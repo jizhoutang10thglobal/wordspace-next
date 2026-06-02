@@ -1,0 +1,11 @@
+node_modules/
+dist/
+out/
+build/
+*.log
+.DS_Store
+
+# unattended auth token — NEVER commit
+.devcontainer/devcontainer.local.env
+.env
+.env.local
