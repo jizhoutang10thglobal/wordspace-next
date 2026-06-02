@@ -64,7 +64,14 @@ while read -r cidr; do
 done < <(echo "$gh_ranges" | jq -r '(.web + .api + .git)[]' | aggregate -q)
 
 # Resolve and add other allowed domains
+# GitHub hosts are resolved here (in addition to the api.github.com/meta CIDRs above)
+# because Docker Desktop for Mac hands out a per-host 198.18.x.x proxy IP that the
+# container actually connects to — the real GitHub CIDRs never get matched on macOS.
 for domain in \
+    "github.com" \
+    "api.github.com" \
+    "codeload.github.com" \
+    "objects.githubusercontent.com" \
     "registry.npmjs.org" \
     "api.anthropic.com" \
     "sentry.io" \
