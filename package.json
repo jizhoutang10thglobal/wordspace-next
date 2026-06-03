@@ -4,7 +4,9 @@
   "private": true,
   "description": "One-shot demo repo for the autonomous feature-shipping workflow (wordspace-next). The skeleton and features are built here by Claude Code under spec control, inside an isolated dev container.",
   "license": "UNLICENSED",
+  "main": "src/main.js",
   "scripts": {
+    "start": "electron .",
     "test": "vitest run",
     "test:e2e": "playwright test"
   },
