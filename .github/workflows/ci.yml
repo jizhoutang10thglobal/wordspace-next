@@ -1,0 +1,23 @@
+name: CI
+
+# PR 上跑权威门同款 Vitest，给 PR 一个真·绿勾。
+# lfg 第 8 步 watch CI 时能看到真 check，不再对"零 check"空转。
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # 与容器一致：不下 Electron 预编译二进制；Vitest 不需要它。
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm test
