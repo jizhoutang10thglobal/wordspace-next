@@ -29,14 +29,20 @@ Vitest 2.x 的主 export 是 ESM-only，直接 `require('vitest')` 会报错。
 
 ## Spec S3 Lessons — 2026-06-05
 
-**preload 在默认 `sandbox: true` 下不能 `require` 项目自定义模块。**
-Electron 20+ 的 preload 默认在 sandbox 里跑，它的 `require` 是阉割版、只能加载 electron 和
-Node 内置模块。在 preload 里 `require('../lib/xxx')` 自定义模块会直接抛错、整个 preload 挂掉、
-`contextBridge` 不执行、`window.api` 全空、renderer 崩。正确做法：纯逻辑模块（无状态、无 Node
-依赖，如 `theme-manager`）直接在 `renderer.js` 里 `require('../lib/xxx')`（renderer 在
-`contextIsolation: true` 下仍有完整 `require`），preload 只保留真正跨进程的 ipc 桥
-（如 `ipcRenderer.invoke`）。这样 `webPreferences.sandbox` 保持默认 true（纵深防御不丢）、
-不引构建步骤、纯逻辑仍是单一可测来源。**别用 `sandbox: false` 绕**——那白丢 Chromium 进程沙箱。
+**让 renderer 用纯逻辑模块（如 `theme-manager`）：preload `require` + `contextBridge` 暴露 + `sandbox: false`。**
+两个事实先记牢（都实测过，别凭直觉）：
+① renderer 网页在 `nodeIntegration: false` 下**没有 `require`**——在 `renderer.js` 顶层
+`require('../lib/xxx')` 会 `ReferenceError` 崩、文档加载不出来。这是 `nodeIntegration` 管的，
+**不是 `contextIsolation`**（别混；CDP 实测：网页里 `typeof require === 'undefined'`）。
+② preload 在默认 `sandbox: true` 下的 `require` 是阉割版、加载不了项目自定义模块，
+`require('../lib/xxx')` 会让整个 preload 挂掉、`window.api` 全空、renderer 崩。
+所以正确做法：**preload 里** `require('../lib/theme-manager')` + `contextBridge.exposeInMainWorld`
+暴露成 `window.api.theme.*`，renderer 用 `window.api.theme.*`（不自己 require）；并在
+`window-config` 的 `webPreferences` 加 **`sandbox: false`**（否则 preload 那句 require 会挂）。
+对只加载本地可信内容的 demo app，丢 Chromium 进程沙箱可接受（`contextIsolation: true` +
+`nodeIntegration: false` 仍在）。**实测对照**：renderer 直接 require → e2e 2 failed（网页没 require）；
+preload require + `sandbox: false` + renderer 用 `window.api.theme` → e2e 2 passed。
+`theme-manager.js` 不动，仍是 vitest 单测的单一来源。
 
 **e2e 真跑只能放 CI（GitHub Actions + xvfb），dev container 里跑不了。**
 容器防火墙白名单没有 Debian apt 源，装不了 xvfb，没 `DISPLAY` Electron 窗口起不来。
