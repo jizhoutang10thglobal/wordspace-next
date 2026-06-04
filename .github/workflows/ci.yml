@@ -21,3 +21,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+
+  # e2e 真门：在 ubuntu runner 上用 xvfb 真启动 Electron 跑 Playwright，
+  # 抓「vitest 全绿但 app 其实打不开」这类渲染层 bug（spec2 就栽在这）。
+  # 独立 job，绝不继承上面 test job 的 ELECTRON_SKIP_BINARY_DOWNLOAD=1
+  # ——e2e 要真 Electron 二进制；CI runner 无防火墙能正常下载。
+  e2e:
+    # pin 22.04（jammy）：ubuntu-latest 已指向 24.04（noble），其包名漂移
+    # （libasound2→libasound2t64 等）会让 playwright install-deps 补不全 Electron
+    # 的 Chromium 系统库、正常 app 也启动失败 → 门误红。22.04 上这套组合成熟稳定。
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npx playwright install-deps chromium
+      - run: xvfb-run -a --server-args="-screen 0 1280x720x24" npm run test:e2e

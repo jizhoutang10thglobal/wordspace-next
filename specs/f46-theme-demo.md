@@ -44,7 +44,7 @@ created: 2026-06-03
 ## 3. 既定约束
 
 - **主题只改外壳，不改文档**：暗 / 亮只作用于 app 外壳；文档纸面颜色始终由那份 HTML 文档自己决定。这是本 spec 的核心正确性，必须有测试守住。
-- **沿用 spec 1 的测试纪律**（应已写进 `CLAUDE.md`）：权威门 = Vitest（`npm test`），无显示容器里可跑；容器内不起 Electron GUI；可测逻辑与 Electron / DOM 解耦；Playwright Electron E2E 写好但无 `DISPLAY` 时自动 skip。真窗口视觉验证由人在 macOS `npm start` 完成。
+- **沿用 spec 1 的测试纪律**（应已写进 `CLAUDE.md`，并按 S3 教训更新）：容器内权威门 = Vitest（`npm test`）快门，无显示容器里可跑；容器内不起 Electron GUI；可测逻辑与 Electron / DOM 解耦。**Playwright Electron E2E 是真门，放 CI（GitHub Actions + xvfb）真跑**——容器装不了 xvfb，所以容器内不跑 e2e，由 CI 那道兜住「vitest 全绿但 app 打不开」。**不要再用 `test.skip(!DISPLAY)` 假绿**（见 CLAUDE.md S3）。真窗口视觉验证仍可由人在 macOS `npm start` 看。
 - **依赖安装**沿用 `ELECTRON_SKIP_BINARY_DOWNLOAD=1`（驱动脚本已处理）。
 
 ---
@@ -79,7 +79,7 @@ created: 2026-06-03
 ### 5.1 成功信号（三件可见实物 + compound 实物）
 
 - **PR**：unattended run 结束时分支已 push、PR 已开。
-- **绿门**：容器内 `npm test` 退出码 0，含“切换后文档纸面色不变”的断言。
+- **绿门**：容器内 `npm test`（Vitest 快门）退出码 0，含“切换后文档纸面色不变”的断言；**CI 上 e2e job（xvfb 真跑 Electron）也绿**，确认 app 真能打开（堵「vitest 绿但 app 坏」）。
 - **能用**：人在 macOS 本机 `npm start`，点开关外壳暗 / 亮切，文档颜色不动。
 - **学到东西**：`CLAUDE.md` 已被 spec 1 写过一段教训、本 run 自动吃到；若本 run 撞到新坑则追加。
 
@@ -98,14 +98,14 @@ created: 2026-06-03
 
 - [ ] **[P1] Given** 暗 / 亮两种主题 **When** 求表示“文档纸面样式”的值 **Then** 两者完全相同——即文档样式不从主题派生。这证明的是“主题模型不从主题派生文档样式”，不是“渲染后文档颜色一定没变”——级联渗色（全局 CSS / 外壳变量漏进文档容器）由渲染层的 computed-style 检查守（写好但容器内 skip），靠 macOS 本机肉眼验。
 
-### 5.3 Playwright Electron E2E（写好，无 `DISPLAY` 时自动 skip）
+### 5.3 Playwright Electron E2E（CI 上 xvfb 真跑，构成 app 集成门）
 
 - [ ] **[P2] Given** 启动 app **When** 点状态栏开关 **Then** 断言 app 外壳的 class / 背景变了，且文档纸面内某个元素的 computed color 没变。
-- [ ] **[P2] Given** 当前环境 `!process.env.DISPLAY` **When** 运行 `npm run test:e2e` **Then** 该 E2E `test.skip(...)`，容器里不报红。
+- [ ] **[P2] Given** app 因 preload / 集成层坏掉（如 `window.api` 没注入、文档空白）**When** 在 CI 用 `xvfb-run npm run test:e2e` 真跑 **Then** E2E 断言失败、CI e2e job 红——**不再用 `test.skip(!DISPLAY)` 让坏 app 假绿过门**。`electron.launch` 的 args 加 `--no-sandbox`（无特权 runner 约束，与 app 的 `webPreferences.sandbox` 是两回事）。
 
 ### 5.4 Compound 交付物（必产出）
 
-- [ ] **[P1] 自动复用 spec 1 的教训**：本 run 启动时已自动 load `CLAUDE.md` 里 spec 1 写下的教训（测试解耦 / E2E skip / electron 跳过下载），少走 spec 1 踩过的弯路。
+- [ ] **[P1] 自动复用既有教训**：本 run 启动时已自动 load `CLAUDE.md` 里 spec 1 / S3 的教训（测试解耦 / e2e 真跑放 CI / preload 别在 sandbox 下 require 自定义模块 / electron 跳过下载），少走前面踩过的弯路。
 - [ ] **[P1] 撞到新坑则追加**：若本 run 撞到 spec 1 未覆盖的新约束，把它追加进 `CLAUDE.md`；driver 脚本结束时报告 compound `WROTE / MISSING`。
 
 ---
