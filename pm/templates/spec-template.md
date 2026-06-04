@@ -13,7 +13,7 @@
     3. §3 既定约束装 AI-run 环境约束：Vitest=权威门 / 容器不起 GUI / 跳过 Electron 二进制下载。
     4. §5.1 成功信号 = 三件可见实物 + compound 实物（替代人类版的"用户时刻 + 性能预算 ≤100ms"，
        因为 headless 量不到真窗口性能；性能/手感留给人在 macOS 肉眼）。
-    5. §5 验收拆成 5.2 Vitest 必过（权威绿/红门，纯逻辑）/ 5.3 Electron E2E 无 DISPLAY 自动 skip
+    5. §5 验收拆成 5.2 Vitest 必过（容器内权威快门，纯逻辑）/ 5.3 Electron E2E 放 CI（xvfb）真跑
        / 5.4 compound 交付物。projectx 的 5-lens 非功能验收：跨平台/长时间/大规模/并发砍进 §2 Out，
        保留的客观项落到 5.2 或 5.3。
     6. "由 dev 决定 / 由设计稿决定"的留口必须消掉——无人 agent 没有下游人接，留口会让它当场停下来问；
@@ -68,8 +68,10 @@ created: YYYY-MM-DD
 ## 3. 既定约束
 
 - [产品决策 1，一句话——凡是会让无人 agent 停下来问的"由 X 决定"，在这里拍死或划进 Out]
-- **权威测试门 = Vitest（`npm test`）**：无显示容器里稳跑，是 unattended run 判绿 / 红的唯一权威。
-- **容器内不起 Electron GUI**：无屏幕 Linux 沙盒里 Electron 窗口起不来。开窗逻辑要么抽成纯模块单测，要么放进无 `DISPLAY` 自动 skip 的 E2E。真窗口视觉验证由人在 macOS `npm start` 完成，不属于自动门。
+- **容器内权威快门 = Vitest（`npm test`）**：无显示容器里稳跑，是 unattended run 当场判绿 / 红的快门。
+- **app 集成真门 = CI 上 xvfb 跑的 Playwright e2e**：vitest 只测纯逻辑，碰不到 preload 注入 / ipc / DOM——「vitest 全绿但 app 打不开」靠这道兜（见 `CLAUDE.md` S3）。容器装不了 xvfb，所以 e2e 不在容器跑、放 `.github/workflows/ci.yml` 的 e2e job（`xvfb-run` + `electron.launch` 加 `--no-sandbox`）。**不要用 `test.skip(!DISPLAY)` 假绿**——skip 不等于通过。真窗口视觉验证仍可由人在 macOS `npm start` 看。
+- **容器内不起 Electron GUI**：无屏幕 Linux 沙盒里 Electron 窗口起不来；容器内门只跑 vitest 快门，e2e 交给 CI。
+- **renderer 要用纯逻辑模块（如主题/配置逻辑）→ 走 preload，不要在 renderer 顶层 require**：renderer 网页在 `nodeIntegration:false` 下没有 `require`（顶层 `require('../lib/xxx')` 会崩）。正确：preload `require` 它 + `contextBridge` 暴露 `window.api.*`，renderer 用 `window.api.*`，并在 `window-config` 加 `sandbox: false`（preload 要 require 自定义模块必须配它）。详见 `CLAUDE.md` S3。
 - **依赖安装跳过 Electron 二进制下载**：设 `ELECTRON_SKIP_BINARY_DOWNLOAD=1`（驱动脚本已处理）；不影响 Vitest。
 
 ---
@@ -110,7 +112,7 @@ created: YYYY-MM-DD
 ### 5.1 成功信号（三件可见实物 + compound 实物）
 
 - **PR**：unattended run 结束时分支已 push、PR 已开。
-- **绿门**：容器内 `npm test` 退出码 0。
+- **绿门**：容器内 `npm test`（vitest 快门）退出码 0；**CI 上 e2e job（xvfb 真跑 Electron）也绿**，确认 app 真能打开（堵「vitest 绿但 app 坏」）。
 - **能用**：人在 macOS 本机 `npm start`，[看到 / 能做什么]。
 - **学到东西**：仓根 `CLAUDE.md` 多出一段本 run 的环境教训（git diff 可见）——下一条 spec 自动吃到。
 
@@ -126,14 +128,14 @@ created: YYYY-MM-DD
 
 > 这些断言全部不启动 Electron、不需要显示环境——容器里稳定可跑。
 
-### 5.3 Playwright Electron E2E（写好，无 `DISPLAY` 时自动 skip）
+### 5.3 Playwright Electron E2E（CI 上 xvfb 真跑，构成 app 集成门）
 
 - [ ] **[P2] Given** 启动 app **When** [真窗口里的动作] **Then** [computed-style / 可见性断言]
-- [ ] 无 `DISPLAY` 时 `test.skip(...)`，容器里"全跳过 = 通过"，带屏 macOS / CI 才真跑。
+- [ ] **[P2] Given** app 因 preload / 集成层坏掉（`window.api` 没注入、文档空白）**When** 在 CI 用 `xvfb-run npm run test:e2e` 真跑 **Then** e2e 断言失败、CI e2e job 红——**不用 `test.skip(!DISPLAY)` 让坏 app 假绿过门**；`electron.launch` 的 args 加 `--no-sandbox`（无特权 runner 约束，与 app 的 `webPreferences.sandbox` 是两回事）。
 
 <!-- ← AI-run 调整：人类版 §5.3 的 5-lens 非功能（Scale / Time / Environment / Concurrency / Failure
      Recovery）——demo 把跨平台 / 长时间 / 大规模 / 并发砍进 §2 Out；保留的客观项要么变 §5.2 纯逻辑断言，
-     要么放这里无 DISPLAY skip 的 E2E。lens 不适用就整段省略。 -->
+     要么放这里在 CI（xvfb）真跑的 e2e。lens 不适用就整段省略。 -->
 
 ### 5.4 Compound 交付物（必产出）
 
