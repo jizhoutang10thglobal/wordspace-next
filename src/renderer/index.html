@@ -6,12 +6,64 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'">
   <title>Wordspace</title>
   <style>
-    body { margin: 0; font-family: sans-serif; }
-    #doc-container { padding: 2rem; max-width: 800px; margin: 0 auto; }
+    :root {
+      --shell-bg: #f0f0f0;
+      --shell-text: #1a1a1a;
+      --statusbar-bg: #e0e0e0;
+      --statusbar-border: #cccccc;
+    }
+    html.theme-dark {
+      --shell-bg: #1e1e1e;
+      --shell-text: #d4d4d4;
+      --statusbar-bg: #2d2d2d;
+      --statusbar-border: #444444;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: var(--shell-bg);
+      color: var(--shell-text);
+    }
+    #doc-container {
+      flex: 1;
+      overflow: auto;
+      padding: 2rem;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
+      /* Fixed paper colors — never var(...) — breaks CSS cascade from shell theme */
+      background: #ffffff;
+      color: #000000;
+    }
+    #status-bar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      padding: 0 1rem;
+      height: 28px;
+      background: var(--statusbar-bg);
+      border-top: 1px solid var(--statusbar-border);
+    }
+    #theme-toggle {
+      font-size: 12px;
+      padding: 2px 8px;
+      cursor: pointer;
+      border: 1px solid var(--statusbar-border);
+      background: transparent;
+      color: inherit;
+      border-radius: 3px;
+    }
   </style>
 </head>
 <body>
   <div id="doc-container"></div>
+  <div id="status-bar">
+    <button id="theme-toggle">&#9728; Light</button>
+  </div>
   <script src="renderer.js"></script>
 </body>
 </html>
