@@ -30,6 +30,10 @@ if [[ "${1:-}" == "--inner" ]]; then
   # 且路 1 不在容器里启动 Electron，所以跳过它的下载，让 npm install 干净通过。
   export ELECTRON_SKIP_BINARY_DOWNLOAD=1
 
+  # headless（无 TTY）下 gh 缺参数会弹交互 prompt 直接挂死整条无人值守链；禁掉它，
+  # 让 gh 缺参时变成非零退出而不是卡住（push/PR 兜底依赖这点，见文末兜底段）。
+  export GH_PROMPT_DISABLED=1
+
   echo "▶ [container] 准备 git / gh 身份…"
   git config user.email  >/dev/null 2>&1 || git config user.email "demo-bot@wordspace.local"
   git config user.name   >/dev/null 2>&1 || git config user.name  "wordspace demo bot"
@@ -91,11 +95,69 @@ if [[ "${1:-}" == "--inner" ]]; then
     COMPOUND="MISSING"
   fi
 
-  PR_URL="$(gh pr view --json url -q .url 2>/dev/null || true)"
+  # ── push/PR 兜底：lfg 的 push/开 PR 步骤被网络中断 / API 529 掐断时不报错、照常输出 DONE
+  #    （见 lfg-push-silent-fail 教训）。失败现场实测：本地有 commit、远端无分支、无 open PR，
+  #    三者齐缺，且 lfg 日志里压根没有 push 输出——所以这里不靠 grep 日志，而是直接查真实
+  #    git / 远端状态，缺什么补什么。恢复顺序固定不可颠倒：先保证远端分支在（ls-remote→缺则 push）
+  #    → 再保证 PR 在（gh pr list 探测→缺则 create）。只覆盖"远端无分支 / 无 PR"两态；
+  #    "PR 已开但本地领先远端"不在本 demo 一次性分支的场景里，不处理。
+  BR="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)"
+  AHEAD="$(git rev-list --count "${BASE}..HEAD" 2>/dev/null || echo 0)"
+  RESCUE="无需兜底"
+
+  # 硬守卫：绝不在 main/master/detached 上 push+开 PR；lfg 没产出 commit（AHEAD=0）也不硬开空 PR。
+  if [[ "$BR" != "main" && "$BR" != "master" && "$BR" != "HEAD" && -n "$BASE" && "$AHEAD" -gt 0 ]]; then
+    PUSHED_NEW=""
+    # 步骤 1：远端没有该分支 → lfg push 疑似被掐断，补 push（带一次瞬时重试，但权限/分叉类不重试）
+    if ! git ls-remote --exit-code --heads origin "$BR" >/dev/null 2>&1; then
+      echo "▶ [container] 远端无分支 $BR（本地领先 $AHEAD commit）—— lfg push 疑似被掐断，兜底补 push"
+      PUSH_ERR="$(git push -u origin "$BR" 2>&1)"; PUSH_RC=$?
+      printf '%s\n' "$PUSH_ERR"
+      if [[ "$PUSH_RC" -ne 0 ]]; then
+        if printf '%s' "$PUSH_ERR" | grep -qiE 'non-fast-forward|\[rejected\]|\[remote rejected\]|protected|rule violation|workflow'; then
+          echo "✗ [container] push 被拒（权限/分叉，非瞬时网络）—— 不重试、不强推（见 gh-token-workflow-scope）" >&2
+        else
+          echo "▶ [container] push 疑似瞬时失败（网络/529），5s 后重试一次…" >&2; sleep 5
+          PUSH_ERR="$(git push -u origin "$BR" 2>&1)"; PUSH_RC=$?; printf '%s\n' "$PUSH_ERR"
+        fi
+      fi
+      if git ls-remote --exit-code --heads origin "$BR" >/dev/null 2>&1; then
+        PUSHED_NEW=1
+      else
+        RESCUE="兜底失败（push 未成，远端仍无分支）"
+      fi
+    fi
+    # 步骤 2：远端分支确认在场后，缺 open PR 就补开（用 gh pr list 探测，不用裸 gh pr view——
+    #         后者对 closed/merged 分支假阴性会误判重复创建）
+    if git ls-remote --exit-code --heads origin "$BR" >/dev/null 2>&1; then
+      PR_EXIST="$(gh pr list --head "$BR" --base main --state open --json url --jq '.[0].url // empty' 2>/dev/null || true)"
+      if [[ -z "$PR_EXIST" ]]; then
+        echo "▶ [container] 远端有分支但无 open PR —— 兜底补开 PR"
+        PR_TITLE="demo(${SLUG}): $(git log -1 --pretty=%s 2>/dev/null || echo "$SLUG")"
+        CREATE_ERR="$(gh pr create --base main --head "$BR" --title "$PR_TITLE" \
+          --body "由 run-spec.sh push/PR 兜底自动补开（lfg 已 commit，但 push/开 PR 步骤被网络掐断，见 lfg-push-silent-fail 教训）。spec: ${SPEC}" 2>&1)"; CREATE_RC=$?
+        printf '%s\n' "$CREATE_ERR"
+        # 竞态：别处刚好开了同分支 PR，gh 报 already exists，按成功处理
+        if [[ "$CREATE_RC" -ne 0 ]] && printf '%s' "$CREATE_ERR" | grep -qi 'already exists'; then CREATE_RC=0; fi
+        if [[ "$CREATE_RC" -eq 0 ]]; then
+          RESCUE="兜底补开 PR${PUSHED_NEW:+（含 push）}"
+        else
+          RESCUE="兜底失败（gh pr create）"
+        fi
+      elif [[ -n "$PUSHED_NEW" ]]; then
+        RESCUE="兜底补 push（PR 原已存在）"
+      fi
+      # else：分支在 + PR 在 + 没补过 push = lfg 自己跑通了，RESCUE 保持"无需兜底"
+    fi
+  fi
+
+  # 统一（重新）求 PR_URL：无论 lfg 自己开的、兜底补开的、还是 main 守卫分支，都以此为准；
+  # 用 list 而非裸 gh pr view，对 closed/merged 不假阴性。红门 comment 依赖这个值，必须在它之后。
+  PR_URL="$(gh pr list --head "$BR" --base main --state open --json url --jq '.[0].url // empty' 2>/dev/null || true)"
 
   # 红门有后果：给已开出的 PR 打 comment 警示，别让红门变成纯摆设。
   if [[ "$GATE" == "FAIL" && -n "$PR_URL" ]]; then
-    gh pr comment --body "⚠ 容器内权威复核门 \`npm test\` 失败（退出码 ${GATE_RC}）。这条 PR 由 lfg 在测试门之前就已开出，请勿合并直到门转绿。" 2>/dev/null || true
+    gh pr comment "$PR_URL" --body "⚠ 容器内权威复核门 \`npm test\` 失败（退出码 ${GATE_RC}）。这条 PR 由 lfg 在测试门之前就已开出，请勿合并直到门转绿。" 2>/dev/null || true
   fi
 
   echo ""
@@ -103,9 +165,18 @@ if [[ "${1:-}" == "--inner" ]]; then
   echo "  spec       : ${SPEC}"
   echo "  权威门     : ${GATE}（npm test 退出码 $GATE_RC）"
   echo "  compound   : ${COMPOUND}（CLAUDE.md 是否被本 run 写入教训）"
+  echo "  补救       : ${RESCUE}"
   echo "  PR         : ${PR_URL:-<未检测到 PR>}"
   echo "════════════════════════════════════════════"
-  exit "$GATE_RC"
+
+  # 退出码：权威门红（GATE_RC=1）优先；门绿但本应有 PR 却最终没有 → 标记未交付（7，避开已用的 2-6）。
+  # 这正是为了不重蹈"看起来 DONE 实际没产出"——无人值守的调用方靠非零退出就能发现这次没交付。
+  FINAL_RC="$GATE_RC"
+  if [[ "$GATE_RC" -eq 0 && "$AHEAD" -gt 0 && -z "$PR_URL" ]]; then
+    echo "⚠ [container] 本 run 有 commit 但最终无 PR（兜底未能补开）—— 标记未交付（exit 7）" >&2
+    FINAL_RC=7
+  fi
+  exit "$FINAL_RC"
 fi
 
 # ── 宿主分支（默认，交互）──────────────────────────────────────────────────
