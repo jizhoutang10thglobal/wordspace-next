@@ -20,4 +20,8 @@ describe('window-config', () => {
   it('getWindowConfig sets nodeIntegration to false', () => {
     expect(getWindowConfig().webPreferences.nodeIntegration).toBe(false);
   });
+
+  it('getWindowConfig sets sandbox to false so preload can require local modules', () => {
+    expect(getWindowConfig().webPreferences.sandbox).toBe(false);
+  });
 });

@@ -8,6 +8,7 @@ function getWindowConfig() {
       preload: path.resolve(__dirname, '../renderer/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   };
 }
