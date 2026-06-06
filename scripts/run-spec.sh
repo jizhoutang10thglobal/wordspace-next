@@ -47,6 +47,15 @@ if [[ "${1:-}" == "--inner" ]]; then
     git switch -c "$NEW_BRANCH" 2>/dev/null || git checkout -b "$NEW_BRANCH"
   fi
 
+  # 把本次 spec 的输入文件（spec.md / intent.md / va.json，都是人写、实现 AI 不该改）前置
+  # commit 进分支，确保进最终 PR——尤其 requires_va 的 spec，va.json 必须跟着，否则 va-coverage
+  # 门红、va-runner 没 VA 可跑。做完这步 lfg 只管写 feature 代码。
+  if git status --porcelain -- "specs/${SLUG}".* 2>/dev/null | grep -q .; then
+    git add "specs/${SLUG}".*
+    git commit -m "chore(${SLUG}): spec + intent + VA 输入（人写，实现前置）" >/dev/null 2>&1 || true
+    echo "▶ [container] 已前置 commit 本次 spec 输入（specs/${SLUG}.*）"
+  fi
+
   # 确保 vitest 等基础依赖在位（node_modules 在 bind mount 上，通常已装）
   if ! npx --no-install vitest --version >/dev/null 2>&1; then
     echo "▶ [container] npm install（首次 / 依赖缺失）…"
