@@ -1,0 +1,21 @@
+# 验收门的"裁判"文件 —— 定义"什么算视觉上对"的强度锚，实现 AI 不许单方面改弱。
+# 改到这些文件的 PR 会自动请求 code owner review；要真正"强制 review 才能合"，
+# 需在 GitHub → Settings → Branches → main 的 branch protection 勾选
+# "Require review from Code Owners"（agent 无 Administration 权限设不了，见 docs/plans 待办）。
+#
+# 注：owner 暂用 repo owner。若 Colin 的个人 GitHub 账号不同，改下面的用户名。
+
+# VA 清单 + 通用 runner + 变异自检（门本体）
+/specs/*.va.json           @jizhoutang10thglobal
+/e2e/va-runner.spec.js     @jizhoutang10thglobal
+/e2e/va-selftest.spec.js   @jizhoutang10thglobal
+/src/lib/va-eval.js        @jizhoutang10thglobal
+# 判定逻辑的"校准基准"单测 + VA 覆盖门：被掏空 = va-eval 正确性没证明
+/src/lib/__tests__/va-eval.test.js      @jizhoutang10thglobal
+/src/lib/__tests__/va-coverage.test.js  @jizhoutang10thglobal
+# spec 强 e2e + 宿主对抗验收（阈值能被放宽 / 门能被改弱）
+/e2e/theme-visual.spec.js  @jizhoutang10thglobal
+/scripts/host-verify.js    @jizhoutang10thglobal
+# CI 配置 + playwright 配置：e2e job 一旦被删/改弱，所有真门一起没
+/.github/workflows/ci.yml  @jizhoutang10thglobal
+/playwright.config.js      @jizhoutang10thglobal

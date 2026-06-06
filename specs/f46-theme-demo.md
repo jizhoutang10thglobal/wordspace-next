@@ -7,6 +7,7 @@ owner: Colin
 depends_on: [S1]
 narrowed_from: F46
 created: 2026-06-03
+requires_va: true
 ---
 
 # S2 · 暗 / 亮主题切换（F46 收窄版）

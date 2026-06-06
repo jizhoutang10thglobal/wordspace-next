@@ -56,3 +56,35 @@ npm run test:e2e`，且这个 job 不设 `ELECTRON_SKIP_BINARY_DOWNLOAD=1`（e2e
 vitest 只测脱离 Electron 的纯逻辑，永远碰不到 preload 注入、ipc、主题 apply 到 DOM 这些集成层。
 spec2 就栽在这：14 个单测全绿、app 却打不开。权威门除了 vitest，必须有一道真启动 app 的 e2e
 （放 CI），否则「绿但坏」会一路畅通到 PR。
+
+## Spec S4 Lessons — 2026-06-05
+
+**代理断言（查 class）≠ 视觉验证。强断言的判定标准：能想出一种「CSS 全废但断言还过」的情形，它就还是弱的。**
+spec2 二次翻车根因：`index.html` 的 CSP `default-src 'self'` 拦掉同文件 inline `<style>`，主题 CSS 全失效，
+但 e2e 只 `assert body.className 含 'dark-theme'`——className 是 JS 直接设的、不过 CSS，CSP 全拦它照过。
+14 vitest 绿 + e2e 2 passed、app 视觉零主题。**修法**：读真实 `getComputedStyle().backgroundColor` 算
+WCAG 亮度断言（暗态 < 0.2 且 < 亮态、文档两态恒等），不查 class。**实测对照**：同一坏 app，弱门(class)
+2 passed、强门(亮度) 1 failed；修后强门绿。**CSP 修法**：inline `<style>` 抽成同目录外部 `theme.css` 用
+`<link rel="stylesheet" href="theme.css">` 加载，`default-src 'self'` 放行同源外链，CSP 一字不改、不削弱
+（别加 `unsafe-inline`；`file://` 下 href 用相对路径，别用 `/theme.css`）。
+
+**门存在 ≠ 门够强——要「变异自检」兜底。**
+把「采集」和「判定」分离：判定逻辑抽成纯模块 `src/lib/va-eval.js`（vitest 可单测）。门在信自己绿前先
+打掉样式、断言 VA 必翻红；破坏后还绿 = 哑门 = 整个 e2e fail（`e2e/va-selftest.spec.js`）。这把「断言够不够强」
+本身变成被测对象，不靠自觉。实测：宿主 `node scripts/host-verify.js` 与 CI e2e 都含这道变异探针。
+
+**验收强度锚在 spec、不锚在实现 AI（破「裁判=运动员」）。**
+有可见效果的 spec 带 `specs/<slug>.va.json`：人写死的可证伪 computed-style 阈值（selector + 亮度/颜色阈值 +
+跨态不变式），实现 AI **不写断言、不许改 VA**（`.github/CODEOWNERS` 锁）。通用 `e2e/va-runner.spec.js` 读 VA
+真开 app 判、自己不认识具体 spec——未来 spec 只要带 `.va.json` 就自动被这道门覆盖。起草可由 AI、拍板冻结在人。
+`run-spec.sh` 收尾报告 VA `HAS / MISSING`（仿 compound）。
+
+**required status check 是 GitHub 服务端配置、不在代码里——e2e 写多强，没设 required 也白搭。**
+现状实测：`main` 无 branch protection（`branches/main/protection` 返回 404），CI 红了 merge 按钮照样能点。
+要红 e2e 真挡住合并：在 GitHub branch protection 把 CI 的 `e2e` job 设 required status check + 勾
+「Require review from Code Owners」（agent 缺 Administration 权限、403，要 Colin 手动设）。
+
+**「真打开看效果」自动化放宿主、容器跑不了。**
+容器无显示器 / 装不了 xvfb；宿主 macOS 有真显示器能真开 app。`scripts/host-verify.js`：宿主真启动 app、
+按 VA 判可见效果 + 变异探针 + 截图存证 + 用宿主 token（有 repo scope）`gh pr checks` 确认 CI e2e 真绿
+（破「容器内 token 缺 Actions:read、读不到 CI」的约束）。由独立 agent 在 merge 前跑，任务是证伪、不是盖章。

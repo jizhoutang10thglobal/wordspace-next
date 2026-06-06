@@ -1,0 +1,54 @@
+body {
+  margin: 0;
+  font-family: sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* Shell theming — applies to body background and status bar only */
+body.light-theme {
+  background: #f0f0f0;
+  color: #1a1a1a;
+}
+body.dark-theme {
+  background: #1a1a1a;
+  color: #e0e0e0;
+}
+
+/* Document area — explicit background breaks the cascade from body theme class */
+#doc-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  background: #ffffff;
+  color: #000000;
+}
+#doc-container > * {
+  max-width: 800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Status bar */
+#status-bar {
+  flex-shrink: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  gap: 0.5rem;
+  border-top: 1px solid rgba(128, 128, 128, 0.3);
+}
+body.light-theme #status-bar { background: #e0e0e0; }
+body.dark-theme  #status-bar { background: #2a2a2a; }
+
+#theme-toggle {
+  padding: 2px 10px;
+  cursor: pointer;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.8rem;
+}
