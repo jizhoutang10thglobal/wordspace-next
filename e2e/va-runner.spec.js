@@ -17,7 +17,8 @@ async function snapshot(window, selectors) {
   for (const sel of selectors) {
     out[sel] = await window.evaluate((s) => {
       const el = s === 'body' ? document.body : document.querySelector(s);
-      return el ? getComputedStyle(el).backgroundColor : null;
+      if (!el) return null;
+      return { bg: getComputedStyle(el).backgroundColor, text: el.textContent };
     }, sel);
   }
   return out;

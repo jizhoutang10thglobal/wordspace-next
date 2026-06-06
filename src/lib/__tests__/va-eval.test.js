@@ -80,3 +80,38 @@ describe('helpers', () => {
     expect(statesOf(va)).toEqual(['light', 'dark', 'lightAgain']);
   });
 });
+
+describe('textContent metric — 验内容（新基建，给"渲染↔源码"这类 spec 用）', () => {
+  const SNAP = {
+    rendered: { '#doc-container': { bg: 'rgb(255, 255, 255)', text: 'Wordspace Welcome to Wordspace.' } },
+    source: { '#doc-container': { bg: 'rgb(255, 255, 255)', text: '<h1>Wordspace</h1><p>Welcome to Wordspace.</p>' } },
+  };
+  const checks = [
+    { id: 'rendered-not-source', desc: '渲染态文本不是源码', selector: '#doc-container', metric: 'textContent', states: { rendered: { notContains: '<h1' } } },
+    { id: 'source-shows-tags', desc: '源码态真显标签', selector: '#doc-container', metric: 'textContent', states: { source: { contains: '<h1' } } },
+  ];
+
+  it('渲染态不含 <h1、源码态含 <h1 → 全过', () => {
+    expect(evaluateChecks(SNAP, checks).passed).toBe(true);
+  });
+  it('坏：源码态没真显源码（文本还是渲染后的）→ source-shows-tags 红', () => {
+    const bad = { ...SNAP, source: { '#doc-container': { bg: 'rgb(255,255,255)', text: 'Wordspace Welcome' } } };
+    expect(evaluateChecks(bad, checks).results.find((r) => r.id === 'source-shows-tags').pass).toBe(false);
+  });
+  it('坏：渲染态其实漏出了源码（notContains 违反）→ rendered-not-source 红', () => {
+    const bad = { ...SNAP, rendered: { '#doc-container': { bg: 'rgb(255,255,255)', text: '<h1>x</h1>' } } };
+    expect(evaluateChecks(bad, checks).results.find((r) => r.id === 'rendered-not-source').pass).toBe(false);
+  });
+  it('采集器没读 text（只有 bg）→ 报错判红，不静默', () => {
+    const noText = { rendered: { '#doc-container': { bg: 'rgb(255,255,255)' } } };
+    expect(evaluateChecks(noText, [checks[0]]).results[0].pass).toBe(false);
+  });
+});
+
+describe('向后兼容：字符串快照当 {bg} 处理', () => {
+  it('bgLuminance 仍能吃纯字符串背景色（旧采集器格式）', () => {
+    const snap = { s: { body: 'rgb(26, 26, 26)' } };
+    const { passed } = evaluateChecks(snap, [{ id: 'x', selector: 'body', metric: 'bgLuminance', states: { s: { max: 0.2 } } }]);
+    expect(passed).toBe(true);
+  });
+});
