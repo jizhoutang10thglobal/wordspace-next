@@ -15,7 +15,7 @@ const { _electron: electron } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
-const { evaluateChecks, selectorsOf } = require('../src/lib/va-eval');
+const { evaluateChecks, selectorsOf, statesOf } = require('../src/lib/va-eval');
 
 const ROOT = path.join(__dirname, '..');
 const SPECS_DIR = path.join(ROOT, 'specs');
@@ -26,7 +26,8 @@ async function snapshot(window, selectors) {
   for (const sel of selectors) {
     out[sel] = await window.evaluate((s) => {
       const el = s === 'body' ? document.body : document.querySelector(s);
-      return el ? getComputedStyle(el).backgroundColor : null;
+      if (!el) return null;
+      return { bg: getComputedStyle(el).backgroundColor, text: el.textContent };
     }, sel);
   }
   return out;
@@ -68,10 +69,19 @@ async function verifyOne(vaFile) {
     results.forEach((r) => console.log(`  ${r.pass ? '✓' : '✗'} ${r.id} — ${r.desc}${r.pass ? '' : '  ::  ' + r.reasons.join('; ')}`));
     if (!passed) issues.push(`${va.spec}: 可见验收判红（看上面 ✗）`);
 
-    // 变异探针：打掉样式后 VA 必须翻红
-    await window.evaluate(() => document.querySelectorAll('link[rel="stylesheet"], style').forEach((e) => e.remove()));
+    // 变异探针：移除样式（颜色门）+ 清空被验元素文本（内容门），打坏后 VA 必须翻红
+    await window.evaluate((sels) => {
+      document.querySelectorAll('link[rel="stylesheet"], style').forEach((e) => e.remove());
+      sels.forEach((s) => {
+        const el = s === 'body' ? document.body : document.querySelector(s);
+        if (el) el.textContent = '';
+      });
+    }, selectors);
     await window.waitForTimeout(100);
-    const broken = await walk(window, va, selectors, false);
+    // 破坏后采一次当前 DOM、所有状态共用（不再走 steps 的 click，清空容器文本会删掉按钮）
+    const brokenSnap = await snapshot(window, selectors);
+    const broken = {};
+    statesOf(va).forEach((st) => { broken[st] = brokenSnap; });
     const mutated = evaluateChecks(broken, va.checks);
     if (mutated.passed) {
       issues.push(`${va.spec}: 变异探针没红 —— 门是哑的`);

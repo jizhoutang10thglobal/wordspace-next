@@ -5,7 +5,7 @@
 const { test, expect, _electron: electron } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
-const { evaluateChecks, selectorsOf } = require('../src/lib/va-eval');
+const { evaluateChecks, selectorsOf, statesOf } = require('../src/lib/va-eval');
 
 // 对抗验收门不容忍概率性放过：retries 设 0，让间歇性失败如实暴露（flaky 是信号不是噪音）。
 test.describe.configure({ retries: 0 });
@@ -18,7 +18,8 @@ async function snapshot(window, selectors) {
   for (const sel of selectors) {
     out[sel] = await window.evaluate((s) => {
       const el = s === 'body' ? document.body : document.querySelector(s);
-      return el ? getComputedStyle(el).backgroundColor : null;
+      if (!el) return null;
+      return { bg: getComputedStyle(el).backgroundColor, text: el.textContent };
     }, sel);
   }
   return out;
@@ -57,16 +58,25 @@ for (const f of vaFiles) {
       expect(baseline.passed, '基线异常：好 app 上 VA 本就该绿，却红了 —— ' +
         baseline.results.filter((r) => !r.pass).map((r) => r.id).join(',')).toBe(true);
 
-      // 变异：移除所有外部样式表与 <style>，模拟 CSS / 主题彻底失效
-      await window.evaluate(() => {
+      // 变异：移除样式（让颜色门失效）+ 清空被验元素文本（让内容门 contains 类失效）。
+      const sels = selectorsOf(va);
+      await window.evaluate((ss) => {
         document.querySelectorAll('link[rel="stylesheet"], style').forEach((el) => el.remove());
-      });
+        ss.forEach((s) => {
+          const el = s === 'body' ? document.body : document.querySelector(s);
+          if (el) el.textContent = '';
+        });
+      }, sels);
       await window.waitForTimeout(100);
 
-      const broken = await collect(window, va);
+      // 破坏后采一次当前 DOM，所有命名状态共用这份坏快照——不再走 steps 的 click，
+      // 因为清空容器文本会连带删掉里面的按钮（如 #theme-toggle），再 click 会卡死。
+      const brokenSnap = await snapshot(window, sels);
+      const broken = {};
+      statesOf(va).forEach((st) => { broken[st] = brokenSnap; });
       const mutated = evaluateChecks(broken, va.checks);
       expect(mutated.passed,
-        '门是哑的：把样式全打掉后 VA 仍判绿，说明断言根本没在验真实可见效果').toBe(false);
+        '门是哑的：把样式和内容都打坏后 VA 仍判绿，说明断言根本没在验真实可见效果').toBe(false);
     } finally {
       await app.close();
     }
