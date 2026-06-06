@@ -23,7 +23,7 @@
 | 1 | frontmatter 14+ 字段（layer/ui_component/priority/reviewers…） | 砍到只留身份与依赖（id/title/slug/status/owner/depends_on/narrowed_from/created）。board/周评/外部 dev 协作字段在 demo 无意义。 |
 | 2 | §5.1 用户时刻 + 性能预算（≤100ms / 内存≤20MB） | 可见实物（PR / 容器内 `npm test` 绿 + CI e2e 绿 / macOS 能用）+ compound 实物。headless 量不到真窗口性能，性能/手感留人肉眼。 |
 | 3 | §5.3 五维非功能验收（Scale/Time/Cross-OS/Concurrency/Failure） | 跨平台/长时间/大规模/并发砍进 §2 Out；客观项落到 §5.2 Vitest 或 §5.3 在 CI（xvfb）真跑的 E2E。 |
-| 4 | §5 单一验收层 | 拆成 §5.2 Vitest 必过（容器内权威快门，纯逻辑）/ §5.3 Electron e2e（**CI 上 xvfb 真跑的 app 集成门**；容器装不了 xvfb 故不在容器跑，堵「vitest 绿但 app 坏」，**不用 test.skip 假绿**，见 CLAUDE.md S3）。 |
+| 4 | §5 单一验收层 | 拆成 §5.2 Vitest 必过（容器内权威快门，纯逻辑）/ §5.3 **可见验收（VA）+ Electron e2e**（**CI 上 xvfb 真跑的 app 集成门**；堵「vitest 绿但 app 坏」「class 变了但屏幕没变」）。有可见效果的 spec 必带 `specs/<slug>.va.json`（人写死阈值、实现不许改），通用 `va-runner` 按它真验屏幕效果、`va-selftest` 变异自检证门有牙，**不用 test.skip 假绿、不用 class 代理断言**，见 CLAUDE.md S3/S4。 |
 | 5 | "由 dev 决定 / 由设计稿决定"的留口 | 全部消掉——无人 agent 没有下游人接留口，会当场停下来问。收进 §3 既定约束或划进 §2 Out。 |
 | 6 | compound 靠人工 Documentation Sync 清单 | 升级成 §5.4 MUST-produce 交付物：把本 run 教训写进 `CLAUDE.md`，git diff 可断言，下一条 spec 自动 load。 |
 

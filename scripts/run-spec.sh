@@ -95,6 +95,19 @@ if [[ "${1:-}" == "--inner" ]]; then
     COMPOUND="MISSING"
   fi
 
+  # ── VA 状态报告：有可见效果的 spec（front-matter requires_va: true）必须带
+  #    specs/<slug>.va.json（验收门强度锚，人写、实现不许改）。真正的硬门是 vitest 里的
+  #    va-coverage.test.js（requires_va 缺 va.json 直接判红 → 上面 GATE 已 FAIL），这里只把状态
+  #    显式打进报告，免得"绿但缺 VA"被忽略。纯逻辑无 UI 的 spec（requires_va 非 true）没有也正常。
+  VA_FILE="${SPEC%.md}.va.json"
+  if [[ -f "$VA_FILE" ]]; then
+    VA="HAS"
+  elif grep -qiE '^requires_va:[[:space:]]*true' "$SPEC" 2>/dev/null; then
+    VA="MISSING（必需！va-coverage 已判红）"
+  else
+    VA="N/A（本 spec 不需要）"
+  fi
+
   # ── push/PR 兜底：lfg 的 push/开 PR 步骤被网络中断 / API 529 掐断时不报错、照常输出 DONE
   #    （见 lfg-push-silent-fail 教训）。失败现场实测：本地有 commit、远端无分支、无 open PR，
   #    三者齐缺，且 lfg 日志里压根没有 push 输出——所以这里不靠 grep 日志，而是直接查真实
@@ -165,6 +178,7 @@ if [[ "${1:-}" == "--inner" ]]; then
   echo "  spec       : ${SPEC}"
   echo "  权威门     : ${GATE}（npm test 退出码 $GATE_RC）"
   echo "  compound   : ${COMPOUND}（CLAUDE.md 是否被本 run 写入教训）"
+  echo "  可见验收VA : ${VA}（specs/<slug>.va.json 是否就位，验收门强度锚）"
   echo "  补救       : ${RESCUE}"
   echo "  PR         : ${PR_URL:-<未检测到 PR>}"
   echo "════════════════════════════════════════════"
@@ -213,4 +227,20 @@ echo "▶ [host] 进容器跑无人链路（显式带入 token，避免复用旧
 devcontainer exec --workspace-folder . -- \
   env GH_TOKEN="$GH_TOKEN" CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN" \
   bash scripts/run-spec.sh --inner "$SPEC"
-exit $?
+INNER_RC=$?
+
+# ── 宿主对抗验收（可选第二道门）：容器里打不开 app（无显示器），所以"真打开看效果"
+#    放宿主、人触发。真启动 app、按 specs/<slug>.va.json 验真实可见效果 + 变异探针证门
+#    有牙 + 截图存证。带 PR 号还会用宿主 token 确认 CI e2e 真绿（破容器读不到 CI 的约束）。
+echo ""
+read -r -p "在宿主真打开 app 跑对抗验收（看效果是否符合 VA）？[y/N] " va_ans
+if [[ "$va_ans" == "y" || "$va_ans" == "Y" ]]; then
+  if [[ -d node_modules/electron/dist/Electron.app ]]; then
+    node scripts/host-verify.js \
+      || echo "⚠ 对抗验收否决（见上）——别合这条 PR，直到可见效果真符合 VA。"
+  else
+    echo "⚠ 宿主 node_modules 不是 darwin electron（容器跑完常把它装成 Linux 版）。"
+    echo "  先重装宿主依赖再手动跑：node scripts/host-verify.js [PR号]（见 node-modules-platform 教训）"
+  fi
+fi
+exit "$INNER_RC"

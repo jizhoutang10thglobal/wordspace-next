@@ -36,6 +36,7 @@ owner: Colin
 depends_on: []           # spec 间依赖，如 [S1]；无则 []
 narrowed_from:           # 若从某 projectx feature 收窄而来，写其 id（如 F46）；否则删此行
 created: YYYY-MM-DD
+requires_va: true        # 有可见效果的 spec 设 true（必须带 specs/<slug>.va.json，见 §5.3）；纯逻辑无 UI 设 false
 ---
 
 # S## · <标题>
@@ -112,7 +113,7 @@ created: YYYY-MM-DD
 ### 5.1 成功信号（三件可见实物 + compound 实物）
 
 - **PR**：unattended run 结束时分支已 push、PR 已开。
-- **绿门**：容器内 `npm test`（vitest 快门）退出码 0；**CI 上 e2e job（xvfb 真跑 Electron）也绿**，确认 app 真能打开（堵「vitest 绿但 app 坏」）。
+- **绿门**：容器内 `npm test`（vitest 快门）退出码 0；**CI 上 e2e job（xvfb 真跑 Electron）也绿**——含 `va-runner` 按 VA 真验可见效果 + `va-selftest` 变异自检，确认 app 真能打开且视觉真生效（堵「vitest 绿但 app 坏」「class 变了但屏幕没变」）。
 - **能用**：人在 macOS 本机 `npm start`，[看到 / 能做什么]。
 - **学到东西**：仓根 `CLAUDE.md` 多出一段本 run 的环境教训（git diff 可见）——下一条 spec 自动吃到。
 
@@ -128,9 +129,16 @@ created: YYYY-MM-DD
 
 > 这些断言全部不启动 Electron、不需要显示环境——容器里稳定可跑。
 
-### 5.3 Playwright Electron E2E（CI 上 xvfb 真跑，构成 app 集成门）
+### 5.3 可见验收（VA）+ Playwright Electron E2E（CI 上 xvfb 真跑，构成 app 集成门）
 
-- [ ] **[P2] Given** 启动 app **When** [真窗口里的动作] **Then** [computed-style / 可见性断言]
+**有可见效果的 spec 必产出 `specs/<slug>.va.json`（可见验收清单）**：人/PM 写死的、可证伪的
+computed-style 阈值（如「暗态某元素背景亮度 < 0.2 且 < 亮态」「文档背景两态恒等」）。实现 AI
+**不写断言、不许改 VA**（`.github/CODEOWNERS` 锁，改动强制人 review）；通用 `e2e/va-runner.spec.js`
+读 VA 真开 app 按亮度/颜色判，`e2e/va-selftest.spec.js` 把样式打掉后断言 VA 必翻红（变异自检，证门
+有牙）。这把"什么算视觉上对"从实现 AI 手里拿走，破「裁判=运动员」。起草可由 AI、拍板冻结在人
+（见 `CLAUDE.md` S4）。纯逻辑无 UI 的 spec 没有 VA 也正常。
+
+- [ ] **[P2] Given** 启动 app **When** [真窗口里的动作] **Then** 读**真实 computed 视觉**（背景亮度 / 颜色）断言——**别只查 class**：class 是 JS 直接设的、不过 CSS，CSP/CSS 全废它照样对（spec2 假绿就栽在这）
 - [ ] **[P2] Given** app 因 preload / 集成层坏掉（`window.api` 没注入、文档空白）**When** 在 CI 用 `xvfb-run npm run test:e2e` 真跑 **Then** e2e 断言失败、CI e2e job 红——**不用 `test.skip(!DISPLAY)` 让坏 app 假绿过门**；`electron.launch` 的 args 加 `--no-sandbox`（无特权 runner 约束，与 app 的 `webPreferences.sandbox` 是两回事）。
 
 <!-- ← AI-run 调整：人类版 §5.3 的 5-lens 非功能（Scale / Time / Environment / Concurrency / Failure
