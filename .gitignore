@@ -2,6 +2,7 @@ node_modules/
 dist/
 out/
 build/
+release/
 test-results/
 playwright-report/
 *.log
@@ -11,3 +12,4 @@ playwright-report/
 .devcontainer/devcontainer.local.env
 .env
 .env.local
+.firecrawl/

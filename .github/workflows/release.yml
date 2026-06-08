@@ -1,0 +1,106 @@
+name: Release
+
+# 把 lfg 的右边缘从「合 PR」推到「签名+公证的 macOS app 发上本仓 Releases + 自动更新」。
+#   prepare-release (ubuntu) → 测试门 → bump 版本 + tag + 建 GitHub Release
+#   build-mac (macos)        → 签名+公证打包(dmg+zip+latest-mac.yml) → 上传到该 Release
+# Developer ID 直分发 + electron-updater（决策 A）；发本仓自己 Releases，public、无镜像（决策 B）。
+#
+# 需要 5 个 repo secrets（Colin 一次性配，见 docs/macos-shipping-pipeline-brief.md §6）：
+#   CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+# 缺 secrets 时 build-mac 会在签名/公证步骤明确失败（不假绿）。
+
+on:
+  push:
+    branches: [main]
+    # 纯文档 / spec 改动不发版；只有真改代码（src/**）才触发。
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'specs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ── Job 1: 测试门 → bump 版本 → tag → 建 Release ──
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: v${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      # 这个 job 不打包，不需要 electron 二进制
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm test
+      - name: Bump patch version
+        id: version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$NEW';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Bumped: $CURRENT → $NEW"
+      - name: Commit version bump + tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          # [skip ci]：版本 bump commit 不再触发 release/ci（防自触发死循环）
+          git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin HEAD:main --tags
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+
+  # ── Job 2: macOS 签名+公证打包 → 上传到 Release ──
+  build-mac:
+    needs: prepare-release
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare-release.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      # 绝不设 ELECTRON_SKIP_BINARY_DOWNLOAD —— 打包要真 electron 二进制（同 CI e2e job，CLAUDE.md S3）
+      - run: npm ci
+      # --publish never：打包阶段照常签名+公证（hardenedRuntime + notarize:true + 下面的 env 触发），
+      # 上传交给下一步 softprops（贴前例的稳定形状，避开 electron-builder 自身 publish 的 draft 行为）。
+      - name: Build, sign & notarize macOS app
+        run: npx electron-builder --mac --publish never
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      # dmg 给下载、zip + latest-mac.yml 给 electron-updater（mac 靠 zip 更新，只传 dmg 会更新坏）
+      - name: Upload signed artifacts to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare-release.outputs.tag }}
+          files: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+          fail_on_unmatched_files: true

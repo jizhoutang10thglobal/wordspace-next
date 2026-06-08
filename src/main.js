@@ -16,6 +16,14 @@ function createWindow() {
 app.whenReady().then(() => {
   createWindow();
 
+  // 自动更新：只在打包后的 app 生效。dev 模式没有 update feed，且会报错，故 isPackaged 守卫 +
+  // 惰性 require（dev 根本不加载 electron-updater）。feed 地址由 electron-builder 从
+  // build.publish 烤进 app-update.yml，这里不用再配。
+  if (app.isPackaged) {
+    const { autoUpdater } = require('electron-updater');
+    autoUpdater.checkForUpdatesAndNotify();
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
