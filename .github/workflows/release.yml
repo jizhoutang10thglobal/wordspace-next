@@ -1,13 +1,15 @@
 name: Release
 
 # 把 lfg 的右边缘从「合 PR」推到「签名+公证的 macOS app 发上本仓 Releases + 自动更新」。
-#   prepare-release (ubuntu) → 测试门 → bump 版本 + tag + 建 GitHub Release
-#   build-mac (macos)        → 签名+公证打包(dmg+zip+latest-mac.yml) → 上传到该 Release
+#   gate (ubuntu)            → vitest 快门 + xvfb 真 Electron e2e（防「vitest 绿但 app 坏」，S3/S4）
+#   prepare-release (ubuntu) → bump 版本 + tag + 建 **draft** Release（needs: gate）
+#   build-mac (macos)        → 签名+公证打包(dmg+zip+latest-mac.yml) → 上传 → 把 Release 从 draft 翻正
 # Developer ID 直分发 + electron-updater（决策 A）；发本仓自己 Releases，public、无镜像（决策 B）。
 #
 # 需要 5 个 repo secrets（Colin 一次性配，见 docs/macos-shipping-pipeline-brief.md §6）：
 #   CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
-# 缺 secrets 时 build-mac 会在签名/公证步骤明确失败（不假绿）。
+# 缺 secrets 时 build-mac 在签名/公证步骤明确失败（不假绿），且因 Release 是 draft、tag/bump 在
+# build-mac 成功后才落 main —— 失败不会留下孤儿正式 Release，也不会白涨 main 的版本号。
 
 on:
   push:
@@ -27,8 +29,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ── Job 1: 测试门 → bump 版本 → tag → 建 Release ──
+  # ── Job 0: 权威门 = vitest + 真 Electron e2e（xvfb）。发版前必须过这道，绝不只靠 vitest。 ──
+  # 直接复刻 ci.yml 的两道门：发签名版本是比合 PR 更高风险的动作，门只强不弱（S3/S4 红线）。
+  gate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npx playwright install-deps chromium
+      - run: xvfb-run -a --server-args="-screen 0 1280x720x24" npm run test:e2e
+
+  # ── Job 1: bump 版本 → tag → 建 draft Release（门绿后才跑）──
   prepare-release:
+    needs: gate
     runs-on: ubuntu-latest
     outputs:
       tag: v${{ steps.version.outputs.version }}
@@ -39,12 +58,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-      # 这个 job 不打包，不需要 electron 二进制
-      - run: npm ci
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      - run: npm test
       - name: Bump patch version
         id: version
         run: |
@@ -63,17 +76,22 @@ jobs:
           git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
           git tag "v${{ steps.version.outputs.version }}"
           git push origin HEAD:main --tags
-      - name: Create GitHub Release
+      # draft: true —— 先建草稿。build-mac 成功上传产物后才翻正（见 finalize-release）。
+      # 这样 build-mac 失败（如 secrets 未配）不会留下一个公开可见、却没产物的孤儿 Release。
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
           generate_release_notes: true
+          draft: true
 
-  # ── Job 2: macOS 签名+公证打包 → 上传到 Release ──
+  # ── Job 2: macOS 签名+公证打包 → 上传到 draft Release ──
   build-mac:
     needs: prepare-release
     runs-on: macos-latest
+    # 公证正常 2–15min；Apple 公证服务偶发卡死会占满 runner 到默认 6h 上限。30min 封顶。
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,7 +100,7 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-      # 绝不设 ELECTRON_SKIP_BINARY_DOWNLOAD —— 打包要真 electron 二进制（同 CI e2e job，CLAUDE.md S3）
+      # 绝不设 ELECTRON_SKIP_BINARY_DOWNLOAD —— 打包要真 electron 二进制（同 ci.yml e2e job，CLAUDE.md S3）
       - run: npm ci
       # --publish never：打包阶段照常签名+公证（hardenedRuntime + notarize:true + 下面的 env 触发），
       # 上传交给下一步 softprops（贴前例的稳定形状，避开 electron-builder 自身 publish 的 draft 行为）。
@@ -94,11 +112,13 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      # dmg 给下载、zip + latest-mac.yml 给 electron-updater（mac 靠 zip 更新，只传 dmg 会更新坏）
-      - name: Upload signed artifacts to Release
+      # dmg 给下载、zip + latest-mac.yml 给 electron-updater（mac 靠 zip 更新，只传 dmg 会更新坏）。
+      # 同一步把 draft 翻正：上传成功 + draft:false 一起做 —— 产物齐了 Release 才公开可见。
+      - name: Upload signed artifacts and publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prepare-release.outputs.tag }}
+          draft: false
           files: |
             release/*.dmg
             release/*.zip

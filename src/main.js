@@ -21,7 +21,10 @@ app.whenReady().then(() => {
   // build.publish 烤进 app-update.yml，这里不用再配。
   if (app.isPackaged) {
     const { autoUpdater } = require('electron-updater');
-    autoUpdater.checkForUpdatesAndNotify();
+    // 网络/feed 失败时别让未捕获的 promise 拒绝崩主进程（Electron 33 默认 unhandled-rejections=throw）
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.error('[updater] check failed:', err && err.message);
+    });
   }
 
   app.on('activate', () => {

@@ -29,6 +29,7 @@ function findApp(arg) {
   if (!fs.existsSync(RELEASE)) return null;
   for (const d of fs.readdirSync(RELEASE).filter((x) => x.startsWith('mac'))) {
     const dir = path.join(RELEASE, d);
+    if (!fs.statSync(dir).isDirectory()) continue; // mac* 可能是文件（如 mac.zip），跳过免 ENOTDIR 崩
     const app = fs.readdirSync(dir).find((f) => f.endsWith('.app'));
     if (app) return path.join(dir, app);
   }
