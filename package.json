@@ -4,15 +4,53 @@
   "private": true,
   "description": "One-shot demo repo for the autonomous feature-shipping workflow (wordspace-next). The skeleton and features are built here by Claude Code under spec control, inside an isolated dev container.",
   "license": "UNLICENSED",
+  "author": "Wordspace Demo",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "dist": "electron-builder --mac"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
     "electron": "^33.0.0",
+    "electron-builder": "^26.8.1",
     "vitest": "^2.1.0"
+  },
+  "build": {
+    "appId": "com.wordspace.demo",
+    "productName": "Wordspace Demo",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**",
+      "package.json"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "jizhoutang10thglobal",
+      "repo": "wordspace-next-demo"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build-resources/entitlements.mac.plist",
+      "entitlementsInherit": "build-resources/entitlements.mac.plist",
+      "notarize": true,
+      "artifactName": "wordspace-demo-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "Wordspace Demo"
+    }
   }
 }

@@ -1,0 +1,115 @@
+name: Release
+
+# 把 lfg 的右边缘从「合 PR」推到「签名+公证的 macOS app 发上本仓 Releases + 自动更新」。
+#   gate (ubuntu)   → vitest 快门 + xvfb 真 Electron e2e（防「vitest 绿但 app 坏」，S3/S4）
+#   release (macos) → 算版本 → 签名+公证打包 → **只有打包成功后** 才 bump+tag+push main + 建已发布 Release
+# Developer ID 直分发 + electron-updater（决策 A）；发本仓自己 Releases，public、无镜像（决策 B）。
+#
+# 关键设计（防孤儿/防版本白涨）：所有「改 main / 对外可见」的动作（push bump 提交、打 tag、建 Release）
+# 全部排在 electron-builder 签名公证成功**之后**的步骤里。GitHub Actions 步骤失败即停、跳过后续步骤——
+# 所以缺 secrets / 公证失败时，build 步骤失败、后面的 push 与建 Release 根本不执行：main 不动、无 tag、
+# 无 Release。不用 draft、不留孤儿、不白涨版本号，也不依赖「electron-updater 能否读 draft」这种假设。
+#
+# 需要 5 个 repo secrets（Colin 一次性配，见 docs/macos-shipping-pipeline-brief.md §6）：
+#   CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+#
+# 注：gate 的 vitest+e2e 是手抄 ci.yml 的形状（发签名版本风险高于合 PR，门只强不弱）。两者目前各跑一份、
+# 未 dedup —— 可接受的演示期重复；将来要单一源可抽成 workflow_call 复用（review 残留，非阻塞）。
+
+on:
+  push:
+    branches: [main]
+    # 纯文档 / spec 改动不发版；只有真改代码（src/**）才触发。
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'specs/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ── Job 0: 权威门 = vitest + 真 Electron e2e（xvfb）。发版前必过，绝不只靠 vitest（S3/S4 红线）。 ──
+  gate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: npx playwright install-deps chromium
+      - run: xvfb-run -a --server-args="-screen 0 1280x720x24" npm run test:e2e
+
+  # ── Job 1: 打包+签名+公证；成功后才改 main + 发 Release（单 job 保证「先成功、后落地」）──
+  release:
+    needs: gate
+    runs-on: macos-latest
+    # 公证正常 2–15min；Apple 公证服务偶发卡死会占满 runner 到默认 6h 上限。30min 封顶。
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      # 绝不设 ELECTRON_SKIP_BINARY_DOWNLOAD —— 打包要真 electron 二进制（同 ci.yml e2e job，CLAUDE.md S3）
+      - run: npm ci
+
+      # 算新版本并写进本地 package.json（先不提交、不推）。electron-builder 读它产出带版本号的产物。
+      - name: Compute next version (local only)
+        id: version
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$NEW';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "Will release: $CURRENT → $NEW"
+
+      # 签名+公证打包。缺 secrets / 公证失败 → 此步失败 → 后面所有「改 main / 建 Release」步骤被跳过，
+      # main 保持干净。--publish never：上传交给最后的 softprops（贴前例稳定形状）。
+      - name: Build, sign & notarize macOS app
+        run: npx electron-builder --mac --publish never
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      # ↓↓↓ 以下步骤只在打包成功后才执行（步骤失败即停） ↓↓↓
+
+      - name: Commit version bump + tag (only after successful signed build)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          # [skip ci]：版本 bump commit 不再触发 release/ci（防自触发死循环）
+          git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin HEAD:main --tags
+
+      # 一次性建「已发布」Release 并附产物（不走 draft；到这步产物已签名公证齐全）。
+      # dmg 给下载、zip + latest-mac.yml 给 electron-updater（mac 靠 zip 更新，只传 dmg 会更新坏）。
+      - name: Create published Release with signed artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+          fail_on_unmatched_files: true
