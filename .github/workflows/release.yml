@@ -2,28 +2,28 @@ name: Release
 
 # 把 lfg 的右边缘从「合 PR」推到「签名+公证的 macOS app 发上本仓 Releases + 自动更新」。
 #   gate (ubuntu)   → vitest 快门 + xvfb 真 Electron e2e（防「vitest 绿但 app 坏」，S3/S4）
-#   release (macos) → 算版本 → 签名+公证打包 → **只有打包成功后** 才 bump+tag+push main + 建已发布 Release
+#   release (macos) → 从 tag 算版本 → 签名+公证打包 → **只有打包成功后** 才建带 tag 的已发布 Release
 # Developer ID 直分发 + electron-updater（决策 A）；发本仓自己 Releases，public、无镜像（决策 B）。
 #
-# 关键设计（防孤儿/防版本白涨）：所有「改 main / 对外可见」的动作（push bump 提交、打 tag、建 Release）
-# 全部排在 electron-builder 签名公证成功**之后**的步骤里。GitHub Actions 步骤失败即停、跳过后续步骤——
-# 所以缺 secrets / 公证失败时，build 步骤失败、后面的 push 与建 Release 根本不执行：main 不动、无 tag、
-# 无 Release。不用 draft、不留孤儿、不白涨版本号，也不依赖「electron-updater 能否读 draft」这种假设。
+# 关键设计（适配 main 的分支保护：required PR + enforce_admins）：
+#   main 受保护，**任何直推 main 都会被拒**（含 github-actions[bot]，enforce_admins=true 连 bot 都不放行）。
+#   所以本流水线**完全不写 main**：版本号不再 commit 回 package.json，而是从 git tag 推算（tag 不受分支保护）。
+#   成功后只由 softprops 建一个带 vX.Y.Z tag 的 Release（它在当前 SHA 上创建 tag ref）。版本号的唯一真源 = tag。
+#   失败安全：build/公证失败 → 后面建 Release 的步骤不执行 → 无 tag、无 Release、main 纹丝不动。
 #
-# 需要 5 个 repo secrets（Colin 一次性配，见 docs/macos-shipping-pipeline-brief.md §6）：
+# 需要 5 个 repo secrets（见 docs/macos-shipping-pipeline-brief.md §6）：
 #   CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
 #
-# 注：gate 的 vitest+e2e 是手抄 ci.yml 的形状（发签名版本风险高于合 PR，门只强不弱）。两者目前各跑一份、
-# 未 dedup —— 可接受的演示期重复；将来要单一源可抽成 workflow_call 复用（review 残留，非阻塞）。
+# 注：gate 的 vitest+e2e 手抄 ci.yml 形状（发签名版本风险高于合 PR，门只强不弱）；未 dedup，演示期可接受。
 
 on:
   push:
     branches: [main]
-    # 纯文档 / spec 改动不发版；只有真改代码（src/**）才触发。
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'specs/**'
+      - '.github/**'   # 改流水线自身（如本文件）不自触发发版；真功能改动（src/**）仍自动发版
   workflow_dispatch:
 
 permissions:
@@ -49,16 +49,19 @@ jobs:
       - run: npx playwright install-deps chromium
       - run: xvfb-run -a --server-args="-screen 0 1280x720x24" npm run test:e2e
 
-  # ── Job 1: 打包+签名+公证；成功后才改 main + 发 Release（单 job 保证「先成功、后落地」）──
+  # ── Job 1: 打包+签名+公证；成功后建带 tag 的 Release。全程不写 main。 ──
   release:
     needs: gate
     runs-on: macos-latest
-    # 公证正常 2–15min；Apple 公证服务偶发卡死会占满 runner 到默认 6h 上限。30min 封顶。
-    timeout-minutes: 30
+    # 公证正常 2–15min，但 Apple 队列偶发拥堵可超 30min（实测撞过）。60min 封顶：给 Apple 队列余量，
+    # 又不至于卡死时白占 6h 默认上限。配合下面 build 步的 DEBUG=electron-notarize* 区分「Apple 队列慢」
+    # vs「notarytool 卡死」——前者日志会打 submission id + 轮询，后者签名后就闷死。
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0   # 取全历史 + tags，下面要按已有 tag 推算下一个版本号
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -66,19 +69,27 @@ jobs:
       # 绝不设 ELECTRON_SKIP_BINARY_DOWNLOAD —— 打包要真 electron 二进制（同 ci.yml e2e job，CLAUDE.md S3）
       - run: npm ci
 
-      # 算新版本并写进本地 package.json（先不提交、不推）。electron-builder 读它产出带版本号的产物。
-      - name: Compute next version (local only)
+      # 版本号唯一真源 = git tag（不读也不写 package.json 的 version）。取最高的 vX.Y.Z tag、patch +1；
+      # 无 tag（首发）则 v0.0.1。算出来写进本地 package.json 供 electron-builder 烤进产物，但**不 commit**。
+      - name: Compute next version from latest tag
         id: version
         run: |
-          CURRENT=$(node -p "require('./package.json').version")
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-          NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+          set -euo pipefail   # GitHub 默认 bash -e，但 pipefail/nounset 默认关；显式打开防静默错值
+          git fetch --tags --force
+          # 严格只认 vMAJOR.MINOR.PATCH（三段纯数字），过滤掉 v0.2.0-rc1 / v1.2.3.4 这类，免得 bump 静默出错
+          LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+          if [ -z "$LATEST" ]; then
+            NEW="0.0.1"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
+            case "$PATCH" in ''|*[!0-9]*) echo "non-numeric patch in tag: $PATCH" >&2; exit 1;; esac
+            NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+          fi
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$NEW';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
-          echo "Will release: $CURRENT → $NEW"
+          echo "Latest tag: ${LATEST:-<none>} → releasing v$NEW"
 
-      # 签名+公证打包。缺 secrets / 公证失败 → 此步失败 → 后面所有「改 main / 建 Release」步骤被跳过，
-      # main 保持干净。--publish never：上传交给最后的 softprops（贴前例稳定形状）。
+      # 签名+公证打包。缺 secrets / 公证失败 → 此步失败 → 后面建 Release 的步骤被跳过，main 与 tag 都不动。
       - name: Build, sign & notarize macOS app
         run: npx electron-builder --mac --publish never
         env:
@@ -87,26 +98,19 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # 让公证过程可见：@electron/notarize 会打印「已提交 Apple，submission id=xxx，轮询中」。
+          # 看到 submission id 还超时 = Apple 队列慢（值得重跑）；连 id 都没有 = notarytool 卡死（换路排查）。
+          DEBUG: electron-notarize*
 
-      # ↓↓↓ 以下步骤只在打包成功后才执行（步骤失败即停） ↓↓↓
-
-      - name: Commit version bump + tag (only after successful signed build)
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json
-          # [skip ci]：版本 bump commit 不再触发 release/ci（防自触发死循环）
-          git commit -m "release: v${{ steps.version.outputs.version }} [skip ci]"
-          git tag "v${{ steps.version.outputs.version }}"
-          git push origin HEAD:main --tags
-
-      # 一次性建「已发布」Release 并附产物（不走 draft；到这步产物已签名公证齐全）。
-      # dmg 给下载、zip + latest-mac.yml 给 electron-updater（mac 靠 zip 更新，只传 dmg 会更新坏）。
+      # ↓↓↓ 只在打包成功后执行（步骤失败即停） ↓↓↓
+      # softprops 在当前 SHA 上创建 tag_name=vX.Y.Z（tag ref 不受 main 分支保护管）并建已发布 Release。
+      # 不走 draft、不推 main：tag 就是版本真源；dmg 给下载，zip + latest-mac.yml 给 electron-updater。
       - name: Create published Release with signed artifacts
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
             release/*.dmg
