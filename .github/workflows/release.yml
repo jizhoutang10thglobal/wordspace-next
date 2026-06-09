@@ -53,8 +53,10 @@ jobs:
   release:
     needs: gate
     runs-on: macos-latest
-    # 公证正常 2–15min；Apple 公证服务偶发卡死会占满 runner 到默认 6h 上限。30min 封顶。
-    timeout-minutes: 30
+    # 公证正常 2–15min，但 Apple 队列偶发拥堵可超 30min（实测撞过）。60min 封顶：给 Apple 队列余量，
+    # 又不至于卡死时白占 6h 默认上限。配合下面 build 步的 DEBUG=electron-notarize* 区分「Apple 队列慢」
+    # vs「notarytool 卡死」——前者日志会打 submission id + 轮询，后者签名后就闷死。
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -87,6 +89,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # 让公证过程可见：@electron/notarize 会打印「已提交 Apple，submission id=xxx，轮询中」。
+          # 看到 submission id 还超时 = Apple 队列慢（值得重跑）；连 id 都没有 = notarytool 卡死（换路排查）。
+          DEBUG: electron-notarize*
 
       # ↓↓↓ 以下步骤只在打包成功后才执行（步骤失败即停） ↓↓↓
 
