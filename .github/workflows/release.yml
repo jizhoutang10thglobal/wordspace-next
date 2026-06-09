@@ -23,6 +23,7 @@ on:
       - '**.md'
       - 'docs/**'
       - 'specs/**'
+      - '.github/**'   # 改流水线自身（如本文件）不自触发发版；真功能改动（src/**）仍自动发版
   workflow_dispatch:
 
 permissions:
@@ -73,12 +74,15 @@ jobs:
       - name: Compute next version from latest tag
         id: version
         run: |
+          set -euo pipefail   # GitHub 默认 bash -e，但 pipefail/nounset 默认关；显式打开防静默错值
           git fetch --tags --force
-          LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -V | tail -1)
+          # 严格只认 vMAJOR.MINOR.PATCH（三段纯数字），过滤掉 v0.2.0-rc1 / v1.2.3.4 这类，免得 bump 静默出错
+          LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
           if [ -z "$LATEST" ]; then
             NEW="0.0.1"
           else
             IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
+            case "$PATCH" in ''|*[!0-9]*) echo "non-numeric patch in tag: $PATCH" >&2; exit 1;; esac
             NEW="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$NEW';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
