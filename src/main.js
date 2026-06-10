@@ -35,6 +35,9 @@ app.whenReady().then(() => {
         if (shouldInstall(response)) {
           autoUpdater.quitAndInstall();
         }
+      }).catch((err) => {
+        // quitAndInstall 在 .then 里同步抛会变成 rejection，Electron 33 没 catch 直接崩主进程
+        console.error('[updater] dialog/install error:', err && err.message);
       });
     });
     // checkForUpdates 的 rejection 已由上面 'error' 监听上报；catch 只为防 Electron 33
