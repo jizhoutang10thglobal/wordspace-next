@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
 const { getWindowConfig } = require('./lib/window-config');
 const { loadBuiltinDocument } = require('./lib/doc-loader');
@@ -27,7 +27,19 @@ app.whenReady().then(() => {
     autoUpdater.on('error', (err) => {
       console.error('[updater] error:', err && err.message);
     });
-    autoUpdater.checkForUpdatesAndNotify();
+    // S5 显式更新弹窗：下载完成后问用户。「立即重启」马上 quitAndInstall；「稍后」沿用
+    // electron-updater 默认的退出时自动安装。弹什么/怎么判在纯模块 update-prompt（vitest 单测）。
+    const { buildUpdateDialogOptions, shouldInstall } = require('./lib/update-prompt');
+    autoUpdater.on('update-downloaded', (info) => {
+      dialog.showMessageBox(buildUpdateDialogOptions(info && info.version)).then(({ response }) => {
+        if (shouldInstall(response)) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+    });
+    // checkForUpdates 的 rejection 已由上面 'error' 监听上报；catch 只为防 Electron 33
+    // unhandled-rejections=throw 崩主进程（同一失败两条路都会冒出来）。
+    autoUpdater.checkForUpdates().catch(() => {});
   }
 
   app.on('activate', () => {
