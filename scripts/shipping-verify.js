@@ -28,7 +28,10 @@ function findApp(arg) {
   if (arg && arg.endsWith('.app')) return arg;
   if (!fs.existsSync(RELEASE)) return null;
   // 两种布局都认：release/mac*/X.app（本地 electron-builder 产物）和 release/X.app（下载 zip 解压）
-  const top = fs.readdirSync(RELEASE).find((f) => f.endsWith('.app'));
+  const top = fs.readdirSync(RELEASE).find((f) => {
+    if (!f.endsWith('.app')) return false;
+    try { return fs.lstatSync(path.join(RELEASE, f)).isDirectory(); } catch { return false; }
+  }); // .app 必须是目录（bundle）——同名文件/坏链接是 decoy，跳过免 codesign 对着文件报错
   if (top) return path.join(RELEASE, top);
   for (const d of fs.readdirSync(RELEASE).filter((x) => x.startsWith('mac'))) {
     const dir = path.join(RELEASE, d);

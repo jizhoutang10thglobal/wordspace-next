@@ -11,7 +11,7 @@
     { "click": "#doc-container p" },
     { "type": ["#doc-container", "VA-EDIT-PROBE"] },
     { "snapshot": "afterType" },
-    { "press": "Meta+z", "times": 20 },
+    { "press": "ControlOrMeta+z", "times": 20 },
     { "snapshot": "afterUndo" }
   ],
   "checks": [
