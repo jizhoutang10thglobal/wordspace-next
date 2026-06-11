@@ -49,8 +49,14 @@ body.dark-theme  #status-bar { background: #2a2a2a; }
   opacity: 0.7;
 }
 
+#edit-indicator {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
 #theme-toggle,
-#view-toggle {
+#view-toggle,
+#reset-doc {
   padding: 2px 10px;
   cursor: pointer;
   border: 1px solid currentColor;

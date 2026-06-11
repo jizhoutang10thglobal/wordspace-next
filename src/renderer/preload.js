@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const themeManager = require('../lib/theme-manager');
 const viewMode = require('../lib/view-mode');
+const editing = require('../lib/editing');
 
 contextBridge.exposeInMainWorld('api', {
   getDocContent: () => ipcRenderer.invoke('get-doc-content'),
@@ -14,5 +15,9 @@ contextBridge.exposeInMainWorld('api', {
     DEFAULT_VIEW: viewMode.DEFAULT_VIEW,
     toggleView: viewMode.toggleView,
     getDisplayMode: viewMode.getDisplayMode,
+  },
+  editing: {
+    normalizePasteText: editing.normalizePasteText,
+    isEdited: editing.isEdited,
   },
 });

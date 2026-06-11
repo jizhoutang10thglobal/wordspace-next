@@ -50,7 +50,9 @@
       "artifactName": "wordspace-demo-${version}-${arch}.${ext}"
     },
     "dmg": {
-      "title": "Wordspace Demo"
-    }
+      "title": "Wordspace Demo",
+      "sign": true
+    },
+    "afterAllArtifactBuild": "scripts/notarize-dmg.js"
   }
 }

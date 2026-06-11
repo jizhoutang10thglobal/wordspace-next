@@ -1,0 +1,47 @@
+{
+  "spec": "f40-basic-editing",
+  "title": "文本输入与基础编辑的可见验收",
+  "note": "由人(Colin)拍板、实现 AI 不许改（.github/CODEOWNERS 锁）。真开 app 打字验编辑：初始态含内置正文且不含探针串（兼证 e2e 存储隔离没漏）；点进文档敲入探针串后真出现在 #doc-container 且 #edit-indicator 显 Edited；连按撤销后探针串消失、内置正文仍在。探针串 VA-EDIT-PROBE 人定，实现不许把它预埋进文档或指示器。依赖 va-runner 通用步骤 type/press（与 click/snapshot 同级词汇，runner 保持 spec-agnostic）。变异自检打掉编辑能力时 typed-text-appears 必翻红。",
+  "launch": {
+    "main": "src/main.js",
+    "waitFor": "#doc-container h1, #doc-container p"
+  },
+  "steps": [
+    { "snapshot": "initial" },
+    { "click": "#doc-container p" },
+    { "type": ["#doc-container", "VA-EDIT-PROBE"] },
+    { "snapshot": "afterType" },
+    { "press": "Meta+z", "times": 20 },
+    { "snapshot": "afterUndo" }
+  ],
+  "checks": [
+    {
+      "id": "initial-clean",
+      "desc": "初始态：内置正文在、探针串不在（证明后面看到的探针是这次打出来的，不是残留/预埋）",
+      "selector": "#doc-container",
+      "metric": "textContent",
+      "states": { "initial": { "contains": "Welcome to Wordspace", "notContains": "VA-EDIT-PROBE" } }
+    },
+    {
+      "id": "typed-text-appears",
+      "desc": "打字上屏：敲入的探针串真出现在文档里",
+      "selector": "#doc-container",
+      "metric": "textContent",
+      "states": { "afterType": { "contains": "VA-EDIT-PROBE" } }
+    },
+    {
+      "id": "edited-indicator-shows",
+      "desc": "脏标记：编辑后状态栏 #edit-indicator 显示 Edited",
+      "selector": "#edit-indicator",
+      "metric": "textContent",
+      "states": { "afterType": { "contains": "Edited" }, "initial": { "notContains": "Edited" } }
+    },
+    {
+      "id": "undo-reverts",
+      "desc": "撤销可退：连按撤销后探针串消失、内置正文还在（编辑可逆、不是只进不出）",
+      "selector": "#doc-container",
+      "metric": "textContent",
+      "states": { "afterUndo": { "contains": "Welcome to Wordspace", "notContains": "VA-EDIT-PROBE" } }
+    }
+  ]
+}

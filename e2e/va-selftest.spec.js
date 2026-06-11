@@ -2,10 +2,12 @@
 // 对每份 VA：先确认好 app 上 VA 判绿（采集+判定在真 app 上确实正确），
 // 再故意把样式彻底打掉（移除所有 <link>/<style>，模拟 CSP 又把 CSS 拦了 / 主题失效），
 // 重新采集并断言 VA 必须翻红。破坏后还绿 = 门是哑的 = 整个 e2e job fail。
-const { test, expect, _electron: electron } = require('@playwright/test');
+// 启动与采集走 e2e/helpers（与 va-runner 同一份 collect，免两份漂移）。
+const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 const { evaluateChecks, selectorsOf, statesOf } = require('../src/lib/va-eval');
+const { launchApp, snapshot, collect } = require('./helpers');
 
 // 对抗验收门不容忍概率性放过：retries 设 0，让间歇性失败如实暴露（flaky 是信号不是噪音）。
 test.describe.configure({ retries: 0 });
@@ -13,38 +15,10 @@ test.describe.configure({ retries: 0 });
 const SPECS_DIR = path.join(__dirname, '../specs');
 const vaFiles = fs.readdirSync(SPECS_DIR).filter((f) => f.endsWith('.va.json'));
 
-async function snapshot(window, selectors) {
-  const out = {};
-  for (const sel of selectors) {
-    out[sel] = await window.evaluate((s) => {
-      const el = s === 'body' ? document.body : document.querySelector(s);
-      if (!el) return null;
-      return { bg: getComputedStyle(el).backgroundColor, text: el.textContent };
-    }, sel);
-  }
-  return out;
-}
-
-async function collect(window, va) {
-  const selectors = selectorsOf(va);
-  const snapshots = {};
-  for (const step of va.steps) {
-    if (step.snapshot) snapshots[step.snapshot] = await snapshot(window, selectors);
-    if (step.click) {
-      await window.locator(step.click).click();
-      // 等两帧渲染落定（跟随实际渲染节奏，比固定 200ms 睡眠确定性强）
-      await window.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-    }
-  }
-  return snapshots;
-}
-
 for (const f of vaFiles) {
   const va = JSON.parse(fs.readFileSync(path.join(SPECS_DIR, f), 'utf8'));
   test(`变异自检: ${va.spec} — 样式打掉后 VA 必红（证明门有牙）`, async () => {
-    const app = await electron.launch({
-      args: ['--no-sandbox', path.join(__dirname, '..', va.launch.main)],
-    });
+    const { app } = await launchApp(path.join(__dirname, '..', va.launch.main));
     try {
       const window = await app.firstWindow();
       await window.waitForLoadState('domcontentloaded');
@@ -69,7 +43,7 @@ for (const f of vaFiles) {
       }, sels);
       await window.waitForTimeout(100);
 
-      // 破坏后采一次当前 DOM，所有命名状态共用这份坏快照——不再走 steps 的 click，
+      // 破坏后采一次当前 DOM，所有命名状态共用这份坏快照——不再走 steps 的 click/type，
       // 因为清空容器文本会连带删掉里面的按钮（如 #theme-toggle），再 click 会卡死。
       const brokenSnap = await snapshot(window, sels);
       const broken = {};
