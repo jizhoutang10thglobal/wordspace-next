@@ -1,5 +1,11 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const path = require('path');
+
+// e2e 持久层隔离（S6）：localStorage 落在 userData 分区里，测试不隔离会跨次运行互相污染
+// （上次跑留下的编辑让这次的「初始态不含探针」假红）。e2e 给每次启动一个全新临时目录。
+if (process.env.WSND_USER_DATA) {
+  app.setPath('userData', process.env.WSND_USER_DATA);
+}
 const { getWindowConfig } = require('./lib/window-config');
 const { loadBuiltinDocument } = require('./lib/doc-loader');
 

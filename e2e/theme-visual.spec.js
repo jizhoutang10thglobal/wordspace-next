@@ -2,10 +2,11 @@
 // 跟 app.spec.js 的 class 断言互补——class 是 JS 直接设的、不过 CSS，CSP 把样式
 // 全拦了它照样过（spec2 就这么假绿的）。这里量的是浏览器算完层叠后的真实颜色，
 // CSS 没生效 / .dark-theme 没命中 / background 写错，暗态亮度都掉不到阈值下 → 必 fail。
-const { test, expect, _electron: electron } = require('@playwright/test');
+const { test, expect } = require('@playwright/test');
 const path = require('path');
 // 复用 va-eval 的同一把尺子（别留第二份 luminance，免得两份漂移）
 const { luminance } = require('../src/lib/va-eval');
+const { launchApp } = require('./helpers');
 
 // 对抗验收门不容忍概率性放过：retries 设 0。
 test.describe.configure({ retries: 0 });
@@ -19,9 +20,7 @@ async function bg(window, selector) {
 }
 
 test('暗/亮主题切换：外壳背景真的从亮变暗，文档容器两态恒白', async () => {
-  const app = await electron.launch({
-    args: ['--no-sandbox', path.join(__dirname, '../src/main.js')],
-  });
+  const { app } = await launchApp(path.join(__dirname, '../src/main.js'));
   try {
     const window = await app.firstWindow();
     await window.waitForLoadState('domcontentloaded');

@@ -1,11 +1,9 @@
 const { test, expect } = require('@playwright/test');
 const path = require('path');
+const { launchApp } = require('./helpers');
 
 test('app window shows built-in document content', async () => {
-  const { _electron: electron } = require('@playwright/test');
-  const app = await electron.launch({
-    args: ['--no-sandbox', path.join(__dirname, '../src/main.js')],
-  });
+  const { app } = await launchApp(path.join(__dirname, '../src/main.js'));
   try {
     const window = await app.firstWindow();
     await window.waitForLoadState('domcontentloaded');
@@ -18,10 +16,7 @@ test('app window shows built-in document content', async () => {
 });
 
 test('theme toggle changes shell class but preserves doc colour', async () => {
-  const { _electron: electron } = require('@playwright/test');
-  const app = await electron.launch({
-    args: ['--no-sandbox', path.join(__dirname, '../src/main.js')],
-  });
+  const { app } = await launchApp(path.join(__dirname, '../src/main.js'));
   try {
     const window = await app.firstWindow();
     await window.waitForLoadState('domcontentloaded');

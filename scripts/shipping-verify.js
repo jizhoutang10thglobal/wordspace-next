@@ -27,6 +27,12 @@ function sh(cmd) {
 function findApp(arg) {
   if (arg && arg.endsWith('.app')) return arg;
   if (!fs.existsSync(RELEASE)) return null;
+  // 两种布局都认：release/mac*/X.app（本地 electron-builder 产物）和 release/X.app（下载 zip 解压）
+  const top = fs.readdirSync(RELEASE).find((f) => {
+    if (!f.endsWith('.app')) return false;
+    try { return fs.lstatSync(path.join(RELEASE, f)).isDirectory(); } catch { return false; }
+  }); // .app 必须是目录（bundle）——同名文件/坏链接是 decoy，跳过免 codesign 对着文件报错
+  if (top) return path.join(RELEASE, top);
   for (const d of fs.readdirSync(RELEASE).filter((x) => x.startsWith('mac'))) {
     const dir = path.join(RELEASE, d);
     if (!fs.lstatSync(dir).isDirectory()) continue; // mac* 可能是文件（如 mac.zip）或坏符号链接，跳过免 ENOTDIR/ENOENT 崩
@@ -75,11 +81,18 @@ check(
 const staple = sh(`xcrun stapler validate "${appPath}" 2>&1`);
 check('声称3 stapler validate 通过', /The validate action worked/.test(staple.out), staple.out);
 
-// dmg 顺带验（下载入口；dmg 用 --type install）
+// dmg 顺带验（下载入口）。--type install 对 notarized dmg 会误判（它走安装包语义），
+// 正确判法：-t open --context context:primary-signature（Gatekeeper 打开下载文件的语义）+ staple 票。
 const dmg = findDmg();
 if (dmg) {
-  const dmgAssess = sh(`spctl --assess --type install --verbose "${dmg}" 2>&1`);
-  check('声称3 dmg spctl install accepted', /: accepted/.test(dmgAssess.out), dmgAssess.out);
+  const dmgAssess = sh(`spctl -a -t open --context context:primary-signature -v "${dmg}" 2>&1`);
+  check(
+    '声称3 dmg spctl open accepted + Notarized',
+    /: accepted/.test(dmgAssess.out) && /source=Notarized Developer ID/.test(dmgAssess.out),
+    dmgAssess.out,
+  );
+  const dmgStaple = sh(`xcrun stapler validate "${dmg}" 2>&1`);
+  check('声称3 dmg stapler validate 通过', /The validate action worked/.test(dmgStaple.out), dmgStaple.out);
 }
 
 console.log('\n════════════════════════════════════════════');
