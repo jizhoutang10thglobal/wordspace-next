@@ -1,5 +1,5 @@
 <!--
-  wordspace-next-demo · 意图卡片模板（gate ①）
+  wordspace-next · 意图卡片模板（gate ①）
   ──────────────────────────────────────────────
   源：projectx-board/pm/templates/spec-intent-template.md。
   人类版的意图卡只装"AI 猜不出、只有人能定的产品意图"，是 spec 起草前的锁。

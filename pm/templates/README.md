@@ -1,4 +1,4 @@
-# wordspace-next-demo · Spec 模板
+# wordspace-next · Spec 模板
 
 这套模板把 projectx 那套**给人类工程师**的 feature spec 模板，改造成**给 AI 无人值守执行**的版本。两边是亲兄弟：demo spec 读起来跟 board 上的 F46 / F06 / F15 同源，但下游不一样。
 

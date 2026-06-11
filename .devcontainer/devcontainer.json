@@ -1,5 +1,5 @@
 {
-  "name": "wordspace-next-demo",
+  "name": "wordspace-next",
   "build": {
     "dockerfile": "Dockerfile",
     "args": {

@@ -1,3 +1,5 @@
+> ⚠ **历史背景（2026-06-11 注）**：本审计「复用 projectx 测试地基」的结论，其前提已被「从零重写 wordspace-next」决策取代（见 `docs/brainstorms/2026-06-11-wordspace-next-repo-home-requirements.md`）。保留作研究存档；其中「可复用资产表」仍是查老代码的有效地图（已摘录进 `docs/projectx-context.md` §4）。
+
 # projectx 毕业审计 + 流水线接入计划
 
 > 多 agent 工作流（11 agent，对抗证伪）产出。2026-06-07。配套母模板：`pm/templates/spec-template-pipeline-grade.md`。
