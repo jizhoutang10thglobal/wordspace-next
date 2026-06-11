@@ -1,3 +1,5 @@
+> **上游 context 入口**：产品愿景、Feature Board 位置、spec 流向约定、老代码参考地图见 `docs/projectx-context.md`（任何冷启动 session 先读它再选题/写 spec）。
+
 <!--
 compound 教训积累处：spec 的 autonomous run 学到的真实坑 / 好做法写进这里，
 后续 run 因 Claude Code 自动加载本文件而吃到它（"系统变聪明了"）。

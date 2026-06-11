@@ -1,11 +1,14 @@
 ---
 title: "refactor: 把无人值守 spec→PR 流水线从 demo 迁到真 app (projectx)"
 type: refactor
-status: active
+status: superseded
 date: 2026-06-08
 target_repo: projectx (worktree colin_pm-track, app 在 dev/)
 origin: docs/projectx-graduation-audit.md
 ---
+
+
+> ⚠ **已作废（2026-06-11）**：本计划的前提（把 spec 落到老 React app 上）已被「从零重写 wordspace-next」决策取代；流水线**不**迁回 projectx，本仓（已改名 wordspace-next）转正为官方主仓。决策依据与替代方案见 `docs/brainstorms/2026-06-11-wordspace-next-repo-home-requirements.md`。本文保留作研究存档，**勿执行**。
 
 # refactor: 把无人值守 spec→PR 流水线从 demo 迁到真 app (projectx)
 

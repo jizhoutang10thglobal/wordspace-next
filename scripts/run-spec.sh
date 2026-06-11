@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run-spec.sh — 全自动 feature shipping demo 的无人编排驱动
+# run-spec.sh — Wordspace Next 全自动 feature shipping 的无人编排驱动
 #
 #   一条命令把： 意图确认(gate ①) → 起隔离容器 → 容器内 /lfg 无人值守
 #   (plan→work→review→commit→push→PR) → 权威测试门(npm test) → 报告 PR
@@ -35,14 +35,14 @@ if [[ "${1:-}" == "--inner" ]]; then
   export GH_PROMPT_DISABLED=1
 
   echo "▶ [container] 准备 git / gh 身份…"
-  git config user.email  >/dev/null 2>&1 || git config user.email "demo-bot@wordspace.local"
-  git config user.name   >/dev/null 2>&1 || git config user.name  "wordspace demo bot"
+  git config user.email  >/dev/null 2>&1 || git config user.email "bot@wordspace-next.local"
+  git config user.name   >/dev/null 2>&1 || git config user.name  "wordspace-next bot"
   gh auth setup-git 2>/dev/null || true   # 让 git 走 GH_TOKEN
 
-  # 不在 default 分支上直接干活：开一条 demo 分支供 lfg/ce-work push + 开 PR
+  # 不在 default 分支上直接干活：开一条 feat 分支供 lfg/ce-work push + 开 PR
   CUR_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
   if [[ "$CUR_BRANCH" == "main" || "$CUR_BRANCH" == "master" ]]; then
-    NEW_BRANCH="demo/${SLUG}-$(date +%Y%m%d-%H%M%S)"
+    NEW_BRANCH="feat/${SLUG}-$(date +%Y%m%d-%H%M%S)"
     echo "▶ [container] 从 $CUR_BRANCH 切到新分支 $NEW_BRANCH"
     git switch -c "$NEW_BRANCH" 2>/dev/null || git checkout -b "$NEW_BRANCH"
   fi
@@ -155,7 +155,7 @@ if [[ "${1:-}" == "--inner" ]]; then
       PR_EXIST="$(gh pr list --head "$BR" --base main --state open --json url --jq '.[0].url // empty' 2>/dev/null || true)"
       if [[ -z "$PR_EXIST" ]]; then
         echo "▶ [container] 远端有分支但无 open PR —— 兜底补开 PR"
-        PR_TITLE="demo(${SLUG}): $(git log -1 --pretty=%s 2>/dev/null || echo "$SLUG")"
+        PR_TITLE="feat(${SLUG}): $(git log -1 --pretty=%s 2>/dev/null || echo "$SLUG")"
         CREATE_ERR="$(gh pr create --base main --head "$BR" --title "$PR_TITLE" \
           --body "由 run-spec.sh push/PR 兜底自动补开（lfg 已 commit，但 push/开 PR 步骤被网络掐断，见 lfg-push-silent-fail 教训）。spec: ${SPEC}" 2>&1)"; CREATE_RC=$?
         printf '%s\n' "$CREATE_ERR"

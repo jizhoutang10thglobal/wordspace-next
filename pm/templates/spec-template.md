@@ -1,5 +1,5 @@
 <!--
-  wordspace-next-demo · Feature Spec 模板（AI 无人值守版）
+  wordspace-next · Feature Spec 模板（AI 无人值守版）
   ──────────────────────────────────────────────────────────
   源：projectx-board/pm/templates/spec-template-feature.md（人类工程师版）。
   本模板是它的"亲兄弟"——同样的 6 段 body + frontmatter，让 demo spec 读起来跟

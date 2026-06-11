@@ -1,10 +1,10 @@
 {
-  "name": "wordspace-next-demo",
+  "name": "wordspace-next",
   "version": "0.0.0",
   "private": true,
-  "description": "One-shot demo repo for the autonomous feature-shipping workflow (wordspace-next). The skeleton and features are built here by Claude Code under spec control, inside an isolated dev container.",
+  "description": "Wordspace Next — HTML-native document editor (official repo). Spec-driven development with an adversarial acceptance pipeline; ships signed/notarized macOS builds with auto-update.",
   "license": "UNLICENSED",
-  "author": "Wordspace Demo",
+  "author": "Wordspace Next",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -22,8 +22,8 @@
     "vitest": "^2.1.0"
   },
   "build": {
-    "appId": "com.wordspace.demo",
-    "productName": "Wordspace Demo",
+    "appId": "com.tenthglobal.wordspace-next",
+    "productName": "Wordspace Next",
     "directories": {
       "output": "release"
     },
@@ -34,7 +34,7 @@
     "publish": {
       "provider": "github",
       "owner": "jizhoutang10thglobal",
-      "repo": "wordspace-next-demo"
+      "repo": "wordspace-next"
     },
     "mac": {
       "target": [
@@ -47,10 +47,10 @@
       "entitlements": "build-resources/entitlements.mac.plist",
       "entitlementsInherit": "build-resources/entitlements.mac.plist",
       "notarize": true,
-      "artifactName": "wordspace-demo-${version}-${arch}.${ext}"
+      "artifactName": "wordspace-next-${version}-${arch}.${ext}"
     },
     "dmg": {
-      "title": "Wordspace Demo",
+      "title": "Wordspace Next",
       "sign": true
     },
     "afterAllArtifactBuild": "scripts/notarize-dmg.js"
