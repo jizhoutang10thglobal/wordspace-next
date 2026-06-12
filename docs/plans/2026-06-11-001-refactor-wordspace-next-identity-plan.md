@@ -1,7 +1,7 @@
 ---
 title: "refactor: wordspace-next-demo 转正 — 仓改名 + 去 demo 化 + projectx context 移植"
 type: refactor
-status: active
+status: completed
 date: 2026-06-11
 origin: docs/brainstorms/2026-06-11-wordspace-next-repo-home-requirements.md
 ---
