@@ -7,6 +7,12 @@ const recents = require('./recents');
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recentsFile = () => path.join(app.getPath('userData'), 'recents.json');
 
+// 纵深防御：读写只接受 .html/.htm 路径。app 本就只开 HTML（对话框/文件关联都限 .html），
+// 这道守卫挡住「篡改 recents.json 注入 /etc/passwd 等任意路径越权读写」的向量，不影响正常流。
+function assertHtmlPath(p) {
+  if (typeof p !== 'string' || !/\.html?$/i.test(p)) throw new Error('只支持 .html/.htm 文件：' + p);
+}
+
 function registerIpc() {
   ipcMain.handle('pick-file', async () => {
     const r = await dialog.showOpenDialog({
@@ -16,6 +22,7 @@ function registerIpc() {
     return r.canceled ? null : r.filePaths[0];
   });
   ipcMain.handle('read-doc', async (_e, p) => {
+    assertHtmlPath(p);
     const buf = await files.readDocBuffer(p);
     const text = buf.toString('utf8');
     // 非 UTF-8 文件按 UTF-8 解码会丢字节，保存会损坏内容，直接拒开
@@ -25,6 +32,7 @@ function registerIpc() {
     return text;
   });
   ipcMain.handle('save-doc', async (_e, p, content) => {
+    assertHtmlPath(p);
     // 归档读原始字节，与文件编码无关
     const prev = await files.readDocBuffer(p).catch(() => null);
     let archiveWarning = null;

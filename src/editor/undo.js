@@ -35,6 +35,9 @@
     }
 
     redo() {
+      // 与 undo 对称：先把未提交的编辑 checkpoint 掉，免得 redo 覆盖丢失它们。
+      // 无改动时 checkpoint 是 no-op（不动 redo 分支）；有改动时提交它、redo 自然变 no-op。
+      this.checkpoint();
       if (this.idx < this.stack.length - 1) {
         this.idx++;
         this.doc.body.innerHTML = this.stack[this.idx];

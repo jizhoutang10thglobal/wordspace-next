@@ -75,6 +75,17 @@ test('收紧 CSP 下打开文档无 CSP 违规（外壳资源照常加载）', a
   expect(cspErrors, 'CSP 违规：\n' + cspErrors.join('\n')).toEqual([]);
 });
 
+test('恶意 meta refresh 不能把 iframe 导航到远程（frame-src file: 挡住）', async () => {
+  await launch();
+  await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<meta http-equiv="refresh" content="0; url=https://example.com/evil">'
+    + '</head><body><p id="m">local</p></body></html>');
+  await page.waitForTimeout(900);
+  // iframe 应仍停在本地文档（#m 还在），没被导航到远程
+  expect(await frame.locator('#m').count()).toBe(1);
+  expect(await frame.locator('#m').evaluate((el) => el.textContent)).toBe('local');
+});
+
 test('文档自带脚本与内联事件处理器（onerror）均不执行', async () => {
   await launch();
   await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>'

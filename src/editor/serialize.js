@@ -7,6 +7,12 @@
     return s + '>';
   }
 
+  // 只剥编辑器自己加的标记（白名单）。**不能**用 startsWith('data-ws2') 前缀剥——
+  // 那会误删文档自带的 data-ws2-* 属性（用户内容损坏，保真红线）。
+  const WS2_MARKERS = new Set([
+    'data-ws2-ui', 'data-ws2-ce', 'data-ws2-sc', 'data-ws2-block', 'data-ws2-container', 'data-ws2-palette',
+  ]);
+
   function cleanRoot(root) {
     root.querySelectorAll('[data-ws2-ui]').forEach(n => n.remove());
     const all = [root, ...root.querySelectorAll('*')];
@@ -14,7 +20,7 @@
       if (el.hasAttribute('data-ws2-ce')) el.removeAttribute('contenteditable');
       if (el.hasAttribute('data-ws2-sc')) el.removeAttribute('spellcheck');
       for (const a of [...el.attributes]) {
-        if (a.name.startsWith('data-ws2')) el.removeAttribute(a.name);
+        if (WS2_MARKERS.has(a.name)) el.removeAttribute(a.name);
       }
     }
     return root;
