@@ -12,7 +12,7 @@ let app, page, frame, tmpDir, cspErrors;
 async function launch() {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wsfid-'));
   app = await electron.launch({
-    args: [ROOT],
+    args: ['--no-sandbox', ROOT],
     env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' }
   });
   page = await app.firstWindow();

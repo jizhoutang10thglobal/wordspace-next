@@ -27,7 +27,9 @@ async function launch(content) {
   docPath = path.join(tmpDir, 'doc.html');
   await fs.writeFile(docPath, content, 'utf8');
   app = await electron.launch({
-    args: [ROOT],
+    // --no-sandbox：CI 无特权 runner 下 Chromium 进程沙箱起不来必需；与 iframe 的
+    // sandbox=allow-same-origin（挡文档脚本）是两回事，不影响安全断言（CLAUDE.md S3）
+    args: ['--no-sandbox', ROOT],
     env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' }
   });
   page = await app.firstWindow();
