@@ -2,13 +2,13 @@
   "name": "wordspace-next",
   "version": "0.0.0",
   "private": true,
-  "description": "Wordspace Next — HTML-native document editor (official repo). Spec-driven development with an adversarial acceptance pipeline; ships signed/notarized macOS builds with auto-update.",
+  "description": "Wordspace Next — local in-place HTML document editor (Notion-like). Signed/notarized macOS builds with auto-update.",
   "license": "UNLICENSED",
   "author": "Wordspace Next",
-  "main": "src/main.js",
+  "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "vitest run",
+    "test": "node --test test/*.test.js",
     "test:e2e": "playwright test",
     "dist": "electron-builder --mac"
   },
@@ -16,10 +16,10 @@
     "electron-updater": "^6.8.3"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0",
-    "electron": "^33.0.0",
+    "@playwright/test": "^1.60.0",
+    "electron": "^42.0.0",
     "electron-builder": "^26.8.1",
-    "vitest": "^2.1.0"
+    "jsdom": "^29.1.1"
   },
   "build": {
     "appId": "com.tenthglobal.wordspace-next",
@@ -47,7 +47,17 @@
       "entitlements": "build-resources/entitlements.mac.plist",
       "entitlementsInherit": "build-resources/entitlements.mac.plist",
       "notarize": true,
-      "artifactName": "wordspace-next-${version}-${arch}.${ext}"
+      "artifactName": "wordspace-next-${version}-${arch}.${ext}",
+      "fileAssociations": [
+        {
+          "ext": [
+            "html",
+            "htm"
+          ],
+          "name": "HTML Document",
+          "role": "Editor"
+        }
+      ]
     },
     "dmg": {
       "title": "Wordspace Next",

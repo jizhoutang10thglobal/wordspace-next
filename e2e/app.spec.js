@@ -1,60 +1,214 @@
-const { test, expect } = require('@playwright/test');
+const { test, expect, _electron: electron } = require('@playwright/test');
+const fs = require('fs/promises');
 const path = require('path');
-const { launchApp } = require('./helpers');
+const os = require('os');
 
-test('app window shows built-in document content', async () => {
-  const { app } = await launchApp(path.join(__dirname, '../src/main.js'));
-  try {
-    const window = await app.firstWindow();
-    await window.waitForLoadState('domcontentloaded');
+const ROOT = path.join(__dirname, '..');
+const SHOT_DIR = path.join(__dirname, 'screenshots');
 
-    const container = window.locator('#doc-container');
-    await expect(container).toContainText('Wordspace');
-  } finally {
-    await app.close();
+const FIXTURE = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>测试文档</title>
+<style>body { font-family: serif; } .newver { background: #f6f6f3; }</style>
+</head>
+<body><div class="wrap">
+<h1>测试文档</h1>
+<p id="p1">第一段文字。</p>
+<p id="p2">第二段文字。</p>
+<div class="newver"><p id="p3">框内段落。</p></div>
+<table id="t1"><tbody><tr><td>单元格内容</td></tr></tbody></table>
+</div>
+<script>document.title = 'SCRIPT-RAN';</script>
+</body></html>`;
+
+let app, page, frame, docPath, tmpDir;
+
+async function launch(content) {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2e2e-'));
+  docPath = path.join(tmpDir, 'doc.html');
+  await fs.writeFile(docPath, content, 'utf8');
+  app = await electron.launch({
+    args: [ROOT],
+    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' }
+  });
+  page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+}
+
+async function openDoc() {
+  await app.evaluate(({ BrowserWindow }, p) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('open-file', p);
+  }, docPath);
+  frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('#p1')).toBeVisible();
+}
+
+async function saveViaButton() {
+  await page.locator('#save-btn').click();
+  await expect(page.locator('#dirty-dot')).toBeHidden();
+}
+
+test.afterEach(async ({}, testInfo) => {
+  if (page) {
+    await fs.mkdir(SHOT_DIR, { recursive: true });
+    const name = testInfo.title.replace(/[^\w一-鿿-]+/g, '_') + '.png';
+    await page.screenshot({ path: path.join(SHOT_DIR, name) }).catch(() => {});
   }
+  if (app) {
+    // 强制销毁窗口绕过未保存关闭守卫，否则 close() 会被守卫拦住
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows().forEach((w) => w.destroy());
+    }).catch(() => {});
+    await app.close().catch(() => {});
+  }
+  app = null; page = null; frame = null;
 });
 
-test('theme toggle changes shell class but preserves doc colour', async () => {
-  const { app } = await launchApp(path.join(__dirname, '../src/main.js'));
-  try {
-    const window = await app.firstWindow();
-    await window.waitForLoadState('domcontentloaded');
+test('启动后显示首页', async () => {
+  await launch(FIXTURE);
+  await expect(page.locator('#open-btn')).toBeVisible();
+  await expect(page.locator('#home h1')).toHaveText('wordspace2');
+});
 
-    // Wait for IPC content to be injected before capturing colours
-    await window.locator('#doc-container h1, #doc-container p').first().waitFor({ state: 'visible' });
+test('打开文档：内容渲染且文档脚本未执行', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await expect(frame.locator('#p1')).toHaveText('第一段文字。');
+  const frameTitle = await frame.locator('html').evaluate((el) => el.ownerDocument.title);
+  expect(frameTitle).not.toBe('SCRIPT-RAN');
+  await expect(page.locator('#doc-name')).toHaveText('doc.html');
+});
 
-    // Capture baseline state
-    const classBeforeToggle = await window.evaluate(() => document.body.className);
-    const docColourBefore = await window.evaluate(() => {
-      const el = document.querySelector('#doc-container h1') ||
-                  document.querySelector('#doc-container p');
-      return window.getComputedStyle(el).color;
-    });
+test('编辑文字出现未保存标记，保存写回磁盘且无编辑器痕迹', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p1').click();
+  await page.keyboard.type('新增内容');
+  await expect(page.locator('#dirty-dot')).toBeVisible();
+  await saveViaButton();
+  const saved = await fs.readFile(docPath, 'utf8');
+  expect(saved).toContain('新增内容');
+  expect(saved).not.toContain('data-ws2');
+  expect(saved).not.toContain('暂不支持编辑');
+  expect(saved).toContain("document.title = 'SCRIPT-RAN';");
+  expect(saved).toContain('.newver { background: #f6f6f3; }');
+});
 
-    // Click the toggle once (light → dark)
-    await window.locator('#theme-toggle').click();
+test('保真：未修改时序列化结果与原文档结构一致', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  const out = await page.evaluate(() => {
+    return WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument);
+  });
+  const { JSDOM } = require('jsdom');
+  const expected = new JSDOM(FIXTURE).window.document.documentElement.outerHTML;
+  const actual = new JSDOM(out).window.document.documentElement.outerHTML;
+  expect(actual).toBe(expected);
+});
 
-    const classAfterToggle = await window.evaluate(() => document.body.className);
-    const docColourAfter = await window.evaluate(() => {
-      const el = document.querySelector('#doc-container h1') ||
-                  document.querySelector('#doc-container p');
-      return window.getComputedStyle(el).color;
-    });
+test('浮动工具栏：选中文字出现，加粗生效', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p1').selectText();
+  const boldBtn = frame.locator('[data-ws2-ui] button[title="加粗 Cmd+B"]');
+  await expect(boldBtn).toBeVisible();
+  await boldBtn.click();
+  const html = await frame.locator('#p1').innerHTML();
+  expect(html).toMatch(/<b>|font-weight/);
+});
 
-    // Shell class must have changed to dark-theme
-    expect(classAfterToggle).toContain('dark-theme');
-    expect(classAfterToggle).not.toContain('light-theme');
-    expect(classAfterToggle).not.toBe(classBeforeToggle);
+test('斜杠菜单：输入 / 弹出，选标题 2 转换块', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p2').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('/h2');
+  await expect(frame.locator('[data-ws2-ui]').filter({ hasText: '标题 2' })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(frame.locator('h2')).toHaveText('第二段文字。');
+  const bodyText = await frame.locator('body').innerText();
+  expect(bodyText).not.toContain('/h2');
+});
 
-    // Document computed colour must be unchanged
-    expect(docColourAfter).toBe(docColourBefore);
+test('拖动手柄：移动段落顺序，Cmd+Z 撤销', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  // 真实鼠标按住拖动会触发 Chromium 原生 DnD 使合成输入挂起，这里用 iframe 内合成事件驱动同一套处理逻辑
+  await frame.locator('body').evaluate((body) => {
+    const doc = body.ownerDocument;
+    const fire = (target, type, x, y) => target.dispatchEvent(new doc.defaultView.MouseEvent(type, { bubbles: true, clientX: x, clientY: y }));
+    const p1 = doc.getElementById('p1');
+    const p2 = doc.getElementById('p2');
+    const r1 = p1.getBoundingClientRect();
+    fire(p1, 'mousemove', r1.left + 10, r1.top + r1.height / 2);
+    const handle = doc.querySelector('[data-ws2-ui][title*="拖动"]');
+    const hr = handle.getBoundingClientRect();
+    fire(handle, 'mousedown', hr.left + 2, hr.top + 2);
+    // 第一段小位移触发拖动阈值，第二段移到目标块
+    fire(doc, 'mousemove', hr.left + 8, hr.top + 8);
+    const r2 = p2.getBoundingClientRect();
+    fire(doc, 'mousemove', r2.left + 10, r2.top + r2.height - 2);
+    fire(doc, 'mouseup', r2.left + 10, r2.top + r2.height - 2);
+  });
+  let ids = await frame.locator('p').evaluateAll((els) => els.map(e => e.id));
+  expect(ids.indexOf('p2')).toBeLessThan(ids.indexOf('p1'));
+  await frame.locator('#p1').click();
+  await page.keyboard.press('Meta+z');
+  ids = await frame.locator('p').evaluateAll((els) => els.map(e => e.id));
+  expect(ids.indexOf('p1')).toBeLessThan(ids.indexOf('p2'));
+});
 
-    // Click again (dark → light) — body class returns to light-theme
-    await window.locator('#theme-toggle').click();
-    const classAfterSecondToggle = await window.evaluate(() => document.body.className);
-    expect(classAfterSecondToggle).toContain('light-theme');
-  } finally {
-    await app.close();
-  }
+test('锁定块：表格不可编辑，悬停出现提示，可整块删除', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  const table = frame.locator('#t1');
+  await expect(table).toHaveAttribute('contenteditable', 'false');
+  await table.hover();
+  await expect(frame.locator('[data-ws2-ui]').filter({ hasText: '此块暂不支持编辑' })).toBeVisible();
+  const handle = frame.locator('[data-ws2-ui][title*="拖动"]');
+  await expect(handle).toBeVisible();
+  await frame.locator('body').evaluate((body) => {
+    const doc = body.ownerDocument;
+    const fire = (target, type, x, y) => target.dispatchEvent(new doc.defaultView.MouseEvent(type, { bubbles: true, clientX: x, clientY: y }));
+    const h = doc.querySelector('[data-ws2-ui][title*="拖动"]');
+    const hr = h.getBoundingClientRect();
+    fire(h, 'mousedown', hr.left + 2, hr.top + 2);
+    fire(doc, 'mouseup', hr.left + 2, hr.top + 2);
+  });
+  const delItem = frame.locator('[data-ws2-ui]').filter({ hasText: '删除块' });
+  await expect(delItem).toBeVisible();
+  await delItem.click();
+  await expect(frame.locator('#t1')).toHaveCount(0);
+});
+
+test('历史版本：保存两次后可恢复旧版', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p1').click();
+  await page.keyboard.type('第一次修改');
+  await saveViaButton();
+  await frame.locator('#p1').click();
+  await page.keyboard.type('第二次修改');
+  await saveViaButton();
+  await page.locator('#history-btn').click();
+  const restoreButtons = page.locator('#history-list button');
+  await expect(restoreButtons.first()).toBeVisible();
+  const count = await restoreButtons.count();
+  expect(count).toBeGreaterThanOrEqual(2);
+  await restoreButtons.last().click();
+  await expect(frame.locator('#p1')).not.toContainText('第一次修改');
+  await expect(page.locator('#dirty-dot')).toBeVisible();
+});
+
+test('未保存修改时关闭窗口被拦截', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p1').click();
+  await page.keyboard.type('未保存的修改');
+  await expect(page.locator('#dirty-dot')).toBeVisible();
+  await app.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows()[0].close();
+  });
+  await page.waitForTimeout(800);
+  const winCount = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+  expect(winCount).toBe(1);
 });

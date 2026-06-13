@@ -1,22 +1,39 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'">
-  <title>Wordspace</title>
-  <!-- 外置样式表：inline <style> 会被 CSP default-src 'self' 拦掉（spec2 假绿的根因）。
-       同源外链受 default-src 'self' 放行，CSP 一字不用改。href 用相对路径（同 renderer.js 的写法）。 -->
-  <link rel="stylesheet" href="theme.css">
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src * data: blob: file: 'unsafe-inline'; script-src 'self'">
+<title>wordspace2</title>
+<link rel="stylesheet" href="shell.css">
 </head>
-<body class="light-theme">
-  <div id="doc-container"></div>
-  <div id="status-bar">
-    <button id="theme-toggle">Dark / Light</button>
-    <button id="view-toggle">Render / Source</button>
-    <button id="reset-doc">Reset</button>
-    <span id="edit-indicator"></span>
+<body>
+<header id="topbar">
+  <button id="open-btn">打开文档</button>
+  <span id="doc-name"></span>
+  <span id="dirty-dot" hidden>●</span>
+  <span class="spacer"></span>
+  <button id="history-btn" disabled>历史版本</button>
+  <button id="save-btn" disabled>保存</button>
+</header>
+<main id="home">
+  <h1>wordspace2</h1>
+  <p class="hint">打开一个 HTML 文档开始编辑</p>
+  <ul id="recent-list"></ul>
+</main>
+<iframe id="doc-frame" sandbox="allow-same-origin" hidden></iframe>
+<div id="history-modal" hidden>
+  <div class="modal-box">
+    <h2>历史版本</h2>
+    <ul id="history-list"></ul>
+    <button id="history-close">关闭</button>
   </div>
-  <script src="renderer.js"></script>
+</div>
+<script src="../editor/blocks.js"></script>
+<script src="../editor/serialize.js"></script>
+<script src="../editor/undo.js"></script>
+<script src="../editor/toolbar.js"></script>
+<script src="../editor/slashmenu.js"></script>
+<script src="../editor/draghandle.js"></script>
+<script src="shell.js"></script>
 </body>
 </html>
