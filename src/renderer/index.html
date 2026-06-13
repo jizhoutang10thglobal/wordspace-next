@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src * data: blob: file: 'unsafe-inline'; script-src 'self'">
-<title>wordspace2</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; frame-src file:; img-src 'self' file: data:; style-src 'self' file:; script-src 'self' file:">
+<title>Wordspace Next</title>
 <link rel="stylesheet" href="shell.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
   <button id="save-btn" disabled>保存</button>
 </header>
 <main id="home">
-  <h1>wordspace2</h1>
+  <h1>Wordspace Next</h1>
   <p class="hint">打开一个 HTML 文档开始编辑</p>
   <ul id="recent-list"></ul>
 </main>

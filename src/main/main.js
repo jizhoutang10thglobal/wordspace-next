@@ -55,7 +55,7 @@ function sendMenu(cmd) {
 function buildMenu() {
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'wordspace2', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit', label: '退出' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit', label: '退出' }] },
     {
       label: '文件',
       submenu: [

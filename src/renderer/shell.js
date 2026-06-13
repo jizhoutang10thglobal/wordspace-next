@@ -19,9 +19,12 @@ const markDirty = () => setDirty(true);
 
 function dirOf(p) { return p.slice(0, p.lastIndexOf('/') + 1); }
 
-function injectBase(doc, p) {
+// 本地路径 → file:// URL，逐段编码（安全处理空格 / 中文 / # / ? 等文件名）
+function fileUrl(p) { return 'file://' + p.split('/').map(encodeURIComponent).join('/'); }
+
+function injectBase(doc, dir) {
   const base = doc.createElement('base');
-  base.href = 'file://' + dirOf(p);
+  base.href = fileUrl(dir);
   base.setAttribute('data-ws2-ui', '');
   doc.head.prepend(base);
 }
@@ -33,60 +36,75 @@ function injectUiStyle(doc) {
   doc.documentElement.appendChild(style);
 }
 
-function loadIntoFrame(html, p, opts) {
-  const asDirty = opts && opts.asDirty;
+// 文档载入后接线编辑器（真实 file:// 与 srcdoc 两种载入方式通用）
+function wireEditor() {
+  const doc = frame.contentDocument;
+  injectUiStyle(doc);
+  WS2Blocks.applyEditable(doc);
+  try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
+  try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
+  undoMgr = new WS2Undo.UndoManager(doc);
+  if (window.WS2Toolbar) WS2Toolbar.attach(doc, undoMgr, markDirty);
+  if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);
+  if (window.WS2Drag) WS2Drag.attach(doc, undoMgr, markDirty);
+  doc.addEventListener('input', () => {
+    markDirty();
+    undoMgr.scheduleCheckpoint();
+    // 编辑中新产生的块（如斜杠菜单插入的分隔线）即时标注，保证有手柄可拖可删
+    WS2Blocks.markBlocks(doc.body);
+  });
+  doc.addEventListener('paste', (e) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    doc.execCommand('insertText', false, text);
+  });
+  doc.addEventListener('keydown', (e) => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    if (k === 'z') { e.preventDefault(); const changed = e.shiftKey ? undoMgr.redo() : undoMgr.undo(); if (changed) markDirty(); }
+    if (k === 's') { e.preventDefault(); save(); }
+    if (k === 'b') { e.preventDefault(); doc.execCommand('bold'); undoMgr.checkpoint(); markDirty(); }
+    if (k === 'i') { e.preventDefault(); doc.execCommand('italic'); undoMgr.checkpoint(); markDirty(); }
+    if (k === 'u') { e.preventDefault(); doc.execCommand('underline'); undoMgr.checkpoint(); markDirty(); }
+  }, true);
+}
+
+function prepFrame(asDirty) {
   home.hidden = true;
   frame.hidden = false;
-  frame.onload = () => {
-    const doc = frame.contentDocument;
-    injectBase(doc, p);
-    injectUiStyle(doc);
-    WS2Blocks.applyEditable(doc);
-    try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
-    try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
-    undoMgr = new WS2Undo.UndoManager(doc);
-    if (window.WS2Toolbar) WS2Toolbar.attach(doc, undoMgr, markDirty);
-    if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);
-    if (window.WS2Drag) WS2Drag.attach(doc, undoMgr, markDirty);
-    doc.addEventListener('input', () => {
-      markDirty();
-      undoMgr.scheduleCheckpoint();
-      // 编辑中新产生的块（如斜杠菜单插入的分隔线）即时标注，保证有手柄可拖可删
-      WS2Blocks.markBlocks(doc.body);
-    });
-    doc.addEventListener('paste', (e) => {
-      e.preventDefault();
-      const text = e.clipboardData.getData('text/plain');
-      doc.execCommand('insertText', false, text);
-    });
-    doc.addEventListener('keydown', (e) => {
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      const k = e.key.toLowerCase();
-      if (k === 'z') { e.preventDefault(); const changed = e.shiftKey ? undoMgr.redo() : undoMgr.undo(); if (changed) markDirty(); }
-      if (k === 's') { e.preventDefault(); save(); }
-      if (k === 'b') { e.preventDefault(); doc.execCommand('bold'); undoMgr.checkpoint(); markDirty(); }
-      if (k === 'i') { e.preventDefault(); doc.execCommand('italic'); undoMgr.checkpoint(); markDirty(); }
-      if (k === 'u') { e.preventDefault(); doc.execCommand('underline'); undoMgr.checkpoint(); markDirty(); }
-    }, true);
-  };
-  frame.srcdoc = html;
-  docName.textContent = p.split('/').pop();
+  docName.textContent = docPath.split('/').pop();
   historyBtn.disabled = false;
   setDirty(!!asDirty);
 }
 
+// 打开真实文件：iframe 直接指向 file:// URL，文档拥有自己的 CSP 上下文、相对资源天然解析
+function loadFromFile(p, opts) {
+  frame.onload = () => wireEditor();
+  frame.removeAttribute('srcdoc');
+  frame.src = fileUrl(p);
+  prepFrame(opts && opts.asDirty);
+}
+
+// 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录
+function loadFromHtml(html, p, opts) {
+  frame.onload = () => { injectBase(frame.contentDocument, dirOf(p)); wireEditor(); };
+  frame.removeAttribute('src');
+  frame.srcdoc = html;
+  prepFrame(opts && opts.asDirty);
+}
+
 async function openDoc(p) {
   if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) return;
-  let html;
   try {
-    html = await window.ws2.readDoc(p);
+    // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；内容本身由 file:// 直接载入
+    await window.ws2.readDoc(p);
   } catch (e) {
     alert('无法打开文件：' + p + '\n' + (e.message || e));
     return;
   }
   docPath = p;
-  loadIntoFrame(html, p);
+  loadFromFile(p);
   await window.ws2.recentsAdd(p);
   renderRecents();
 }
@@ -118,7 +136,7 @@ async function renderRecents() {
   ul.innerHTML = '';
   for (const r of list) {
     const li = document.createElement('li');
-    li.textContent = r.path.split('/').pop() + ' ' + r.path;
+    li.textContent = r.path.split('/').pop() + ' ' + r.path;
     li.onclick = () => openDoc(r.path);
     ul.appendChild(li);
   }
@@ -147,7 +165,7 @@ async function showHistory() {
     btn.textContent = '恢复';
     btn.onclick = async () => {
       const content = await window.ws2.historyRead(docPath, v.id);
-      loadIntoFrame(content, docPath, { asDirty: true });
+      loadFromHtml(content, docPath, { asDirty: true });
       modal.hidden = true;
     };
     li.append(label, btn);

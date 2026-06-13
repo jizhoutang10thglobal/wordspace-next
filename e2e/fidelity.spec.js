@@ -1,0 +1,88 @@
+// U4 针对性验收：真实 file:// 文档模型的"所见即所得 + 安全"两个核心声明。
+// 她原本的 app.spec.js 没断言文档自带样式是否真生效、内联事件处理器是否被挡——这里补上。
+const { test, expect, _electron: electron } = require('@playwright/test');
+const fs = require('fs/promises');
+const path = require('path');
+const os = require('os');
+
+const ROOT = path.join(__dirname, '..');
+
+let app, page, frame, tmpDir, cspErrors;
+
+async function launch() {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wsfid-'));
+  app = await electron.launch({
+    args: [ROOT],
+    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' }
+  });
+  page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+  cspErrors = [];
+  page.on('console', (m) => {
+    const t = m.text();
+    if (/content security policy|refused to (load|execute|apply)/i.test(t)) cspErrors.push(t);
+  });
+}
+
+async function openFile(content, extra = {}) {
+  const docPath = path.join(tmpDir, 'doc.html');
+  await fs.writeFile(docPath, content, 'utf8');
+  for (const [name, body] of Object.entries(extra)) {
+    await fs.writeFile(path.join(tmpDir, name), body, 'utf8');
+  }
+  await app.evaluate(({ BrowserWindow }, p) => {
+    BrowserWindow.getAllWindows()[0].webContents.send('open-file', p);
+  }, docPath);
+  frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('body')).toBeVisible();
+  return docPath;
+}
+
+test.afterEach(async () => {
+  if (app) {
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
+    await app.close().catch(() => {});
+  }
+  app = null; page = null; frame = null;
+});
+
+test('文档自带 inline <style> 真实生效（所见即所得）', async () => {
+  await launch();
+  await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<style>#m { color: rgb(10, 20, 30); background-color: rgb(40, 50, 60); }</style>'
+    + '</head><body><p id="m">styled</p></body></html>');
+  const color = await frame.locator('#m').evaluate((el) => getComputedStyle(el).color);
+  const bg = await frame.locator('#m').evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(color).toBe('rgb(10, 20, 30)');
+  expect(bg).toBe('rgb(40, 50, 60)');
+});
+
+test('文档相对路径 <link> 样式表能加载（file:// 相对解析）', async () => {
+  await launch();
+  await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<link rel="stylesheet" href="theme.css"></head><body><p id="m">x</p></body></html>',
+    { 'theme.css': '#m { color: rgb(1, 2, 3); }' });
+  await expect
+    .poll(async () => frame.locator('#m').evaluate((el) => getComputedStyle(el).color))
+    .toBe('rgb(1, 2, 3)');
+});
+
+test('收紧 CSP 下打开文档无 CSP 违规（外壳资源照常加载）', async () => {
+  await launch();
+  await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    + '<style>p{color:red}</style></head><body><p>x</p></body></html>');
+  await page.waitForTimeout(300);
+  expect(cspErrors, 'CSP 违规：\n' + cspErrors.join('\n')).toEqual([]);
+});
+
+test('文档自带脚本与内联事件处理器（onerror）均不执行', async () => {
+  await launch();
+  await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>'
+    + '<p id="m">x</p>'
+    + '<img src="does-not-exist.png" onerror="document.title=\'HACKED\'">'
+    + '<script>document.title=\'SCRIPT-RAN\';</' + 'script></body></html>');
+  await page.waitForTimeout(250);
+  const title = await frame.locator('html').evaluate((el) => el.ownerDocument.title);
+  expect(title).not.toBe('SCRIPT-RAN');
+  expect(title).not.toBe('HACKED');
+});

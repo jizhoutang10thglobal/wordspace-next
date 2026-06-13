@@ -66,7 +66,7 @@ test.afterEach(async ({}, testInfo) => {
 test('启动后显示首页', async () => {
   await launch(FIXTURE);
   await expect(page.locator('#open-btn')).toBeVisible();
-  await expect(page.locator('#home h1')).toHaveText('wordspace2');
+  await expect(page.locator('#home h1')).toHaveText('Wordspace Next');
 });
 
 test('打开文档：内容渲染且文档脚本未执行', async () => {
