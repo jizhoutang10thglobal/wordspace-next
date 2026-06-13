@@ -80,6 +80,21 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// 自动更新：仅打包后生效。dev 无 update feed，惰性 require（dev 不加载 electron-updater）。
+// update-downloaded 后显式弹窗问用户（立即重启走 quitAndInstall / 稍后退出时自动装）。
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+  const { autoUpdater } = require('electron-updater');
+  const { buildUpdateDialogOptions, shouldInstall } = require('../lib/update-prompt');
+  autoUpdater.on('error', (err) => console.error('[updater] error:', err && err.message));
+  autoUpdater.on('update-downloaded', (info) => {
+    dialog.showMessageBox(buildUpdateDialogOptions(info && info.version)).then(({ response }) => {
+      if (shouldInstall(response)) autoUpdater.quitAndInstall();
+    }).catch((err) => console.error('[updater] dialog/install error:', err && err.message));
+  });
+  autoUpdater.checkForUpdates().catch(() => {});
+}
+
 app.on('open-file', (e, p) => {
   e.preventDefault();
   if (win) win.webContents.send('open-file', p);
@@ -92,5 +107,6 @@ app.whenReady().then(() => {
   registerIpc();
   buildMenu();
   createWindow();
+  setupAutoUpdater();
 });
 app.on('window-all-closed', () => app.quit());
