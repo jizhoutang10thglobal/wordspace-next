@@ -25,6 +25,11 @@ on:
       - 'specs/**'
       - '.github/**'   # 改流水线自身（如本文件）不自触发发版；真功能改动（src/**）仍自动发版
   workflow_dispatch:
+    inputs:
+      version:
+        description: '手动指定版本号（如 0.1.0）；留空则取 max(最高 tag patch+1, package.json.version)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -69,25 +74,36 @@ jobs:
       # 绝不设 ELECTRON_SKIP_BINARY_DOWNLOAD —— 打包要真 electron 二进制（同 ci.yml e2e job，CLAUDE.md S3）
       - run: npm ci
 
-      # 版本号唯一真源 = git tag（不读也不写 package.json 的 version）。取最高的 vX.Y.Z tag、patch +1；
-      # 无 tag（首发）则 v0.0.1。算出来写进本地 package.json 供 electron-builder 烤进产物，但**不 commit**。
-      - name: Compute next version from latest tag
+      # 版本号 = 手动指定（dispatch input）> max(最高 tag patch+1, package.json.version)。
+      # package.json.version 平时是基线（如 0.1.0），让 minor 跃迁能由 commit 控制：
+      #   patch+1=0.0.5 vs pkg=0.1.0 → 取 0.1.0；下次 patch+1=0.1.1 > pkg → 取 0.1.1，自然单调递增。
+      # 算出来写进本地 package.json 供 electron-builder 烤进产物，但**不 commit**（main 受保护）。
+      - name: Compute release version
         id: version
         run: |
-          set -euo pipefail   # GitHub 默认 bash -e，但 pipefail/nounset 默认关；显式打开防静默错值
+          set -euo pipefail
           git fetch --tags --force
-          # 严格只认 vMAJOR.MINOR.PATCH（三段纯数字），过滤掉 v0.2.0-rc1 / v1.2.3.4 这类，免得 bump 静默出错
+          INPUT_VER="${{ github.event.inputs.version }}"
+          # 严格只认 vMAJOR.MINOR.PATCH（三段纯数字）
           LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
           if [ -z "$LATEST" ]; then
-            NEW="0.0.1"
+            TAGBUMP="0.0.1"
           else
             IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
             case "$PATCH" in ''|*[!0-9]*) echo "non-numeric patch in tag: $PATCH" >&2; exit 1;; esac
-            NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+            TAGBUMP="$MAJOR.$MINOR.$((PATCH + 1))"
           fi
+          PKGVER=$(node -e "process.stdout.write(require('./package.json').version)")
+          if [ -n "$INPUT_VER" ]; then
+            NEW="$INPUT_VER"
+          else
+            NEW=$(printf '%s\n%s\n' "$TAGBUMP" "$PKGVER" | sort -V | tail -1)
+          fi
+          case "$NEW" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "bad version: $NEW" >&2; exit 1;; esac
+          if git rev-parse "v$NEW" >/dev/null 2>&1; then echo "tag v$NEW already exists" >&2; exit 1; fi
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$NEW';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
-          echo "Latest tag: ${LATEST:-<none>} → releasing v$NEW"
+          echo "input=${INPUT_VER:-<none>} tagbump=$TAGBUMP pkg=$PKGVER → releasing v$NEW"
 
       # 签名+公证打包。缺 secrets / 公证失败 → 此步失败 → 后面建 Release 的步骤被跳过，main 与 tag 都不动。
       - name: Build, sign & notarize macOS app

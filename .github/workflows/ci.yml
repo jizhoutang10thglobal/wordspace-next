@@ -1,7 +1,7 @@
 name: CI
 
-# PR 上跑权威门同款 Vitest，给 PR 一个真·绿勾。
-# lfg 第 8 步 watch CI 时能看到真 check，不再对"零 check"空转。
+# PR 上跑权威门：node:test 单测（纯逻辑，jsdom）+ xvfb 真 Electron e2e。
+# 给 PR 一个真·绿勾，watch CI 时能看到真 check。
 on:
   pull_request:
   push:
@@ -11,7 +11,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      # 与容器一致：不下 Electron 预编译二进制；Vitest 不需要它。
+      # 单测是 node:test + jsdom 的纯逻辑，不需要 Electron 二进制 → 跳下载省时间。
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
@@ -23,11 +23,9 @@ jobs:
       - run: npm test
 
   # e2e 真门：在 ubuntu runner 上用 xvfb 真启动 Electron 跑 Playwright，
-  # 抓「vitest 全绿但 app 其实打不开」这类渲染层 bug（spec2 就栽在这）。
-  # 这道 job 现在跑全部 e2e（playwright testDir=./e2e），含三层：
-  #   ① 各 spec 的功能/强断言 e2e（如 theme-visual：读真实 computed 亮度，不是查 class）
-  #   ② va-runner：扫 specs/*.va.json，按人写的可见验收清单真验屏幕效果
-  #   ③ va-selftest：把样式打掉后断言 VA 必红 —— 证明门不是哑的（门存在≠门够强）
+  # 抓「单测全绿但 app 其实打不开」这类渲染层/集成 bug。含两组：
+  #   ① app.spec.js：编辑器全功能（打开/编辑保存/保真/工具栏/斜杠/拖块/锁定块/历史/关窗拦截）
+  #   ② fidelity.spec.js：文档自带样式真渲染 + 收紧 CSP 无违规 + 文档脚本/onerror 不执行
   # 要让红 e2e 真挡住 merge，需在 GitHub 把本 job 设为 main 的 required status check。
   # 独立 job，绝不继承上面 test job 的 ELECTRON_SKIP_BINARY_DOWNLOAD=1
   # ——e2e 要真 Electron 二进制；CI runner 无防火墙能正常下载。

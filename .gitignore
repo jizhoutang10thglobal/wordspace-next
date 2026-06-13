@@ -13,3 +13,4 @@ playwright-report/
 .env
 .env.local
 .firecrawl/
+e2e/screenshots/
