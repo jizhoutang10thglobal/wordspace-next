@@ -1,25 +1,24 @@
-# Wordspace Next
+# wordspace
 
-> Wordspace Next 是一款本地运行的 HTML 文档编辑器。打开 .html 文件，像普通文档
-> 一样编辑——标题、列表、表格、图片——再存回干净的 HTML。完全在你自己的电脑上
-> 运行：不上云、不用账号。
+> wordspace 是一款本地运行的 HTML 文档编辑器。打开 .html 文件，像普通文档一样
+> 编辑——标题、列表、表格、图片——再存回干净的 HTML。完全在你自己的电脑上运行：
+> 不上云、不用账号。
 
 ## 这是什么
 
-Wordspace Next 把普通的 .html 文件变成可以像文档一样编辑的东西。你没有改动的内容
+wordspace 把普通的 .html 文件变成可以像文档一样编辑的东西。你没有改动的内容
 （表格、图片、嵌入媒体）会被原样保留，文件始终是可在任何地方打开的合法 HTML。
 
-它是一款 macOS 和 Windows 的原生桌面应用，免费下载，并会自动更新（安装包经过签名与公证）。
+它是一款 macOS 和 Windows 的原生桌面应用，免费下载。每次打开都会在后台自动下载
+最新版本并提示安装（安装包经过签名与公证）。
 
 ## 下载
 
-- macOS（Apple Silicon）：https://wordspace.ai/downloads/mac
+- macOS（Apple Silicon，适配 M 系列芯片）：https://wordspace.ai/downloads/mac
 - Windows（x64 安装包）：https://wordspace.ai/downloads/win
 
-两个链接始终指向最新的已签名版本，发布在应用的公开 GitHub releases 上，因此跨版本保持稳定。
+两个链接始终指向最新的已签名版本，因此跨版本保持稳定。
 
 ## 链接
 
 - 产品站点：https://wordspace.ai
-- 源码与发布：https://github.com/jizhoutang10thglobal/wordspace-next
-- 更新日志：https://github.com/jizhoutang10thglobal/wordspace-next/releases

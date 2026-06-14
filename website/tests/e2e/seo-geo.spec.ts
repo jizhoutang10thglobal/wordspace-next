@@ -37,10 +37,10 @@ test.describe('SEO + GEO baseline', () => {
     const res = await request.get('/llms.txt');
     expect(res.status()).toBe(200);
     const body = await res.text();
-    expect(body).toMatch(/^#\s+Wordspace Next/m);
+    expect(body).toMatch(/^#\s+wordspace/m);
     // llmstxt.org convention: the H1 is immediately followed by a
     // blockquote carrying the project's elevator pitch.
-    expect(body).toMatch(/^>\s+Wordspace Next/m);
+    expect(body).toMatch(/^>\s+wordspace/m);
     expect(body).toContain('/downloads/mac');
   });
 

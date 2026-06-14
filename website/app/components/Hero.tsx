@@ -6,7 +6,7 @@ export function Hero() {
           像写文档一样，<em>编辑 HTML</em>。
         </h1>
         <p className="hero__subtitle">
-          Wordspace Next 在本地打开你的 .html 文件，像普通文档一样编辑，再原样存回干净的
+          wordspace 在本地打开你的 .html 文件，像普通文档一样编辑，再原样存回干净的
           HTML。不上云，不用账号。
         </p>
         <div className="hero__ctas">
@@ -20,7 +20,7 @@ export function Hero() {
           </a>
         </div>
         <p className="hero__ctas-note">
-          macOS 为 Apple Silicon 版本 · Windows 安装包 · 自动更新
+          macOS 为 Apple Silicon 版本，适配 M 系列芯片
         </p>
       </div>
     </section>

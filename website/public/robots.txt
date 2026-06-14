@@ -1,5 +1,5 @@
 # wordspace.ai — robots policy
-# Wordspace Next is a local HTML document editor and wants to be
+# wordspace is a local HTML document editor and wants to be
 # discoverable by both traditional search engines and AI answer engines.
 # The default is "allow everyone"; any future blocks should require an
 # explicit product-strategy sign-off.

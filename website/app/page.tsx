@@ -1,5 +1,6 @@
 import { SiteHeader } from './components/SiteHeader';
 import { Hero } from './components/Hero';
+import { AutoUpdate } from './components/AutoUpdate';
 import { SiteFooter } from './components/SiteFooter';
 import { SITE_DESCRIPTION, SITE_URL } from './lib/site-config';
 
@@ -12,7 +13,7 @@ const softwareApplicationSchema = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
   '@id': `${SITE_URL}/#software`,
-  name: 'Wordspace Next',
+  name: 'wordspace',
   description: SITE_DESCRIPTION,
   url: SITE_URL,
   applicationCategory: 'BusinessApplication',
@@ -25,7 +26,7 @@ const softwareApplicationSchema = {
   downloadUrl: [`${SITE_URL}/downloads/mac`, `${SITE_URL}/downloads/win`],
   softwareHelp: {
     '@type': 'CreativeWork',
-    url: 'https://github.com/jizhoutang10thglobal/wordspace-next',
+    url: SITE_URL,
   },
 };
 
@@ -41,6 +42,7 @@ export default function HomePage() {
       <SiteHeader />
       <main>
         <Hero />
+        <AutoUpdate />
       </main>
       <SiteFooter />
     </>
