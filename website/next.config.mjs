@@ -1,7 +1,11 @@
 /** @type {import('next').NextConfig} */
 
-const MIRROR_BASE =
-  'https://github.com/jizhoutang10thglobal/wordspace-releases/releases/latest/download';
+// Stable download short-links. Both point at the "latest" GitHub release
+// of the app, so the URLs never change across versions. Artifact names
+// match electron-builder's `build.mac/win.artifactName` in the app's
+// package.json — keep them in sync if those change.
+const RELEASE_BASE =
+  'https://github.com/jizhoutang10thglobal/wordspace-next/releases/latest/download';
 
 const nextConfig = {
   reactStrictMode: true,
@@ -10,12 +14,12 @@ const nextConfig = {
     return [
       {
         source: '/downloads/mac',
-        destination: `${MIRROR_BASE}/wordspace-mac-arm64.dmg`,
+        destination: `${RELEASE_BASE}/wordspace-next-mac-arm64.dmg`,
         statusCode: 302,
       },
       {
         source: '/downloads/win',
-        destination: `${MIRROR_BASE}/wordspace-windows-setup.exe`,
+        destination: `${RELEASE_BASE}/wordspace-next-win-x64.exe`,
         statusCode: 302,
       },
     ];

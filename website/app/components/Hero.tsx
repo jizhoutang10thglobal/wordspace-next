@@ -2,29 +2,25 @@ export function Hero() {
   return (
     <section className="hero">
       <div className="container">
-        <span className="hero__eyebrow">Headless AI document editor</span>
         <h1 className="hero__title">
-          Your document editor, <em>bring your own AI</em>.
+          像写文档一样，<em>编辑 HTML</em>。
         </h1>
         <p className="hero__subtitle">
-          wordspace is a clean, native document editor with no AI inside. Copy one prompt,
-          paste it into Claude Code, Cursor, or any agent, and let your AI edit the open
-          document through a secure local REST API. Every change auto-saves to your{' '}
-          <code>.wsp</code> file and refreshes instantly through WebSocket.
+          wordspace 在本地打开你的 .html 文件，像普通文档一样编辑，再原样存回干净的
+          HTML。
         </p>
         <div className="hero__ctas">
           <a className="cta" href="/downloads/mac" data-testid="cta-mac">
             <span aria-hidden="true">⌘</span>
-            Download for macOS
+            下载 macOS 版
           </a>
           <a className="cta cta--secondary" href="/downloads/win" data-testid="cta-win">
             <span aria-hidden="true">⊞</span>
-            Download for Windows
+            下载 Windows 版
           </a>
         </div>
         <p className="hero__ctas-note">
-          Apple Silicon build for macOS · Windows installer · Linux{' '}
-          <a href="/downloads/linux">coming soon</a>.
+          macOS 为 Apple Silicon 版本，适配 M 系列芯片
         </p>
       </div>
     </section>

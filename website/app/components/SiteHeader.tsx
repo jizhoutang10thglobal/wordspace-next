@@ -35,18 +35,6 @@ export function SiteHeader() {
           </svg>
           <span>wordspace</span>
         </Link>
-        <nav className="site-header__nav" aria-label="Primary">
-          <a href="#features">Features</a>
-          <a href="#how-it-works">How it works</a>
-          <a href="#faq">FAQ</a>
-          <a
-            href="https://github.com/jizhoutang10thglobal/wordspace-releases"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            GitHub
-          </a>
-        </nav>
       </div>
     </header>
   );
