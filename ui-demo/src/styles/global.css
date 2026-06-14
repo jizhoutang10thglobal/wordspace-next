@@ -1,0 +1,59 @@
+@import "./tokens.css";
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  color: var(--c-text);
+  background: var(--c-bg-chrome);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden; /* the app owns scrolling regions */
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+button:disabled { cursor: default; }
+
+a { color: var(--c-accent); text-decoration: none; }
+input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
+input:focus, textarea:focus, button:focus { outline: none; }
+
+h1, h2, h3, h4, p, ul, ol, figure { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+
+/* thin desktop-style scrollbars */
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,.18);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.30); background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+::selection { background: var(--c-accent-tint-2); }
+
+/* shared helpers */
+.ws-muted { color: var(--c-text-2); }
+.ws-mono { font-family: var(--font-mono); }
+.ws-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@keyframes ws-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ws-pop-in { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes ws-spin { to { transform: rotate(360deg); } }
+@keyframes ws-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }

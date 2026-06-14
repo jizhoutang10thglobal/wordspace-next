@@ -1,0 +1,50 @@
+.ws-avatar {
+  width: var(--av-size, 24px);
+  height: var(--av-size, 24px);
+  border-radius: var(--r-pill);
+  background: var(--av-color, #888);
+  color: #fff;
+  font-size: calc(var(--av-size, 24px) * 0.42);
+  font-weight: var(--fw-semibold);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex: none;
+  user-select: none;
+}
+.ws-avatar-extra {
+  background: var(--c-active);
+  color: var(--c-text-2);
+}
+.ws-avatar-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ws-spin {
+  animation: ws-spin 0.8s linear infinite;
+  color: var(--c-accent);
+}
+
+.ws-vis-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+  display: inline-block;
+  flex: none;
+}
+
+.ws-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+.ws-pill-neutral { background: var(--c-active); color: var(--c-text-2); }
+.ws-pill-accent { background: var(--c-accent-tint); color: var(--c-accent); }
+.ws-pill-success { background: var(--c-success-tint); color: var(--c-success); }
