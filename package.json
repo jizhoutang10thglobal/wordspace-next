@@ -63,6 +63,26 @@
       "title": "Wordspace Next",
       "sign": true
     },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "wordspace-next-win-${arch}.${ext}",
+      "fileAssociations": [
+        {
+          "ext": [
+            "html",
+            "htm"
+          ],
+          "name": "HTML Document",
+          "role": "Editor"
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
     "afterAllArtifactBuild": "scripts/notarize-dmg.js"
   }
 }
