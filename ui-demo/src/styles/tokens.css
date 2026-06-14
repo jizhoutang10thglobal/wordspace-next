@@ -1,0 +1,90 @@
+/* Wordspace design tokens
+   Aesthetic: standard desktop application (Chrome / Arc / Outlook).
+   Neutral surfaces, one restrained blue accent, hairline borders, no gradients,
+   no glow, no oversized radii, no decorative shadows. Keep it plain. */
+:root {
+  /* ---- color ---- */
+  --c-bg: #ffffff;
+  --c-bg-sunken: #f7f8fa;     /* side panes */
+  --c-bg-rail: #ececef;       /* far-left icon rail */
+  --c-bg-chrome: #f2f3f5;     /* titlebar + tab strip */
+  --c-surface: #ffffff;
+
+  --c-border: #e4e6e9;
+  --c-border-strong: #d3d6db;
+  --c-divider: #eceef0;
+
+  --c-text: #1c1d1f;
+  --c-text-2: #5a5f66;        /* secondary */
+  --c-text-3: #8a8f96;        /* tertiary / placeholder */
+  --c-text-invert: #ffffff;
+
+  --c-accent: #1a73e8;        /* restrained standard blue */
+  --c-accent-hover: #1765cc;
+  --c-accent-press: #145bb5;
+  --c-accent-tint: #e8f0fe;   /* selection / active tint */
+  --c-accent-tint-2: #d2e3fc;
+
+  --c-hover: #f0f1f3;
+  --c-active: #e8e9ec;
+  --c-selected: #e8f0fe;
+
+  --c-success: #1e8e3e;
+  --c-success-tint: #e6f4ea;
+  --c-warning: #b06000;
+  --c-danger: #d93025;
+  --c-danger-tint: #fce8e6;
+
+  /* visibility accents (subtle) */
+  --c-private: #8a8f96;
+  --c-invited: #1a73e8;
+  --c-internal: #b06000;
+  --c-public: #1e8e3e;
+
+  /* ---- type ---- */
+  --font-ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto,
+    "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --font-doc: -apple-system, "SF Pro Text", system-ui, "Segoe UI",
+    "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+  --fs-2xl: 22px;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  --lh-tight: 1.3;
+  --lh-base: 1.5;
+  --lh-doc: 1.75;
+
+  /* ---- radius ---- */
+  --r-xs: 3px;
+  --r-sm: 5px;
+  --r-md: 7px;
+  --r-lg: 10px;
+  --r-pill: 999px;
+
+  /* ---- shadow (overlays only) ---- */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04);
+  --shadow-menu: 0 4px 14px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.06);
+  --shadow-modal: 0 14px 44px rgba(0,0,0,.20), 0 0 0 1px rgba(0,0,0,.06);
+
+  /* ---- metrics ---- */
+  --h-titlebar: 40px;
+  --h-toolbar: 46px;
+  --rail-w: 56px;
+  --list-w: 268px;
+  --maxdoc-w: 820px;
+
+  /* ---- motion ---- */
+  --ease: cubic-bezier(.2, .6, .2, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+}

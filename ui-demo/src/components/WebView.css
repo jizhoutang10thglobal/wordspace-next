@@ -1,0 +1,52 @@
+/* Frame around a real external <iframe>. The mock sites and the new-tab page
+   bring their own styling; this file only dresses the iframe fallback. */
+.webview {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg);
+}
+
+/* slim muted notice that real sites may refuse to be embedded */
+.webview-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 34px;
+  padding: 0 12px;
+  background: var(--c-bg-sunken);
+  border-bottom: 1px solid var(--c-border);
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+.webview-strip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.webview-strip-open {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.webview-strip-open:hover { background: var(--c-hover); color: var(--c-text); }
+
+.webview-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: #fff;
+}
