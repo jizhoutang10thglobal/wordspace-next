@@ -59,6 +59,9 @@ jobs:
   release:
     needs: gate
     runs-on: macos-latest
+    # version 输出给下面的 build-win：两平台用同一个版本号 / 同一个 tag，产物进同一个 Release。
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     # 公证正常 2–15min，但 Apple 队列偶发拥堵可超 30min（实测撞过）。60min 封顶：给 Apple 队列余量，
     # 又不至于卡死时白占 6h 默认上限。配合下面 build 步的 DEBUG=electron-notarize* 区分「Apple 队列慢」
     # vs「notarytool 卡死」——前者日志会打 submission id + 轮询，后者签名后就闷死。
@@ -162,4 +165,47 @@ jobs:
             release/*.dmg
             release/*.zip
             release/latest-mac.yml
+          fail_on_unmatched_files: true
+
+  # ── Job 2: Windows 打包（nsis，不签名 = 接受 SmartScreen 警告，同老 wordspace 决策十四）。 ──
+  # 对 mac 零风险：mac 的 release job 一字不改；本 job needs: release，等 mac 先建好 tag/Release，
+  # 再把 .exe + latest.yml upsert（softprops 同 tag 追加）到同一个 Release——mac/win 两套自动更新
+  # 清单（latest-mac.yml / latest.yml）+ 两平台安装包共存于同一「latest」Release。
+  # continue-on-error: Windows 构建挂了也只是 win 没出，mac 已发、整个 workflow 不红（决策十三双写哲学）。
+  # ⚠ 未在真 Windows 上验证过功能（无 Windows 机器）——路径已修为跨平台（src/lib/path-url.js），
+  #   但开/编辑/存/自动更新由用户实测反馈。详见交付说明。
+  build-win:
+    needs: release
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      # 绝不设 ELECTRON_SKIP_BINARY_DOWNLOAD —— 打包要真 electron windows 二进制
+      - run: npm ci
+      # 把 mac 算出的同一版本号烤进本地 package.json（windows runner 用 bash 跑同款写入；不 commit）
+      - name: Stamp release version into package.json
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='${{ needs.release.outputs.version }}';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
+      # nsis 安装包（未签名）。electron-builder 生成 .exe + .exe.blockmap + latest.yml（win 自动更新清单）。
+      - name: Build Windows installer (nsis, unsigned)
+        run: npx electron-builder --win --publish never
+      # upsert：同 tag 第二次调 softprops → 把 win 产物追加到 mac 已建的同一个 Release。
+      - name: Upload Windows artifacts to the same Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.release.outputs.version }}
+          # blockmap 一并传：latest.yml 里有 blockMapSize 引用它，不传会让 win 更新先 404 再退回全量。
+          # nsis 必产 <exe>.blockmap（app-builder-lib），故 glob 必命中。
+          files: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml
           fail_on_unmatched_files: true

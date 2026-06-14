@@ -1,4 +1,5 @@
 let docPath = null;
+let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name }，主进程算（见 window.ws2.pathInfo）
 let dirty = false;
 let undoMgr = null;
 
@@ -17,14 +18,13 @@ function setDirty(v) {
 }
 const markDirty = () => setDirty(true);
 
-function dirOf(p) { return p.slice(0, p.lastIndexOf('/') + 1); }
+// 仅用于显示的纯文件名：跨平台按 / 或 \ 切（Windows 路径用反斜杠）。真正加载用的 URL 一律走
+// 主进程的 window.ws2.pathInfo（Node url.pathToFileURL），renderer 不自己拼 file:// URL。
+function baseName(p) { return p.split(/[\\/]/).pop(); }
 
-// 本地路径 → file:// URL，逐段编码（安全处理空格 / 中文 / # / ? 等文件名）
-function fileUrl(p) { return 'file://' + p.split('/').map(encodeURIComponent).join('/'); }
-
-function injectBase(doc, dir) {
+function injectBase(doc, dirUrl) {
   const base = doc.createElement('base');
-  base.href = fileUrl(dir);
+  base.href = dirUrl;
   base.setAttribute('data-ws2-ui', '');
   doc.head.prepend(base);
 }
@@ -73,22 +73,23 @@ function wireEditor() {
 function prepFrame(asDirty) {
   home.hidden = true;
   frame.hidden = false;
-  docName.textContent = docPath.split('/').pop();
+  docName.textContent = docInfo.name;
   historyBtn.disabled = false;
   setDirty(!!asDirty);
 }
 
-// 打开真实文件：iframe 直接指向 file:// URL，文档拥有自己的 CSP 上下文、相对资源天然解析
-function loadFromFile(p, opts) {
+// 打开真实文件：iframe 直接指向 file:// URL（主进程 pathInfo 算，跨平台正确），
+// 文档拥有自己的 CSP 上下文、相对资源天然解析
+function loadFromFile(opts) {
   frame.onload = () => wireEditor();
   frame.removeAttribute('srcdoc');
-  frame.src = fileUrl(p);
+  frame.src = docInfo.fileUrl;
   prepFrame(opts && opts.asDirty);
 }
 
-// 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录
-function loadFromHtml(html, p, opts) {
-  frame.onload = () => { injectBase(frame.contentDocument, dirOf(p)); wireEditor(); };
+// 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录（用 docInfo.dirUrl）
+function loadFromHtml(html, opts) {
+  frame.onload = () => { injectBase(frame.contentDocument, docInfo.dirUrl); wireEditor(); };
   frame.removeAttribute('src');
   frame.srcdoc = html;
   prepFrame(opts && opts.asDirty);
@@ -96,15 +97,18 @@ function loadFromHtml(html, p, opts) {
 
 async function openDoc(p) {
   if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) return;
+  let info;
   try {
-    // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；内容本身由 file:// 直接载入
+    // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；再取跨平台 file:// URL / 文件名 / 目录URL
     await window.ws2.readDoc(p);
+    info = await window.ws2.pathInfo(p);
   } catch (e) {
     alert('无法打开文件：' + p + '\n' + (e.message || e));
     return;
   }
   docPath = p;
-  loadFromFile(p);
+  docInfo = info;
+  loadFromFile();
   await window.ws2.recentsAdd(p);
   renderRecents();
 }
@@ -136,7 +140,7 @@ async function renderRecents() {
   ul.innerHTML = '';
   for (const r of list) {
     const li = document.createElement('li');
-    li.textContent = r.path.split('/').pop() + ' ' + r.path;
+    li.textContent = baseName(r.path) + ' ' + r.path;
     li.onclick = () => openDoc(r.path);
     ul.appendChild(li);
   }
@@ -165,7 +169,7 @@ async function showHistory() {
     btn.textContent = '恢复';
     btn.onclick = async () => {
       const content = await window.ws2.historyRead(docPath, v.id);
-      loadFromHtml(content, docPath, { asDirty: true });
+      loadFromHtml(content, { asDirty: true });
       modal.hidden = true;
     };
     li.append(label, btn);

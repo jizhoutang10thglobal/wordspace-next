@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('ws2', {
   pickFile: () => ipcRenderer.invoke('pick-file'),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
+  pathInfo: (p) => ipcRenderer.invoke('path-info', p),
   saveDoc: (p, c) => ipcRenderer.invoke('save-doc', p, c),
   recents: () => ipcRenderer.invoke('recents-list'),
   recentsAdd: (p) => ipcRenderer.invoke('recents-add', p),
