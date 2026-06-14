@@ -12,17 +12,17 @@
   </g>
   <g transform="translate(132, 150)">
     <rect x="0" y="0" width="96" height="96" rx="16" fill="#C9A96E"/>
-    <text x="48" y="68" text-anchor="middle" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-weight="700" font-size="48" fill="#1e1a12">ws</text>
+    <text x="48" y="68" text-anchor="middle" font-family="-apple-system, 'PingFang SC', 'Inter', sans-serif" font-weight="700" font-size="48" fill="#1e1a12">ws</text>
   </g>
-  <g font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" fill="#1e1a12">
+  <g font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Inter', sans-serif" fill="#1e1a12">
     <text x="260" y="210" font-size="44" font-weight="600">Wordspace Next</text>
-    <text x="132" y="320" font-size="76" font-weight="700">Edit HTML</text>
-    <text x="132" y="400" font-size="76" font-weight="700" fill="#A5884F">like a document.</text>
+    <text x="132" y="324" font-size="76" font-weight="700">像写文档一样，</text>
+    <text x="132" y="408" font-size="76" font-weight="700" fill="#A5884F">编辑 HTML。</text>
   </g>
-  <text x="132" y="470" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-size="28" fill="#5c5650">
-    Local HTML editor · macOS &amp; Windows · Free
+  <text x="132" y="476" font-family="-apple-system, 'PingFang SC', 'Microsoft YaHei', 'Inter', sans-serif" font-size="28" fill="#5c5650">
+    本地 HTML 文档编辑器 · macOS 与 Windows · 免费
   </text>
-  <text x="132" y="560" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-size="22" font-weight="600" fill="#1e1a12">
+  <text x="132" y="564" font-family="-apple-system, 'PingFang SC', 'Inter', sans-serif" font-size="22" font-weight="600" fill="#1e1a12">
     wordspace.ai
   </text>
 </svg>

@@ -3,8 +3,8 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="container site-footer__inner">
-        <span>© {year} Wordspace Next</span>
-        <nav className="site-footer__links" aria-label="Footer">
+        <span>© {year} 10thglobal</span>
+        <nav className="site-footer__links" aria-label="页脚">
           <a
             href="https://github.com/jizhoutang10thglobal/wordspace-next"
             target="_blank"
@@ -17,10 +17,8 @@ export function SiteFooter() {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Release notes
+            更新日志
           </a>
-          <a href="/downloads/mac">Download macOS</a>
-          <a href="/downloads/win">Download Windows</a>
         </nav>
       </div>
     </footer>

@@ -1,6 +1,5 @@
 import { SiteHeader } from './components/SiteHeader';
 import { Hero } from './components/Hero';
-import { FeatureTrio } from './components/FeatureTrio';
 import { SiteFooter } from './components/SiteFooter';
 import { SITE_DESCRIPTION, SITE_URL } from './lib/site-config';
 
@@ -16,8 +15,6 @@ const softwareApplicationSchema = {
   name: 'Wordspace Next',
   description: SITE_DESCRIPTION,
   url: SITE_URL,
-  // schema.org canonical SoftwareApplication subclass most products in
-  // this category use (Notion, Google Docs, etc.).
   applicationCategory: 'BusinessApplication',
   operatingSystem: 'macOS, Windows',
   offers: {
@@ -44,7 +41,6 @@ export default function HomePage() {
       <SiteHeader />
       <main>
         <Hero />
-        <FeatureTrio />
       </main>
       <SiteFooter />
     </>

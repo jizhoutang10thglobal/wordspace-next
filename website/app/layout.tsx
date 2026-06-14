@@ -17,8 +17,6 @@ export const metadata: Metadata = {
   },
   icons: {
     // Order matters: modern browsers pick the first match they support.
-    // SVG first for crisp rendering; .ico as the legacy fallback Safari
-    // and some webmail clients still look for.
     icon: [
       { url: '/icon.svg', type: 'image/svg+xml' },
       { url: '/favicon.ico', sizes: '32x32', type: 'image/x-icon' },
@@ -37,10 +35,10 @@ export const metadata: Metadata = {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Wordspace Next — a local HTML document editor',
+        alt: 'Wordspace Next — 本地 HTML 文档编辑器',
       },
     ],
-    locale: 'en_US',
+    locale: 'zh_CN',
   },
   twitter: {
     card: 'summary_large_image',
@@ -62,7 +60,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body>
         {children}
         <Analytics />

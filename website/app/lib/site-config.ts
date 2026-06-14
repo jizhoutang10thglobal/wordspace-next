@@ -6,9 +6,8 @@
  */
 export const SITE_URL = 'https://wordspace.ai';
 
-export const SITE_TITLE = 'Wordspace Next — a local HTML document editor';
+export const SITE_TITLE = 'Wordspace Next — 本地 HTML 文档编辑器';
 
-// Kept under ~160 characters so Google's SERP snippet and the OpenGraph
-// preview render without mid-sentence truncation.
+// 控制在中文 SERP / OpenGraph 预览不至于中途截断的长度。
 export const SITE_DESCRIPTION =
-  'Wordspace Next is a clean desktop editor for HTML documents — open a file, edit it like a doc, and it saves straight back to clean HTML. Local and free.';
+  'Wordspace Next 是一款本地运行的 HTML 文档编辑器：打开 .html 文件，像普通文档一样编辑，再存回干净的 HTML。免费，不上云、不用账号。';

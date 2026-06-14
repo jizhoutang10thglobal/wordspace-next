@@ -8,7 +8,7 @@ test.describe('wordspace.ai landing', () => {
     expect(response?.status()).toBe(200);
 
     await expect(
-      page.getByRole('heading', { level: 1, name: /like a document/i }),
+      page.getByRole('heading', { level: 1, name: /编辑 HTML/ }),
     ).toBeVisible();
 
     await expect(page.getByTestId('cta-mac')).toBeVisible();

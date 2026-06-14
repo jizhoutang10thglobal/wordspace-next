@@ -40,7 +40,7 @@ test.describe('SEO + GEO baseline', () => {
     expect(body).toMatch(/^#\s+Wordspace Next/m);
     // llmstxt.org convention: the H1 is immediately followed by a
     // blockquote carrying the project's elevator pitch.
-    expect(body).toMatch(/^>\s+Wordspace Next is/m);
+    expect(body).toMatch(/^>\s+Wordspace Next/m);
     expect(body).toContain('/downloads/mac');
   });
 

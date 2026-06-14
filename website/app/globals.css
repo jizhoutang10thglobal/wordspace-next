@@ -121,6 +121,18 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Single-screen layout: the hero fills the space between header and
+   footer (vertically centered), so the page reads as one calm screen. */
+main {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 a {
