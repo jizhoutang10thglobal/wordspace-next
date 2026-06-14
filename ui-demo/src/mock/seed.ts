@@ -1,0 +1,222 @@
+import type {
+  AgentEvent,
+  Doc,
+  Folder,
+  Member,
+  Space,
+  Template,
+  Workspace,
+} from '../types'
+
+const now = Date.now()
+const MIN = 60_000
+const HR = 60 * MIN
+const DAY = 24 * HR
+
+// ---------------------------------------------------------------------------
+// people (and a couple of agents, which are first-class members)
+// ---------------------------------------------------------------------------
+export const ME_ID = 'm-wendi'
+
+export const seedMembers: Member[] = [
+  { id: 'm-wendi', name: 'Wendi', initials: 'WD', color: '#1a73e8', email: 'wendi@tenthglobal.com', kind: 'human' },
+  { id: 'm-lin', name: '林越', initials: '林', color: '#1e8e3e', email: 'lin@tenthglobal.com', kind: 'human' },
+  { id: 'm-zhao', name: '赵敏', initials: '赵', color: '#b8541d', email: 'zhao@tenthglobal.com', kind: 'human' },
+  { id: 'm-chen', name: '陈航', initials: '陈', color: '#8a3ffc', email: 'chen@tenthglobal.com', kind: 'human' },
+  { id: 'a-market', name: '市场 Agent', initials: 'AI', color: '#0b8793', email: 'market-agent', kind: 'agent' },
+  { id: 'a-ops', name: '运营 Agent', initials: 'AI', color: '#5a5f66', email: 'ops-agent', kind: 'agent' },
+]
+
+// ---------------------------------------------------------------------------
+// folders: team space + personal drafts
+// ---------------------------------------------------------------------------
+export const seedFolders: Folder[] = [
+  { id: 'f-strategy', name: '战略', scope: 'team', order: 0 },
+  { id: 'f-people', name: '人事', scope: 'team', order: 1 },
+  { id: 'f-product', name: '产品', scope: 'team', order: 2 },
+  { id: 'f-drafts', name: '我的草稿', scope: 'personal', order: 0 },
+]
+
+// ---------------------------------------------------------------------------
+// documents
+// ---------------------------------------------------------------------------
+export const seedDocs: Doc[] = [
+  {
+    id: 'd-handbook',
+    title: '员工手册',
+    emoji: '📘',
+    kind: 'doc',
+    folderId: 'f-people',
+    visibility: 'internal',
+    publishedUrl: 'https://team.tenthglobal.com/handbook',
+    localPath: '~/Wordspace/团队/人事/员工手册.html',
+    updatedAt: now - 3 * HR,
+    updatedBy: 'm-lin',
+    collaborators: ['m-wendi', 'm-lin', 'm-zhao'],
+    deployedAt: now - 3 * HR,
+    blocks: [
+      { id: 'b1', type: 'heading', level: 1, html: '员工手册' },
+      { id: 'b2', type: 'text', html: '欢迎加入 Tenth Global。这份手册说明我们怎么一起工作,以及你应当了解的制度与资源。它和公司里其他文档一样,是一份你能随时打开、归你所有的文件。' },
+      { id: 'b3', type: 'heading', level: 2, html: '我们怎么工作' },
+      { id: 'b4', type: 'text', html: '我们以结果为准,不以工时论高下。你对自己的时间和节奏有充分自主,前提是把事情交付到位、让协作的人能依赖你。' },
+      { id: 'b5', type: 'list', html: '<li>弹性办公,时间地点由你安排</li><li>第一天就接触真实业务</li><li>信息默认公开,文档优先于会议</li>' },
+      { id: 'b6', type: 'callout', html: '有疑问先查这份手册,查不到再找你的负责人。手册由人事维护,每季度复核一次。' },
+      { id: 'b7', type: 'heading', level: 2, html: '休假与考勤' },
+      { id: 'b8', type: 'text', html: '带薪年假每年 15 天,病假据实申请。请提前在团队日历登记,方便其他人安排。' },
+      { id: 'b9', type: 'heading', level: 2, html: '设备与报销' },
+      { id: 'b10', type: 'text', html: '入职配备办公设备一套。与工作直接相关的支出可凭票报销,月底前提交。' },
+    ],
+  },
+  {
+    id: 'd-recruit',
+    title: '招聘 · 加入我们',
+    emoji: '🧭',
+    kind: 'page',
+    folderId: 'f-people',
+    visibility: 'public',
+    publishedUrl: 'https://tenthglobal.com/careers',
+    localPath: '~/Wordspace/团队/人事/招聘.html',
+    updatedAt: now - 26 * HR,
+    updatedBy: 'm-wendi',
+    collaborators: ['m-wendi', 'm-zhao'],
+    deployedAt: now - 26 * HR,
+    blocks: [
+      {
+        id: 'r1',
+        type: 'embed',
+        designed: true,
+        html: `<div style="background:linear-gradient(135deg,#16307a,#2f6fe0 60%,#5b93f2);color:#fff;border-radius:12px;padding:52px 44px;">
+          <div style="font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.85;">Careers · Tenth Global</div>
+          <div style="font-size:38px;font-weight:800;letter-spacing:-.01em;margin:14px 0 12px;">我们在招聘</div>
+          <div style="font-size:16px;opacity:.92;max-width:440px;line-height:1.6;">在找懂业务、能动手、愿意和公司一起往上走的人。这一页本身就是用 Wordspace 写的,一键发布成了网站。</div>
+          <div style="margin-top:24px;"><span style="display:inline-block;background:#fff;color:#16307a;font-weight:700;font-size:14px;padding:11px 22px;border-radius:8px;">投递简历 →</span></div>
+        </div>`,
+      },
+      { id: 'r2', type: 'heading', level: 2, html: '为什么加入' },
+      {
+        id: 'r3',
+        type: 'embed',
+        designed: true,
+        html: `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;">
+          <div style="border:1px solid #e4e6e9;border-radius:10px;padding:18px;"><div style="font-weight:700;font-size:15px;margin-bottom:6px;">真实的项目</div><div style="color:#5a5f66;font-size:13px;line-height:1.6;">第一天就上手真的业务,不做演练。</div></div>
+          <div style="border:1px solid #e4e6e9;border-radius:10px;padding:18px;"><div style="font-weight:700;font-size:15px;margin-bottom:6px;">弹性与自主</div><div style="color:#5a5f66;font-size:13px;line-height:1.6;">以结果为准,时间地点你自己定。</div></div>
+          <div style="border:1px solid #e4e6e9;border-radius:10px;padding:18px;"><div style="font-weight:700;font-size:15px;margin-bottom:6px;">一起成长</div><div style="color:#5a5f66;font-size:13px;line-height:1.6;">跟着公司一起往上走。</div></div>
+        </div>`,
+      },
+      { id: 'r4', type: 'heading', level: 2, html: '正在招的岗位' },
+      { id: 'r5', type: 'list', html: '<li>项目经理(PM)</li><li>项目助理(PA)</li><li>财务运营(FO)</li>' },
+    ],
+  },
+  {
+    id: 'd-strategy',
+    title: '2026 公司战略',
+    emoji: '🎯',
+    kind: 'doc',
+    folderId: 'f-strategy',
+    visibility: 'invited',
+    localPath: '~/Wordspace/团队/战略/2026战略.html',
+    updatedAt: now - 5 * HR,
+    updatedBy: 'm-wendi',
+    collaborators: ['m-wendi', 'm-lin'],
+    blocks: [
+      { id: 's1', type: 'heading', level: 1, html: '2026 公司战略' },
+      { id: 's2', type: 'text', html: '今年的重点是把核心业务做深,同时为下一阶段的 AI 产品打基础。下面是四条业务线和各自的目标。' },
+      { id: 's3', type: 'heading', level: 2, html: '业务线' },
+      { id: 's4', type: 'list', html: '<li>咨询交付:稳住现金流,提升复购</li><li>培训与内容:沉淀方法论</li><li>AI 产品:从内部工具孵化</li><li>生态合作:拓展渠道</li>' },
+      { id: 's5', type: 'callout', html: '这份文档只对受邀的几个人可见,还在讨论中,定稿后再发到内网。' },
+    ],
+  },
+  {
+    id: 'd-deck',
+    title: 'Q2 业务汇报',
+    emoji: '📊',
+    kind: 'slides',
+    folderId: 'f-product',
+    visibility: 'private',
+    localPath: '~/Wordspace/团队/产品/Q2汇报.html',
+    updatedAt: now - 1 * DAY,
+    updatedBy: 'm-chen',
+    collaborators: ['m-chen'],
+    blocks: [
+      { id: 'k1', type: 'heading', level: 1, html: 'Q2 业务汇报' },
+      { id: 'k2', type: 'text', html: '这是一份演示文稿,和普通文档一样是一个 HTML 文件,可以放映,也可以导出成 PPT。' },
+      { id: 'k3', type: 'heading', level: 2, html: '关键数字' },
+      { id: 'k4', type: 'list', html: '<li>营收同比 +28%</li><li>新签客户 12 家</li><li>毛利率 41%</li>' },
+    ],
+  },
+  {
+    id: 'd-minutes',
+    title: '周会纪要 06-12',
+    emoji: '📝',
+    kind: 'doc',
+    folderId: 'f-strategy',
+    visibility: 'private',
+    localPath: '~/Wordspace/团队/战略/周会纪要-0612.html',
+    updatedAt: now - 2 * DAY,
+    updatedBy: 'm-lin',
+    collaborators: ['m-lin'],
+    blocks: [
+      { id: 'n1', type: 'heading', level: 1, html: '周会纪要 · 06-12' },
+      { id: 'n2', type: 'list', html: '<li>招聘页已上线,本周看转化</li><li>员工手册补充报销章节</li><li>下周评审 AI 产品 demo</li>' },
+    ],
+  },
+  {
+    id: 'd-offer',
+    title: 'Offer 模板(草稿)',
+    emoji: '✉️',
+    kind: 'doc',
+    folderId: 'f-drafts',
+    visibility: 'private',
+    localPath: '~/Wordspace/我的草稿/offer模板.html',
+    updatedAt: now - 40 * MIN,
+    updatedBy: 'm-wendi',
+    collaborators: ['m-wendi'],
+    blocks: [
+      { id: 'o1', type: 'heading', level: 1, html: 'Offer 模板' },
+      { id: 'o2', type: 'text', html: '尊敬的 {{候选人}},很高兴向你发出录用通知……(草稿,待定稿后存为模板)' },
+    ],
+  },
+]
+
+// ---------------------------------------------------------------------------
+// templates: private (company) pool + public pool
+// ---------------------------------------------------------------------------
+export const seedTemplates: Template[] = [
+  { id: 't-handbook', name: '员工手册', kind: 'doc', category: '手册', pool: 'private', description: '公司样式的制度手册,分章节。', accent: '#1a73e8', blocks: [{ id: 'tt1', type: 'heading', level: 1, html: '员工手册' }, { id: 'tt2', type: 'text', html: '欢迎加入。' }] },
+  { id: 't-bid', name: '投标书', kind: 'doc', category: '标书', pool: 'private', description: '正式标书版式,带封面与目录。', accent: '#b8541d', blocks: [{ id: 'tb1', type: 'heading', level: 1, html: '项目投标书' }] },
+  { id: 't-deck', name: '季度汇报', kind: 'slides', category: '演示', pool: 'private', description: '演示文稿模板,可放映可导 PPT。', accent: '#1e8e3e', blocks: [{ id: 'td1', type: 'heading', level: 1, html: '季度汇报' }] },
+  { id: 't-landing', name: '招聘落地页', kind: 'page', category: '落地页', pool: 'private', description: '排过版的招聘网页,一键发布。', accent: '#8a3ffc', blocks: [{ id: 'tl1', type: 'heading', level: 1, html: '我们在招聘' }] },
+  { id: 't-blog', name: '博客文章', kind: 'page', category: '网页', pool: 'public', description: '通用图文排版,适合对外发布。', accent: '#0b8793', blocks: [{ id: 'tg1', type: 'heading', level: 1, html: '文章标题' }] },
+  { id: 't-readme', name: '产品说明', kind: 'doc', category: '文档', pool: 'public', description: '简洁的产品说明文档结构。', accent: '#5a5f66', blocks: [{ id: 'tr1', type: 'heading', level: 1, html: '产品说明' }] },
+]
+
+// ---------------------------------------------------------------------------
+// agent activity feed
+// ---------------------------------------------------------------------------
+export const seedAgentEvents: AgentEvent[] = [
+  { id: 'e1', agentName: '市场 Agent', agentColor: '#0b8793', action: 'create', docTitle: '周报 · 第 24 周', at: now - 35 * MIN },
+  { id: 'e2', agentName: '市场 Agent', agentColor: '#0b8793', action: 'publish', docTitle: '周报 · 第 24 周', at: now - 34 * MIN },
+  { id: 'e3', agentName: '运营 Agent', agentColor: '#5a5f66', action: 'read', docTitle: '员工手册', at: now - 2 * HR },
+  { id: 'e4', agentName: '运营 Agent', agentColor: '#5a5f66', action: 'update', docTitle: '产品定价说明', at: now - 6 * HR },
+]
+
+// ---------------------------------------------------------------------------
+// workspace
+// ---------------------------------------------------------------------------
+export const seedWorkspace: Workspace = {
+  id: 'w-tg',
+  name: 'Tenth Global',
+  plan: '团队版',
+  storagePath: '~/Wordspace',
+  deployTarget: 'cloud.tenthglobal.com(自托管)',
+  syncedAt: now - 4 * MIN,
+}
+
+// ---------------------------------------------------------------------------
+// spaces (Arc-style, swiped in the sidebar)
+// ---------------------------------------------------------------------------
+export const seedSpaces: Space[] = [
+  { id: 'sp-tg', name: 'Tenth Global', kind: 'team', badge: 'TG', color: '#1a73e8', subtitle: '团队工作区' },
+  { id: 'sp-local', name: '本地仓库', kind: 'local', badge: '本', color: '#1e8e3e', subtitle: '~/Wordspace 本地文件' },
+  { id: 'sp-me', name: '我的草稿', kind: 'personal', badge: '我', color: '#8a3ffc', subtitle: '私人空间' },
+]

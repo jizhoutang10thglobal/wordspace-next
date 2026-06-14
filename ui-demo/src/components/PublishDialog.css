@@ -1,0 +1,251 @@
+/* ------------------------------------------------------------------ */
+/* Shared modal shell (also declared in CreateModal.css so each        */
+/* component is self-contained). Plain Outlook/Linear-like overlay.    */
+/* ------------------------------------------------------------------ */
+.ws-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(20, 22, 26, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: ws-modal-fade var(--dur-fast) var(--ease);
+}
+.ws-modal {
+  width: 100%;
+  background: var(--c-surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  animation: ws-modal-pop var(--dur) var(--ease);
+}
+@keyframes ws-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ws-modal-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+
+.ws-modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--c-divider);
+}
+.ws-modal-head-text { min-width: 0; flex: 1; }
+.ws-modal-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+  line-height: var(--lh-tight);
+}
+.ws-modal-sub {
+  margin-top: 3px;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-modal-x {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: -2px -4px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--c-text-3);
+}
+.ws-modal-x:hover { background: var(--c-hover); color: var(--c-text); }
+
+.ws-modal-body {
+  padding: 14px 18px;
+  overflow-y: auto;
+}
+.ws-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--c-divider);
+}
+
+/* buttons */
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease);
+}
+.ws-btn:hover { background: var(--c-hover); }
+.ws-btn:active { background: var(--c-active); }
+.ws-btn:disabled { opacity: 0.6; cursor: default; }
+.ws-btn-primary {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-text-invert);
+}
+.ws-btn-primary:hover { background: var(--c-accent-hover); }
+.ws-btn-primary:active { background: var(--c-accent-press); }
+.ws-btn-primary:disabled:hover { background: var(--c-accent); }
+
+/* text input */
+.ws-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  color: var(--c-text);
+}
+.ws-input::placeholder { color: var(--c-text-3); }
+.ws-input:focus {
+  outline: none;
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 2px var(--c-accent-tint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Publish dialog specifics                                            */
+/* ------------------------------------------------------------------ */
+.ws-modal.pub { max-width: 460px; }
+
+.pub-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pub-level {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 11px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+}
+.pub-level:hover { background: var(--c-hover); }
+.pub-level.is-active {
+  background: var(--c-accent-tint);
+  border-color: var(--c-accent-tint-2);
+}
+.pub-level-ico {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--vis, var(--c-text-2));
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+}
+.pub-level.is-active .pub-level-ico {
+  background: var(--c-surface);
+  border-color: var(--c-border-strong);
+}
+.pub-level-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.pub-level-label {
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  color: var(--c-text);
+}
+.pub-level-desc {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+  color: var(--c-text-2);
+}
+.pub-level-check {
+  flex: none;
+  margin-top: 6px;
+  color: var(--c-accent);
+}
+
+/* contextual panel below the levels */
+.pub-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--c-divider);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pub-invite { display: flex; gap: 8px; }
+
+.pub-collabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pub-collab {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 4px;
+}
+.pub-collab-name {
+  font-size: var(--fs-base);
+  color: var(--c-text);
+}
+
+.pub-url-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pub-url {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  padding: 0 11px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--c-accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pub-url-pending { color: var(--c-text-2); }
+.pub-deploy { align-self: flex-start; }
+.pub-note {
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  line-height: var(--lh-base);
+}

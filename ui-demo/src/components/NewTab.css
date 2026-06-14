@@ -1,0 +1,123 @@
+/* Browser start page — app-level chrome, kept plain (tokens.css only). */
+.nt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  background: var(--c-bg);
+  overflow-y: auto;
+}
+.nt-inner {
+  margin: auto;
+  width: 100%;
+  max-width: 600px;
+  padding: 80px 32px 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.nt-mark {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--c-text);
+  margin-bottom: 28px;
+}
+
+/* the big centered address/search field */
+.nt-omni {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 20px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-pill);
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+.nt-omni:focus-within {
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 3px var(--c-accent-tint);
+}
+.nt-omni-ico { color: var(--c-text-3); flex: none; }
+.nt-omni input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: var(--fs-lg);
+  color: var(--c-text);
+  font-family: var(--font-ui);
+}
+.nt-omni input::placeholder { color: var(--c-text-3); }
+
+/* shortcut tiles */
+.nt-tiles {
+  margin-top: 44px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 14px;
+}
+@media (max-width: 620px) {
+  .nt-tiles { grid-template-columns: repeat(4, 1fr); }
+}
+.nt-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px;
+  border-radius: var(--r-md);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.nt-tile:hover { background: var(--c-hover); }
+.nt-chip {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  font-weight: var(--fw-semibold);
+  color: #fff;
+  background: var(--chip, var(--c-accent));
+}
+.nt-tile-name {
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+  text-align: center;
+  line-height: 1.2;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* thin bookmarks row */
+.nt-marks {
+  margin-top: 40px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 4px;
+  max-width: 520px;
+}
+.nt-marks-ico { color: var(--c-text-3); margin-right: 4px; flex: none; }
+.nt-mark-link {
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+  background: none;
+  border: none;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  cursor: pointer;
+}
+.nt-mark-link:hover { background: var(--c-hover); color: var(--c-text); }
