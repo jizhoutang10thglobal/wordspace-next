@@ -3,6 +3,7 @@ const path = require('path');
 const files = require('./files');
 const history = require('./history');
 const recents = require('./recents');
+const { pathInfo } = require('../lib/path-url');
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recentsFile = () => path.join(app.getPath('userData'), 'recents.json');
@@ -46,6 +47,9 @@ function registerIpc() {
     await files.writeDocSafe(p, content);
     return { ok: true, archiveWarning };
   });
+  // 跨平台路径派生值（file:// URL / 目录URL / 文件名）在主进程算——完整 Node 的 url.pathToFileURL
+  // 正确处理 Windows 盘符与反斜杠；renderer 不自己拼路径（沙箱 preload 没有可靠的 path/url）。
+  ipcMain.handle('path-info', (_e, p) => { assertHtmlPath(p); return pathInfo(p); });
   ipcMain.handle('recents-list', () => recents.load(recentsFile()));
   ipcMain.handle('recents-add', (_e, p) => recents.add(recentsFile(), p));
   ipcMain.handle('history-list', (_e, p) => history.list(historyRoot(), p));

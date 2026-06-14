@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
 const path = require('path');
 const { registerIpc } = require('./ipc');
+const { htmlPathFromArgv } = require('../lib/path-url');
 
 // e2e 测试用：隔离 userData，避免污染真实的最近文档与历史
 if (process.env.WS2_USERDATA) app.setPath('userData', process.env.WS2_USERDATA);
@@ -59,15 +60,15 @@ function buildMenu() {
     {
       label: '文件',
       submenu: [
-        { label: '打开…', accelerator: 'Cmd+O', click: () => sendMenu('open') },
-        { label: '保存', accelerator: 'Cmd+S', click: () => sendMenu('save') }
+        { label: '打开…', accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
+        { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') }
       ]
     },
     {
       label: '编辑',
       submenu: [
-        { label: '撤销', accelerator: 'Cmd+Z', click: () => sendMenu('undo') },
-        { label: '重做', accelerator: 'Shift+Cmd+Z', click: () => sendMenu('redo') },
+        { label: '撤销', accelerator: 'CmdOrCtrl+Z', click: () => sendMenu('undo') },
+        { label: '重做', accelerator: 'CmdOrCtrl+Shift+Z', click: () => sendMenu('redo') },
         { type: 'separator' },
         { role: 'cut', label: '剪切' },
         { role: 'copy', label: '拷贝' },
@@ -95,18 +96,56 @@ function setupAutoUpdater() {
   autoUpdater.checkForUpdates().catch(() => {});
 }
 
+// 把外部请求打开的文件路径送进窗口：已就绪则发并聚焦，未就绪则挂起等 did-finish-load。
+function openExternalPath(p) {
+  if (!p) return;
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+    win.webContents.send('open-file', p);
+  } else {
+    pendingOpenPath = p;
+  }
+}
+
+// 把已运行实例的窗口带到前台（second-instance 无论带不带文件都该聚焦，这是单实例 app 的标准行为）。
+function focusWindow() {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+}
+
+// macOS：Finder 双击 / 拖到 Dock（可能在 whenReady 之前触发，故走 pendingOpenPath 兜底）。
 app.on('open-file', (e, p) => {
   e.preventDefault();
-  if (win) win.webContents.send('open-file', p);
-  else pendingOpenPath = p;
+  openExternalPath(p);
 });
 
 ipcMain.on('set-dirty', (_e, v) => { isDirty = !!v; });
 
-app.whenReady().then(() => {
-  registerIpc();
-  buildMenu();
-  createWindow();
-  setupAutoUpdater();
-});
-app.on('window-all-closed', () => app.quit());
+// 单实例：第二次启动（如再双击一个文件）不另起进程，而是把 argv 里的路径交给已运行实例并聚焦窗口。
+// 这也是 Windows 文件关联能用的关键——否则双击只会无脑再开一个空窗口。
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  // workingDirectory（第三参）是「第二次启动」的 cwd，用它解析相对路径才对（不能用本实例的 cwd）。
+  app.on('second-instance', (_e, argv, workingDirectory) => {
+    focusWindow(); // 无文件也要把窗口带到前台
+    const p = htmlPathFromArgv(argv, workingDirectory);
+    if (p) openExternalPath(p);
+  });
+
+  app.whenReady().then(() => {
+    registerIpc();
+    buildMenu();
+    createWindow();
+    setupAutoUpdater();
+    // Windows/Linux 首次带文件启动：从 argv 取路径（macOS 由上面的 open-file 事件负责）。
+    // 此时 renderer 尚未 ready，挂 pendingOpenPath 等 did-finish-load 发出。
+    if (process.platform !== 'darwin') {
+      const p = htmlPathFromArgv(process.argv);
+      if (p) pendingOpenPath = p;
+    }
+  });
+  app.on('window-all-closed', () => app.quit());
+}
