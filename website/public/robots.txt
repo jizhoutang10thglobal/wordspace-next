@@ -1,0 +1,99 @@
+# wordspace.ai — robots policy
+# See decision XIX (pm/technical-decisions.md): wordspace is an AI-era
+# document editor and actively WANTS to be discoverable by both traditional
+# search engines and AI crawlers. The default is "allow everyone"; any
+# future blocks should require explicit product-strategy sign-off.
+
+# Default allow for all crawlers (covers Googlebot, Bingbot, DuckDuckBot,
+# Yandex, and anything else respecting robots.txt).
+User-agent: *
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# Explicit opt-ins for AI crawlers. Listing each UA explicitly (rather than
+# relying on the wildcard above) means future UA-specific bans or rate
+# limits have an obvious place to land without surprise behavior change.
+
+# OpenAI (ChatGPT / GPT search)
+User-agent: GPTBot
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# OpenAI (end-user browsing with ChatGPT; distinct from GPTBot training)
+User-agent: ChatGPT-User
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# OpenAI (search index for ChatGPT)
+User-agent: OAI-SearchBot
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# Anthropic Claude
+User-agent: ClaudeBot
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+User-agent: Claude-Web
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# Anthropic's general crawler
+User-agent: anthropic-ai
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# Common Crawl (feeds many AI training datasets and search indexes)
+User-agent: CCBot
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# Perplexity
+User-agent: PerplexityBot
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# Google — controls AI training usage (Gemini etc.) separately from Search
+User-agent: Google-Extended
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# ByteDance / TikTok's crawler (feeds Doubao / Coze)
+User-agent: Bytespider
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# Apple's crawler (for Apple Intelligence / Siri answers)
+User-agent: Applebot
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+# Meta AI
+User-agent: FacebookBot
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+User-agent: Meta-ExternalAgent
+Allow: /
+Disallow: /downloads/mac
+Disallow: /downloads/win
+
+Sitemap: https://wordspace.ai/sitemap.xml

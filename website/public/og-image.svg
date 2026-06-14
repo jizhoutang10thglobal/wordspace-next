@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#faf7f0"/>
+      <stop offset="100%" stop-color="#f0ece2"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g transform="translate(96, 108)">
+    <rect x="0" y="0" width="1008" height="414" rx="20" fill="#ffffff" opacity="0.55"/>
+    <rect x="0" y="0" width="1008" height="414" rx="20" fill="none" stroke="rgba(60,50,30,0.10)" stroke-width="1"/>
+  </g>
+  <g transform="translate(132, 150)">
+    <rect x="0" y="0" width="96" height="96" rx="16" fill="#C9A96E"/>
+    <text x="48" y="68" text-anchor="middle" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-weight="700" font-size="48" fill="#1e1a12">ws</text>
+  </g>
+  <g font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" fill="#1e1a12">
+    <text x="260" y="210" font-size="44" font-weight="600">wordspace</text>
+    <text x="132" y="320" font-size="76" font-weight="700">Your document editor,</text>
+    <text x="132" y="400" font-size="76" font-weight="700" fill="#A5884F">bring your own AI.</text>
+  </g>
+  <text x="132" y="470" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-size="28" fill="#5c5650">
+    Headless editor · Copy Prompt · .wsp files · Mac &amp; Windows
+  </text>
+  <text x="132" y="560" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-size="22" font-weight="600" fill="#1e1a12">
+    wordspace.ai
+  </text>
+</svg>
