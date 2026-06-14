@@ -24,6 +24,7 @@ on:
       - 'docs/**'
       - 'specs/**'
       - '.github/**'   # 改流水线自身（如本文件）不自触发发版；真功能改动（src/**）仍自动发版
+      - 'website/**'   # wordspace.ai 官网（独立 Next.js / Vercel 部署）；改官网不触发 editor 签名发版
   workflow_dispatch:
     inputs:
       version:
