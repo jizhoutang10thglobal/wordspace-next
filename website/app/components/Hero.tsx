@@ -7,7 +7,7 @@ export function Hero() {
         </h1>
         <p className="hero__subtitle">
           wordspace 在本地打开你的 .html 文件，像普通文档一样编辑，再原样存回干净的
-          HTML。不上云，不用账号。
+          HTML。
         </p>
         <div className="hero__ctas">
           <a className="cta" href="/downloads/mac" data-testid="cta-mac">
