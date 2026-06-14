@@ -9,8 +9,8 @@ test.describe('SEO + GEO baseline', () => {
     const body = await res.text();
     expect(body).toMatch(/User-agent:\s*\*/);
     expect(body).toMatch(/Sitemap:\s*https:\/\/wordspace\.ai\/sitemap\.xml/);
-    // AI crawlers should be explicitly allowed — this is a product
-    // strategy decision (decision XIX), not a default, so lock it in.
+    // AI answer engines should be explicitly allowed to crawl the public
+    // marketing site — lock it in so it can't silently regress.
     expect(body).toMatch(/User-agent:\s*GPTBot/);
     expect(body).toMatch(/User-agent:\s*ClaudeBot/);
     expect(body).toMatch(/User-agent:\s*PerplexityBot/);
@@ -19,14 +19,13 @@ test.describe('SEO + GEO baseline', () => {
     expect(body).toMatch(/Disallow:\s*\/downloads\/win/);
   });
 
-  test('/sitemap.xml returns 200 and lists both real pages', async ({
+  test('/sitemap.xml returns 200 and lists the home page', async ({
     request,
   }) => {
     const res = await request.get('/sitemap.xml');
     expect(res.status()).toBe(200);
     const body = await res.text();
     expect(body).toContain('https://wordspace.ai/');
-    expect(body).toContain('https://wordspace.ai/downloads/linux');
     // 302 short-links must NOT leak into the sitemap.
     expect(body).not.toContain('https://wordspace.ai/downloads/mac');
     expect(body).not.toContain('https://wordspace.ai/downloads/win');
@@ -38,11 +37,10 @@ test.describe('SEO + GEO baseline', () => {
     const res = await request.get('/llms.txt');
     expect(res.status()).toBe(200);
     const body = await res.text();
-    expect(body).toMatch(/^#\s+wordspace/m);
+    expect(body).toMatch(/^#\s+Wordspace Next/m);
     // llmstxt.org convention: the H1 is immediately followed by a
     // blockquote carrying the project's elevator pitch.
-    expect(body).toMatch(/^>\s+wordspace is/m);
-    expect(body).toContain('Copy Prompt');
+    expect(body).toMatch(/^>\s+Wordspace Next is/m);
     expect(body).toContain('/downloads/mac');
   });
 
@@ -65,40 +63,28 @@ test.describe('SEO + GEO baseline', () => {
       'summary_large_image',
     );
 
-    // Canonical must point at apex (decision XIX follow-up pending, but
-    // today apex is the primary host). Next.js normalises the root URL
-    // by stripping the trailing slash, so match both forms.
+    // Canonical must point at apex. Next.js normalises the root URL by
+    // stripping the trailing slash, so match both forms.
     await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
       'href',
       /^https:\/\/wordspace\.ai\/?$/,
     );
 
-    // JSON-LD must include both SoftwareApplication and FAQPage so AI
-    // engines and Google rich results can pick up the right entity.
+    // JSON-LD must describe the app as a SoftwareApplication so AI engines
+    // and Google rich results can pick up the right entity.
     const jsonLd = await page
       .locator('script[type="application/ld+json"]')
       .first()
       .textContent();
     expect(jsonLd).toBeTruthy();
-    const parsed = JSON.parse(jsonLd!) as {
-      '@graph': Array<{ '@type': string }>;
-    };
-    const types = parsed['@graph']?.map((e) => e['@type']) ?? [];
-    expect(types).toContain('SoftwareApplication');
-    expect(types).toContain('FAQPage');
+    const parsed = JSON.parse(jsonLd!) as { '@type'?: string };
+    expect(parsed['@type']).toBe('SoftwareApplication');
   });
 
-  test('home and /downloads/linux have distinct <title> values', async ({
-    page,
-  }) => {
+  test('home <title> reflects the product, not a sub-page', async ({ page }) => {
     await page.goto('/');
     const homeTitle = await page.title();
     expect(homeTitle).toMatch(/wordspace/i);
     expect(homeTitle).not.toMatch(/coming soon/i);
-
-    await page.goto('/downloads/linux');
-    const linuxTitle = await page.title();
-    expect(linuxTitle).toMatch(/coming soon/i);
-    expect(linuxTitle).not.toBe(homeTitle);
   });
 });

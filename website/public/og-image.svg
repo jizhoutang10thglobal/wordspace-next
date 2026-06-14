@@ -15,12 +15,12 @@
     <text x="48" y="68" text-anchor="middle" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-weight="700" font-size="48" fill="#1e1a12">ws</text>
   </g>
   <g font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" fill="#1e1a12">
-    <text x="260" y="210" font-size="44" font-weight="600">wordspace</text>
-    <text x="132" y="320" font-size="76" font-weight="700">Your document editor,</text>
-    <text x="132" y="400" font-size="76" font-weight="700" fill="#A5884F">bring your own AI.</text>
+    <text x="260" y="210" font-size="44" font-weight="600">Wordspace Next</text>
+    <text x="132" y="320" font-size="76" font-weight="700">Edit HTML</text>
+    <text x="132" y="400" font-size="76" font-weight="700" fill="#A5884F">like a document.</text>
   </g>
   <text x="132" y="470" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-size="28" fill="#5c5650">
-    Headless editor · Copy Prompt · .wsp files · Mac &amp; Windows
+    Local HTML editor · macOS &amp; Windows · Free
   </text>
   <text x="132" y="560" font-family="-apple-system, 'Inter', 'Helvetica Neue', sans-serif" font-size="22" font-weight="600" fill="#1e1a12">
     wordspace.ai

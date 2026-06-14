@@ -8,10 +8,10 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: SITE_TITLE,
-    template: '%s · wordspace',
+    template: '%s · Wordspace Next',
   },
   description: SITE_DESCRIPTION,
-  applicationName: 'wordspace',
+  applicationName: 'Wordspace Next',
   alternates: {
     canonical: '/',
   },
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     url: SITE_URL,
-    siteName: 'wordspace',
+    siteName: 'Wordspace Next',
     title: SITE_TITLE,
     description: SITE_DESCRIPTION,
     images: [
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'wordspace — headless AI document editor',
+        alt: 'Wordspace Next — a local HTML document editor',
       },
     ],
     locale: 'en_US',

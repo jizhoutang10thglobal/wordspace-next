@@ -1,8 +1,8 @@
 # wordspace.ai — robots policy
-# See decision XIX (pm/technical-decisions.md): wordspace is an AI-era
-# document editor and actively WANTS to be discoverable by both traditional
-# search engines and AI crawlers. The default is "allow everyone"; any
-# future blocks should require explicit product-strategy sign-off.
+# Wordspace Next is a local HTML document editor and wants to be
+# discoverable by both traditional search engines and AI answer engines.
+# The default is "allow everyone"; any future blocks should require an
+# explicit product-strategy sign-off.
 
 # Default allow for all crawlers (covers Googlebot, Bingbot, DuckDuckBot,
 # Yandex, and anything else respecting robots.txt).

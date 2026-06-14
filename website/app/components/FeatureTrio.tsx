@@ -1,21 +1,21 @@
 const FEATURES = [
   {
     num: '01',
-    title: 'No AI inside',
+    title: 'Your real files',
     body:
-      'wordspace has no built-in model. You keep full control of the prompt, model, and tooling. Use Claude Code, Cursor, or your own agent — swap anytime without migrating documents.',
+      'Open any .html document and edit it in place. Wordspace Next saves back to clean, standard HTML — no private format, no lock-in.',
   },
   {
     num: '02',
-    title: 'Copy Prompt bridges it',
+    title: 'Edit like a doc',
     body:
-      'One click copies a ready-to-paste prompt with the local API base URL and your key. Paste into your AI tool and it immediately knows how to read and write your open document.',
+      'Headings, lists, bold, highlight, tables, and images. Content you don’t touch — tables, embedded media — is kept exactly as it was.',
   },
   {
     num: '03',
-    title: '.wsp files, auto-saved, live-synced',
+    title: 'Local and private',
     body:
-      'Every AI edit persists to a native .wsp file on disk. WebSocket pushes changes back into the editor instantly, so you and the AI always see the same state.',
+      'Everything stays on your machine. No account, no cloud, no telemetry. Updates download and install themselves, signed and notarized.',
   },
 ];
 
@@ -23,7 +23,7 @@ export function FeatureTrio() {
   return (
     <section className="section features" id="features">
       <div className="container">
-        <h2 className="features__title">A simple editor. An AI-shaped hole.</h2>
+        <h2 className="features__title">What you get.</h2>
         <div className="features__grid">
           {FEATURES.map((f) => (
             <article key={f.num} className="feature">

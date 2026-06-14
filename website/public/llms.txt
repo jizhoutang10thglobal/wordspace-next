@@ -1,66 +1,30 @@
-# wordspace
+# Wordspace Next
 
-> wordspace is an AI-era document editor. Think Microsoft Word or
-> Google Docs, but headless — wordspace itself has no built-in AI.
-> Instead, it bridges your document to any AI tool (Claude Code,
-> Cursor, your own agent) via REST API + WebSocket. BYOM
-> (Bring Your Own Model).
+> Wordspace Next is a local desktop editor for HTML documents. Open a
+> .html file, edit it like a normal document — headings, lists, tables,
+> images — and it saves straight back to clean HTML. It runs entirely on
+> your own machine: no cloud, no account.
 
-## Core design
+## What it is
 
-Users click Copy Prompt in wordspace, paste into their favorite AI
-tool, and the AI gets full read/write access to the currently open
-document. wordspace handles file persistence (.wsp format),
-rendering (A4-paginated), and live-refresh. All AI logic happens
-outside — this is the "Headless AI Editor" model.
+Wordspace Next turns plain .html files into something you can edit like a
+document. Content you don't touch — tables, images, embedded media — is
+preserved exactly as it was, so the file stays valid HTML you can open
+anywhere.
 
-The split means users own the AI relationship end to end: you pick
-the provider, you hold the API key, you decide the prompt style.
-wordspace is the canvas; your AI is the collaborator.
-
-## How it works (three steps)
-
-1. Click Copy Prompt in the toolbar (or on the cold-start screen).
-2. Paste the prompt into Claude Code, Cursor, or any tool that can
-   call an HTTP API. The prompt contains a local base URL and an
-   API key scoped to that wordspace session.
-3. Ask the AI to read, edit, or restructure the document. wordspace
-   auto-persists every write to the bound .wsp file and re-renders
-   live through WebSocket.
+It is a native desktop app for macOS and Windows, free to download, and it
+updates itself automatically (builds are signed and notarized).
 
 ## Download
 
 - macOS (Apple Silicon): https://wordspace.ai/downloads/mac
 - Windows (x64 installer): https://wordspace.ai/downloads/win
-- Linux: coming soon — see https://wordspace.ai/downloads/linux
 
-All installers are published through the public release mirror at
-https://github.com/jizhoutang10thglobal/wordspace-releases so the
-download links above stay stable across versions.
-
-## FAQ
-
-- Do I need my own AI account? Yes. wordspace has no built-in
-  model — you bring the AI. Most people use Claude Code, Cursor,
-  or another agent they already pay for. That also means no
-  wordspace subscription for AI tokens.
-- Which AI tools are supported? Anything that can call an HTTP
-  API. That includes Claude Code, Cursor, and custom agents built
-  on the Anthropic, OpenAI, or any OpenAI-compatible SDK. The
-  Copy Prompt output works the same way for all of them.
-- What is a .wsp file? wordspace's native document format.
-  Currently a JSON file that captures content, page format, and
-  editing context. In the future it will evolve into a folder-based
-  package so AI collaboration history travels with the document.
-- How does the app update itself? wordspace checks for new
-  versions on startup. Downloads are published through
-  wordspace.ai/downloads/mac and wordspace.ai/downloads/win, which
-  always point at the latest build in our public release mirror
-  on GitHub.
+Both links always point at the latest signed build, published through the
+app's public GitHub releases, so they stay stable across versions.
 
 ## Links
 
 - Product site: https://wordspace.ai
-- Release notes: https://github.com/jizhoutang10thglobal/wordspace-releases/releases
-- Direct download (macOS, always latest): https://wordspace.ai/downloads/mac
-- Direct download (Windows, always latest): https://wordspace.ai/downloads/win
+- Source & releases: https://github.com/jizhoutang10thglobal/wordspace-next
+- Release notes: https://github.com/jizhoutang10thglobal/wordspace-next/releases

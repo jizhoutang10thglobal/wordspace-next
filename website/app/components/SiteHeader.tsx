@@ -4,7 +4,7 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="container site-header__inner">
-        <Link href="/" className="site-header__brand" aria-label="wordspace home">
+        <Link href="/" className="site-header__brand" aria-label="Wordspace Next home">
           <svg
             className="site-header__mark"
             viewBox="0 0 1024 1024"
@@ -33,14 +33,11 @@ export function SiteHeader() {
             </text>
             <rect x="200" y="880" width="620" height="16" rx="4" fill="#C9A96E" />
           </svg>
-          <span>wordspace</span>
+          <span>Wordspace Next</span>
         </Link>
         <nav className="site-header__nav" aria-label="Primary">
-          <a href="#features">Features</a>
-          <a href="#how-it-works">How it works</a>
-          <a href="#faq">FAQ</a>
           <a
-            href="https://github.com/jizhoutang10thglobal/wordspace-releases"
+            href="https://github.com/jizhoutang10thglobal/wordspace-next"
             target="_blank"
             rel="noopener noreferrer"
           >
