@@ -2,7 +2,7 @@
 
 **Wordspace Next 官方仓**：HTML-native 文档编辑器，spec 驱动开发，带对抗性验收门禁；macOS 构建自动签名、公证并经 GitHub Releases 自动更新分发。
 
-开发方式：spec → AI 实现过全部门禁（vitest 快门 + 真 Electron e2e + 人锁 VA 可见验收 + 变异自检）→ PR → 合并自动发版。
+开发方式：spec → AI 实现过全部门禁（vitest 快门 + 真 Electron e2e + 人锁 VA 可见验收 + 变异自检）→ PR → 合并。**发版按需触发**（打 tag 或手动），不随合并自动发版——见 `docs/releasing.md`。
 
 - **隔离运行**：`.devcontainer/`（非 root `node` 用户 + 默认拒绝出站 + 白名单），无人值守 run 在容器内进行。
 - **认证**：走 Claude 订阅（Pro/Max），`claude setup-token` 生成 token 写进 `.devcontainer/devcontainer.local.env`（gitignored）。
