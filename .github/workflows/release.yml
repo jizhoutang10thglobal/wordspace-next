@@ -1,34 +1,33 @@
 name: Release
 
-# 把 lfg 的右边缘从「合 PR」推到「签名+公证的 macOS app 发上本仓 Releases + 自动更新」。
+# 签名+公证的 macOS / Windows app 发上本仓 Releases + electron-updater 自动更新。
 #   gate (ubuntu)   → vitest 快门 + xvfb 真 Electron e2e（防「vitest 绿但 app 坏」，S3/S4）
-#   release (macos) → 从 tag 算版本 → 签名+公证打包 → **只有打包成功后** 才建带 tag 的已发布 Release
+#   release (macos) → 算版本 → 签名+公证打包 → **只有打包成功后** 才建带 tag 的已发布 Release
+#   build-win       → 等 mac 建好 Release 后，把 Windows 安装包 upsert 进同一个 Release
 # Developer ID 直分发 + electron-updater（决策 A）；发本仓自己 Releases，public、无镜像（决策 B）。
 #
-# 关键设计（适配 main 的分支保护：required PR + enforce_admins）：
-#   main 受保护，**任何直推 main 都会被拒**（含 github-actions[bot]，enforce_admins=true 连 bot 都不放行）。
-#   所以本流水线**完全不写 main**：版本号不再 commit 回 package.json，而是从 git tag 推算（tag 不受分支保护）。
-#   成功后只由 softprops 建一个带 vX.Y.Z tag 的 Release（它在当前 SHA 上创建 tag ref）。版本号的唯一真源 = tag。
-#   失败安全：build/公证失败 → 后面建 Release 的步骤不执行 → 无 tag、无 Release、main 纹丝不动。
+# 触发（2026-06-15 改）：**只在「打 tag」或「手动 Run workflow」时发版**，合 PR 到 main 不再自动发版。
+#   · 打 tag：`git tag vX.Y.Z && git push origin vX.Y.Z` → 用该 tag 作版本号发版（tag = 版本真源）。
+#   · 手动：Actions → Release → Run workflow，可填版本号；留空则 max(最高 tag patch+1, package.json.version)，
+#     并由 softprops 自动建 tag。
+#   目的：日常合 PR / 修小补丁不再触发签名发版，只有真想发时才发。
 #
-# 需要 5 个 repo secrets（见 docs/macos-shipping-pipeline-brief.md §6）：
+# 全程不写 main（版本号只烤进产物、不 commit 回 package.json）；失败安全：build/公证失败 → 不建 tag/Release。
+#
+# 需要 5 个 repo secrets（配置见 docs/apple-developer-setup-walkthrough.md）：
 #   CSC_LINK / CSC_KEY_PASSWORD / APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
 #
-# 注：gate 的 vitest+e2e 手抄 ci.yml 形状（发签名版本风险高于合 PR，门只强不弱）；未 dedup，演示期可接受。
+# 注：gate 的 vitest+e2e 手抄 ci.yml 形状（发签名版本风险高于合 PR，门只强不弱）；未 dedup，可接受。
 
 on:
+  # 只在「打 tag」或「手动 Run workflow」时发版——合 PR 到 main 不再自动发版。
   push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - 'specs/**'
-      - '.github/**'   # 改流水线自身（如本文件）不自触发发版；真功能改动（src/**）仍自动发版
-      - 'website/**'   # wordspace.ai 官网（独立 Next.js / Vercel 部署）；改官网不触发 editor 签名发版
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
     inputs:
       version:
-        description: '手动指定版本号（如 0.1.0）；留空则取 max(最高 tag patch+1, package.json.version)'
+        description: '手动指定版本号（如 0.2.0）；留空则取 max(最高 tag patch+1, package.json.version)'
         required: false
         default: ''
 
@@ -84,30 +83,47 @@ jobs:
       # 算出来写进本地 package.json 供 electron-builder 烤进产物，但**不 commit**（main 受保护）。
       - name: Compute release version
         id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # gh release view 鉴权用
         run: |
           set -euo pipefail
           git fetch --tags --force
-          INPUT_VER="${{ github.event.inputs.version }}"
-          # 严格只认 vMAJOR.MINOR.PATCH（三段纯数字）
-          LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
-          if [ -z "$LATEST" ]; then
-            TAGBUMP="0.0.1"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            # 打 tag 触发：版本号 = 被推的 tag（去掉前缀 v）。tag 本就存在 → 不新建。
+            NEW="${GITHUB_REF_NAME#v}"
+            # 防覆盖闸（恢复旧版"撞了硬失败"语义）：该版本已发布过 Release 就拒绝重发，
+            # 避免重跑/重推已发布 tag 静默覆盖已 ship 的签名产物 + 自动更新校验和。
+            # 首发该 tag 时 Release 尚不存在 → 通过；只有重跑已发布 tag 才在此 exit 1。
+            if gh release view "v$NEW" >/dev/null 2>&1; then
+              echo "release v$NEW already published; refusing to clobber shipped artifacts" >&2
+              exit 1
+            fi
+            echo "tag-triggered: ${GITHUB_REF_NAME} → releasing v$NEW"
           else
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
-            case "$PATCH" in ''|*[!0-9]*) echo "non-numeric patch in tag: $PATCH" >&2; exit 1;; esac
-            TAGBUMP="$MAJOR.$MINOR.$((PATCH + 1))"
+            # 手动触发（workflow_dispatch）：用输入版本号，留空则 max(最高 tag patch+1, package.json.version)；新建 tag，撞已存在的就停。
+            INPUT_VER="${{ github.event.inputs.version }}"
+            LATEST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+            if [ -z "$LATEST" ]; then
+              TAGBUMP="0.0.1"
+            else
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
+              case "$PATCH" in ''|*[!0-9]*) echo "non-numeric patch in tag: $PATCH" >&2; exit 1;; esac
+              TAGBUMP="$MAJOR.$MINOR.$((PATCH + 1))"
+            fi
+            PKGVER=$(node -e "process.stdout.write(require('./package.json').version)")
+            if [ -n "$INPUT_VER" ]; then
+              NEW="$INPUT_VER"
+            else
+              NEW=$(printf '%s\n%s\n' "$TAGBUMP" "$PKGVER" | sort -V | tail -1)
+            fi
+            if git rev-parse "v$NEW" >/dev/null 2>&1; then echo "tag v$NEW already exists" >&2; exit 1; fi
+            echo "dispatch: input=${INPUT_VER:-<none>} tagbump=$TAGBUMP pkg=$PKGVER → releasing v$NEW"
           fi
-          PKGVER=$(node -e "process.stdout.write(require('./package.json').version)")
-          if [ -n "$INPUT_VER" ]; then
-            NEW="$INPUT_VER"
-          else
-            NEW=$(printf '%s\n%s\n' "$TAGBUMP" "$PKGVER" | sort -V | tail -1)
-          fi
-          case "$NEW" in [0-9]*.[0-9]*.[0-9]*) ;; *) echo "bad version: $NEW" >&2; exit 1;; esac
-          if git rev-parse "v$NEW" >/dev/null 2>&1; then echo "tag v$NEW already exists" >&2; exit 1; fi
+          # 严格只认 MAJOR.MINOR.PATCH（三段纯数字，锚定 ^...$）——两条路径都过这关，
+          # 挡住 vfoo / v1.2.3.4 / v0.1.0-beta / 01.2.3 这类坏版本，也顺带杜绝下面 node -e 的引号注入。
+          echo "$NEW" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "bad version: $NEW" >&2; exit 1; }
           node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));p.version='$NEW';fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');"
           echo "version=$NEW" >> "$GITHUB_OUTPUT"
-          echo "input=${INPUT_VER:-<none>} tagbump=$TAGBUMP pkg=$PKGVER → releasing v$NEW"
 
       # 签名+公证打包。缺 secrets / 公证失败 → 此步失败 → 后面建 Release 的步骤被跳过，main 与 tag 都不动。
       - name: Build, sign & notarize macOS app
