@@ -1,7 +1,7 @@
 # Wordspace · 产品文档
 
-> **来源**：本文忠实转录自 `ui-demo/产品文档.html`，作者 **Wendi**，2026 年 6 月，v0.1。
-> 这是 wordspace-next 的 canonical 产品愿景。以下为原文正文的 markdown 版，未增删观点；如与原 HTML 有出入，以 `ui-demo/产品文档.html` 为准。
+> **作者 Wendi，2026 年 6 月，v0.1。** 这是 wordspace-next 的 canonical 产品愿景（North Star）——选题、写 spec、做取舍都对齐它。
+> （原始 HTML 版已并入本文，git 历史可查。）
 
 **本地优先的文档与发布平台**
 
