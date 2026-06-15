@@ -21,6 +21,13 @@ const COLUMNS = [
   { key: 'doing', label: '开发中', hint: '有人在做' },
   { key: 'done', label: '已完成', hint: '开发完、上线' },
 ];
+
+// 阶段 → 板块（顺序即板块序）。spec frontmatter 的 phase 取这几个 key 之一；缺省归 backlog。
+const PHASES = [
+  { key: '1', label: '第一阶段 · 本地编辑器 + 文件管理', hint: '把"文档/文件编辑器"做扎实，不上云' },
+  { key: '2', label: '第二阶段 · 上云', hint: '协作、同步、发布——一上云就归这块' },
+  { key: 'backlog', label: '后续 · 待排期', hint: '愿景里有，还没排进一/二期' },
+];
 const STATUS_KEYS = new Set(COLUMNS.map((c) => c.key));
 
 // 极简 frontmatter 解析：flat `key: value`，value 去引号；body = 第二个 --- 之后全部。
@@ -94,12 +101,25 @@ const warnings = specs
 rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(join(OUT_DIR, 'assets'), { recursive: true });
 
-const cols = COLUMNS.map((col) => {
-  const items = specs.filter((s) => (STATUS_KEYS.has(s.fm.status) ? s.fm.status : 'idea') === col.key);
-  return `<section class="col col-${col.key}">
-      <h2>${col.label}<span class="count">${items.length}</span></h2>
-      <p class="colhint">${col.hint}</p>
-      <div class="cards">${items.map(card).join('\n') || '<div class="empty">—</div>'}</div>
+const PHASE_KEYS = new Set(PHASES.map((p) => p.key));
+const phaseOf = (s) => (PHASE_KEYS.has(s.fm.phase) ? s.fm.phase : 'backlog');
+
+function renderColumns(list) {
+  return COLUMNS.map((col) => {
+    const items = list.filter((s) => (STATUS_KEYS.has(s.fm.status) ? s.fm.status : 'idea') === col.key);
+    return `<section class="col col-${col.key}">
+        <h3>${col.label}<span class="count">${items.length}</span></h3>
+        <p class="colhint">${col.hint}</p>
+        <div class="cards">${items.map(card).join('\n') || '<div class="empty">—</div>'}</div>
+      </section>`;
+  }).join('\n');
+}
+
+const board = PHASES.map((ph) => {
+  const list = specs.filter((s) => phaseOf(s) === ph.key);
+  return `<section class="phase">
+      <div class="phasehead"><h2 class="phasetitle">${ph.label}<span class="pcount">${list.length}</span></h2><span class="phasehint">${ph.hint}</span></div>
+      <div class="board">${renderColumns(list)}</div>
     </section>`;
 }).join('\n');
 
@@ -110,12 +130,18 @@ const CSS = `
   header { padding:28px 32px 12px; }
   h1 { margin:0; font-size:22px; font-weight:600; }
   .sub { margin:6px 0 0; color:var(--mut); font-size:13px; }
-  .board { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding:16px 32px 48px; align-items:start; }
-  .col { background:#f2f2f2; border-radius:10px; padding:12px; min-height:120px; }
-  .col h2 { margin:0; font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .phase { padding:0 32px; }
+  .phasehead { display:flex; align-items:baseline; gap:12px; padding:22px 0 2px; border-top:1px solid #ececec; }
+  .phase:first-of-type .phasehead { border-top:none; padding-top:8px; }
+  .phasetitle { margin:0; font-size:17px; font-weight:700; display:flex; align-items:center; gap:8px; }
+  .pcount { background:#e8e8e8; color:#666; font-size:12px; border-radius:10px; padding:1px 8px; font-weight:500; }
+  .phasehint { color:var(--mut); font-size:12px; }
+  .board { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding:12px 0 24px; align-items:start; }
+  .col { background:#f2f2f2; border-radius:10px; padding:12px; min-height:90px; }
+  .col h3 { margin:0; font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
   .count { background:#ddd; color:#555; font-size:12px; border-radius:10px; padding:1px 8px; font-weight:500; }
   .colhint { margin:2px 0 12px; color:var(--mut); font-size:12px; }
-  .col-done h2 { color:#1a7f37; } .col-doing h2 { color:#9a6700; } .col-todo h2 { color:#0969da; } .col-idea h2 { color:#6e7781; }
+  .col-done h3 { color:#1a7f37; } .col-doing h3 { color:#9a6700; } .col-todo h3 { color:#0969da; } .col-idea h3 { color:#6e7781; }
   .cards { display:flex; flex-direction:column; gap:10px; }
   .empty { color:#ccc; text-align:center; padding:18px 0; }
   .card { display:block; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; text-decoration:none; color:inherit; transition:box-shadow .12s,border-color .12s; }
@@ -141,7 +167,7 @@ const html = `<!DOCTYPE html>
   <h1>Wordspace Next · Feature Board</h1>
   <p class="sub">真相源 = <code>specs/*.md</code>，本页由 <code>specs/build-board.mjs</code> 自动生成 · 共 ${specs.length} 条 spec</p>
 </header>
-<main class="board">${cols}</main>
+<main>${board}</main>
 </body></html>`;
 
 writeFileSync(join(OUT_DIR, 'index.html'), html);

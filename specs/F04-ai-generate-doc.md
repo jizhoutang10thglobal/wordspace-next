@@ -1,0 +1,12 @@
+---
+id: F04
+title: AI 生成文档
+status: idea
+phase: backlog
+owner:
+demo:
+---
+
+用自然语言向 AI 描述，由 AI 直接生成整篇文档的 HTML。和块编辑器互补：AI 生成的文档能在编辑器里继续改，编辑器里写就的也能交给 AI 重做。
+
+> 后续待排期。spec 待细化。

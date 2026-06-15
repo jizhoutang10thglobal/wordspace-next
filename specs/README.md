@@ -18,6 +18,7 @@ Wordspace Next 的功能规划在这里。Colin + Wendi 协同，每个功能模
 id: F04                       # 稳定短把手，standup/planning 里直接说 "做 F04"
 title: 功能模块名
 status: idea                  # idea(想法) | todo(待开发) | doing(开发中) | done(已完成)
+phase: 1                      # 1(本地编辑器+文件) | 2(上云) | backlog(待排期)；缺省 = backlog
 owner: colin                  # colin | wendi |（留空 = 未认领）
 demo: demo 里对应的区域/组件名   # 指向 demo 里细化的那部分
 screenshot: specs/assets/F04.png   # 截图（放 assets/），让 reference 更准；没有就先留着，看板显示占位
@@ -40,6 +41,16 @@ screenshot: specs/assets/F04.png   # 截图（放 assets/），让 reference 更
 | `todo` | 待开发 | spec 写好，可被 pickup |
 | `doing` | 开发中 | 有人在做 |
 | `done` | 已完成 | 开发完、上线 |
+
+## 阶段（看板分两个板块 + 一个待排期）
+
+| phase | 板块 | 含义 |
+|---|---|---|
+| `1` | 第一阶段 · 本地编辑器 + 文件管理 | 把「文档/文件编辑器」做扎实，不上云 |
+| `2` | 第二阶段 · 上云 | 协作、同步、发布——一上云就归这块 |
+| `backlog` | 后续 · 待排期 | 愿景里有，还没排进一/二期 |
+
+看板按 phase 分成三段，每段内再按 status 分四列。
 
 ## 约定
 
