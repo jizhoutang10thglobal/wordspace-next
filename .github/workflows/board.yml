@@ -1,0 +1,43 @@
+name: Feature Board
+
+# 改了 spec / 看板脚本，合进 main → 自动重新生成 Feature Board 并发到 GitHub Pages。
+# 真相源 = specs/*.md；本 workflow 只跑 scripts/build-board.mjs 渲染 + 部署，不写仓。
+# Pages 需在仓 Settings → Pages → Source = GitHub Actions（一次性，见 specs/README.md）。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'specs/**'
+      - '.github/workflows/board.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同时只部一个，新推取消旧的
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Build board
+        run: node specs/build-board.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: out
+      - id: deploy
+        uses: actions/deploy-pages@v4
