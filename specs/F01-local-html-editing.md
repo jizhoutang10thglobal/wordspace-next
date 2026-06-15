@@ -3,7 +3,7 @@ id: F01
 title: 本地 HTML 文档编辑（块编辑器）
 status: doing
 phase: 1
-owner: wendi
+owner: colin
 demo: 编辑器主区
 ---
 
