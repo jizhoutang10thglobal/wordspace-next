@@ -1,0 +1,12 @@
+---
+id: F11
+title: 公开模板池
+status: idea
+phase: backlog
+owner:
+demo:
+---
+
+除了公司内部私有模板库，还有一个公开共享的模板池，允许跨组织复用，Agent 也能从中取用。
+
+> 后续待排期。spec 待细化。
