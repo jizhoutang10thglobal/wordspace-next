@@ -56,13 +56,18 @@ function wireEditor() {
   canvas.enable();
   // 选择内核：悬停虚线 / 点击实线 / Esc 选父 / 点空白取消（in-doc CSSOM 覆盖框）
   const selection = WS2Selection.attach(doc, canvas, { refresh: () => toolbar.refresh() });
+  // 内联改字：双击文字元素 → contenteditable + 聚焦；Esc / 外点退出还原。Esc 走 capture +
+  // stopPropagation（编辑态下先于 selection 的 Esc-选父，见 KTD7）。
+  // openLinkDialog 暂不传 → 双击 <a> 直接编辑锚文本（fall through）；完整链接弹窗路由是后续，
+  // 工具栏现在没暴露 open-link 方法（openLink 只能从工具栏按钮触发），等暴露后再接。
+  const textEdit = WS2TextEdit.attach(doc, { markDirty, onEnter: () => {}, onExit: () => {} });
   modeBtn.textContent = '预览';
   try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
   try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
   savedRange = null;
   // 常驻工具栏换上下文到当前文档：跨帧执行命令 + 取最近选区恢复 + 被选元素（块操作 retarget）
   toolbar.setContext({ doc, win: frame.contentWindow, getRange: () => savedRange, undoMgr, canvas,
-    getSelectedEl: () => selection.current() });
+    getSelectedEl: () => selection.current(), isTextEditing: () => textEdit.isEditing() });
   doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); });
   doc.addEventListener('mousedown', () => toolbar.closePops());
   if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);

@@ -126,6 +126,7 @@
 
     function onKeyDown(e) {
       if (e.key === 'Escape') {
+        if (doc.querySelector('[data-ws2-editing]')) return; // 文字编辑态：Esc 让 text-edit 退出，selection 不抢（KTD7）
         if (!controller.getState().selectedEl) return; // 没选中时不拦 Esc
         selectParent();
         e.preventDefault();
