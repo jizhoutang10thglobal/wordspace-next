@@ -71,7 +71,13 @@ function wireEditor() {
   doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); });
   doc.addEventListener('mousedown', () => toolbar.closePops());
   if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);
-  if (window.WS2Drag) WS2Drag.attach(doc, undoMgr, markDirty);
+  // 自由拖动（HVE_DragMove）：抓被选元素拖到任意位置，首拖转 absolute，整次拖动一个 undo op。
+  // 文字编辑态由 isEditing 门住（mousedown 放光标，不启动拖动）。
+  if (window.WS2Drag) WS2Drag.attach(doc, {
+    getSelectedEl: () => selection.current(),
+    isEditing: () => textEdit.isEditing(),
+    undoMgr, markDirty, win: frame.contentWindow,
+  });
   doc.addEventListener('input', () => {
     markDirty();
     undoMgr.scheduleCheckpoint();
