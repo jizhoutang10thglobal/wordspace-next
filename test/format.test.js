@@ -129,6 +129,66 @@ test('duplicateBlock: 剥掉克隆体及后代的 id（不产生重复 id）', (
   assert.equal(doc.querySelectorAll('[id]').length, 3);    // 全文 id 仍是原来那 3 个
 });
 
+test('isTextEditable: 白名单标签恒真', () => {
+  const doc = docOf('<p>x</p><a href="#">y</a>');
+  assert.equal(format.isTextEditable(doc.querySelector('p')), true);
+  assert.equal(format.isTextEditable(doc.querySelector('a')), true);
+});
+
+test('isTextEditable: IMG/HR / 只含结构的 div 为假；直接含文字的 div 为真', () => {
+  const doc = docOf('<img src="x"><hr><div><table></table></div><div>raw</div>');
+  assert.equal(format.isTextEditable(doc.querySelector('img')), false);
+  assert.equal(format.isTextEditable(doc.querySelector('hr')), false);
+  assert.equal(format.isTextEditable(doc.querySelector('div:nth-of-type(1)')), false); // 只含 <table>
+  assert.equal(format.isTextEditable(doc.querySelector('div:nth-of-type(2)')), true);  // 直接含文字
+});
+
+test('isTextEditable: 非元素 / null 为假', () => {
+  const doc = docOf('<p>x</p>');
+  assert.equal(format.isTextEditable(doc.querySelector('p').firstChild), false); // 文本节点
+  assert.equal(format.isTextEditable(null), false);
+});
+
+test('anchorWithin: 选中含链接的 p 返回内部 a；选中 a 返回自身；无链接返回 null', () => {
+  const doc = docOf('<p data-ws2-block="text">看 <a href="https://x.com">这里</a> 啊</p><p>无链接</p>');
+  const ps = doc.querySelectorAll('p');
+  const a = doc.querySelector('a');
+  assert.equal(format.anchorWithin(ps[0]), a);  // p 内的 a
+  assert.equal(format.anchorWithin(a), a);       // a 自身
+  assert.equal(format.anchorWithin(ps[1]), null); // 无链接
+});
+
+test('applyBlockStyle: 设样式并返回 before/after delta', () => {
+  const doc = docOf('<p>x</p>');
+  const p = doc.querySelector('p');
+  const d1 = format.applyBlockStyle(p, 'fontSize', '24px');
+  assert.deepEqual(d1, { prop: 'fontSize', before: '', after: '24px' });
+  assert.equal(p.style.fontSize, '24px');
+  const d2 = format.applyBlockStyle(p, 'fontSize', '12px'); // 二次改：before 是上次的值
+  assert.deepEqual(d2, { prop: 'fontSize', before: '24px', after: '12px' });
+});
+
+test('retagElement: 换标签保留 id/class/style 与全部子节点', () => {
+  const doc = docOf('<p id="t" class="lead" style="color: red;">原文 <b>粗</b></p>');
+  const p = doc.querySelector('p');
+  const next = format.retagElement(p, 'h2');
+  assert.equal(next.tagName, 'H2');
+  assert.equal(next.id, 't');
+  assert.equal(next.className, 'lead');
+  assert.equal(next.style.color, 'red');
+  assert.equal(next.querySelector('b').textContent, '粗'); // 子节点搬过来了
+  assert.equal(doc.querySelectorAll('p').length, 0);        // 旧 <p> 已被替换
+  assert.equal(doc.querySelectorAll('h2').length, 1);
+});
+
+test('retagElement: 无父元素时原样返回（no-op safe）', () => {
+  const doc = docOf('');
+  const orphan = doc.createElement('p');
+  orphan.textContent = 'x';
+  assert.equal(format.retagElement(orphan, 'h2'), orphan); // 返回 el 本身、不变标签
+  assert.equal(orphan.tagName, 'P');
+});
+
 test('safeHref: 放行 http/https/mailto/tel + 相对/锚点；拒绝 javascript/data/vbscript（含绕过）', () => {
   assert.equal(format.safeHref('https://wordspace.ai'), 'https://wordspace.ai');
   assert.equal(format.safeHref('mailto:a@b.com'), 'mailto:a@b.com');
