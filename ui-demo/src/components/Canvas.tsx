@@ -6,11 +6,37 @@ import {
   useState,
 } from 'react'
 import {
-  GripVertical,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Link2,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
   Plus,
+  Copy,
+  ArrowUp as ArrowUpIcon,
+  ArrowDown as ArrowDownIcon,
+  Trash2,
+  Undo2,
+  Redo2,
+  Square,
+  CircleDot,
+  Contrast,
   Sparkles,
   ArrowUp,
   MoreHorizontal,
+  Type,
+  Table,
+  Image as ImageIcon,
+  Box,
+  Minus,
+  List,
+  Lock,
+  Group,
+  ChevronUp,
+  ChevronsUp,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import {
@@ -21,108 +47,85 @@ import {
 } from '../types'
 import { Avatar, VisibilityDot, Spinner } from '../ui/primitives'
 import { relTime } from '../lib/format'
-import BlockAddMenu from './canvas/BlockAddMenu'
 import DocMenu from './canvas/DocMenu'
-import FormatToolbar, { type FormatRect } from './canvas/FormatToolbar'
-import CollabCursors from './canvas/CollabCursors'
 import './Canvas.css'
 
-const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout']
-const isEditable = (b: Block) => !b.designed && EDITABLE.includes(b.type)
+const TEXT_TYPES: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout']
+const isTextBlock = (b: Block) => !b.designed && TEXT_TYPES.includes(b.type)
+
+type Rect = { top: number; left: number; width: number; height: number }
 
 // ---------------------------------------------------------------------------
-// One editable / static block, with hover handle + add button + drag source.
+// One rendered block. Single click selects (canvas model); double click on a
+// text block enters inline edit. Content is set imperatively so we never fight
+// the caret while editing.
 // ---------------------------------------------------------------------------
-function BlockRow({
+function BlockView({
   doc,
   block,
-  index,
+  editing,
+  selected,
   registerEl,
-  onFocusBlock,
-  addOpen,
-  onToggleAdd,
-  onPickAdd,
-  onDragStart,
-  onDragOver,
-  onDrop,
-  onDragEnd,
-  dropEdge,
+  onSelect,
+  onEnterEdit,
+  onExitEdit,
 }: {
   doc: Doc
   block: Block
-  index: number
+  editing: boolean
+  selected: boolean
   registerEl: (id: string, el: HTMLElement | null) => void
-  onFocusBlock: (id: string | null) => void
-  addOpen: boolean
-  onToggleAdd: (id: string) => void
-  onPickAdd: (type: BlockType) => void
-  onDragStart: (index: number) => void
-  onDragOver: (index: number) => void
-  onDrop: () => void
-  onDragEnd: () => void
-  dropEdge: 'top' | 'bottom' | null
+  onSelect: (id: string) => void
+  onEnterEdit: (id: string) => void
+  onExitEdit: () => void
 }) {
   const updateBlockHtml = useStore((s) => s.updateBlockHtml)
-  const deleteBlock = useStore((s) => s.deleteBlock)
   const elRef = useRef<HTMLElement | null>(null)
-  const debounce = useRef<number | undefined>(undefined)
-  const focused = useRef(false)
 
-  const editable = isEditable(block)
-
-  // Set DOM content from the store only when not actively editing, so we never
-  // fight the caret. Covers external mutations (AI redesign, reorder reuse).
   const setNode = useCallback(
     (el: HTMLElement | null) => {
       elRef.current = el
       registerEl(block.id, el)
-      if (el && !focused.current && el.innerHTML !== block.html) {
-        el.innerHTML = block.html
-      }
+      if (el && !editing && el.innerHTML !== block.html) el.innerHTML = block.html
     },
-    [block.id, block.html, registerEl],
+    [block.id, block.html, editing, registerEl],
   )
 
   useLayoutEffect(() => {
     const el = elRef.current
-    if (el && !focused.current && el.innerHTML !== block.html) {
-      el.innerHTML = block.html
+    if (el && !editing && el.innerHTML !== block.html) el.innerHTML = block.html
+  }, [block.html, editing])
+
+  useEffect(() => {
+    if (editing) {
+      const el = elRef.current
+      if (el) {
+        el.focus()
+        const range = document.createRange()
+        range.selectNodeContents(el)
+        range.collapse(false)
+        const sel = window.getSelection()
+        sel?.removeAllRanges()
+        sel?.addRange(range)
+      }
     }
-  }, [block.html])
+  }, [editing])
 
   const persist = () => {
     const el = elRef.current
     if (el) updateBlockHtml(doc.id, block.id, el.innerHTML)
   }
 
-  const handleInput = () => {
-    window.clearTimeout(debounce.current)
-    debounce.current = window.setTimeout(persist, 400)
-  }
-
-  const handleBlur = () => {
-    focused.current = false
-    window.clearTimeout(debounce.current)
-    persist()
-    // Keep this block as the "last focused" target so the AI bar can act on it
-    // even after the input steals focus; it's only cleared if the block is gone.
-  }
-
-  const handleFocus = () => {
-    focused.current = true
-    onFocusBlock(block.id)
-  }
-
-  // editable element rendered with the right tag, content set imperatively
   const editProps = {
     ref: setNode as never,
-    contentEditable: true,
+    contentEditable: editing,
     suppressContentEditableWarning: true,
     spellCheck: false,
-    onInput: handleInput,
-    onBlur: handleBlur,
-    onFocus: handleFocus,
     'data-block': block.id,
+    onBlur: () => {
+      persist()
+      onExitEdit()
+    },
   }
 
   let inner: React.ReactNode
@@ -146,9 +149,7 @@ function BlockRow({
     const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3'
     inner = <L className={`ws-h ws-h${block.level ?? 2}`} {...editProps} />
   } else if (block.type === 'text') {
-    inner = (
-      <p className="ws-p" data-placeholder="空段落,输入正文…" {...editProps} />
-    )
+    inner = <p className="ws-p" data-placeholder="空段落,输入正文…" {...editProps} />
   } else if (block.type === 'list') {
     inner = <ul className="ws-ul" {...editProps} />
   } else if (block.type === 'quote') {
@@ -159,60 +160,27 @@ function BlockRow({
 
   return (
     <div
-      className={`ws-block${editable ? '' : ' ws-block-static'}${
-        dropEdge ? ` ws-block-drop-${dropEdge}` : ''
-      }`}
-      onDragOver={(e) => {
-        e.preventDefault()
-        onDragOver(index)
+      className={`ws-cblock${selected ? ' is-selected' : ''}${editing ? ' is-editing' : ''}`}
+      data-cblock={block.id}
+      onMouseDown={(e) => {
+        e.stopPropagation() // keep selection/edit alive; don't bubble to stage-deselect
+        if (editing) return
+        onSelect(block.id)
       }}
-      onDrop={(e) => {
-        e.preventDefault()
-        onDrop()
+      onDoubleClick={(e) => {
+        if (isTextBlock(block)) {
+          e.stopPropagation()
+          onEnterEdit(block.id)
+        }
       }}
     >
-      <div className="ws-block-controls" contentEditable={false}>
-        <span
-          className="ws-block-grip"
-          title="拖动以重新排序"
-          draggable
-          onDragStart={() => onDragStart(index)}
-          onDragEnd={onDragEnd}
-        >
-          <GripVertical size={15} strokeWidth={1.8} />
-        </span>
-        <span
-          className="ws-block-add"
-          title="在下方插入"
-          onClick={() => onToggleAdd(block.id)}
-        >
-          <Plus size={14} strokeWidth={1.8} />
-        </span>
-        {addOpen && (
-          <BlockAddMenu
-            onPick={onPickAdd}
-            onClose={() => onToggleAdd(block.id)}
-          />
-        )}
-      </div>
-
       {inner}
-
-      <button
-        className="ws-block-del"
-        title="删除此块"
-        contentEditable={false}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => deleteBlock(doc.id, block.id)}
-      >
-        ×
-      </button>
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Header: breadcrumb, meta, and the "…" menu (export / link / rename / delete)
+// Doc header (breadcrumb + meta + "…" menu) — unchanged from the block editor.
 // ---------------------------------------------------------------------------
 function DocHeader({ doc }: { doc: Doc }) {
   const folder = useStore((s) => s.folders.find((f) => f.id === doc.folderId))
@@ -236,11 +204,7 @@ function DocHeader({ doc }: { doc: Doc }) {
         <span className="ws-bc-sep">/</span>
         <span>{folder?.name}</span>
         <div className="ws-doc-more">
-          <button
-            className="ws-icon-btn"
-            title="更多"
-            onClick={() => setMenuOpen((o) => !o)}
-          >
+          <button className="ws-icon-btn" title="更多" onClick={() => setMenuOpen((o) => !o)}>
             <MoreHorizontal size={16} strokeWidth={1.8} />
           </button>
           {menuOpen && (
@@ -255,7 +219,6 @@ function DocHeader({ doc }: { doc: Doc }) {
           )}
         </div>
       </div>
-
       {renaming ? (
         <input
           className="ws-rename-input"
@@ -269,7 +232,6 @@ function DocHeader({ doc }: { doc: Doc }) {
           }}
         />
       ) : null}
-
       <div className="ws-doc-meta">
         {editor && <Avatar member={editor} size={20} />}
         <span className="ws-muted">
@@ -285,7 +247,24 @@ function DocHeader({ doc }: { doc: Doc }) {
 }
 
 // ---------------------------------------------------------------------------
-// Canvas
+// Toolbar — persistent rich toolbar (heyhtml style). Mostly visual; align
+// buttons + heading reflect a little state so the chrome feels alive.
+// ---------------------------------------------------------------------------
+const HANDLE_POS = [
+  { l: 0, t: 0 }, { l: 0.5, t: 0 }, { l: 1, t: 0 }, { l: 1, t: 0.5 },
+  { l: 1, t: 1 }, { l: 0.5, t: 1 }, { l: 0, t: 1 }, { l: 0, t: 0.5 },
+]
+
+const INSERT_ITEMS = [
+  { icon: Box, label: '容器' }, { icon: Type, label: '文本' },
+  { icon: ChevronUp, label: '标题' }, { icon: Table, label: '表格' },
+  { icon: ImageIcon, label: '图片' }, { icon: Square, label: '按钮' },
+  { icon: Minus, label: '分隔线' }, { icon: Link2, label: '链接' },
+  { icon: List, label: '列表' },
+]
+
+// ---------------------------------------------------------------------------
+// Canvas — heyhtml free-canvas editor area
 // ---------------------------------------------------------------------------
 export default function Canvas() {
   const tabs = useStore((s) => s.tabs)
@@ -293,91 +272,88 @@ export default function Canvas() {
   const getDoc = useStore((s) => s.getDoc)
   const addBlock = useStore((s) => s.addBlock)
   const updateBlockHtml = useStore((s) => s.updateBlockHtml)
-  const reorderBlocks = useStore((s) => s.reorderBlocks)
+  const deleteBlock = useStore((s) => s.deleteBlock)
   const redesignBlock = useStore((s) => s.redesignBlock)
   const aiBusy = useStore((s) => s.aiBusy)
 
   const tab = tabs.find((x) => x.id === activeTabId)
   const doc = tab?.docId ? getDoc(tab.docId) : undefined
 
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
-  const focusedBlockId = useRef<string | null>(null)
 
-  const [addMenuFor, setAddMenuFor] = useState<string | null>(null)
-  const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
+  const [mode, setMode] = useState<'edit' | 'view'>('edit')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [align, setAlign] = useState<'left' | 'center' | 'right'>('left')
+  const [insertOpen, setInsertOpen] = useState(false)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  const [selRect, setSelRect] = useState<Rect | null>(null)
+  const [guide, setGuide] = useState<{ x: number; top: number; height: number; gapY: number; gap: number } | null>(null)
   const [aiInput, setAiInput] = useState('')
-  // flip after first paint so children receive the real scroll element (the
-  // ref is null on the initial render that mounts it)
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-
-  // drag-to-reorder
-  const dragFrom = useRef<number | null>(null)
-  const [dropIndex, setDropIndex] = useState<number | null>(null)
 
   const registerEl = useCallback((id: string, el: HTMLElement | null) => {
     if (el) blockEls.current.set(id, el)
     else blockEls.current.delete(id)
   }, [])
 
-  const getBlockEl = useCallback(
-    (id: string) => blockEls.current.get(id) ?? null,
-    [],
-  )
-
-  const focusBlock = useCallback((id: string) => {
-    requestAnimationFrame(() => {
-      const el = blockEls.current.get(id)
-      if (!el) return
-      el.focus()
-      const range = document.createRange()
-      range.selectNodeContents(el)
-      range.collapse(false)
-      const sel = window.getSelection()
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-    })
-  }, [])
-
-  // --- inline format toolbar: follow the live selection inside this doc ----
-  useEffect(() => {
-    const onSel = () => {
-      const sel = window.getSelection()
-      const root = scrollRef.current
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !root) {
-        setFmtRect(null)
-        return
-      }
-      const range = sel.getRangeAt(0)
-      const anchor = range.startContainer.parentElement
-      const inEditable = anchor?.closest('[contenteditable="true"]')
-      if (!inEditable || !root.contains(inEditable)) {
-        setFmtRect(null)
-        return
-      }
-      const r = range.getBoundingClientRect()
-      const sr = root.getBoundingClientRect()
-      if (r.width === 0 && r.height === 0) {
-        setFmtRect(null)
-        return
-      }
-      setFmtRect({
-        top: r.top - sr.top + root.scrollTop - 44,
-        left: r.left - sr.left + r.width / 2,
-      })
+  // compute the selection box + an alignment guide for the selected block,
+  // all in .ws-stage coordinate space (so it tracks scroll for free).
+  const recomputeOverlay = useCallback((id: string | null) => {
+    const stage = stageRef.current
+    if (!id || !stage) {
+      setSelRect(null)
+      setGuide(null)
+      return
     }
-    document.addEventListener('selectionchange', onSel)
-    return () => document.removeEventListener('selectionchange', onSel)
-  }, [doc?.id])
-
-  // persist the block the toolbar just edited
-  const persistFocused = useCallback(() => {
-    const id = focusedBlockId.current
-    if (!id || !doc) return
     const el = blockEls.current.get(id)
-    if (el) updateBlockHtml(doc.id, id, el.innerHTML)
-  }, [doc, updateBlockHtml])
+    if (!el) {
+      setSelRect(null)
+      setGuide(null)
+      return
+    }
+    const sr = stage.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    const pad = 4
+    setSelRect({
+      left: r.left - sr.left - pad,
+      top: r.top - sr.top - pad,
+      width: r.width + pad * 2,
+      height: r.height + pad * 2,
+    })
+    // alignment guide: left-edge vertical line + vertical gap to the next block
+    const ids = doc ? doc.blocks.map((b) => b.id) : []
+    const i = ids.indexOf(id)
+    const next = i >= 0 && i < ids.length - 1 ? blockEls.current.get(ids[i + 1]) : null
+    if (next) {
+      const nr = next.getBoundingClientRect()
+      const gap = Math.max(0, Math.round(nr.top - r.bottom))
+      setGuide({
+        x: r.left - sr.left,
+        top: r.top - sr.top - 22,
+        height: nr.bottom - r.top + 22,
+        gapY: r.bottom - sr.top + (nr.top - r.bottom) / 2,
+        gap,
+      })
+    } else {
+      setGuide(null)
+    }
+  }, [doc])
+
+  useLayoutEffect(() => {
+    recomputeOverlay(selectedId)
+  }, [selectedId, recomputeOverlay, doc?.id])
+
+  useEffect(() => {
+    const onResize = () => recomputeOverlay(selectedId)
+    window.addEventListener('resize', onResize)
+    const stage = stageRef.current?.parentElement
+    stage?.addEventListener('scroll', onResize)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      stage?.removeEventListener('scroll', onResize)
+    }
+  }, [selectedId, recomputeOverlay])
 
   if (!doc) {
     return (
@@ -387,137 +363,249 @@ export default function Canvas() {
     )
   }
 
-  const onFocusBlock = (id: string | null) => {
-    focusedBlockId.current = id
+  const selectedBlock = doc.blocks.find((b) => b.id === selectedId) ?? null
+  const headingValue =
+    selectedBlock?.type === 'heading' ? `h${selectedBlock.level ?? 2}` : 'p'
+
+  const select = (id: string) => {
+    setSelectedId(id)
+    setEditingId(null)
+    setCtxMenu(null)
+    setInsertOpen(false)
+  }
+  const deselect = () => {
+    setSelectedId(null)
+    setEditingId(null)
+    setCtxMenu(null)
   }
 
-  // insert a block after `afterId` and focus it
-  const handleAdd = (afterId: string, type: BlockType) => {
-    setAddMenuFor(null)
-    const newId = addBlock(doc.id, afterId, type)
-    if (type !== 'divider') focusBlock(newId)
+  const onContext = (e: React.MouseEvent) => {
+    if (mode === 'view') return
+    e.preventDefault()
+    const target = (e.target as HTMLElement).closest('[data-cblock]') as HTMLElement | null
+    if (target) select(target.dataset.cblock!)
+    setCtxMenu({ x: e.clientX, y: e.clientY })
   }
 
-  // --- drag reorder ---
-  const onDragStart = (index: number) => {
-    dragFrom.current = index
-  }
-  const onDragOver = (index: number) => {
-    if (dragFrom.current === null) return
-    setDropIndex(index)
-  }
-  const onDrop = () => {
-    const from = dragFrom.current
-    const to = dropIndex
-    // Dropping on row `to` moves the dragged block into that slot; the store's
-    // splice (remove `from`, insert at `to`) implements exactly that.
-    if (from !== null && to !== null && from !== to) {
-      reorderBlocks(doc.id, from, to)
-    }
-    dragFrom.current = null
-    setDropIndex(null)
-  }
-  const onDragEnd = () => {
-    dragFrom.current = null
-    setDropIndex(null)
-  }
-
-  // --- AI command bar ---
   const submitAI = async () => {
     const prompt = aiInput.trim()
     if (!prompt || aiBusy) return
     setAiInput('')
-    const target = focusedBlockId.current
-    const targetExists = !!target && doc.blocks.some((b) => b.id === target)
-    if (target && targetExists) {
-      await redesignBlock(doc.id, target, prompt)
+    if (selectedId && doc.blocks.some((b) => b.id === selectedId)) {
+      await redesignBlock(doc.id, selectedId, prompt)
     } else {
       const newId = addBlock(doc.id, null, 'text')
-      updateBlockHtml(
-        doc.id,
-        newId,
-        `根据「${prompt}」生成的一段内容。你可以直接编辑这段文字,或选中后再让 AI 调整。`,
-      )
-      focusBlock(newId)
+      updateBlockHtml(doc.id, newId, `根据「${prompt}」生成的一段内容。选中任意元素后再让 AI 调整。`)
+      select(newId)
     }
   }
 
+  const TB = (icon: React.ReactNode, title: string, opts?: { on?: boolean; danger?: boolean; onClick?: () => void }) => (
+    <button
+      className={`ws-tb-btn${opts?.on ? ' on' : ''}${opts?.danger ? ' danger' : ''}`}
+      title={title}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={opts?.onClick}
+    >
+      {icon}
+    </button>
+  )
+
   return (
-    <main className="ws-canvas">
-      <div className="ws-canvas-scroll" ref={scrollRef}>
-        <article className={`ws-doc ws-doc-${doc.kind}`}>
-          <DocHeader doc={doc} />
-          <div className="ws-blocks">
-            {doc.blocks.map((b, i) => {
-              let edge: 'top' | 'bottom' | null = null
-              if (dropIndex === i && dragFrom.current !== null) {
-                edge = dragFrom.current < i ? 'bottom' : 'top'
-              }
-              return (
-                <BlockRow
+    <main className={`ws-canvas ws-canvas-hey mode-${mode}`}>
+      {/* ===== persistent rich toolbar ===== */}
+      <div className="ws-edtoolbar">
+        <div className="ws-tb-grp">
+          {TB(<Bold size={15} />, '加粗 ⌘B')}
+          {TB(<Italic size={15} />, '斜体 ⌘I')}
+          {TB(<Underline size={15} />, '下划线 ⌘U')}
+          {TB(<Strikethrough size={15} />, '删除线')}
+        </div>
+        <span className="ws-tb-sep" />
+        <select className="ws-tb-sel" value={headingValue} title="段落 / 标题" onChange={() => {}}>
+          <option value="p">正文</option>
+          <option value="h1">标题 1</option>
+          <option value="h2">标题 2</option>
+          <option value="h3">标题 3</option>
+        </select>
+        <span className="ws-tb-sep" />
+        <div className="ws-tb-grp">
+          <select className="ws-tb-sel" title="字体" onChange={() => {}}>
+            <option>字体</option><option>无衬线</option><option>衬线</option><option>等宽</option>
+          </select>
+          <select className="ws-tb-sel" title="字号" onChange={() => {}}>
+            <option>16</option><option>14</option><option>18</option><option>24</option><option>32</option>
+          </select>
+        </div>
+        <span className="ws-tb-sep" />
+        <div className="ws-tb-grp">
+          {TB(<span className="ws-tb-A">A</span>, '文字颜色')}
+          {TB(<span className="ws-tb-hi" />, '背景高亮')}
+          {TB(<Link2 size={15} />, '链接')}
+        </div>
+        <span className="ws-tb-sep" />
+        <div className="ws-tb-grp">
+          {TB(<AlignLeft size={15} />, '左对齐', { on: align === 'left', onClick: () => setAlign('left') })}
+          {TB(<AlignCenter size={15} />, '居中', { on: align === 'center', onClick: () => setAlign('center') })}
+          {TB(<AlignRight size={15} />, '右对齐', { on: align === 'right', onClick: () => setAlign('right') })}
+        </div>
+        <span className="ws-tb-sep" />
+        <button
+          className={`ws-tb-btn ws-tb-text${insertOpen ? ' on' : ''}`}
+          title="插入元素"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => { setInsertOpen((o) => !o); setCtxMenu(null) }}
+        >
+          <Plus size={15} /> 插入
+        </button>
+        <span className="ws-tb-sep" />
+        <div className="ws-tb-grp">
+          {TB(<Copy size={15} />, '复制')}
+          {TB(<ArrowUpIcon size={15} />, '上移')}
+          {TB(<ArrowDownIcon size={15} />, '下移')}
+          {TB(<Trash2 size={15} />, '删除', { danger: true, onClick: () => { if (selectedId) { deleteBlock(doc.id, selectedId); deselect() } } })}
+        </div>
+        <span className="ws-tb-sep" />
+        <div className="ws-tb-grp">
+          {TB(<Square size={15} />, '圆角')}
+          {TB(<Contrast size={15} />, '阴影')}
+          {TB(<CircleDot size={15} />, '不透明度')}
+        </div>
+        <span className="ws-tb-sep" />
+        <div className="ws-tb-grp">
+          {TB(<Undo2 size={15} />, '撤销')}
+          {TB(<Redo2 size={15} />, '重做')}
+        </div>
+        <span className="ws-tb-spacer" />
+        <div className="ws-tb-seg">
+          <button className={mode === 'edit' ? 'on' : ''} onClick={() => setMode('edit')}>编辑</button>
+          <button className={mode === 'view' ? 'on' : ''} onClick={() => { setMode('view'); deselect() }}>预览</button>
+        </div>
+      </div>
+
+      {/* ===== canvas workspace ===== */}
+      <div className="ws-canvas-workspace">
+        <div
+          className="ws-stage"
+          ref={stageRef}
+          onMouseDown={deselect}
+          onContextMenu={onContext}
+        >
+          <article className={`ws-page ws-doc-${doc.kind}`}>
+            <DocHeader doc={doc} />
+            <div className="ws-blocks">
+              {doc.blocks.map((b) => (
+                <BlockView
                   key={b.id}
                   doc={doc}
                   block={b}
-                  index={i}
+                  editing={editingId === b.id}
+                  selected={selectedId === b.id}
                   registerEl={registerEl}
-                  onFocusBlock={onFocusBlock}
-                  addOpen={addMenuFor === b.id}
-                  onToggleAdd={(id) =>
-                    setAddMenuFor((cur) => (cur === id ? null : id))
-                  }
-                  onPickAdd={(type) => handleAdd(b.id, type)}
-                  onDragStart={onDragStart}
-                  onDragOver={onDragOver}
-                  onDrop={onDrop}
-                  onDragEnd={onDragEnd}
-                  dropEdge={edge}
+                  onSelect={select}
+                  onEnterEdit={(id) => { setSelectedId(id); setEditingId(id) }}
+                  onExitEdit={() => setEditingId(null)}
                 />
-              )
-            })}
-          </div>
-          <div className="ws-doc-end ws-muted">
-            这是一个本地 HTML 文件 · {doc.localPath}
-          </div>
-        </article>
+              ))}
+            </div>
+            <div className="ws-doc-end ws-muted">这是一个本地 HTML 文件 · {doc.localPath}</div>
+          </article>
 
-        {fmtRect && (
-          <FormatToolbar rect={fmtRect} onApplied={persistFocused} />
-        )}
+          {/* selection + handles + alignment guides overlay (edit mode only) */}
+          {mode === 'edit' && selRect && (
+            <div className="ws-overlay" aria-hidden>
+              {guide && (
+                <>
+                  <span className="ws-guide-v" style={{ left: guide.x, top: guide.top, height: guide.height }} />
+                  {guide.gap > 0 && (
+                    <span className="ws-dist" style={{ left: guide.x, top: guide.gapY }}>{guide.gap} px</span>
+                  )}
+                </>
+              )}
+              <div
+                className="ws-selbox"
+                style={{ left: selRect.left, top: selRect.top, width: selRect.width, height: selRect.height }}
+              >
+                <span className="ws-seltag">
+                  {selectedBlock?.type === 'heading' ? `标题 ${selectedBlock.level ?? 2}` :
+                    selectedBlock?.type === 'image' ? '图片' :
+                    selectedBlock?.designed ? '设计块' : '文本'} · {selectedBlock?.type ?? ''}
+                </span>
+                {HANDLE_POS.map((p, i) => (
+                  <span key={i} className="ws-handle" style={{ left: `${p.l * 100}%`, top: `${p.t * 100}%` }} />
+                ))}
+              </div>
+            </div>
+          )}
 
-        <CollabCursors
-          doc={doc}
-          scrollEl={mounted ? scrollRef.current : null}
-          getBlockEl={getBlockEl}
-        />
+          {/* insert panel popover */}
+          {insertOpen && mode === 'edit' && (
+            <div className="ws-insertpanel" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="ws-ip-ttl">插入元素 <span>双击空白处也可</span></div>
+              <div className="ws-ip-modes">
+                <button className="on">浮动 Float</button>
+                <button>排版流 Flow</button>
+              </div>
+              <div className="ws-ip-grid">
+                {INSERT_ITEMS.map((it) => (
+                  <button
+                    key={it.label}
+                    className="ws-ip-cell"
+                    onClick={() => { addBlock(doc.id, selectedId, 'text'); setInsertOpen(false) }}
+                  >
+                    <it.icon size={17} strokeWidth={1.7} />
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
+      {/* ===== right-click context menu ===== */}
+      {ctxMenu && (
+        <>
+          <div className="ws-ctx-scrim" onMouseDown={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }} />
+          <div className="ws-ctxmenu" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+            <button className="ws-ctx-item" onClick={() => { if (selectedId) setEditingId(selectedId); setCtxMenu(null) }}>编辑文字 <span>双击</span></button>
+            <button className="ws-ctx-item"><span className="ws-ci-l"><Copy size={14} /> 复制</span><span>⌘D</span></button>
+            <div className="ws-ctx-sep" />
+            <button className="ws-ctx-item">复制样式 <span>⌘⇧C</span></button>
+            <button className="ws-ctx-item">粘贴样式 <span>⌘⇧V</span></button>
+            <div className="ws-ctx-sep" />
+            <button className="ws-ctx-item"><span className="ws-ci-l"><ChevronUp size={14} /> 上移一层</span></button>
+            <button className="ws-ctx-item"><span className="ws-ci-l"><ChevronsUp size={14} /> 置于顶层</span></button>
+            <button className="ws-ctx-item"><span className="ws-ci-l"><Lock size={14} /> 锁定</span><span>⌘L</span></button>
+            <button className="ws-ctx-item"><span className="ws-ci-l"><Group size={14} /> 编组</span><span>⌘G</span></button>
+            <div className="ws-ctx-sep" />
+            <button className="ws-ctx-item danger" onClick={() => { if (selectedId) { deleteBlock(doc.id, selectedId); deselect() } setCtxMenu(null) }}><span className="ws-ci-l"><Trash2 size={14} /> 删除</span><span>⌫</span></button>
+          </div>
+        </>
+      )}
+
+      {/* ===== multi-select toast hint (edit mode, something selected) ===== */}
+      {mode === 'edit' && selectedId && (
+        <div className="ws-mstoast">
+          <span className="ws-mst-cnt">已选中 1 个元素</span>
+          <button className="ws-mst-mini">编组</button>
+          <button className="ws-mst-mini" onClick={() => { deleteBlock(doc.id, selectedId); deselect() }}>删除</button>
+          <span className="ws-mst-hint">⌘ 点击可多选</span>
+        </div>
+      )}
+
+      {/* ===== AI command bar (wordspace product feature, kept) ===== */}
       <div className="ws-aibar">
         <div className={`ws-aibar-inner${aiBusy ? ' is-busy' : ''}`}>
-          {aiBusy ? (
-            <Spinner size={16} />
-          ) : (
-            <Sparkles size={16} className="ws-aibar-spark" />
-          )}
+          {aiBusy ? <Spinner size={16} /> : <Sparkles size={16} className="ws-aibar-spark" />}
           <input
             value={aiInput}
             disabled={aiBusy}
-            placeholder={
-              aiBusy
-                ? '正在生成…'
-                : focusedBlockId.current
-                  ? '让 AI 重排当前这一块,例如“做成横幅”'
-                  : '让 AI 生成或修改这一页,例如“补一段结论”'
-            }
+            placeholder={aiBusy ? '正在生成…' : selectedId ? '让 AI 重排选中的元素,例如“做成横幅”' : '让 AI 生成或修改这一页…'}
             onChange={(e) => setAiInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submitAI()
-            }}
+            onKeyDown={(e) => { if (e.key === 'Enter') submitAI() }}
           />
-          <button
-            className="ws-aibar-send"
-            disabled={aiBusy || !aiInput.trim()}
-            onClick={submitAI}
-          >
+          <button className="ws-aibar-send" disabled={aiBusy || !aiInput.trim()} onClick={submitAI}>
             <ArrowUp size={15} strokeWidth={2} />
           </button>
         </div>
