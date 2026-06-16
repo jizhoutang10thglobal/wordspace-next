@@ -102,6 +102,9 @@ function prepFrame(asDirty) {
 // 打开真实文件：iframe 直接指向 file:// URL（主进程 pathInfo 算，跨平台正确），
 // 文档拥有自己的 CSP 上下文、相对资源天然解析
 function loadFromFile(opts) {
+  // 设 src 是同步、onload 异步：先失活工具栏 + 清旧选区，免得加载窗口期工具栏还指向上一个文档
+  savedRange = null;
+  toolbar.setContext({});
   frame.onload = () => wireEditor();
   frame.removeAttribute('srcdoc');
   frame.src = docInfo.fileUrl;
@@ -110,6 +113,8 @@ function loadFromFile(opts) {
 
 // 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录（用 docInfo.dirUrl）
 function loadFromHtml(html, opts) {
+  savedRange = null;
+  toolbar.setContext({});
   frame.onload = () => { injectBase(frame.contentDocument, docInfo.dirUrl); wireEditor(); };
   frame.removeAttribute('src');
   frame.srcdoc = html;

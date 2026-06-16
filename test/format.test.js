@@ -73,7 +73,7 @@ test('moveBlock: 到边界不动并返回 false', () => {
 });
 
 test('wrapInlineStyle: 把选中文字包进带行内样式的 span', () => {
-  const dom = new JSDOM('<!DOCTYPE html><html><body><p>abcdef</p></body></html>');
+  const dom = new JSDOM('<!DOCTYPE html><html><body><p data-ws2-block="text">abcdef</p></body></html>');
   const doc = dom.window.document;
   const textNode = doc.querySelector('p').firstChild;
   const sel = dom.window.getSelection();
@@ -92,7 +92,7 @@ test('wrapInlineStyle: 把选中文字包进带行内样式的 span', () => {
 });
 
 test('wrapInlineStyle: 折叠选区不动、返回 false', () => {
-  const dom = new JSDOM('<!DOCTYPE html><html><body><p>abc</p></body></html>');
+  const dom = new JSDOM('<!DOCTYPE html><html><body><p data-ws2-block="text">abc</p></body></html>');
   const doc = dom.window.document;
   const sel = dom.window.getSelection();
   const range = doc.createRange();
@@ -102,4 +102,45 @@ test('wrapInlineStyle: 折叠选区不动、返回 false', () => {
   sel.addRange(range);
   assert.equal(format.wrapInlineStyle(doc, 'fontSize', '20px'), false);
   assert.equal(doc.querySelector('span'), null);
+});
+
+test('wrapInlineStyle: 跨块选区拒绝（不动文档、返回 false，保真红线）', () => {
+  const dom = new JSDOM('<!DOCTYPE html><html><body><p data-ws2-block="text" id="p1">abc</p><p data-ws2-block="text" id="p2">def</p></body></html>');
+  const doc = dom.window.document;
+  const sel = dom.window.getSelection();
+  const range = doc.createRange();
+  range.setStart(doc.getElementById('p1').firstChild, 1);
+  range.setEnd(doc.getElementById('p2').firstChild, 2); // 选区横跨 p1→p2
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const before = doc.body.innerHTML;
+  assert.equal(format.wrapInlineStyle(doc, 'fontSize', '24px'), false);
+  assert.equal(doc.querySelector('span'), null);   // 没生成 span
+  assert.equal(doc.body.innerHTML, before);          // 文档一字未动（不破坏保真）
+});
+
+test('duplicateBlock: 剥掉克隆体及后代的 id（不产生重复 id）', () => {
+  const doc = docOf('<section data-ws2-block="container" id="sec"><h2 id="h">标题</h2><p id="p">正文</p></section>');
+  const clone = format.duplicateBlock(doc.getElementById('sec'));
+  assert.equal(clone.id, '');                              // 克隆根无 id
+  assert.equal(clone.querySelectorAll('[id]').length, 0);  // 后代也无 id
+  assert.equal(clone.querySelector('h2').textContent, '标题'); // 内容仍在
+  assert.equal(doc.querySelectorAll('#sec').length, 1);    // 原 id 没被复制成重复
+  assert.equal(doc.querySelectorAll('[id]').length, 3);    // 全文 id 仍是原来那 3 个
+});
+
+test('safeHref: 放行 http/https/mailto/tel + 相对/锚点；拒绝 javascript/data/vbscript（含绕过）', () => {
+  assert.equal(format.safeHref('https://wordspace.ai'), 'https://wordspace.ai');
+  assert.equal(format.safeHref('mailto:a@b.com'), 'mailto:a@b.com');
+  assert.equal(format.safeHref('tel:123'), 'tel:123');
+  assert.equal(format.safeHref('/rel/x.html'), '/rel/x.html');
+  assert.equal(format.safeHref('#sec'), '#sec');
+  assert.equal(format.safeHref('./a.css'), './a.css');
+  assert.equal(format.safeHref(''), '');
+  assert.equal(format.safeHref('   '), '');
+  assert.equal(format.safeHref('javascript:alert(1)'), null);
+  assert.equal(format.safeHref('JaVaScript:alert(1)'), null);  // 大小写绕过
+  assert.equal(format.safeHref('java\tscript:alert(1)'), null); // 控制字符绕过
+  assert.equal(format.safeHref('data:text/html,x'), null);
+  assert.equal(format.safeHref('vbscript:msgbox'), null);
 });

@@ -118,6 +118,7 @@
     linkPop.appendChild(linkRow);
     linkHolder.append(linkBtn, linkPop);
     linkInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyLink(); } if (e.key === 'Escape') closePops(); });
+    linkInput.addEventListener('input', () => { linkInput.style.borderColor = ''; }); // 改输入清掉拒绝红边
 
     function openLink() {
       const showing = linkPop.classList.contains('open');
@@ -125,7 +126,9 @@
       if (showing || !ctx.doc) return;
       linkSnapshot = ctx.getRange ? ctx.getRange() : null;
       const a = global.WS2Format ? WS2Format.anchorAt(ctx.doc) : null;
-      linkInput.value = a ? (a.getAttribute('href') || '') : '';
+      const safe = WS2Format.safeHref(a ? a.getAttribute('href') : ''); // 旧值若是危险 scheme，回填空
+      linkInput.value = safe || '';
+      linkInput.style.borderColor = '';
       linkPop.classList.add('open');
       linkInput.focus(); linkInput.select();
     }
@@ -135,15 +138,16 @@
       p.removeChild(el);
     }
     function applyLink() {
-      const url = linkInput.value.trim();
+      const safe = WS2Format.safeHref(linkInput.value);
+      if (safe === null) { linkInput.style.borderColor = '#b3261e'; return; } // 危险 scheme：拒绝、不动文档
       closePops();
       if (!ctx.doc) return;
       if (ctx.win && ctx.win.focus) ctx.win.focus();
       restoreSelection(linkSnapshot);
       const a = global.WS2Format ? WS2Format.anchorAt(ctx.doc) : null;
-      if (!url && a) unwrap(a);              // 清空 = 拆链接
-      else if (url && a) a.setAttribute('href', url);
-      else if (url) ctx.doc.execCommand('createLink', false, url);
+      if (!safe) { if (a) unwrap(a); }       // 空 = 拆链接
+      else if (a) a.setAttribute('href', safe);
+      else ctx.doc.execCommand('createLink', false, safe);
       if (ctx.undoMgr) ctx.undoMgr.checkpoint();
       hooks.markDirty();
       if (global.WS2Blocks) WS2Blocks.markBlocks(ctx.doc.body);

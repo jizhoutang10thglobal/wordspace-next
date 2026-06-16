@@ -135,6 +135,22 @@ test('工具栏链接：选中文字加链接，href 写入 <a>', async () => {
   await expect(frame.locator('#p1 a')).toHaveAttribute('href', 'https://wordspace.ai');
 });
 
+test('工具栏链接：危险 scheme（javascript:）被拒，不进文档也不落盘', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p1').selectText();
+  await page.locator('#toolbar button[title="链接"]').click();
+  await page.locator('.tb-linkinput').fill('javascript:alert(document.cookie)');
+  await page.locator('#toolbar button[title="应用链接"]').click();
+  await expect(frame.locator('#p1 a')).toHaveCount(0); // 没生成链接
+  // 改点别的内容再存盘，确认危险 URL 从未进入文档/磁盘
+  await frame.locator('#p2').click();
+  await page.keyboard.type('改一下');
+  await saveViaButton();
+  const saved = await fs.readFile(docPath, 'utf8');
+  expect(saved).not.toContain('javascript:');
+});
+
 test('工具栏复制块：当前段落复制一份', async () => {
   await launch(FIXTURE);
   await openDoc();
