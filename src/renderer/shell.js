@@ -77,6 +77,12 @@ function wireEditor() {
   doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); });
   doc.addEventListener('mousedown', () => toolbar.closePops());
   if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);
+  // 插入面板（HVE_InsertPanel）：工具栏「+ 插入」开 Float/Flow 面板 + 10 种元素类型。
+  // 面板是父层 chrome（shell.css 类，非注入 iframe）；工厂建的元素带 inline 样式、序列化白嫖。
+  // 插入后 canvas.select 新元素（出手柄 + 可拖），checkpoint（结构变更走 html 快照 undo）。
+  if (window.WS2Insert) WS2Insert.attach(toolbarEl, {
+    doc, getSelectedEl: () => selection.current(), canvas, undoMgr, markDirty, win: frame.contentWindow,
+  });
   // 智能对齐线 + 吸附（HVE_AlignGuide）：拖动中算被拖框与其它顶层元素的边/中心对齐，画品红线 +
   // 距离标注、阈值内吸附。覆盖节点走 in-doc CSSOM（KTD2）。
   const alignGuide = window.WS2AlignGuide ? WS2AlignGuide.attach(doc) : null;
