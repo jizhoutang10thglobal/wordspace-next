@@ -91,8 +91,44 @@ function wireEditor() {
     const text = e.clipboardData.getData('text/plain');
     doc.execCommand('insertText', false, text);
   });
+  // 方向键 nudge 的合并窗口状态：一连串快速 nudge 塌成一个 undo op，500ms 静默 / 切元素 / 非 nudge 键收尾。
+  let nudgeTimer = null;
+  let nudgeEl = null;
+  let nudgeBefore = null; // 这段合并窗口首帧的 pre-nudge cssText（合并 op 的 before）
+  function commitNudge() {
+    if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; }
+    if (nudgeEl) { undoMgr.commit(); nudgeEl = null; nudgeBefore = null; }
+  }
+
   doc.addEventListener('keydown', (e) => {
     const mod = e.metaKey || e.ctrlKey;
+    // 方向键 nudge（KTD7 单一 keydown 表）：非 mod + 有元素选中 + 非文字编辑 + 是方向键 → 微调。
+    // 文字编辑态不拦（isEditing 门）：让光标移动，这是承重回归（R2）。
+    if (!mod && !textEdit.isEditing()) {
+      const d = WS2Drag.nudgeDelta(e.key, e.shiftKey);
+      const el = d ? selection.current() : null;
+      if (d && el) {
+        e.preventDefault();
+        if (el !== nudgeEl) {
+          commitNudge(); // 切元素先收尾上一段
+          nudgeBefore = el.style.cssText; // 转绝对前的快照（合并 op 的 before）
+          // 整段 nudge 用稳定 key（不带方向），混向连按也塌成一个 op
+          undoMgr.beginCoalesce('nudge');
+          WS2Drag.ensureAbsolute(el, frame.contentWindow, doc);
+          nudgeEl = el;
+        }
+        const base = { left: parseFloat(el.style.left) || 0, top: parseFloat(el.style.top) || 0 };
+        const next = WS2Drag.applyDelta(base, d.dx, d.dy);
+        el.style.left = next.left + 'px'; // CSSOM（KTD2）
+        el.style.top = next.top + 'px';
+        undoMgr.recordStyleOp(el, nudgeBefore, el.style.cssText, 'nudge');
+        markDirty();
+        if (nudgeTimer) clearTimeout(nudgeTimer);
+        nudgeTimer = setTimeout(commitNudge, 500); // 静默 500ms 收一个 op
+        return;
+      }
+    }
+    if (nudgeEl) commitNudge(); // 任何非 nudge 键 / 切走选中 → 先收尾合并窗口
     if (!mod) return;
     const k = e.key.toLowerCase();
     if (k === 'z') { e.preventDefault(); const changed = e.shiftKey ? undoMgr.redo() : undoMgr.undo(); if (changed) markDirty(); }

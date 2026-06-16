@@ -213,6 +213,34 @@ test('拖动手柄：移动段落顺序，Cmd+Z 撤销', async () => {
   expect(ids.indexOf('p1')).toBeLessThan(ids.indexOf('p2'));
 });
 
+test('方向键 nudge：选中元素 ArrowRight×5 左移、合并一个 undo；文字编辑态方向键不移动（光标动）', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  // 选中 #p1（点击 = canvas 选中，非文字编辑）
+  await frame.locator('#p1').click();
+  // ArrowRight×5 → 元素转 absolute、left 增加
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+  const afterNudge = await frame.locator('#p1').evaluate((el) => ({
+    position: el.style.position,
+    left: parseFloat(el.style.left) || 0,
+  }));
+  expect(afterNudge.position).toBe('absolute');
+  expect(afterNudge.left).toBeGreaterThan(0); // 5px（相对转换基准）
+
+  // 5 连 nudge 合并成一个 undo op：等合并窗口收尾后 Cmd+Z 一次回到 nudge 前（无 inline left）
+  await page.waitForTimeout(600); // 过 500ms 合并窗口，收一个 op
+  await page.keyboard.press('Meta+z');
+  const afterUndo = await frame.locator('#p1').evaluate((el) => el.style.left || '');
+  expect(afterUndo).toBe(''); // 单步撤销回到 nudge 前（pre-conversion，inline left 清空）
+
+  // 承重回归：双击进文字编辑态，ArrowRight 不移动元素（让光标移动）
+  await frame.locator('#p1').dblclick();
+  const leftBeforeEdit = await frame.locator('#p1').evaluate((el) => el.style.left || '');
+  await page.keyboard.press('ArrowRight');
+  const leftAfterEdit = await frame.locator('#p1').evaluate((el) => el.style.left || '');
+  expect(leftAfterEdit).toBe(leftBeforeEdit); // 文字编辑态方向键不 nudge
+});
+
 test('锁定块：表格不可编辑，悬停出现提示，可整块删除', async () => {
   await launch(FIXTURE);
   await openDoc();

@@ -30,6 +30,39 @@
     return p === 'static' || p === '' || p === 'relative';
   }
 
+  // 方向键 → 位移 {dx, dy}（step = shift?10:1），非方向键返 null。nudge 与 drag 共用 applyDelta。
+  function nudgeDelta(key, shift) {
+    const step = shift ? 10 : 1;
+    switch (key) {
+      case 'ArrowLeft':  return { dx: -step, dy: 0 };
+      case 'ArrowRight': return { dx: step, dy: 0 };
+      case 'ArrowUp':    return { dx: 0, dy: -step };
+      case 'ArrowDown':  return { dx: 0, dy: step };
+      default: return null;
+    }
+  }
+
+  // 冻结并把元素转成 absolute（若需要），返回基准 {left, top}。drag 首拖与 nudge 共用同一条转换路径。
+  // needsConversion 时：computeAbsolutePlacement 钉视觉框 + CSSOM 写 position/left/top/width/height；
+  // 否则读当前 inline left/top（缺省按 0）。绝不 setAttribute('style')（KTD2）。
+  function ensureAbsolute(el, win, doc) {
+    const cs = win.getComputedStyle(el);
+    if (needsConversion(cs.position)) {
+      const parent = el.offsetParent || doc.documentElement;
+      const place = computeAbsolutePlacement(
+        el.getBoundingClientRect(),
+        parent.getBoundingClientRect()
+      );
+      el.style.width = place.width + 'px';
+      el.style.height = place.height + 'px';
+      el.style.position = 'absolute';
+      el.style.left = place.left + 'px';
+      el.style.top = place.top + 'px';
+      return { left: place.left, top: place.top };
+    }
+    return { left: parseFloat(el.style.left) || 0, top: parseFloat(el.style.top) || 0 };
+  }
+
   // ---- DOM / 事件驱动 ----
 
   const THRESHOLD = 4; // 像素阈值，沿用 draghandle.js 的小位移门限
@@ -84,24 +117,7 @@
         before = target.style.cssText;
         key = 'move:' + stableKey(target);
         if (undoMgr) undoMgr.beginCoalesce(key);
-        const cs = win.getComputedStyle(target);
-        if (needsConversion(cs.position)) {
-          const parent = target.offsetParent || doc.documentElement;
-          const place = computeAbsolutePlacement(
-            target.getBoundingClientRect(),
-            parent.getBoundingClientRect()
-          );
-          // 钉住宽高 + 转绝对，全走 CSSOM
-          target.style.width = place.width + 'px';
-          target.style.height = place.height + 'px';
-          target.style.position = 'absolute';
-          target.style.left = place.left + 'px';
-          target.style.top = place.top + 'px';
-          base = { left: place.left, top: place.top };
-        } else {
-          // 已是 absolute/fixed：以当前 inline left/top 为基（缺省按 0）
-          base = { left: parseFloat(target.style.left) || 0, top: parseFloat(target.style.top) || 0 };
-        }
+        base = ensureAbsolute(target, win, doc); // 冻结+转绝对（与 nudge 共用，DRY）
       }
 
       doc.addEventListener('mousemove', onMove);
@@ -123,7 +139,7 @@
     return (el.getAttribute && el.getAttribute('data-ws2-eid')) || (el.tagName || 'el');
   }
 
-  const api = { computeAbsolutePlacement, applyDelta, needsConversion, attach };
+  const api = { computeAbsolutePlacement, applyDelta, needsConversion, nudgeDelta, ensureAbsolute, attach };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2Drag = api;
 })(typeof window !== 'undefined' ? window : globalThis);
