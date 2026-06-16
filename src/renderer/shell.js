@@ -54,12 +54,15 @@ function wireEditor() {
   // 画布控制器取代旧 blocks.applyEditable：进入编辑模式（不再把 body 设成 contenteditable）
   canvas = WS2Canvas.create(doc, { undoMgr, markDirty });
   canvas.enable();
+  // 选择内核：悬停虚线 / 点击实线 / Esc 选父 / 点空白取消（in-doc CSSOM 覆盖框）
+  const selection = WS2Selection.attach(doc, canvas, { refresh: () => toolbar.refresh() });
   modeBtn.textContent = '预览';
   try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
   try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
   savedRange = null;
-  // 常驻工具栏换上下文到当前文档：跨帧执行命令 + 取最近选区恢复
-  toolbar.setContext({ doc, win: frame.contentWindow, getRange: () => savedRange, undoMgr, canvas });
+  // 常驻工具栏换上下文到当前文档：跨帧执行命令 + 取最近选区恢复 + 被选元素（块操作 retarget）
+  toolbar.setContext({ doc, win: frame.contentWindow, getRange: () => savedRange, undoMgr, canvas,
+    getSelectedEl: () => selection.current() });
   doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); });
   doc.addEventListener('mousedown', () => toolbar.closePops());
   if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);

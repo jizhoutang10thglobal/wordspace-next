@@ -21,7 +21,7 @@
 
   function create(container, hooks) {
     const d = container.ownerDocument;
-    let ctx = { doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null };
+    let ctx = { doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null, getSelectedEl: () => null };
     const els = {};
 
     function restoreSelection(range) {
@@ -179,10 +179,12 @@
     els.alignC = btn('中', '居中', cmd('justifyCenter'));
     els.alignR = btn('右', '右对齐', cmd('justifyRight'));
 
-    els.dup = btn('⧉', '复制块', () => run((doc) => { WS2Format.duplicateBlock(WS2Format.currentBlock(doc)); }));
-    els.up = btn('↑', '上移块', () => run((doc) => { WS2Format.moveBlock(WS2Format.currentBlock(doc), -1); }));
-    els.down = btn('↓', '下移块', () => run((doc) => { WS2Format.moveBlock(WS2Format.currentBlock(doc), 1); }));
-    els.del = btn('🗑', '删除块', () => run((doc) => { const b = WS2Format.currentBlock(doc); if (b) b.remove(); }), { danger: true });
+    // 块操作目标：优先被选元素（HVE 选择模型），回退到光标当前块（文字编辑路径）。
+    const blockTarget = (doc) => (ctx.getSelectedEl && ctx.getSelectedEl()) || WS2Format.currentBlock(doc);
+    els.dup = btn('⧉', '复制块', () => run((doc) => { WS2Format.duplicateBlock(blockTarget(doc)); }));
+    els.up = btn('↑', '上移块', () => run((doc) => { WS2Format.moveBlock(blockTarget(doc), -1); }));
+    els.down = btn('↓', '下移块', () => run((doc) => { WS2Format.moveBlock(blockTarget(doc), 1); }));
+    els.del = btn('🗑', '删除块', () => run((doc) => { const b = blockTarget(doc); if (b) b.remove(); }), { danger: true });
 
     els.hr = btn('―', '插入分隔线', cmd('insertHorizontalRule'));
     els.clear = btn('清除格式', '移除行内格式', cmd('removeFormat'));
@@ -228,7 +230,7 @@
     }
 
     function setContext(next) {
-      ctx = Object.assign({ doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null }, next);
+      ctx = Object.assign({ doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null, getSelectedEl: () => null }, next);
       closePops();
       refresh();
     }
