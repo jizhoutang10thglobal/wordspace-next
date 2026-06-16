@@ -55,7 +55,13 @@ function wireEditor() {
   canvas = WS2Canvas.create(doc, { undoMgr, markDirty });
   canvas.enable();
   // 选择内核：悬停虚线 / 点击实线 / Esc 选父 / 点空白取消（in-doc CSSOM 覆盖框）
-  const selection = WS2Selection.attach(doc, canvas, { refresh: () => toolbar.refresh() });
+  const selection = WS2Selection.attach(doc, canvas, { refresh: () => { toolbar.refresh(); resize.render(); } });
+  // 缩放控制器（HVE_Resize）：选中元素时渲染 8 个 in-doc 手柄、拖手柄改宽高（+ 西/北平移原点），
+  // 整次缩放一个 undo op（KTD3）。手柄走 CSSOM、不入存盘（KTD2）。render() 由 selection refresh 回调驱动。
+  const resize = WS2Resize.attach(doc, {
+    getSelectedEl: () => selection.current(),
+    undoMgr, markDirty, win: frame.contentWindow,
+  });
   // 内联改字：双击文字元素 → contenteditable + 聚焦；Esc / 外点退出还原。Esc 走 capture +
   // stopPropagation（编辑态下先于 selection 的 Esc-选父，见 KTD7）。
   // openLinkDialog 暂不传 → 双击 <a> 直接编辑锚文本（fall through）；完整链接弹窗路由是后续，
