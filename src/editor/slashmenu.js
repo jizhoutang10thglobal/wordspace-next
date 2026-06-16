@@ -51,13 +51,15 @@
   function makeHr(doc) { return getInsert().createElement(doc, 'divider'); }
 
   const ITEMS = [
-    { label: '标题 1', kw: 'h1 biaoti', run: (doc) => retagBlock(doc, caretBlock(doc), 'h1') },
-    { label: '标题 2', kw: 'h2 biaoti', run: (doc) => retagBlock(doc, caretBlock(doc), 'h2') },
-    { label: '标题 3', kw: 'h3 biaoti', run: (doc) => retagBlock(doc, caretBlock(doc), 'h3') },
-    { label: '正文', kw: 'p text zhengwen', run: (doc) => retagBlock(doc, caretBlock(doc), 'p') },
-    { label: '无序列表', kw: 'ul list liebiao', run: (doc) => insertFlowElement(doc, caretBlock(doc), makeUl) },
-    { label: '有序列表', kw: 'ol list liebiao', run: (doc) => insertFlowElement(doc, caretBlock(doc), makeOl) },
-    { label: '分隔线', kw: 'hr divider fengexian', run: (doc) => insertFlowElement(doc, caretBlock(doc), makeHr) }
+    // run 接 (doc, block)：block 由 apply() 在 deleteTyped 扰动选区**之前**解析好传进来，
+    // 否则 deleteTyped 的 sel.modify/deleteContents 会把选区弄到块外、caretBlock 取不到块。
+    { label: '标题 1', kw: 'h1 biaoti', run: (doc, block) => retagBlock(doc, block, 'h1') },
+    { label: '标题 2', kw: 'h2 biaoti', run: (doc, block) => retagBlock(doc, block, 'h2') },
+    { label: '标题 3', kw: 'h3 biaoti', run: (doc, block) => retagBlock(doc, block, 'h3') },
+    { label: '正文', kw: 'p text zhengwen', run: (doc, block) => retagBlock(doc, block, 'p') },
+    { label: '无序列表', kw: 'ul list liebiao', run: (doc, block) => insertFlowElement(doc, block, makeUl) },
+    { label: '有序列表', kw: 'ol list liebiao', run: (doc, block) => insertFlowElement(doc, block, makeOl) },
+    { label: '分隔线', kw: 'hr divider fengexian', run: (doc, block) => insertFlowElement(doc, block, makeHr) }
   ];
 
   function attach(doc, undoMgr, markDirty) {
@@ -106,8 +108,9 @@
     }
 
     function apply(item) {
+      const block = caretBlock(doc); // 在 deleteTyped 扰动选区前先解析「'/' 所在的块」
       deleteTyped();
-      item.run(doc);
+      item.run(doc, block);
       undoMgr.checkpoint();
       markDirty();
       close();
