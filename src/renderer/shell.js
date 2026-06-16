@@ -71,12 +71,15 @@ function wireEditor() {
   doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); });
   doc.addEventListener('mousedown', () => toolbar.closePops());
   if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);
+  // 智能对齐线 + 吸附（HVE_AlignGuide）：拖动中算被拖框与其它顶层元素的边/中心对齐，画品红线 +
+  // 距离标注、阈值内吸附。覆盖节点走 in-doc CSSOM（KTD2）。
+  const alignGuide = window.WS2AlignGuide ? WS2AlignGuide.attach(doc) : null;
   // 自由拖动（HVE_DragMove）：抓被选元素拖到任意位置，首拖转 absolute，整次拖动一个 undo op。
   // 文字编辑态由 isEditing 门住（mousedown 放光标，不启动拖动）。
   if (window.WS2Drag) WS2Drag.attach(doc, {
     getSelectedEl: () => selection.current(),
     isEditing: () => textEdit.isEditing(),
-    undoMgr, markDirty, win: frame.contentWindow,
+    undoMgr, markDirty, win: frame.contentWindow, guide: alignGuide,
   });
   doc.addEventListener('input', () => {
     markDirty();

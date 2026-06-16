@@ -41,6 +41,7 @@
     const undoMgr = deps.undoMgr || null;
     const markDirty = deps.markDirty || (() => {});
     const win = deps.win || doc.defaultView;
+    const guide = deps.guide || null; // HVE_AlignGuide：拖动中算对齐线 + 吸附（可选）
 
     function onMouseDown(e) {
       if (isEditing()) return; // 文字编辑态：mousedown 放光标，不启动拖动（KTD7 / R2 门）
@@ -61,7 +62,9 @@
         }
         const dx = me.clientX - downAt.x;
         const dy = me.clientY - downAt.y;
-        const next = applyDelta(base, dx, dy);
+        let next = applyDelta(base, dx, dy);
+        // 对齐线 + 吸附：在写 left/top 前让 guide 调整拟落点（snap）+ 画线（in-doc CSSOM）
+        if (guide) next = guide.update(el, next, win) || next;
         el.style.left = next.left + 'px'; // CSSOM，绝不 setAttribute('style')（KTD2）
         el.style.top = next.top + 'px';
         if (undoMgr) undoMgr.recordStyleOp(el, before, el.style.cssText, key);
@@ -71,6 +74,7 @@
       const onUp = () => {
         doc.removeEventListener('mousemove', onMove);
         doc.removeEventListener('mouseup', onUp);
+        if (guide) guide.clear(); // 收起对齐线
         if (dragging && undoMgr) undoMgr.commit(); // 整次拖动塌成一个 op（无净变化则丢弃）
         if (dragging) markDirty();
       };
