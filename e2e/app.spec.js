@@ -107,15 +107,53 @@ test('保真：未修改时序列化结果与原文档结构一致', async () =>
   expect(actual).toBe(expected);
 });
 
-test('浮动工具栏：选中文字出现，加粗生效', async () => {
+test('常驻工具栏：开文档即显示，选中文字点加粗跨帧生效', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await expect(page.locator('#toolbar')).toBeVisible();
+  await frame.locator('#p1').selectText();
+  await page.locator('#toolbar button[title="加粗 Cmd+B"]').click();
+  const html = await frame.locator('#p1').innerHTML();
+  expect(html).toMatch(/<b>|font-weight/);
+});
+
+test('工具栏标题下拉：段落转标题 2', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p2').click();
+  await page.locator('#toolbar select').first().selectOption('h2');
+  await expect(frame.locator('h2')).toHaveText('第二段文字。');
+});
+
+test('工具栏链接：选中文字加链接，href 写入 <a>', async () => {
   await launch(FIXTURE);
   await openDoc();
   await frame.locator('#p1').selectText();
-  const boldBtn = frame.locator('[data-ws2-ui] button[title="加粗 Cmd+B"]');
-  await expect(boldBtn).toBeVisible();
-  await boldBtn.click();
-  const html = await frame.locator('#p1').innerHTML();
-  expect(html).toMatch(/<b>|font-weight/);
+  await page.locator('#toolbar button[title="链接"]').click();
+  await page.locator('.tb-linkinput').fill('https://wordspace.ai');
+  await page.locator('#toolbar button[title="应用链接"]').click();
+  await expect(frame.locator('#p1 a')).toHaveAttribute('href', 'https://wordspace.ai');
+});
+
+test('工具栏复制块：当前段落复制一份', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  const before = await frame.locator('p').count();
+  await frame.locator('#p1').click();
+  await page.locator('#toolbar button[title="复制块"]').click();
+  expect(await frame.locator('p').count()).toBe(before + 1);
+});
+
+test('工具栏改格式后保存：格式写回磁盘且无编辑器痕迹', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p1').selectText();
+  await page.locator('#toolbar button[title="加粗 Cmd+B"]').click();
+  await saveViaButton();
+  const saved = await fs.readFile(docPath, 'utf8');
+  expect(saved).toMatch(/<b>|font-weight/);
+  expect(saved).not.toContain('data-ws2');
+  expect(saved).not.toContain('tb-btn');
 });
 
 test('斜杠菜单：输入 / 弹出，选标题 2 转换块', async () => {

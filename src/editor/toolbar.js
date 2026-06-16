@@ -1,97 +1,240 @@
 (function (global) {
+  // 常驻富工具栏，挂在父层 app chrome（不进 iframe 文档，对保真零风险）。命令通过
+  // ctx.doc.execCommand / WS2Format 跨帧操作被编辑文档；ctx 由 shell 每次开文档时 setContext。
+  const HEADINGS = [
+    { label: '正文', tag: 'p' },
+    { label: '标题 1', tag: 'h1' },
+    { label: '标题 2', tag: 'h2' },
+    { label: '标题 3', tag: 'h3' },
+    { label: '引用', tag: 'blockquote' }
+  ];
+  const FONTS = [
+    { label: '字体', value: '' },
+    { label: '无衬线', value: 'sans-serif' },
+    { label: '衬线', value: 'serif' },
+    { label: '等宽', value: 'monospace' },
+    { label: '系统', value: '-apple-system, system-ui, sans-serif' }
+  ];
+  const SIZES = ['字号', '12', '14', '16', '18', '20', '24', '28', '32', '40'];
   const TEXT_COLORS = ['#1a1a1a', '#888888', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2'];
   const HILITE_COLORS = ['#fff59d', '#ffd6d6', '#d7f0db', '#dbe9ff', '#f3e3ff'];
 
-  function attach(doc, undoMgr, markDirty) {
-    const bar = doc.createElement('div');
-    bar.setAttribute('data-ws2-ui', '');
-    bar.setAttribute('contenteditable', 'false');
-    bar.style.cssText = 'position:fixed;display:none;z-index:99999;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);padding:4px;font-family:-apple-system,sans-serif;font-size:13px;white-space:nowrap;';
-    doc.documentElement.appendChild(bar);
+  function create(container, hooks) {
+    const d = container.ownerDocument;
+    let ctx = { doc: null, win: null, getRange: () => null, undoMgr: null };
+    const els = {};
 
-    function hidePalettes() {
-      bar.querySelectorAll('[data-ws2-palette]').forEach(p => { p.style.display = 'none'; });
+    function restoreSelection(range) {
+      if (!ctx.doc) return;
+      const r = range || (ctx.getRange && ctx.getRange());
+      const sel = ctx.doc.getSelection();
+      if (r && sel) { try { sel.removeAllRanges(); sel.addRange(r); } catch (e) {} }
     }
 
-    function btn(label, title, fn) {
-      const b = doc.createElement('button');
-      b.textContent = label;
+    // 跨帧执行：先聚焦 iframe + 恢复选区，再跑命令；之后 checkpoint + 标脏 + 重标块 + 刷新状态。
+    function run(fn) {
+      if (!ctx.doc) return;
+      if (ctx.win && ctx.win.focus) ctx.win.focus();
+      restoreSelection();
+      fn(ctx.doc);
+      if (ctx.undoMgr) ctx.undoMgr.checkpoint();
+      hooks.markDirty();
+      if (global.WS2Blocks) WS2Blocks.markBlocks(ctx.doc.body);
+      refresh();
+    }
+    const cmd = (name, val) => () => run((doc) => doc.execCommand(name, false, val));
+
+    // ---- DOM 构建小工具 ----
+    function btn(label, title, onClick, opts) {
+      const b = d.createElement('button');
+      b.className = 'tb-btn' + (opts && opts.danger ? ' tb-danger' : '');
+      b.innerHTML = label;
       b.title = title;
-      b.style.cssText = 'border:none;background:none;padding:4px 8px;cursor:pointer;font-size:13px;';
-      b.addEventListener('mousedown', (e) => e.preventDefault());
-      b.addEventListener('click', () => { fn(); undoMgr.checkpoint(); markDirty(); hidePalettes(); });
+      b.addEventListener('mousedown', (e) => e.preventDefault()); // 不抢 iframe 焦点 → 选区保住
+      b.addEventListener('click', onClick);
       return b;
     }
-
-    function palette(label, title, colors, cmd) {
-      const holder = doc.createElement('span');
-      holder.style.cssText = 'position:relative;display:inline-block;';
-      const openBtn = doc.createElement('button');
-      openBtn.textContent = label;
-      openBtn.title = title;
-      openBtn.style.cssText = 'border:none;background:none;padding:4px 8px;cursor:pointer;font-size:13px;';
-      const pop = doc.createElement('div');
-      pop.setAttribute('data-ws2-palette', '');
-      pop.style.cssText = 'position:absolute;top:100%;left:0;display:none;background:#fff;border:1px solid #ddd;border-radius:6px;padding:6px;width:120px;';
+    function sep() { const s = d.createElement('span'); s.className = 'tb-sep'; return s; }
+    function group() {
+      const g = d.createElement('span'); g.className = 'tb-group';
+      for (let i = 0; i < arguments.length; i++) g.appendChild(arguments[i]);
+      return g;
+    }
+    // 下拉：options=[{label,value}]；reset=true 时选完自动回到第 0 项（当动作菜单用）。
+    function select(options, onPick, opts) {
+      const s = d.createElement('select');
+      s.className = 'tb-select';
+      for (const o of options) {
+        const op = d.createElement('option');
+        op.value = o.value; op.textContent = o.label;
+        s.appendChild(op);
+      }
+      s.addEventListener('change', () => {
+        const v = s.value;
+        if (opts && opts.reset) s.selectedIndex = 0;
+        if (v !== '' || !opts || !opts.reset) onPick(v);
+      });
+      return s;
+    }
+    // 颜色弹窗：openBtn 旁挂 swatch 面板。
+    function colorMenu(label, title, colors, command, clearValue) {
+      const holder = d.createElement('span'); holder.className = 'tb-holder';
+      const open = btn(label, title, () => {
+        const showing = pop.classList.contains('open');
+        closePops();
+        if (!showing) pop.classList.add('open');
+      });
+      const pop = d.createElement('div'); pop.className = 'tb-pop';
       for (const c of colors) {
-        const sw = doc.createElement('button');
-        sw.title = c;
-        sw.style.cssText = 'width:18px;height:18px;border:1px solid #ccc;border-radius:3px;cursor:pointer;margin:2px;background:' + c + ';';
+        const sw = d.createElement('button');
+        sw.className = 'tb-swatch'; sw.title = c;
+        sw.style.background = c;
         sw.addEventListener('mousedown', (e) => e.preventDefault());
-        sw.addEventListener('click', () => {
-          doc.execCommand(cmd, false, c);
-          undoMgr.checkpoint(); markDirty(); hidePalettes();
-        });
+        sw.addEventListener('click', () => { run((doc) => doc.execCommand(command, false, c)); closePops(); });
         pop.appendChild(sw);
       }
-      const clear = doc.createElement('button');
-      clear.textContent = '清除';
-      clear.style.cssText = 'border:none;background:none;font-size:12px;cursor:pointer;display:block;margin-top:4px;color:#666;';
-      clear.addEventListener('mousedown', (e) => e.preventDefault());
-      clear.addEventListener('click', () => {
-        doc.execCommand(cmd, false, cmd === 'hiliteColor' ? 'transparent' : '#1a1a1a');
-        undoMgr.checkpoint(); markDirty(); hidePalettes();
-      });
-      pop.appendChild(clear);
-      openBtn.addEventListener('mousedown', (e) => e.preventDefault());
-      openBtn.addEventListener('click', () => {
-        const showing = pop.style.display !== 'none';
-        hidePalettes();
-        pop.style.display = showing ? 'none' : 'block';
-      });
-      holder.append(openBtn, pop);
+      const clr = btn('清除', '清除', () => { run((doc) => doc.execCommand(command, false, clearValue)); closePops(); });
+      clr.className = 'tb-clear';
+      pop.appendChild(clr);
+      holder.append(open, pop);
       return holder;
     }
+    function closePops() {
+      container.querySelectorAll('.tb-pop.open').forEach(p => p.classList.remove('open'));
+    }
 
-    const boldBtn = btn('', '加粗 Cmd+B', () => doc.execCommand('bold'));
-    const boldLabel = doc.createElement('b');
-    boldLabel.textContent = 'B';
-    boldBtn.appendChild(boldLabel);
-    bar.appendChild(boldBtn);
-    bar.appendChild(btn('I', '斜体 Cmd+I', () => doc.execCommand('italic')));
-    bar.appendChild(btn('U', '下划线 Cmd+U', () => doc.execCommand('underline')));
-    bar.appendChild(btn('S', '删除线', () => doc.execCommand('strikeThrough')));
-    bar.appendChild(palette('A', '文字颜色', TEXT_COLORS, 'foreColor'));
-    bar.appendChild(palette('🖍', '背景高亮', HILITE_COLORS, 'hiliteColor'));
-    bar.appendChild(btn('清除格式', '移除行内格式', () => doc.execCommand('removeFormat')));
+    // ---- 链接弹窗 ----
+    let linkSnapshot = null;
+    const linkHolder = d.createElement('span'); linkHolder.className = 'tb-holder';
+    const linkBtn = btn('🔗', '链接', () => openLink());
+    const linkPop = d.createElement('div'); linkPop.className = 'tb-pop tb-linkpop';
+    const linkInput = d.createElement('input');
+    linkInput.type = 'text'; linkInput.placeholder = 'https://…'; linkInput.className = 'tb-linkinput';
+    const linkOk = btn('确定', '应用链接', () => applyLink());
+    const linkRemove = btn('移除', '移除链接', () => { linkInput.value = ''; applyLink(); });
+    linkOk.className = 'tb-textbtn'; linkRemove.className = 'tb-textbtn';
+    const linkRow = d.createElement('div'); linkRow.className = 'tb-linkrow';
+    linkRow.append(linkInput, linkOk, linkRemove);
+    linkPop.appendChild(linkRow);
+    linkHolder.append(linkBtn, linkPop);
+    linkInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyLink(); } if (e.key === 'Escape') closePops(); });
 
-    doc.addEventListener('selectionchange', () => {
-      const sel = doc.getSelection();
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) { bar.style.display = 'none'; hidePalettes(); return; }
-      const node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
-      if (!node || !doc.body.contains(node) || node.closest('[data-ws2-block="locked"]') || node.closest('[data-ws2-ui]')) {
-        bar.style.display = 'none';
-        return;
-      }
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
-      if (rect.width === 0 && rect.height === 0) { bar.style.display = 'none'; return; }
-      bar.style.display = 'block';
-      bar.style.left = Math.max(8, rect.left) + 'px';
-      bar.style.top = Math.max(8, rect.top - bar.offsetHeight - 8) + 'px';
+    function openLink() {
+      const showing = linkPop.classList.contains('open');
+      closePops();
+      if (showing || !ctx.doc) return;
+      linkSnapshot = ctx.getRange ? ctx.getRange() : null;
+      const a = global.WS2Format ? WS2Format.anchorAt(ctx.doc) : null;
+      linkInput.value = a ? (a.getAttribute('href') || '') : '';
+      linkPop.classList.add('open');
+      linkInput.focus(); linkInput.select();
+    }
+    function unwrap(el) {
+      const p = el.parentNode; if (!p) return;
+      while (el.firstChild) p.insertBefore(el.firstChild, el);
+      p.removeChild(el);
+    }
+    function applyLink() {
+      const url = linkInput.value.trim();
+      closePops();
+      if (!ctx.doc) return;
+      if (ctx.win && ctx.win.focus) ctx.win.focus();
+      restoreSelection(linkSnapshot);
+      const a = global.WS2Format ? WS2Format.anchorAt(ctx.doc) : null;
+      if (!url && a) unwrap(a);              // 清空 = 拆链接
+      else if (url && a) a.setAttribute('href', url);
+      else if (url) ctx.doc.execCommand('createLink', false, url);
+      if (ctx.undoMgr) ctx.undoMgr.checkpoint();
+      hooks.markDirty();
+      if (global.WS2Blocks) WS2Blocks.markBlocks(ctx.doc.body);
+      refresh();
+    }
+
+    // ---- 文字色按钮（A 带下划色条） ----
+    const colorA = '<span class="tb-aglyph">A</span>';
+
+    // ---- 组装 ----
+    els.bold = btn('<b>B</b>', '加粗 Cmd+B', cmd('bold'));
+    els.italic = btn('<i>I</i>', '斜体 Cmd+I', cmd('italic'));
+    els.underline = btn('<u>U</u>', '下划线 Cmd+U', cmd('underline'));
+    els.strike = btn('<s>S</s>', '删除线', cmd('strikeThrough'));
+
+    els.heading = select(HEADINGS.map(h => ({ label: h.label, value: h.tag })),
+      (v) => run((doc) => doc.execCommand('formatBlock', false, v)));
+
+    els.ul = btn('•', '无序列表', cmd('insertUnorderedList'));
+    els.ol = btn('1.', '有序列表', cmd('insertOrderedList'));
+
+    els.font = select(FONTS, (v) => { if (v) run((doc) => doc.execCommand('fontName', false, v)); }, { reset: true });
+    els.size = select(SIZES.map(s => ({ label: s, value: s === '字号' ? '' : s })),
+      (v) => { if (v) run((doc) => WS2Format.wrapInlineStyle(doc, 'fontSize', v + 'px')); }, { reset: true });
+
+    els.color = colorMenu(colorA, '文字颜色', TEXT_COLORS, 'foreColor', '#1a1a1a');
+    els.hilite = colorMenu('🖍', '背景高亮', HILITE_COLORS, 'hiliteColor', 'transparent');
+
+    els.alignL = btn('左', '左对齐', cmd('justifyLeft'));
+    els.alignC = btn('中', '居中', cmd('justifyCenter'));
+    els.alignR = btn('右', '右对齐', cmd('justifyRight'));
+
+    els.dup = btn('⧉', '复制块', () => run((doc) => { WS2Format.duplicateBlock(WS2Format.currentBlock(doc)); }));
+    els.up = btn('↑', '上移块', () => run((doc) => { WS2Format.moveBlock(WS2Format.currentBlock(doc), -1); }));
+    els.down = btn('↓', '下移块', () => run((doc) => { WS2Format.moveBlock(WS2Format.currentBlock(doc), 1); }));
+    els.del = btn('🗑', '删除块', () => run((doc) => { const b = WS2Format.currentBlock(doc); if (b) b.remove(); }), { danger: true });
+
+    els.hr = btn('―', '插入分隔线', cmd('insertHorizontalRule'));
+    els.clear = btn('清除格式', '移除行内格式', cmd('removeFormat'));
+    els.clear.className = 'tb-btn tb-textbtn';
+
+    els.undo = btn('↶', '撤销', () => { if (ctx.undoMgr && ctx.undoMgr.undo()) { hooks.markDirty(); refresh(); } });
+    els.redo = btn('↷', '重做', () => { if (ctx.undoMgr && ctx.undoMgr.redo()) { hooks.markDirty(); refresh(); } });
+
+    container.append(
+      group(els.bold, els.italic, els.underline, els.strike), sep(),
+      group(els.heading), sep(),
+      group(els.ul, els.ol), sep(),
+      group(els.font, els.size), sep(),
+      group(els.color, els.hilite), sep(),
+      group(linkHolder), sep(),
+      group(els.alignL, els.alignC, els.alignR), sep(),
+      group(els.dup, els.up, els.down, els.del), sep(),
+      group(els.hr, els.clear), sep(),
+      group(els.undo, els.redo)
+    );
+
+    // 点工具栏外关掉所有弹窗（含 iframe 内点击——shell 会把 iframe 的 mousedown 转过来）。
+    d.addEventListener('mousedown', (e) => {
+      if (!container.contains(e.target)) closePops();
     });
+
+    function refresh() {
+      const on = !!ctx.doc;
+      container.querySelectorAll('button, select, input').forEach(el => { el.disabled = !on; });
+      if (!on) return;
+      const doc = ctx.doc;
+      try {
+        els.bold.classList.toggle('active', doc.queryCommandState('bold'));
+        els.italic.classList.toggle('active', doc.queryCommandState('italic'));
+        els.underline.classList.toggle('active', doc.queryCommandState('underline'));
+        els.strike.classList.toggle('active', doc.queryCommandState('strikeThrough'));
+      } catch (e) {}
+      const block = global.WS2Format ? WS2Format.currentBlock(doc) : null;
+      if (block) {
+        const tag = block.tagName.toLowerCase();
+        els.heading.value = HEADINGS.some(h => h.tag === tag) ? tag : 'p';
+      }
+    }
+
+    function setContext(next) {
+      ctx = Object.assign({ doc: null, win: null, getRange: () => null, undoMgr: null }, next);
+      closePops();
+      refresh();
+    }
+
+    refresh(); // 初始：无文档 → 全禁用
+    return { setContext, refresh, closePops };
   }
 
-  const api = { attach };
+  const api = { create };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2Toolbar = api;
 })(typeof window !== 'undefined' ? window : globalThis);

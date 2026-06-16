@@ -4,6 +4,33 @@ body { font-family: -apple-system, "PingFang SC", sans-serif; height: 100vh; dis
 #topbar .spacer { flex: 1; }
 #topbar button { font-size: 13px; padding: 5px 14px; border: 1px solid #ddd; border-radius: 5px; background: #fff; cursor: pointer; }
 #topbar button:disabled { opacity: 0.4; cursor: default; }
+#brand { font-weight: 600; font-size: 14px; color: #1a1a1a; letter-spacing: 0.2px; }
+.topbar-sep { width: 1px; height: 18px; background: #e0e0e0; }
+
+/* 常驻富工具栏（父层 app chrome，仿 heyhtml） */
+#toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 2px; padding: 5px 12px; border-bottom: 1px solid #e7e7e3; background: #fbfbfa; font-family: -apple-system, "PingFang SC", sans-serif; }
+#toolbar[hidden] { display: none; }
+.tb-group { display: inline-flex; align-items: center; gap: 1px; }
+.tb-sep { width: 1px; height: 20px; background: #e3e3e0; margin: 0 6px; }
+.tb-btn { min-width: 28px; height: 28px; padding: 0 6px; border: none; background: transparent; border-radius: 5px; cursor: pointer; color: #333; font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.tb-btn:hover { background: #ececea; }
+.tb-btn.active { background: #e3edfb; color: #1a73e8; }
+.tb-btn:disabled { opacity: 0.35; cursor: default; background: transparent; }
+.tb-textbtn { width: auto; padding: 0 9px; font-size: 13px; }
+.tb-danger { color: #b3261e; }
+.tb-danger:hover { background: #fdecec; }
+.tb-aglyph { border-bottom: 2px solid #b3261e; padding-bottom: 1px; font-weight: 600; }
+.tb-select { height: 28px; border: 1px solid #e0e0dc; border-radius: 5px; background: #fff; font-size: 13px; padding: 0 4px; color: #333; cursor: pointer; }
+.tb-select:disabled { opacity: 0.35; cursor: default; }
+.tb-holder { position: relative; display: inline-flex; }
+.tb-pop { position: absolute; top: 100%; left: 0; margin-top: 5px; display: none; background: #fff; border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,0.12); padding: 8px; z-index: 50; width: 132px; }
+.tb-pop.open { display: block; }
+.tb-swatch { width: 20px; height: 20px; border: 1px solid #ddd; border-radius: 4px; margin: 2px; cursor: pointer; padding: 0; }
+.tb-clear { display: block; width: 100%; margin-top: 6px; font-size: 12px; color: #666; background: none; border: none; cursor: pointer; text-align: left; padding: 4px; }
+.tb-clear:hover { color: #1a1a1a; }
+.tb-linkpop { width: 300px; }
+.tb-linkrow { display: flex; gap: 6px; align-items: center; }
+.tb-linkinput { flex: 1; min-width: 0; height: 28px; border: 1px solid #ddd; border-radius: 5px; padding: 0 8px; font-size: 13px; }
 #doc-name { font-size: 13px; color: #333; }
 #dirty-dot { color: #e0a800; font-size: 10px; }
 #home { flex: 1; padding: 80px 60px; overflow: auto; }

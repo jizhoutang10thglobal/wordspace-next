@@ -2,6 +2,7 @@ let docPath = null;
 let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name }，主进程算（见 window.ws2.pathInfo）
 let dirty = false;
 let undoMgr = null;
+let savedRange = null; // iframe 内最近一次有效选区——常驻工具栏跨帧执行命令前要恢复它
 
 const frame = document.getElementById('doc-frame');
 const home = document.getElementById('home');
@@ -9,6 +10,7 @@ const docName = document.getElementById('doc-name');
 const dirtyDot = document.getElementById('dirty-dot');
 const saveBtn = document.getElementById('save-btn');
 const historyBtn = document.getElementById('history-btn');
+const toolbarEl = document.getElementById('toolbar');
 
 function setDirty(v) {
   dirty = v;
@@ -17,6 +19,20 @@ function setDirty(v) {
   window.ws2.setDirty(v);
 }
 const markDirty = () => setDirty(true);
+
+// 常驻工具栏只建一次（父层 app chrome）；每次开文档由 wireEditor 用 setContext 换上下文。
+const toolbar = WS2Toolbar.create(toolbarEl, { markDirty });
+
+// 记录 iframe 内最近一次落在正文里的选区。工具栏按钮在父层、点击会让 iframe 失焦，
+// 跨帧执行命令前要把这个选区恢复回去。
+function saveRange() {
+  const doc = frame.contentDocument;
+  const sel = doc && doc.getSelection && doc.getSelection();
+  if (sel && sel.rangeCount > 0) {
+    const r = sel.getRangeAt(0);
+    if (doc.body && doc.body.contains(r.commonAncestorContainer)) savedRange = r.cloneRange();
+  }
+}
 
 // 仅用于显示的纯文件名：跨平台按 / 或 \ 切（Windows 路径用反斜杠）。真正加载用的 URL 一律走
 // 主进程的 window.ws2.pathInfo（Node url.pathToFileURL），renderer 不自己拼 file:// URL。
@@ -44,7 +60,11 @@ function wireEditor() {
   try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
   try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
   undoMgr = new WS2Undo.UndoManager(doc);
-  if (window.WS2Toolbar) WS2Toolbar.attach(doc, undoMgr, markDirty);
+  savedRange = null;
+  // 常驻工具栏换上下文到当前文档：跨帧执行命令 + 取最近选区恢复
+  toolbar.setContext({ doc, win: frame.contentWindow, getRange: () => savedRange, undoMgr });
+  doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); });
+  doc.addEventListener('mousedown', () => toolbar.closePops());
   if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);
   if (window.WS2Drag) WS2Drag.attach(doc, undoMgr, markDirty);
   doc.addEventListener('input', () => {
@@ -73,6 +93,7 @@ function wireEditor() {
 function prepFrame(asDirty) {
   home.hidden = true;
   frame.hidden = false;
+  toolbarEl.hidden = false;
   docName.textContent = docInfo.name;
   historyBtn.disabled = false;
   setDirty(!!asDirty);

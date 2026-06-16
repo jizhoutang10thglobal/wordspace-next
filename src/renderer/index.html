@@ -8,13 +8,16 @@
 </head>
 <body>
 <header id="topbar">
-  <button id="open-btn">打开文档</button>
+  <span id="brand">Wordspace Next</span>
+  <span class="topbar-sep"></span>
+  <button id="open-btn">打开</button>
   <span id="doc-name"></span>
   <span id="dirty-dot" hidden>●</span>
   <span class="spacer"></span>
   <button id="history-btn" disabled>历史版本</button>
   <button id="save-btn" disabled>保存</button>
 </header>
+<div id="toolbar" hidden></div>
 <main id="home">
   <h1>Wordspace Next</h1>
   <p class="hint">打开一个 HTML 文档开始编辑</p>
@@ -31,6 +34,7 @@
 <script src="../editor/blocks.js"></script>
 <script src="../editor/serialize.js"></script>
 <script src="../editor/undo.js"></script>
+<script src="../editor/format.js"></script>
 <script src="../editor/toolbar.js"></script>
 <script src="../editor/slashmenu.js"></script>
 <script src="../editor/draghandle.js"></script>
