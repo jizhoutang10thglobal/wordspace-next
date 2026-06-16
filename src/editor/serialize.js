@@ -11,6 +11,7 @@
   // 那会误删文档自带的 data-ws2-* 属性（用户内容损坏，保真红线）。
   const WS2_MARKERS = new Set([
     'data-ws2-ui', 'data-ws2-ce', 'data-ws2-sc', 'data-ws2-block', 'data-ws2-container',
+    'data-ws2-canvas', 'data-ws2-eid',
   ]);
 
   function cleanRoot(root) {

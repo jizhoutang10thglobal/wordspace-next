@@ -21,7 +21,7 @@
 
   function create(container, hooks) {
     const d = container.ownerDocument;
-    let ctx = { doc: null, win: null, getRange: () => null, undoMgr: null };
+    let ctx = { doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null };
     const els = {};
 
     function restoreSelection(range) {
@@ -31,7 +31,8 @@
       if (r && sel) { try { sel.removeAllRanges(); sel.addRange(r); } catch (e) {} }
     }
 
-    // 跨帧执行：先聚焦 iframe + 恢复选区，再跑命令；之后 checkpoint + 标脏 + 重标块 + 刷新状态。
+    // 跨帧执行：先聚焦 iframe + 恢复选区，再跑命令；之后 checkpoint + 标脏 + 刷新状态。
+    // 画布模型不需要重标块（不再依赖 data-ws2-block），故去掉 WS2Blocks.markBlocks。
     function run(fn) {
       if (!ctx.doc) return;
       if (ctx.win && ctx.win.focus) ctx.win.focus();
@@ -39,7 +40,6 @@
       fn(ctx.doc);
       if (ctx.undoMgr) ctx.undoMgr.checkpoint();
       hooks.markDirty();
-      if (global.WS2Blocks) WS2Blocks.markBlocks(ctx.doc.body);
       refresh();
     }
     const cmd = (name, val) => () => run((doc) => doc.execCommand(name, false, val));
@@ -150,7 +150,6 @@
       else ctx.doc.execCommand('createLink', false, safe);
       if (ctx.undoMgr) ctx.undoMgr.checkpoint();
       hooks.markDirty();
-      if (global.WS2Blocks) WS2Blocks.markBlocks(ctx.doc.body);
       refresh();
     }
 
@@ -229,7 +228,7 @@
     }
 
     function setContext(next) {
-      ctx = Object.assign({ doc: null, win: null, getRange: () => null, undoMgr: null }, next);
+      ctx = Object.assign({ doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null }, next);
       closePops();
       refresh();
     }

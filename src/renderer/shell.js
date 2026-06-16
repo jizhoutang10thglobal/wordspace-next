@@ -2,6 +2,7 @@ let docPath = null;
 let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name }，主进程算（见 window.ws2.pathInfo）
 let dirty = false;
 let undoMgr = null;
+let canvas = null; // 当前文档的画布控制器（HVE_Core），取代旧块流 applyEditable
 let savedRange = null; // iframe 内最近一次有效选区——常驻工具栏跨帧执行命令前要恢复它
 
 const frame = document.getElementById('doc-frame');
@@ -10,6 +11,7 @@ const docName = document.getElementById('doc-name');
 const dirtyDot = document.getElementById('dirty-dot');
 const saveBtn = document.getElementById('save-btn');
 const historyBtn = document.getElementById('history-btn');
+const modeBtn = document.getElementById('mode-btn');
 const toolbarEl = document.getElementById('toolbar');
 
 function setDirty(v) {
@@ -45,24 +47,19 @@ function injectBase(doc, dirUrl) {
   doc.head.prepend(base);
 }
 
-function injectUiStyle(doc) {
-  const style = doc.createElement('style');
-  style.setAttribute('data-ws2-ui', '');
-  style.textContent = '[data-ws2-block="locked"]:hover { outline: 1px dashed #ccc; }';
-  doc.documentElement.appendChild(style);
-}
-
 // 文档载入后接线编辑器（真实 file:// 与 srcdoc 两种载入方式通用）
 function wireEditor() {
   const doc = frame.contentDocument;
-  injectUiStyle(doc);
-  WS2Blocks.applyEditable(doc);
+  undoMgr = new WS2Undo.UndoManager(doc);
+  // 画布控制器取代旧 blocks.applyEditable：进入编辑模式（不再把 body 设成 contenteditable）
+  canvas = WS2Canvas.create(doc, { undoMgr, markDirty });
+  canvas.enable();
+  modeBtn.textContent = '预览';
   try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
   try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
-  undoMgr = new WS2Undo.UndoManager(doc);
   savedRange = null;
   // 常驻工具栏换上下文到当前文档：跨帧执行命令 + 取最近选区恢复
-  toolbar.setContext({ doc, win: frame.contentWindow, getRange: () => savedRange, undoMgr });
+  toolbar.setContext({ doc, win: frame.contentWindow, getRange: () => savedRange, undoMgr, canvas });
   doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); });
   doc.addEventListener('mousedown', () => toolbar.closePops());
   if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);
@@ -70,8 +67,7 @@ function wireEditor() {
   doc.addEventListener('input', () => {
     markDirty();
     undoMgr.scheduleCheckpoint();
-    // 编辑中新产生的块（如斜杠菜单插入的分隔线）即时标注，保证有手柄可拖可删
-    WS2Blocks.markBlocks(doc.body);
+    // 画布模型不需要重标块；选中态是真实元素 ref、由 input 改不动结构，无需刷新
   });
   doc.addEventListener('paste', (e) => {
     e.preventDefault();
@@ -96,7 +92,20 @@ function prepFrame(asDirty) {
   toolbarEl.hidden = false;
   docName.textContent = docInfo.name;
   historyBtn.disabled = false;
+  modeBtn.disabled = false;
   setDirty(!!asDirty);
+}
+
+// 编辑/预览切换：预览态停用画布交互（disable），编辑态恢复（enable）。
+function toggleMode() {
+  if (!canvas) return;
+  if (canvas.getState().enabled) {
+    canvas.disable();
+    modeBtn.textContent = '编辑';
+  } else {
+    canvas.enable();
+    modeBtn.textContent = '预览';
+  }
 }
 
 // 打开真实文件：iframe 直接指向 file:// URL（主进程 pathInfo 算，跨平台正确），
@@ -207,6 +216,7 @@ async function showHistory() {
 document.getElementById('open-btn').onclick = pickAndOpen;
 saveBtn.onclick = save;
 historyBtn.onclick = showHistory;
+modeBtn.onclick = toggleMode;
 document.getElementById('history-close').onclick = () => { document.getElementById('history-modal').hidden = true; };
 
 window.ws2.onOpenFile((p) => openDoc(p));

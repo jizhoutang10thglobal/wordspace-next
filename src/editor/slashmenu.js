@@ -81,7 +81,11 @@
           const sel = doc.getSelection();
           const node = sel && sel.anchorNode;
           const el = node && (node.nodeType === 1 ? node : node.parentElement);
-          if (!el || !el.closest('[data-ws2-block="text"], li')) return;
+          // 画布模型不再标 data-ws2-block：改成「光标在可编辑文字元素内」判定（沿 DOM 往上找）。
+          const fmt = global.WS2Format;
+          let host = el;
+          while (host && host !== doc.body && !(fmt && fmt.isTextEditable(host))) host = host.parentElement;
+          if (!host || host === doc.body) return;
           open = true; query = ''; active = 0;
           setTimeout(() => {
             const rect = caretRect();
