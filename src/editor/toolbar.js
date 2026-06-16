@@ -18,10 +18,14 @@
   const SIZES = ['字号', '12', '14', '16', '18', '20', '24', '28', '32', '40'];
   const TEXT_COLORS = ['#1a1a1a', '#888888', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2'];
   const HILITE_COLORS = ['#fff59d', '#ffd6d6', '#d7f0db', '#dbe9ff', '#f3e3ff'];
+  // 视觉效果循环表（元素级，applyToSel + applyBlockStyle，CSSOM 写）。
+  const RADII = ['', '8px', '16px'];
+  const OPACITIES = ['', '0.75', '0.5'];
+  const BOX_SHADOW = '0 6px 18px rgba(0,0,0,0.18)';
 
   function create(container, hooks) {
     const d = container.ownerDocument;
-    let ctx = { doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null, getSelectedEl: () => null };
+    let ctx = { doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null, getSelectedEl: () => null, isTextEditing: () => false };
     const els = {};
 
     function restoreSelection(range) {
@@ -43,6 +47,20 @@
       refresh();
     }
     const cmd = (name, val) => () => run((doc) => doc.execCommand(name, false, val));
+
+    // 元素级执行：对 ctx.getSelectedEl() 跑 fn(el)，再 checkpoint + 标脏 + 刷新。
+    // 离散工具栏点击用 html 快照 checkpoint 够了（recordStyleOp 是给拖拽高频用的）。
+    function applyToSel(fn) {
+      const el = ctx.getSelectedEl && ctx.getSelectedEl();
+      if (!el) return;
+      fn(el);
+      if (ctx.undoMgr && ctx.undoMgr.checkpoint) ctx.undoMgr.checkpoint();
+      hooks.markDirty();
+      refresh();
+    }
+    // 当前是否在内联文字编辑（有文字 range 在编辑）→ 命令走 range；否则走被选元素。
+    const editing = () => !!(ctx.isTextEditing && ctx.isTextEditing());
+    const selEl = () => (ctx.getSelectedEl && ctx.getSelectedEl()) || null;
 
     // ---- DOM 构建小工具 ----
     function btn(label, title, onClick, opts) {
@@ -76,24 +94,33 @@
       });
       return s;
     }
-    // 颜色弹窗：openBtn 旁挂 swatch 面板。
-    function colorMenu(label, title, colors, command, clearValue) {
+    // 颜色弹窗：openBtn 旁挂 swatch 面板。styleProp = 元素级 CSSOM 属性（heyhtml 颜色作用于被选元素，
+    // 不需进文字编辑）；editing() 真时仍走 range execCommand。
+    function colorMenu(label, title, colors, command, clearValue, styleProp) {
       const holder = d.createElement('span'); holder.className = 'tb-holder';
       const open = btn(label, title, () => {
         const showing = pop.classList.contains('open');
         closePops();
         if (!showing) pop.classList.add('open');
       });
+      const applyColor = (c) => {
+        if (editing() || !selEl()) run((doc) => doc.execCommand(command, false, c));
+        else applyToSel((el) => WS2Format.applyBlockStyle(el, styleProp, c));
+      };
       const pop = d.createElement('div'); pop.className = 'tb-pop';
       for (const c of colors) {
         const sw = d.createElement('button');
         sw.className = 'tb-swatch'; sw.title = c;
         sw.style.background = c;
         sw.addEventListener('mousedown', (e) => e.preventDefault());
-        sw.addEventListener('click', () => { run((doc) => doc.execCommand(command, false, c)); closePops(); });
+        sw.addEventListener('click', () => { applyColor(c); closePops(); });
         pop.appendChild(sw);
       }
-      const clr = btn('清除', '清除', () => { run((doc) => doc.execCommand(command, false, clearValue)); closePops(); });
+      const clr = btn('清除', '清除', () => {
+        if (editing() || !selEl()) run((doc) => doc.execCommand(command, false, clearValue));
+        else applyToSel((el) => WS2Format.applyBlockStyle(el, styleProp, ''));
+        closePops();
+      });
       clr.className = 'tb-clear';
       pop.appendChild(clr);
       holder.append(open, pop);
@@ -162,22 +189,50 @@
     els.underline = btn('<u>U</u>', '下划线 Cmd+U', cmd('underline'));
     els.strike = btn('<s>S</s>', '删除线', cmd('strikeThrough'));
 
-    els.heading = select(HEADINGS.map(h => ({ label: h.label, value: h.tag })),
-      (v) => run((doc) => doc.execCommand('formatBlock', false, v)));
+    els.heading = select(HEADINGS.map(h => ({ label: h.label, value: h.tag })), (v) => {
+      if (editing() || !selEl()) { run((doc) => doc.execCommand('formatBlock', false, v)); return; }
+      applyToSel((el) => {
+        const next = WS2Format.retagElement(el, v);
+        if (next !== el && ctx.canvas && ctx.canvas.select) ctx.canvas.select(next);
+      });
+    });
 
     els.ul = btn('•', '无序列表', cmd('insertUnorderedList'));
     els.ol = btn('1.', '有序列表', cmd('insertOrderedList'));
 
-    els.font = select(FONTS, (v) => { if (v) run((doc) => doc.execCommand('fontName', false, v)); }, { reset: true });
-    els.size = select(SIZES.map(s => ({ label: s, value: s === '字号' ? '' : s })),
-      (v) => { if (v) run((doc) => WS2Format.wrapInlineStyle(doc, 'fontSize', v + 'px')); }, { reset: true });
+    els.font = select(FONTS, (v) => {
+      if (!v) return;
+      if (editing() || !selEl()) { run((doc) => doc.execCommand('fontName', false, v)); return; }
+      applyToSel((el) => WS2Format.applyBlockStyle(el, 'fontFamily', v));
+    }, { reset: true });
+    els.size = select(SIZES.map(s => ({ label: s, value: s === '字号' ? '' : s })), (v) => {
+      if (!v) return;
+      if (editing() || !selEl()) { run((doc) => WS2Format.wrapInlineStyle(doc, 'fontSize', v + 'px')); return; }
+      applyToSel((el) => WS2Format.applyBlockStyle(el, 'fontSize', v + 'px'));
+    }, { reset: true });
 
-    els.color = colorMenu(colorA, '文字颜色', TEXT_COLORS, 'foreColor', '#1a1a1a');
-    els.hilite = colorMenu('🖍', '背景高亮', HILITE_COLORS, 'hiliteColor', 'transparent');
+    els.color = colorMenu(colorA, '文字颜色', TEXT_COLORS, 'foreColor', '#1a1a1a', 'color');
+    els.hilite = colorMenu('🖍', '背景高亮', HILITE_COLORS, 'hiliteColor', 'transparent', 'backgroundColor');
 
-    els.alignL = btn('左', '左对齐', cmd('justifyLeft'));
-    els.alignC = btn('中', '居中', cmd('justifyCenter'));
-    els.alignR = btn('右', '右对齐', cmd('justifyRight'));
+    // 对齐：文字编辑态走 execCommand justify*；否则元素级 textAlign。
+    const align = (command, value) => () => {
+      if (editing() || !selEl()) run((doc) => doc.execCommand(command, false));
+      else applyToSel((el) => WS2Format.applyBlockStyle(el, 'textAlign', value));
+    };
+    els.alignL = btn('左', '左对齐', align('justifyLeft', 'left'));
+    els.alignC = btn('中', '居中', align('justifyCenter', 'center'));
+    els.alignR = btn('右', '右对齐', align('justifyRight', 'right'));
+
+    // 视觉效果（元素级，无文字编辑分支——heyhtml 这组只作用于被选元素）：
+    // 圆角 0→8→16→0、不透明度 1→0.75→0.5→1、阴影开关。
+    function cycle(prop, ring, el) {
+      const cur = el.style[prop] || '';
+      const i = ring.indexOf(cur);
+      return ring[(i + 1) % ring.length];
+    }
+    els.radius = btn('⬚', '圆角', () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'borderRadius', cycle('borderRadius', RADII, el))));
+    els.shadow = btn('▦', '阴影', () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'boxShadow', el.style.boxShadow ? '' : BOX_SHADOW)));
+    els.opacity = btn('◐', '不透明度', () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'opacity', cycle('opacity', OPACITIES, el))));
 
     // 块操作目标：优先被选元素（HVE 选择模型），回退到光标当前块（文字编辑路径）。
     const blockTarget = (doc) => (ctx.getSelectedEl && ctx.getSelectedEl()) || WS2Format.currentBlock(doc);
@@ -201,6 +256,7 @@
       group(els.color, els.hilite), sep(),
       group(linkHolder), sep(),
       group(els.alignL, els.alignC, els.alignR), sep(),
+      group(els.radius, els.shadow, els.opacity), sep(),
       group(els.dup, els.up, els.down, els.del), sep(),
       group(els.hr, els.clear), sep(),
       group(els.undo, els.redo)
@@ -222,7 +278,8 @@
         els.underline.classList.toggle('active', doc.queryCommandState('underline'));
         els.strike.classList.toggle('active', doc.queryCommandState('strikeThrough'));
       } catch (e) {}
-      const block = global.WS2Format ? WS2Format.currentBlock(doc) : null;
+      // 标题下拉反映当前块：非编辑态有被选元素时用它；否则回退光标当前块（文字编辑路径）。
+      const block = (!editing() && selEl()) || (global.WS2Format ? WS2Format.currentBlock(doc) : null);
       if (block) {
         const tag = block.tagName.toLowerCase();
         els.heading.value = HEADINGS.some(h => h.tag === tag) ? tag : 'p';
@@ -230,7 +287,7 @@
     }
 
     function setContext(next) {
-      ctx = Object.assign({ doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null, getSelectedEl: () => null }, next);
+      ctx = Object.assign({ doc: null, win: null, getRange: () => null, undoMgr: null, canvas: null, getSelectedEl: () => null, isTextEditing: () => false }, next);
       closePops();
       refresh();
     }
