@@ -48,3 +48,19 @@ test('preserves top-level comments and legacy doctype', () => {
   assert.ok(out.includes('"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"'));
   assert.ok(!out.includes('data-ws2'));
 });
+
+// U5：白名单 = 精确集合，不是前缀。用户文档自带的 data-ws2-* 属性必须原样保留（保真红线）；
+// 编辑器自己的画布标记（data-ws2-canvas/-eid 等）必须剥掉。
+test('whitelist is exact, not prefix: keeps author data-ws2-* but strips editor canvas markers', () => {
+  const dom = new JSDOM('<!DOCTYPE html><html><body>' +
+    '<div data-ws2-canvas data-ws2-eid="7" data-ws2-foo="keep" style="left:5px;">x</div>' +
+    '</body></html>');
+  const doc = dom.window.document;
+  const out = serializeDocument(doc);
+  // 编辑器标记剥掉
+  assert.ok(!out.includes('data-ws2-canvas'), 'data-ws2-canvas 应被剥');
+  assert.ok(!out.includes('data-ws2-eid'), 'data-ws2-eid 应被剥');
+  // 用户自带属性 + 内联样式（拖动/缩放写的几何）保留
+  assert.ok(out.includes('data-ws2-foo="keep"'), '用户自带 data-ws2-foo 必须保留（非前缀剥）');
+  assert.ok(out.includes('left:'), '内联样式（画布几何）必须保留');
+});
