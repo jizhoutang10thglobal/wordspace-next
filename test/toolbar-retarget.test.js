@@ -22,12 +22,14 @@ function clickBtn(container, title) {
   assert.ok(b, '找不到按钮 title=' + title);
   b.click();
 }
-function pickHeading(container, value) {
-  // heading select 是第一个 select（HEADINGS）；用 option 文本反查更稳，这里直接按已知顺序取。
-  const sels = [...container.querySelectorAll('select')];
-  const heading = sels[0];
-  heading.value = value;
-  heading.dispatchEvent(new container.ownerDocument.defaultView.Event('change'));
+function pickTurn(container, label) {
+  // 「转为」菜单：点「转换类型」开菜单，再点对应 .tb-menu-item（取代旧 heading <select>）。
+  const trigger = [...container.querySelectorAll('button')].find(x => x.title === '转换类型');
+  assert.ok(trigger, '找不到转换类型按钮');
+  trigger.click();
+  const item = [...container.querySelectorAll('.tb-menu-item')].find(x => x.textContent === label);
+  assert.ok(item, '找不到转为菜单项 ' + label);
+  item.click();
 }
 function pickByOptionValue(container, optionValue) {
   // 找到含该 value 的 select，设值并触发 change。
@@ -41,7 +43,7 @@ function pickByOptionValue(container, optionValue) {
   return false;
 }
 
-test('非编辑态：heading h2 把被选 <p> retag 成 <h2>，并刷新选中', () => {
+test('非编辑态：转为「标题 2」把被选 <p> retag 成 <h2>，并刷新选中', () => {
   const { tb, container, doc } = setup('<p id="p1">hello</p>');
   let selectedEl = doc.getElementById('p1');
   const canvasStub = { select: (el) => { selectedEl = el; return el; } };
@@ -49,7 +51,7 @@ test('非编辑态：heading h2 把被选 <p> retag 成 <h2>，并刷新选中',
     doc, getSelectedEl: () => selectedEl, isTextEditing: () => false,
     undoMgr: { checkpoint() {} }, canvas: canvasStub
   });
-  pickHeading(container, 'h2');
+  pickTurn(container, '标题 2');
   const h2 = doc.querySelector('h2');
   assert.ok(h2, '<p> 应被 retag 成 <h2>');
   assert.equal(h2.id, 'p1');
@@ -128,11 +130,5 @@ test('文字编辑态：字号走 wrapInlineStyle（range span），不走 apply
   assert.equal(p.style.fontSize, '', '被选元素本身不应被 applyBlockStyle 改');
 });
 
-test('refresh: 非编辑态选中 <h3> → heading 下拉反映 h3', () => {
-  const { tb, container, doc } = setup('<h3 id="t">标题</h3>');
-  const h3 = doc.getElementById('t');
-  tb.setContext({ doc, getSelectedEl: () => h3, isTextEditing: () => false, undoMgr: { checkpoint() {} } });
-  tb.refresh();
-  const heading = container.querySelector('select');
-  assert.equal(heading.value, 'h3');
-});
+// 注：旧「heading 下拉反映当前块类型」用例已随设计移除——「转为」改成 Notion 式静态标签
+// （不再回显当前类型），与平行 session ui-demo 的 FormatToolbar 一致。

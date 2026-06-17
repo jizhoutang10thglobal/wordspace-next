@@ -3,7 +3,10 @@ let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name
 let dirty = false;
 let undoMgr = null;
 let canvas = null; // 当前文档的画布控制器（HVE_Core），取代旧块流 applyEditable
-let savedRange = null; // iframe 内最近一次有效选区——常驻工具栏跨帧执行命令前要恢复它
+let savedRange = null; // iframe 内最近一次有效选区——浮动工具栏跨帧执行命令前要恢复它
+let currentSelection = null; // 当前文档的选择 API（WS2Selection.attach 返回），浮动定位读它
+let currentTextEdit = null;  // 当前文档的文字编辑 API（WS2TextEdit.attach 返回）
+let insertApi = null;        // 顶栏「+ 插入」（WS2Insert.attach 返回）；换文档前 detach 防堆叠
 
 const frame = document.getElementById('doc-frame');
 const home = document.getElementById('home');
@@ -12,7 +15,9 @@ const dirtyDot = document.getElementById('dirty-dot');
 const saveBtn = document.getElementById('save-btn');
 const historyBtn = document.getElementById('history-btn');
 const modeBtn = document.getElementById('mode-btn');
+const topbarEl = document.getElementById('topbar');
 const toolbarEl = document.getElementById('toolbar');
+const insertSlot = document.getElementById('insert-slot');
 
 function setDirty(v) {
   dirty = v;
@@ -22,8 +27,58 @@ function setDirty(v) {
 }
 const markDirty = () => setDirty(true);
 
-// 常驻工具栏只建一次（父层 app chrome）；每次开文档由 wireEditor 用 setContext 换上下文。
-const toolbar = WS2Toolbar.create(toolbarEl, { markDirty });
+// 浮动工具栏只建一次（父层 app chrome）；每次开文档由 wireEditor 用 setContext 换上下文。
+// onApply：命令应用后元素几何可能变，重新定位气泡。
+const toolbar = WS2Toolbar.create(toolbarEl, { markDirty, onApply: () => repositionToolbar() });
+
+// ---- 浮动工具栏定位/显隐控制器 ----------------------------------------------
+// 工具栏是父层 position:fixed 气泡，被编辑元素/文字选区在 iframe 里。锚定 = iframe 内 rect +
+// frame.getBoundingClientRect()（iframe 在 renderer 视口的偏移）→ renderer 视口坐标。
+// 显示规则（仿 Notion）：文字编辑且有非折叠选区 → 浮选区上方（text 模式）；元素被选中（非编辑）
+// → 浮元素上方（element 模式）；其余隐藏。
+function hideToolbar() {
+  if (!toolbarEl.hidden) { toolbarEl.hidden = true; toolbar.closePops(); }
+}
+
+function showToolbarAt(rect, mode) {
+  toolbar.setMode(mode);
+  toolbarEl.hidden = false; // 先露出才能量 offsetWidth/Height
+  const fr = frame.getBoundingClientRect();
+  const tw = toolbarEl.offsetWidth;
+  const th = toolbarEl.offsetHeight;
+  const minTop = topbarEl.getBoundingClientRect().bottom + 6; // 别盖住顶栏
+  const centerX = fr.left + rect.left + rect.width / 2;
+  let top = fr.top + rect.top - th - 8;       // 默认浮在上方
+  if (top < minTop) top = fr.top + rect.top + rect.height + 8; // 上方放不下 → 翻到下方
+  let left = centerX - tw / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tw - 8)); // 横向夹住不出屏
+  toolbarEl.style.left = left + 'px';
+  toolbarEl.style.top = top + 'px';
+  toolbar.refresh();
+}
+
+function repositionToolbar() {
+  const doc = frame.contentDocument;
+  if (frame.hidden || !doc || !currentSelection) { hideToolbar(); return; }
+  const editing = currentTextEdit && currentTextEdit.isEditing();
+  let rect = null, mode = null;
+  if (editing) {
+    const sel = doc.getSelection && doc.getSelection();
+    if (sel && sel.rangeCount && !sel.isCollapsed) {
+      const range = sel.getRangeAt(0);
+      const r = range.getClientRects()[0] || range.getBoundingClientRect();
+      if (r && (r.width || r.height)) { rect = r; mode = 'text'; }
+    }
+    // 编辑态但选区折叠（只是光标）→ 不弹（Notion：选中文字才出气泡）
+  } else {
+    const el = currentSelection.current();
+    if (el) { rect = el.getBoundingClientRect(); mode = 'element'; }
+  }
+  if (!rect) { hideToolbar(); return; }
+  // 元素/选区被滚出 iframe 可视区 → 隐藏
+  if (rect.bottom < 0 || rect.top > frame.clientHeight) { hideToolbar(); return; }
+  showToolbarAt(rect, mode);
+}
 
 // 记录 iframe 内最近一次落在正文里的选区。工具栏按钮在父层、点击会让 iframe 失焦，
 // 跨帧执行命令前要把这个选区恢复回去。
@@ -55,7 +110,8 @@ function wireEditor() {
   canvas = WS2Canvas.create(doc, { undoMgr, markDirty });
   canvas.enable();
   // 选择内核：悬停虚线 / 点击实线 / Esc 选父 / 点空白取消（in-doc CSSOM 覆盖框）
-  const selection = WS2Selection.attach(doc, canvas, { refresh: () => { toolbar.refresh(); resize.render(); } });
+  const selection = WS2Selection.attach(doc, canvas, { refresh: () => { toolbar.refresh(); resize.render(); repositionToolbar(); } });
+  currentSelection = selection;
   // 缩放控制器（HVE_Resize）：选中元素时渲染 8 个 in-doc 手柄、拖手柄改宽高（+ 西/北平移原点），
   // 整次缩放一个 undo op（KTD3）。手柄走 CSSOM、不入存盘（KTD2）。render() 由 selection refresh 回调驱动。
   const resize = WS2Resize.attach(doc, {
@@ -66,7 +122,8 @@ function wireEditor() {
   // stopPropagation（编辑态下先于 selection 的 Esc-选父，见 KTD7）。
   // openLinkDialog 暂不传 → 双击 <a> 直接编辑锚文本（fall through）；完整链接弹窗路由是后续，
   // 工具栏现在没暴露 open-link 方法（openLink 只能从工具栏按钮触发），等暴露后再接。
-  const textEdit = WS2TextEdit.attach(doc, { markDirty, onEnter: () => {}, onExit: () => {} });
+  const textEdit = WS2TextEdit.attach(doc, { markDirty, onEnter: () => repositionToolbar(), onExit: () => repositionToolbar() });
+  currentTextEdit = textEdit;
   modeBtn.textContent = '预览';
   try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
   try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
@@ -74,13 +131,17 @@ function wireEditor() {
   // 常驻工具栏换上下文到当前文档：跨帧执行命令 + 取最近选区恢复 + 被选元素（块操作 retarget）
   toolbar.setContext({ doc, win: frame.contentWindow, getRange: () => savedRange, undoMgr, canvas,
     getSelectedEl: () => selection.current(), isTextEditing: () => textEdit.isEditing() });
-  doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); });
-  doc.addEventListener('mousedown', () => toolbar.closePops());
+  doc.addEventListener('selectionchange', () => { saveRange(); toolbar.refresh(); repositionToolbar(); });
+  // 在 iframe 内按下：关弹层 + 先收起气泡（拖动/缩放时不挡视线），mouseup 再按新几何弹回。
+  doc.addEventListener('mousedown', () => { toolbar.closePops(); hideToolbar(); });
+  doc.addEventListener('mouseup', () => repositionToolbar());
+  doc.addEventListener('scroll', () => repositionToolbar(), true); // 捕获含内层滚动容器 + 文档滚动
   if (window.WS2Slash) WS2Slash.attach(doc, undoMgr, markDirty);
-  // 插入面板（HVE_InsertPanel）：工具栏「+ 插入」开 Float/Flow 面板 + 10 种元素类型。
-  // 面板是父层 chrome（shell.css 类，非注入 iframe）；工厂建的元素带 inline 样式、序列化白嫖。
+  // 插入面板（HVE_InsertPanel）：顶栏「+ 插入」开 Float/Flow 面板 + 10 种元素类型。面板是父层
+  // chrome（shell.css 类，非注入 iframe）。换文档前 detach 防触发钮/面板在父层堆叠。
   // 插入后 canvas.select 新元素（出手柄 + 可拖），checkpoint（结构变更走 html 快照 undo）。
-  if (window.WS2Insert) WS2Insert.attach(toolbarEl, {
+  if (insertApi) { insertApi.detach(); insertApi = null; }
+  if (window.WS2Insert) insertApi = WS2Insert.attach(insertSlot, {
     doc, getSelectedEl: () => selection.current(), canvas, undoMgr, markDirty, win: frame.contentWindow,
   });
   // 智能对齐线 + 吸附（HVE_AlignGuide）：拖动中算被拖框与其它顶层元素的边/中心对齐，画品红线 +
@@ -135,6 +196,7 @@ function wireEditor() {
         el.style.top = next.top + 'px';
         undoMgr.recordStyleOp(el, nudgeBefore, el.style.cssText, 'nudge');
         markDirty();
+        repositionToolbar(); // 元素被键盘微移 → 气泡跟上
         if (nudgeTimer) clearTimeout(nudgeTimer);
         nudgeTimer = setTimeout(commitNudge, 500); // 静默 500ms 收一个 op
         return;
@@ -154,18 +216,18 @@ function wireEditor() {
 function prepFrame(asDirty) {
   home.hidden = true;
   frame.hidden = false;
-  toolbarEl.hidden = false;
   docName.textContent = docInfo.name;
   historyBtn.disabled = false;
   modeBtn.disabled = false;
   setDirty(!!asDirty);
 }
 
-// 编辑/预览切换：预览态停用画布交互（disable），编辑态恢复（enable）。
+// 编辑/预览切换：预览态停用画布交互（disable）+ 收起气泡；编辑态恢复（enable）。
 function toggleMode() {
   if (!canvas) return;
   if (canvas.getState().enabled) {
     canvas.disable();
+    hideToolbar();
     modeBtn.textContent = '编辑';
   } else {
     canvas.enable();
@@ -176,9 +238,11 @@ function toggleMode() {
 // 打开真实文件：iframe 直接指向 file:// URL（主进程 pathInfo 算，跨平台正确），
 // 文档拥有自己的 CSP 上下文、相对资源天然解析
 function loadFromFile(opts) {
-  // 设 src 是同步、onload 异步：先失活工具栏 + 清旧选区，免得加载窗口期工具栏还指向上一个文档
+  // 设 src 是同步、onload 异步：先失活工具栏 + 清旧选区 + 收起气泡，免得加载窗口期还指向上个文档
   savedRange = null;
+  currentSelection = null; currentTextEdit = null;
   toolbar.setContext({});
+  hideToolbar();
   frame.onload = () => wireEditor();
   frame.removeAttribute('srcdoc');
   frame.src = docInfo.fileUrl;
@@ -188,7 +252,9 @@ function loadFromFile(opts) {
 // 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录（用 docInfo.dirUrl）
 function loadFromHtml(html, opts) {
   savedRange = null;
+  currentSelection = null; currentTextEdit = null;
   toolbar.setContext({});
+  hideToolbar();
   frame.onload = () => { injectBase(frame.contentDocument, docInfo.dirUrl); wireEditor(); };
   frame.removeAttribute('src');
   frame.srcdoc = html;
@@ -282,6 +348,7 @@ document.getElementById('open-btn').onclick = pickAndOpen;
 saveBtn.onclick = save;
 historyBtn.onclick = showHistory;
 modeBtn.onclick = toggleMode;
+window.addEventListener('resize', () => repositionToolbar()); // 窗口尺寸变 → 气泡重新定位
 document.getElementById('history-close').onclick = () => { document.getElementById('history-modal').hidden = true; };
 
 window.ws2.onOpenFile((p) => openDoc(p));
