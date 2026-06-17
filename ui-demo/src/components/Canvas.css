@@ -366,6 +366,21 @@
   border: 1px solid var(--c-border); cursor: pointer;
 }
 
+/* 斜杠 / 插入菜单 */
+.ws-slashmenu {
+  z-index: 80; min-width: 184px; max-height: 290px; overflow-y: auto;
+  padding: 4px; background: var(--c-surface); border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+}
+.ws-slashmenu-item {
+  display: block; width: 100%; height: 32px; padding: 0 10px;
+  border-radius: var(--r-sm); font-size: var(--fs-base);
+  color: var(--c-text); text-align: left;
+}
+.ws-slashmenu-item:hover,
+.ws-slashmenu-item.active { background: var(--c-hover); }
+.ws-slashmenu-empty { padding: 8px 10px; font-size: var(--fs-sm); color: var(--c-text-3); }
+
 /* ------------------------------------------------------------------ */
 /* simulated remote collaborator carets                                */
 /* ------------------------------------------------------------------ */

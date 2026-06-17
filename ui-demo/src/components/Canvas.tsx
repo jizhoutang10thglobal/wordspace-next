@@ -20,10 +20,36 @@ import DocMenu from './canvas/DocMenu'
 import FormatToolbar, { type FormatRect } from './canvas/FormatToolbar'
 import AiSoonModal from './canvas/AiSoonModal'
 import BlockActionMenu from './canvas/BlockActionMenu'
+import SlashMenu from './canvas/SlashMenu'
 import './Canvas.css'
 
 const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout']
 const isEditable = (b: Block) => !b.designed && EDITABLE.includes(b.type)
+
+// 斜杠 `/` 插入菜单的条目（插入块 / 转换块 / AI）。kw 供拼音/英文筛选。
+const SLASH_ITEMS: {
+  key: string
+  label: string
+  kw: string
+  type: BlockType | 'ai'
+  level?: 1 | 2 | 3
+}[] = [
+  { key: 'text', label: '正文', kw: 'text zhengwen p', type: 'text' },
+  { key: 'h1', label: '标题 1', kw: 'h1 biaoti heading', type: 'heading', level: 1 },
+  { key: 'h2', label: '标题 2', kw: 'h2 biaoti heading', type: 'heading', level: 2 },
+  { key: 'h3', label: '标题 3', kw: 'h3 biaoti heading', type: 'heading', level: 3 },
+  { key: 'list', label: '列表', kw: 'list liebiao ul', type: 'list' },
+  { key: 'quote', label: '引用', kw: 'quote yinyong', type: 'quote' },
+  { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
+  { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
+  { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
+]
+const filterSlash = (q: string) => {
+  const s = q.toLowerCase()
+  return SLASH_ITEMS.filter(
+    (it) => !s || it.label.toLowerCase().includes(s) || it.kw.includes(s),
+  )
+}
 
 // ---------------------------------------------------------------------------
 // One block. 分块制内核：默认 contentEditable=false，单击把整块作为离散对象选中；
@@ -323,6 +349,12 @@ export default function Canvas() {
     top: number
     left: number
   } | null>(null)
+  const [slash, setSlash] = useState<{
+    blockId: string
+    query: string
+    pos: { top: number; left: number }
+    active: number
+  } | null>(null)
   // drag-to-reorder
   const dragFrom = useRef<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -368,6 +400,36 @@ export default function Canvas() {
     setFmtRect(null)
   }, [])
 
+  // 斜杠菜单选中某项：删掉已输入的「/query」，再插入新块 / 转换当前块 / 弹 AI 占位。
+  const applySlash = useCallback(
+    (key: string) => {
+      if (!doc || !slash) return
+      const it = SLASH_ITEMS.find((x) => x.key === key)
+      setSlash(null)
+      if (!it) return
+      const sel = window.getSelection()
+      if (sel && sel.rangeCount > 0) {
+        for (let i = 0; i < slash.query.length + 1; i++)
+          sel.modify('extend', 'backward', 'character')
+        document.execCommand('delete')
+      }
+      if (it.type === 'ai') {
+        setAiSoonOpen(true)
+        return
+      }
+      const el = blockEls.current.get(slash.blockId)
+      const empty = !el || (el.textContent ?? '').trim() === ''
+      if (it.type === 'divider' || it.type === 'image') {
+        selectBlock(addBlock(doc.id, slash.blockId, it.type))
+      } else if (empty) {
+        setBlockType(doc.id, slash.blockId, it.type, it.level)
+      } else {
+        editBlock(addBlock(doc.id, slash.blockId, it.type))
+      }
+    },
+    [doc, slash, addBlock, setBlockType, selectBlock, editBlock],
+  )
+
   // 进入编辑态时聚焦该块并把光标落到末尾
   useEffect(() => {
     if (editingId) focusBlock(editingId)
@@ -377,6 +439,7 @@ export default function Canvas() {
   // Delete/Backspace（选中且非编辑态）→ 删整块，替代原来的 × 按钮。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (slash) return // 斜杠菜单开时让斜杠监听处理按键
       if (e.key === 'Escape') {
         if (editingId) setEditingId(null)
         else if (selectedId) deselect()
@@ -395,7 +458,7 @@ export default function Canvas() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [editingId, selectedId, deselect, deleteBlock, doc])
+  }, [editingId, selectedId, deselect, deleteBlock, doc, slash])
 
   // 浮动工具栏位置：① 编辑态有文字选区 → 浮在选区上方；② 块被选中（非编辑）→ 浮在块上方；
   // ③ 否则隐藏。selectionchange 与 选中/编辑态变化都会重算。
@@ -436,6 +499,80 @@ export default function Canvas() {
     document.addEventListener('selectionchange', update)
     return () => document.removeEventListener('selectionchange', update)
   }, [selectedId, editingId, doc?.id])
+
+  // 斜杠 `/` 触发 + 菜单键盘导航（筛选 / 上下选 / Enter 选 / Esc 关）
+  useEffect(() => {
+    const caretRect = () => {
+      const sel = window.getSelection()
+      if (!sel || sel.rangeCount === 0) return null
+      const r = sel.getRangeAt(0).cloneRange()
+      const rects = r.getClientRects()
+      const rect = rects.length
+        ? rects[0]
+        : r.startContainer.parentElement?.getBoundingClientRect()
+      if (!rect) return null
+      return { top: rect.bottom + 6, left: rect.left }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (!slash) {
+        if (e.key === '/' && editingId && !e.metaKey && !e.ctrlKey) {
+          const bid = editingId
+          window.setTimeout(() => {
+            const rect = caretRect()
+            if (rect) setSlash({ blockId: bid, query: '', pos: rect, active: 0 })
+          }, 0)
+        }
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setSlash(null)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const it = filterSlash(slash.query)[slash.active]
+        if (it) applySlash(it.key)
+        else setSlash(null)
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSlash((s) =>
+          s
+            ? {
+                ...s,
+                active: Math.max(
+                  0,
+                  Math.min(s.active + 1, filterSlash(s.query).length - 1),
+                ),
+              }
+            : s,
+        )
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlash((s) => (s ? { ...s, active: Math.max(0, s.active - 1) } : s))
+        return
+      }
+      if (e.key === 'Backspace') {
+        setSlash((s) =>
+          s
+            ? s.query.length === 0
+              ? null
+              : { ...s, query: s.query.slice(0, -1), active: 0 }
+            : s,
+        )
+        return
+      }
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+        setSlash((s) => (s ? { ...s, query: s.query + e.key, active: 0 } : s))
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [slash, editingId, doc?.id, applySlash])
 
   // persist the block the toolbar just edited
   const persistFocused = useCallback(() => {
@@ -654,6 +791,18 @@ export default function Canvas() {
             )
           }
           onClose={closeBlockMenu}
+        />
+      )}
+
+      {slash && (
+        <SlashMenu
+          pos={slash.pos}
+          items={filterSlash(slash.query).map((it) => ({
+            key: it.key,
+            label: it.label,
+          }))}
+          activeIndex={slash.active}
+          onPick={applySlash}
         />
       )}
     </main>
