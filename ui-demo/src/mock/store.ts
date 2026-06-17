@@ -76,6 +76,13 @@ interface State {
   reorderBlocks: (docId: string, from: number, to: number) => void
   addBlock: (docId: string, afterId: string | null, type: BlockType) => string
   deleteBlock: (docId: string, blockId: string) => void
+  setBlockType: (
+    docId: string,
+    blockId: string,
+    type: BlockType,
+    level?: 1 | 2 | 3,
+  ) => void
+  duplicateBlock: (docId: string, blockId: string) => string
 
   // documents
   createDoc: (folderId: string, kind?: DocKind, title?: string) => string
@@ -325,6 +332,49 @@ export const useStore = create<State>()(
               : { ...d, blocks: d.blocks.filter((b) => b.id !== blockId) },
           ),
         })),
+
+      // 转块类型（Notion 的「转为…」/heyhtml 的块类型切换）。进 heading 给默认 level，
+      // 离开 heading 清掉 level；html（文字内容）保留。
+      setBlockType: (docId, blockId, type, level) =>
+        set((s) => ({
+          docs: s.docs.map((d) =>
+            d.id !== docId
+              ? d
+              : {
+                  ...d,
+                  updatedAt: Date.now(),
+                  updatedBy: s.meId,
+                  blocks: d.blocks.map((b) =>
+                    b.id !== blockId
+                      ? b
+                      : {
+                          ...b,
+                          type,
+                          level:
+                            type === 'heading'
+                              ? level ?? b.level ?? 2
+                              : undefined,
+                        },
+                  ),
+                },
+          ),
+        })),
+
+      // 复制块：克隆并插到原块之后，给新 id，返回它。
+      duplicateBlock: (docId, blockId) => {
+        const newId = uid('b')
+        set((s) => ({
+          docs: s.docs.map((d) => {
+            if (d.id !== docId) return d
+            const idx = d.blocks.findIndex((b) => b.id === blockId)
+            if (idx < 0) return d
+            const blocks = [...d.blocks]
+            blocks.splice(idx + 1, 0, { ...blocks[idx], id: newId })
+            return { ...d, blocks, updatedAt: Date.now(), updatedBy: s.meId }
+          }),
+        }))
+        return newId
+      },
 
       createDoc: (folderId, kind = 'doc', title = '无标题文档') => {
         const id = uid('d')
