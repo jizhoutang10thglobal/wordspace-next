@@ -70,6 +70,18 @@ function caretRangeAtPoint(x: number, y: number): Range | null {
   return null
 }
 
+// caret 是否在块内容末尾（之后无非空白文本）。用 Range 比较，避免内联标签下 textContent 长度误判。
+function isCaretAtBlockEnd(el: HTMLElement): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false
+  const caret = sel.getRangeAt(0)
+  if (!el.contains(caret.endContainer)) return false
+  const after = document.createRange()
+  after.setStart(caret.endContainer, caret.endOffset)
+  after.setEnd(el, el.childNodes.length)
+  return after.toString().trim() === ''
+}
+
 // ---------------------------------------------------------------------------
 // One block. 单击可编辑块 = 进文字编辑（光标落点击处）；单击不可编辑块 = 块级灰选中。
 // 「分块制」只留在数据层（每块离散、忠实 HTML），不再在视觉上做对象框。
@@ -474,6 +486,18 @@ export default function Canvas() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (slash) return // 斜杠菜单开时让斜杠监听处理按键
+      // Enter：可编辑块末尾 → 新建正文块（IME 组词 / Shift 软换行 / list / 中间 各自交还原生）
+      if (e.key === 'Enter' && editingId && doc) {
+        if (e.isComposing || e.keyCode === 229) return // 中文/日文输入法组词中 = 确认候选词
+        if (e.shiftKey) return // 软换行
+        const el = blockEls.current.get(editingId)
+        const blk = doc.blocks.find((b) => b.id === editingId)
+        if (!el || !blk || blk.type === 'list') return // list 内 Enter 交原生（新 <li>）
+        if (!isCaretAtBlockEnd(el)) return // 光标在中间 → 原生换行（本期不分裂）
+        e.preventDefault()
+        editBlock(addBlock(doc.id, editingId, 'text'), { mode: 'start' })
+        return
+      }
       if (e.key === 'Escape') {
         if (editingId) setEditingId(null)
         else if (selectedId) deselect()
@@ -492,7 +516,7 @@ export default function Canvas() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [editingId, selectedId, deselect, deleteBlock, doc, slash])
+  }, [editingId, selectedId, deselect, deleteBlock, doc, slash, addBlock, editBlock])
 
   // 浮动工具栏位置：① 编辑态有文字选区 → 浮在选区上方；② 块被选中（非编辑）→ 浮在块上方；
   // ③ 否则隐藏。selectionchange 与 选中/编辑态变化都会重算。
