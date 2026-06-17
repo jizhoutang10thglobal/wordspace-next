@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Type, Heading, Quote, Copy, Trash2 } from 'lucide-react'
+import { Type, Heading, Quote, Plus, Copy, Trash2 } from 'lucide-react'
 import type { BlockType } from '../../types'
 
 const COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2']
@@ -11,6 +11,7 @@ const COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2'
 export default function BlockActionMenu({
   pos,
   onTurnInto,
+  onInsertBelow,
   onDuplicate,
   onDelete,
   onColor,
@@ -18,6 +19,7 @@ export default function BlockActionMenu({
 }: {
   pos: { top: number; left: number }
   onTurnInto: (type: BlockType, level?: 1 | 2 | 3) => void
+  onInsertBelow: () => void
   onDuplicate: () => void
   onDelete: () => void
   onColor: (c: string) => void
@@ -80,6 +82,17 @@ export default function BlockActionMenu({
 
       <div className="ws-blockmenu-sep" />
 
+      <button
+        className="ws-blockmenu-item"
+        role="menuitem"
+        onClick={() => {
+          onInsertBelow()
+          onClose()
+        }}
+      >
+        <Plus size={15} strokeWidth={1.8} />
+        <span>在下方插入</span>
+      </button>
       <button
         className="ws-blockmenu-item"
         role="menuitem"

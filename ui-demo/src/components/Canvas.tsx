@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { GripVertical, Plus, MoreHorizontal } from 'lucide-react'
+import { GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import {
   VISIBILITY_META,
@@ -15,7 +15,6 @@ import {
 } from '../types'
 import { Avatar, VisibilityDot } from '../ui/primitives'
 import { relTime } from '../lib/format'
-import BlockAddMenu from './canvas/BlockAddMenu'
 import DocMenu from './canvas/DocMenu'
 import FormatToolbar, { type FormatRect } from './canvas/FormatToolbar'
 import AiSoonModal from './canvas/AiSoonModal'
@@ -66,9 +65,6 @@ function BlockRow({
   onEdit,
   onFocusBlock,
   onOpenBlockMenu,
-  addOpen,
-  onToggleAdd,
-  onPickAdd,
   onDragStart,
   onDragOver,
   onDrop,
@@ -85,9 +81,6 @@ function BlockRow({
   onEdit: (id: string) => void
   onFocusBlock: (id: string | null) => void
   onOpenBlockMenu: (id: string, pos: { top: number; left: number }) => void
-  addOpen: boolean
-  onToggleAdd: (id: string) => void
-  onPickAdd: (type: BlockType) => void
   onDragStart: (index: number) => void
   onDragOver: (index: number) => void
   onDrop: () => void
@@ -222,22 +215,6 @@ function BlockRow({
         >
           <GripVertical size={15} strokeWidth={1.8} />
         </span>
-        <span
-          className="ws-block-add"
-          title="在下方插入"
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleAdd(block.id)
-          }}
-        >
-          <Plus size={14} strokeWidth={1.8} />
-        </span>
-        {addOpen && (
-          <BlockAddMenu
-            onPick={onPickAdd}
-            onClose={() => onToggleAdd(block.id)}
-          />
-        )}
       </div>
 
       {inner}
@@ -339,7 +316,6 @@ export default function Canvas() {
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
   const focusedBlockId = useRef<string | null>(null)
 
-  const [addMenuFor, setAddMenuFor] = useState<string | null>(null)
   const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -684,14 +660,6 @@ export default function Canvas() {
     setBlockMenuPos(null)
   }
 
-  // insert a block after `afterId`; 文本类进编辑、分隔线只选中
-  const handleAdd = (afterId: string, type: BlockType) => {
-    setAddMenuFor(null)
-    const newId = addBlock(doc.id, afterId, type)
-    if (type === 'divider' || type === 'image') selectBlock(newId)
-    else editBlock(newId)
-  }
-
   // --- drag reorder ---
   const onDragStart = (index: number) => {
     dragFrom.current = index
@@ -743,11 +711,6 @@ export default function Canvas() {
                   onEdit={editBlock}
                   onFocusBlock={onFocusBlock}
                   onOpenBlockMenu={openBlockMenu}
-                  addOpen={addMenuFor === b.id}
-                  onToggleAdd={(id) =>
-                    setAddMenuFor((cur) => (cur === id ? null : id))
-                  }
-                  onPickAdd={(type) => handleAdd(b.id, type)}
                   onDragStart={onDragStart}
                   onDragOver={onDragOver}
                   onDrop={onDrop}
@@ -779,6 +742,9 @@ export default function Canvas() {
           pos={blockMenuPos}
           onTurnInto={(type, level) =>
             setBlockType(doc.id, blockMenuFor, type, level)
+          }
+          onInsertBelow={() =>
+            editBlock(addBlock(doc.id, blockMenuFor as string, 'text'))
           }
           onDuplicate={() => duplicateBlock(doc.id, blockMenuFor as string)}
           onDelete={() => {

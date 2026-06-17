@@ -74,7 +74,7 @@
   margin-right: -8px;
 }
 
-/* left control cluster (grip + add) revealed on hover */
+/* left control cluster (grip) revealed on hover */
 .ws-block-controls {
   position: absolute;
   left: -52px;
@@ -87,17 +87,14 @@
   transition: opacity var(--dur-fast) var(--ease);
 }
 .ws-block:hover > .ws-block-controls { opacity: 1; }
-.ws-block-grip,
-.ws-block-add {
+.ws-block-grip {
   display: flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: var(--r-xs);
   color: var(--c-text-3);
 }
 .ws-block-grip { cursor: grab; }
 .ws-block-grip:active { cursor: grabbing; }
-.ws-block-grip:hover,
-.ws-block-add:hover { background: var(--c-hover); color: var(--c-text-2); }
-.ws-block-add { cursor: pointer; }
+.ws-block-grip:hover { background: var(--c-hover); color: var(--c-text-2); }
 
 /* delete affordance on the right */
 .ws-block-del {
