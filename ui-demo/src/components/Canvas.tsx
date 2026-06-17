@@ -50,9 +50,29 @@ const filterSlash = (q: string) => {
   )
 }
 
+// 点击落点 → caret Range（Chrome/Safari/Edge: caretRangeFromPoint；Firefox: caretPositionFromPoint）
+function caretRangeAtPoint(x: number, y: number): Range | null {
+  const d = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null
+    caretPositionFromPoint?: (
+      x: number,
+      y: number,
+    ) => { offsetNode: Node; offset: number } | null
+  }
+  if (d.caretRangeFromPoint) return d.caretRangeFromPoint(x, y)
+  const pos = d.caretPositionFromPoint?.(x, y)
+  if (pos) {
+    const r = document.createRange()
+    r.setStart(pos.offsetNode, pos.offset)
+    r.collapse(true)
+    return r
+  }
+  return null
+}
+
 // ---------------------------------------------------------------------------
-// One block. 分块制内核：默认 contentEditable=false，单击把整块作为离散对象选中；
-// 双击才进文字编辑（contentEditable=true）。这样点击不再是落文字光标，而是选「块对象」。
+// One block. 单击可编辑块 = 进文字编辑（光标落点击处）；单击不可编辑块 = 块级灰选中。
+// 「分块制」只留在数据层（每块离散、忠实 HTML），不再在视觉上做对象框。
 // ---------------------------------------------------------------------------
 function BlockRow({
   doc,
@@ -78,7 +98,7 @@ function BlockRow({
   selected: boolean
   editing: boolean
   onSelect: (id: string) => void
-  onEdit: (id: string) => void
+  onEdit: (id: string, x: number, y: number) => void
   onFocusBlock: (id: string | null) => void
   onOpenBlockMenu: (id: string, pos: { top: number; left: number }) => void
   onDragStart: (index: number) => void
@@ -185,10 +205,8 @@ function BlockRow({
       }
       onClick={(e) => {
         e.stopPropagation()
-        onSelect(block.id)
-      }}
-      onDoubleClick={() => {
-        if (canEdit) onEdit(block.id)
+        if (canEdit) onEdit(block.id, e.clientX, e.clientY)
+        else onSelect(block.id)
       }}
       onDragOver={(e) => {
         e.preventDefault()
@@ -340,19 +358,40 @@ export default function Canvas() {
     else blockEls.current.delete(id)
   }, [])
 
-  const focusBlock = useCallback((id: string) => {
-    requestAnimationFrame(() => {
-      const el = blockEls.current.get(id)
-      if (!el) return
-      el.focus()
-      const range = document.createRange()
-      range.selectNodeContents(el)
-      range.collapse(false)
-      const sel = window.getSelection()
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-    })
-  }, [])
+  // 进入编辑态时光标落点的「意图」：单击落点击处 / Enter·插入落块首 / Esc·⋮⋮ 落块末
+  const pendingCaret = useRef<{
+    mode: 'point' | 'start' | 'end'
+    x?: number
+    y?: number
+  }>({ mode: 'end' })
+
+  const focusBlockAt = useCallback(
+    (
+      id: string,
+      caret: { mode: 'point' | 'start' | 'end'; x?: number; y?: number },
+    ) => {
+      requestAnimationFrame(() => {
+        const el = blockEls.current.get(id)
+        if (!el) return
+        el.focus()
+        const sel = window.getSelection()
+        if (!sel) return
+        let range: Range | null = null
+        if (caret.mode === 'point' && caret.x != null && caret.y != null) {
+          const pt = caretRangeAtPoint(caret.x, caret.y)
+          if (pt && el.contains(pt.startContainer)) range = pt // 落点须在块内，否则回退块末
+        }
+        if (!range) {
+          range = document.createRange()
+          range.selectNodeContents(el)
+          range.collapse(caret.mode === 'start')
+        }
+        sel.removeAllRanges()
+        sel.addRange(range)
+      })
+    },
+    [],
+  )
 
   // 分块制选中模型：单击选块、双击进文字编辑、点空白取消、Esc 逐级退出
   const onFocusBlock = useCallback((id: string | null) => {
@@ -365,10 +404,26 @@ export default function Canvas() {
     setEditingId((cur) => (cur === id ? cur : null))
   }, [])
 
-  const editBlock = useCallback((id: string) => {
-    setSelectedId(id)
-    setEditingId(id)
-  }, [])
+  const editBlock = useCallback(
+    (
+      id: string,
+      caret: { mode: 'point' | 'start' | 'end'; x?: number; y?: number } = {
+        mode: 'end',
+      },
+    ) => {
+      pendingCaret.current = caret
+      setSelectedId(id)
+      setEditingId(id)
+    },
+    [],
+  )
+
+  // 单击可编辑块：进编辑 + 光标落点击位置
+  const editAtPoint = useCallback(
+    (id: string, x: number, y: number) =>
+      editBlock(id, { mode: 'point', x, y }),
+    [editBlock],
+  )
 
   const deselect = useCallback(() => {
     setSelectedId(null)
@@ -406,10 +461,13 @@ export default function Canvas() {
     [doc, slash, addBlock, setBlockType, selectBlock, editBlock],
   )
 
-  // 进入编辑态时聚焦该块并把光标落到末尾
+  // 进入编辑态时聚焦该块，光标按 pendingCaret 意图落点（点击处 / 块首 / 块末）
   useEffect(() => {
-    if (editingId) focusBlock(editingId)
-  }, [editingId, focusBlock])
+    if (!editingId) return
+    const caret = pendingCaret.current
+    pendingCaret.current = { mode: 'end' }
+    focusBlockAt(editingId, caret)
+  }, [editingId, focusBlockAt])
 
   // Esc：编辑 → 退回块选中；已选中 → 取消选中。
   // Delete/Backspace（选中且非编辑态）→ 删整块，替代原来的 × 按钮。
@@ -459,8 +517,10 @@ export default function Canvas() {
         }
       }
       if (selectedId && !editingId) {
+        const blk = doc?.blocks.find((b) => b.id === selectedId)
         const el = blockEls.current.get(selectedId)
-        if (el) {
+        // 仅可编辑块在「块选中」态浮出格式工具栏；不可编辑/designed 块的操作走 ⋮⋮ 菜单
+        if (blk && isEditable(blk) && el) {
           const r = el.getBoundingClientRect()
           return {
             top: r.top - sr.top + root.scrollTop - 46,
@@ -568,6 +628,8 @@ export default function Canvas() {
 
   // 块选中（非编辑）态下要对整块套格式：先让块可编辑、聚焦、全选，再跑 execCommand，最后落库。
   const execOnBlock = (blockId: string, run: () => void) => {
+    const blk = doc.blocks.find((b) => b.id === blockId)
+    if (!blk || !isEditable(blk)) return // 不可编辑/designed 块不可被置 contentEditable（防污染 AI HTML）
     const el = blockEls.current.get(blockId)
     if (!el) return
     el.setAttribute('contenteditable', 'true')
@@ -708,7 +770,7 @@ export default function Canvas() {
                   selected={selectedId === b.id}
                   editing={editingId === b.id}
                   onSelect={selectBlock}
-                  onEdit={editBlock}
+                  onEdit={editAtPoint}
                   onFocusBlock={onFocusBlock}
                   onOpenBlockMenu={openBlockMenu}
                   onDragStart={onDragStart}

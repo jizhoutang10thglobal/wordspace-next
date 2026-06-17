@@ -54,16 +54,20 @@
 .ws-blocks { display: flex; flex-direction: column; }
 .ws-block { position: relative; padding: 3px 0; }
 
-/* 分块制：单击把整块作为离散对象选中 —— 淡高亮框（无缩放手柄/无间距读数，保文档感）。
-   编辑态（双击进文字编辑）去掉对象环，交给文字光标。 */
+/* 块级选中（不可编辑块单击、或编辑态 Esc 退一档）：很淡的灰框，明显是「选中」但弱于编辑。
+   可编辑块单击直接进编辑（无对象环），交给文字光标。 */
 .ws-block-selected:not(.ws-block-editing) {
   border-radius: var(--r-sm);
-  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.4);
-  background: rgba(26, 115, 232, 0.045);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.18);
+  background: rgba(0, 0, 0, 0.025);
   padding-left: 8px;
   padding-right: 8px;
   margin-left: -8px;
   margin-right: -8px;
+}
+/* 块级灰选中时左侧 ⋮⋮ 常驻可见（不靠 hover），保证有可发现的操作抓手 */
+.ws-block-selected:not(.ws-block-editing) > .ws-block-controls {
+  opacity: 1;
 }
 .ws-block-editing {
   border-radius: var(--r-sm);
