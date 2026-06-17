@@ -2,10 +2,15 @@ name: CI
 
 # PR 上跑权威门：node:test 单测（纯逻辑，jsdom）+ xvfb 真 Electron e2e。
 # 给 PR 一个真·绿勾，watch CI 时能看到真 check。
+# 只改 ui-demo/（独立前端原型，不属于 Electron 主程序）的 PR/push 不触发本 CI。
 on:
   pull_request:
+    paths-ignore:
+      - 'ui-demo/**'
   push:
     branches: [main]
+    paths-ignore:
+      - 'ui-demo/**'
 
 jobs:
   test:
