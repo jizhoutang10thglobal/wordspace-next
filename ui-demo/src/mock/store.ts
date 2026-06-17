@@ -52,6 +52,7 @@ interface State {
   activeSpaceId: string
   tabs: Tab[]
   activeTabId: string
+  activeTabBySpace: Record<string, string> // remembers each space's last-active tab
   toasts: Toast[]
   presence: Presence[]
   aiBusy: boolean
@@ -67,6 +68,7 @@ interface State {
   setTabUrl: (tabId: string, url: string, title?: string) => void
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
+  moveTab: (tabId: string, toIndex: number) => void
   setActiveSpace: (spaceId: string) => void
 
   // editing
@@ -143,6 +145,7 @@ export const useStore = create<State>()(
       tabs: [
         {
           id: 'tab-1',
+          spaceId: 'sp-tg',
           docId: 'd-handbook',
           kind: 'doc',
           title: '员工手册',
@@ -150,12 +153,16 @@ export const useStore = create<State>()(
         },
         {
           id: 'tab-web',
+          spaceId: 'sp-tg',
           kind: 'web',
           title: 'Designer News · 行业动态',
           url: 'https://news.design/today',
         },
+        { id: 'tab-local', spaceId: 'sp-local', kind: 'web', title: '新标签页', url: '' },
+        { id: 'tab-me', spaceId: 'sp-me', kind: 'web', title: '新标签页', url: '' },
       ],
       activeTabId: 'tab-1',
+      activeTabBySpace: { 'sp-tg': 'tab-1', 'sp-local': 'tab-local', 'sp-me': 'tab-me' },
       toasts: [],
       presence: [],
       aiBusy: false,
@@ -166,29 +173,48 @@ export const useStore = create<State>()(
       openDoc: (docId) => {
         const doc = get().getDoc(docId)
         if (!doc) return
-        const existing = get().tabs.find((t) => t.docId === docId)
+        const space = get().activeSpaceId
+        const existing = get().tabs.find((t) => t.docId === docId && t.spaceId === space)
         if (existing) {
-          set({ activeTabId: existing.id })
+          set((s) => ({
+            activeTabId: existing.id,
+            activeTabBySpace: { ...s.activeTabBySpace, [space]: existing.id },
+          }))
           return
         }
         const tab: Tab = {
           id: uid('tab'),
+          spaceId: space,
           docId,
           kind: 'doc',
           title: doc.title,
           url: doc.publishedUrl ?? doc.localPath,
         }
-        set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
+        set((s) => ({
+          tabs: [...s.tabs, tab],
+          activeTabId: tab.id,
+          activeTabBySpace: { ...s.activeTabBySpace, [space]: tab.id },
+        }))
       },
 
       openWebTab: (url, title) => {
-        const tab: Tab = { id: uid('tab'), kind: 'web', title, url }
-        set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
+        const space = get().activeSpaceId
+        const tab: Tab = { id: uid('tab'), spaceId: space, kind: 'web', title, url }
+        set((s) => ({
+          tabs: [...s.tabs, tab],
+          activeTabId: tab.id,
+          activeTabBySpace: { ...s.activeTabBySpace, [space]: tab.id },
+        }))
       },
 
       newBrowserTab: () => {
-        const tab: Tab = { id: uid('tab'), kind: 'web', title: '新标签页', url: '' }
-        set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
+        const space = get().activeSpaceId
+        const tab: Tab = { id: uid('tab'), spaceId: space, kind: 'web', title: '新标签页', url: '' }
+        set((s) => ({
+          tabs: [...s.tabs, tab],
+          activeTabId: tab.id,
+          activeTabBySpace: { ...s.activeTabBySpace, [space]: tab.id },
+        }))
       },
 
       setTabUrl: (tabId, url, title) =>
@@ -198,18 +224,55 @@ export const useStore = create<State>()(
           ),
         })),
 
-      setActiveSpace: (spaceId) => set({ activeSpaceId: spaceId }),
+      // Switching space swaps the whole context: its tabs, its favorites (in the
+      // sidebar) and its library. The active tab follows to that space's tab.
+      setActiveSpace: (spaceId) =>
+        set((s) => {
+          const remembered = s.activeTabBySpace[spaceId]
+          const valid = remembered && s.tabs.some((t) => t.id === remembered && t.spaceId === spaceId)
+          const fallback = s.tabs.find((t) => t.spaceId === spaceId)?.id ?? ''
+          return { activeSpaceId: spaceId, activeTabId: valid ? remembered : fallback }
+        }),
 
       closeTab: (tabId) =>
         set((s) => {
+          const closing = s.tabs.find((t) => t.id === tabId)
           const tabs = s.tabs.filter((t) => t.id !== tabId)
           let activeTabId = s.activeTabId
-          if (activeTabId === tabId)
-            activeTabId = tabs[tabs.length - 1]?.id ?? ''
-          return { tabs, activeTabId }
+          const activeTabBySpace = { ...s.activeTabBySpace }
+          if (closing && activeTabBySpace[closing.spaceId] === tabId) {
+            // pick another tab in the same space to become its active one
+            const sameSpace = tabs.filter((t) => t.spaceId === closing.spaceId)
+            const next = sameSpace[sameSpace.length - 1]?.id ?? ''
+            activeTabBySpace[closing.spaceId] = next
+            if (s.activeSpaceId === closing.spaceId) activeTabId = next
+          }
+          return { tabs, activeTabId, activeTabBySpace }
         }),
 
-      setActiveTab: (tabId) => set({ activeTabId: tabId }),
+      setActiveTab: (tabId) =>
+        set((s) => {
+          const tab = s.tabs.find((t) => t.id === tabId)
+          if (!tab) return { activeTabId: tabId }
+          return {
+            activeTabId: tabId,
+            activeTabBySpace: { ...s.activeTabBySpace, [tab.spaceId]: tabId },
+          }
+        }),
+
+      // Reorder within the tab's own space; order across spaces is irrelevant
+      // since the sidebar only ever shows one space's tabs at a time.
+      moveTab: (tabId, toIndex) =>
+        set((s) => {
+          const tab = s.tabs.find((t) => t.id === tabId)
+          if (!tab) return s
+          const inSpace = s.tabs.filter((t) => t.spaceId === tab.spaceId)
+          const others = s.tabs.filter((t) => t.spaceId !== tab.spaceId)
+          const from = inSpace.findIndex((t) => t.id === tabId)
+          inSpace.splice(from, 1)
+          inSpace.splice(Math.max(0, Math.min(toIndex, inSpace.length)), 0, tab)
+          return { tabs: [...others, ...inSpace] }
+        }),
 
       updateBlockHtml: (docId, blockId, html) =>
         set((s) => ({
@@ -480,6 +543,7 @@ export const useStore = create<State>()(
 if (typeof window !== 'undefined') {
   ;(window as unknown as Record<string, unknown>).__resetWordspace = () => {
     localStorage.removeItem('wordspace-demo')
+    localStorage.removeItem('wordspace-browser')
     location.reload()
   }
 }
