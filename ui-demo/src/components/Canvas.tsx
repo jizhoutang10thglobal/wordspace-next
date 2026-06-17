@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { GripVertical, Plus, MoreHorizontal } from 'lucide-react'
+import { GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import {
   VISIBILITY_META,
@@ -15,7 +15,6 @@ import {
 } from '../types'
 import { Avatar, VisibilityDot } from '../ui/primitives'
 import { relTime } from '../lib/format'
-import BlockAddMenu from './canvas/BlockAddMenu'
 import DocMenu from './canvas/DocMenu'
 import FormatToolbar, { type FormatRect } from './canvas/FormatToolbar'
 import AiSoonModal from './canvas/AiSoonModal'
@@ -51,9 +50,53 @@ const filterSlash = (q: string) => {
   )
 }
 
+// 点击落点 → caret Range（Chrome/Safari/Edge: caretRangeFromPoint；Firefox: caretPositionFromPoint）
+function caretRangeAtPoint(x: number, y: number): Range | null {
+  const d = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null
+    caretPositionFromPoint?: (
+      x: number,
+      y: number,
+    ) => { offsetNode: Node; offset: number } | null
+  }
+  if (d.caretRangeFromPoint) return d.caretRangeFromPoint(x, y)
+  const pos = d.caretPositionFromPoint?.(x, y)
+  if (pos) {
+    const r = document.createRange()
+    r.setStart(pos.offsetNode, pos.offset)
+    r.collapse(true)
+    return r
+  }
+  return null
+}
+
+// caret 是否在块内容末尾（之后无非空白文本）。用 Range 比较，避免内联标签下 textContent 长度误判。
+function isCaretAtBlockEnd(el: HTMLElement): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false
+  const caret = sel.getRangeAt(0)
+  if (!el.contains(caret.endContainer)) return false
+  const after = document.createRange()
+  after.setStart(caret.endContainer, caret.endOffset)
+  after.setEnd(el, el.childNodes.length)
+  return after.toString().trim() === ''
+}
+
+// caret 是否在块内容最前端（之前无任何文本）。用于 Backspace 删/合并到上一块。
+function isCaretAtBlockStart(el: HTMLElement): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false
+  const caret = sel.getRangeAt(0)
+  if (!el.contains(caret.startContainer)) return false
+  const before = document.createRange()
+  before.setStart(el, 0)
+  before.setEnd(caret.startContainer, caret.startOffset)
+  return before.toString() === ''
+}
+
 // ---------------------------------------------------------------------------
-// One block. 分块制内核：默认 contentEditable=false，单击把整块作为离散对象选中；
-// 双击才进文字编辑（contentEditable=true）。这样点击不再是落文字光标，而是选「块对象」。
+// One block. 单击可编辑块 = 进文字编辑（光标落点击处）；单击不可编辑块 = 块级灰选中。
+// 「分块制」只留在数据层（每块离散、忠实 HTML），不再在视觉上做对象框。
 // ---------------------------------------------------------------------------
 function BlockRow({
   doc,
@@ -66,9 +109,6 @@ function BlockRow({
   onEdit,
   onFocusBlock,
   onOpenBlockMenu,
-  addOpen,
-  onToggleAdd,
-  onPickAdd,
   onDragStart,
   onDragOver,
   onDrop,
@@ -82,12 +122,9 @@ function BlockRow({
   selected: boolean
   editing: boolean
   onSelect: (id: string) => void
-  onEdit: (id: string) => void
+  onEdit: (id: string, x: number, y: number) => void
   onFocusBlock: (id: string | null) => void
   onOpenBlockMenu: (id: string, pos: { top: number; left: number }) => void
-  addOpen: boolean
-  onToggleAdd: (id: string) => void
-  onPickAdd: (type: BlockType) => void
   onDragStart: (index: number) => void
   onDragOver: (index: number) => void
   onDrop: () => void
@@ -186,16 +223,17 @@ function BlockRow({
     <div
       className={
         `ws-block${canEdit ? '' : ' ws-block-static'}` +
+        ` ws-blk-${
+          block.type === 'heading' ? `h${block.level ?? 2}` : block.type
+        }` +
         `${selected ? ' ws-block-selected' : ''}` +
         `${editing ? ' ws-block-editing' : ''}` +
         `${dropEdge ? ` ws-block-drop-${dropEdge}` : ''}`
       }
       onClick={(e) => {
         e.stopPropagation()
-        onSelect(block.id)
-      }}
-      onDoubleClick={() => {
-        if (canEdit) onEdit(block.id)
+        if (canEdit) onEdit(block.id, e.clientX, e.clientY)
+        else onSelect(block.id)
       }}
       onDragOver={(e) => {
         e.preventDefault()
@@ -222,22 +260,6 @@ function BlockRow({
         >
           <GripVertical size={15} strokeWidth={1.8} />
         </span>
-        <span
-          className="ws-block-add"
-          title="在下方插入"
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleAdd(block.id)
-          }}
-        >
-          <Plus size={14} strokeWidth={1.8} />
-        </span>
-        {addOpen && (
-          <BlockAddMenu
-            onPick={onPickAdd}
-            onClose={() => onToggleAdd(block.id)}
-          />
-        )}
       </div>
 
       {inner}
@@ -339,7 +361,6 @@ export default function Canvas() {
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
   const focusedBlockId = useRef<string | null>(null)
 
-  const [addMenuFor, setAddMenuFor] = useState<string | null>(null)
   const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -364,19 +385,40 @@ export default function Canvas() {
     else blockEls.current.delete(id)
   }, [])
 
-  const focusBlock = useCallback((id: string) => {
-    requestAnimationFrame(() => {
-      const el = blockEls.current.get(id)
-      if (!el) return
-      el.focus()
-      const range = document.createRange()
-      range.selectNodeContents(el)
-      range.collapse(false)
-      const sel = window.getSelection()
-      sel?.removeAllRanges()
-      sel?.addRange(range)
-    })
-  }, [])
+  // 进入编辑态时光标落点的「意图」：单击落点击处 / Enter·插入落块首 / Esc·⋮⋮ 落块末
+  const pendingCaret = useRef<{
+    mode: 'point' | 'start' | 'end'
+    x?: number
+    y?: number
+  }>({ mode: 'end' })
+
+  const focusBlockAt = useCallback(
+    (
+      id: string,
+      caret: { mode: 'point' | 'start' | 'end'; x?: number; y?: number },
+    ) => {
+      requestAnimationFrame(() => {
+        const el = blockEls.current.get(id)
+        if (!el) return
+        el.focus()
+        const sel = window.getSelection()
+        if (!sel) return
+        let range: Range | null = null
+        if (caret.mode === 'point' && caret.x != null && caret.y != null) {
+          const pt = caretRangeAtPoint(caret.x, caret.y)
+          if (pt && el.contains(pt.startContainer)) range = pt // 落点须在块内，否则回退块末
+        }
+        if (!range) {
+          range = document.createRange()
+          range.selectNodeContents(el)
+          range.collapse(caret.mode === 'start')
+        }
+        sel.removeAllRanges()
+        sel.addRange(range)
+      })
+    },
+    [],
+  )
 
   // 分块制选中模型：单击选块、双击进文字编辑、点空白取消、Esc 逐级退出
   const onFocusBlock = useCallback((id: string | null) => {
@@ -389,16 +431,48 @@ export default function Canvas() {
     setEditingId((cur) => (cur === id ? cur : null))
   }, [])
 
-  const editBlock = useCallback((id: string) => {
-    setSelectedId(id)
-    setEditingId(id)
-  }, [])
+  const editBlock = useCallback(
+    (
+      id: string,
+      caret: { mode: 'point' | 'start' | 'end'; x?: number; y?: number } = {
+        mode: 'end',
+      },
+    ) => {
+      pendingCaret.current = caret
+      setSelectedId(id)
+      setEditingId(id)
+    },
+    [],
+  )
+
+  // 单击可编辑块：进编辑 + 光标落点击位置
+  const editAtPoint = useCallback(
+    (id: string, x: number, y: number) =>
+      editBlock(id, { mode: 'point', x, y }),
+    [editBlock],
+  )
 
   const deselect = useCallback(() => {
     setSelectedId(null)
     setEditingId(null)
     setFmtRect(null)
   }, [])
+
+  // 删块（带兜底）：删到只剩一块时清空成空正文并进编辑，避免空白死状态（KTD-7，不改 store）。
+  const removeBlock = useCallback(
+    (id: string) => {
+      if (!doc) return
+      if (doc.blocks.length <= 1) {
+        updateBlockHtml(doc.id, id, '')
+        setBlockType(doc.id, id, 'text')
+        editBlock(id, { mode: 'start' })
+      } else {
+        deleteBlock(doc.id, id)
+        deselect()
+      }
+    },
+    [doc, updateBlockHtml, setBlockType, editBlock, deleteBlock, deselect],
+  )
 
   // 斜杠菜单选中某项：删掉已输入的「/query」，再插入新块 / 转换当前块 / 弹 AI 占位。
   const applySlash = useCallback(
@@ -430,16 +504,106 @@ export default function Canvas() {
     [doc, slash, addBlock, setBlockType, selectBlock, editBlock],
   )
 
-  // 进入编辑态时聚焦该块并把光标落到末尾
+  // 进入编辑态时聚焦该块，光标按 pendingCaret 意图落点（点击处 / 块首 / 块末）
   useEffect(() => {
-    if (editingId) focusBlock(editingId)
-  }, [editingId, focusBlock])
+    if (!editingId) return
+    const caret = pendingCaret.current
+    pendingCaret.current = { mode: 'end' }
+    focusBlockAt(editingId, caret)
+  }, [editingId, focusBlockAt])
 
   // Esc：编辑 → 退回块选中；已选中 → 取消选中。
   // Delete/Backspace（选中且非编辑态）→ 删整块，替代原来的 × 按钮。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (slash) return // 斜杠菜单开时让斜杠监听处理按键
+      // Enter：可编辑块末尾 → 新建正文块（IME 组词 / Shift 软换行 / list / 中间 各自交还原生）
+      if (e.key === 'Enter' && editingId && doc) {
+        if (e.isComposing || e.keyCode === 229) return // 中文/日文输入法组词中 = 确认候选词
+        if (e.shiftKey) return // 软换行
+        const el = blockEls.current.get(editingId)
+        const blk = doc.blocks.find((b) => b.id === editingId)
+        if (!el || !blk || blk.type === 'list') return // list 内 Enter 交原生（新 <li>）
+        if (!isCaretAtBlockEnd(el)) return // 光标在中间 → 原生换行（本期不分裂）
+        e.preventDefault()
+        editBlock(addBlock(doc.id, editingId, 'text'), { mode: 'start' })
+        return
+      }
+      // 灰选中态按 Enter：在选中块后插正文块并进编辑（兜底，可在不可编辑块后插块）
+      if (e.key === 'Enter' && selectedId && !editingId && doc) {
+        if (e.isComposing || e.keyCode === 229) return
+        e.preventDefault()
+        editBlock(addBlock(doc.id, selectedId, 'text'), { mode: 'start' })
+        return
+      }
+      // Backspace 在可编辑块最前端：空块→删块、光标落上一块末；非空→并入上一块。
+      // 这是「空行删不掉 / Enter 刷出一堆空块」问题的解药。
+      if (e.key === 'Backspace' && editingId && doc) {
+        if (e.isComposing || e.keyCode === 229) return
+        const el = blockEls.current.get(editingId)
+        if (!el || !isCaretAtBlockStart(el)) return // 非块首 → 原生删字符
+        const idx = doc.blocks.findIndex((b) => b.id === editingId)
+        if (idx <= 0) return // 第一块 → 原生（无上一块可并）
+        const prev = doc.blocks[idx - 1]
+        const curEmpty = (el.textContent ?? '').trim() === ''
+        e.preventDefault()
+        if (isEditable(prev)) {
+          if (!curEmpty) {
+            const prevEl = blockEls.current.get(prev.id)
+            updateBlockHtml(doc.id, prev.id, (prevEl?.innerHTML ?? '') + el.innerHTML)
+          }
+          deleteBlock(doc.id, editingId)
+          editBlock(prev.id, { mode: 'end' })
+        } else if (curEmpty) {
+          // 上一块不可编辑：空块直接删并选中上一块（非空则不动，避免吞内容）
+          deleteBlock(doc.id, editingId)
+          selectBlock(prev.id)
+        }
+        return
+      }
+      // 跨块方向键：末行↓→下一块、首行↑→上一块（尽量保持列位置）；块中间交还原生。
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editingId && doc) {
+        if (e.isComposing || e.keyCode === 229) return
+        const el = blockEls.current.get(editingId)
+        const sel = window.getSelection()
+        if (!el || !sel || sel.rangeCount === 0 || !sel.isCollapsed) return
+        const er = el.getBoundingClientRect()
+        const box = sel.getRangeAt(0).getBoundingClientRect()
+        const degenerate = box.height === 0 && box.top === 0 // 空块等 caret 取不到位置
+        const caret = degenerate
+          ? { top: er.top, bottom: er.bottom, left: er.left }
+          : box
+        const lh = (degenerate ? Math.min(er.height, 24) : box.height) || 20
+        const idx = doc.blocks.findIndex((b) => b.id === editingId)
+        if (e.key === 'ArrowDown') {
+          if (caret.bottom < er.bottom - lh * 0.5) return // 不在末行 → 原生
+          const next = doc.blocks[idx + 1]
+          if (!next) return
+          e.preventDefault()
+          if (isEditable(next)) {
+            const nr = blockEls.current.get(next.id)?.getBoundingClientRect()
+            editBlock(next.id, {
+              mode: 'point',
+              x: caret.left,
+              y: nr ? nr.top + lh * 0.5 : caret.left,
+            })
+          } else selectBlock(next.id)
+        } else {
+          if (caret.top > er.top + lh * 0.5) return // 不在首行 → 原生
+          const prev = doc.blocks[idx - 1]
+          if (!prev) return
+          e.preventDefault()
+          if (isEditable(prev)) {
+            const pr = blockEls.current.get(prev.id)?.getBoundingClientRect()
+            editBlock(prev.id, {
+              mode: 'point',
+              x: caret.left,
+              y: pr ? pr.bottom - lh * 0.5 : caret.left,
+            })
+          } else selectBlock(prev.id)
+        }
+        return
+      }
       if (e.key === 'Escape') {
         if (editingId) setEditingId(null)
         else if (selectedId) deselect()
@@ -452,13 +616,24 @@ export default function Canvas() {
         doc
       ) {
         e.preventDefault()
-        deleteBlock(doc.id, selectedId)
-        deselect()
+        removeBlock(selectedId)
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [editingId, selectedId, deselect, deleteBlock, doc, slash])
+  }, [
+    editingId,
+    selectedId,
+    deselect,
+    deleteBlock,
+    doc,
+    slash,
+    addBlock,
+    editBlock,
+    removeBlock,
+    updateBlockHtml,
+    selectBlock,
+  ])
 
   // 浮动工具栏位置：① 编辑态有文字选区 → 浮在选区上方；② 块被选中（非编辑）→ 浮在块上方；
   // ③ 否则隐藏。selectionchange 与 选中/编辑态变化都会重算。
@@ -483,8 +658,10 @@ export default function Canvas() {
         }
       }
       if (selectedId && !editingId) {
+        const blk = doc?.blocks.find((b) => b.id === selectedId)
         const el = blockEls.current.get(selectedId)
-        if (el) {
+        // 仅可编辑块在「块选中」态浮出格式工具栏；不可编辑/designed 块的操作走 ⋮⋮ 菜单
+        if (blk && isEditable(blk) && el) {
           const r = el.getBoundingClientRect()
           return {
             top: r.top - sr.top + root.scrollTop - 46,
@@ -592,6 +769,8 @@ export default function Canvas() {
 
   // 块选中（非编辑）态下要对整块套格式：先让块可编辑、聚焦、全选，再跑 execCommand，最后落库。
   const execOnBlock = (blockId: string, run: () => void) => {
+    const blk = doc.blocks.find((b) => b.id === blockId)
+    if (!blk || !isEditable(blk)) return // 不可编辑/designed 块不可被置 contentEditable（防污染 AI HTML）
     const el = blockEls.current.get(blockId)
     if (!el) return
     el.setAttribute('contenteditable', 'true')
@@ -684,14 +863,6 @@ export default function Canvas() {
     setBlockMenuPos(null)
   }
 
-  // insert a block after `afterId`; 文本类进编辑、分隔线只选中
-  const handleAdd = (afterId: string, type: BlockType) => {
-    setAddMenuFor(null)
-    const newId = addBlock(doc.id, afterId, type)
-    if (type === 'divider' || type === 'image') selectBlock(newId)
-    else editBlock(newId)
-  }
-
   // --- drag reorder ---
   const onDragStart = (index: number) => {
     dragFrom.current = index
@@ -740,14 +911,9 @@ export default function Canvas() {
                   selected={selectedId === b.id}
                   editing={editingId === b.id}
                   onSelect={selectBlock}
-                  onEdit={editBlock}
+                  onEdit={editAtPoint}
                   onFocusBlock={onFocusBlock}
                   onOpenBlockMenu={openBlockMenu}
-                  addOpen={addMenuFor === b.id}
-                  onToggleAdd={(id) =>
-                    setAddMenuFor((cur) => (cur === id ? null : id))
-                  }
-                  onPickAdd={(type) => handleAdd(b.id, type)}
                   onDragStart={onDragStart}
                   onDragOver={onDragOver}
                   onDrop={onDrop}
@@ -757,6 +923,25 @@ export default function Canvas() {
               )
             })}
           </div>
+          <div
+            className="ws-canvas-tail"
+            onClick={(e) => {
+              e.stopPropagation()
+              const last = doc.blocks[doc.blocks.length - 1]
+              const lastEl = last && blockEls.current.get(last.id)
+              if (
+                last &&
+                isEditable(last) &&
+                (lastEl?.textContent ?? '').trim() === ''
+              ) {
+                editBlock(last.id, { mode: 'end' }) // 末块已是空可编辑块，直接进它
+              } else {
+                editBlock(addBlock(doc.id, last ? last.id : '', 'text'), {
+                  mode: 'start',
+                })
+              }
+            }}
+          />
           <div className="ws-doc-end ws-muted">
             这是一个本地 HTML 文件 · {doc.localPath}
           </div>
@@ -780,11 +965,11 @@ export default function Canvas() {
           onTurnInto={(type, level) =>
             setBlockType(doc.id, blockMenuFor, type, level)
           }
+          onInsertBelow={() =>
+            editBlock(addBlock(doc.id, blockMenuFor as string, 'text'))
+          }
           onDuplicate={() => duplicateBlock(doc.id, blockMenuFor as string)}
-          onDelete={() => {
-            deleteBlock(doc.id, blockMenuFor as string)
-            deselect()
-          }}
+          onDelete={() => removeBlock(blockMenuFor as string)}
           onColor={(c) =>
             execOnBlock(blockMenuFor as string, () =>
               document.execCommand('foreColor', false, c),
