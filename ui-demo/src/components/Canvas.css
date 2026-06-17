@@ -73,7 +73,6 @@
 }
 .ws-block-editing {
   border-radius: var(--r-sm);
-  background: rgba(0, 0, 0, 0.018);
   padding-left: 8px;
   padding-right: 8px;
   margin-left: -8px;
@@ -83,8 +82,8 @@
 /* left control cluster (grip) revealed on hover */
 .ws-block-controls {
   position: absolute;
-  left: -52px;
-  top: 4px;
+  left: -28px;
+  top: 10px; /* 默认对齐正文/列表首行；其余类型按下方各自微调 */
   height: 24px;
   display: flex;
   align-items: center;
@@ -101,6 +100,14 @@
 .ws-block-grip { cursor: grab; }
 .ws-block-grip:active { cursor: grabbing; }
 .ws-block-grip:hover { background: var(--c-hover); color: var(--c-text-2); }
+/* gutter 首行对齐：各块类型上边距/行高不同，按类型微调 ⋮⋮ 的 top（默认 10px = 正文/列表） */
+.ws-blk-h1 > .ws-block-controls { top: 18px; }
+.ws-blk-h2 > .ws-block-controls { top: 30px; }
+.ws-blk-h3 > .ws-block-controls { top: 24px; }
+.ws-blk-quote > .ws-block-controls { top: 14px; }
+.ws-blk-callout > .ws-block-controls { top: 30px; }
+.ws-blk-divider > .ws-block-controls { top: 22px; }
+.ws-blk-image > .ws-block-controls { top: 18px; }
 
 /* delete affordance on the right */
 .ws-block-del {

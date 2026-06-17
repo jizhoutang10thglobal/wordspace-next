@@ -82,6 +82,18 @@ function isCaretAtBlockEnd(el: HTMLElement): boolean {
   return after.toString().trim() === ''
 }
 
+// caret 是否在块内容最前端（之前无任何文本）。用于 Backspace 删/合并到上一块。
+function isCaretAtBlockStart(el: HTMLElement): boolean {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false
+  const caret = sel.getRangeAt(0)
+  if (!el.contains(caret.startContainer)) return false
+  const before = document.createRange()
+  before.setStart(el, 0)
+  before.setEnd(caret.startContainer, caret.startOffset)
+  return before.toString() === ''
+}
+
 // ---------------------------------------------------------------------------
 // One block. 单击可编辑块 = 进文字编辑（光标落点击处）；单击不可编辑块 = 块级灰选中。
 // 「分块制」只留在数据层（每块离散、忠实 HTML），不再在视觉上做对象框。
@@ -211,6 +223,9 @@ function BlockRow({
     <div
       className={
         `ws-block${canEdit ? '' : ' ws-block-static'}` +
+        ` ws-blk-${
+          block.type === 'heading' ? `h${block.level ?? 2}` : block.type
+        }` +
         `${selected ? ' ws-block-selected' : ''}` +
         `${editing ? ' ws-block-editing' : ''}` +
         `${dropEdge ? ` ws-block-drop-${dropEdge}` : ''}`
@@ -521,6 +536,74 @@ export default function Canvas() {
         editBlock(addBlock(doc.id, selectedId, 'text'), { mode: 'start' })
         return
       }
+      // Backspace 在可编辑块最前端：空块→删块、光标落上一块末；非空→并入上一块。
+      // 这是「空行删不掉 / Enter 刷出一堆空块」问题的解药。
+      if (e.key === 'Backspace' && editingId && doc) {
+        if (e.isComposing || e.keyCode === 229) return
+        const el = blockEls.current.get(editingId)
+        if (!el || !isCaretAtBlockStart(el)) return // 非块首 → 原生删字符
+        const idx = doc.blocks.findIndex((b) => b.id === editingId)
+        if (idx <= 0) return // 第一块 → 原生（无上一块可并）
+        const prev = doc.blocks[idx - 1]
+        const curEmpty = (el.textContent ?? '').trim() === ''
+        e.preventDefault()
+        if (isEditable(prev)) {
+          if (!curEmpty) {
+            const prevEl = blockEls.current.get(prev.id)
+            updateBlockHtml(doc.id, prev.id, (prevEl?.innerHTML ?? '') + el.innerHTML)
+          }
+          deleteBlock(doc.id, editingId)
+          editBlock(prev.id, { mode: 'end' })
+        } else if (curEmpty) {
+          // 上一块不可编辑：空块直接删并选中上一块（非空则不动，避免吞内容）
+          deleteBlock(doc.id, editingId)
+          selectBlock(prev.id)
+        }
+        return
+      }
+      // 跨块方向键：末行↓→下一块、首行↑→上一块（尽量保持列位置）；块中间交还原生。
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editingId && doc) {
+        if (e.isComposing || e.keyCode === 229) return
+        const el = blockEls.current.get(editingId)
+        const sel = window.getSelection()
+        if (!el || !sel || sel.rangeCount === 0 || !sel.isCollapsed) return
+        const er = el.getBoundingClientRect()
+        const box = sel.getRangeAt(0).getBoundingClientRect()
+        const degenerate = box.height === 0 && box.top === 0 // 空块等 caret 取不到位置
+        const caret = degenerate
+          ? { top: er.top, bottom: er.bottom, left: er.left }
+          : box
+        const lh = (degenerate ? Math.min(er.height, 24) : box.height) || 20
+        const idx = doc.blocks.findIndex((b) => b.id === editingId)
+        if (e.key === 'ArrowDown') {
+          if (caret.bottom < er.bottom - lh * 0.5) return // 不在末行 → 原生
+          const next = doc.blocks[idx + 1]
+          if (!next) return
+          e.preventDefault()
+          if (isEditable(next)) {
+            const nr = blockEls.current.get(next.id)?.getBoundingClientRect()
+            editBlock(next.id, {
+              mode: 'point',
+              x: caret.left,
+              y: nr ? nr.top + lh * 0.5 : caret.left,
+            })
+          } else selectBlock(next.id)
+        } else {
+          if (caret.top > er.top + lh * 0.5) return // 不在首行 → 原生
+          const prev = doc.blocks[idx - 1]
+          if (!prev) return
+          e.preventDefault()
+          if (isEditable(prev)) {
+            const pr = blockEls.current.get(prev.id)?.getBoundingClientRect()
+            editBlock(prev.id, {
+              mode: 'point',
+              x: caret.left,
+              y: pr ? pr.bottom - lh * 0.5 : caret.left,
+            })
+          } else selectBlock(prev.id)
+        }
+        return
+      }
       if (e.key === 'Escape') {
         if (editingId) setEditingId(null)
         else if (selectedId) deselect()
@@ -548,6 +631,8 @@ export default function Canvas() {
     addBlock,
     editBlock,
     removeBlock,
+    updateBlockHtml,
+    selectBlock,
   ])
 
   // 浮动工具栏位置：① 编辑态有文字选区 → 浮在选区上方；② 块被选中（非编辑）→ 浮在块上方；
