@@ -119,6 +119,7 @@ export interface Presence {
 
 export interface Tab {
   id: string
+  spaceId: string // the space this tab belongs to; tabs are scoped per space
   docId?: string
   kind: 'doc' | 'web'
   title: string

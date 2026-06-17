@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from 'react'
 import { Search, Bookmark } from 'lucide-react'
-import { useBrowser } from '../mock/browser'
+import { useBrowser, type Bookmark as Mark } from '../mock/browser'
+import { useStore } from '../mock/store'
 import './NewTab.css'
 
 // The browser start page. App-level UI, so it stays plain like the rest of the
@@ -28,6 +29,10 @@ export default function NewTab() {
   const [value, setValue] = useState('')
   const bookmarks = useBrowser((s) => s.bookmarks)
   const go = (url: string) => useBrowser.getState().navigate(url)
+  const openMark = (b: Mark) => {
+    if (b.kind === 'doc' && b.docId) useStore.getState().openDoc(b.docId)
+    else if (b.url) go(b.url)
+  }
 
   return (
     <div className="nt">
@@ -66,7 +71,7 @@ export default function NewTab() {
         <div className="nt-marks">
           <Bookmark size={13} className="nt-marks-ico" />
           {bookmarks.map((b) => (
-            <button key={b.url} className="nt-mark-link" onClick={() => go(b.url)}>
+            <button key={b.uid} className="nt-mark-link" onClick={() => openMark(b)}>
               {b.title}
             </button>
           ))}
