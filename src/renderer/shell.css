@@ -103,95 +103,7 @@ ul { list-style: none; }
 .ws-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-muted { color: var(--c-text-3); }
 
-/* ============================================================ 左侧文件栏（照搬 ArcSidebar.css） */
-.arc-sidebar {
-  position: relative;
-  width: 274px;
-  flex: none;
-  background: var(--c-bg-sunken);
-  border-right: 1px solid var(--c-border);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  user-select: none;
-}
-
-.arc-top { height: var(--h-titlebar); display: flex; align-items: center; gap: 10px; padding: 0 12px; flex: none; }
-.arc-traffic { display: flex; gap: 8px; flex: none; }
-.arc-traffic span { width: 12px; height: 12px; border-radius: var(--r-pill); display: block; }
-.arc-top-nav { display: flex; align-items: center; gap: 1px; margin-left: auto; }
-.arc-ico { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--c-text-2); }
-.arc-ico:hover { background: rgba(0,0,0,.06); color: var(--c-text); }
-.arc-ico-sm { width: 24px; height: 24px; }
-
-.arc-omni { margin: 2px 12px 8px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 11px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); color: var(--c-text-2); flex: none; }
-.arc-omni-url { font-size: var(--fs-sm); color: var(--c-text); flex: 1; min-width: 0; }
-.arc-omni-tag { font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--c-text-2); background: var(--c-active); padding: 1px 6px; border-radius: var(--r-pill); flex: none; }
-
-.arc-space-bar { flex: none; padding: 0 10px 6px; position: relative; }
-.arc-spaces { position: relative; flex: 1; min-width: 0; }
-.arc-space-trigger { width: 100%; display: flex; align-items: center; gap: 4px; padding: 3px 6px 3px 2px; border-radius: var(--r-sm); color: var(--c-text); }
-.arc-space-trigger:hover { background: var(--c-hover); }
-.arc-space-title { flex: 1; min-width: 0; text-align: left; font-size: var(--fs-sm); font-weight: var(--fw-semibold); }
-.arc-space-chev { flex: none; color: var(--c-text-3); }
-
-.arc-scroll { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
-.arc-section-label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: .04em; color: var(--c-text-3); text-transform: uppercase; padding: 10px 8px 4px; }
-.arc-tabs-label { display: flex; align-items: center; justify-content: space-between; }
-
-.arc-marks-zone { border-radius: var(--r-md); border: 1px dashed transparent; }
-.arc-marks { display: flex; flex-direction: column; gap: 1px; }
-.arc-mark { position: relative; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; border-radius: var(--r-sm); color: var(--c-text-2); }
-.arc-mark:hover { background: var(--c-hover); color: var(--c-text); }
-.arc-mark-ico { display: flex; align-items: center; justify-content: center; flex: none; width: 16px; color: var(--c-text-3); }
-.arc-mark-title { flex: 1; min-width: 0; font-size: var(--fs-base); }
-
-.arc-tabs { display: flex; flex-direction: column; gap: 1px; }
-.arc-tab { position: relative; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border-radius: var(--r-sm); color: var(--c-text-2); }
-.arc-tab:hover { background: var(--c-hover); }
-.arc-tab.is-active { background: var(--c-surface); color: var(--c-text); box-shadow: var(--shadow-sm); }
-.arc-tab-ico { display: flex; flex: none; color: var(--c-text-3); }
-.arc-tab.is-active .arc-tab-ico { color: var(--c-accent); }
-.arc-tab-title { flex: 1; min-width: 0; font-size: var(--fs-base); }
-
-.arc-lib-root { display: flex; align-items: center; gap: 6px; padding: 4px 8px; color: var(--c-text-2); font-size: var(--fs-sm); font-weight: var(--fw-medium); }
-.arc-folder { margin-bottom: 1px; }
-.arc-folder-head { width: 100%; display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: var(--r-sm); color: var(--c-text-2); text-align: left; font-size: var(--fs-sm); font-weight: var(--fw-medium); }
-.arc-folder-head:hover { background: var(--c-hover); color: var(--c-text); }
-.arc-caret { flex: none; color: var(--c-text-3); }
-.arc-doc { width: 100%; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 28px; border-radius: var(--r-sm); color: var(--c-text); text-align: left; }
-.arc-doc:hover { background: var(--c-hover); }
-.arc-doc.is-active { background: var(--c-selected); color: var(--c-accent); }
-.arc-doc-ico { flex: none; color: var(--c-text-3); }
-.arc-doc.is-active .arc-doc-ico { color: var(--c-accent); }
-.arc-doc-title { flex: 1; min-width: 0; font-size: var(--fs-base); }
-
-.arc-foot { flex: none; border-top: 1px solid var(--c-border); padding: 8px; }
-.arc-util { display: flex; align-items: center; gap: 2px; padding: 0 2px; }
-.arc-util-btn { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: var(--r-sm); color: var(--c-text-2); }
-.arc-util-btn:hover { background: var(--c-hover); color: var(--c-text); }
-.arc-util-spacer { flex: 1; }
-.arc-util-me { display: flex; align-items: center; }
-.arc-avatar { width: 24px; height: 24px; border-radius: var(--r-pill); background: var(--c-accent); color: #fff; font-size: 10px; font-weight: var(--fw-semibold); display: flex; align-items: center; justify-content: center; letter-spacing: .02em; }
-
-/* 「开发中」lockout：盖满侧栏、吞所有交互、hover 显徽标 */
-.sidebar-lock {
-  position: absolute; inset: 0; z-index: 50;
-  cursor: not-allowed;
-  display: flex; align-items: flex-start; justify-content: center;
-  padding-top: 38vh;
-}
-.sidebar-lock-badge {
-  font-size: var(--fs-sm); font-weight: var(--fw-medium);
-  color: var(--c-text-2); background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: var(--r-pill);
-  padding: 5px 12px; box-shadow: var(--shadow-sm);
-  opacity: 0; transform: translateY(-4px);
-  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-.sidebar-lock:hover .sidebar-lock-badge { opacity: 1; transform: none; }
-
-/* ============================================================ 右侧编辑区（照搬 Canvas chrome） */
+/* ============================================================ 编辑区（照搬 Canvas chrome）；左侧文件栏暂不做 */
 #main {
   flex: 1;
   min-width: 0;
@@ -243,10 +155,6 @@ ul { list-style: none; }
 /* insert 面板（父层 chrome，从 #insert-slot 下展开；actions 在右上角，故面板右对齐） */
 .insert-panel { position: absolute; top: calc(100% + 7px); right: 0; left: auto; display: none; background: var(--c-surface); border-radius: var(--r-md); box-shadow: var(--shadow-menu); padding: 10px; z-index: 70; width: 244px; }
 .insert-panel.open { display: block; animation: tb-in var(--dur-fast) var(--ease); }
-.insert-modes { display: flex; gap: 5px; margin-bottom: 10px; }
-.insert-mode { flex: 1; height: 30px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font: inherit; font-size: 12px; color: var(--c-text-2); cursor: pointer; }
-.insert-mode:hover { background: var(--c-hover); }
-.insert-mode.active { background: var(--c-accent-tint); border-color: var(--c-accent); color: var(--c-accent); }
 .insert-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .insert-cell { height: 36px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font: inherit; font-size: 13px; color: var(--c-text); cursor: pointer; transition: background var(--dur-fast) var(--ease); }
 .insert-cell:hover { background: var(--c-hover); }
@@ -304,15 +212,3 @@ ul { list-style: none; }
 .tb-linkrow { display: flex; gap: 6px; align-items: center; padding: 3px; }
 .tb-linkinput { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 0 9px; font: inherit; font-size: 13px; color: var(--c-text); transition: border-color var(--dur-fast) var(--ease); }
 .tb-linkinput:focus { outline: none; border-color: var(--c-accent); }
-
-/* ---------------------------------------------------------- history modal */
-#history-modal { position: fixed; inset: 0; background: rgba(20,22,26,.34); display: flex; align-items: center; justify-content: center; z-index: 200; }
-#history-modal[hidden] { display: none; }
-.modal-box { background: var(--c-surface); border-radius: var(--r-lg); padding: 24px; width: 440px; max-height: 70vh; overflow: auto; box-shadow: var(--shadow-menu); }
-.modal-box h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; }
-#history-list li { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--c-divider); font-size: 13px; }
-#history-list li:last-child { border-bottom: none; }
-#history-list button { font: inherit; font-size: 12px; padding: 5px 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; }
-#history-list button:hover { background: var(--c-hover); }
-#history-close { margin-top: 16px; font: inherit; font-size: 13px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); padding: 7px 14px; cursor: pointer; }
-#history-close:hover { background: var(--c-hover); }

@@ -14,8 +14,6 @@ const docHeader = document.getElementById('doc-header');
 const docName = document.getElementById('doc-name');
 const dirtyDot = document.getElementById('dirty-dot');
 const saveBtn = document.getElementById('save-btn');
-const historyBtn = document.getElementById('history-btn');
-const modeBtn = document.getElementById('mode-btn');
 const toolbarEl = document.getElementById('toolbar');
 const insertSlot = document.getElementById('insert-slot');
 
@@ -126,7 +124,6 @@ function wireEditor() {
   // 工具栏现在没暴露 open-link 方法（openLink 只能从工具栏按钮触发），等暴露后再接。
   const textEdit = WS2TextEdit.attach(doc, { markDirty, onEnter: () => repositionToolbar(), onExit: () => repositionToolbar() });
   currentTextEdit = textEdit;
-  modeBtn.textContent = '预览';
   try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
   try { doc.execCommand('styleWithCSS', false, true); } catch (e) {}
   savedRange = null;
@@ -220,22 +217,7 @@ function prepFrame(asDirty) {
   docHeader.hidden = false;
   frame.hidden = false;
   docName.textContent = docInfo.name;
-  historyBtn.disabled = false;
-  modeBtn.disabled = false;
   setDirty(!!asDirty);
-}
-
-// 编辑/预览切换：预览态停用画布交互（disable）+ 收起气泡；编辑态恢复（enable）。
-function toggleMode() {
-  if (!canvas) return;
-  if (canvas.getState().enabled) {
-    canvas.disable();
-    hideToolbar();
-    modeBtn.textContent = '编辑';
-  } else {
-    canvas.enable();
-    modeBtn.textContent = '预览';
-  }
 }
 
 // 打开真实文件：iframe 直接指向 file:// URL（主进程 pathInfo 算，跨平台正确），
@@ -315,46 +297,11 @@ async function renderRecents() {
   }
 }
 
-function formatTs(ts) {
-  // 2026-06-12T08-30-22-123Z -> 2026-06-12 08:30:22
-  return ts.replace('T', ' ').slice(0, 19).replace(/ (\d\d)-(\d\d)-(\d\d)/, ' $1:$2:$3');
-}
-
-async function showHistory() {
-  const modal = document.getElementById('history-modal');
-  const ul = document.getElementById('history-list');
-  ul.innerHTML = '';
-  const versions = await window.ws2.historyList(docPath);
-  if (versions.length === 0) {
-    const li = document.createElement('li');
-    li.textContent = '还没有历史版本（保存一次后产生）';
-    ul.appendChild(li);
-  }
-  for (const v of versions) {
-    const li = document.createElement('li');
-    const label = document.createElement('span');
-    label.textContent = formatTs(v.ts);
-    const btn = document.createElement('button');
-    btn.textContent = '恢复';
-    btn.onclick = async () => {
-      const content = await window.ws2.historyRead(docPath, v.id);
-      loadFromHtml(content, { asDirty: true });
-      modal.hidden = true;
-    };
-    li.append(label, btn);
-    ul.appendChild(li);
-  }
-  modal.hidden = false;
-}
-
 document.getElementById('open-btn').onclick = pickAndOpen;
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = save;
-historyBtn.onclick = showHistory;
-modeBtn.onclick = toggleMode;
 window.addEventListener('resize', () => repositionToolbar()); // 窗口尺寸变 → 气泡重新定位
-document.getElementById('history-close').onclick = () => { document.getElementById('history-modal').hidden = true; };
 
 window.ws2.onOpenFile((p) => openDoc(p));
 window.ws2.onMenu((cmd) => {

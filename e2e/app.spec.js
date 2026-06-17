@@ -71,13 +71,11 @@ test.afterEach(async ({}, testInfo) => {
   app = null; page = null; frame = null;
 });
 
-test('启动后显示空态首页 + 左侧文件栏门面', async () => {
+test('启动后显示空态首页（单栏，无侧栏）', async () => {
   await launch(FIXTURE);
   await expect(page.locator('#open-btn')).toBeVisible();
   await expect(page.locator('#home .ws-empty-title')).toHaveText('Wordspace Next');
-  // 左侧文件栏门面存在（照搬 ui-demo 样式，只展示不可用）
-  await expect(page.locator('#sidebar')).toBeVisible();
-  await expect(page.locator('.sidebar-lock')).toBeVisible();
+  await expect(page.locator('#sidebar')).toHaveCount(0); // 左侧文件栏已删（先只做编辑区）
 });
 
 test('打开文档：内容渲染且文档脚本未执行', async () => {
@@ -203,25 +201,6 @@ test('回归门：弹层默认不展开、不挡文档（弹层吃点击曾挂 9
   await expect(page.locator('#toolbar')).toBeVisible();
 });
 
-test('回归门：预览模式隐藏气泡，且 resize 不让它复活', async () => {
-  await launch(FIXTURE);
-  await openDoc();
-  await frame.locator('#p1').click();                 // 元素态气泡浮出
-  await expect(page.locator('#toolbar')).toBeVisible();
-  await page.locator('#mode-btn').click();            // 进预览
-  await expect(page.locator('#toolbar')).toBeHidden();
-  await page.setViewportSize({ width: 1000, height: 720 }); // 触发 resize
-  await expect(page.locator('#toolbar')).toBeHidden(); // 预览态不复活
-});
-
-test('侧栏 lockout：点击侧栏不影响文档编辑', async () => {
-  await launch(FIXTURE);
-  await openDoc();
-  await page.locator('.sidebar-lock').click();        // 点侧栏被吞，无副作用
-  await editText('#p1', '改一下');
-  await expect(page.locator('#dirty-dot')).toBeVisible(); // 文档仍能正常编辑
-});
-
 test('斜杠菜单：进编辑后输入 / 弹出，选标题 2 转换块', async () => {
   await launch(FIXTURE);
   await openDoc();
@@ -281,23 +260,6 @@ test('方向键 nudge：选中元素 ArrowRight×5 右移、合并一个 undo；
   await page.keyboard.press('ArrowRight');
   const leftAfterEdit = await frame.locator('#p1').evaluate((el) => el.style.left || '');
   expect(leftAfterEdit).toBe(leftBeforeEdit);
-});
-
-test('历史版本：保存两次后可恢复旧版', async () => {
-  await launch(FIXTURE);
-  await openDoc();
-  await editText('#p1', '第一次修改');
-  await saveViaButton();
-  await editText('#p1', '第二次修改');
-  await saveViaButton();
-  await page.locator('#history-btn').click();
-  const restoreButtons = page.locator('#history-list button');
-  await expect(restoreButtons.first()).toBeVisible();
-  const count = await restoreButtons.count();
-  expect(count).toBeGreaterThanOrEqual(2);
-  await restoreButtons.last().click();
-  await expect(frame.locator('#p1')).not.toContainText('第一次修改');
-  await expect(page.locator('#dirty-dot')).toBeVisible();
 });
 
 test('未保存修改时关闭窗口被拦截', async () => {
