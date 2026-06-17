@@ -8,3 +8,5 @@ dist-ssr
 # TS build cache
 *.tsbuildinfo
 .vercel
+# stress harness 产物（截图/报告）
+test-results
