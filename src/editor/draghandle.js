@@ -146,5 +146,5 @@
 
   const api = { attach };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else global.WS2Drag = api;
+  else global.WS2DragHandle = api;
 })(typeof window !== 'undefined' ? window : globalThis);
