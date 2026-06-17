@@ -72,8 +72,9 @@
     let open = false;
     let query = '';
     let active = 0;
+    let triggerBlock = null; // '/' 弹菜单那刻光标所在的块——在选区可能漂走前存好，apply 用它
 
-    function close() { open = false; query = ''; active = 0; menu.style.display = 'none'; }
+    function close() { open = false; query = ''; active = 0; triggerBlock = null; menu.style.display = 'none'; }
 
     function visibleItems() {
       const q = query.toLowerCase();
@@ -108,7 +109,7 @@
     }
 
     function apply(item) {
-      const block = caretBlock(doc); // 在 deleteTyped 扰动选区前先解析「'/' 所在的块」
+      const block = triggerBlock || caretBlock(doc); // 优先用菜单弹出时存的块（选区可能已漂走）
       deleteTyped();
       item.run(doc, block);
       undoMgr.checkpoint();
@@ -138,6 +139,7 @@
           while (host && host !== doc.body && !(fmt && fmt.isTextEditable(host))) host = host.parentElement;
           if (!host || host === doc.body) return;
           open = true; query = ''; active = 0;
+          triggerBlock = (fmt && fmt.nearestBlock(node, doc.body)) || host; // 选区还在块里时存好块
           setTimeout(() => {
             const rect = caretRect();
             if (!rect) { close(); return; }
