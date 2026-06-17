@@ -127,7 +127,15 @@
       trigger.addEventListener('click', () => {
         const showing = pop.classList.contains('open');
         closePops();
-        if (!showing && ctx.doc) { pop.classList.add('open'); if (onOpen) onOpen(); }
+        if (!showing && ctx.doc) {
+          pop.style.left = ''; // 复位上次 clamp 再量
+          pop.classList.add('open');
+          // 横向 clamp：弹层从 holder 左缘向右展开，右溢出视口则左移拉回（修对抗 review：宽弹层贴右缘被裁）
+          const vw = (d.defaultView && d.defaultView.innerWidth) || 9999;
+          const over = h.getBoundingClientRect().left + pop.offsetWidth - (vw - 8);
+          if (over > 0) pop.style.left = (-over) + 'px';
+          if (onOpen) onOpen();
+        }
       });
       h.append(trigger, pop);
       return h;

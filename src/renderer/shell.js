@@ -10,12 +10,12 @@ let insertApi = null;        // 顶栏「+ 插入」（WS2Insert.attach 返回�
 
 const frame = document.getElementById('doc-frame');
 const home = document.getElementById('home');
+const docHeader = document.getElementById('doc-header');
 const docName = document.getElementById('doc-name');
 const dirtyDot = document.getElementById('dirty-dot');
 const saveBtn = document.getElementById('save-btn');
 const historyBtn = document.getElementById('history-btn');
 const modeBtn = document.getElementById('mode-btn');
-const topbarEl = document.getElementById('topbar');
 const toolbarEl = document.getElementById('toolbar');
 const insertSlot = document.getElementById('insert-slot');
 
@@ -46,10 +46,11 @@ function showToolbarAt(rect, mode) {
   const fr = frame.getBoundingClientRect();
   const tw = toolbarEl.offsetWidth;
   const th = toolbarEl.offsetHeight;
-  const minTop = topbarEl.getBoundingClientRect().bottom + 6; // 别盖住顶栏
+  const minTop = 8; // 无横顶栏；顶部留 8px 余量
   const centerX = fr.left + rect.left + rect.width / 2;
   let top = fr.top + rect.top - th - 8;       // 默认浮在上方
   if (top < minTop) top = fr.top + rect.top + rect.height + 8; // 上方放不下 → 翻到下方
+  top = Math.max(minTop, Math.min(top, window.innerHeight - th - 8)); // 纵向夹住（翻下后也不溢出底部）
   let left = centerX - tw / 2;
   left = Math.max(8, Math.min(left, window.innerWidth - tw - 8)); // 横向夹住不出屏
   toolbarEl.style.left = left + 'px';
@@ -60,6 +61,7 @@ function showToolbarAt(rect, mode) {
 function repositionToolbar() {
   const doc = frame.contentDocument;
   if (frame.hidden || !doc || !currentSelection) { hideToolbar(); return; }
+  if (canvas && canvas.getState && !canvas.getState().enabled) { hideToolbar(); return; } // 预览态：任何 scroll/resize 都不弹气泡
   const editing = currentTextEdit && currentTextEdit.isEditing();
   let rect = null, mode = null;
   if (editing) {
@@ -75,8 +77,8 @@ function repositionToolbar() {
     if (el) { rect = el.getBoundingClientRect(); mode = 'element'; }
   }
   if (!rect) { hideToolbar(); return; }
-  // 元素/选区被滚出 iframe 可视区 → 隐藏
-  if (rect.bottom < 0 || rect.top > frame.clientHeight) { hideToolbar(); return; }
+  // 元素/选区被滚出 iframe 可视区（纵向或横向）→ 隐藏
+  if (rect.bottom < 0 || rect.top > frame.clientHeight || rect.right < 0 || rect.left > frame.clientWidth) { hideToolbar(); return; }
   showToolbarAt(rect, mode);
 }
 
@@ -215,6 +217,7 @@ function wireEditor() {
 
 function prepFrame(asDirty) {
   home.hidden = true;
+  docHeader.hidden = false;
   frame.hidden = false;
   docName.textContent = docInfo.name;
   historyBtn.disabled = false;
@@ -345,6 +348,8 @@ async function showHistory() {
 }
 
 document.getElementById('open-btn').onclick = pickAndOpen;
+const homeOpenBtn = document.getElementById('home-open');
+if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = save;
 historyBtn.onclick = showHistory;
 modeBtn.onclick = toggleMode;

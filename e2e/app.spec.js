@@ -71,10 +71,13 @@ test.afterEach(async ({}, testInfo) => {
   app = null; page = null; frame = null;
 });
 
-test('启动后显示首页', async () => {
+test('启动后显示空态首页 + 左侧文件栏门面', async () => {
   await launch(FIXTURE);
   await expect(page.locator('#open-btn')).toBeVisible();
-  await expect(page.locator('#home h1')).toHaveText('Wordspace Next');
+  await expect(page.locator('#home .ws-empty-title')).toHaveText('Wordspace Next');
+  // 左侧文件栏门面存在（照搬 ui-demo 样式，只展示不可用）
+  await expect(page.locator('#sidebar')).toBeVisible();
+  await expect(page.locator('.sidebar-lock')).toBeVisible();
 });
 
 test('打开文档：内容渲染且文档脚本未执行', async () => {
@@ -185,6 +188,38 @@ test('工具栏改格式后保存：格式写回磁盘且无编辑器痕迹', as
   expect(saved).toMatch(/<b>|font-weight/);
   expect(saved).not.toContain('data-ws2');
   expect(saved).not.toContain('tb-btn');
+});
+
+// 加固门（来自对抗 review 覆盖缺口）-------------------------------------------------
+
+test('回归门：弹层默认不展开、不挡文档（弹层吃点击曾挂 9 个 e2e）', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await expect(page.locator('#toolbar')).toBeHidden();          // 没选中不显示
+  expect(await page.locator('.tb-pop.open').count()).toBe(0);   // 没有任何常驻展开的弹层
+  // 直接双击进编辑能成（不被任何常驻浮层挡住——正是当初坏掉的症状）
+  await frame.locator('#p1').dblclick();
+  await frame.locator('#p1').selectText();
+  await expect(page.locator('#toolbar')).toBeVisible();
+});
+
+test('回归门：预览模式隐藏气泡，且 resize 不让它复活', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await frame.locator('#p1').click();                 // 元素态气泡浮出
+  await expect(page.locator('#toolbar')).toBeVisible();
+  await page.locator('#mode-btn').click();            // 进预览
+  await expect(page.locator('#toolbar')).toBeHidden();
+  await page.setViewportSize({ width: 1000, height: 720 }); // 触发 resize
+  await expect(page.locator('#toolbar')).toBeHidden(); // 预览态不复活
+});
+
+test('侧栏 lockout：点击侧栏不影响文档编辑', async () => {
+  await launch(FIXTURE);
+  await openDoc();
+  await page.locator('.sidebar-lock').click();        // 点侧栏被吞，无副作用
+  await editText('#p1', '改一下');
+  await expect(page.locator('#dirty-dot')).toBeVisible(); // 文档仍能正常编辑
 });
 
 test('斜杠菜单：进编辑后输入 / 弹出，选标题 2 转换块', async () => {

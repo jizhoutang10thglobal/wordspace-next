@@ -7,27 +7,146 @@
 <link rel="stylesheet" href="shell.css">
 </head>
 <body>
-<header id="topbar">
-  <span id="brand">Wordspace Next</span>
-  <span class="topbar-sep"></span>
-  <button id="open-btn">打开</button>
-  <span id="insert-slot"></span>
-  <span class="topbar-sep"></span>
-  <span id="doc-name"></span>
-  <span id="dirty-dot" hidden>●</span>
-  <span class="spacer"></span>
-  <button id="mode-btn" disabled>预览</button>
-  <button id="history-btn" disabled>历史版本</button>
-  <button id="save-btn" disabled>保存</button>
-</header>
-<!-- 按需浮出的富工具栏（Notion 气泡）：position:fixed，显隐/定位由 shell 的控制器驱动 -->
+
+<!-- ============================================================ 左侧文件管理栏（照搬 ui-demo ArcSidebar 的样式）
+     只抄样式不抄功能：整片 .sidebar-lock 吞点击 + hover 显「开发中」。内容为静态门面（假数据）。 -->
+<aside id="sidebar" class="arc-sidebar">
+  <div class="arc-top">
+    <div class="arc-traffic">
+      <span style="background:#ff5f57"></span>
+      <span style="background:#febc2e"></span>
+      <span style="background:#28c840"></span>
+    </div>
+    <div class="arc-top-nav">
+      <span class="arc-ico" title="侧栏"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></span>
+      <span class="arc-ico" title="后退"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></span>
+      <span class="arc-ico" title="前进"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+      <span class="arc-ico" title="刷新"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>
+    </div>
+  </div>
+
+  <div class="arc-omni">
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+    <span class="arc-omni-url ws-truncate">team.tenthglobal.com/handbook</span>
+    <span class="arc-omni-tag">本地</span>
+  </div>
+
+  <div class="arc-space-bar">
+    <div class="arc-spaces">
+      <div class="arc-space-trigger">
+        <span class="arc-space-title ws-truncate">Tenth Global</span>
+        <svg class="arc-space-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="arc-scroll">
+    <div class="arc-marks-zone">
+      <div class="arc-section-label">收藏</div>
+      <div class="arc-marks">
+        <div class="arc-mark"><span class="arc-mark-ico"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg></span><span class="arc-mark-title ws-truncate">员工手册</span></div>
+        <div class="arc-mark"><span class="arc-mark-ico"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg></span><span class="arc-mark-title ws-truncate">Tenth Global 官网</span></div>
+        <div class="arc-mark"><span class="arc-mark-ico"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg></span><span class="arc-mark-title ws-truncate">招聘 · 加入我们</span></div>
+      </div>
+    </div>
+
+    <div class="arc-section-label arc-tabs-label">
+      <span>标签页</span>
+      <span class="arc-ico arc-ico-sm" title="新建标签页"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span>
+    </div>
+    <div class="arc-tabs">
+      <div class="arc-tab is-active">
+        <span class="arc-tab-ico"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg></span>
+        <span class="arc-tab-title ws-truncate">员工手册</span>
+      </div>
+      <div class="arc-tab">
+        <span class="arc-tab-ico"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg></span>
+        <span class="arc-tab-title ws-truncate">Designer News · 行业动态</span>
+      </div>
+    </div>
+
+    <div class="arc-section-label arc-tabs-label">
+      <span>文档</span>
+      <span class="arc-ico arc-ico-sm" title="在此空间新建"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span>
+    </div>
+    <div class="arc-lib">
+      <div class="arc-lib-root"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg> ~/Wordspace</div>
+
+      <div class="arc-folder">
+        <div class="arc-folder-head"><svg class="arc-caret is-open" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span class="ws-truncate">战略</span></div>
+        <div class="arc-doc"><svg class="arc-doc-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg><span class="arc-doc-title ws-truncate">2026 公司战略</span></div>
+        <div class="arc-doc"><svg class="arc-doc-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg><span class="arc-doc-title ws-truncate">周会纪要 06-12</span></div>
+      </div>
+
+      <div class="arc-folder">
+        <div class="arc-folder-head"><svg class="arc-caret is-open" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span class="ws-truncate">人事</span></div>
+        <div class="arc-doc is-active"><svg class="arc-doc-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg><span class="arc-doc-title ws-truncate">员工手册</span></div>
+        <div class="arc-doc"><svg class="arc-doc-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg><span class="arc-doc-title ws-truncate">招聘 · 加入我们</span></div>
+      </div>
+
+      <div class="arc-folder">
+        <div class="arc-folder-head"><svg class="arc-caret is-open" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg><span class="ws-truncate">产品</span></div>
+        <div class="arc-doc"><svg class="arc-doc-ico" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/></svg><span class="arc-doc-title ws-truncate">Q2 业务汇报</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arc-foot">
+    <div class="arc-util">
+      <span class="arc-util-btn" title="模板"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="7" rx="1"/><rect x="3" y="14" width="9" height="7" rx="1"/><rect x="16" y="14" width="5" height="7" rx="1"/></svg></span>
+      <span class="arc-util-btn" title="Agent"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg></span>
+      <span class="arc-util-btn" title="设置"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg></span>
+      <div class="arc-util-spacer"></div>
+      <span class="arc-util-me"><span class="arc-avatar">WD</span></span>
+    </div>
+  </div>
+
+  <!-- 「开发中」lockout：吞掉侧栏所有交互 + hover 显提示 -->
+  <div class="sidebar-lock" title="开发中"><span class="sidebar-lock-badge">开发中</span></div>
+</aside>
+
+<!-- ============================================================ 右侧编辑区（照搬 ui-demo Canvas chrome） -->
+<section id="main" class="ws-main-doc">
+  <!-- 右上角浮动 actions（照 ui-demo TopActions 风格，承载真功能键） -->
+  <div class="top-actions">
+    <button id="mode-btn" class="ta-ghost" disabled>预览</button>
+    <button id="history-btn" class="ta-ghost" disabled>历史版本</button>
+    <span id="insert-slot"></span>
+    <button id="open-btn" class="ta-ghost">打开</button>
+    <button id="save-btn" class="top-share" disabled>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7H7v7"/><path d="M7 3v4h8"/></svg>
+      保存
+    </button>
+  </div>
+
+  <div class="ws-canvas">
+    <!-- 文档头：面包屑 本地 / 文件名 + 元信息（仅开文档时显示） -->
+    <div id="doc-header" class="ws-doc-header" hidden>
+      <div class="ws-breadcrumb">
+        <span>本地</span>
+        <span class="ws-bc-sep">/</span>
+        <span id="doc-name" class="ws-doc-crumb"></span>
+        <span id="dirty-dot" class="ws-dirty" hidden>● 未保存</span>
+      </div>
+    </div>
+
+    <!-- 空态（无文档时） -->
+    <div id="home" class="ws-empty-wrap">
+      <div class="ws-empty">
+        <div class="ws-empty-title">Wordspace Next</div>
+        <div class="ws-empty-note">打开一个 HTML 文档开始编辑</div>
+        <button id="home-open" class="top-share">打开文档</button>
+        <ul id="recent-list"></ul>
+      </div>
+    </div>
+
+    <iframe id="doc-frame" sandbox="allow-same-origin" hidden></iframe>
+  </div>
+</section>
+
+<!-- 按需浮出的富工具栏（Notion 气泡）：position:fixed，显隐/定位由 shell 控制器驱动 -->
 <div id="toolbar" hidden></div>
-<main id="home">
-  <h1>Wordspace Next</h1>
-  <p class="hint">打开一个 HTML 文档开始编辑</p>
-  <ul id="recent-list"></ul>
-</main>
-<iframe id="doc-frame" sandbox="allow-same-origin" hidden></iframe>
+
 <div id="history-modal" hidden>
   <div class="modal-box">
     <h2>历史版本</h2>
@@ -35,6 +154,7 @@
     <button id="history-close">关闭</button>
   </div>
 </div>
+
 <script src="../editor/blocks.js"></script>
 <script src="../editor/serialize.js"></script>
 <script src="../editor/undo.js"></script>
