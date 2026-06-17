@@ -204,3 +204,13 @@ test('safeHref: 放行 http/https/mailto/tel + 相对/锚点；拒绝 javascript
   assert.equal(format.safeHref('data:text/html,x'), null);
   assert.equal(format.safeHref('vbscript:msgbox'), null);
 });
+
+// 回归守卫：nearestBlock 必须导出在 WS2Format 上——slashmenu 的 caretBlock 调 fmt.nearestBlock，
+// 没导出时它恒抛错（slash 转换全废），而 bridge 单测直接传 block、走不到 caretBlock 故测不出。
+test('nearestBlock 已导出且按标签找最近块级祖先', () => {
+  assert.equal(typeof format.nearestBlock, 'function', 'nearestBlock 必须导出在 WS2Format');
+  const doc = docOf('<div class="wrap"><p id="p"><span id="s">x</span></p></div>');
+  const span = doc.getElementById('s');
+  assert.equal(format.nearestBlock(span.firstChild, doc.body), doc.getElementById('p'));
+  assert.equal(format.nearestBlock(doc.body, doc.body), null); // body 自身无块级祖先
+});
