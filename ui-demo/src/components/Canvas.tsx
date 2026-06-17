@@ -443,6 +443,22 @@ export default function Canvas() {
     setFmtRect(null)
   }, [])
 
+  // 删块（带兜底）：删到只剩一块时清空成空正文并进编辑，避免空白死状态（KTD-7，不改 store）。
+  const removeBlock = useCallback(
+    (id: string) => {
+      if (!doc) return
+      if (doc.blocks.length <= 1) {
+        updateBlockHtml(doc.id, id, '')
+        setBlockType(doc.id, id, 'text')
+        editBlock(id, { mode: 'start' })
+      } else {
+        deleteBlock(doc.id, id)
+        deselect()
+      }
+    },
+    [doc, updateBlockHtml, setBlockType, editBlock, deleteBlock, deselect],
+  )
+
   // 斜杠菜单选中某项：删掉已输入的「/query」，再插入新块 / 转换当前块 / 弹 AI 占位。
   const applySlash = useCallback(
     (key: string) => {
@@ -498,6 +514,13 @@ export default function Canvas() {
         editBlock(addBlock(doc.id, editingId, 'text'), { mode: 'start' })
         return
       }
+      // 灰选中态按 Enter：在选中块后插正文块并进编辑（兜底，可在不可编辑块后插块）
+      if (e.key === 'Enter' && selectedId && !editingId && doc) {
+        if (e.isComposing || e.keyCode === 229) return
+        e.preventDefault()
+        editBlock(addBlock(doc.id, selectedId, 'text'), { mode: 'start' })
+        return
+      }
       if (e.key === 'Escape') {
         if (editingId) setEditingId(null)
         else if (selectedId) deselect()
@@ -510,13 +533,22 @@ export default function Canvas() {
         doc
       ) {
         e.preventDefault()
-        deleteBlock(doc.id, selectedId)
-        deselect()
+        removeBlock(selectedId)
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [editingId, selectedId, deselect, deleteBlock, doc, slash, addBlock, editBlock])
+  }, [
+    editingId,
+    selectedId,
+    deselect,
+    deleteBlock,
+    doc,
+    slash,
+    addBlock,
+    editBlock,
+    removeBlock,
+  ])
 
   // 浮动工具栏位置：① 编辑态有文字选区 → 浮在选区上方；② 块被选中（非编辑）→ 浮在块上方；
   // ③ 否则隐藏。selectionchange 与 选中/编辑态变化都会重算。
@@ -806,6 +838,25 @@ export default function Canvas() {
               )
             })}
           </div>
+          <div
+            className="ws-canvas-tail"
+            onClick={(e) => {
+              e.stopPropagation()
+              const last = doc.blocks[doc.blocks.length - 1]
+              const lastEl = last && blockEls.current.get(last.id)
+              if (
+                last &&
+                isEditable(last) &&
+                (lastEl?.textContent ?? '').trim() === ''
+              ) {
+                editBlock(last.id, { mode: 'end' }) // 末块已是空可编辑块，直接进它
+              } else {
+                editBlock(addBlock(doc.id, last ? last.id : '', 'text'), {
+                  mode: 'start',
+                })
+              }
+            }}
+          />
           <div className="ws-doc-end ws-muted">
             这是一个本地 HTML 文件 · {doc.localPath}
           </div>
@@ -833,10 +884,7 @@ export default function Canvas() {
             editBlock(addBlock(doc.id, blockMenuFor as string, 'text'))
           }
           onDuplicate={() => duplicateBlock(doc.id, blockMenuFor as string)}
-          onDelete={() => {
-            deleteBlock(doc.id, blockMenuFor as string)
-            deselect()
-          }}
+          onDelete={() => removeBlock(blockMenuFor as string)}
           onColor={(c) =>
             execOnBlock(blockMenuFor as string, () =>
               document.execCommand('foreColor', false, c),

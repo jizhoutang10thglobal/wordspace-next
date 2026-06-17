@@ -53,6 +53,8 @@
 /* blocks */
 .ws-blocks { display: flex; flex-direction: column; }
 .ws-block { position: relative; padding: 3px 0; }
+/* 文末续写捕获区：点这里在文末新起一段（删 gutter + 后的兜底插块路径之一） */
+.ws-canvas-tail { min-height: 44px; cursor: text; }
 
 /* 块级选中（不可编辑块单击、或编辑态 Esc 退一档）：很淡的灰框，明显是「选中」但弱于编辑。
    可编辑块单击直接进编辑（无对象环），交给文字光标。 */
