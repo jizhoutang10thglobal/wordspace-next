@@ -1,29 +1,50 @@
-import { Bold, Italic } from 'lucide-react'
+import { useState } from 'react'
+import {
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Code,
+  Link2,
+  Sparkles,
+  ChevronDown,
+} from 'lucide-react'
+import type { BlockType } from '../../types'
 
 export interface FormatRect {
   top: number
   left: number
 }
 
+const TURN_INTO: { label: string; type: BlockType; level?: 1 | 2 | 3 }[] = [
+  { label: '正文', type: 'text' },
+  { label: '标题 1', type: 'heading', level: 1 },
+  { label: '标题 2', type: 'heading', level: 2 },
+  { label: '标题 3', type: 'heading', level: 3 },
+  { label: '引用', type: 'quote' },
+  { label: '列表', type: 'list' },
+]
+const TEXT_COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2']
+const HILITE_COLORS = ['#fff59d', '#ffd6d6', '#d7f0db', '#dbe9ff', '#f3e3ff']
+
 /**
- * Floating inline toolbar shown above a non-empty text selection. Commands run
- * through document.execCommand against the live selection; the host persists
- * the affected block afterwards via onApplied.
+ * 按需浮出的富工具栏（Notion 气泡式）。选中块时浮在块上方、编辑时浮在文字选区上方。
+ * 自己不直接动 DOM：命令通过 onCmd / onTurnInto / onAskAI 交给 Canvas，按「块选中 vs 文字
+ * 选中」两种模式分别应用。mousedown 一律 preventDefault，避免点工具栏丢掉选区。
  */
 export default function FormatToolbar({
   rect,
-  onApplied,
+  onCmd,
+  onTurnInto,
+  onAskAI,
 }: {
   rect: FormatRect
-  onApplied: () => void
+  onCmd: (command: string, value?: string) => void
+  onTurnInto: (type: BlockType, level?: 1 | 2 | 3) => void
+  onAskAI: () => void
 }) {
-  // Keep the selection alive: prevent the toolbar from stealing focus.
+  const [menu, setMenu] = useState<'turn' | 'color' | 'hilite' | null>(null)
   const guard = (e: React.MouseEvent) => e.preventDefault()
-
-  const exec = (command: string, value?: string) => {
-    document.execCommand(command, false, value)
-    onApplied()
-  }
 
   return (
     <div
@@ -32,49 +53,126 @@ export default function FormatToolbar({
       onMouseDown={guard}
       role="toolbar"
     >
-      <button
-        className="ws-fmtbar-btn"
-        title="加粗"
-        onClick={() => exec('bold')}
-      >
+      {/* 转为：块类型切换 */}
+      <div className="ws-fmtbar-holder">
+        <button
+          className="ws-fmtbar-btn ws-fmtbar-text"
+          title="转换块类型"
+          onMouseDown={guard}
+          onClick={() => setMenu(menu === 'turn' ? null : 'turn')}
+        >
+          转为 <ChevronDown size={12} strokeWidth={2} />
+        </button>
+        {menu === 'turn' && (
+          <div className="ws-fmtbar-menu" onMouseDown={guard}>
+            {TURN_INTO.map((it) => (
+              <button
+                key={it.label}
+                className="ws-fmtbar-menu-item"
+                onMouseDown={guard}
+                onClick={() => {
+                  onTurnInto(it.type, it.level)
+                  setMenu(null)
+                }}
+              >
+                {it.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <span className="ws-fmtbar-sep" />
+
+      <button className="ws-fmtbar-btn" title="加粗" onMouseDown={guard} onClick={() => onCmd('bold')}>
         <Bold size={15} strokeWidth={2} />
       </button>
-      <button
-        className="ws-fmtbar-btn"
-        title="斜体"
-        onClick={() => exec('italic')}
-      >
+      <button className="ws-fmtbar-btn" title="斜体" onMouseDown={guard} onClick={() => onCmd('italic')}>
         <Italic size={15} strokeWidth={2} />
       </button>
+      <button className="ws-fmtbar-btn" title="下划线" onMouseDown={guard} onClick={() => onCmd('underline')}>
+        <Underline size={15} strokeWidth={2} />
+      </button>
+      <button className="ws-fmtbar-btn" title="删除线" onMouseDown={guard} onClick={() => onCmd('strikeThrough')}>
+        <Strikethrough size={15} strokeWidth={2} />
+      </button>
+      <button className="ws-fmtbar-btn" title="行内代码" onMouseDown={guard} onClick={() => onCmd('__code__')}>
+        <Code size={15} strokeWidth={2} />
+      </button>
+
       <span className="ws-fmtbar-sep" />
-      <button
-        className="ws-fmtbar-btn ws-fmtbar-text"
-        title="一级标题"
-        onClick={() => exec('formatBlock', 'h1')}
-      >
-        H1
+
+      {/* 文字颜色 */}
+      <div className="ws-fmtbar-holder">
+        <button
+          className="ws-fmtbar-btn ws-fmtbar-aglyph"
+          title="文字颜色"
+          onMouseDown={guard}
+          onClick={() => setMenu(menu === 'color' ? null : 'color')}
+        >
+          A
+        </button>
+        {menu === 'color' && (
+          <div className="ws-fmtbar-swatches" onMouseDown={guard}>
+            {TEXT_COLORS.map((c) => (
+              <button
+                key={c}
+                className="ws-fmtbar-swatch"
+                style={{ background: c }}
+                title={c}
+                onMouseDown={guard}
+                onClick={() => {
+                  onCmd('foreColor', c)
+                  setMenu(null)
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 背景高亮 */}
+      <div className="ws-fmtbar-holder">
+        <button
+          className="ws-fmtbar-btn"
+          title="背景高亮"
+          onMouseDown={guard}
+          onClick={() => setMenu(menu === 'hilite' ? null : 'hilite')}
+        >
+          🖍
+        </button>
+        {menu === 'hilite' && (
+          <div className="ws-fmtbar-swatches" onMouseDown={guard}>
+            {HILITE_COLORS.map((c) => (
+              <button
+                key={c}
+                className="ws-fmtbar-swatch"
+                style={{ background: c }}
+                title={c}
+                onMouseDown={guard}
+                onClick={() => {
+                  onCmd('hiliteColor', c)
+                  setMenu(null)
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button className="ws-fmtbar-btn" title="链接" onMouseDown={guard} onClick={() => onCmd('createLink')}>
+        <Link2 size={15} strokeWidth={2} />
       </button>
-      <button
-        className="ws-fmtbar-btn ws-fmtbar-text"
-        title="二级标题"
-        onClick={() => exec('formatBlock', 'h2')}
-      >
-        H2
-      </button>
-      <button
-        className="ws-fmtbar-btn ws-fmtbar-text"
-        title="正文"
-        onClick={() => exec('formatBlock', 'p')}
-      >
-        正文
-      </button>
+
       <span className="ws-fmtbar-sep" />
+
       <button
-        className="ws-fmtbar-color"
-        title="标蓝"
-        onClick={() => exec('foreColor', '#1a73e8')}
+        className="ws-fmtbar-btn ws-fmtbar-ai"
+        title="让 AI 重排这一块（开发中）"
+        onMouseDown={guard}
+        onClick={onAskAI}
       >
-        <span className="ws-fmtbar-swatch" />
+        <Sparkles size={14} strokeWidth={2} /> AI
       </button>
     </div>
   )

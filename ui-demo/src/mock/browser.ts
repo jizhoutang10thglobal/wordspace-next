@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { useStore } from './store'
 
 // ---------------------------------------------------------------------------
@@ -15,10 +16,23 @@ import { useStore } from './store'
 export type SiteKind = 'newtab' | 'mock' | 'web'
 export type SiteKey = 'search' | 'company' | 'news' | 'saas'
 
+/**
+ * A saved favorite. Wordspace's bookmarks mix the two kinds of things the app
+ * can open: a local/published document (by docId) and a web page (by url).
+ * `uid` is a unique per-entry id; favorites are NOT de-duplicated, so the same
+ * page can be saved more than once and each entry is moved/removed on its own.
+ */
 export interface Bookmark {
+  uid: string
+  spaceId: string // favorites are scoped per space, like tabs
+  kind: 'doc' | 'web'
   title: string
-  url: string
+  url?: string // kind === 'web'
+  docId?: string // kind === 'doc'
 }
+
+let bookmarkSeq = 0
+export const newBookmarkUid = () => `bm-${Date.now().toString(36)}-${(bookmarkSeq++).toString(36)}`
 
 export interface Resolved {
   kind: SiteKind
@@ -143,14 +157,29 @@ interface BrowserState {
   forward: () => void
   canGoBack: (tabId?: string) => boolean
   canGoForward: (tabId?: string) => boolean
+
+  addBookmark: (bm: Bookmark) => void
+  removeBookmark: (uid: string) => void
+  moveBookmark: (fromUid: string, toIndex: number) => void
 }
 
+const webMark = (uid: string, title: string, url: string): Bookmark => ({
+  uid,
+  spaceId: 'sp-tg',
+  kind: 'web',
+  title,
+  url,
+})
+
+// Seeded favorites all live in the team space (sp-tg); the other spaces start
+// empty. Deliberately mixes a document and web pages, to show a bookmark can be
+// either.
 const seedBookmarks: Bookmark[] = [
-  { title: 'Tenth Global 官网', url: 'https://tenthglobal.com' },
-  { title: '招聘 · 加入我们', url: 'https://tenthglobal.com/careers' },
-  { title: 'Designer News', url: 'https://news.design/today' },
-  { title: 'FlowDesk', url: 'https://flowdesk.app' },
-  { title: '维基百科', url: 'https://zh.wikipedia.org' },
+  { uid: 'bm-handbook', spaceId: 'sp-tg', kind: 'doc', docId: 'd-handbook', title: '员工手册' },
+  webMark('bm-tg', 'Tenth Global 官网', 'https://tenthglobal.com'),
+  webMark('bm-careers', '招聘 · 加入我们', 'https://tenthglobal.com/careers'),
+  webMark('bm-news', 'Designer News', 'https://news.design/today'),
+  webMark('bm-flowdesk', 'FlowDesk', 'https://flowdesk.app'),
 ]
 
 /** Apply a resolved url to the active tab's address bar + title. */
@@ -159,7 +188,9 @@ function commitToTab(tabId: string, url: string) {
   useStore.getState().setTabUrl(tabId, url, r.title)
 }
 
-export const useBrowser = create<BrowserState>((set, get) => ({
+export const useBrowser = create<BrowserState>()(
+  persist(
+    (set, get) => ({
   bookmarks: seedBookmarks,
   history: {},
 
@@ -209,4 +240,30 @@ export const useBrowser = create<BrowserState>((set, get) => ({
     const entry = get().history[id]
     return !!entry && entry.index < entry.stack.length - 1
   },
-}))
+
+  // No de-duplication: dragging the same page in again adds another entry.
+  addBookmark: (bm) => set((s) => ({ bookmarks: [...s.bookmarks, bm] })),
+  removeBookmark: (uid) =>
+    set((s) => ({ bookmarks: s.bookmarks.filter((b) => b.uid !== uid) })),
+  // Reorder within the favorite's own space (toIndex is relative to that space).
+  moveBookmark: (fromUid, toIndex) =>
+    set((s) => {
+      const mark = s.bookmarks.find((b) => b.uid === fromUid)
+      if (!mark) return s
+      const inSpace = s.bookmarks.filter((b) => b.spaceId === mark.spaceId)
+      const others = s.bookmarks.filter((b) => b.spaceId !== mark.spaceId)
+      const from = inSpace.findIndex((b) => b.uid === fromUid)
+      inSpace.splice(from, 1)
+      inSpace.splice(Math.max(0, Math.min(toIndex, inSpace.length)), 0, mark)
+      return { bookmarks: [...others, ...inSpace] }
+    }),
+    }),
+    {
+      // Only favorites persist; per-tab history stays fresh each session.
+      name: 'wordspace-browser',
+      version: 1, // bumped when bookmarks gained spaceId; old state reseeds
+      partialize: (s) => ({ bookmarks: s.bookmarks }),
+      migrate: () => ({ bookmarks: seedBookmarks }) as never,
+    },
+  ),
+)

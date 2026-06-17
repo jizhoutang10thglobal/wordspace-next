@@ -11,6 +11,13 @@ interface UI {
   openCreate: () => void
   closeCreate: () => void
 
+  sidebarCollapsed: boolean
+  toggleSidebar: () => void
+
+  // collapsed sidebar folders, keyed by 'folder:<id>' or 'tree:<path>'.
+  collapsedKeys: Record<string, boolean>
+  toggleCollapsed: (key: string) => void
+
   aiPrompt: string
   setAiPrompt: (v: string) => void
 }
@@ -23,6 +30,13 @@ export const useUI = create<UI>((set) => ({
   createOpen: false,
   openCreate: () => set({ createOpen: true }),
   closeCreate: () => set({ createOpen: false }),
+
+  sidebarCollapsed: false,
+  toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+
+  collapsedKeys: {},
+  toggleCollapsed: (key) =>
+    set((s) => ({ collapsedKeys: { ...s.collapsedKeys, [key]: !s.collapsedKeys[key] } })),
 
   aiPrompt: '',
   setAiPrompt: (v) => set({ aiPrompt: v }),
