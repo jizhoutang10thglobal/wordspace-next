@@ -15,14 +15,18 @@ export async function launchHarness({ url = DEFAULT_URL, headed = false } = {}) 
   })
 
   await page.goto(url, { waitUntil: 'load' })
-  // 清 persist（store name + browser）再 reload → 自动 reseed 到静态 seedDocs（确定性初态）
+  await resetPage(page)
+  return { browser, page, errors }
+}
+
+// 清 persist（store name + browser）再 reload → 自动 reseed 到静态 seedDocs（确定性初态）。
+// 变异自检每个用例之间也用它复位（KTD-4 + parallel session 的「每用例干净实例」教训）。
+export async function resetPage(page) {
   await page.evaluate(() => {
     localStorage.removeItem('wordspace-demo')
     localStorage.removeItem('wordspace-browser')
   })
   await page.reload({ waitUntil: 'load' })
   await page.waitForSelector('.ws-block', { timeout: 10000 })
-  // settle 一拍，等 React/contentEditable 初始 effect 落定
-  await page.waitForTimeout(50)
-  return { browser, page, errors }
+  await page.waitForTimeout(50) // settle 一拍，等 React/contentEditable 初始 effect 落定
 }

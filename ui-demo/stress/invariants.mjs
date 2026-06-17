@@ -70,21 +70,15 @@ async function snapshot(page) {
         if (Math.abs(signed) > GT) misaligned.push({ cls: b.className.match(/ws-blk-\S+/)?.[0], diff: signed })
       }
 
-      // faithful-save：读 persist 真存盘的块 html
-      let saveOffenders = []
-      try {
-        const raw = localStorage.getItem('wordspace-demo')
-        if (raw) {
-          const data = JSON.parse(raw)
-          const docs = (data.state && data.state.docs) || data.docs || []
-          // 只查「编辑器 chrome 漏进存盘」——ui-demo 流式编辑器不写定位/尺寸样式，
-          // 而 designed/seed 块合法地带 background/width/font-size 等内容样式，不能误判。
-          const bad = /ws-block-controls|ws-block-grip|contenteditable\s*=|data-block\s*=/i
-          for (const d of docs) for (const blk of d.blocks || []) {
-            if (typeof blk.html === 'string' && bad.test(blk.html)) saveOffenders.push({ doc: d.id, snippet: blk.html.slice(0, 80) })
-          }
-        }
-      } catch (e) { saveOffenders = [{ error: String(e) }] }
+      // faithful-save：读每个块 contentEditable 的 innerHTML（= updateBlockHtml 实际存盘的东西，可靠来源）。
+      // 只查「编辑器 chrome 漏进存盘内容」——ui-demo 流式编辑器不写定位/尺寸样式，
+      // 而 designed/seed 块合法地带 background/width/font-size 等内容样式，不能误判。
+      const saveOffenders = []
+      const bad = /ws-block-controls|ws-block-grip|contenteditable\s*=|data-block\s*=/i
+      for (const el of document.querySelectorAll('[data-block]')) {
+        const html = el.innerHTML
+        if (bad.test(html)) saveOffenders.push({ id: el.getAttribute('data-block'), snippet: html.slice(0, 80) })
+      }
 
       return {
         count: blocks.length,

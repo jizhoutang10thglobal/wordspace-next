@@ -3,6 +3,7 @@ import { launchHarness } from './setup.mjs'
 import { makeRng, randomSeed } from './rng.mjs'
 import { step } from './actions.mjs'
 import { runInvariants } from './invariants.mjs'
+import { runSelfcheck } from './selfcheck.mjs'
 
 // 等 React 提交 + 一帧绘制落定（比固定 ms 更稳，压低时序发散）
 async function settle(page) {
@@ -32,6 +33,21 @@ mkdirSync('test-results/stress', { recursive: true })
 
 const { browser, page, errors } = await launchHarness({ url: args.url, headed: args.headed })
 const rng = makeRng(seed)
+
+// --selfcheck：变异自检模式——注入坏状态、断言对应不变量必翻红（证明门有牙）
+if (args.selfcheck) {
+  const { results, allHaveTeeth, dumb } = await runSelfcheck(page)
+  console.log('[selfcheck] 变异自检结果：')
+  for (const r of results) console.log(`  ${r.fired ? '✓' : '✗ 哑门!'} ${r.label}`)
+  await browser.close()
+  if (allHaveTeeth) {
+    console.log('[selfcheck] ✓ 全部翻红 —— 门有牙')
+    process.exit(0)
+  } else {
+    console.log(`[selfcheck] ✗ ${dumb.length} 条该红不红（哑门）：#${dumb.map((d) => d.target).join(',#')}`)
+    process.exit(1)
+  }
+}
 
 const ctx = { errors }
 
