@@ -5,13 +5,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import {
-  GripVertical,
-  Plus,
-  Sparkles,
-  ArrowUp,
-  MoreHorizontal,
-} from 'lucide-react'
+import { GripVertical, Plus, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import {
   VISIBILITY_META,
@@ -19,26 +13,33 @@ import {
   type BlockType,
   type Doc,
 } from '../types'
-import { Avatar, VisibilityDot, Spinner } from '../ui/primitives'
+import { Avatar, VisibilityDot } from '../ui/primitives'
 import { relTime } from '../lib/format'
 import BlockAddMenu from './canvas/BlockAddMenu'
 import DocMenu from './canvas/DocMenu'
 import FormatToolbar, { type FormatRect } from './canvas/FormatToolbar'
-import CollabCursors from './canvas/CollabCursors'
+import AiSoonModal from './canvas/AiSoonModal'
+import BlockActionMenu from './canvas/BlockActionMenu'
 import './Canvas.css'
 
 const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout']
 const isEditable = (b: Block) => !b.designed && EDITABLE.includes(b.type)
 
 // ---------------------------------------------------------------------------
-// One editable / static block, with hover handle + add button + drag source.
+// One block. 分块制内核：默认 contentEditable=false，单击把整块作为离散对象选中；
+// 双击才进文字编辑（contentEditable=true）。这样点击不再是落文字光标，而是选「块对象」。
 // ---------------------------------------------------------------------------
 function BlockRow({
   doc,
   block,
   index,
   registerEl,
+  selected,
+  editing,
+  onSelect,
+  onEdit,
   onFocusBlock,
+  onOpenBlockMenu,
   addOpen,
   onToggleAdd,
   onPickAdd,
@@ -52,7 +53,12 @@ function BlockRow({
   block: Block
   index: number
   registerEl: (id: string, el: HTMLElement | null) => void
+  selected: boolean
+  editing: boolean
+  onSelect: (id: string) => void
+  onEdit: (id: string) => void
   onFocusBlock: (id: string | null) => void
+  onOpenBlockMenu: (id: string, pos: { top: number; left: number }) => void
   addOpen: boolean
   onToggleAdd: (id: string) => void
   onPickAdd: (type: BlockType) => void
@@ -63,15 +69,14 @@ function BlockRow({
   dropEdge: 'top' | 'bottom' | null
 }) {
   const updateBlockHtml = useStore((s) => s.updateBlockHtml)
-  const deleteBlock = useStore((s) => s.deleteBlock)
   const elRef = useRef<HTMLElement | null>(null)
   const debounce = useRef<number | undefined>(undefined)
   const focused = useRef(false)
 
-  const editable = isEditable(block)
+  const canEdit = isEditable(block)
+  const editableNow = canEdit && editing
 
-  // Set DOM content from the store only when not actively editing, so we never
-  // fight the caret. Covers external mutations (AI redesign, reorder reuse).
+  // 仅在未聚焦时从 store 同步内容，避免和光标打架（覆盖 AI 改版 / 重排复用等外部 mutation）
   const setNode = useCallback(
     (el: HTMLElement | null) => {
       elRef.current = el
@@ -94,29 +99,23 @@ function BlockRow({
     const el = elRef.current
     if (el) updateBlockHtml(doc.id, block.id, el.innerHTML)
   }
-
   const handleInput = () => {
     window.clearTimeout(debounce.current)
     debounce.current = window.setTimeout(persist, 400)
   }
-
   const handleBlur = () => {
     focused.current = false
     window.clearTimeout(debounce.current)
     persist()
-    // Keep this block as the "last focused" target so the AI bar can act on it
-    // even after the input steals focus; it's only cleared if the block is gone.
   }
-
   const handleFocus = () => {
     focused.current = true
     onFocusBlock(block.id)
   }
 
-  // editable element rendered with the right tag, content set imperatively
   const editProps = {
     ref: setNode as never,
-    contentEditable: true,
+    contentEditable: editableNow,
     suppressContentEditableWarning: true,
     spellCheck: false,
     onInput: handleInput,
@@ -147,7 +146,7 @@ function BlockRow({
     inner = <L className={`ws-h ws-h${block.level ?? 2}`} {...editProps} />
   } else if (block.type === 'text') {
     inner = (
-      <p className="ws-p" data-placeholder="空段落,输入正文…" {...editProps} />
+      <p className="ws-p" data-placeholder="输入正文,或按 / 插入" {...editProps} />
     )
   } else if (block.type === 'list') {
     inner = <ul className="ws-ul" {...editProps} />
@@ -159,9 +158,19 @@ function BlockRow({
 
   return (
     <div
-      className={`ws-block${editable ? '' : ' ws-block-static'}${
-        dropEdge ? ` ws-block-drop-${dropEdge}` : ''
-      }`}
+      className={
+        `ws-block${canEdit ? '' : ' ws-block-static'}` +
+        `${selected ? ' ws-block-selected' : ''}` +
+        `${editing ? ' ws-block-editing' : ''}` +
+        `${dropEdge ? ` ws-block-drop-${dropEdge}` : ''}`
+      }
+      onClick={(e) => {
+        e.stopPropagation()
+        onSelect(block.id)
+      }}
+      onDoubleClick={() => {
+        if (canEdit) onEdit(block.id)
+      }}
       onDragOver={(e) => {
         e.preventDefault()
         onDragOver(index)
@@ -174,8 +183,14 @@ function BlockRow({
       <div className="ws-block-controls" contentEditable={false}>
         <span
           className="ws-block-grip"
-          title="拖动以重新排序"
+          title="拖动重排 · 点击打开菜单"
           draggable
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            onOpenBlockMenu(block.id, { top: r.bottom + 4, left: r.left })
+          }}
           onDragStart={() => onDragStart(index)}
           onDragEnd={onDragEnd}
         >
@@ -184,7 +199,10 @@ function BlockRow({
         <span
           className="ws-block-add"
           title="在下方插入"
-          onClick={() => onToggleAdd(block.id)}
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleAdd(block.id)
+          }}
         >
           <Plus size={14} strokeWidth={1.8} />
         </span>
@@ -197,16 +215,6 @@ function BlockRow({
       </div>
 
       {inner}
-
-      <button
-        className="ws-block-del"
-        title="删除此块"
-        contentEditable={false}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => deleteBlock(doc.id, block.id)}
-      >
-        ×
-      </button>
     </div>
   )
 }
@@ -294,8 +302,9 @@ export default function Canvas() {
   const addBlock = useStore((s) => s.addBlock)
   const updateBlockHtml = useStore((s) => s.updateBlockHtml)
   const reorderBlocks = useStore((s) => s.reorderBlocks)
-  const redesignBlock = useStore((s) => s.redesignBlock)
-  const aiBusy = useStore((s) => s.aiBusy)
+  const deleteBlock = useStore((s) => s.deleteBlock)
+  const setBlockType = useStore((s) => s.setBlockType)
+  const duplicateBlock = useStore((s) => s.duplicateBlock)
 
   const tab = tabs.find((x) => x.id === activeTabId)
   const doc = tab?.docId ? getDoc(tab.docId) : undefined
@@ -306,12 +315,14 @@ export default function Canvas() {
 
   const [addMenuFor, setAddMenuFor] = useState<string | null>(null)
   const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
-  const [aiInput, setAiInput] = useState('')
-  // flip after first paint so children receive the real scroll element (the
-  // ref is null on the initial render that mounts it)
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [aiSoonOpen, setAiSoonOpen] = useState(false)
+  const [blockMenuFor, setBlockMenuFor] = useState<string | null>(null)
+  const [blockMenuPos, setBlockMenuPos] = useState<{
+    top: number
+    left: number
+  } | null>(null)
   // drag-to-reorder
   const dragFrom = useRef<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -320,11 +331,6 @@ export default function Canvas() {
     if (el) blockEls.current.set(id, el)
     else blockEls.current.delete(id)
   }, [])
-
-  const getBlockEl = useCallback(
-    (id: string) => blockEls.current.get(id) ?? null,
-    [],
-  )
 
   const focusBlock = useCallback((id: string) => {
     requestAnimationFrame(() => {
@@ -340,36 +346,96 @@ export default function Canvas() {
     })
   }, [])
 
-  // --- inline format toolbar: follow the live selection inside this doc ----
+  // 分块制选中模型：单击选块、双击进文字编辑、点空白取消、Esc 逐级退出
+  const onFocusBlock = useCallback((id: string | null) => {
+    focusedBlockId.current = id
+  }, [])
+
+  const selectBlock = useCallback((id: string) => {
+    setSelectedId(id)
+    // 点到「别的」块时退出文字编辑；点正在编辑的块本身则保持编辑（让原生光标工作）
+    setEditingId((cur) => (cur === id ? cur : null))
+  }, [])
+
+  const editBlock = useCallback((id: string) => {
+    setSelectedId(id)
+    setEditingId(id)
+  }, [])
+
+  const deselect = useCallback(() => {
+    setSelectedId(null)
+    setEditingId(null)
+    setFmtRect(null)
+  }, [])
+
+  // 进入编辑态时聚焦该块并把光标落到末尾
   useEffect(() => {
-    const onSel = () => {
-      const sel = window.getSelection()
-      const root = scrollRef.current
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !root) {
-        setFmtRect(null)
+    if (editingId) focusBlock(editingId)
+  }, [editingId, focusBlock])
+
+  // Esc：编辑 → 退回块选中；已选中 → 取消选中。
+  // Delete/Backspace（选中且非编辑态）→ 删整块，替代原来的 × 按钮。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (editingId) setEditingId(null)
+        else if (selectedId) deselect()
         return
       }
-      const range = sel.getRangeAt(0)
-      const anchor = range.startContainer.parentElement
-      const inEditable = anchor?.closest('[contenteditable="true"]')
-      if (!inEditable || !root.contains(inEditable)) {
-        setFmtRect(null)
-        return
+      if (
+        (e.key === 'Delete' || e.key === 'Backspace') &&
+        selectedId &&
+        !editingId &&
+        doc
+      ) {
+        e.preventDefault()
+        deleteBlock(doc.id, selectedId)
+        deselect()
       }
-      const r = range.getBoundingClientRect()
-      const sr = root.getBoundingClientRect()
-      if (r.width === 0 && r.height === 0) {
-        setFmtRect(null)
-        return
-      }
-      setFmtRect({
-        top: r.top - sr.top + root.scrollTop - 44,
-        left: r.left - sr.left + r.width / 2,
-      })
     }
-    document.addEventListener('selectionchange', onSel)
-    return () => document.removeEventListener('selectionchange', onSel)
-  }, [doc?.id])
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [editingId, selectedId, deselect, deleteBlock, doc])
+
+  // 浮动工具栏位置：① 编辑态有文字选区 → 浮在选区上方；② 块被选中（非编辑）→ 浮在块上方；
+  // ③ 否则隐藏。selectionchange 与 选中/编辑态变化都会重算。
+  useEffect(() => {
+    const computeRect = (): FormatRect | null => {
+      const root = scrollRef.current
+      if (!root) return null
+      const sr = root.getBoundingClientRect()
+      const sel = window.getSelection()
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0)
+        const anchor = range.startContainer.parentElement
+        const inEditable = anchor?.closest('[contenteditable="true"]')
+        if (inEditable && root.contains(inEditable)) {
+          const r = range.getBoundingClientRect()
+          if (r.width !== 0 || r.height !== 0) {
+            return {
+              top: r.top - sr.top + root.scrollTop - 46,
+              left: r.left - sr.left + r.width / 2,
+            }
+          }
+        }
+      }
+      if (selectedId && !editingId) {
+        const el = blockEls.current.get(selectedId)
+        if (el) {
+          const r = el.getBoundingClientRect()
+          return {
+            top: r.top - sr.top + root.scrollTop - 46,
+            left: r.left - sr.left + Math.min(r.width / 2, 180),
+          }
+        }
+      }
+      return null
+    }
+    const update = () => setFmtRect(computeRect())
+    update()
+    document.addEventListener('selectionchange', update)
+    return () => document.removeEventListener('selectionchange', update)
+  }, [selectedId, editingId, doc?.id])
 
   // persist the block the toolbar just edited
   const persistFocused = useCallback(() => {
@@ -387,15 +453,106 @@ export default function Canvas() {
     )
   }
 
-  const onFocusBlock = (id: string | null) => {
-    focusedBlockId.current = id
+  // 块选中（非编辑）态下要对整块套格式：先让块可编辑、聚焦、全选，再跑 execCommand，最后落库。
+  const execOnBlock = (blockId: string, run: () => void) => {
+    const el = blockEls.current.get(blockId)
+    if (!el) return
+    el.setAttribute('contenteditable', 'true')
+    setEditingId(blockId)
+    el.focus()
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    const sel = window.getSelection()
+    sel?.removeAllRanges()
+    sel?.addRange(range)
+    try {
+      document.execCommand('styleWithCSS', false, true)
+    } catch {
+      /* ignore */
+    }
+    run()
+    updateBlockHtml(doc.id, blockId, el.innerHTML)
   }
 
-  // insert a block after `afterId` and focus it
+  // 行内代码：execCommand 没有，自己把选区包进 <code>
+  const wrapCode = () => {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    const range = sel.getRangeAt(0)
+    const code = document.createElement('code')
+    try {
+      range.surroundContents(code)
+    } catch {
+      code.appendChild(range.extractContents())
+      range.insertNode(code)
+    }
+  }
+
+  // 工具栏命令统一入口：有文字选区 → 作用于选区；否则作用于被选中的整块。
+  const applyCmd = (command: string, value?: string) => {
+    const sel = window.getSelection()
+    const hasText =
+      !!editingId && !!sel && !sel.isCollapsed && sel.rangeCount > 0
+
+    if (command === 'createLink') {
+      const saved = hasText ? sel!.getRangeAt(0).cloneRange() : null
+      const url = window.prompt('链接地址', 'https://')
+      if (!url) return
+      if (saved) {
+        const s = window.getSelection()
+        s?.removeAllRanges()
+        s?.addRange(saved)
+        document.execCommand('createLink', false, url)
+        persistFocused()
+      } else if (selectedId) {
+        execOnBlock(selectedId, () =>
+          document.execCommand('createLink', false, url),
+        )
+      }
+      return
+    }
+
+    const run = () => {
+      if (command === '__code__') wrapCode()
+      else document.execCommand(command, false, value)
+    }
+    if (hasText) {
+      try {
+        document.execCommand('styleWithCSS', false, true)
+      } catch {
+        /* ignore */
+      }
+      run()
+      persistFocused()
+    } else if (selectedId) {
+      execOnBlock(selectedId, run)
+    }
+  }
+
+  const turnInto = (type: BlockType, level?: 1 | 2 | 3) => {
+    if (!selectedId) return
+    setBlockType(doc.id, selectedId, type, level)
+  }
+
+  const askAI = () => setAiSoonOpen(true)
+
+  // 点 ⋮⋮ 手柄打开块操作菜单（pos = 视口坐标）
+  const openBlockMenu = (id: string, pos: { top: number; left: number }) => {
+    selectBlock(id)
+    setBlockMenuFor(id)
+    setBlockMenuPos(pos)
+  }
+  const closeBlockMenu = () => {
+    setBlockMenuFor(null)
+    setBlockMenuPos(null)
+  }
+
+  // insert a block after `afterId`; 文本类进编辑、分隔线只选中
   const handleAdd = (afterId: string, type: BlockType) => {
     setAddMenuFor(null)
     const newId = addBlock(doc.id, afterId, type)
-    if (type !== 'divider') focusBlock(newId)
+    if (type === 'divider' || type === 'image') selectBlock(newId)
+    else editBlock(newId)
   }
 
   // --- drag reorder ---
@@ -409,8 +566,6 @@ export default function Canvas() {
   const onDrop = () => {
     const from = dragFrom.current
     const to = dropIndex
-    // Dropping on row `to` moves the dragged block into that slot; the store's
-    // splice (remove `from`, insert at `to`) implements exactly that.
     if (from !== null && to !== null && from !== to) {
       reorderBlocks(doc.id, from, to)
     }
@@ -422,29 +577,14 @@ export default function Canvas() {
     setDropIndex(null)
   }
 
-  // --- AI command bar ---
-  const submitAI = async () => {
-    const prompt = aiInput.trim()
-    if (!prompt || aiBusy) return
-    setAiInput('')
-    const target = focusedBlockId.current
-    const targetExists = !!target && doc.blocks.some((b) => b.id === target)
-    if (target && targetExists) {
-      await redesignBlock(doc.id, target, prompt)
-    } else {
-      const newId = addBlock(doc.id, null, 'text')
-      updateBlockHtml(
-        doc.id,
-        newId,
-        `根据「${prompt}」生成的一段内容。你可以直接编辑这段文字,或选中后再让 AI 调整。`,
-      )
-      focusBlock(newId)
-    }
-  }
-
   return (
     <main className="ws-canvas">
-      <div className="ws-canvas-scroll" ref={scrollRef}>
+      {/* 点空白处（非任何块）取消选中——块的 onClick 会 stopPropagation，故此处只接到空白点击 */}
+      <div
+        className="ws-canvas-scroll"
+        ref={scrollRef}
+        onClick={deselect}
+      >
         <article className={`ws-doc ws-doc-${doc.kind}`}>
           <DocHeader doc={doc} />
           <div className="ws-blocks">
@@ -460,7 +600,12 @@ export default function Canvas() {
                   block={b}
                   index={i}
                   registerEl={registerEl}
+                  selected={selectedId === b.id}
+                  editing={editingId === b.id}
+                  onSelect={selectBlock}
+                  onEdit={editBlock}
                   onFocusBlock={onFocusBlock}
+                  onOpenBlockMenu={openBlockMenu}
                   addOpen={addMenuFor === b.id}
                   onToggleAdd={(id) =>
                     setAddMenuFor((cur) => (cur === id ? null : id))
@@ -481,47 +626,36 @@ export default function Canvas() {
         </article>
 
         {fmtRect && (
-          <FormatToolbar rect={fmtRect} onApplied={persistFocused} />
-        )}
-
-        <CollabCursors
-          doc={doc}
-          scrollEl={mounted ? scrollRef.current : null}
-          getBlockEl={getBlockEl}
-        />
-      </div>
-
-      <div className="ws-aibar">
-        <div className={`ws-aibar-inner${aiBusy ? ' is-busy' : ''}`}>
-          {aiBusy ? (
-            <Spinner size={16} />
-          ) : (
-            <Sparkles size={16} className="ws-aibar-spark" />
-          )}
-          <input
-            value={aiInput}
-            disabled={aiBusy}
-            placeholder={
-              aiBusy
-                ? '正在生成…'
-                : focusedBlockId.current
-                  ? '让 AI 重排当前这一块,例如“做成横幅”'
-                  : '让 AI 生成或修改这一页,例如“补一段结论”'
-            }
-            onChange={(e) => setAiInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') submitAI()
-            }}
+          <FormatToolbar
+            rect={fmtRect}
+            onCmd={applyCmd}
+            onTurnInto={turnInto}
+            onAskAI={askAI}
           />
-          <button
-            className="ws-aibar-send"
-            disabled={aiBusy || !aiInput.trim()}
-            onClick={submitAI}
-          >
-            <ArrowUp size={15} strokeWidth={2} />
-          </button>
-        </div>
+        )}
       </div>
+
+      {aiSoonOpen && <AiSoonModal onClose={() => setAiSoonOpen(false)} />}
+
+      {blockMenuFor && blockMenuPos && (
+        <BlockActionMenu
+          pos={blockMenuPos}
+          onTurnInto={(type, level) =>
+            setBlockType(doc.id, blockMenuFor, type, level)
+          }
+          onDuplicate={() => duplicateBlock(doc.id, blockMenuFor as string)}
+          onDelete={() => {
+            deleteBlock(doc.id, blockMenuFor as string)
+            deselect()
+          }}
+          onColor={(c) =>
+            execOnBlock(blockMenuFor as string, () =>
+              document.execCommand('foreColor', false, c),
+            )
+          }
+          onClose={closeBlockMenu}
+        />
+      )}
     </main>
   )
 }

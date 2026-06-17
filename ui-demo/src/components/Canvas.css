@@ -54,6 +54,26 @@
 .ws-blocks { display: flex; flex-direction: column; }
 .ws-block { position: relative; padding: 3px 0; }
 
+/* 分块制：单击把整块作为离散对象选中 —— 淡高亮框（无缩放手柄/无间距读数，保文档感）。
+   编辑态（双击进文字编辑）去掉对象环，交给文字光标。 */
+.ws-block-selected:not(.ws-block-editing) {
+  border-radius: var(--r-sm);
+  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.4);
+  background: rgba(26, 115, 232, 0.045);
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+}
+.ws-block-editing {
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.018);
+  padding-left: 8px;
+  padding-right: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+}
+
 /* left control cluster (grip + add) revealed on hover */
 .ws-block-controls {
   position: absolute;
@@ -243,6 +263,107 @@
 .ws-fmtbar-swatch {
   width: 14px; height: 14px; border-radius: var(--r-xs);
   background: var(--c-accent);
+}
+
+/* 富工具栏：转为下拉 / 颜色弹层 / AI 按钮 */
+.ws-fmtbar-holder { position: relative; display: inline-flex; }
+.ws-fmtbar-text { gap: 3px; }
+.ws-fmtbar-aglyph {
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--c-accent);
+  text-underline-offset: 2px;
+}
+.ws-fmtbar-ai {
+  gap: 4px; color: var(--c-accent);
+  font-size: var(--fs-sm); font-weight: var(--fw-medium);
+}
+.ws-fmtbar-ai:hover { background: rgba(26, 115, 232, 0.08); }
+.ws-fmtbar-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+  min-width: 132px; padding: 4px;
+  background: var(--c-surface); border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+}
+.ws-fmtbar-menu-item {
+  display: block; width: 100%; height: 30px; padding: 0 10px;
+  border-radius: var(--r-sm); font-size: var(--fs-base);
+  color: var(--c-text); text-align: left;
+}
+.ws-fmtbar-menu-item:hover { background: var(--c-hover); }
+.ws-fmtbar-swatches {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
+  display: flex; gap: 4px; padding: 7px;
+  background: var(--c-surface); border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+}
+.ws-fmtbar-swatches .ws-fmtbar-swatch {
+  width: 20px; height: 20px; border-radius: var(--r-xs);
+  border: 1px solid var(--c-border); cursor: pointer;
+}
+
+/* AI「开发中」占位弹窗 */
+.ws-aisoon-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(0, 0, 0, 0.32);
+  display: flex; align-items: center; justify-content: center;
+}
+.ws-aisoon {
+  position: relative;
+  width: 320px; padding: 28px 24px 22px;
+  background: var(--c-surface); border-radius: 14px;
+  box-shadow: var(--shadow-menu); text-align: center;
+}
+.ws-aisoon-icon {
+  width: 46px; height: 46px; margin: 0 auto 14px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(26, 115, 232, 0.1); color: var(--c-accent);
+}
+.ws-aisoon-title {
+  font-size: var(--fs-lg); font-weight: var(--fw-semibold);
+  color: var(--c-text); margin-bottom: 8px;
+}
+.ws-aisoon-desc {
+  font-size: var(--fs-md); color: var(--c-text-2);
+  line-height: 1.6; margin-bottom: 18px;
+}
+.ws-aisoon-btn {
+  height: 34px; padding: 0 18px; border-radius: var(--r-pill);
+  background: var(--c-accent); color: #fff; font-size: var(--fs-base);
+}
+.ws-aisoon-btn:hover { background: var(--c-accent-hover); }
+.ws-aisoon-x {
+  position: absolute; top: 12px; right: 12px;
+  width: 26px; height: 26px; border-radius: var(--r-sm);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-text-3);
+}
+.ws-aisoon-x:hover { background: var(--c-hover); color: var(--c-text); }
+
+/* gutter ⋮⋮ 块操作菜单 */
+.ws-blockmenu {
+  z-index: 80;
+  min-width: 168px; padding: 4px;
+  background: var(--c-surface); border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+}
+.ws-blockmenu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; height: 32px; padding: 0 10px;
+  border-radius: var(--r-sm); font-size: var(--fs-base);
+  color: var(--c-text); text-align: left;
+}
+.ws-blockmenu-item:hover { background: var(--c-hover); }
+.ws-blockmenu-item svg { color: var(--c-text-3); flex: none; }
+.ws-blockmenu-danger { color: var(--c-danger); }
+.ws-blockmenu-danger svg { color: var(--c-danger); }
+.ws-blockmenu-danger:hover { background: var(--c-danger-tint); }
+.ws-blockmenu-sep { height: 1px; background: var(--c-divider); margin: 4px 6px; }
+.ws-blockmenu-colors { display: flex; gap: 5px; padding: 5px 8px 3px; }
+.ws-blockmenu-swatch {
+  width: 18px; height: 18px; border-radius: var(--r-xs);
+  border: 1px solid var(--c-border); cursor: pointer;
 }
 
 /* ------------------------------------------------------------------ */
