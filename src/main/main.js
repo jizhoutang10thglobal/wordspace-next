@@ -56,7 +56,7 @@ function sendMenu(cmd) {
 function buildMenu() {
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit', label: '退出' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { type: 'separator' }, { role: 'quit', label: '退出' }] },
     {
       label: '文件',
       submenu: [
@@ -82,18 +82,70 @@ function buildMenu() {
 }
 
 // 自动更新：仅打包后生效。dev 无 update feed，惰性 require（dev 不加载 electron-updater）。
-// update-downloaded 后显式弹窗问用户（立即重启走 quitAndInstall / 稍后退出时自动装）。
+// autoDownload=false：下载时机自己控——启动自动更新静默下载；菜单「检查更新…」先问用户再下载。
+// manualCheck 标志区分两条路的弹窗（手动才弹「已是最新 / 失败」，自动保持静默）。
+let autoUpdater = null;
+let manualCheck = false;
+
 function setupAutoUpdater() {
   if (!app.isPackaged) return;
-  const { autoUpdater } = require('electron-updater');
-  const { buildUpdateDialogOptions, shouldInstall } = require('../lib/update-prompt');
-  autoUpdater.on('error', (err) => console.error('[updater] error:', err && err.message));
+  autoUpdater = require('electron-updater').autoUpdater;
+  const up = require('../lib/update-prompt');
+  autoUpdater.autoDownload = false;
+
+  autoUpdater.on('update-available', (info) => {
+    if (manualCheck) {
+      manualCheck = false;
+      dialog.showMessageBox(up.buildAvailableDialogOptions(info && info.version)).then(({ response }) => {
+        if (up.shouldDownload(response)) autoUpdater.downloadUpdate().catch((e) => console.error('[updater] download error:', e && e.message));
+      }).catch((e) => console.error('[updater] dialog error:', e && e.message));
+    } else {
+      // 启动自动更新：静默下载（保持原行为），下载完走下面 update-downloaded 的「立即重启」弹窗。
+      autoUpdater.downloadUpdate().catch((e) => console.error('[updater] download error:', e && e.message));
+    }
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    if (manualCheck) {
+      manualCheck = false;
+      dialog.showMessageBox(up.buildUpToDateDialogOptions(app.getVersion())).catch(() => {});
+    }
+  });
+
   autoUpdater.on('update-downloaded', (info) => {
-    dialog.showMessageBox(buildUpdateDialogOptions(info && info.version)).then(({ response }) => {
-      if (shouldInstall(response)) autoUpdater.quitAndInstall();
+    dialog.showMessageBox(up.buildUpdateDialogOptions(info && info.version)).then(({ response }) => {
+      if (up.shouldInstall(response)) autoUpdater.quitAndInstall();
     }).catch((err) => console.error('[updater] dialog/install error:', err && err.message));
   });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[updater] error:', err && err.message);
+    if (manualCheck) {
+      manualCheck = false;
+      dialog.showMessageBox(up.buildCheckErrorDialogOptions()).catch(() => {});
+    }
+  });
+
+  // 启动自动查一次（auto 路径：manualCheck=false → 有更新静默下载）。
   autoUpdater.checkForUpdates().catch(() => {});
+}
+
+// 菜单「检查更新…」：手动查。dev/未就绪 → 弹「开发模式无法检查更新」；packaged → 走 manualCheck 路径
+// （有新版问下载、没有提示已是最新、出错弹失败）。
+function manualCheckForUpdates() {
+  const up = require('../lib/update-prompt');
+  if (!app.isPackaged || !autoUpdater) {
+    dialog.showMessageBox(up.buildDevDialogOptions()).catch(() => {});
+    return;
+  }
+  manualCheck = true;
+  autoUpdater.checkForUpdates().catch((e) => {
+    console.error('[updater] manual check error:', e && e.message);
+    if (manualCheck) {
+      manualCheck = false;
+      dialog.showMessageBox(up.buildCheckErrorDialogOptions()).catch(() => {});
+    }
+  });
 }
 
 // 把外部请求打开的文件路径送进窗口：已就绪则发并聚焦，未就绪则挂起等 did-finish-load。

@@ -136,8 +136,6 @@
     const win = deps.win || (doc && doc.defaultView) || {};
     const d = host.ownerDocument; // 父层 renderer document（面板属父层 chrome）
 
-    let mode = 'flow';
-
     const trigger = d.createElement('button');
     trigger.className = 'tb-btn tb-textbtn';
     trigger.textContent = '+ 插入';
@@ -147,25 +145,7 @@
     const panel = d.createElement('div');
     panel.className = 'insert-panel';
 
-    // Float/Flow 分段切换
-    const toggleRow = d.createElement('div');
-    toggleRow.className = 'insert-modes';
-    const flowBtn = d.createElement('button');
-    flowBtn.className = 'insert-mode active';
-    flowBtn.textContent = 'Flow 文档流';
-    const floatBtn = d.createElement('button');
-    floatBtn.className = 'insert-mode';
-    floatBtn.textContent = 'Float 浮动';
-    function setMode(m) {
-      mode = m;
-      flowBtn.classList.toggle('active', m === 'flow');
-      floatBtn.classList.toggle('active', m === 'float');
-    }
-    flowBtn.addEventListener('click', () => setMode('flow'));
-    floatBtn.addEventListener('click', () => setMode('float'));
-    toggleRow.append(flowBtn, floatBtn);
-
-    // 10 种类型网格
+    // 10 种类型网格（恒插入文档流；不做 Float 浮动）
     const grid = d.createElement('div');
     grid.className = 'insert-grid';
     for (const t of TYPES) {
@@ -176,7 +156,7 @@
       grid.appendChild(cell);
     }
 
-    panel.append(toggleRow, grid);
+    panel.append(grid);
     host.append(trigger, panel);
 
     function openPanel() { panel.classList.add('open'); }
@@ -190,14 +170,7 @@
       if (!doc) return;
       const el = createElement(doc, type);
       if (!el) return;
-      if (mode === 'float') {
-        // 默认落点：视口中心偏左上一点（避开手柄/选中框边缘），加滚动偏移。
-        const vw = win.innerWidth || 800;
-        const vh = win.innerHeight || 600;
-        placeFloat(doc, el, Math.round(vw / 2) - 100, Math.round(vh / 2) - 40, win);
-      } else {
-        placeFlow(doc, el, getSelectedEl());
-      }
+      placeFlow(doc, el, getSelectedEl()); // 恒插入文档流（选中元素后插其后 / 否则插 body 顶）
       if (canvas && canvas.select) canvas.select(el); // 选中新元素 → 出手柄 + 可拖
       if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); // 插入 = 结构变更 → html 快照 undo
       markDirty();
