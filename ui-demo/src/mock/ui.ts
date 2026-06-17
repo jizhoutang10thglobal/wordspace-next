@@ -11,6 +11,10 @@ interface UI {
   openCreate: () => void
   closeCreate: () => void
 
+  spaceModalOpen: boolean
+  openSpaceModal: () => void
+  closeSpaceModal: () => void
+
   sidebarCollapsed: boolean
   toggleSidebar: () => void
 
@@ -30,6 +34,10 @@ export const useUI = create<UI>((set) => ({
   createOpen: false,
   openCreate: () => set({ createOpen: true }),
   closeCreate: () => set({ createOpen: false }),
+
+  spaceModalOpen: false,
+  openSpaceModal: () => set({ spaceModalOpen: true }),
+  closeSpaceModal: () => set({ spaceModalOpen: false }),
 
   sidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),

@@ -17,27 +17,31 @@ import {
   Bot,
   Settings2,
   Globe2,
+  Cloud,
+  HardDrive,
+  FileImage,
+  FileSpreadsheet,
+  Presentation,
+  File,
+  Pin,
+  PinOff,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
-import { useBrowser, newBookmarkUid, type Bookmark } from '../mock/browser'
-import { Avatar, VisibilityDot } from '../ui/primitives'
-import { buildLocalTree, type TreeNode } from '../lib/tree'
-import type { Doc, Folder, Space, Tab } from '../types'
+import { useBrowser } from '../mock/browser'
+import { Avatar } from '../ui/primitives'
+import { buildFileTree, type FileNode } from '../lib/tree'
+import { isCloudStorage } from '../types'
+import type { Doc, FileKind, Folder, Space, Tab } from '../types'
 import './ArcSidebar.css'
 
 // ---------------------------------------------------------------------------
-// Drag and drop. Tabs reorder within 标签页; bookmarks reorder within 收藏; a tab
-// dragged onto 收藏 is saved; a bookmark dragged out of 收藏 is removed.
-// getData() is blocked during dragover, so the live drag is stashed module-side
-// and read for reorder math; the MIME type carries the kind (types ARE readable
-// during dragover). Same-document only, which is all this prototype needs.
+// Drag and drop. 置顶 and 标签页 both hold tabs, so there is one drag kind: a tab
+// dropped into the 置顶 zone becomes pinned, into the 标签页 zone becomes
+// unpinned, and within a zone it reorders. getData() is blocked during dragover,
+// so the dragged id is stashed module-side. Same-document only.
 // ---------------------------------------------------------------------------
-const TAB_MIME = 'application/x-ws-tab'
-const MARK_MIME = 'application/x-ws-bookmark'
-type DragState = { kind: 'tab' | 'bookmark'; id: string }
-let activeDrag: DragState | null = null
-let bookmarkLanded = false // set when a dragged bookmark lands on the 收藏 zone
+let dragTabId: string | null = null
 
 type InsertPos = 'before' | 'after'
 /** Where to drop, from cursor Y vs the hovered row's midpoint. */
@@ -45,31 +49,12 @@ function insertAt(e: React.DragEvent): InsertPos {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
   return e.clientY > r.top + r.height / 2 ? 'after' : 'before'
 }
-/** Final array index for "move fromId next to targetId on `pos` side". */
+/** Final index in a group for "move fromId next to targetId on `pos` side". */
 function targetIndex(ids: string[], fromId: string, targetId: string, pos: InsertPos): number {
   const rest = ids.filter((id) => id !== fromId)
-  let idx = rest.indexOf(targetId)
+  const idx = rest.indexOf(targetId)
   if (idx < 0) return rest.length
   return pos === 'after' ? idx + 1 : idx
-}
-
-// A tab becomes a favorite by dragging it onto the 收藏 area. The new-tab start
-// page (empty / wordspace:// url) has nothing to bookmark, so it yields null.
-function tabToBookmark(tab: Tab, getDoc: (id: string) => Doc | undefined): Bookmark | null {
-  if (tab.kind === 'doc' && tab.docId) {
-    const d = getDoc(tab.docId)
-    return {
-      uid: newBookmarkUid(),
-      spaceId: tab.spaceId,
-      kind: 'doc',
-      docId: tab.docId,
-      title: d?.title ?? tab.title,
-    }
-  }
-  if (tab.kind === 'web' && tab.url && !tab.url.startsWith('wordspace://')) {
-    return { uid: newBookmarkUid(), spaceId: tab.spaceId, kind: 'web', url: tab.url, title: tab.title }
-  }
-  return null
 }
 
 function TabRow({
@@ -81,19 +66,20 @@ function TabRow({
   insert: InsertPos | null
   onRowDragOver: (e: React.DragEvent) => void
 }) {
-  const { activeTabId, setActiveTab, closeTab } = useStore()
+  const { activeTabId, setActiveTab, closeTab, togglePin } = useStore()
   const active = tab.id === activeTabId
+  const pinned = !!tab.pinned
   return (
     <div
       className={`arc-tab ${active ? 'is-active' : ''} ${insert ? 'drop-' + insert : ''}`}
       draggable
       onDragStart={(e) => {
-        activeDrag = { kind: 'tab', id: tab.id }
-        e.dataTransfer.setData(TAB_MIME, tab.id)
-        e.dataTransfer.effectAllowed = 'copyMove'
+        dragTabId = tab.id
+        e.dataTransfer.setData('text/plain', tab.id)
+        e.dataTransfer.effectAllowed = 'move'
       }}
       onDragEnd={() => {
-        activeDrag = null
+        dragTabId = null
       }}
       onDragOver={onRowDragOver}
       onClick={() => setActiveTab(tab.id)}
@@ -103,74 +89,93 @@ function TabRow({
       </span>
       <span className="arc-tab-title ws-truncate">{tab.title}</span>
       <button
-        className="arc-tab-close"
+        className="arc-tab-act"
+        title={pinned ? '取消置顶' : '置顶'}
         onClick={(e) => {
           e.stopPropagation()
-          closeTab(tab.id)
+          togglePin(tab.id)
         }}
       >
-        <X size={12} />
+        {pinned ? <PinOff size={12} /> : <Pin size={12} />}
       </button>
+      {!pinned && (
+        <button
+          className="arc-tab-act arc-tab-close"
+          title="关闭"
+          onClick={(e) => {
+            e.stopPropagation()
+            closeTab(tab.id)
+          }}
+        >
+          <X size={12} />
+        </button>
+      )}
     </div>
   )
 }
 
+// One strip for a (space, pinned?) group of tabs. It is a drop zone: dropping a
+// tab here sets its pinned state and positions it where the insertion line was.
 function TabStrip({
   spaceId,
-  onOpenMark,
+  pinned,
+  emptyHint,
 }: {
   spaceId: string
-  onOpenMark: (markId: string) => string | null
+  pinned: boolean
+  emptyHint?: string
 }) {
   const allTabs = useStore((s) => s.tabs)
-  const moveTab = useStore((s) => s.moveTab)
-  const tabs = allTabs.filter((t) => t.spaceId === spaceId)
+  const dropTab = useStore((s) => s.dropTab)
+  const tabs = allTabs.filter((t) => t.spaceId === spaceId && !!t.pinned === pinned)
   const [insert, setInsert] = useState<{ id: string; pos: InsertPos } | null>(null)
+  const [zoneOver, setZoneOver] = useState(false)
+  const empty = tabs.length === 0
 
   const onDrop = (e: React.DragEvent) => {
-    if (!activeDrag) return
+    if (!dragTabId) return
     e.preventDefault()
     const target = insert
     setInsert(null)
-    if (activeDrag.kind === 'tab') {
-      const fromId = activeDrag.id
-      if (target) moveTab(fromId, targetIndex(tabs.map((t) => t.id), fromId, target.id, target.pos))
-    } else if (activeDrag.kind === 'bookmark') {
-      // Opening a favorite as a tab counts as a landing, so it isn't removed.
-      bookmarkLanded = true
-      const newId = onOpenMark(activeDrag.id)
-      if (newId && target) {
-        const ids = useStore.getState().tabs.map((t) => t.id)
-        moveTab(newId, targetIndex(ids, newId, target.id, target.pos))
-      }
-    }
+    setZoneOver(false)
+    const idx = target
+      ? targetIndex(tabs.map((t) => t.id), dragTabId, target.id, target.pos)
+      : tabs.filter((t) => t.id !== dragTabId).length
+    dropTab(dragTabId, pinned, idx)
   }
   return (
     <div
-      className="arc-tabs"
+      className={`arc-tabs ${zoneOver ? 'is-drop' : ''}`}
       onDragOver={(e) => {
-        if (!activeDrag) return
+        if (!dragTabId) return
         e.preventDefault()
         e.dataTransfer.dropEffect = 'move'
+        if (empty) setZoneOver(true)
       }}
       onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) setInsert(null)
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+          setInsert(null)
+          setZoneOver(false)
+        }
       }}
       onDrop={onDrop}
     >
-      {tabs.map((t) => (
-        <TabRow
-          key={t.id}
-          tab={t}
-          insert={insert?.id === t.id ? insert.pos : null}
-          onRowDragOver={(e) => {
-            // both a reordered tab and a favorite being opened show the line
-            if (!activeDrag || activeDrag.id === t.id) return
-            e.preventDefault()
-            setInsert({ id: t.id, pos: insertAt(e) })
-          }}
-        />
-      ))}
+      {empty && emptyHint ? (
+        <div className="arc-tabs-empty">{emptyHint}</div>
+      ) : (
+        tabs.map((t) => (
+          <TabRow
+            key={t.id}
+            tab={t}
+            insert={insert?.id === t.id ? insert.pos : null}
+            onRowDragOver={(e) => {
+              if (!dragTabId || dragTabId === t.id) return
+              e.preventDefault()
+              setInsert({ id: t.id, pos: insertAt(e) })
+            }}
+          />
+        ))
+      )}
     </div>
   )
 }
@@ -189,149 +194,7 @@ function DocRow({ doc }: { doc: Doc }) {
     >
       <FileText size={13} className="arc-doc-ico" />
       <span className="arc-doc-title ws-truncate">{doc.title}</span>
-      <VisibilityDot v={doc.visibility} />
     </button>
-  )
-}
-
-function BookmarkRow({
-  mark,
-  insert,
-  onRowDragOver,
-}: {
-  mark: Bookmark
-  insert: InsertPos | null
-  onRowDragOver: (e: React.DragEvent) => void
-}) {
-  const navigate = useNavigate()
-  const { openDoc, getDoc, openWebTab } = useStore()
-  const removeBookmark = useBrowser((s) => s.removeBookmark)
-  const doc = mark.kind === 'doc' && mark.docId ? getDoc(mark.docId) : undefined
-  // A document bookmark whose doc no longer exists (e.g. after a reseed) is skipped.
-  if (mark.kind === 'doc' && !doc) return null
-  const title = doc?.title ?? mark.title
-  // A favorite is a button: a doc jumps to that document; a web page always opens
-  // a fresh tab (duplicate tabs are fine).
-  const open = () => {
-    if (mark.kind === 'doc' && mark.docId) {
-      openDoc(mark.docId)
-    } else if (mark.url) {
-      openWebTab(mark.url, mark.title)
-      useBrowser.getState().navigate(mark.url)
-    }
-    navigate('/docs')
-  }
-  return (
-    <div
-      className={`arc-mark ${insert ? 'drop-' + insert : ''}`}
-      draggable
-      onDragStart={(e) => {
-        activeDrag = { kind: 'bookmark', id: mark.uid }
-        bookmarkLanded = false
-        e.dataTransfer.setData(MARK_MIME, mark.uid)
-        e.dataTransfer.effectAllowed = 'move'
-      }}
-      onDragEnd={() => {
-        // Dropped anywhere other than the 收藏 zone → drag-out removal.
-        if (activeDrag?.kind === 'bookmark' && !bookmarkLanded) removeBookmark(mark.uid)
-        activeDrag = null
-      }}
-      onDragOver={onRowDragOver}
-      onClick={open}
-    >
-      <span className="arc-mark-ico">
-        {mark.kind === 'doc' ? <FileText size={13} /> : <Globe2 size={13} />}
-      </span>
-      <span className="arc-mark-title ws-truncate">{title}</span>
-      <button
-        className="arc-mark-del"
-        title="移除收藏"
-        onClick={(e) => {
-          e.stopPropagation()
-          removeBookmark(mark.uid)
-        }}
-      >
-        <X size={12} />
-      </button>
-    </div>
-  )
-}
-
-function MarksStrip({
-  spaceId,
-  onAddTab,
-}: {
-  spaceId: string
-  onAddTab: (tabId: string) => string | null
-}) {
-  const allBookmarks = useBrowser((s) => s.bookmarks)
-  const moveBookmark = useBrowser((s) => s.moveBookmark)
-  const bookmarks = allBookmarks.filter((b) => b.spaceId === spaceId)
-  const [insert, setInsert] = useState<{ id: string; pos: InsertPos } | null>(null)
-  const [tabOver, setTabOver] = useState(false)
-
-  const onZoneDragOver = (e: React.DragEvent) => {
-    if (!activeDrag) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    // Empty 收藏 has no rows to draw an insertion line on, so highlight the zone.
-    if (activeDrag.kind === 'tab' && bookmarks.length === 0) setTabOver(true)
-  }
-  const onZoneDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    const target = insert
-    setInsert(null)
-    if (activeDrag?.kind === 'tab') {
-      setTabOver(false)
-      const newUid = onAddTab(e.dataTransfer.getData(TAB_MIME) || activeDrag.id)
-      // Drop it where the insertion line was, like a reorder.
-      if (newUid && target) {
-        const uids = useBrowser.getState().bookmarks.map((b) => b.uid)
-        moveBookmark(newUid, targetIndex(uids, newUid, target.id, target.pos))
-      }
-      return
-    }
-    if (activeDrag?.kind === 'bookmark') {
-      bookmarkLanded = true
-      const fromUid = activeDrag.id
-      if (target) {
-        moveBookmark(fromUid, targetIndex(bookmarks.map((b) => b.uid), fromUid, target.id, target.pos))
-      }
-    }
-  }
-  return (
-    <div
-      className={`arc-marks-zone ${tabOver ? 'is-drop' : ''}`}
-      onDragOver={onZoneDragOver}
-      onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-          setTabOver(false)
-          setInsert(null)
-        }
-      }}
-      onDrop={onZoneDrop}
-    >
-      <div className="arc-section-label">收藏</div>
-      {bookmarks.length > 0 ? (
-        <div className="arc-marks">
-          {bookmarks.map((b) => (
-            <BookmarkRow
-              key={b.uid}
-              mark={b}
-              insert={insert?.id === b.uid ? insert.pos : null}
-              onRowDragOver={(e) => {
-                // both a reordered bookmark and a tab being saved show the line
-                if (!activeDrag || activeDrag.id === b.uid) return
-                e.preventDefault()
-                setInsert({ id: b.uid, pos: insertAt(e) })
-              }}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="arc-marks-empty">把标签页拖到这里收藏</div>
-      )}
-    </div>
   )
 }
 
@@ -355,28 +218,149 @@ function FolderGroup({ folder }: { folder: Folder }) {
   )
 }
 
-function TreeBranch({ node, depth, path }: { node: TreeNode; depth: number; path: string }) {
+function FileIcon({ kind }: { kind: FileKind }) {
+  switch (kind) {
+    case 'image':
+      return <FileImage size={13} className="arc-file-ico is-image" />
+    case 'sheet':
+      return <FileSpreadsheet size={13} className="arc-file-ico is-sheet" />
+    case 'slides':
+      return <Presentation size={13} className="arc-file-ico is-slides" />
+    case 'word':
+      return <FileText size={13} className="arc-file-ico is-word" />
+    case 'pdf':
+      return <FileText size={13} className="arc-file-ico is-pdf" />
+    case 'html':
+      return <FileText size={13} className="arc-file-ico is-html" />
+    default:
+      return <File size={13} className="arc-file-ico" />
+  }
+}
+
+// A lightweight Finder-style right-click menu, positioned at the cursor.
+function ContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: {
+  x: number
+  y: number
+  items: { label: string; danger?: boolean; onClick: () => void }[]
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+  return (
+    <div ref={ref} className="arc-ctx" style={{ left: x, top: y }}>
+      {items.map((it, i) => (
+        <button
+          key={i}
+          className={`arc-ctx-item ${it.danger ? 'is-danger' : ''}`}
+          onClick={() => {
+            it.onClick()
+            onClose()
+          }}
+        >
+          {it.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// A node in a connected folder. HTML files open in the editor; every other type
+// opens a hand-off tab. Right-click a file for open / rename / delete.
+function FileBranch({ node, depth, path }: { node: FileNode; depth: number; path: string }) {
   const navigate = useNavigate()
-  const { openDoc, tabs, activeTabId, getDoc } = useStore()
-  const key = 'tree:' + path
-  const open = useUI((s) => !s.collapsedKeys[key])
+  const openFileTab = useStore((s) => s.openFileTab)
+  const renameFile = useStore((s) => s.renameFile)
+  const deleteFile = useStore((s) => s.deleteFile)
+  const tabs = useStore((s) => s.tabs)
+  const activeTabId = useStore((s) => s.activeTabId)
+  const open = useUI((s) => !s.collapsedKeys['file:' + path])
   const toggle = useUI((s) => s.toggleCollapsed)
-  const activeDocId = tabs.find((t) => t.id === activeTabId)?.docId
-  if (node.docId) {
-    const doc = getDoc(node.docId)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [renaming, setRenaming] = useState(false)
+  const cancelRename = useRef(false)
+
+  if (node.file) {
+    const f = node.file
+    const activeTab = tabs.find((t) => t.id === activeTabId)
+    const isActive = !!activeTab?.fileName && activeTab.url === f.path
+    const foreign = f.kind !== 'html'
+    const dot = node.name.lastIndexOf('.')
+    const baseName = dot > 0 ? node.name.slice(0, dot) : node.name
+    const openIt = () => {
+      openFileTab(f)
+      navigate('/docs')
+    }
+
+    if (renaming) {
+      return (
+        <div className="arc-file" style={{ paddingLeft: 26 + depth * 16 }}>
+          <FileIcon kind={f.kind} />
+          <input
+            className="arc-file-rename"
+            autoFocus
+            defaultValue={baseName}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={(e) => {
+              if (!cancelRename.current) renameFile(f, e.currentTarget.value)
+              cancelRename.current = false
+              setRenaming(false)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+              if (e.key === 'Escape') {
+                cancelRename.current = true
+                e.currentTarget.blur()
+              }
+            }}
+          />
+        </div>
+      )
+    }
     return (
-      <button
-        className={`arc-file ${node.docId === activeDocId ? 'is-active' : ''}`}
-        style={{ paddingLeft: 10 + depth * 16 }}
-        onClick={() => {
-          openDoc(node.docId!)
-          navigate('/docs')
-        }}
-      >
-        <FileText size={13} className="arc-file-ico" />
-        <span className="ws-truncate">{node.name}</span>
-        {doc && <VisibilityDot v={doc.visibility} />}
-      </button>
+      <>
+        <button
+          className={`arc-file ${isActive ? 'is-active' : ''} ${foreign ? 'is-foreign' : ''}`}
+          style={{ paddingLeft: 26 + depth * 16 }}
+          onClick={openIt}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setMenu({ x: e.clientX, y: e.clientY })
+          }}
+        >
+          <FileIcon kind={f.kind} />
+          <span className="ws-truncate">{node.name}</span>
+        </button>
+        {menu && (
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
+              { label: '打开', onClick: openIt },
+              { label: '重命名', onClick: () => setRenaming(true) },
+              { label: '删除', danger: true, onClick: () => deleteFile(f) },
+            ]}
+          />
+        )}
+      </>
     )
   }
   return (
@@ -384,7 +368,7 @@ function TreeBranch({ node, depth, path }: { node: TreeNode; depth: number; path
       <button
         className="arc-folder-head"
         style={{ paddingLeft: 8 + depth * 16 }}
-        onClick={() => toggle(key)}
+        onClick={() => toggle('file:' + path)}
       >
         <ChevronRight size={12} className={`arc-caret ${open ? 'is-open' : ''}`} />
         <FolderClosed size={13} />
@@ -392,43 +376,88 @@ function TreeBranch({ node, depth, path }: { node: TreeNode; depth: number; path
       </button>
       {open &&
         node.children.map((c, i) => (
-          <TreeBranch key={i} node={c} depth={depth + 1} path={`${path}/${c.name}`} />
+          <FileBranch key={i} node={c} depth={depth + 1} path={`${path}/${c.name}`} />
         ))}
     </div>
   )
 }
 
+// The colored identity square for a space (its initial on its accent color).
+function SpaceIcon({ space }: { space: Space }) {
+  return (
+    <span className="arc-space-ic" style={{ background: space.color }} aria-hidden>
+      {space.badge}
+    </span>
+  )
+}
+
+// A space's one-line detail under its name. Category is already carried by the
+// group header, so this shows the useful bit: capability for cloud, path for a
+// connected folder.
+function spaceDetail(space: Space): string {
+  if (isCloudStorage(space.storage)) return '实时协作、Agent'
+  return space.mountPath ?? space.subtitle
+}
+
 function SpaceLibrary({ space }: { space: Space }) {
   const folders = useStore((s) => s.folders)
+  const files = useStore((s) => s.files)
   const docs = useStore((s) => s.docs)
 
-  if (space.kind === 'local') {
-    const tree = buildLocalTree(docs)
+  // A connected folder: browse the whole mount, every file type, not just docs.
+  if (!isCloudStorage(space.storage)) {
+    const tree = buildFileTree(files.filter((f) => f.spaceId === space.id))
+    const drive = space.storage === 'gdrive'
     return (
       <div className="arc-lib" key={space.id}>
-        <div className="arc-lib-root">
-          <FolderClosed size={13} /> ~/Wordspace
+        <div className="arc-connected" title="这是一个连接进来的外部文件夹">
+          {drive ? <Cloud size={12} /> : <HardDrive size={12} />}
+          <span className="ws-truncate">
+            {space.mountPath ?? (drive ? 'Google Drive' : '本地文件夹')}
+          </span>
         </div>
-        {tree.map((n, i) => (
-          <TreeBranch key={i} node={n} depth={0} path={n.name} />
-        ))}
+        {tree.length ? (
+          tree.map((n, i) => <FileBranch key={i} node={n} depth={0} path={n.name} />)
+        ) : (
+          <div className="arc-lib-empty">这个文件夹还没有文件</div>
+        )}
       </div>
     )
   }
 
-  const scope = space.kind === 'team' ? 'team' : 'personal'
-  const list = folders.filter((f) => f.scope === scope).sort((a, b) => a.order - b.order)
+  // Wordspace cloud: a team-shared section and a private one, scoped to THIS
+  // space — cloud spaces are isolated workspaces, like Notion.
+  const team = folders
+    .filter((f) => f.spaceId === space.id && f.scope === 'team')
+    .sort((a, b) => a.order - b.order)
+  const personal = folders
+    .filter((f) => f.spaceId === space.id && f.scope === 'personal')
+    .sort((a, b) => a.order - b.order)
+  const folderIds = new Set([...team, ...personal].map((f) => f.id))
+  const hasDocs = docs.some((d) => folderIds.has(d.folderId))
   return (
     <div className="arc-lib" key={space.id}>
-      {list.map((f) => (
-        <FolderGroup key={f.id} folder={f} />
-      ))}
+      {!hasDocs ? (
+        <div className="arc-lib-empty">这个空间还没有文档,点上面的 + 新建一篇。</div>
+      ) : (
+        <>
+          {team.length > 0 && <div className="arc-sec-label">团队共享</div>}
+          {team.map((f) => (
+            <FolderGroup key={f.id} folder={f} />
+          ))}
+          {personal.length > 0 && <div className="arc-sec-label">我的私有</div>}
+          {personal.map((f) => (
+            <FolderGroup key={f.id} folder={f} />
+          ))}
+        </>
+      )}
     </div>
   )
 }
 
 function SpaceSwitcher() {
   const { spaces, activeSpaceId, setActiveSpace } = useStore()
+  const openSpaceModal = useUI((s) => s.openSpaceModal)
   const active = spaces.find((s) => s.id === activeSpaceId)
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -448,31 +477,58 @@ function SpaceSwitcher() {
       document.removeEventListener('keydown', onKey)
     }
   }, [open])
+  const cloud = spaces.filter((s) => isCloudStorage(s.storage))
+  const connected = spaces.filter((s) => !isCloudStorage(s.storage))
+  const item = (s: Space) => {
+    const Icon = s.storage === 'local' ? HardDrive : Cloud
+    return (
+      <button
+        key={s.id}
+        className={`arc-space-item ${s.id === activeSpaceId ? 'is-active' : ''}`}
+        onClick={() => {
+          setActiveSpace(s.id)
+          setOpen(false)
+        }}
+      >
+        <SpaceIcon space={s} />
+        <span className="arc-space-item-text">
+          <span className="arc-space-item-name ws-truncate">{s.name}</span>
+          <span className="arc-space-item-sub ws-truncate">
+            <Icon size={11} />
+            {spaceDetail(s)}
+          </span>
+        </span>
+        {s.id === activeSpaceId && <Check size={15} className="arc-space-check" />}
+      </button>
+    )
+  }
   return (
     <div className="arc-spaces" ref={ref}>
       <button className="arc-space-trigger" onClick={() => setOpen((v) => !v)}>
         <span className="arc-space-title ws-truncate">{active?.name}</span>
+        {active && (
+          <span className="arc-space-trig-ic">
+            {active.storage === 'local' ? <HardDrive size={13} /> : <Cloud size={13} />}
+          </span>
+        )}
         <ChevronDown size={14} className={`arc-space-chev ${open ? 'is-open' : ''}`} />
       </button>
       {open && (
         <div className="arc-space-menu">
-          {spaces.map((s) => (
-            <button
-              key={s.id}
-              className={`arc-space-item ${s.id === activeSpaceId ? 'is-active' : ''}`}
-              onClick={() => {
-                setActiveSpace(s.id)
-                setOpen(false)
-              }}
-            >
-              <span className="arc-space-bullet" style={{ background: s.color }} />
-              <span className="arc-space-item-text">
-                <span className="arc-space-item-name ws-truncate">{s.name}</span>
-                <span className="arc-space-item-sub ws-truncate">{s.subtitle}</span>
-              </span>
-              {s.id === activeSpaceId && <Check size={14} className="arc-space-check" />}
-            </button>
-          ))}
+          <div className="arc-space-group">Wordspace 云盘</div>
+          {cloud.map(item)}
+          {connected.length > 0 && <div className="arc-space-group">连接的文件夹</div>}
+          {connected.map(item)}
+          <button
+            className="arc-space-new"
+            onClick={() => {
+              setOpen(false)
+              openSpaceModal()
+            }}
+          >
+            <Plus size={14} />
+            <span>新建空间</span>
+          </button>
         </div>
       )}
     </div>
@@ -490,44 +546,16 @@ export default function ArcSidebar() {
     activeSpaceId,
     setActiveSpace,
     newBrowserTab,
-    openDoc,
-    openWebTab,
     openCreate,
   } = { ...useStore(), openCreate: useUI((s) => s.openCreate) }
   const me = useStore((s) => s.getMember(s.meId))
   const collapsed = useUI((s) => s.sidebarCollapsed)
   const toggleSidebar = useUI((s) => s.toggleSidebar)
-  const addBookmark = useBrowser((s) => s.addBookmark)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const doc = activeTab?.docId ? getDoc(activeTab.docId) : undefined
   const space = spaces.find((s) => s.id === activeSpaceId) ?? spaces[0]
   const isLocal = !doc?.publishedUrl || doc.visibility === 'private' || doc.visibility === 'invited'
-
-  // Dropping a dragged tab onto the 收藏 area saves it as a favorite (returns the
-  // new bookmark id so the drop can position it where the insertion line was).
-  const addTabToMarks = (tabId: string): string | null => {
-    const tab = tabs.find((t) => t.id === tabId)
-    const bm = tab && tabToBookmark(tab, getDoc)
-    if (!bm) return null
-    addBookmark(bm)
-    return bm.uid
-  }
-
-  // The mirror: dropping a favorite onto 标签页 opens it as a tab (returns the
-  // resulting tab id so the drop can position it).
-  const openMarkAsTab = (markUid: string): string | null => {
-    const mark = useBrowser.getState().bookmarks.find((b) => b.uid === markUid)
-    if (!mark) return null
-    if (mark.kind === 'doc' && mark.docId) {
-      openDoc(mark.docId)
-    } else if (mark.url) {
-      openWebTab(mark.url, mark.title)
-      useBrowser.getState().navigate(mark.url)
-    }
-    navigate('/docs')
-    return useStore.getState().activeTabId
-  }
 
   const [omni, setOmni] = useState(activeTab?.url ?? '')
   useEffect(() => {
@@ -633,7 +661,8 @@ export default function ArcSidebar() {
       </div>
 
       <div className="arc-scroll" onWheel={onWheel}>
-        <MarksStrip spaceId={activeSpaceId} onAddTab={addTabToMarks} />
+        <div className="arc-section-label">置顶</div>
+        <TabStrip spaceId={activeSpaceId} pinned emptyHint="把标签页拖到这里置顶" />
 
         <div className="arc-section-label arc-tabs-label">
           <span>标签页</span>
@@ -641,7 +670,7 @@ export default function ArcSidebar() {
             <Plus size={14} />
           </button>
         </div>
-        <TabStrip spaceId={activeSpaceId} onOpenMark={openMarkAsTab} />
+        <TabStrip spaceId={activeSpaceId} pinned={false} />
 
         <div className="arc-section-label arc-tabs-label">
           <span>文档</span>
