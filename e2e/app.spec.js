@@ -187,13 +187,6 @@ test('斜杠菜单：进编辑后输入 / 弹出，选标题 2 转换块', async
   await page.keyboard.type('/h2');
   await expect(frame.locator('[data-ws2-ui]').filter({ hasText: '标题 2' })).toBeVisible();
   await page.keyboard.press('Enter');
-  // 诊断（CI 日志可见）：Enter 后真实 DOM——定位 slash 转换为何没产出 h2
-  const dbg = await frame.locator('body').evaluate((b) => ({
-    p2: b.querySelector('#p2') ? b.querySelector('#p2').outerHTML : 'NO #p2',
-    h2n: b.querySelectorAll('h2').length,
-    h2: b.querySelector('h2') ? b.querySelector('h2').outerHTML : 'NO h2',
-  }));
-  console.log('SLASH-DEBUG ' + JSON.stringify(dbg));
   await expect(frame.locator('h2')).toHaveText('第二段文字。');
   const bodyText = await frame.locator('body').innerText();
   expect(bodyText).not.toContain('/h2');
