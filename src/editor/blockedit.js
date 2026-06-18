@@ -108,6 +108,7 @@
     let hoverEl = null;      // 鼠标悬停的块（驱动 ⋮⋮ 定位）
     let slash = null;        // { blockEl, query, active }
     let dragFrom = null;     // 拖拽重排的源块
+    let fmtShown = false;    // 格式气泡是否显示——「粘住」用：选区折叠后不立即关，直到离开该块
 
     // ---- 覆盖层节点（data-ws2-ui，存盘剥除）----
     function mk(tag, cls) { const n = doc.createElement(tag); n.setAttribute('data-ws2-ui', ''); n.setAttribute('contenteditable', 'false'); if (cls) n.className = cls; return n; }
@@ -158,22 +159,33 @@
       grip.style.top = (r.top + sy + 2) + 'px';
       grip.style.display = 'flex';
     }
-    function positionFmtbar() {
-      const sel = doc.getSelection();
-      let target = null;
-      if (editingEl && sel && !sel.isCollapsed && sel.rangeCount > 0) {
-        const r = sel.getRangeAt(0).getBoundingClientRect();
-        if (r.width || r.height) target = { left: r.left + r.width / 2, top: r.top };
-      } else if (selectedEl && isEditableEl(selectedEl)) {
-        const r = selectedEl.getBoundingClientRect();
-        target = { left: r.left + Math.min(r.width / 2, 180), top: r.top };
-      }
-      if (!target) { fmtbar.style.display = 'none'; return; }
+    function showFmtAt(left, top) {
       const { sx, sy } = vp();
       fmtbar.style.position = 'absolute';
-      fmtbar.style.left = (target.left + sx) + 'px';
-      fmtbar.style.top = (target.top + sy - 46) + 'px';
+      fmtbar.style.left = (left + sx) + 'px';
+      fmtbar.style.top = (top + sy - 46) + 'px';
       fmtbar.style.display = 'flex';
+      fmtShown = true;
+    }
+    function positionFmtbar() {
+      const sel = doc.getSelection();
+      // ① 编辑态有非折叠选区 → 跟随选区
+      if (editingEl && sel && !sel.isCollapsed && sel.rangeCount > 0) {
+        const r = sel.getRangeAt(0).getBoundingClientRect();
+        if (r.width || r.height) { showFmtAt(r.left + r.width / 2, r.top); return; }
+      }
+      // ② 块选中（非编辑）→ 浮块上方
+      if (!editingEl && selectedEl && isEditableEl(selectedEl)) {
+        const r = selectedEl.getBoundingClientRect();
+        showFmtAt(r.left + Math.min(r.width / 2, 180), r.top); return;
+      }
+      // ③ 粘住：已显示且仍在编辑同一块（选区折叠，如刚点了格式按钮/移光标）→ 保持显示、锚到块上方，
+      //    直到离开该块（点别的块/空白/Esc）才关。这样「改一下不会马上关掉气泡」。
+      if (fmtShown && editingEl) {
+        const r = editingEl.getBoundingClientRect();
+        showFmtAt(r.left + Math.min(r.width / 2, 180), r.top); return;
+      }
+      fmtbar.style.display = 'none'; fmtShown = false;
     }
 
     // ---- 选中 / 编辑 ----
@@ -191,14 +203,15 @@
       selectedEl = null;
       hoverEl = null; grip.style.display = 'none'; // 清悬停引用，防删块后幽灵手柄
       closeBlockMenu();
-      fmtbar.style.display = 'none';
+      fmtbar.style.display = 'none'; fmtShown = false;
     }
     function enterEdit(el, caret) {
       if (editingEl && editingEl !== el) exitEdit();
       clearSelectedAttr();
       selectedEl = null;
       editingEl = el;
-      hoverEl = null; grip.style.display = 'none'; // 进编辑态收起手柄
+      fmtShown = false; // 进新编辑上下文：气泡先不粘（等用户选文字才弹）
+      hoverEl = el; positionGrip(el); // 编辑态保留手柄、指向当前块（可开块菜单/拖拽，对齐 ui-demo 常驻手柄）
       el.setAttribute('contenteditable', 'true');
       el.setAttribute('data-ws2-ce', '');
       el.setAttribute('data-ws2-editing', '');
@@ -211,11 +224,13 @@
       const el = editingEl; editingEl = null;
       if (el.hasAttribute('data-ws2-ce')) { el.removeAttribute('contenteditable'); el.removeAttribute('data-ws2-ce'); }
       el.removeAttribute('data-ws2-editing');
+      fmtShown = false; fmtbar.style.display = 'none'; // 离开编辑 → 关气泡
     }
     function placeCaret(el, caret) {
       const sel = doc.getSelection(); if (!sel) return;
       let range = null;
       caret = caret || { mode: 'end' };
+      if (caret.mode === 'keep') return; // 保留已有选区（点选文字后进编辑，别折叠它）
       // 列表：contenteditable 在 <ul> 上，但光标要落到 <li> 内（否则打字落 ul 直接子级 = 裸文本）
       let target = el;
       if ((el.tagName === 'UL' || el.tagName === 'OL')) { const li = el.querySelector('li'); if (li) target = li; }
@@ -285,16 +300,28 @@
     }
 
     // ---- 格式气泡内容（对齐 ui-demo FormatToolbar）----
+    // 选区是否落在同一块级元素内（折叠选区视为安全）。跨块用 execCommand 改结构会产生非法嵌套/
+    // 写坏文档——对齐 wrapInlineStyle 的「跨块拒绝」保真红线；B/I/U/S/行内代码/链接此前都缺这道守卫。
+    function selWithinOneBlock() {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return false;
+      const r = sel.getRangeAt(0);
+      if (r.collapsed) return true; // 折叠选区：execCommand 作用于光标处，安全
+      const a = fmt.nearestBlock(r.startContainer, body);
+      return !!a && a === fmt.nearestBlock(r.endContainer, body);
+    }
     function execText(cmd) {
+      if (!selWithinOneBlock()) return; // 跨块拒绝（保真红线）
       // 语义标签命令（粗/斜/下划线/删除线）= execCommand，CSP 安全（无 inline style）
       doc.execCommand(cmd, false, null);
       markDirty(); persistEditing();
     }
     function applyColor(prop, value) {
-      // 颜色/高亮：用 CSSOM span（KTD2），不用 execCommand+styleWithCSS（inline style 被 CSP 丢）
+      // 颜色/高亮：用 CSSOM span（KTD2）。wrapInlineStyle 内部已含跨块拒绝。
       if (fmt.wrapInlineStyle(doc, prop, value)) { markDirty(); persistEditing(); }
     }
     function addLink() {
+      if (!selWithinOneBlock()) return; // 跨块拒绝
       // iframe sandbox 无 allow-modals → iframe window 的 prompt/alert 被禁；用父窗口（global）
       const url = global.prompt ? global.prompt('链接地址', 'https://') : null;
       if (!url) return;
@@ -306,6 +333,7 @@
     function wrapCode() {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      if (!selWithinOneBlock()) return; // 跨块拒绝：否则 extractContents 会把块级元素拽进 <code>
       const range = sel.getRangeAt(0);
       const code = doc.createElement('code');
       try { range.surroundContents(code); } catch (e) { code.appendChild(range.extractContents()); range.insertNode(code); }
@@ -454,11 +482,10 @@
 
     // ---- 监听器（父层挂到 iframe doc）----
     function onMouseMove(e) {
-      if (editingEl) return; // 编辑时手柄不抢
       // 在手柄/菜单/气泡上移动：保持现状（手柄在块外 margin，移过去若隐藏就点不到了）
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
       const el = blockOf(e.target);
-      if (el && el !== hoverEl) { hoverEl = el; positionGrip(el); }
+      if (el && el !== hoverEl) { hoverEl = el; positionGrip(el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
       // 移到块外空白/gutter 间隙：不立即隐藏（停在最后悬停块、保证可点）；隐藏交给进编辑/离开文档。
     }
     function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; grip.style.display = 'none'; } }
@@ -470,6 +497,8 @@
         // 文末续写：点最后一块下方、且在文档列水平范围内的空白 → 进末块(若空可编辑)或末尾新建正文块
         // （对齐 ui-demo ws-canvas-tail）。列左右侧边距的点击仍是取消选中。
         const blocks = topBlocks();
+        // 空文档（无任何块）：点一下就建第一个正文块进编辑，避免「打开空 HTML 后点不进去」死状态
+        if (blocks.length === 0) { const p = doc.createElement('p'); body.appendChild(p); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(p, { mode: 'start' }); return; }
         const last = blocks[blocks.length - 1];
         const br = body.getBoundingClientRect();
         if (last && e.clientY > last.getBoundingClientRect().bottom && e.clientX >= br.left && e.clientX <= br.right) {
@@ -480,18 +509,27 @@
         deselect(); return;
       }
       closeBlockMenu();
-      if (isEditableEl(el)) { enterEdit(el, { mode: 'point', x: e.clientX, y: e.clientY }); }
-      else { selectBlock(el); positionGrip(el); }
+      if (isEditableEl(el)) {
+        // 已在编辑这个块：交给原生（移光标 / 拖选文字），别重置——否则刚选的文字会被重新落光标折叠掉、气泡闪退。
+        if (editingEl === el) return;
+        // 进入编辑；若此块里已有非折叠选区（拖选后松手触发的 click），保留选区、不用 point 光标折叠它。
+        const sel = doc.getSelection();
+        const keepSel = sel && !sel.isCollapsed && sel.rangeCount > 0 && el.contains(sel.anchorNode) && el.contains(sel.focusNode);
+        enterEdit(el, keepSel ? { mode: 'keep' } : { mode: 'point', x: e.clientX, y: e.clientY });
+      } else { selectBlock(el); positionGrip(el); }
     }
     function onKeyDown(e) {
       // 斜杠菜单开启时：导航
       if (slash) {
+        if (e.isComposing || e.keyCode === 229) return; // IME 组词中：交原生（compositionstart 已关菜单兜底），别把组词键当 query
         if (e.key === 'Escape') { e.preventDefault(); slash = null; slashMenu.style.display = 'none'; return; }
         if (e.key === 'Enter') { e.preventDefault(); const items = filterSlash(slash.query); const it = items[slash.active]; if (it) applySlash(it.key); else { slash = null; slashMenu.style.display = 'none'; } return; }
         if (e.key === 'ArrowDown') { e.preventDefault(); const n = filterSlash(slash.query).length; slash.active = Math.min(slash.active + 1, n - 1); renderSlash(); return; }
         if (e.key === 'ArrowUp') { e.preventDefault(); slash.active = Math.max(0, slash.active - 1); renderSlash(); return; }
         if (e.key === 'Backspace') { if (slash.query.length === 0) { slash = null; slashMenu.style.display = 'none'; } else { slash.query = slash.query.slice(0, -1); slash.active = 0; renderSlash(); } return; }
         if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) { slash.query += e.key; slash.active = 0; renderSlash(); return; }
+        // 光标移动键（←→/Home/End/PageUp-Down）或其它键 → 关菜单、交原生：caret 移走后再 applySlash 会从错位删字
+        slash = null; slashMenu.style.display = 'none';
         return;
       }
       // 触发斜杠
@@ -504,7 +542,20 @@
       // Enter：可编辑块末尾 → 新建正文块（list 交原生新 <li>；中间交原生；IME/Shift 软换行）
       if (e.key === 'Enter' && editingEl) {
         if (e.isComposing || e.keyCode === 229 || e.shiftKey) return;
-        if (classify(editingEl) === 'list') return;
+        if (classify(editingEl) === 'list') {
+          // 列表内回车：空的最后一项上再回车 → 跳出列表、在 ul 后新建正文块（双回车退出，对齐常见编辑器）。
+          const sel = doc.getSelection();
+          const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
+          const li = node && node.closest ? node.closest('li') : null;
+          if (li && (li.textContent || '').trim() === '' && !li.nextElementSibling) {
+            e.preventDefault();
+            const ul = editingEl; li.remove();
+            if (ul.querySelector('li')) { const nx = insertAfter(ul, SLASH_ITEMS[0]); enterEdit(nx, { mode: 'start' }); }
+            else { const p = turnInto(ul, SLASH_ITEMS[0]); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
+            return;
+          }
+          return; // 非空/非末项 → 交原生（新建 <li>）
+        }
         if (!isCaretAtEnd(doc, editingEl)) return;
         e.preventDefault();
         const nx = insertAfter(editingEl, SLASH_ITEMS[0]);
@@ -586,6 +637,18 @@
         }
         return;
       }
+      // 灰选中（不可编辑块）态的上下方向键：继续穿过到上/下一块——否则键盘撞到图片/分隔线就卡死、过不去。
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && selectedEl && !editingEl) {
+        if (e.isComposing || e.keyCode === 229) return;
+        const blocks = topBlocks();
+        const idx = blocks.indexOf(selectedEl);
+        const target = e.key === 'ArrowDown' ? blocks[idx + 1] : blocks[idx - 1];
+        if (!target) return;
+        e.preventDefault();
+        if (isEditableEl(target)) enterEdit(target, { mode: e.key === 'ArrowDown' ? 'start' : 'end' });
+        else { selectBlock(target); positionGrip(target); }
+        return;
+      }
       // Esc：编辑 → 灰选中；灰选中 → 取消
       if (e.key === 'Escape') {
         if (editingEl) { const el = editingEl; exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return; }
@@ -596,7 +659,9 @@
     }
 
     function onInput() { markDirty(); }
-    function onSelectionChange() { positionFmtbar(); }
+    function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
+    function onSelectionChange() { closeFmtPops(); positionFmtbar(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）
+    function onCompStart() { if (slash) { slash = null; slashMenu.style.display = 'none'; } } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
     function onScroll() { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); if (blockMenu.style.display !== 'none') closeBlockMenu(); }
 
     // grip 交互
@@ -614,6 +679,7 @@
     doc.addEventListener('keydown', onKeyDown, true);
     doc.addEventListener('input', onInput);
     doc.addEventListener('selectionchange', onSelectionChange);
+    doc.addEventListener('compositionstart', onCompStart);
     doc.addEventListener('scroll', onScroll, true);
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
@@ -626,6 +692,7 @@
       doc.removeEventListener('keydown', onKeyDown, true);
       doc.removeEventListener('input', onInput);
       doc.removeEventListener('selectionchange', onSelectionChange);
+      doc.removeEventListener('compositionstart', onCompStart);
       doc.removeEventListener('scroll', onScroll, true);
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
@@ -636,8 +703,9 @@
     // 撤销/重做后 body.innerHTML 被整体重写，旧的元素引用全失效 → 清空状态、收起所有覆盖层。
     function reset() {
       slash = null; slashMenu.style.display = 'none';
-      editingEl = null; selectedEl = null; hoverEl = null;
+      editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false;
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
+      const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
     }
 
