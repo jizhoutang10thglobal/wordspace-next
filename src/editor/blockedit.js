@@ -1,7 +1,9 @@
 (function (global) {
   // WS2BlockEdit —— ui-demo（main）式 Notion 块编辑内核，取代 heyhtml 自由画布。
   // 跑在父层 renderer，操作 iframe 的 contentDocument（iframe sandbox 无 allow-scripts，不跑脚本）。
-  // 「块」= <body> 的顶层子元素（排除 data-ws2-ui 覆盖层）。所有编辑 UI（⋮⋮ 手柄 / 块菜单 /
+  // 「块」= 块容器（blockRoot）的顶层子元素（排除 data-ws2-ui 覆盖层）。blockRoot 默认 <body>，
+  // 但会穿透居中/限宽包裹容器（见 pickBlockRoot），否则被 <div class="wrap"> 包住的文档会塌成单块。
+  // 所有编辑 UI（⋮⋮ 手柄 / 块菜单 /
   // 斜杠菜单 / 格式气泡）都是 iframe 内的 data-ws2-ui 节点，存盘时 serialize 剥除（不入磁盘）。
   // 选中/编辑态走 data-ws2-selected / data-ws2-editing 属性（serialize 白名单剥除），不包裹用户元素（保真）。
   // 排版样式经 adoptedStyleSheets 注入（构造样式表 = CSSOM，CSP 不拦、且不进序列化 → 存盘干净）。
@@ -49,6 +51,33 @@
     return false;
   }
 
+  // 真正承载「块」的容器。多数「像样」的文档把正文包在一个居中/限宽的容器里
+  // （<body> 底下只有这一个 <div class="wrap"> / <main> 之类）。若死认 <body> 为块容器，
+  // 整篇会塌成单个不可编辑块——点哪都进不去编辑。这是真实文档最常见的结构（容器 div 做居中限宽），
+  // 必须穿透。规则：从 body 向下钻，当当前容器「只有一个实体元素孩子」、那孩子是无语义包裹容器
+  // （div/section/article/main）、且它自己还含元素孩子（钻下去确有块）时，下钻一层；否则停。
+  // 处理 body>div.wrap>[blocks] 乃至多层嵌套；单个纯文字 div 不钻（它本身就是可编辑块）。
+  const WRAP_TAGS = new Set(['DIV', 'SECTION', 'ARTICLE', 'MAIN']);
+  function realEls(el) {
+    const out = [];
+    for (const c of el.children) {
+      if (c.nodeType === 1 && !(c.hasAttribute && c.hasAttribute('data-ws2-ui'))) out.push(c);
+    }
+    return out;
+  }
+  function pickBlockRoot(body) {
+    let root = body;
+    for (let depth = 0; depth < 8; depth++) { // 上限防异常深嵌套
+      const kids = realEls(root);
+      if (kids.length !== 1) break;
+      const only = kids[0];
+      if (!WRAP_TAGS.has(only.tagName)) break;     // 独子不是无语义容器（如它本身是 <p>/<ul>）→ 停
+      if (realEls(only).length === 0) break;        // 纯文字容器：它自己就是可编辑块，别钻成空
+      root = only;
+    }
+    return root;
+  }
+
   function caretRangeAtPoint(doc, x, y) {
     if (doc.caretRangeFromPoint) return doc.caretRangeFromPoint(x, y);
     if (doc.caretPositionFromPoint) {
@@ -85,6 +114,9 @@
     const markDirty = deps.markDirty || (() => {});
     const onAiSoon = deps.onAiSoon || (() => {});
     const body = doc.body;
+    // 块容器：穿透居中/限宽包裹容器（见 pickBlockRoot）。撤销/重做会整体重写 body.innerHTML、
+    // 重建包裹节点 → 旧引用失效，故在 reset() 里重算（let 而非 const）。
+    let blockRoot = pickBlockRoot(body);
 
     // ---- 注入排版样式表（构造样式表 / adoptedStyleSheets，CSP-safe、不进序列化）----
     let sheet = null;
@@ -99,8 +131,9 @@
       st.textContent = EDITOR_CSS;
       (doc.head || doc.documentElement).appendChild(st);
     }
-    // 居中窄栏（ui-demo 820 列）——加在 body 上的标记类，注入 CSS 据此布局
-    body.setAttribute('data-ws2-canvas', '');
+    // 居中窄栏（ui-demo 820 列）——仅当文档是「裸块」结构（block root 就是 body、没有自带包裹容器）
+    // 时才套；文档自带居中容器（blockRoot ≠ body）时尊重它原有的版式，不强加编辑器的列宽。
+    if (blockRoot === body) body.setAttribute('data-ws2-canvas', '');
 
     // ---- 状态 ----
     let selectedEl = null;   // 灰选中的不可编辑块
@@ -140,12 +173,12 @@
     doc.documentElement.appendChild(slashMenu);
 
     const docOf = () => doc;
-    function topBlocks() { return [...body.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')); }
+    function topBlocks() { return [...blockRoot.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')); }
     function blockOf(node) {
       let el = node; if (el && el.nodeType === 3) el = el.parentElement;
-      while (el && el.parentElement && el.parentElement !== body) el = el.parentElement;
-      // 块 = body 的直接子元素。点到 body/html/空白（el.parentElement !== body）→ null（取消选中）
-      if (!el || el.parentElement !== body || el.hasAttribute('data-ws2-ui')) return null;
+      while (el && el.parentElement && el.parentElement !== blockRoot) el = el.parentElement;
+      // 块 = blockRoot 的直接子元素。点到容器外/空白（el.parentElement !== blockRoot）→ null（取消选中）
+      if (!el || el.parentElement !== blockRoot || el.hasAttribute('data-ws2-ui')) return null;
       return el;
     }
 
@@ -255,7 +288,7 @@
     }
     function insertAfter(refEl, item) {
       const el = newBlock(item);
-      if (refEl && refEl.after) refEl.after(el); else body.appendChild(el);
+      if (refEl && refEl.after) refEl.after(el); else blockRoot.appendChild(el);
       if (undoMgr) undoMgr.checkpoint();
       markDirty();
       return el;
@@ -526,9 +559,9 @@
         // （对齐 ui-demo ws-canvas-tail）。列左右侧边距的点击仍是取消选中。
         const blocks = topBlocks();
         // 空文档（无任何块）：点一下就建第一个正文块进编辑，避免「打开空 HTML 后点不进去」死状态
-        if (blocks.length === 0) { const p = doc.createElement('p'); body.appendChild(p); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(p, { mode: 'start' }); return; }
+        if (blocks.length === 0) { const p = doc.createElement('p'); blockRoot.appendChild(p); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(p, { mode: 'start' }); return; }
         const last = blocks[blocks.length - 1];
-        const br = body.getBoundingClientRect();
+        const br = blockRoot.getBoundingClientRect();
         if (last && e.clientY > last.getBoundingClientRect().bottom && e.clientX >= br.left && e.clientX <= br.right) {
           if (isEditableEl(last) && (last.textContent || '').trim() === '') enterEdit(last, { mode: 'end' });
           else { const nx = insertAfter(last, SLASH_ITEMS[0]); enterEdit(nx, { mode: 'start' }); }
@@ -728,6 +761,8 @@
     function reset() {
       slash = null; slashMenu.style.display = 'none';
       editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false;
+      blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
+      if (blockRoot === body) body.setAttribute('data-ws2-canvas', ''); else body.removeAttribute('data-ws2-canvas');
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
@@ -794,7 +829,7 @@
   .ws-slashmenu-empty{padding:8px 10px;font-size:12px;color:#8a8f96;}
   `;
 
-  const api = { attach, classify, isEditableEl };
+  const api = { attach, classify, isEditableEl, pickBlockRoot };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);
