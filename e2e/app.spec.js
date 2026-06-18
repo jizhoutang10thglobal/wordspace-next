@@ -195,3 +195,43 @@ test('编辑块不让正文位移（issue 回归门）', async () => {
   const after = await textLeft();
   expect(Math.abs(after - before), `文字位移了 ${(after - before).toFixed(1)}px`).toBeLessThanOrEqual(1);
 });
+
+// 整篇内容包在一个居中/限宽的容器 <div> 里（绝大多数「像样」文档的写法）。修复前 <body> 底下只有这一个
+// 子元素 → 整篇塌成单个不可编辑块，点哪都进不去（Wendi 拿真模板实测翻车）。修复=穿透包裹容器找真块根。
+const WRAPPED = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}.wrap{max-width:760px;margin:0 auto;padding:96px 32px}</style></head>
+<body><div class="wrap">
+<h1 id="t">[文档标题]</h1>
+<p id="lead">导言段落。</p>
+<h2 id="h2a">章节一</h2>
+<p id="p1">第一段正文。</p>
+<ul><li id="li1">要点</li></ul>
+<table><tbody><tr><td id="cell">单元</td></tr></tbody></table>
+<h4 id="h4a">A1 小项</h4>
+<p id="p2">小项正文。</p>
+</div></body></html>`;
+
+test('回归：整篇包在 <div class="wrap"> 里仍能逐块编辑（Wendi 文件根因）', async () => {
+  await launch();
+  await openDoc(WRAPPED);
+  // 点包裹容器内的段落 → 直接进编辑态（修复前：整篇=一个灰选中的不可编辑块，进不去）
+  await frame.locator('#p1').click();
+  await expect(frame.locator('[data-ws2-editing]')).toHaveCount(1);
+  // 编辑态落在被点的那个 <p> 上，证明块根穿透到了 .wrap、而不是把整篇当一块
+  expect(await frame.locator('[data-ws2-editing]').evaluate((e) => e.id)).toBe('p1');
+  // 容器内的 h4 子项也可编辑（h4 在 TEXT_EDITABLE_TAGS）
+  await clearUI();
+  await frame.locator('#h4a').click();
+  expect(await frame.locator('[data-ws2-editing]').evaluate((e) => e.id)).toBe('h4a');
+  // 打字真的落进被点的块
+  await clearUI();
+  await frame.locator('#p2').click();
+  await page.keyboard.type('改了');
+  await page.waitForTimeout(120);
+  expect(await htmlOf('p2')).toContain('改了');
+  // 存盘保真：包裹容器及其样式原样保留，没被塌平
+  const out = await serialize();
+  expect(out).toContain('class="wrap"');
+  expect(out).toContain('max-width:760px');
+  expect(out).toContain('改了');
+});
