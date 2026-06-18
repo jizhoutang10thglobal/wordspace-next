@@ -12,6 +12,7 @@
   const WS2_MARKERS = new Set([
     'data-ws2-ui', 'data-ws2-ce', 'data-ws2-sc', 'data-ws2-block', 'data-ws2-container',
     'data-ws2-canvas', 'data-ws2-eid', 'data-ws2-editing',
+    'data-ws2-selected', 'data-ws2-drop', // 块编辑：灰选中 / 拖拽投放标记（仅交互态，存盘剥除）
   ]);
 
   function cleanRoot(root) {
@@ -39,7 +40,13 @@
     return parts.join('\n');
   }
 
-  const api = { serializeDocument };
+  // body 的「干净 innerHTML」：克隆后按同一白名单剥掉编辑器标记/contenteditable。供 undo 快照用——
+  // 这样编辑器选中/编辑态属性 toggle 不会被当成内容变更（且与存盘用同一套剥除规则，不误删用户 data-ws2-*）。
+  function cleanedBodyHtml(body) {
+    return cleanRoot(body.cloneNode(true)).innerHTML;
+  }
+
+  const api = { serializeDocument, cleanedBodyHtml };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2Serialize = api;
 })(typeof window !== 'undefined' ? window : globalThis);

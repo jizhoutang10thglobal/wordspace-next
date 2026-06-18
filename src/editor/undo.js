@@ -29,11 +29,20 @@
       this.doc = doc;
       // 时间线：第 0 项恒为 html 基线快照；其上每项是一次「转换」op（html 全量快照或 prop 元素属性变更）。
       // idx 指向「已应用到当前状态的最后一个 op」。
-      this.stack = [{ kind: 'html', html: doc.body.innerHTML }];
+      this.stack = [{ kind: 'html', html: this._cleanHtml() }];
       this.idx = 0;
       this.timer = null;
       this.coalesce = null; // { key, op } —— beginCoalesce 期间把同 key 的多帧并进一个 prop op
-      this._applied = doc.body.innerHTML; // 上次落 op / checkpoint 后的真实 DOM 序列化（判脏基准）
+      this._applied = this._cleanHtml(); // 上次落 op / checkpoint 后的真实 DOM 序列化（判脏基准）
+    }
+
+    // 用于快照/判脏的 body innerHTML：剥掉编辑器标记（选中/编辑态属性、contenteditable）后再比较——
+    // 否则纯状态 toggle 会被当成内容变更、产生看不见的「假」撤销步。renderer 有 WS2Serialize 时用它
+    // （与存盘同一白名单，不误删用户自带 data-ws2-*）；node 单测无该全局则回退原始 innerHTML。
+    _cleanHtml() {
+      const body = this.doc.body;
+      if (typeof WS2Serialize !== 'undefined' && WS2Serialize.cleanedBodyHtml) return WS2Serialize.cleanedBodyHtml(body);
+      return body.innerHTML;
     }
 
     // 砍掉 idx 之后的 redo 尾、push 新 op、维持 LIMIT 截断、idx 前移。
@@ -42,7 +51,7 @@
       this.stack.push(op);
       if (this.stack.length > LIMIT) this.stack.shift();
       this.idx = this.stack.length - 1;
-      this._applied = this.doc.body.innerHTML;
+      this._applied = this._cleanHtml();
     }
 
     checkpoint() {
@@ -50,7 +59,7 @@
       // 栈顶是 prop op 时跳过：DOM 与最近 html 基线的差异已被那个 prop op 解释，
       // 再快照会埋掉 prop op、破坏 LIFO（prop 走 recordStyleOp 这条 path，不靠快照）。
       if (this.stack[this.idx].kind === 'prop') return;
-      const s = this.doc.body.innerHTML;
+      const s = this._cleanHtml();
       if (s === this._applied) return; // 跟「上次落 op 后的真实 DOM」比，而非存储基线串——避免 cssText 归一化被误判成脏
       this._push({ kind: 'html', html: s });
     }
@@ -119,7 +128,7 @@
         const html = this._lastHtml();
         if (html !== null) this.doc.body.innerHTML = html;
       }
-      this._applied = this.doc.body.innerHTML;
+      this._applied = this._cleanHtml();
       return true;
     }
 
@@ -137,7 +146,7 @@
       } else {
         this.doc.body.innerHTML = next.html;
       }
-      this._applied = this.doc.body.innerHTML;
+      this._applied = this._cleanHtml();
       return true;
     }
   }
