@@ -12,7 +12,6 @@
 <section id="main" class="ws-main-doc">
   <!-- 右上角浮动 actions（照 ui-demo TopActions 风格，承载真功能键） -->
   <div class="top-actions">
-    <span id="insert-slot"></span>
     <button id="open-btn" class="ta-ghost">打开</button>
     <button id="save-btn" class="top-share" disabled>
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7H7v7"/><path d="M7 3v4h8"/></svg>
@@ -45,24 +44,10 @@
   </div>
 </section>
 
-<!-- 按需浮出的富工具栏（Notion 气泡）：position:fixed，显隐/定位由 shell 控制器驱动 -->
-<div id="toolbar" hidden></div>
-
-<script src="../editor/blocks.js"></script>
 <script src="../editor/serialize.js"></script>
 <script src="../editor/undo.js"></script>
 <script src="../editor/format.js"></script>
-<script src="../editor/canvas.js"></script>
-<script src="../editor/selection.js"></script>
-<script src="../editor/text-edit.js"></script>
-<script src="../editor/alignguide.js"></script>
-<script src="../editor/dragmove.js"></script>
-<script src="../editor/resize-geom.js"></script>
-<script src="../editor/resize.js"></script>
-<script src="../editor/insert.js"></script>
-<script src="../editor/toolbar.js"></script>
-<script src="../editor/slashmenu.js"></script>
-<script src="../editor/draghandle.js"></script>
+<script src="../editor/blockedit.js"></script>
 <script src="shell.js"></script>
 </body>
 </html>
