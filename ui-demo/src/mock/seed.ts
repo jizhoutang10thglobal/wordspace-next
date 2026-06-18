@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   Doc,
+  FileEntry,
   Folder,
   Member,
   Space,
@@ -30,11 +31,13 @@ export const seedMembers: Member[] = [
 // ---------------------------------------------------------------------------
 // folders: team space + personal drafts
 // ---------------------------------------------------------------------------
+// All seeded folders belong to the Tenth Global cloud space; other cloud spaces
+// start with their own (separate) folders.
 export const seedFolders: Folder[] = [
-  { id: 'f-strategy', name: '战略', scope: 'team', order: 0 },
-  { id: 'f-people', name: '人事', scope: 'team', order: 1 },
-  { id: 'f-product', name: '产品', scope: 'team', order: 2 },
-  { id: 'f-drafts', name: '我的草稿', scope: 'personal', order: 0 },
+  { id: 'f-strategy', name: '战略', scope: 'team', spaceId: 'sp-tg', order: 0 },
+  { id: 'f-people', name: '人事', scope: 'team', spaceId: 'sp-tg', order: 1 },
+  { id: 'f-product', name: '产品', scope: 'team', spaceId: 'sp-tg', order: 2 },
+  { id: 'f-drafts', name: '我的草稿', scope: 'personal', spaceId: 'sp-tg', order: 0 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -176,6 +179,38 @@ export const seedDocs: Doc[] = [
       { id: 'o2', type: 'text', html: '尊敬的 {{候选人}},很高兴向你发出录用通知……(草稿,待定稿后存为模板)' },
     ],
   },
+  {
+    id: 'd-notes',
+    title: '读书笔记 · 增长飞轮',
+    emoji: '📖',
+    kind: 'doc',
+    folderId: 'f-drafts',
+    visibility: 'private',
+    localPath: '~/Wordspace/我的草稿/读书笔记-增长飞轮.html',
+    updatedAt: now - 90 * MIN,
+    updatedBy: 'm-wendi',
+    collaborators: ['m-wendi'],
+    blocks: [
+      { id: 'rn1', type: 'heading', level: 1, html: '读书笔记 · 增长飞轮' },
+      { id: 'rn2', type: 'text', html: '存在本地、只给自己看的随手记。' },
+    ],
+  },
+  {
+    id: 'd-todo',
+    title: '本周待办',
+    emoji: '✅',
+    kind: 'doc',
+    folderId: 'f-drafts',
+    visibility: 'private',
+    localPath: '~/Wordspace/我的草稿/本周待办.html',
+    updatedAt: now - 20 * MIN,
+    updatedBy: 'm-wendi',
+    collaborators: ['m-wendi'],
+    blocks: [
+      { id: 'tw1', type: 'heading', level: 1, html: '本周待办' },
+      { id: 'tw2', type: 'list', html: '<li>定稿招聘页</li><li>过一遍 Q2 汇报</li><li>约客户周会</li>' },
+    ],
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -215,8 +250,31 @@ export const seedWorkspace: Workspace = {
 // ---------------------------------------------------------------------------
 // spaces (Arc-style, swiped in the sidebar)
 // ---------------------------------------------------------------------------
+// Two real categories of space: the Wordspace cloud (native, collaborative,
+// team/private sections) and connected folders (an external mount you browse —
+// local disk or Google Drive, the same kind of thing).
 export const seedSpaces: Space[] = [
-  { id: 'sp-tg', name: 'Tenth Global', kind: 'team', badge: 'TG', color: '#1a73e8', subtitle: '团队工作区' },
-  { id: 'sp-local', name: '本地仓库', kind: 'local', badge: '本', color: '#1e8e3e', subtitle: '~/Wordspace 本地文件' },
-  { id: 'sp-me', name: '我的草稿', kind: 'personal', badge: '我', color: '#8a3ffc', subtitle: '私人空间' },
+  { id: 'sp-tg', name: 'Tenth Global', kind: 'team', storage: 'cloud', badge: 'TG', color: '#1a73e8', subtitle: '团队工作区' },
+  { id: 'sp-drive', name: '公司网盘', kind: 'project', storage: 'gdrive', badge: 'G', color: '#1e8e3e', subtitle: 'Google Drive', mountPath: 'Google Drive/Tenth Global' },
+  { id: 'sp-local', name: '设计项目', kind: 'project', storage: 'local', badge: '设', color: '#b8541d', subtitle: '本地项目', mountPath: '~/Projects/品牌升级' },
+]
+
+// Connected folders show every file, not just Wordspace docs. HTML opens in the
+// editor (docId set); the rest hand off to the OS default app.
+export const seedFiles: FileEntry[] = [
+  // 公司网盘 (Google Drive)
+  { spaceId: 'sp-drive', path: '人事/员工手册.html', kind: 'html', docId: 'd-handbook' },
+  { spaceId: 'sp-drive', path: '人事/入职流程.docx', kind: 'word' },
+  { spaceId: 'sp-drive', path: '战略/2026 战略规划.docx', kind: 'word' },
+  { spaceId: 'sp-drive', path: '战略/市场分析.pdf', kind: 'pdf' },
+  { spaceId: 'sp-drive', path: '品牌/官网首页.html', kind: 'html', docId: 'd-recruit' },
+  { spaceId: 'sp-drive', path: '品牌/Logo.png', kind: 'image' },
+  { spaceId: 'sp-drive', path: '财务/Q2 预算.xlsx', kind: 'sheet' },
+  { spaceId: 'sp-drive', path: '产品/发布会.pptx', kind: 'slides' },
+  // 设计项目 (local)
+  { spaceId: 'sp-local', path: '提案.docx', kind: 'word' },
+  { spaceId: 'sp-local', path: '落地页.html', kind: 'html', docId: 'd-recruit' },
+  { spaceId: 'sp-local', path: '素材/封面.png', kind: 'image' },
+  { spaceId: 'sp-local', path: '数据/转化分析.xlsx', kind: 'sheet' },
+  { spaceId: 'sp-local', path: '说明.html', kind: 'html', docId: 'd-handbook' },
 ]

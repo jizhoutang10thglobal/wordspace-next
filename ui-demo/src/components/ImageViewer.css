@@ -1,0 +1,38 @@
+.imgv {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg);
+}
+
+.imgv-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #2b2d31;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+.imgv-frame {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+.imgv-art {
+  width: min(560px, 70vw);
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  background:
+    radial-gradient(circle at 28% 30%, rgba(255, 210, 122, 0.95), transparent 45%),
+    radial-gradient(circle at 76% 68%, rgba(122, 208, 255, 0.9), transparent 45%),
+    linear-gradient(135deg, #6750c8, #1a73e8);
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.45);
+}
+.imgv-cap {
+  font-size: var(--fs-sm);
+  color: rgba(255, 255, 255, 0.7);
+}

@@ -1,0 +1,86 @@
+.efp {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: var(--c-bg);
+}
+
+.efp-card {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 36px 32px 32px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg, 12px);
+  background: var(--c-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.efp-ico {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--c-hover);
+  color: var(--c-text-2);
+  margin-bottom: 16px;
+}
+.efp-card.st-word .efp-ico {
+  background: rgba(26, 115, 232, 0.12);
+  color: #1a73e8;
+}
+.efp-card.st-pdf .efp-ico {
+  background: rgba(211, 53, 60, 0.12);
+  color: #d3353c;
+}
+.efp-card.st-sheet .efp-ico {
+  background: rgba(30, 142, 62, 0.12);
+  color: #1e8e3e;
+}
+.efp-card.st-slides .efp-ico {
+  background: rgba(176, 96, 0, 0.12);
+  color: #b06000;
+}
+.efp-card.st-image .efp-ico {
+  background: rgba(138, 63, 252, 0.12);
+  color: #8a3ffc;
+}
+
+.efp-name {
+  max-width: 100%;
+  font-size: 17px;
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+.efp-meta {
+  margin-top: 4px;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+.efp-note {
+  margin: 16px 0 20px;
+  font-size: var(--fs-md);
+  line-height: 1.6;
+  color: var(--c-text-2);
+}
+
+.efp-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: var(--r-sm);
+  background: var(--c-accent);
+  color: #fff;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+.efp-open:hover {
+  background: var(--c-accent-hover);
+}
