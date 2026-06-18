@@ -190,23 +190,26 @@ const counts = {
   unsure: clean.filter((r) => r.final === 'unsure').length,
 }
 
-// U4：变异自检模式 —— 喂的是「功能坏掉」的证据，判官**应当全判 fail**；该 fail 不 fail = 哑门。
+// U4：变异自检 —— 喂「功能坏掉」的证据。**哑门 = 判官被骗把坏场景判 pass（rubber stamp、把坏的
+// 放行）**，这才是真危险。判 unsure 不算哑门：判官没被骗，只是单帧证据不足以「确诊」——对咨询型
+// 工具这是诚实的「提请人复核」，可接受。所以 hasTeeth = 没有任何注坏场景被判 pass。
 if (mode === 'selfcheck') {
   const expected = scenarios.length
   const judged = clean.length
-  const dumb = clean.filter((r) => r.final !== 'fail')
-  // 必须「该判的都真判了(judged===expected) 且都判 fail」才算有牙。判官 error/被 skip（null）
-  // 导致 judged<expected 时是 inconclusive，绝不能因为 dumb.length===0 就空判 hasTeeth=true
-  // （否则 session limit / agent 全挂会伪装成「门有牙」，极危险）。
+  const fooled = clean.filter((r) => r.final === 'pass') // 被骗放行 = 真哑门
+  const unsureOnBroken = clean.filter((r) => r.final === 'unsure') // 没被骗、单帧证据不足，诚实存疑
+  // judged<expected（判官 error/被 skip，如 session limit）= 不足结论，绝不空判有牙。
   const inconclusive = judged < expected || judged === 0
-  const hasTeeth = !inconclusive && dumb.length === 0
+  const hasTeeth = !inconclusive && fooled.length === 0
   log(
-    `变异自检：注坏 ${expected} 个、实判 ${judged} 个、判 fail ${counts.fail} 个；` +
+    `变异自检：注坏 ${expected} / 实判 ${judged}（fail ${counts.fail}、unsure ${counts.unsure}、pass ${counts.pass}）；` +
       (inconclusive
-        ? `⚠ 不足结论（${expected - judged} 个判官未返回/出错，可能是 session limit 或 agent 死）——请重跑`
-        : dumb.length
-          ? `哑门 ${dumb.length} 个（该 fail 没 fail）：${dumb.map((r) => r.id).join(', ')}`
-          : '全部判 fail —— 门有牙 ✓'),
+        ? `⚠ 不足结论（${expected - judged} 个判官未返回/出错，可能 session limit / agent 死）——请重跑`
+        : fooled.length
+          ? `❌ 哑门：${fooled.length} 个注坏场景被骗判 pass：${fooled.map((r) => r.id).join(', ')}`
+          : unsureOnBroken.length
+            ? `✓ 门有牙（无被骗放行）；其中 ${unsureOnBroken.length} 个单帧证据不足只给 unsure（未被骗、诚实存疑）：${unsureOnBroken.map((r) => r.id).join(', ')}`
+            : '✓ 门有牙 —— 注坏的全判 fail'),
   )
   return {
     mode,
@@ -215,7 +218,8 @@ if (mode === 'selfcheck') {
     judged,
     inconclusive,
     hasTeeth,
-    dumbGates: dumb.map((r) => ({ id: r.id, final: r.final, summary: r.summary })),
+    fooled: fooled.map((r) => ({ id: r.id, summary: r.summary })),
+    unsureOnBroken: unsureOnBroken.map((r) => r.id),
     results: clean,
   }
 }

@@ -65,21 +65,22 @@ Workflow({ scriptPath: "<绝对路径>/.claude/workflows/ui-demo-audit.js" })
 
 跑完出 `/tmp/ui-demo-audit/report.md`：按严重度排序的人话报告，给非工程的 Wendi 也能看（自行拷回仓库留存）。
 
-> **判定层是 consultative、probabilistic**：persona 判有 run-to-run 方差（实测同一空列表 bug 一轮判 fail、一轮判 pass）。对策：① 证据层尽量把关键信号显式记下来（如 `liCount=0`）让判官无法漏判；② 高价值结论多跑几轮取并集（任一轮判 fail 就值得查）；③ 真正可靠的是确定性的取证层 + 变异自检，判定层只当"咨询报告"，不卡红绿。
+> **判定层是 consultative、probabilistic**：persona 判有 run-to-run 方差（同一坏场景不同轮可能 fail 或 unsure）。关键性质是**从不被骗判 pass**（实测变异自检 4 轮 0 假 pass）——判官会诚实存疑，但不会把坏的当好的放行。对策：① 证据层把关键信号显式记下（如 `liCount=0`）让判官少漏判；② 高价值结论多跑几轮取并集（任一轮判 fail 就值得查）；③ 判定层当"咨询报告"、不卡红绿，确定性的取证层 + 变异自检兜底。
 
-### 4. 变异自检（证明判官有牙、不是哑门）
+### 4. 变异自检（证明判官不被骗、不是橡皮图章）
 
-故意把功能「弄坏」产出坏证据，断言判官**必须判 fail**；该 fail 不 fail = 哑门报警。
+故意把功能「弄坏」产出坏证据喂判官。**哑门 = 判官被骗把坏场景判 pass（rubber stamp、把坏的放行）——这才是真危险**。判 unsure **不算**哑门：判官没被骗，只是单帧证据不足以「确诊」，诚实提请人复核（对咨询型工具是对的）。所以 `hasTeeth = 没有任何注坏场景被判 pass`。
+
+> 好的 mutation 要造**持久、明确**的坏状态（注入伪内容 / 清空成空列表）。别造**瞬态移除**（如抹掉 toast）——单帧截图分不清「真没反馈」还是「toast 已自动消失」，判官会诚实给 unsure（不是哑门，但也不稳定 fail）。
 
 ```bash
-# a. 注坏所有有 mutation 的 scenario + stage
+# a. 注坏所有 mutation scenario + stage 到独立目录（别和正常 index 撞）
 npm run audit:capture -- --mutate all
-npm run audit:prepare -- --evidence test-results/audit/evidence.mutated.json \
-                         --stage /tmp/ui-demo-audit --out /tmp/ui-demo-audit/judge-input.mutated.json
-# b. run-config 指向 mutated + mode=selfcheck，再跑同一个 Workflow
+npm run audit:prepare -- --evidence test-results/audit/evidence.mutated.json --stage /tmp/ui-demo-audit-mut
+# b. run-config.judgeInput 指向 /tmp/ui-demo-audit-mut/index.json + mode=selfcheck，跑同一个 Workflow
 ```
 
-`mode: "selfcheck"` 时 workflow 返回 `{hasTeeth, dumbGates}`：被注坏的场景全判 fail = 门有牙。
+返回 `{hasTeeth, fooled, unsureOnBroken, judged/expected}`：`judged < expected` = inconclusive（agent 出错/session limit，重跑）；`fooled` 非空 = 哑门（被骗判 pass）；`fooled` 空 = 门有牙（`unsureOnBroken` 列出诚实存疑的场景）。
 
 ---
 

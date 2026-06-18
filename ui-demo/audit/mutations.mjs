@@ -5,11 +5,15 @@
 // 功能失效」，不是改 app（沿用 v1/CLAUDE.md 变异自检哲学，但测的是判官而非不变量）。
 
 export const MUTATIONS = {
-  // 插入列表后把刚插的块删掉 → 「插了没反应」。违反 E:insert-list（应得到可编辑带项目符号的列表）。
+  // 把刚插入的（末尾）列表块就地清空成无 <li> 的空壳、留在原位 → 「插入的列表空无项目符号」。
+  // 不删块：删块会让 blockCount 下降，判官分不清是「插入失败」还是「drive 复用/移走了别处列表」，
+  // 证据有歧义 → 判官诚实给 unsure 而非 fail，是个弱 mutation。就地清空则明确制造「这次插入的列表
+  // 就在末尾、但空无 bullet」的坏状态，归因清晰，判官能稳定判 fail。违反 E:insert-list。
   'insert-list': async (page) => {
     await page.evaluate(() => {
       const blocks = document.querySelectorAll('.ws-block')
-      blocks[blocks.length - 1]?.remove()
+      const inner = blocks[blocks.length - 1]?.querySelector('[data-block]')
+      if (inner) inner.innerHTML = '' // 空 ul：无 li、无 bullet，仍留在末尾
     })
   },
 
