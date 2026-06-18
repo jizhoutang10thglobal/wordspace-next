@@ -19,3 +19,5 @@
 # CI 配置 + playwright 配置：e2e job 一旦被删/改弱，所有真门一起没
 /.github/workflows/ci.yml  @jizhoutang10thglobal
 /playwright.config.js      @jizhoutang10thglobal
+# 编辑器验收契约（ui-demo 主导、人写、跨 surface 共享）——判定 AI 只读不改，改弱期望需人审
+/specs/acceptance/editor.expect.md  @jizhoutang10thglobal

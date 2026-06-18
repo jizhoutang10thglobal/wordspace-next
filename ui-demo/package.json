@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "stress": "node stress/run.mjs",
-    "stress:selfcheck": "node stress/run.mjs --selfcheck"
+    "stress:selfcheck": "node stress/run.mjs --selfcheck",
+    "audit:capture": "node audit/capture.mjs",
+    "audit:expect": "node audit/expectations.mjs",
+    "audit:prepare": "node audit/expectations.mjs --pair"
   },
   "dependencies": {
     "lucide-react": "^0.439.0",

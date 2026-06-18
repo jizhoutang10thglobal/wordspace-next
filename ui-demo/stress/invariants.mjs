@@ -62,11 +62,25 @@ async function snapshot(page) {
         if (!grip || !inner) continue
         if ((inner.textContent || '').trim() === '' && !inner.querySelector('img,hr')) continue
         const gr = grip.getBoundingClientRect()
-        let top = null, h = null
-        try { const r = document.createRange(); r.selectNodeContents(inner); const rs = r.getClientRects(); if (rs.length) { top = rs[0].top; h = rs[0].height } } catch (e) {}
-        if (top == null) { const ir = inner.getBoundingClientRect(); top = ir.top; h = ir.height }
+        const gripCenter = gr.top + gr.height / 2
+        // 首行中心：用「折叠到内容最前端」的 caret rect。selectNodeContents(inner).getClientRects()[0]
+        // 在 fuzz 把内容揉成多行 li / 含 <br> 的畸形块时会返回跨多行的大 rect，其 center 不是视觉首行、
+        // 造成假阳性（实测 list 假阳 13→caret -3、quote(内含 li+br) 假阳 12→caret 0；干净内容两法皆 0）。
+        let firstCenter = null
+        try {
+          const r = document.createRange(); r.selectNodeContents(inner); r.collapse(true)
+          const rc = r.getBoundingClientRect()
+          if (rc && rc.height) firstCenter = rc.top + rc.height / 2
+        } catch (e) {}
+        if (firstCenter == null) { // 退路：首个 client rect 的 top + 高度截到行高
+          try {
+            const r = document.createRange(); r.selectNodeContents(inner); const rs = r.getClientRects()
+            if (rs.length) { const lh = parseFloat(getComputedStyle(inner).lineHeight) || rs[0].height; firstCenter = rs[0].top + Math.min(rs[0].height, lh) / 2 }
+          } catch (e) {}
+          if (firstCenter == null) { const ir = inner.getBoundingClientRect(); firstCenter = ir.top + ir.height / 2 }
+        }
         // 有符号：>0 = 首行中心在 ⋮⋮ 下方（gutter 偏高，需把该类型 top 调大该数值）
-        const signed = Math.round((top + (h || 0) / 2) - (gr.top + gr.height / 2))
+        const signed = Math.round(firstCenter - gripCenter)
         if (Math.abs(signed) > GT) misaligned.push({ cls: b.className.match(/ws-blk-\S+/)?.[0], diff: signed })
       }
 
