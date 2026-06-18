@@ -1,0 +1,84 @@
+.pdfv {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg);
+}
+
+.pdfv-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: #e6e7ea;
+  padding: 24px 0 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+.pdfv-page {
+  width: min(720px, calc(100% - 48px));
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  border-radius: 2px;
+  padding: 56px 60px;
+}
+
+.pdfv-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+}
+.pdfv-h1 {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 10px 0 6px;
+  color: #1c1d1f;
+}
+.pdfv-h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 26px 0 10px;
+  color: #1c1d1f;
+}
+.pdfv-meta {
+  font-size: 12px;
+  color: var(--c-text-3);
+  margin-bottom: 18px;
+}
+.pdfv-p {
+  font-size: 14px;
+  line-height: 1.8;
+  color: #33363a;
+  margin: 0 0 12px;
+}
+.pdfv-list {
+  font-size: 14px;
+  line-height: 1.9;
+  color: #33363a;
+  padding-left: 20px;
+  margin: 0 0 12px;
+}
+.pdfv-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  height: 150px;
+  margin: 18px 0 6px;
+  padding: 14px;
+  border: 1px solid #eceef0;
+  border-radius: 8px;
+}
+.pdfv-chart span {
+  flex: 1;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(180deg, #4f8cf0, #1a73e8);
+}
+.pdfv-cap {
+  font-size: 12px;
+  color: var(--c-text-3);
+  text-align: center;
+}

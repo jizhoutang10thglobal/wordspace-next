@@ -9,6 +9,7 @@ import { GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import {
   VISIBILITY_META,
+  isCloudStorage,
   type Block,
   type BlockType,
   type Doc,
@@ -274,6 +275,16 @@ function DocHeader({ doc }: { doc: Doc }) {
   const folder = useStore((s) => s.folders.find((f) => f.id === doc.folderId))
   const editor = useStore((s) => s.getMember(doc.updatedBy))
   const renameDoc = useStore((s) => s.renameDoc)
+  // In a connected folder there is no Wordspace publish/visibility, and the
+  // breadcrumb is the mounted path, not a cloud workspace. null in a cloud space.
+  const folderCrumb = useStore((s) => {
+    const sp = s.spaces.find((x) => x.id === s.activeSpaceId)
+    if (!sp || isCloudStorage(sp.storage)) return null
+    const t = s.tabs.find((x) => x.id === s.activeTabId)
+    const mount = sp.mountPath ?? (sp.storage === 'gdrive' ? 'Google Drive' : '本地文件夹')
+    return t?.url ? `${mount} / ${t.url}` : mount
+  })
+  const isFolderSpace = folderCrumb !== null
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(doc.title)
@@ -288,9 +299,15 @@ function DocHeader({ doc }: { doc: Doc }) {
   return (
     <div className="ws-doc-header">
       <div className="ws-breadcrumb">
-        <span>{folder?.scope === 'team' ? '团队空间' : '我的草稿'}</span>
-        <span className="ws-bc-sep">/</span>
-        <span>{folder?.name}</span>
+        {folderCrumb ? (
+          <span className="ws-truncate">{folderCrumb}</span>
+        ) : (
+          <>
+            <span>{folder?.scope === 'team' ? '团队空间' : '我的草稿'}</span>
+            <span className="ws-bc-sep">/</span>
+            <span>{folder?.name}</span>
+          </>
+        )}
         <div className="ws-doc-more">
           <button
             className="ws-icon-btn"
@@ -331,10 +348,12 @@ function DocHeader({ doc }: { doc: Doc }) {
         <span className="ws-muted">
           {editor?.name} 编辑于 {relTime(doc.updatedAt)}
         </span>
-        <span className="ws-meta-vis">
-          <VisibilityDot v={doc.visibility} />
-          {v.label}
-        </span>
+        {!isFolderSpace && (
+          <span className="ws-meta-vis">
+            <VisibilityDot v={doc.visibility} />
+            {v.label}
+          </span>
+        )}
       </div>
     </div>
   )

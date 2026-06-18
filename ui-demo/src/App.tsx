@@ -2,6 +2,9 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import ArcSidebar from './components/ArcSidebar'
 import Canvas from './components/Canvas'
 import WebView from './components/WebView'
+import ExternalFilePanel from './components/ExternalFilePanel'
+import PdfViewer from './components/PdfViewer'
+import ImageViewer from './components/ImageViewer'
 import TopActions from './components/TopActions'
 import ToastHost from './components/ToastHost'
 import Templates from './components/Templates'
@@ -9,6 +12,7 @@ import Agents from './components/Agents'
 import Settings from './components/Settings'
 import PublishDialog from './components/PublishDialog'
 import CreateModal from './components/CreateModal'
+import CreateSpaceModal from './components/CreateSpaceModal'
 import { useStore } from './mock/store'
 import './App.css'
 
@@ -16,6 +20,11 @@ function MainDocs() {
   const { tabs, activeTabId } = useStore()
   const tab = tabs.find((t) => t.id === activeTabId)
   if (tab?.kind === 'web') return <WebView tab={tab} />
+  if (tab?.kind === 'file') {
+    if (tab.fileKind === 'pdf') return <PdfViewer tab={tab} />
+    if (tab.fileKind === 'image') return <ImageViewer tab={tab} />
+    return <ExternalFilePanel tab={tab} />
+  }
   return (
     <div className="ws-main-doc">
       <TopActions />
@@ -42,6 +51,7 @@ export default function App() {
       <ToastHost />
       <PublishDialog />
       <CreateModal />
+      <CreateSpaceModal />
     </div>
   )
 }

@@ -54,7 +54,8 @@ export interface Doc {
 export interface Folder {
   id: string
   name: string
-  scope: 'team' | 'personal' // 团队空间 / 我的草稿
+  scope: 'team' | 'personal' // 团队共享 / 我的私有, within one cloud space
+  spaceId: string // the cloud space this folder belongs to (spaces are isolated)
   order: number
 }
 
@@ -96,18 +97,39 @@ export interface Workspace {
   syncedAt: number
 }
 
+/** Where a space's files physically live. Orthogonal to the work scenario. */
+export type StorageKind = 'cloud' | 'local' | 'gdrive'
+
 /**
  * An Arc-style Space: a switchable context shown in the left sidebar.
- * Spaces are swiped left/right. A space scopes which library the sidebar shows
- * (the team workspace, the on-disk local repo, personal drafts).
+ * A space is a work scenario (a company, a person, a project). `storage` is the
+ * separate dimension of where that space's files actually live.
  */
 export interface Space {
   id: string
   name: string
-  kind: 'team' | 'local' | 'personal'
+  kind: 'team' | 'personal' | 'project' // the work scenario
+  storage: StorageKind // where the files live (cloud / local / gdrive)
   badge: string // short label shown in the switcher
   color: string
   subtitle: string
+  mountPath?: string // for connected folders: the root path shown in the library
+}
+
+/** The two real categories of space. Local and Google Drive are both connected
+ *  folders; only the Wordspace cloud is the native, collaborative kind. */
+export function isCloudStorage(s: StorageKind): boolean {
+  return s === 'cloud'
+}
+
+/** The OS app a non-HTML file hands off to, shown in the "open externally" panel. */
+export const EXTERNAL_APP: Record<Exclude<FileKind, 'html'>, string> = {
+  word: 'Microsoft Word',
+  pdf: '预览',
+  image: '预览',
+  sheet: 'Numbers',
+  slides: 'Keynote',
+  other: '默认程序',
 }
 
 /** A simulated remote collaborator caret living inside the open document. */
@@ -121,10 +143,24 @@ export interface Tab {
   id: string
   spaceId: string // the space this tab belongs to; tabs are scoped per space
   docId?: string
-  kind: 'doc' | 'web'
+  kind: 'doc' | 'web' | 'file' // 'file' = a non-HTML file opened from a connected folder
   title: string
   url: string // address-bar string (local path or https url)
   favicon?: string
+  fileName?: string // for kind 'file'
+  fileKind?: FileKind // for kind 'file'
+  pinned?: boolean // pinned tabs live in 置顶; the rest are transient 标签页
+}
+
+/** A file living in a connected folder. Wordspace edits HTML; everything else
+ *  it hands off to the OS default app. */
+export type FileKind = 'html' | 'word' | 'pdf' | 'image' | 'sheet' | 'slides' | 'other'
+
+export interface FileEntry {
+  spaceId: string
+  path: string // path under the mounted root, e.g. '品牌/官网首页.html'
+  kind: FileKind
+  docId?: string // set when kind === 'html' and it maps to an editable doc
 }
 
 export interface Toast {
@@ -160,5 +196,34 @@ export const VISIBILITY_META: Record<
     short: '公开',
     desc: '生成公开地址,任何人都能打开,等同一处对外站点。',
     color: 'var(--c-public)',
+  },
+}
+
+/**
+ * The storage backing of a space. Picked when a space is created; it determines
+ * the space's capabilities (only a cloud-backed space gets real-time
+ * collaboration and live Agent access) but is independent of the work scenario.
+ */
+export const STORAGE_META: Record<
+  StorageKind,
+  { label: string; short: string; desc: string; collab: boolean }
+> = {
+  cloud: {
+    label: 'Wordspace 网盘',
+    short: '网盘',
+    desc: '托管在 Wordspace,自带实时协作和 Agent 接入,文件可随时下载。',
+    collab: true,
+  },
+  local: {
+    label: '本地文件夹',
+    short: '本地',
+    desc: '存在你设备上的 ~/Wordspace,单人私有,离线可用。',
+    collab: false,
+  },
+  gdrive: {
+    label: 'Google Drive',
+    short: 'Drive',
+    desc: '存在你自己的 Google Drive,多设备同步,文件归你。',
+    collab: false,
   },
 }

@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react'
-import { Search, Bookmark } from 'lucide-react'
-import { useBrowser, type Bookmark as Mark } from '../mock/browser'
+import { Search, Pin } from 'lucide-react'
+import { useBrowser } from '../mock/browser'
 import { useStore } from '../mock/store'
 import './NewTab.css'
 
@@ -27,12 +27,9 @@ const shortcuts: Shortcut[] = [
 
 export default function NewTab() {
   const [value, setValue] = useState('')
-  const bookmarks = useBrowser((s) => s.bookmarks)
+  const pins = useStore((s) => s.tabs.filter((t) => t.spaceId === s.activeSpaceId && t.pinned))
+  const setActiveTab = useStore((s) => s.setActiveTab)
   const go = (url: string) => useBrowser.getState().navigate(url)
-  const openMark = (b: Mark) => {
-    if (b.kind === 'doc' && b.docId) useStore.getState().openDoc(b.docId)
-    else if (b.url) go(b.url)
-  }
 
   return (
     <div className="nt">
@@ -68,14 +65,16 @@ export default function NewTab() {
           ))}
         </div>
 
-        <div className="nt-marks">
-          <Bookmark size={13} className="nt-marks-ico" />
-          {bookmarks.map((b) => (
-            <button key={b.uid} className="nt-mark-link" onClick={() => openMark(b)}>
-              {b.title}
-            </button>
-          ))}
-        </div>
+        {pins.length > 0 && (
+          <div className="nt-marks">
+            <Pin size={13} className="nt-marks-ico" />
+            {pins.map((p) => (
+              <button key={p.id} className="nt-mark-link" onClick={() => setActiveTab(p.id)}>
+                {p.title}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
