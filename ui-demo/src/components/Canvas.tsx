@@ -514,13 +514,20 @@ export default function Canvas() {
       const empty = !el || (el.textContent ?? '').trim() === ''
       if (it.type === 'divider' || it.type === 'image') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
+      } else if (it.type === 'list' && empty) {
+        // 空块插列表：不在聚焦块上 setBlockType（p→ul 交换会触发 blur 把空 innerHTML 回写、
+        // 得到没有 <li> 的空 <ul>）。改成 addBlock 一个带 <li> seed 的新列表块（挂载时同步进
+        // DOM、没被 focus 不会被 blur 清），再删掉原空块。
+        const newId = addBlock(doc.id, slash.blockId, 'list')
+        deleteBlock(doc.id, slash.blockId)
+        editBlock(newId, { mode: 'start' })
       } else if (empty) {
         setBlockType(doc.id, slash.blockId, it.type, it.level)
       } else {
         editBlock(addBlock(doc.id, slash.blockId, it.type))
       }
     },
-    [doc, slash, addBlock, setBlockType, selectBlock, editBlock],
+    [doc, slash, addBlock, deleteBlock, setBlockType, selectBlock, editBlock],
   )
 
   // 进入编辑态时聚焦该块，光标按 pendingCaret 意图落点（点击处 / 块首 / 块末）
