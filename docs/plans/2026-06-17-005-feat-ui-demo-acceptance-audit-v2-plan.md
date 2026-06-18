@@ -1,7 +1,7 @@
 ---
 title: "feat: ui-demo 编辑器 persona AI 判官层 acceptance-audit (v2 · MVP)"
 type: feat
-status: active
+status: completed
 date: 2026-06-17
 origin: docs/brainstorms/2026-06-17-ui-demo-editor-stress-harness-requirements.md
 ---
