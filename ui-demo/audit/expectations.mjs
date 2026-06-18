@@ -9,9 +9,9 @@
 //
 // 裁判≠运动员：本模块只读 expect.md，不写、不改其判定内容。
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { resolve } from 'node:path'
+import { resolve, basename } from 'node:path'
 
 const DEFAULT_EXPECT = fileURLToPath(
   new URL('../../specs/acceptance/editor.expect.md', import.meta.url),
@@ -101,12 +101,33 @@ if (isMain) {
   if (has('--pair')) {
     const shotDir = arg('--shotdir', 'test-results/audit')
     const evPath = arg('--evidence', resolve(shotDir, 'evidence.json'))
-    const outPath = arg('--out', resolve(shotDir, 'judge-input.json'))
+    // --stage <中性绝对目录>：把截图拷过去 + judge-input 的 screenshot 指向它。判定 Workflow 的
+    // agent cwd 是共享 worktree，会把含 'wordspace-next-ui-demo' 的绝对路径"规整"成 sibling 的
+    // 'wordspace-next-demo'、读不到文件 → 假 unsure。stage 到 /tmp 这种无 sibling worktree 的中性
+    // 路径就没法被规整。判定层请用 stage 后的 judge-input.json。
+    const stageDir = arg('--stage')
     const evidence = JSON.parse(readFileSync(evPath, 'utf8'))
-    const records = pair(map, evidence, { surface, shotDir })
+    let records = pair(map, evidence, { surface, shotDir })
+    let outPath = arg('--out')
+    if (stageDir) {
+      mkdirSync(stageDir, { recursive: true })
+      records = records.map((r) => {
+        const dest = resolve(stageDir, basename(r.screenshot))
+        try {
+          copyFileSync(r.screenshot, dest)
+        } catch {
+          /* 截图缺失不致命，judge 退化为读 DOM 证据 */
+        }
+        return { ...r, screenshot: dest }
+      })
+      if (!outPath) outPath = resolve(stageDir, 'judge-input.json')
+    }
+    if (!outPath) outPath = resolve(shotDir, 'judge-input.json')
     writeFileSync(outPath, JSON.stringify(records, null, 2))
     console.log(
-      `[expect] judge-input → ${outPath}（${records.length} scenario，surface=${surface}）`,
+      `[expect] judge-input → ${outPath}（${records.length} scenario，surface=${surface}${
+        stageDir ? '，已 stage 到 ' + stageDir : ''
+      }）`,
     )
     for (const r of records)
       console.log(
