@@ -120,13 +120,33 @@ if (isMain) {
         }
         return { ...r, screenshot: dest }
       })
+      // 省 token（lever A）：把每条记录拆成独立小文件 rec/<id>.json + 一个轻量 index.json。
+      // 判定层让每个判官只读自己那条 rec（~3KB），不再 18 个 agent 各把整份 judge-input(~30KB)
+      // 重读一遍。index 只放定位字段，judge 据此找到自己的 rec/screenshot。
+      const recDir = resolve(stageDir, 'rec')
+      mkdirSync(recDir, { recursive: true })
+      const index = records.map((r) => {
+        const recPath = resolve(recDir, `${r.id}.json`)
+        writeFileSync(recPath, JSON.stringify(r, null, 2))
+        return {
+          id: r.id,
+          label: r.label,
+          surface: r.surface,
+          mutated: !!r.mutated,
+          severity: r.expectation?.severity ?? null,
+          hasExpectation: r.hasExpectation,
+          screenshot: r.screenshot,
+          recPath,
+        }
+      })
+      writeFileSync(resolve(stageDir, 'index.json'), JSON.stringify(index, null, 2))
       if (!outPath) outPath = resolve(stageDir, 'judge-input.json')
     }
     if (!outPath) outPath = resolve(shotDir, 'judge-input.json')
     writeFileSync(outPath, JSON.stringify(records, null, 2))
     console.log(
       `[expect] judge-input → ${outPath}（${records.length} scenario，surface=${surface}${
-        stageDir ? '，已 stage 到 ' + stageDir : ''
+        stageDir ? '，已 stage 到 ' + stageDir + '（含 index.json + rec/）' : ''
       }）`,
     )
     for (const r of records)

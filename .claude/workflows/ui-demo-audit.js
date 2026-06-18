@@ -45,6 +45,8 @@ const LOAD_SCHEMA = {
           surface: { type: 'string' },
           severity: { type: ['string', 'null'] },
           hasExpectation: { type: 'boolean' },
+          screenshot: { type: 'string' },
+          recPath: { type: 'string' },
         },
       },
     },
@@ -87,11 +89,11 @@ const judgePrompt = (s) => `你是「资深生产力工具用户 + 挑剔的 UX 
 场景 id：${s.id}（${s.label || ''}）
 
 步骤（所有路径都是**绝对路径，照抄逐字使用、不要替换目录或 worktree 名**——这台机器上有两个名字相似的 worktree 目录，混了就读不到文件）：
-1. 用 Read 工具读 JSON 文件：${judgeInput}，找到 id === "${s.id}" 的那条记录。里面有：
+1. 用 Read 工具读这条场景自己的记录文件（只有它一条，不是大文件）：${s.recPath}。里面有：
    - expectation：人写验收期望（expect=应当怎样，failIf=满足哪些即算坏，severity）。若为 null，说明这条没有硬期望，你按常识判这个功能对用户合不合理。
    - evidence：drive 结果 + DOM 快照（块结构 / 可编辑性 / 弹窗 / toast 等）。
    - screenshot：截图的绝对路径。
-2. 用 Read 工具打开那张 screenshot 图片（同样照抄路径），**亲眼看**功能执行后页面长什么样（make-sense 判定离不开视觉）。万一这张图读不到，就只凭上面 JSON 里的 evidence(DOM 证据) 判——**不要因为文件读不到就判 unsure**；unsure 只留给「证据本身不足以判断」。
+2. 用 Read 工具打开截图 ${s.screenshot}（照抄路径），**亲眼看**功能执行后页面长什么样（make-sense 判定离不开视觉）。万一这张图读不到，就只凭记录里的 evidence(DOM 证据) 判——**不要因为文件读不到就判 unsure**；unsure 只留给「证据本身不足以判断」。
 3. 结合截图 + DOM 证据 + 期望判定：
    - verdict：pass（符合 / 对用户合理）｜ fail（不符合 / 会让用户懵或被误导）｜ unsure（证据不足或边界）。
    - severity：有期望就沿用；无期望你自己定（high/medium/low/none）。
@@ -100,7 +102,10 @@ const judgePrompt = (s) => `你是「资深生产力工具用户 + 挑剔的 UX 
    - againstExpectation：对应哪条期望、符不符（无期望就写「无硬期望，按常识」）。
    - reproduce：用户怎么重现。
 
-原则：宁可保守。只有当你能**具体说出「用户会怎样被坑」**时才判 fail；模糊就 unsure。不要因为「能更好」就判 fail——期望是底线不是理想。只返回结构化结论。`
+原则：
+- **判定锚定在「这次操作产生/影响的那个块」**——看 evidence 的 driveOut（这次干了什么）和末尾新块/受影响块。**绝不能拿文档里本来就预先存在的同类内容当这次操作的成功证据**：比如「插入列表」如果没产出可用列表，文档别处预置的正常列表不算数；判 pass 前先确认「这次操作的产物」本身是对的。
+- 宁可保守。只有当你能**具体说出「用户会怎样被坑」**时才判 fail；模糊就 unsure。不要因为「能更好」就判 fail——期望是底线不是理想。
+只返回结构化结论。`
 
 const verifyPrompt = (v, s) => `你是对抗验证者，任务是**尽力证伪**下面这条「不符合(fail)」判定。默认怀疑它是误报。
 
@@ -109,9 +114,9 @@ const verifyPrompt = (v, s) => `你是对抗验证者，任务是**尽力证伪*
 实际观察：${v.observed || ''}
 对应期望：${v.againstExpectation || ''}
 
-步骤：
-1. Read ${judgeInput}（绝对路径，照抄逐字、不要替换目录/worktree 名），找 id === "${s.id}" 的记录，看它的 expectation 与 evidence。
-2. Read 它的 screenshot 图片，亲眼核对。
+步骤（路径照抄逐字、不要替换目录/worktree 名）：
+1. Read 这条场景自己的记录文件 ${s.recPath}，看它的 expectation 与 evidence。
+2. Read 截图 ${s.screenshot}，亲眼核对。
 3. 判断这条「不符合」站不站得住：
    - 若证据其实显示功能 OK、或判定夸大/误读了证据 → refuted=true，指出错在哪。
    - 若证据确实显示功能对用户坏掉/误导 → refuted=false。
@@ -122,8 +127,8 @@ phase('Load')
 const loaded = await agent(
   `分两步，路径都是**绝对路径、照抄逐字、不要替换目录或 worktree 名**（这台机器有两个名字相似的 worktree，混了就读不到）：
 1) 用 Read 工具读配置文件 ${CONFIG}，它是 JSON：{judgeInput, mode, report}。
-2) 用 Read 工具读第 1 步里 judgeInput 指向的那个 JSON 数组文件（每元素是一个待审计场景）。
-返回 {judgeInput, mode, report, scenarios:[每个场景 {id, label, surface, screenshot, severity（取 expectation.severity，没有则 null）, hasExpectation}]}。不要判定，只做清单。`,
+2) 用 Read 工具读第 1 步里 judgeInput 指向的那个 JSON 数组文件（这是个**轻量 index**，每元素一个待审计场景，已含 screenshot 与 recPath 字段）。
+原样返回 {judgeInput, mode, report, scenarios:[每个场景照抄 {id, label, surface, severity, hasExpectation, screenshot, recPath}]}。不要判定、不要读 recPath/screenshot 指向的文件，只做清单。`,
   { label: 'load', phase: 'Load', schema: LOAD_SCHEMA },
 )
 
@@ -151,8 +156,13 @@ const results = await pipeline(
     if (!verdict) return null
     if (verdict.verdict !== 'fail')
       return { ...verdict, label: s.label, final: verdict.verdict, verification: null }
+    // 分级对抗验证（lever C）：high 派 VERIFIERS(3) 票、medium 2 票、low/none 1 票——
+    // 低风险 finding 验证轻一点，省开销；严格多数驳回 → 降级 unsure。
+    const sev = verdict.severity || s.severity || 'medium'
+    const n = sev === 'high' ? VERIFIERS : sev === 'low' || sev === 'none' ? 1 : 2
+    const need = Math.floor(n / 2) + 1
     return parallel(
-      Array.from({ length: VERIFIERS }, (_, k) => () =>
+      Array.from({ length: n }, (_, k) => () =>
         agent(verifyPrompt(verdict, s), {
           label: `verify:${s.id}:${k + 1}`,
           phase: 'Verify',
@@ -162,12 +172,12 @@ const results = await pipeline(
     ).then((votes) => {
       const valid = votes.filter(Boolean)
       const refutes = valid.filter((v) => v.refuted).length
-      const downgraded = refutes >= Math.ceil(VERIFIERS / 2) // 多数驳回 → 降级
+      const downgraded = refutes >= need // 严格多数驳回 → 降级
       return {
         ...verdict,
         label: s.label,
         final: downgraded ? 'unsure' : 'fail',
-        verification: { refutes, total: valid.length, downgraded, votes: valid },
+        verification: { verifiers: n, refutes, total: valid.length, downgraded, votes: valid },
       }
     })
   },
@@ -182,17 +192,29 @@ const counts = {
 
 // U4：变异自检模式 —— 喂的是「功能坏掉」的证据，判官**应当全判 fail**；该 fail 不 fail = 哑门。
 if (mode === 'selfcheck') {
+  const expected = scenarios.length
+  const judged = clean.length
   const dumb = clean.filter((r) => r.final !== 'fail')
+  // 必须「该判的都真判了(judged===expected) 且都判 fail」才算有牙。判官 error/被 skip（null）
+  // 导致 judged<expected 时是 inconclusive，绝不能因为 dumb.length===0 就空判 hasTeeth=true
+  // （否则 session limit / agent 全挂会伪装成「门有牙」，极危险）。
+  const inconclusive = judged < expected || judged === 0
+  const hasTeeth = !inconclusive && dumb.length === 0
   log(
-    `变异自检：${clean.length} 个被注坏的场景，判 fail ${counts.fail} 个；` +
-      (dumb.length
-        ? `哑门 ${dumb.length} 个（该 fail 没 fail）：${dumb.map((r) => r.id).join(', ')}`
-        : '全部判 fail —— 门有牙 ✓'),
+    `变异自检：注坏 ${expected} 个、实判 ${judged} 个、判 fail ${counts.fail} 个；` +
+      (inconclusive
+        ? `⚠ 不足结论（${expected - judged} 个判官未返回/出错，可能是 session limit 或 agent 死）——请重跑`
+        : dumb.length
+          ? `哑门 ${dumb.length} 个（该 fail 没 fail）：${dumb.map((r) => r.id).join(', ')}`
+          : '全部判 fail —— 门有牙 ✓'),
   )
   return {
     mode,
     counts,
-    hasTeeth: dumb.length === 0,
+    expected,
+    judged,
+    inconclusive,
+    hasTeeth,
     dumbGates: dumb.map((r) => ({ id: r.id, final: r.final, summary: r.summary })),
     results: clean,
   }

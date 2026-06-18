@@ -46,12 +46,13 @@ npm run audit:expect           # 只看解析到哪些期望（surface 过滤）
 跑判定三步：
 
 ```bash
-# a. stage：把截图拷到 /tmp/ui-demo-audit + judge-input 的 screenshot 指向它
+# a. stage：拷截图到 /tmp/ui-demo-audit + 把每条记录拆成 rec/<id>.json + 一个轻量 index.json
+#    （省 token：判官只读自己那条 rec ~4KB，不再 18 个 agent 各重读整份 ~45KB judge-input）
 npm run audit:prepare -- --stage /tmp/ui-demo-audit
 
-# b. 写 run-config.json（workflow 从这个固定路径读，规避 args 不稳）
+# b. 写 run-config.json（workflow 从这个固定路径读，规避 args 不稳）。judgeInput 指 index.json。
 cat > /tmp/ui-demo-audit/run-config.json <<'JSON'
-{ "judgeInput": "/tmp/ui-demo-audit/judge-input.json",
+{ "judgeInput": "/tmp/ui-demo-audit/index.json",
   "mode": "audit",
   "report": "/tmp/ui-demo-audit/report.md" }
 JSON
