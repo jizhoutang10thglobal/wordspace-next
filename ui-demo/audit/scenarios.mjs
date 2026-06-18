@@ -180,6 +180,7 @@ async function lastBlocks(page, n = 2) {
       return [...document.querySelectorAll('.ws-block')].slice(-n).map((b) => {
         const m = b.className.match(/ws-blk-([a-z0-9]+)/)
         const inner = b.querySelector('[data-block]')
+        const ul = b.querySelector('.ws-ul')
         return {
           type: m ? m[1] : '?',
           editable: EDIT.test(b.className),
@@ -187,6 +188,8 @@ async function lastBlocks(page, n = 2) {
           contentEditable: !!b.querySelector('[contenteditable="true"]'),
           hasPlaceholder: !!b.querySelector('[data-placeholder]'),
           hasVisibleHr: !!b.querySelector('hr'),
+          // 列表显式记 li 数：插入「列表」却得到 liCount=0 = 空列表无项目符号 bug，让判官无法漏判
+          liCount: ul ? ul.querySelectorAll(':scope > li').length : null,
           html: (inner?.innerHTML ?? b.innerHTML).slice(0, 120),
           text: (inner?.textContent || b.textContent || '').trim().slice(0, 60),
         }

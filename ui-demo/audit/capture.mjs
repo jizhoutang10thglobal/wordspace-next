@@ -24,7 +24,8 @@ const has = (name) => process.argv.includes(name)
 const URL = arg('--url', 'http://localhost:5180/#/docs')
 const OUT = arg('--out', 'test-results/audit')
 const ONLY = arg('--only')
-const MUTATE = arg('--mutate') // scenario id：跑它并注入坏证据
+const MUTATE = arg('--mutate') // scenario id | 'all'：注入坏证据做变异自检
+const MUTATE_ALL = MUTATE === 'all'
 const LIST = has('--list')
 
 if (LIST) {
@@ -33,13 +34,14 @@ if (LIST) {
 }
 
 let scenarios = SCENARIOS
-if (MUTATE) scenarios = SCENARIOS.filter((s) => s.id === MUTATE)
+if (MUTATE_ALL) scenarios = SCENARIOS.filter((s) => MUTATIONS[s.id])
+else if (MUTATE) scenarios = SCENARIOS.filter((s) => s.id === MUTATE)
 else if (ONLY) scenarios = SCENARIOS.filter((s) => s.id === ONLY)
 if (!scenarios.length) {
   console.error(`[audit] 没有匹配的 scenario：${MUTATE || ONLY}`)
   process.exit(2)
 }
-if (MUTATE && !MUTATIONS[MUTATE]) {
+if (MUTATE && !MUTATE_ALL && !MUTATIONS[MUTATE]) {
   console.error(
     `[audit] scenario「${MUTATE}」没有定义变异注入（mutations.mjs），无法做变异自检`,
   )
@@ -61,8 +63,9 @@ const run = async () => {
 
     // U4：变异注入 —— drive 之后把「功能效果」破坏掉，产出一份「坏证据」喂判官。
     let mutated = false
-    if (MUTATE && MUTATIONS[MUTATE]) {
-      await MUTATIONS[MUTATE](page, driveOut).catch(() => {})
+    const mut = MUTATE ? MUTATIONS[sc.id] : null
+    if (mut) {
+      await mut(page, driveOut).catch(() => {})
       await settle(page)
       mutated = true
     }
@@ -94,9 +97,11 @@ const run = async () => {
     )
   }
 
-  const evidenceFile = MUTATE
-    ? join(OUT, `evidence.mutated.${MUTATE}.json`)
-    : join(OUT, 'evidence.json')
+  const evidenceFile = MUTATE_ALL
+    ? join(OUT, 'evidence.mutated.json')
+    : MUTATE
+      ? join(OUT, `evidence.mutated.${MUTATE}.json`)
+      : join(OUT, 'evidence.json')
   writeFileSync(evidenceFile, JSON.stringify(evidence, null, 2))
   await browser.close()
   console.log(
