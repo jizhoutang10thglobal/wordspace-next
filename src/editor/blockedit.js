@@ -310,10 +310,34 @@
       const a = fmt.nearestBlock(r.startContainer, body);
       return !!a && a === fmt.nearestBlock(r.endContainer, body);
     }
+    // 粗/斜/下划线/删除线：自由跨块——把选区按块切成子段，逐块聚焦+选中该段+execCommand，作用到选区里
+    // 每个块的部分（不受块限制，这是用户要的）。实测 execCommand 逐块跑不写坏文档（已 fact-check）。
+    // 临时设可编辑的块打 data-ws2-ce，serialize 会剥掉 contenteditable，存盘干净。
     function execText(cmd) {
-      if (!selWithinOneBlock()) return; // 跨块拒绝（保真红线）
-      // 语义标签命令（粗/斜/下划线/删除线）= execCommand，CSP 安全（无 inline style）
-      doc.execCommand(cmd, false, null);
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      if (sel.isCollapsed) { doc.execCommand(cmd, false, null); markDirty(); persistEditing(); return; } // 折叠：作用于光标
+      const full = sel.getRangeAt(0);
+      const tops = topBlocks();
+      let i = tops.indexOf(blockOf(full.startContainer)), j = tops.indexOf(blockOf(full.endContainer));
+      if (i < 0 || j < 0) { doc.execCommand(cmd, false, null); markDirty(); persistEditing(); return; } // 兜底
+      if (i > j) { const t = i; i = j; j = t; }
+      const sC = full.startContainer, sO = full.startOffset, eC = full.endContainer, eO = full.endOffset;
+      for (let k = i; k <= j; k++) {
+        const blk = tops[k];
+        if (!isEditableEl(blk)) continue; // 图片/分隔线等跳过
+        const wasCE = blk.getAttribute('contenteditable') === 'true';
+        if (!wasCE) { blk.setAttribute('contenteditable', 'true'); blk.setAttribute('data-ws2-ce', ''); }
+        blk.focus();
+        const r = doc.createRange();
+        if (k === i) r.setStart(sC, sO); else r.setStart(blk, 0);
+        if (k === j) r.setEnd(eC, eO); else r.setEnd(blk, blk.childNodes.length);
+        const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r);
+        try { doc.execCommand('styleWithCSS', false, false); } catch (e) {}
+        doc.execCommand(cmd, false, null);
+        if (!wasCE) { blk.removeAttribute('contenteditable'); blk.removeAttribute('data-ws2-ce'); } // 还原临时可编辑块
+      }
+      if (editingEl && editingEl.isConnected) editingEl.focus(); // 焦点还给原编辑块（别丢到末块）
       markDirty(); persistEditing();
     }
     function applyColor(prop, value) {
@@ -321,7 +345,7 @@
       if (fmt.wrapInlineStyle(doc, prop, value)) { markDirty(); persistEditing(); }
     }
     function addLink() {
-      if (!selWithinOneBlock()) return; // 跨块拒绝
+      // 不再跨块拒绝：链接作用于当前编辑块的选区部分（链接本就不该横跨块）；execCommand 不会写坏文档。
       // iframe sandbox 无 allow-modals → iframe window 的 prompt/alert 被禁；用父窗口（global）
       const url = global.prompt ? global.prompt('链接地址', 'https://') : null;
       if (!url) return;
@@ -492,6 +516,10 @@
     function onClick(e) {
       // 点到覆盖层（手柄/菜单/气泡）自身：交给它们各自的 handler，这里忽略
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      // 刚用鼠标拖选了文字（单块或跨块）→ 松手的这下 click 触发时选区仍非折叠 → 一律保留、什么都不做，
+      // 否则会把选区折叠掉、气泡闪退（这是用户报的根因）。纯点击时 mousedown 已先把选区折叠成光标，不受影响。
+      const _sel = doc.getSelection();
+      if (_sel && !_sel.isCollapsed && _sel.rangeCount > 0) return;
       const el = blockOf(e.target);
       if (!el) {
         // 文末续写：点最后一块下方、且在文档列水平范围内的空白 → 进末块(若空可编辑)或末尾新建正文块
@@ -510,12 +538,8 @@
       }
       closeBlockMenu();
       if (isEditableEl(el)) {
-        // 已在编辑这个块：交给原生（移光标 / 拖选文字），别重置——否则刚选的文字会被重新落光标折叠掉、气泡闪退。
-        if (editingEl === el) return;
-        // 进入编辑；若此块里已有非折叠选区（拖选后松手触发的 click），保留选区、不用 point 光标折叠它。
-        const sel = doc.getSelection();
-        const keepSel = sel && !sel.isCollapsed && sel.rangeCount > 0 && el.contains(sel.anchorNode) && el.contains(sel.focusNode);
-        enterEdit(el, keepSel ? { mode: 'keep' } : { mode: 'point', x: e.clientX, y: e.clientY });
+        if (editingEl === el) return; // 已编辑此块的纯点击 → 交原生移光标，别重置
+        enterEdit(el, { mode: 'point', x: e.clientX, y: e.clientY });
       } else { selectBlock(el); positionGrip(el); }
     }
     function onKeyDown(e) {
@@ -729,8 +753,10 @@
 
   [contenteditable='true']{outline:none;}
   p[data-ws2-editing]:empty::before{content:'输入正文，或按 / 插入';color:#8a8f96;pointer-events:none;}
-  [data-ws2-selected]:not([data-ws2-editing]){border-radius:5px;box-shadow:0 0 0 1.5px rgba(0,0,0,.18);background:rgba(0,0,0,.025);padding-left:8px;padding-right:8px;margin-left:-8px;margin-right:-8px;}
-  [data-ws2-editing]{border-radius:5px;padding-left:8px;padding-right:8px;margin-left:-8px;margin-right:-8px;}
+  /* 选中/编辑高亮只用 box-shadow + background（不影响布局），绝不用 padding/margin——否则 padding 把文字推右、
+     而 margin 补偿会被 [data-ws2-canvas]>tag 的更高权重盖掉、补不回来，导致选中时文字右移几像素。 */
+  [data-ws2-selected]:not([data-ws2-editing]){border-radius:4px;box-shadow:0 0 0 2px rgba(0,0,0,.16),0 0 0 6px rgba(0,0,0,.05);background:rgba(0,0,0,.03);}
+  [data-ws2-editing]{border-radius:4px;background:rgba(0,0,0,.015);}
   [data-ws2-drop='top']{box-shadow:0 -2px 0 0 #1a73e8;}
   [data-ws2-drop='bottom']{box-shadow:0 2px 0 0 #1a73e8;}
 

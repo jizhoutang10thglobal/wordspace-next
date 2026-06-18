@@ -181,3 +181,17 @@ test('格式气泡：拖选不闪退 + 改完粘住（bug 回归门）', async (
   expect(await htmlOf('p1')).toMatch(/<(b|strong)>/i);
   expect(await barVis(), '改完格式气泡马上关了(bug2 回归)').toBe(true);
 });
+
+// 位移回归门：点进块编辑时，正文不能往右平移（高亮只能用 box-shadow/bg，不能用 padding/margin）。
+// 量的是文字位置（range rect），不是元素 border 盒——padding 推文字、但 border 盒 left 不变，量盒量不出来。
+test('编辑块不让正文位移（issue 回归门）', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  const textLeft = () => frame.locator('#p1').evaluate((e) => { const r = e.ownerDocument.createRange(); r.selectNodeContents(e); return r.getBoundingClientRect().left; });
+  const before = await textLeft();
+  const b = await frame.locator('#p1').boundingBox();
+  await page.mouse.click(b.x + 20, b.y + b.height / 2); // 真点击进编辑
+  await page.waitForTimeout(150);
+  const after = await textLeft();
+  expect(Math.abs(after - before), `文字位移了 ${(after - before).toFixed(1)}px`).toBeLessThanOrEqual(1);
+});
