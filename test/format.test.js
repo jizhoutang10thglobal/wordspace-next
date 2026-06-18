@@ -181,6 +181,21 @@ test('retagElement: 换标签保留 id/class/style 与全部子节点', () => {
   assert.equal(doc.querySelectorAll('h2').length, 1);
 });
 
+test('retagElement: 保留用户全部属性（title/lang/dir/data-*/role/aria-*），不只 id/class/style', () => {
+  const doc = docOf('<p id="t" class="c" style="color: red;" title="hi" lang="en" dir="rtl" data-foo="bar" role="note" aria-label="x">内容</p>');
+  const next = format.retagElement(doc.querySelector('p'), 'h2');
+  assert.equal(next.tagName, 'H2');
+  assert.equal(next.id, 't');
+  assert.equal(next.className, 'c');
+  assert.equal(next.style.color, 'red');
+  assert.equal(next.getAttribute('title'), 'hi');
+  assert.equal(next.getAttribute('lang'), 'en');
+  assert.equal(next.getAttribute('dir'), 'rtl');
+  assert.equal(next.getAttribute('data-foo'), 'bar');
+  assert.equal(next.getAttribute('role'), 'note');
+  assert.equal(next.getAttribute('aria-label'), 'x');
+});
+
 test('retagElement: 无父元素时原样返回（no-op safe）', () => {
   const doc = docOf('');
   const orphan = doc.createElement('p');
