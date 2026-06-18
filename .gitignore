@@ -15,3 +15,5 @@ playwright-report/
 .firecrawl/
 e2e/screenshots/
 .gstack/
+.playwright-mcp/
+ws-state-*.png
