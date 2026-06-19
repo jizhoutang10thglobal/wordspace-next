@@ -18,8 +18,13 @@
 >
 > **severity 语义。** `high` = 上手就坏/会误导用户；`medium` = 明显别扭但能绕；`low` = 打磨项。
 >
+> **status 语义。** 每条可标 `status`：
+> - `built`（默认，缺省即此）—— 功能已做，审计照常判 pass/fail。
+> - `planned` —— 功能还没做，契约在描述**目标**、不是说 app 坏了。审计判 **pending**、不判 fail；
+>   功能真做好了把它翻成 `built`（走 CODEOWNERS review）。
+>
 > **格式（给解析器）。** 每条期望一个 `### E:<scenario-id> · <标题>` 小节，下接
-> `surface` / `severity` / `expect` / `fail-if` 四个加粗键。`scenario-id` 对应审计场景 id。
+> `surface` / `severity` / `expect` / `fail-if` 加粗键（可选 `status`，缺省 `built`）。`scenario-id` 对应审计场景 id。
 
 ---
 
@@ -87,6 +92,49 @@
 
 ---
 
+## 文字格式
+
+### E:format-bold · 加粗
+
+- **surface:** both
+- **severity:** high
+- **expect:** 选中一段文字点气泡工具栏「加粗」，文字应立即变粗；存盘后粗体仍在内容里（`<b>` / `<strong>` 或 font-weight），不丢。
+- **fail-if:** 点了没反应；或视觉变粗但存盘后粗体丢失；或把选区外的文字也加粗了。
+
+### E:link-add · 加链接
+
+- **surface:** both
+- **severity:** medium
+- **expect:** 选中一段文字点「链接」、填入地址，应生成一个指向该地址、可点的链接，存盘保留。
+- **fail-if:** 填了地址不生成链接；或链接指向错误地址；或选中的文字被吞掉 / 替换。
+
+### E:undo-restores · 撤销干净回退
+
+- **surface:** both
+- **severity:** medium
+- **expect:** 插入或修改一个块后按一次撤销（Cmd+Z 或菜单「撤销」），应干净回到这步之前的状态。
+- **fail-if:** 撤销没反应；或只回退了一半、残留半个块；或撤销破坏了文档其余部分。
+
+---
+
+## 安全与保真（红线）
+
+### E:safety-dangerous-link · 危险链接被拒
+
+- **surface:** both
+- **severity:** high
+- **expect:** 给链接填 `javascript:` 等危险 scheme，**必须被拒绝**：不在文档里生成该链接，也绝不写进磁盘。
+- **fail-if:** 危险 scheme 的链接被生成；或被写进保存的文件。
+
+### E:safety-fidelity · 存盘保真、不泄漏编辑器痕迹
+
+- **surface:** both
+- **severity:** high
+- **expect:** 打开文档、不做任何编辑就存盘，写回的文件应与原文**结构一致**，且**不含任何编辑器运行时痕迹**（`data-ws2-*` 等）。
+- **fail-if:** 存盘后结构被改写 / 塌平；或文件里出现 `data-ws2-*` / 编辑器覆盖层节点等痕迹。
+
+---
+
 ## AI 入口（demo 态）
 
 ### E:ai-entry-slash · /AI 诚实占位
@@ -125,6 +173,7 @@
 
 - **surface:** app
 - **severity:** high
+- **status:** planned
 - **expect:** 真 app 中导出 PDF / Word / PPT 应实际产出一个能打开的文件，并落到用户可见的位置。
 - **fail-if:** 只弹提示但没有真实文件产出；或文件打不开 / 内容与文档不符。
 
@@ -132,5 +181,6 @@
 
 - **surface:** app
 - **severity:** high
+- **status:** planned
 - **expect:** 真 app 中 AI 入口应实际生成或重排内容，并把结果落进文档供继续编辑。
 - **fail-if:** AI 入口只给占位提示、不产出内容；或产出与请求无关 / 破坏了已有内容。
