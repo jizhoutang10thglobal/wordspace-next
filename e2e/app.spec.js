@@ -257,3 +257,40 @@ test('回归：长文件名不顶到保存按钮、不撑高顶栏（Bug3）', a
   expect(m.crumbH, '文件名换行撑高了顶栏').toBeLessThanOrEqual(22);
   expect(m.truncated, '窄窗长文件名应被省略号截断').toBe(true);
 });
+
+// Bug1 回归门（Wendi）：内层包裹 div（自己没直接文字、只裹 <p>）此前被当 designed 整块、点不进去编辑。
+// v0.3.1 修的是最外层包裹；这是夹在兄弟块里的内层透明内容容器（<div class="lead"><p>…</p></div>）。
+const INNER_WRAP = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>价值观</title></head>
+<body><div class="wrap">
+<h1 id="t">价值观</h1>
+<div class="lead" id="lead"><p id="leadp">这是一段导言，应当可以直接编辑。</p></div>
+<p id="body1">正文一段。</p>
+<div><table id="tb"><tbody><tr><td>结构块</td></tr></tbody></table></div>
+</div></body></html>`;
+
+test('回归：内层包裹 div（div.lead>p）里的文字可编辑、含表格的结构 div 仍不可（Wendi Bug1）', async () => {
+  await launch();
+  await openDoc(INNER_WRAP);
+  // 点 lead 里的文字 → 进编辑态（修复前：div.lead 整块灰选、进不去）
+  await frame.locator('#leadp').click();
+  await expect(frame.locator('[data-ws2-editing]')).toHaveCount(1);
+  expect(await frame.locator('[data-ws2-editing]').evaluate((e) => e.className)).toContain('lead');
+  // 打字真的落进文档（内层 p）
+  await page.keyboard.type('改了');
+  await page.waitForTimeout(120);
+  expect(await htmlOf('lead')).toContain('改了');
+  // 存盘保真：lead 容器 + 内层 p 保留、无编辑器 marker 泄漏
+  const out = await serialize();
+  expect(out).toContain('class="lead"');
+  expect(out).not.toMatch(/data-ws2-/);
+  expect(out).toContain('改了');
+  // 含 <table> 的结构 div 仍是不可编辑 designed 块（点它进不了编辑、是整块灰选）
+  await clearUI();
+  await frame.locator('#tb').click({ force: true });
+  await page.waitForTimeout(120);
+  expect(await frame.locator('[data-ws2-editing]').count(), '含表格的结构 div 不该变成可编辑').toBe(0);
+  // h1 仍可编辑（没误伤）
+  await clearUI();
+  await frame.locator('#t').click();
+  expect(await frame.locator('[data-ws2-editing]').evaluate((e) => e.id)).toBe('t');
+});
