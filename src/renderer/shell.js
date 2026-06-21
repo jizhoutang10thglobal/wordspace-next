@@ -87,6 +87,16 @@ function loadFromFile(opts) {
   prepFrame(opts && opts.asDirty);
 }
 
+// 外部磁盘改动后重新载入磁盘版本（Bug2：用 Claude 等外部工具改完，自动刷新渲染）。
+// 同一 file:// URL 直接赋 frame.src 不会重导航 → 先 about:blank 再设回，强制刷新一次。
+function reloadDoc() {
+  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  frame.onload = () => { frame.onload = () => wireEditor(); frame.src = docInfo.fileUrl; };
+  frame.removeAttribute('srcdoc');
+  frame.src = 'about:blank';
+  setDirty(false); // 重载到磁盘版本 = 干净状态
+}
+
 // 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录（用 docInfo.dirUrl）
 function loadFromHtml(html, opts) {
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
@@ -110,6 +120,7 @@ async function openDoc(p) {
   docPath = p;
   docInfo = info;
   loadFromFile();
+  window.ws2.watchDoc(p); // 盯外部磁盘改动（Bug2）；换文档时主进程会重指向到新路径
   await window.ws2.recentsAdd(p);
   renderRecents();
 }
@@ -152,6 +163,13 @@ const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = save;
 window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); }); // 窗口尺寸变 → 手柄/气泡跟上
+
+// 外部磁盘改动（Bug2）：是当前文档才处理；有未保存改动先问，免得静默覆盖用户的编辑。
+window.ws2.onDocChanged((p) => {
+  if (!docPath || p !== docPath) return;
+  if (dirty && !confirm('这个文件在外部被改动了，但你有未保存的修改。\n重新加载会丢弃你的修改、改用磁盘上的新版本，继续吗？')) return;
+  reloadDoc();
+});
 
 window.ws2.onOpenFile((p) => openDoc(p));
 window.ws2.onMenu((cmd) => {

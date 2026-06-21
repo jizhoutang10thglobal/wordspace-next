@@ -294,3 +294,50 @@ test('回归：内层包裹 div（div.lead>p）里的文字可编辑、含表格
   await frame.locator('#t').click();
   expect(await frame.locator('[data-ws2-editing]').evaluate((e) => e.id)).toBe('t');
 });
+
+// Bug2 功能门（Wendi）：用 Claude 等外部工具改完磁盘文件后，app 自动重载渲染。
+const OLD_DOC = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><p id="m">旧内容OLD标记</p></body></html>';
+const NEW_DOC = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><h1 id="h">外部改了</h1><p id="m">新内容NEW标记</p></body></html>';
+
+test('功能：外部改动磁盘文件后自动重载渲染（Bug2，无未保存改动）', async () => {
+  await launch();
+  const docPath = await openDoc(OLD_DOC);
+  await expect(frame.locator('body')).toContainText('旧内容OLD标记');
+  // 模拟外部工具（Claude）直接改盘——不经 app 的保存通道
+  await fs.writeFile(docPath, NEW_DOC, 'utf8');
+  // watcher 去抖 + doc-changed + 重导航 → 应自动显示新内容
+  await expect(frame.locator('body')).toContainText('新内容NEW标记', { timeout: 5000 });
+  expect(await frame.locator('body').textContent()).not.toContain('旧内容OLD标记');
+  expect(await frame.locator('#h').textContent()).toBe('外部改了'); // 新增的块也在
+});
+
+test('功能：有未保存改动时外部改动先征求确认、拒绝则不重载（Bug2 脏态守卫）', async () => {
+  await launch();
+  const docPath = await openDoc(OLD_DOC);
+  // 编辑使其变脏
+  await frame.locator('#m').click();
+  await page.keyboard.type('我的编辑');
+  await page.waitForTimeout(150);
+  // 用户拒绝重载（保留自己的改动）
+  await page.evaluate(() => { window.confirm = () => false; });
+  await fs.writeFile(docPath, NEW_DOC, 'utf8');
+  await page.waitForTimeout(1500);
+  // 没有重载：自己的编辑还在、外部新内容没盖进来
+  expect(await frame.locator('#m').textContent()).toContain('我的编辑');
+  expect(await frame.locator('body').textContent()).not.toContain('新内容NEW标记');
+});
+
+test('功能：app 自己保存不触发外部重载（Bug2 自存盘抑制，否则每次保存都闪一下丢光标）', async () => {
+  await launch();
+  await openDoc(OLD_DOC);
+  await frame.locator('#m').click();
+  await page.keyboard.type('改一下');
+  await page.waitForTimeout(150);
+  await expect(frame.locator('[data-ws2-editing]')).toHaveCount(1); // 处于编辑态
+  // 走菜单保存（不抢 iframe 焦点）：写盘会触发目录 watcher，但自存盘应被抑制、不重载
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'save'));
+  await page.waitForTimeout(1500);
+  // 若自存盘没被抑制 → doc-changed → 重载 → 编辑态被清空（count=0）。抑制生效则仍在编辑态。
+  expect(await frame.locator('[data-ws2-editing]').count(), '自存盘触发了重载（编辑态被清）').toBe(1);
+  expect(await frame.locator('#m').textContent()).toContain('改一下');
+});
