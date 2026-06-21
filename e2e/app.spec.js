@@ -235,3 +235,25 @@ test('回归：整篇包在 <div class="wrap"> 里仍能逐块编辑（Wendi 文
   expect(out).toContain('max-width:760px');
   expect(out).toContain('改了');
 });
+
+// Bug3 回归门（Wendi）：文件名一长，顶栏面包屑会顶到右上角绝对定位的「保存」按钮上、把它切成两半。
+// 修复=面包屑 nowrap+ellipsis 截断 + doc-header 右侧给按钮留位。窄窗 + 长文件名下断言：不重叠、不撑高。
+test('回归：长文件名不顶到保存按钮、不撑高顶栏（Bug3）', async () => {
+  await launch();
+  await page.setViewportSize({ width: 760, height: 700 }); // 窄窗放大碰撞
+  const longName = '这是一个相当长的中文文档文件名用来回归顶栏文件名过长与保存按钮重叠的布局问题测试.html';
+  const docPath = path.join(tmpDir, longName);
+  await fs.writeFile(docPath, '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><h1>标题</h1><p>正文。</p></body></html>', 'utf8');
+  await app.evaluate(({ BrowserWindow }, p) => { BrowserWindow.getAllWindows()[0].webContents.send('open-file', p); }, docPath);
+  // 顶栏在父 renderer（不在 iframe）：等文档头露出、文件名填上
+  await page.waitForFunction(() => { const n = document.getElementById('doc-name'); return n && n.textContent.trim().length > 0; }, { timeout: 5000 });
+  await page.waitForTimeout(300);
+  const m = await page.evaluate(() => {
+    const crumb = document.getElementById('doc-name'); const save = document.getElementById('save-btn');
+    const a = crumb.getBoundingClientRect(); const b = save.getBoundingClientRect();
+    return { overlap: a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top, crumbH: a.height, truncated: crumb.scrollWidth > crumb.clientWidth + 1 };
+  });
+  expect(m.overlap, '长文件名与保存按钮重叠（Bug3 回归）').toBe(false);
+  expect(m.crumbH, '文件名换行撑高了顶栏').toBeLessThanOrEqual(22);
+  expect(m.truncated, '窄窗长文件名应被省略号截断').toBe(true);
+});
