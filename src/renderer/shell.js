@@ -3,6 +3,7 @@ let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name
 let dirty = false;
 let undoMgr = null;
 let blockEdit = null; // 当前文档的块编辑内核（WS2BlockEdit.attach 返回）；换文档前 detach 防堆叠
+let loadGen = 0;       // 每次载入/重载自增；旧的 frame.onload 闭包据此作废，防并发载入（如外部连改 + 重载）交叉 wireEditor
 
 const frame = document.getElementById('doc-frame');
 const home = document.getElementById('home');
@@ -81,7 +82,8 @@ function prepFrame(asDirty) {
 // 文档拥有自己的 CSP 上下文、相对资源天然解析。
 function loadFromFile(opts) {
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
-  frame.onload = () => wireEditor();
+  const gen = ++loadGen;
+  frame.onload = () => { if (gen !== loadGen) return; wireEditor(); };
   frame.removeAttribute('srcdoc');
   frame.src = docInfo.fileUrl;
   prepFrame(opts && opts.asDirty);
@@ -89,18 +91,25 @@ function loadFromFile(opts) {
 
 // 外部磁盘改动后重新载入磁盘版本（Bug2：用 Claude 等外部工具改完，自动刷新渲染）。
 // 同一 file:// URL 直接赋 frame.src 不会重导航 → 先 about:blank 再设回，强制刷新一次。
+// loadGen 守卫：若重载途中又来一次载入（外部连续改动 / 同时打开别的文档），旧 onload 作废，
+// 不把 wireEditor 跑在 about:blank 或错误文档上。setDirty(false) 放到真正载完磁盘版本后才清。
 function reloadDoc() {
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
-  frame.onload = () => { frame.onload = () => wireEditor(); frame.src = docInfo.fileUrl; };
+  const gen = ++loadGen;
+  frame.onload = () => {
+    if (gen !== loadGen) return; // 被更晚的载入抢占
+    frame.onload = () => { if (gen !== loadGen) return; wireEditor(); setDirty(false); };
+    frame.src = docInfo.fileUrl;
+  };
   frame.removeAttribute('srcdoc');
   frame.src = 'about:blank';
-  setDirty(false); // 重载到磁盘版本 = 干净状态
 }
 
 // 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录（用 docInfo.dirUrl）
 function loadFromHtml(html, opts) {
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
-  frame.onload = () => { injectBase(frame.contentDocument, docInfo.dirUrl); wireEditor(); };
+  const gen = ++loadGen;
+  frame.onload = () => { if (gen !== loadGen) return; injectBase(frame.contentDocument, docInfo.dirUrl); wireEditor(); };
   frame.removeAttribute('src');
   frame.srcdoc = html;
   prepFrame(opts && opts.asDirty);

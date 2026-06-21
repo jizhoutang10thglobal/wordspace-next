@@ -14,6 +14,7 @@ let watcher = null;
 let watchedPath = null;
 let timer = null;
 let lastSelfWrite = 0;
+let lastMtimeMs = 0;       // 上次通知时目标文件的 mtime；用它去重 + 过滤同目录他文件的事件
 const SELF_WRITE_MS = 800; // 自存盘后这段时间内的盘变化视为自己写的，不当外部改动
 const DEBOUNCE_MS = 180;
 
@@ -26,21 +27,27 @@ function close() {
   watchedPath = null;
 }
 
-// 开始盯 p；外部改动（去抖、排除自存盘、文件仍在）时调用 onChange(p)。
+// 开始盯 p；外部改动（去抖、排除自存盘、目标文件 mtime 真变了）时调用 onChange(p)。
 function watch(p, onChange) {
   close();
   if (!p || typeof p !== 'string') return;
   watchedPath = p;
+  try { lastMtimeMs = fs.statSync(p).mtimeMs; } catch (e) { lastMtimeMs = 0; } // 基线 mtime
   const dir = path.dirname(p);
   const base = path.basename(p);
   try {
     watcher = fs.watch(dir, (event, filename) => {
-      if (filename && path.basename(filename) !== base) return; // 只关这个文件
+      if (filename && path.basename(filename) !== base) return; // 只关这个文件（filename 缺失时靠下面 mtime 兜底）
       if (Date.now() - lastSelfWrite < SELF_WRITE_MS) return;    // 自存盘引发，跳过
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        // 文件仍存在才通知（被删/重命名走了就不重载到空）
-        fs.access(watchedPath, fs.constants.F_OK, (err) => { if (!err) onChange(watchedPath); });
+        // 比对目标文件 mtime：没了/读不到 → 不重载到空；mtime 没变（同目录他文件事件 / 重复事件）→ 跳过。
+        fs.stat(watchedPath, (err, st) => {
+          if (err) return;
+          if (st.mtimeMs === lastMtimeMs) return;
+          lastMtimeMs = st.mtimeMs;
+          onChange(watchedPath);
+        });
       }, DEBOUNCE_MS);
     });
     watcher.on('error', () => close()); // 目录被删等 → 静默放弃，不崩主进程

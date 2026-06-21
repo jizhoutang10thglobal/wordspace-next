@@ -267,6 +267,13 @@
       // 列表：contenteditable 在 <ul> 上，但光标要落到 <li> 内（否则打字落 ul 直接子级 = 裸文本）
       let target = el;
       if ((el.tagName === 'UL' || el.tagName === 'OL')) { const li = el.querySelector('li'); if (li) target = li; }
+      // 透明内容容器（div.lead>p 之类）：自己没直接文字、只裹块级内容时，光标下钻进里面第一个块，
+      // 别停在容器层（否则键盘进入 start/end 模式打字会在容器直接子级产生裸文本）。
+      while ((target.tagName === 'DIV' || target.tagName === 'SECTION' || target.tagName === 'ARTICLE' || target.tagName === 'MAIN')
+        && ![...target.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())
+        && target.firstElementChild) {
+        target = target.firstElementChild;
+      }
       if (caret.mode === 'point' && caret.x != null) {
         const pt = caretRangeAtPoint(doc, caret.x, caret.y);
         if (pt && el.contains(pt.startContainer)) range = pt;

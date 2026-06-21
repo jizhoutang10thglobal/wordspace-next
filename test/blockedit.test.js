@@ -49,6 +49,8 @@ test('isEditableEl: 透明内容包裹 div（裹 <p>/<h>）可编辑，含表格
   assert.equal(be.isEditableEl(el('<section><h2>小节</h2><p>正文</p></section>')), true);
   assert.equal(be.isEditableEl(el('<div class="card"><h3>卡片</h3><p>内文</p></div>')), true);
   assert.equal(be.isEditableEl(el('<div><div><p>深层文字</p></div></div>')), true);     // 多层透明包裹
+  assert.equal(be.isEditableEl(el('<article><h2>标题</h2><p>正文</p></article>')), true); // article 也算包裹容器
+  assert.equal(be.isEditableEl(el('<main><p>主区文字</p></main>')), true);                // main 同理
   // 含表格 = designed 结构块，仍不可编辑（即便也裹了 <p>）
   assert.equal(be.isEditableEl(el('<div><p>说明</p><table><tbody><tr><td>x</td></tr></tbody></table></div>')), false);
   // 空容器（无文字内容）不算可编辑文本块

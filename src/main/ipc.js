@@ -45,8 +45,8 @@ function registerIpc() {
         console.error('history archive failed:', err);
       });
     }
-    docWatcher.noteSelfWrite(); // 自己存盘引发的盘变化，别触发「外部改动」自动重载
     await files.writeDocSafe(p, content);
+    docWatcher.noteSelfWrite(); // 写完才打戳：抑制窗口覆盖「写完→watcher 触发」的延迟，不被写入耗时吃掉（慢盘也不会自存盘误触发重载）
     return { ok: true, archiveWarning };
   });
   // 监听当前文档的外部磁盘变化（Bug2）：renderer 打开文档后调一次 watch-doc，文件被外部改动时
