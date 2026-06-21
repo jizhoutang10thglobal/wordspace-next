@@ -380,6 +380,44 @@
       if (editingEl && editingEl.isConnected) editingEl.focus(); // 焦点还给原编辑块（别丢到末块）
       markDirty(); persistEditing();
     }
+    // 删非折叠选区：覆盖「拖选没进编辑态」和「跨块选区」——这俩原生删不掉（选区横跨多个各自独立的
+    // contenteditable 块，或没有任何 contenteditable 宿主），用户只能一个字一个字删（Wendi Bug4/5）。
+    // 返回 true=已处理（调用方 preventDefault）；false=交原生（如编辑态单块内选区，原生删得了）。
+    function deleteSelection() {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+      const r = sel.getRangeAt(0);
+      const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
+      if (!sBlk || !eBlk) return false; // 选区落在块外/覆盖层 → 不碰
+      if (sBlk === eBlk) {
+        if (editingEl === sBlk) return false;  // 编辑态单块内选区 → 原生删得了
+        if (!isEditableEl(sBlk)) return false; // 不可编辑块 → 不碰
+        // 无编辑态的单块拖选：进编辑（保留选区）→ 重设选区 → execCommand 删
+        const sc = r.startContainer, so = r.startOffset, ec = r.endContainer, eo = r.endOffset;
+        enterEdit(sBlk, { mode: 'keep' });
+        try { const cr = doc.createRange(); cr.setStart(sc, so); cr.setEnd(ec, eo); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
+        doc.execCommand('delete'); markDirty(); if (undoMgr) undoMgr.scheduleCheckpoint();
+        return true;
+      }
+      // 跨块：Range 规范上 startContainer 在 endContainer 之前 → sBlk 在 eBlk 之前
+      const tops = topBlocks();
+      const i = tops.indexOf(sBlk), j = tops.indexOf(eBlk);
+      if (i < 0 || j < 0 || i > j) return false;
+      const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sBlk, sBlk.childNodes.length); r1.deleteContents(); // 裁起块：选区起点→块末
+      const r2 = doc.createRange(); r2.setStart(eBlk, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents();                       // 裁末块：块首→选区终点
+      for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === blockRoot) m.remove(); }                            // 删中间整块
+      const prefixEnd = sBlk.lastChild; // 接合点（合并前 prefix 末尾）
+      if (isEditableEl(sBlk) && isEditableEl(eBlk) && classify(sBlk) !== 'list' && classify(eBlk) !== 'list') {
+        while (eBlk.firstChild) sBlk.appendChild(eBlk.firstChild); // 起末都是文字块 → 末块剩余并入起块
+        eBlk.remove();
+      }
+      markDirty(); if (undoMgr) undoMgr.checkpoint();
+      if (isEditableEl(sBlk)) {
+        enterEdit(sBlk, { mode: 'keep' });
+        try { const cr = doc.createRange(); if (prefixEnd && prefixEnd.parentNode === sBlk) cr.setStartAfter(prefixEnd); else cr.setStart(sBlk, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
+      } else { selectBlock(sBlk); positionGrip(sBlk); }
+      return true;
+    }
     function applyColor(prop, value) {
       // 颜色/高亮：用 CSSOM span（KTD2）。wrapInlineStyle 内部已含跨块拒绝。
       if (fmt.wrapInlineStyle(doc, prop, value)) { markDirty(); persistEditing(); }
@@ -602,6 +640,23 @@
         // 用父窗口 setTimeout：iframe 是 sandbox 无 allow-scripts，在 iframe window 上调度回调会被拦
         global.setTimeout(() => { if (editingEl === blockEl) openSlash(blockEl); }, 0);
         return;
+      }
+      // 跨块 / 无编辑态拖选的删除 + 剪切：原生删不掉这类选区（横跨多个独立 contenteditable 块，
+      // 或没有 contenteditable 宿主）→ 自己删（Wendi Bug4/5/6）。deleteSelection 返回 false 时（编辑态
+      // 单块内选区）不拦、交原生。Cmd+X 先把选区复制进剪贴板再删。
+      if ((e.key === 'Backspace' || e.key === 'Delete') && !e.isComposing && e.keyCode !== 229) {
+        const sel = doc.getSelection();
+        if (sel && sel.rangeCount && !sel.isCollapsed && deleteSelection()) { e.preventDefault(); return; }
+      }
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
+        const sel = doc.getSelection();
+        if (sel && sel.rangeCount && !sel.isCollapsed) {
+          e.preventDefault();
+          try { doc.execCommand('copy'); } catch (x) {} // 复制选区到剪贴板（剪切=复制+删）
+          if (!deleteSelection()) doc.execCommand('delete'); // 跨块/无主自己删；编辑态单块内 → 原生删
+          markDirty();
+          return;
+        }
       }
       // Enter：可编辑块末尾 → 新建正文块（list 交原生新 <li>；中间交原生；IME/Shift 软换行）
       if (e.key === 'Enter' && editingEl) {
