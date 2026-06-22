@@ -382,3 +382,25 @@ test('回归：跨块 Cmd+X 剪切——删除 + 复制进剪贴板（Wendi Bug6
   expect(clip, '剪切没把内容写进剪贴板').not.toBe('__sentinel__');
   expect(clip).toContain('111');
 });
+
+// 跨块拖选顺滑（去掉「选区被钉死在单块里」那道墙）的配套门：拖选出来的是「无编辑态的跨块选区」，
+// 它必须能弹格式气泡、且气泡上的操作（加粗等）对跨块生效——否则跨块选完没法格式化。
+// 注：真拖拽手势自动化不了（会卡死测试框架），这里用程序化设「无编辑态跨块选区」验收尾逻辑（气泡+格式）。
+test('回归：无编辑态跨块选区弹气泡、且跨块加粗生效（拖选顺滑配套）', async () => {
+  await launch();
+  await openDoc(DEL_DOC);
+  // 不 click 进编辑（editingEl=null）→ 程序化设跨块选区 → selectionchange → 气泡分支④
+  await frame.locator('body').evaluate(() => {
+    const r = document.createRange(); r.setStart(document.getElementById('p1').firstChild, 1); r.setEnd(document.getElementById('p2').firstChild, 2);
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.waitForTimeout(200);
+  const st = await frame.locator('body').evaluate(() => {
+    const bar = document.querySelector('.ws-fmtbar');
+    return { editing: !!document.querySelector('[data-ws2-editing]'), barVisible: !!bar && getComputedStyle(bar).display !== 'none' };
+  });
+  expect(st.editing, '应是无编辑态 homeless 选区').toBe(false);
+  expect(st.barVisible, 'homeless 跨块选区没弹气泡（分支④失效）').toBe(true);
+  await frame.locator('.ws-fmtbar [title="加粗"]').click(); await page.waitForTimeout(150);
+  expect(await frame.locator('body').evaluate(() => document.querySelectorAll('b,strong').length > 0), '跨块加粗没生效').toBe(true);
+});

@@ -142,6 +142,8 @@
     let slash = null;        // { blockEl, query, active }
     let dragFrom = null;     // 拖拽重排的源块
     let fmtShown = false;    // 格式气泡是否显示——「粘住」用：选区折叠后不立即关，直到离开该块
+    let dragStart = null;    // 拖拽选择起点 {x,y}（mousedown 记、mouseup 清）；用来分辨「点击」vs「拖选」
+    let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
 
     // ---- 覆盖层节点（data-ws2-ui，存盘剥除）----
     function mk(tag, cls) { const n = doc.createElement(tag); n.setAttribute('data-ws2-ui', ''); n.setAttribute('contenteditable', 'false'); if (cls) n.className = cls; return n; }
@@ -217,6 +219,12 @@
       if (fmtShown && editingEl) {
         const r = editingEl.getBoundingClientRect();
         showFmtAt(r.left + Math.min(r.width / 2, 180), r.top); return;
+      }
+      // ④ 拖选出来的跨块 / homeless 选区（无 editingEl，但有非折叠选区）→ 也弹气泡，否则跨块选完没法
+      //    点加粗/取色。拖动中（dragStart 还在）不弹，免得跟着手抖闪。
+      if (!editingEl && !dragStart && sel && !sel.isCollapsed && sel.rangeCount > 0) {
+        const r = sel.getRangeAt(0).getBoundingClientRect();
+        if (r.width || r.height) { showFmtAt(r.left + r.width / 2, r.top); return; }
       }
       fmtbar.style.display = 'none'; fmtShown = false;
     }
@@ -583,12 +591,44 @@
     }
 
     // ---- 监听器（父层挂到 iframe doc）----
+    // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。
+    function onMouseDown(e) {
+      if (e.button !== 0) return; // 只管左键
+      if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      dragStart = { x: e.clientX, y: e.clientY };
+      wallDropped = false;
+    }
     function onMouseMove(e) {
+      // 拖选进行中：按住左键移动超过阈值 → 摘掉当前编辑块的 contenteditable（放倒墙），让选区自由跨块。
+      // 纯点击（不移动）不摘墙，保留「点同一块原生移光标」「IME 组词」等。选区此刻已起、摘墙不打断它。
+      if (dragStart && !wallDropped && (e.buttons & 1) &&
+          (Math.abs(e.clientX - dragStart.x) > 4 || Math.abs(e.clientY - dragStart.y) > 4)) {
+        wallDropped = true;
+        if (editingEl) exitEdit();
+      }
       // 在手柄/菜单/气泡上移动：保持现状（手柄在块外 margin，移过去若隐藏就点不到了）
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
       const el = blockOf(e.target);
       if (el && el !== hoverEl) { hoverEl = el; positionGrip(el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
       // 移到块外空白/gutter 间隙：不立即隐藏（停在最后悬停块、保证可点）；隐藏交给进编辑/离开文档。
+    }
+    // 鼠标抬起：收尾一次拖选。单块内选区 → 恢复进编辑（保留选区，可打字替换/气泡走编辑态分支）；
+    // 跨块/homeless 选区 → 留着、弹气泡。纯点击（没摘墙）→ 交给 onClick 走进编辑。
+    function onMouseUp() {
+      if (!dragStart) return;
+      const dropped = wallDropped;
+      dragStart = null; wallDropped = false;
+      if (!dropped) return;
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 拖了但没选到东西
+      const r = sel.getRangeAt(0);
+      const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
+      if (sBlk && sBlk === eBlk && isEditableEl(sBlk)) {
+        const sc = r.startContainer, so = r.startOffset, ec = r.endContainer, eo = r.endOffset;
+        enterEdit(sBlk, { mode: 'keep' });
+        try { const cr = doc.createRange(); cr.setStart(sc, so); cr.setEnd(ec, eo); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
+      }
+      positionFmtbar();
     }
     function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; grip.style.display = 'none'; } }
     function onClick(e) {
@@ -793,7 +833,9 @@
     function onDrop(e) { if (!dragFrom) return; e.preventDefault(); const el = blockOf(e.target); if (el && el !== dragFrom) { const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING; if (before) el.after(dragFrom); else el.before(dragFrom); if (undoMgr) undoMgr.checkpoint(); markDirty(); } clearDrop(); dragFrom = null; }
 
     buildFmtbar();
+    doc.addEventListener('mousedown', onMouseDown, true);
     doc.addEventListener('mousemove', onMouseMove);
+    doc.addEventListener('mouseup', onMouseUp);
     doc.addEventListener('click', onClick);
     doc.addEventListener('keydown', onKeyDown, true);
     doc.addEventListener('input', onInput);
@@ -806,7 +848,9 @@
 
     function detach() {
       doc.documentElement.removeEventListener('mouseleave', onDocLeave);
+      doc.removeEventListener('mousedown', onMouseDown, true);
       doc.removeEventListener('mousemove', onMouseMove);
+      doc.removeEventListener('mouseup', onMouseUp);
       doc.removeEventListener('click', onClick);
       doc.removeEventListener('keydown', onKeyDown, true);
       doc.removeEventListener('input', onInput);
