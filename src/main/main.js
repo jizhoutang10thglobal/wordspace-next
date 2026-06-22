@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
 const path = require('path');
 const { registerIpc } = require('./ipc');
+const docWatcher = require('./doc-watcher');
 const { htmlPathFromArgv } = require('../lib/path-url');
 
 // e2e 测试用：隔离 userData，避免污染真实的最近文档与历史
@@ -15,6 +16,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1100,
     height: 800,
+    minWidth: 720,   // 缩不到比这更小：正文列 + 顶栏（文件名/保存按钮）放得开，避开 Bug3 那种拥挤；720=常见 1440 屏的一半，能并排分屏
+    minHeight: 520,  // 顶栏 + 一屏可编辑内容的下限
     webPreferences: {
       preload: path.join(__dirname, '../renderer/preload.js'),
       contextIsolation: true,
@@ -22,6 +25,7 @@ function createWindow() {
     }
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
+  win.on('closed', () => docWatcher.close()); // 关窗即停文件监听（防悬挂 watcher / 去抖定时器在窗口销毁后还触发）
   win.webContents.on('did-finish-load', () => {
     if (pendingOpenPath) {
       win.webContents.send('open-file', pendingOpenPath);

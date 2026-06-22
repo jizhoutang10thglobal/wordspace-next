@@ -43,6 +43,20 @@ test('isEditableEl: 含直接文字的 div 可编辑，纯结构 div 不可（de
   assert.equal(be.isEditableEl(el('<div><table><tbody><tr><td>x</td></tr></tbody></table></div>')), false);
 });
 
+// 透明内容容器：div/section 自己没直接文字、只裹文本型块级内容 → 可编辑里面的文字（Wendi Bug1）。
+test('isEditableEl: 透明内容包裹 div（裹 <p>/<h>）可编辑，含表格的结构 div 不可', () => {
+  assert.equal(be.isEditableEl(el('<div class="lead"><p>导言段落</p></div>')), true);   // Bug1 根因
+  assert.equal(be.isEditableEl(el('<section><h2>小节</h2><p>正文</p></section>')), true);
+  assert.equal(be.isEditableEl(el('<div class="card"><h3>卡片</h3><p>内文</p></div>')), true);
+  assert.equal(be.isEditableEl(el('<div><div><p>深层文字</p></div></div>')), true);     // 多层透明包裹
+  assert.equal(be.isEditableEl(el('<article><h2>标题</h2><p>正文</p></article>')), true); // article 也算包裹容器
+  assert.equal(be.isEditableEl(el('<main><p>主区文字</p></main>')), true);                // main 同理
+  // 含表格 = designed 结构块，仍不可编辑（即便也裹了 <p>）
+  assert.equal(be.isEditableEl(el('<div><p>说明</p><table><tbody><tr><td>x</td></tr></tbody></table></div>')), false);
+  // 空容器（无文字内容）不算可编辑文本块
+  assert.equal(be.isEditableEl(el('<div><p></p></div>')), false);
+});
+
 // pickBlockRoot：穿透居中/限宽包裹容器，否则被 <div class="wrap"> 包住的文档会塌成单个不可编辑块（Wendi 实测翻车）。
 test('pickBlockRoot: body 直接挂块 → blockRoot 就是 body', () => {
   const body = bodyOf('<h1>标题</h1><p>正文</p><ul><li>项</li></ul>');

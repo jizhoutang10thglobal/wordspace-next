@@ -3,6 +3,7 @@ const path = require('path');
 const files = require('./files');
 const history = require('./history');
 const recents = require('./recents');
+const docWatcher = require('./doc-watcher');
 const { pathInfo } = require('../lib/path-url');
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
@@ -45,8 +46,18 @@ function registerIpc() {
       });
     }
     await files.writeDocSafe(p, content);
+    docWatcher.noteSelfWrite(); // 写完才打戳：抑制窗口覆盖「写完→watcher 触发」的延迟，不被写入耗时吃掉（慢盘也不会自存盘误触发重载）
     return { ok: true, archiveWarning };
   });
+  // 监听当前文档的外部磁盘变化（Bug2）：renderer 打开文档后调一次 watch-doc，文件被外部改动时
+  // 主进程回一个 doc-changed，renderer 自行（按脏态）决定是否重载。换文档再调即重指向。
+  ipcMain.on('watch-doc', (e, p) => {
+    try { assertHtmlPath(p); } catch (err) { return; }
+    docWatcher.watch(p, (changed) => {
+      if (!e.sender.isDestroyed()) e.sender.send('doc-changed', changed);
+    });
+  });
+  ipcMain.on('unwatch-doc', () => docWatcher.close());
   // 跨平台路径派生值（file:// URL / 目录URL / 文件名）在主进程算——完整 Node 的 url.pathToFileURL
   // 正确处理 Windows 盘符与反斜杠；renderer 不自己拼路径（沙箱 preload 没有可靠的 path/url）。
   ipcMain.handle('path-info', (_e, p) => { assertHtmlPath(p); return pathInfo(p); });
