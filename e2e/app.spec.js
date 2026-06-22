@@ -41,6 +41,15 @@ const tagOf = (id) => frame.locator('body').evaluate((b, id) => (b.ownerDocument
 const htmlOf = (id) => frame.locator('body').evaluate((b, id) => { const e = b.ownerDocument.getElementById(id); return e ? e.outerHTML : null; }, id);
 const blockCount = () => frame.locator('body').evaluate((b) => [...b.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')).length);
 const serialize = () => page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
+const editingId = () => frame.locator('body').evaluate(() => { const e = document.querySelector('[data-ws2-editing]'); return e ? (e.id || e.tagName) : null; });
+// 设折叠光标到某块文本节点的指定偏移（块编辑/合并/方向键测试用）。先 click 进编辑，再调它覆盖光标。
+async function setCaret(id, off) {
+  await frame.locator('body').evaluate((body, [id, off]) => {
+    const el = document.getElementById(id); const tn = el.firstChild || el;
+    const r = document.createRange(); r.setStart(tn, off); r.collapse(true);
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }, [id, off]);
+}
 
 const SIMPLE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>
 <h1 id="t">标题</h1><p id="p1">第一段文字。</p><p id="p2">第二段文字内容。</p><p id="p3">第三段。</p><blockquote id="q">引用。</blockquote></body></html>`;
@@ -403,4 +412,166 @@ test('回归：无编辑态跨块选区弹气泡、且跨块加粗生效（拖�
   expect(st.barVisible, 'homeless 跨块选区没弹气泡（分支④失效）').toBe(true);
   await frame.locator('.ws-fmtbar [title="加粗"]').click(); await page.waitForTimeout(150);
   expect(await frame.locator('body').evaluate(() => document.querySelectorAll('b,strong').length > 0), '跨块加粗没生效').toBe(true);
+});
+
+// ===== Wendi Bug8：块边界的左右方向键跨块（原生光标被各块各自的 contenteditable 钉死，跨不过去）=====
+test('回归：块末按→进下一块、块首按←进上一块（Wendi Bug8 跨块光标）', async () => {
+  await launch();
+  await openDoc(DEL_DOC); // p1 AAA111 / p2 BBB222 / p3 CCC
+  // 块末按 → 进下一块
+  await frame.locator('#p2').click(); await page.waitForTimeout(120);
+  await setCaret('p2', 6); // "BBB222" 末尾
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(async () => await editingId(), { message: '块末按→没进下一块（Bug8）' }).toBe('p3');
+  // 块首按 ← 进上一块
+  await frame.locator('#p2').click(); await page.waitForTimeout(120);
+  await setCaret('p2', 0);
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(async () => await editingId(), { message: '块首按←没进上一块（Bug8）' }).toBe('p1');
+});
+
+// ===== Wendi Bug7：换段/合并段（在一个 block 里换行 vs 新建 block）=====
+test('回归：段落中间按 Enter 劈成两个同类型块、不产生嵌套 <p>（Bug7 换段）', async () => {
+  await launch();
+  await openDoc(DEL_DOC);
+  const before = await blockCount();
+  await frame.locator('#p2').click(); await page.waitForTimeout(120);
+  await setCaret('p2', 3); // "BBB|222"
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => await blockCount(), { message: '中间回车没劈块' }).toBe(before + 1);
+  expect((await layoutOf()).join('|'), '劈块内容/顺序不对').toBe('P:AAA111|P:BBB|P:222|P:CCC');
+  const html = await serialize();
+  expect(html, '劈块产生了嵌套 <p>（原生回车的坏行为）').not.toMatch(/<p[^>]*>[^<]*<p[\s>]/i);
+});
+
+test('回归：块末按 Delete 把下一段并入当前（Bug7 前向合并）', async () => {
+  await launch();
+  await openDoc(DEL_DOC);
+  const before = await blockCount();
+  await frame.locator('#p1').click(); await page.waitForTimeout(120);
+  await setCaret('p1', 6); // "AAA111" 末尾
+  await page.keyboard.press('Delete');
+  await expect.poll(async () => await blockCount(), { message: '块末 Delete 没合并下一段' }).toBe(before - 1);
+  expect((await layoutOf()).join('|'), 'p2 应并入 p1 末尾').toBe('P:AAA111BBB222|P:CCC');
+});
+
+test('回归：Shift+Enter 软换行（块内 <br>、不新建块）+ 段末 Enter 新建块（Bug7 对照）', async () => {
+  await launch();
+  await openDoc(DEL_DOC);
+  let before = await blockCount();
+  await frame.locator('#p1').click(); await page.waitForTimeout(120);
+  await setCaret('p1', 3);
+  await page.keyboard.press('Shift+Enter');
+  await page.waitForTimeout(120);
+  expect(await blockCount(), 'Shift+Enter 不应新建块').toBe(before);
+  expect(await htmlOf('p1'), 'Shift+Enter 应插入 <br>').toMatch(/<br>/i);
+  before = await blockCount();
+  await frame.locator('#p3').click(); await page.waitForTimeout(120);
+  await setCaret('p3', 3); // "CCC" 末尾
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => await blockCount(), { message: '段末 Enter 应新建块' }).toBe(before + 1);
+});
+
+const STYLED = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+  + '<h2 id="h" class="lead">大标题文字</h2><p id="b">前<b>加粗</b>后</p></body></html>';
+test('回归：劈块保留标签+class，且劈在行内标签里两边都不丢格式（Bug7）', async () => {
+  await launch();
+  await openDoc(STYLED);
+  // 劈标题中间 → 两个 H2、都带 class="lead"
+  await frame.locator('#h').click(); await page.waitForTimeout(120);
+  await setCaret('h', 2); // "大标|题文字"
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  const headings = await frame.locator('body').evaluate(() =>
+    [...document.body.children].filter((c) => c.tagName === 'H2').map((c) => (c.className || '') + ':' + c.textContent));
+  expect(headings, '标题劈块应得两个 H2、都带 class=lead').toEqual(['lead:大标', 'lead:题文字']);
+  // 劈在 <b> 内部 → 两个块各自仍含 <b>（extractContents 正确劈开行内标签）
+  await frame.locator('#b').click(); await page.waitForTimeout(120);
+  await frame.locator('body').evaluate(() => {
+    const bb = document.getElementById('b').querySelector('b');
+    const r = document.createRange(); r.setStart(bb.firstChild, 1); r.collapse(true); // "加|粗"
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  const withB = await frame.locator('body').evaluate(() =>
+    [...document.body.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui') && c.querySelector && c.querySelector('b')).length);
+  expect(withB, '在 <b> 里劈块后两边都该保留 <b>').toBe(2);
+});
+
+// ===== 对抗验证暴露的边界（A/B/C 组）回归门 =====
+// 透明包裹块 div.lead>p 跟普通块当兄弟（pickBlockRoot 不下钻 → 它是顶层块）；合并它会平搬块级子节点 → 非法嵌套。
+const WRAP_MERGE = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+  + '<p id="a">First</p><div class="lead"><p id="inner">Inner</p></div><p id="c">Last</p></body></html>';
+
+test('回归(A)：透明包裹块参与合并被拒、不写出 <p><p>/容器直挂裸文本（前向 Delete + 块首 Backspace）', async () => {
+  await launch();
+  await openDoc(WRAP_MERGE);
+  // 前向：p#a 末尾按 Delete，下一块是 div.lead（包裹块）→ 拒绝合并、不破坏
+  await frame.locator('#a').click(); await page.waitForTimeout(120);
+  await setCaret('a', 5); // "First" 末尾
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(120);
+  expect(await blockCount(), '不该把包裹块合并掉').toBe(3);
+  let html = await serialize();
+  expect(html, '产生了 <p> 套 <p> 非法嵌套').not.toMatch(/<p[^>]*>[^<]*<p[\s>]/i);
+  expect(html, 'div.lead 内层 <p> 被破坏').toMatch(/<div class="lead"><p[^>]*>Inner<\/p><\/div>/);
+  // 块首：p#c 块首按 Backspace，上一块是 div.lead（包裹块）→ 拒绝合并、不破坏
+  await frame.locator('#c').click(); await page.waitForTimeout(120);
+  await setCaret('c', 0);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(120);
+  expect(await blockCount(), 'Backspace 不该把包裹块合并掉').toBe(3);
+  html = await serialize();
+  expect(html, 'Backspace 产生了非法嵌套/裸文本').not.toMatch(/<p[^>]*>[^<]*<p[\s>]/i);
+  expect(html).toMatch(/<div class="lead"><p[^>]*>Inner<\/p><\/div>/);
+});
+
+const WRAP_ID = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+  + '<h1 id="t">标题</h1><div class="lead"><p id="inner">大标题文字</p></div></body></html>';
+test('回归(A)：劈透明包裹块时后块剥 id、不产生重复 id', async () => {
+  await launch();
+  await openDoc(WRAP_ID);
+  await frame.locator('#inner').click(); await page.waitForTimeout(120); // editingEl=div.lead，光标下钻进内层 p
+  await setCaret('inner', 2); // "大标|题文字"
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  const idCount = await frame.locator('body').evaluate(() => document.querySelectorAll('[id="inner"]').length);
+  expect(idCount, '劈块后出现重复 id=inner').toBe(1);
+  const html = await serialize();
+  expect(html, '存盘含重复 id').not.toMatch(/id="inner"[\s\S]*id="inner"/);
+});
+
+const TRAIL = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+  + '<p id="a">Hello   </p><p id="b">World</p></body></html>';
+test('回归(B)：尾随空格时段内 Delete/→ 不误判块末、不跨块吞并/跳块', async () => {
+  await launch();
+  await openDoc(TRAIL);
+  // → 在「Hello」后（右边还有 3 空格）：应交原生在块内移光标，不跳到下一块
+  await frame.locator('#a').click(); await page.waitForTimeout(120);
+  await setCaret('a', 5);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(120);
+  expect(await editingId(), '尾随空格被误判块末、→ 越界跳块').toBe('a');
+  // Delete 同理：应交原生删一个空格，不把下一段吞进来
+  await frame.locator('#a').click(); await page.waitForTimeout(120);
+  await setCaret('a', 5);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(120);
+  expect(await blockCount(), '尾随空格被误判块末、Delete 误合并下一段').toBe(2);
+  expect(await editingId()).toBe('a');
+});
+
+test('回归(C)：Cmd+→/Cmd+← 不被跨块逻辑吞掉（带修饰键交原生、不跳块）', async () => {
+  await launch();
+  await openDoc(DEL_DOC); // p1/p2/p3
+  await frame.locator('#p2').click(); await page.waitForTimeout(120);
+  await setCaret('p2', 6); // 块末
+  await page.keyboard.press('Meta+ArrowRight'); // mac 行尾 / 别的平台无操作——都不该跨块
+  await page.waitForTimeout(120);
+  expect(await editingId(), 'Cmd+→ 被误当跨块跳转').toBe('p2');
+  await setCaret('p2', 0); // 块首
+  await page.keyboard.press('Meta+ArrowLeft');
+  await page.waitForTimeout(120);
+  expect(await editingId(), 'Cmd+← 被误当跨块跳转').toBe('p2');
 });

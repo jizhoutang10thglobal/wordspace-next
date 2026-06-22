@@ -50,6 +50,18 @@
     if (c === 'other' && fmt && fmt.isTextEditable(el)) return true;
     return false;
   }
+  // 叶子文字块 = 直接承载文字、可安全做「节点级拼接」（合并）的块：它的元素子节点全是行内标签。
+  // 「透明包裹块」（div.lead>p、section>… 这种内部裹块级元素的）不是叶子——对它做 appendChild 平搬子节点
+  // 会把块级 <p> 塞进 <p>（非法嵌套）或把裸文本灌进容器，存盘即坏（对抗验证 A 组）。合并前必须用它把关。
+  const INLINE_TAGS = new Set(['B', 'I', 'EM', 'STRONG', 'U', 'S', 'A', 'CODE', 'SPAN', 'BR', 'IMG', 'SUB', 'SUP', 'MARK', 'SMALL', 'BIG', 'FONT', 'LABEL', 'ABBR', 'TIME', 'CITE', 'Q', 'KBD', 'SAMP', 'VAR', 'WBR', 'DEL', 'INS']);
+  function isLeafTextBlock(el) {
+    if (!el || el.nodeType !== 1) return false;
+    for (const n of el.children) {
+      if (n.hasAttribute && n.hasAttribute('data-ws2-ui')) continue;
+      if (!INLINE_TAGS.has(n.tagName)) return false; // 含块级/列表/表格/未知元素子节点 → 非叶子
+    }
+    return true;
+  }
 
   // 真正承载「块」的容器。多数「像样」的文档把正文包在一个居中/限宽的容器里
   // （<body> 底下只有这一个 <div class="wrap"> / <main> 之类）。若死认 <body> 为块容器，
@@ -105,6 +117,22 @@
     before.setStart(el, 0);
     before.setEnd(caret.startContainer, caret.startOffset);
     return before.toString() === '';
+  }
+  // 严格块末判定：光标右侧确无任何可见字符/元素（最多容一个末尾填充 <br>——浏览器给空块/末行补的占位）。
+  // 区别于 isCaretAtEnd 的 trim()——后者把尾随空格/块内 <br> 也当块末，会让「段内按 →/Delete」误触发
+  // 跨块跳转/前向合并（对抗验证 B 组）。破坏性操作（跨块右移、前向合并、Enter 劈块分流）必须用这个严格版。
+  function isCaretAtRealEnd(doc, el) {
+    const sel = doc.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+    const caret = sel.getRangeAt(0);
+    if (!el.contains(caret.endContainer)) return false;
+    const after = doc.createRange();
+    after.setStart(caret.endContainer, caret.endOffset);
+    after.setEnd(el, el.childNodes.length);
+    const frag = after.cloneContents(); // 克隆、不动原 DOM
+    const last = frag.lastChild;
+    if (last && last.nodeType === 1 && last.tagName === 'BR') frag.removeChild(last); // 去掉一个末尾填充 br
+    return (frag.textContent || '') === '' && !frag.querySelector('*'); // 不 trim：尾随空格算「有内容」
   }
 
   function attach(doc, deps) {
@@ -426,6 +454,31 @@
       } else { selectBlock(sBlk); positionGrip(sBlk); }
       return true;
     }
+    // 在光标处把当前编辑块劈成两个同类型同 class 的顶层块（换段）。非折叠选区先删再劈。光标落后块块首。
+    // 用来取代「段落中间按 Enter 交原生」——原生在 contenteditable 的 <p> 里回车会塞嵌套 <p>，写坏文档（Bug7）。
+    function splitBlock() {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || !editingEl) return false;
+      if (!sel.isCollapsed) doc.execCommand('delete'); // 选中文字后回车：先删选区，再在塌陷点劈
+      const r = sel.getRangeAt(0);
+      const el = editingEl;
+      if (!el.contains(r.endContainer)) return false;
+      const tail = doc.createRange();              // 光标 → 块末 = 后半段
+      tail.setStart(r.endContainer, r.endOffset);
+      tail.setEnd(el, el.childNodes.length);
+      const frag = tail.extractContents();         // 后半段从原块移出（extractContents 会正确劈开跨界的行内标签，如 <b>）
+      const nx = doc.createElement(el.tagName);
+      if (el.className) nx.className = el.className;
+      nx.appendChild(frag);
+      // 剥后块及其后代的 id：劈透明包裹块（div.lead>p#id）或含 id 的行内元素时，extractContents 会连 id 一起
+      // 克隆 → 文档出现重复 id（坏锚点/选择器/getElementById）。前块保留原 id，后块去重（对齐 duplicateBlock，A 组）。
+      if (nx.id) nx.removeAttribute('id');
+      nx.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+      el.after(nx);
+      if (undoMgr) undoMgr.checkpoint(); markDirty();
+      enterEdit(nx, { mode: 'start' });
+      return true;
+    }
     function applyColor(prop, value) {
       // 颜色/高亮：用 CSSOM span（KTD2）。wrapInlineStyle 内部已含跨块拒绝。
       if (fmt.wrapInlineStyle(doc, prop, value)) { markDirty(); persistEditing(); }
@@ -715,7 +768,13 @@
           }
           return; // 非空/非末项 → 交原生（新建 <li>）
         }
-        if (!isCaretAtEnd(doc, editingEl)) return;
+        if (!isCaretAtRealEnd(doc, editingEl)) {
+          // 段落中间/块首回车 → 在光标处劈成两个同类型块（换段）。绝不交原生（原生塞嵌套 <p>，写坏文档，Bug7）。
+          // 严格块末判定（尾随空格不算块末）：否则「Hello␣␣␣|」按 Enter 会走新建空块、把空格留原块（B 组）。
+          if (splitBlock()) { e.preventDefault(); return; }
+          return;
+        }
+        // 段末回车 → 新建空正文块（标题/引用末尾回车也续为正文，对齐 Notion；故用 SLASH_ITEMS[0] 而非劈块）
         e.preventDefault();
         const nx = insertAfter(editingEl, SLASH_ITEMS[0]);
         enterEdit(nx, { mode: 'start' });
@@ -758,7 +817,10 @@
           return;
         }
         if (isEditableEl(prev)) {
-          // 两个文字块：搬移子节点拼接（合法），光标落接合点（原 prev 末尾）
+          // 两块都得是「叶子文字块」才做节点级拼接——否则 prev/cur 是透明包裹块（div.lead>p）时，把块级 <p>
+          // 搬进 <p> 会成 <p><p>、把裸文本灌进 div 会成「容器直挂文本」，存盘即坏（A 组）。非叶子则不吞、光标留原处。
+          if (!isLeafTextBlock(prev) || !isLeafTextBlock(cur)) return;
+          // 两个叶子文字块：搬移子节点拼接（合法），光标落接合点（原 prev 末尾）
           const joinAt = cur.firstChild;
           while (cur.firstChild) prev.appendChild(cur.firstChild);
           cur.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -767,6 +829,51 @@
           return;
         }
         // prev 不可编辑（图片/分隔线/designed）且当前块非空：不吞内容，光标留在原处
+        return;
+      }
+      // Delete 块末（前向合并）：把下一块并入当前块末尾，光标停在接合点。镜像上面的 Backspace 块首合并
+      // （Wendi Bug7「合并段」——原来只能向后合并，块末按 Delete 撞墙没反应）。块中间交原生删字。
+      if (e.key === 'Delete' && editingEl) {
+        if (e.isComposing || e.keyCode === 229) return;
+        if (classify(editingEl) === 'list') return; // 列表内交原生（删项/删字）
+        const sel = doc.getSelection();
+        if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 非折叠选区前面已处理；这里只管折叠光标
+        if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内 Delete 会误吞下一段（B 组）
+        const blocks = topBlocks();
+        const next = blocks[blocks.indexOf(editingEl) + 1];
+        if (!next) return;
+        if (classify(next) === 'list' || !isEditableEl(next)) return; // 下一块是列表/图片/分隔线 → 不吞
+        const cur = editingEl;
+        // 两块都得是叶子文字块才拼接——cur/next 是透明包裹块（div.lead>p）时平搬子节点会造 <p><p>/容器直挂裸文本（A 组）。
+        if (!isLeafTextBlock(cur) || !isLeafTextBlock(next)) return;
+        e.preventDefault();
+        const joinAt = next.firstChild; // 接合点（合并后停在它前面 = cur 原末尾）；next 空时为 null
+        while (next.firstChild) cur.appendChild(next.firstChild);
+        next.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
+        if (joinAt && joinAt.parentNode === cur) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+        return;
+      }
+      // 跨块左右方向键：块末按 → 进下一块块首；块首按 ← 进上一块块末（Wendi Bug8——原生光标被各自
+      // contenteditable 的块边界钉死、跨不过去）。块中间/有选区/带修饰键（Shift 扩选、Cmd 行首尾、Option 跳词）交原生。
+      if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && editingEl && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.isComposing || e.keyCode === 229) return;
+        const sel = doc.getSelection();
+        if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 有选区 → 交原生
+        const blocks = topBlocks();
+        const idx = blocks.indexOf(editingEl);
+        if (e.key === 'ArrowRight') {
+          if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内按 → 会越过空格直接跳块（B 组）
+          const next = blocks[idx + 1]; if (!next) return;
+          e.preventDefault();
+          if (isEditableEl(next)) enterEdit(next, { mode: 'start' });
+          else { selectBlock(next); positionGrip(next); }
+        } else {
+          if (!isCaretAtStart(doc, editingEl)) return; // 不在块首 → 原生
+          const prev = blocks[idx - 1]; if (!prev) return;
+          e.preventDefault();
+          if (isEditableEl(prev)) enterEdit(prev, { mode: 'end' });
+          else { selectBlock(prev); positionGrip(prev); }
+        }
         return;
       }
       // 跨块上下方向键：末行↓→下一块、首行↑→上一块（尽量保持列位置；不可编辑块则灰选）。块中间交原生。
@@ -796,15 +903,17 @@
         }
         return;
       }
-      // 灰选中（不可编辑块）态的上下方向键：继续穿过到上/下一块——否则键盘撞到图片/分隔线就卡死、过不去。
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && selectedEl && !editingEl) {
+      // 灰选中（不可编辑块）态的方向键：继续穿过到上/下一块——否则键盘撞到图片/分隔线就卡死、过不去。
+      // ↓→ = 下一块，↑← = 上一块（左右与上下同义，跟编辑态的跨块左右一致，避免落到图片上再卡住）。
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') && selectedEl && !editingEl && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
         if (e.isComposing || e.keyCode === 229) return;
+        const fwd = e.key === 'ArrowDown' || e.key === 'ArrowRight';
         const blocks = topBlocks();
         const idx = blocks.indexOf(selectedEl);
-        const target = e.key === 'ArrowDown' ? blocks[idx + 1] : blocks[idx - 1];
+        const target = fwd ? blocks[idx + 1] : blocks[idx - 1];
         if (!target) return;
         e.preventDefault();
-        if (isEditableEl(target)) enterEdit(target, { mode: e.key === 'ArrowDown' ? 'start' : 'end' });
+        if (isEditableEl(target)) enterEdit(target, { mode: fwd ? 'start' : 'end' });
         else { selectBlock(target); positionGrip(target); }
         return;
       }
