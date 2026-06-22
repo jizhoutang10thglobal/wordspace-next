@@ -122,7 +122,9 @@ ul { list-style: none; }
 .ws-bc-sep { color: var(--c-border-strong); flex: none; }
 /* 文件名过长时截断省略，不换行、不撑高、不溢出顶到按钮 */
 .ws-doc-crumb { color: var(--c-text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-dirty { color: var(--c-warning); font-size: var(--fs-xs); flex: none; white-space: nowrap; }
+.ws-dirty { color: var(--c-warning); font-size: var(--fs-xs); flex: none; white-space: nowrap; transition: opacity .3s ease; }
+.ws-dirty.ws-saved { color: var(--c-success); } /* 保存成功：✓ 已保存（绿） */
+.ws-dirty.ws-fade { opacity: 0; }               /* 淡出 */
 .ws-dirty[hidden] { display: none; }
 
 #doc-frame { flex: 1; border: none; width: 100%; background: var(--c-bg); }
