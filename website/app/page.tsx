@@ -23,7 +23,11 @@ const softwareApplicationSchema = {
     price: '0',
     priceCurrency: 'USD',
   },
-  downloadUrl: [`${SITE_URL}/downloads/mac`, `${SITE_URL}/downloads/win`],
+  downloadUrl: [
+    `${SITE_URL}/downloads/mac`,
+    `${SITE_URL}/downloads/mac-intel`,
+    `${SITE_URL}/downloads/win`,
+  ],
   softwareHelp: {
     '@type': 'CreativeWork',
     url: SITE_URL,

@@ -12,7 +12,11 @@ export function Hero() {
         <div className="hero__ctas">
           <a className="cta" href="/downloads/mac" data-testid="cta-mac">
             <span aria-hidden="true">⌘</span>
-            下载 macOS 版
+            下载 macOS 版（Apple Silicon）
+          </a>
+          <a className="cta cta--secondary" href="/downloads/mac-intel" data-testid="cta-mac-intel">
+            <span aria-hidden="true">⌘</span>
+            下载 macOS 版（Intel）
           </a>
           <a className="cta cta--secondary" href="/downloads/win" data-testid="cta-win">
             <span aria-hidden="true">⊞</span>
@@ -20,7 +24,7 @@ export function Hero() {
           </a>
         </div>
         <p className="hero__ctas-note">
-          macOS 为 Apple Silicon 版本，适配 M 系列芯片
+          macOS 同时支持 Apple Silicon（M 系列）和 Intel 芯片；不确定芯片就看苹果菜单「关于本机」
         </p>
       </div>
     </section>
