@@ -6,7 +6,9 @@ Wordspace Next 的功能规划。Colin + Wendi 协同。
 > 状态 / 阶段 / 负责人在那儿管，拖卡片即改——那是看板的**真相源**。
 > 原 GitHub Pages 看板（github.io）已退役。
 
-这个目录 `specs/` 留作每个功能的**详细 spec 正文**：devs 要看一个功能到底是什么、关键取舍是什么，就读这里的 `F##-slug.md`。Notion 每张卡片的「规格链接」指向对应的 `.md`。
+**Spec 的主表面是 Notion，不是这个 repo。** 每个功能的 spec（简介、关键取舍、讨论）主要写在 Notion 看板的卡片上。**查看 / 认领 / 讨论任何 spec，第一步先去 [Notion 看板](https://www.notion.so/76c6444b609944a4a9619eed6472fcdf)看那一页。**
+
+这个目录 `specs/` 是**可选的「详细 spec 正文」**：当一个功能要进开发、需要展开长文档（完整需求、关键取舍）时，才在这建 `F##-slug.md`，Notion 卡片用「规格链接」指过来。所以 repo 里**可能没有**某个功能的 `.md`（新卡通常还没建，如 F16–F18），或**滞后于 Notion**——别只看 repo 就下结论；动手前先跟 Notion 对一下，改完两边记得**手动同步**。
 
 ## 怎么用
 
