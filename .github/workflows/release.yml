@@ -151,20 +151,22 @@ jobs:
             const dir = "release";
             const yml = path.join(dir, "latest-mac.yml");
             if (!fs.existsSync(yml)) { console.log("no latest-mac.yml"); process.exit(0); }
-            const dmg = fs.readdirSync(dir).find((f) => f.endsWith(".dmg"));
-            if (!dmg) { console.log("no dmg"); process.exit(0); }
-            const file = path.join(dir, dmg);
-            const sha512 = crypto.createHash("sha512").update(fs.readFileSync(file)).digest("base64");
-            const size = fs.statSync(file).size;
-            const lines = fs.readFileSync(yml, "utf8").split("\n");
-            const i0 = lines.findIndex((l) => l.includes("url: " + dmg));
-            if (i0 === -1) { console.log("dmg not in yml"); process.exit(0); }
-            for (let i = i0 + 1; i < lines.length && !lines[i].includes("- url:"); i++) {
-              if (/^\s+sha512:/.test(lines[i])) lines[i] = lines[i].replace(/sha512:.*/, "sha512: " + sha512);
-              if (/^\s+size:/.test(lines[i])) lines[i] = lines[i].replace(/size:.*/, "size: " + size);
+            const dmgs = fs.readdirSync(dir).filter((f) => f.endsWith(".dmg"));
+            if (!dmgs.length) { console.log("no dmg"); process.exit(0); }
+            let lines = fs.readFileSync(yml, "utf8").split("\n");
+            for (const dmg of dmgs) {
+              const file = path.join(dir, dmg);
+              const sha512 = crypto.createHash("sha512").update(fs.readFileSync(file)).digest("base64");
+              const size = fs.statSync(file).size;
+              const i0 = lines.findIndex((l) => l.includes("url: " + dmg));
+              if (i0 === -1) { console.log("dmg not in yml:", dmg); continue; }
+              for (let i = i0 + 1; i < lines.length && !lines[i].includes("- url:"); i++) {
+                if (/^\s+sha512:/.test(lines[i])) lines[i] = lines[i].replace(/sha512:.*/, "sha512: " + sha512);
+                if (/^\s+size:/.test(lines[i])) lines[i] = lines[i].replace(/size:.*/, "size: " + size);
+              }
+              console.log("latest-mac.yml dmg entry fixed:", dmg, "size", size);
             }
             fs.writeFileSync(yml, lines.join("\n"));
-            console.log("latest-mac.yml dmg entry fixed:", dmg, "size", size);
           '
 
       # ↓↓↓ 只在打包成功后执行（步骤失败即停） ↓↓↓
