@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
 const { registerIpc } = require('./ipc');
 const docWatcher = require('./doc-watcher');
@@ -57,10 +57,15 @@ function sendMenu(cmd) {
   if (win) win.webContents.send('menu', cmd);
 }
 
+// Bug 报告表单（Notion 公开表单）。应用菜单「Wordspace Next → 报告问题 / 反馈…」点开，用系统浏览器打开。
+// 这是 Notion「Share form」的公开链接（notion.site）：测试员无需账号即可提交，且只看到表单、
+// 看不到其他人的报告。别换成数据库页链接（那会暴露所有人的 bug）。
+const BUG_REPORT_URL = 'https://humble-blanket-79b.notion.site/11f77f0ceeb647f899bcbe2798963b42?pvs=105';
+
 function buildMenu() {
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { type: 'separator' }, { role: 'quit', label: '退出' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { type: 'separator' }, { role: 'quit', label: '退出' }] },
     {
       label: '文件',
       submenu: [
