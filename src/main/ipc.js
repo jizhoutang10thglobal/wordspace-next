@@ -1,9 +1,10 @@
-const { ipcMain, dialog, app } = require('electron');
+const { ipcMain, dialog, app, BrowserWindow, shell } = require('electron');
 const path = require('path');
 const files = require('./files');
 const history = require('./history');
 const recents = require('./recents');
 const docWatcher = require('./doc-watcher');
+const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
 const { pathInfo } = require('../lib/path-url');
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
@@ -61,6 +62,39 @@ function registerIpc() {
   // 跨平台路径派生值（file:// URL / 目录URL / 文件名）在主进程算——完整 Node 的 url.pathToFileURL
   // 正确处理 Windows 盘符与反斜杠；renderer 不自己拼路径（沙箱 preload 没有可靠的 path/url）。
   ipcMain.handle('path-info', (_e, p) => { assertHtmlPath(p); return pathInfo(p); });
+  // 导出 PDF（连续单页，直印源文件）：弹保存对话框选输出路径 → pdf-export 隐藏窗口印出来。
+  // WS2_PDF_OUT 是测试 seam：设了就跳过原生对话框直接用该路径（原生对话框 e2e 点不了）。
+  ipcMain.handle('export-pdf', async (e, p, mode, html) => {
+    assertHtmlPath(p);
+    // WS2_PDF_OUT 仅在非打包态生效（打包后忽略，一律走保存对话框）——跟 main.js 自动更新 isPackaged 闸一致，
+    // 防生产进程继承到该环境变量就静默把 PDF 写到预设路径、绕过对话框。
+    const seamPath = !app.isPackaged ? process.env.WS2_PDF_OUT : null;
+    let outPath = seamPath;
+    if (!outPath) {
+      const def = path.basename(p).replace(/\.html?$/i, '') + '.pdf';
+      const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
+        title: '导出 PDF',
+        defaultPath: path.join(path.dirname(p), def),
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (r.canceled || !r.filePath) return { canceled: true };
+      outPath = r.filePath;
+    }
+    try {
+      if (mode === 'wordspace' && html) {
+        // Wordspace 样式：renderer 已把「文档+编辑器排版」烤成静态 HTML，写到源文件同目录的临时文件
+        // （相对资源原生解析），印完删。
+        await exportPdfFromHtml(html, path.dirname(p), outPath);
+      } else {
+        await exportPdf(p, outPath); // raw：直印源文件
+      }
+      if (!seamPath) shell.showItemInFolder(outPath); // 成功：在 Finder 高亮文件（确认成功 + 告诉用户落在哪）；测试 seam 路径不弹
+      return { ok: true, path: outPath };
+    } catch (err) {
+      console.error('export-pdf failed:', err);
+      return { error: String((err && err.message) || err) };
+    }
+  });
   ipcMain.handle('recents-list', () => recents.load(recentsFile()));
   ipcMain.handle('recents-add', (_e, p) => recents.add(recentsFile(), p));
   ipcMain.handle('history-list', (_e, p) => history.list(historyRoot(), p));

@@ -65,7 +65,9 @@ function buildMenu() {
       label: '文件',
       submenu: [
         { label: '打开…', accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
-        { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') }
+        { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
+        { type: 'separator' },
+        { label: '导出 PDF…', accelerator: 'CmdOrCtrl+E', click: () => sendMenu('export-pdf') }
       ]
     },
     {

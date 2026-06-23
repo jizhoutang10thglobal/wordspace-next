@@ -16,7 +16,7 @@ async function launch() {
   app = await electron.launch({
     // --no-sandbox：CI 无特权 runner 必需；与 iframe sandbox=allow-same-origin（挡文档脚本）无关
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' },
+    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_PDF_OUT: path.join(tmpDir, 'export.pdf') },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
@@ -638,12 +638,12 @@ test('回归(缩放B)：编辑态缩放后 ⋮⋮ 手柄跟随重定位、不漂
   await frame.locator('#p2').click(); await page.waitForTimeout(120); // 编辑态，手柄定到 p2
   await frame.locator('body').evaluate((b) => b.ownerDocument.dispatchEvent(
     new WheelEvent('wheel', { ctrlKey: true, deltaY: -40, bubbles: true, cancelable: true })));
-  await page.waitForTimeout(150);
-  const { gripTop, blkTop } = await frame.locator('body').evaluate(() => {
+  // 轮询等手柄重定位稳定（满负载下 wheel→reposition 可能晚于一次固定等待，用 poll 去 flake）
+  await expect.poll(async () => frame.locator('body').evaluate(() => {
     const g = document.querySelector('.ws-grip'), b = document.getElementById('p2');
-    return { gripTop: g.getBoundingClientRect().top, blkTop: b.getBoundingClientRect().top };
-  });
-  expect(Math.abs(gripTop - blkTop), '缩放后手柄没跟随编辑块（reposition 漏了 hoverEl）').toBeLessThan(30);
+    if (!g || !b) return 999;
+    return Math.abs(g.getBoundingClientRect().top - b.getBoundingClientRect().top);
+  }), { message: '缩放后手柄没跟随编辑块（reposition 漏了 hoverEl）' }).toBeLessThan(30);
 });
 
 test('回归(缩放C)：保存「✓已保存」淡出期间切文档，旧确认不串到新文档', async () => {
@@ -681,4 +681,118 @@ test('回归(缩放E)：焦点在父层 shell（非 iframe）时 Cmd+= 仍能缩
   await page.waitForTimeout(150);
   const w1 = await frame.locator('#p2').evaluate((e) => e.getBoundingClientRect().width);
   expect(w1 / w0, '父层焦点下 Cmd+= 没生效（缩放键没挂父层 window）').toBeGreaterThan(1.05);
+});
+
+// 空块连按 Enter 能连续换行：块确实建出来了，但非编辑态空块塌成 0 高 → 空白行全叠在一处、看着「换不了行」。
+// 修：给空块 min-height（占一行）。门同时验「块数连增」+「编辑块 Y 每次下移」（后者才是用户看到的症状）。
+test('回归：空块连按 Enter 能连续换行（空块占行高、不塌成 0 高）', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#p1').click(); await page.keyboard.press('End');
+  const edTop = () => frame.locator('body').evaluate(() => {
+    const e = document.querySelector('[data-ws2-editing]'); return e ? Math.round(e.getBoundingClientRect().top) : null;
+  });
+  const before = await blockCount();
+  // 编辑块的 Y 每次 Enter 都往下走（空白行能堆叠）——修复前都塌在同一处。
+  // 用 poll 等每次 Enter 的效果落地（满负载下 layout 可能晚于固定等待），避免 flake。
+  let prev = await edTop();
+  for (let i = 1; i <= 3; i++) {
+    await page.keyboard.press('Enter');
+    const last = prev;
+    await expect.poll(async () => await edTop(), { message: `第${i}次 Enter 编辑块没下移（空块塌成 0 高？）` }).toBeGreaterThan(last);
+    prev = await edTop();
+  }
+  expect(await blockCount(), '连按 Enter 没连续建块').toBe(before + 3);
+});
+
+// 导出 PDF（MVP：连续单页、直印源文件）。WS2_PDF_OUT 已在 launch env 设好（跳过原生保存对话框）。
+const PDF_DOC = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>'
+  + '<style>body{background:#eef;font-family:serif;padding:40px;color:#123}</style></head><body>'
+  + Array.from({ length: 60 }, (_, i) => `<p style="margin:0 0 10px">第 ${i + 1} 段，长文档用来验证连续单页不被切断。</p>`).join('')
+  + '</body></html>';
+test('导出 PDF：连续单页 + 合法 PDF（MVP 直印源文件）', async () => {
+  await launch();
+  const docPath = await openDoc(PDF_DOC);
+  const res = await page.evaluate((dp) => window.ws2.exportPdf(dp), docPath);
+  expect(res && res.ok, '导出没成功：' + JSON.stringify(res)).toBe(true);
+  const buf = await fs.readFile(path.join(tmpDir, 'export.pdf'));
+  expect(buf.slice(0, 5).toString('latin1'), '不是合法 PDF').toBe('%PDF-');
+  expect(buf.length, 'PDF 太小、可能是空的').toBeGreaterThan(1000);
+  const s = buf.toString('latin1');
+  // 连续单页：长内容也只 1 页（被纸张分页则 /Count > 1）
+  expect((s.match(/\/Count\s+(\d+)/) || [])[1], '没印成连续单页').toBe('1');
+  // 页高随内容长 → 远超「退到视口高」兜底的固定 842pt（A4_HEIGHT_PX 1123px × 0.75）。
+  // 阈值取 1000：稳在 842 兜底之上（仍强力区分「量到内容」vs「退兜底」），又不写死会踩
+  // 跨平台字体渲染差异的高数值（CI Linux serif 比 macOS 矮，本 60 段文档实测 ~1467pt）。
+  const mediaH = parseFloat((s.match(/\/MediaBox\s*\[[^\]]*?\s([\d.]+)\]/) || [])[1] || '0');
+  expect(mediaH, '页高没跟内容走（疑似没量到高/退兜底 842pt）').toBeGreaterThan(1000);
+});
+
+// 超长文档（内容高 > Chromium 单页上限 ~200in）：退标准 A4 分页，内容一段不丢，而非钳成一页把底部静默截断。
+test('导出 PDF：超长文档退 A4 分页、不静默截断', async () => {
+  await launch();
+  const LONG = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + Array.from({ length: 800 }, (_, i) => `<p style="margin:0 0 10px">第 ${i + 1} 段</p>`).join('') // ~23000px ≈ 240in > 200in
+    + '</body></html>';
+  const docPath = await openDoc(LONG);
+  const res = await page.evaluate((dp) => window.ws2.exportPdf(dp), docPath);
+  expect(res && res.ok, '导出没成功：' + JSON.stringify(res)).toBe(true);
+  const buf = await fs.readFile(path.join(tmpDir, 'export.pdf'));
+  expect(buf.slice(0, 5).toString('latin1')).toBe('%PDF-');
+  // 撑不进单页 → 退 A4 分页（多页），而不是钳成一页把底部丢掉
+  const count = parseInt((buf.toString('latin1').match(/\/Count\s+(\d+)/) || [])[1] || '0', 10);
+  expect(count, '超长文档没退 A4 分页（疑似钳成一页、底部被截断）').toBeGreaterThan(1);
+});
+
+// Wordspace 样式（Mode 2）：烤进编辑器排版 → 与「原 HTML 样式」渲染不同；走 UI（点导出按钮→选样式）；临时打印文件清理。
+test('导出 PDF（Wordspace 样式）：烤进编辑器排版、与原样式不同、临时文件清理', async () => {
+  await launch();
+  const docPath = await openDoc(PDF_DOC); // 裸文档：编辑器会套 820 居中栏/字体 → 两种样式必然不同
+  // 先 raw 导出（直接 IPC）
+  const rawRes = await page.evaluate((dp) => window.ws2.exportPdf(dp, 'raw', null), docPath);
+  expect(rawRes && rawRes.ok, 'raw 导出失败：' + JSON.stringify(rawRes)).toBe(true);
+  const rawBuf = await fs.readFile(path.join(tmpDir, 'export.pdf'));
+  // 再走 UI：点导出按钮 → 选「Wordspace 样式」（覆盖同一输出路径）
+  await page.click('#export-btn');
+  await page.click('.ta-export-item[data-mode="wordspace"]');
+  await expect.poll(async () => {
+    try { const b = await fs.readFile(path.join(tmpDir, 'export.pdf')); return !b.equals(rawBuf); } catch (e) { return false; }
+  }, { message: 'Wordspace 样式没生成、或渲染跟 raw 一样（编辑器排版没烤进去）' }).toBe(true);
+  const wsBuf = await fs.readFile(path.join(tmpDir, 'export.pdf'));
+  expect(wsBuf.slice(0, 5).toString('latin1'), 'Wordspace 导出不是合法 PDF').toBe('%PDF-');
+  // 临时打印文件已清理（源目录无 .ws-export-* 残留）
+  const leftover = (await fs.readdir(tmpDir)).filter((f) => f.startsWith('.ws-export-'));
+  expect(leftover, '临时打印文件没清理').toEqual([]);
+});
+
+// Wordspace 样式 + 文档自带严格 CSP：必须剥掉 CSP，否则内联 EDITOR_CSS 被 style-src 拦 → 样式失效退回原样。
+// 验证手段：带 CSP 的裸文档，Wordspace 导出应仍与 raw 不同（= 编辑器排版生效 = CSP 真被剥了）。
+const CSP_DOC = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
+  + '<meta http-equiv="Content-Security-Policy" content="default-src \'self\' file:; style-src \'self\' file:">'
+  + '<title>t</title><style>body{padding:5px;font-family:serif;color:#222}</style></head><body>'
+  + Array.from({ length: 20 }, (_, i) => `<p>第 ${i + 1} 段，CSP 文档。</p>`).join('') + '</body></html>';
+test('导出 PDF（Wordspace 样式）：文档自带严格 CSP 也能套上编辑器排版（CSP 被剥）', async () => {
+  await launch();
+  const docPath = await openDoc(CSP_DOC);
+  const rawRes = await page.evaluate((dp) => window.ws2.exportPdf(dp, 'raw', null), docPath);
+  expect(rawRes && rawRes.ok).toBe(true);
+  const rawBuf = await fs.readFile(path.join(tmpDir, 'export.pdf'));
+  await page.click('#export-btn');
+  await page.click('.ta-export-item[data-mode="wordspace"]');
+  await expect.poll(async () => {
+    try { const b = await fs.readFile(path.join(tmpDir, 'export.pdf')); return !b.equals(rawBuf); } catch (e) { return false; }
+  }, { message: 'CSP 文档 Wordspace 样式没生效（疑似 CSP 没剥、内联 EDITOR_CSS 被拦）' }).toBe(true);
+});
+
+// Wordspace 导出前清掉历史残留的临时打印文件（上次 SIGKILL/崩溃跳过 finally 留下的）。
+test('导出 PDF（Wordspace 样式）：导出前清掉历史残留临时文件 + 本次也自清', async () => {
+  await launch();
+  const docPath = await openDoc(PDF_DOC);
+  const stale = path.join(tmpDir, '.ws-export-stale-999.html'); // 伪造上次崩溃残留
+  await fs.writeFile(stale, '<html>old</html>', 'utf8');
+  await page.click('#export-btn');
+  await page.click('.ta-export-item[data-mode="wordspace"]');
+  await expect.poll(async () => { try { return (await fs.readFile(path.join(tmpDir, 'export.pdf'))).length > 1000; } catch (e) { return false; } }).toBe(true);
+  const leftover = (await fs.readdir(tmpDir)).filter((f) => f.startsWith('.ws-export-'));
+  expect(leftover, '历史残留没清 / 本次临时文件没自清').toEqual([]);
 });
