@@ -1,9 +1,6 @@
 ---
 id: F01
 title: 本地 HTML 文档编辑（可视化画布编辑器）
-status: doing
-phase: 1
-owner: colin
 demo: 编辑器主区
 screenshot: specs/assets/F01-editor.png
 ---

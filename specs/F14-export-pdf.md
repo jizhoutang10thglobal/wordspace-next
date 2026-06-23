@@ -1,9 +1,6 @@
 ---
 id: F14
 title: 导出 PDF
-status: todo
-phase: 1
-owner:
 demo: 导出入口（demo 待补）
 ---
 

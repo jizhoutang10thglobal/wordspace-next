@@ -1,9 +1,6 @@
 ---
 id: F06
 title: 本地仓库与文件管理
-status: todo
-phase: 1
-owner:
 demo: 侧边栏文件树
 ---
 

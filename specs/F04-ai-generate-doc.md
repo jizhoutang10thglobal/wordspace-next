@@ -1,9 +1,6 @@
 ---
 id: F04
 title: AI 生成文档
-status: idea
-phase: backlog
-owner:
 demo:
 ---
 

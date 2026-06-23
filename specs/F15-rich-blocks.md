@@ -1,9 +1,6 @@
 ---
 id: F15
 title: 富文本与块类型扩展
-status: todo
-phase: 1
-owner:
 demo: 块插入菜单 / 表格图片块
 ---
 

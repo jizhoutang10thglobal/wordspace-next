@@ -1,9 +1,6 @@
 ---
 id: F02
 title: 一键发布到自有服务器
-status: idea
-phase: 2
-owner:
 demo: 发布对话框（PublishDialog）
 ---
 

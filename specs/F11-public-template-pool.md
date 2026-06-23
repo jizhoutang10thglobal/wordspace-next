@@ -1,9 +1,6 @@
 ---
 id: F11
 title: 公开模板池
-status: idea
-phase: backlog
-owner:
 demo:
 ---
 

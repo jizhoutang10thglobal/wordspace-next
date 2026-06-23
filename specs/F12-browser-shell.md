@@ -1,9 +1,6 @@
 ---
 id: F12
 title: 浏览器外壳
-status: idea
-phase: backlog
-owner:
 demo:
 ---
 

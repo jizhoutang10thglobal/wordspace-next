@@ -1,9 +1,6 @@
 ---
 id: F05
 title: AI 版面改造
-status: idea
-phase: backlog
-owner:
 demo:
 ---
 

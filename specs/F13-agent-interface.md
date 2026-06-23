@@ -1,9 +1,6 @@
 ---
 id: F13
 title: Agent 接口
-status: idea
-phase: backlog
-owner:
 demo:
 ---
 
