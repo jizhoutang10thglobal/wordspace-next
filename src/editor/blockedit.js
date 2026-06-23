@@ -162,6 +162,7 @@
     // 居中窄栏（ui-demo 820 列）——仅当文档是「裸块」结构（block root 就是 body、没有自带包裹容器）
     // 时才套；文档自带居中容器（blockRoot ≠ body）时尊重它原有的版式，不强加编辑器的列宽。
     if (blockRoot === body) body.setAttribute('data-ws2-canvas', '');
+    blockRoot.setAttribute('data-ws2-root', ''); // 标记块容器（裸文档=body / 包裹文档=div.wrap 等）：给「空块占一行高度」等编辑器结构 CSS 用。data-ws2-* 存盘剥除。
 
     // ---- 状态 ----
     let selectedEl = null;   // 灰选中的不可编辑块
@@ -978,6 +979,7 @@
       editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false;
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
       if (blockRoot === body) body.setAttribute('data-ws2-canvas', ''); else body.removeAttribute('data-ws2-canvas');
+      blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
@@ -1005,6 +1007,10 @@
 
   [contenteditable='true']{outline:none;}
   p[data-ws2-editing]:empty::before{content:'输入正文，或按 / 插入';color:#8a8f96;pointer-events:none;}
+  /* 空块也占一行高度——否则非编辑态的空块（没占位符）塌成 0 高，连按 Enter 建的空白行全叠在一处、看着「换不了行」。
+     用 em 跟字号缩放（空标题行更高）。纯渲染、不进序列化。 */
+  [data-ws2-root] > p:empty, [data-ws2-root] > h1:empty, [data-ws2-root] > h2:empty,
+  [data-ws2-root] > h3:empty, [data-ws2-root] > blockquote:empty, [data-ws2-root] > .ws-callout:empty{min-height:1.6em;}
   /* 选中/编辑高亮只用 box-shadow + background（不影响布局），绝不用 padding/margin——否则 padding 把文字推右、
      而 margin 补偿会被 [data-ws2-canvas]>tag 的更高权重盖掉、补不回来，导致选中时文字右移几像素。 */
   [data-ws2-selected]:not([data-ws2-editing]){border-radius:4px;box-shadow:0 0 0 2px rgba(0,0,0,.16),0 0 0 6px rgba(0,0,0,.05);background:rgba(0,0,0,.03);}
@@ -1046,7 +1052,7 @@
   .ws-slashmenu-empty{padding:8px 10px;font-size:12px;color:#8a8f96;}
   `;
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

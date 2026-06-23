@@ -11,6 +11,8 @@ const docHeader = document.getElementById('doc-header');
 const docName = document.getElementById('doc-name');
 const dirtyDot = document.getElementById('dirty-dot');
 const saveBtn = document.getElementById('save-btn');
+const exportBtn = document.getElementById('export-btn');
+const exportMenu = document.getElementById('export-menu');
 
 let savedTimer = null; // 「✓ 已保存」淡出定时器（保存成功后闪一下再消失）
 function setDirty(v) {
@@ -146,6 +148,7 @@ function prepFrame(asDirty) {
   docHeader.hidden = false;
   frame.hidden = false;
   docName.textContent = docInfo.name;
+  exportBtn.disabled = false; // 开了文档就能导出（不像保存要脏才亮）
   setDirty(!!asDirty);
 }
 
@@ -259,8 +262,65 @@ window.ws2.onOpenFile((p) => openDoc(p));
 window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
+  if (cmd === 'export-pdf') exportPdf();
   if (cmd === 'undo' && undoMgr) { if (undoMgr.undo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
   if (cmd === 'redo' && undoMgr) { if (undoMgr.redo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
 });
+
+// 导出 PDF。两种样式：
+//   'wordspace'（默认）= 烤进编辑器排版，跟 app 里看到的一致（所见即所得）；
+//   'raw'              = 直印源文件、文档原本的渲染效果。
+// 有未保存改动先落盘（印的是磁盘版本）。
+let exporting = false; // single-flight：连按不并发开多个隐藏窗口/叠多个对话框
+async function exportPdf(mode) {
+  if (exporting || !docPath) return;
+  exporting = true; // 必须在 await save() 之前置位——否则脏文档连按时第二次调用会在 save 的 await 让出期溜过守卫
+  try {
+    mode = mode === 'raw' ? 'raw' : 'wordspace';
+    if (dirty) { await save(); if (dirty) return; } // save 失败（仍脏）→ 不导出
+    const html = mode === 'wordspace' ? buildWordspacePrintHtml() : null; // 可能抛错（文档未就绪），下面 catch 兜
+    const res = await window.ws2.exportPdf(docPath, mode, html);
+    if (res && res.error) alert('导出 PDF 失败：' + res.error);
+  } catch (e) {
+    alert('导出 PDF 失败：' + ((e && e.message) || e));
+  } finally {
+    exporting = false;
+  }
+}
+
+// Mode 2「Wordspace 样式」：把当前文档 + 编辑器排版烤成一份静态打印 HTML，让导出跟 app 里看到的一致。
+// 剥覆盖层(data-ws2-ui)/交互态属性，保留 data-ws2-canvas/root（EDITOR_CSS 要靠它们定位），内联 EDITOR_CSS、
+// 去掉文档自带 CSP（否则内联 <style> 被 style-src 拦）。主进程那边 js:false 印、文档脚本不跑——跟编辑器一致。
+// 不注入 <base>：临时打印文件写在源文件同目录，相对资源 + 文档自带 <base> 都跟编辑器 file:// 直载时一致解析
+// （注入反而会顶掉文档自带的 base，把图片解析错）。仅这份临时打印文档去 CSP，用户原文件分毫不动。
+function buildWordspacePrintHtml() {
+  const cd = frame.contentDocument;
+  // 防 Bug2 外部重载把 contentDocument 切到 about:blank/半载时克隆出空壳 → 导出空白 PDF 却报成功
+  if (!cd || !cd.querySelector('[data-ws2-canvas],[data-ws2-root]')) {
+    throw new Error('文档尚未就绪（可能正在重新加载），请稍后再导出');
+  }
+  const root = cd.documentElement.cloneNode(true);
+  root.querySelectorAll('[data-ws2-ui]').forEach((n) => n.remove());
+  root.querySelectorAll('[contenteditable]').forEach((n) => n.removeAttribute('contenteditable'));
+  ['data-ws2-editing', 'data-ws2-selected', 'data-ws2-ce', 'data-ws2-drop', 'data-ws2-eid'].forEach((a) =>
+    root.querySelectorAll('[' + a + ']').forEach((n) => n.removeAttribute(a)));
+  root.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach((n) => n.remove());
+  const head = root.querySelector('head') || root;
+  const style = cd.createElement('style'); style.textContent = WS2BlockEdit.EDITOR_CSS; head.appendChild(style);
+  // 保留原 doctype：无 doctype 的 quirks 文档别被强塞标准模式（盒模型/行高会变、跟编辑器不一致）
+  const dt = cd.doctype;
+  const doctypeStr = dt ? '<!DOCTYPE ' + dt.name
+    + (dt.publicId ? ' PUBLIC "' + dt.publicId + '"' : '')
+    + (dt.systemId ? (dt.publicId ? '' : ' SYSTEM') + ' "' + dt.systemId + '"' : '') + '>' : '';
+  return doctypeStr + '\n' + root.outerHTML;
+}
+
+// 导出按钮 → 点开样式小菜单（默认 Wordspace 样式）
+exportBtn.onclick = (e) => { e.stopPropagation(); if (!exportBtn.disabled) exportMenu.hidden = !exportMenu.hidden; };
+exportMenu.querySelectorAll('.ta-export-item').forEach((it) => {
+  it.onclick = () => { exportMenu.hidden = true; exportPdf(it.dataset.mode); };
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('.ta-export-wrap')) exportMenu.hidden = true; });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') exportMenu.hidden = true; });
 
 renderRecents();

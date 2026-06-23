@@ -17,6 +17,17 @@
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7H7v7"/><path d="M7 3v4h8"/></svg>
       保存
     </button>
+    <!-- 导出 PDF：点开小菜单选样式（默认 Wordspace 样式） -->
+    <div class="ta-export-wrap">
+      <button id="export-btn" class="ta-ghost" disabled title="导出 PDF">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+        导出
+      </button>
+      <div id="export-menu" class="ta-export-menu" hidden>
+        <button class="ta-export-item" data-mode="wordspace">Wordspace 样式<span class="ta-export-sub">所见即所得（编辑器排版）</span></button>
+        <button class="ta-export-item" data-mode="raw">原 HTML 样式<span class="ta-export-sub">文档原本的渲染效果</span></button>
+      </div>
+    </div>
   </div>
 
   <div class="ws-canvas">

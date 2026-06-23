@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('ws2', {
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),
   saveDoc: (p, c) => ipcRenderer.invoke('save-doc', p, c),
+  exportPdf: (p, mode, html) => ipcRenderer.invoke('export-pdf', p, mode, html),
   recents: () => ipcRenderer.invoke('recents-list'),
   recentsAdd: (p) => ipcRenderer.invoke('recents-add', p),
   historyList: (p) => ipcRenderer.invoke('history-list', p),
