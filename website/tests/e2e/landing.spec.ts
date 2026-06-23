@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 const RELEASES = 'github.com/jizhoutang10thglobal/wordspace-next';
 
 test.describe('wordspace.ai landing', () => {
-  test('home page renders hero + double download CTA', async ({ page }) => {
+  test('home page renders hero + mac/intel/win download CTAs', async ({ page }) => {
     const response = await page.goto('/');
     expect(response?.status()).toBe(200);
 
@@ -12,6 +12,7 @@ test.describe('wordspace.ai landing', () => {
     ).toBeVisible();
 
     await expect(page.getByTestId('cta-mac')).toBeVisible();
+    await expect(page.getByTestId('cta-mac-intel')).toBeVisible();
     await expect(page.getByTestId('cta-win')).toBeVisible();
   });
 
@@ -21,6 +22,14 @@ test.describe('wordspace.ai landing', () => {
     const location = res.headers()['location'] ?? '';
     expect(location).toContain(RELEASES);
     expect(location).toContain('wordspace-next-mac-arm64.dmg');
+  });
+
+  test('/downloads/mac-intel returns 302 to the latest signed x64 .dmg', async ({ request }) => {
+    const res = await request.get('/downloads/mac-intel', { maxRedirects: 0 });
+    expect(res.status()).toBe(302);
+    const location = res.headers()['location'] ?? '';
+    expect(location).toContain(RELEASES);
+    expect(location).toContain('wordspace-next-mac-x64.dmg');
   });
 
   test('/downloads/win returns 302 to the latest signed .exe', async ({ request }) => {

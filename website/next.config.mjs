@@ -18,6 +18,11 @@ const nextConfig = {
         statusCode: 302,
       },
       {
+        source: '/downloads/mac-intel',
+        destination: `${RELEASE_BASE}/wordspace-next-mac-x64.dmg`,
+        statusCode: 302,
+      },
+      {
         source: '/downloads/win',
         destination: `${RELEASE_BASE}/wordspace-next-win-x64.exe`,
         statusCode: 302,
