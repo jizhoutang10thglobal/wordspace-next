@@ -1,9 +1,6 @@
 ---
 id: F10
 title: 本地正本 × 云端同步
-status: idea
-phase: 2
-owner:
 demo:
 ---
 

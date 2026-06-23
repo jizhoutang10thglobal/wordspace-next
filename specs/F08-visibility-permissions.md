@@ -1,9 +1,6 @@
 ---
 id: F08
 title: 可见范围与权限
-status: idea
-phase: 2
-owner:
 demo:
 ---
 

@@ -1,9 +1,6 @@
 ---
 id: F07
 title: 文档历史版本
-status: todo
-phase: 1
-owner:
 demo: 历史版本弹窗
 ---
 

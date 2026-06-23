@@ -2,15 +2,14 @@
 
 这份文档说明 Wordspace Next 怎么协同开发——功能怎么规划、代码怎么进仓、版本怎么发、变更怎么记。原则：**流程轻、进度看得见、不互相挡路。**
 
-## 一、功能规划与进度：Feature Board
+## 一、功能规划与进度：Feature Board（在 Notion）
 
-要做的功能和想法，都以一个 spec 文件的形式放在 `specs/`，自动汇总成一个可视化看板。
+看板维护在 Notion：[**Wordspace · Feature Board**](https://www.notion.so/76c6444b609944a4a9619eed6472fcdf) —— 收藏它，随时看每个功能在哪个阶段、谁在做。（原 github.io 看板已退役。）
 
-- **看板**：https://jizhoutang10thglobal.github.io/wordspace-next/ —— 收藏它，随时看每个功能在哪个阶段、谁在做。
-- 每个功能 = 一个 spec 文件，带：状态、负责人、对应 demo 的哪一块、一段约 100 字的需求说明。
-- 四个状态：**想法 → 待开发 → 开发中 → 已完成**。改 spec 文件里的 `status` 就能挪动卡片。
-- 谁在做什么看 `owner` 字段（colin / wendi / 留空 = 没人认领）。看板一眼看清谁在忙哪个、什么还没人接。owner也可以中途交接后切换
-- 怎么写 spec、字段是什么含义 → 见 [`specs/README.md`](specs/README.md)。
+- 每个功能 = 看板上一张卡片，带：状态、阶段、负责人、对应 demo 的哪一块、一段约 100 字的简介。
+- 四个状态：**想法 → 待开发 → 开发中 → 已完成**。直接在 Notion 里拖卡片就能挪。
+- 谁在做什么看「负责人」（colin / wendi / 未认领）。中途交接换一下即可。
+- **详细 spec 正文**放在仓里 `specs/F##-slug.md`，卡片用「规格链接」指过去。怎么写 → 见 [`specs/README.md`](specs/README.md)。
 
 > `ui-demo/` 是用来讨论前端和交互的 demo，是正式产品的**参考**，不等于产品本身（通常 demo 还领先产品一步）。产品的整体设想见 [`docs/product-vision.md`](docs/product-vision.md)。
 

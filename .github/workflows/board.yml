@@ -1,14 +1,16 @@
-name: Feature Board
+name: Feature Board (retired → Notion)
 
-# 改了 spec / 看板脚本，合进 main → 自动重新生成 Feature Board 并发到 GitHub Pages。
-# 真相源 = specs/*.md；本 workflow 只跑 scripts/build-board.mjs 渲染 + 部署，不写仓。
-# Pages 需在仓 Settings → Pages → Source = GitHub Actions（一次性，见 specs/README.md）。
+# 看板已迁移到 Notion（「Wordspace · Feature Board」database）。真相源 = 那个 Notion DB，
+# 不再是 specs/*.md 的 frontmatter；specs/*.md 留作每个功能的「详细 spec 正文」，devs 读，
+# Notion 卡片用「规格链接」指过来。
+# 这个 workflow 现在只把 github.io 旧网址发成一张「已迁移」提示页（带跳转），别让旧 URL 一直
+# 挂着一个不再更新的假实时看板。改动这个文件合进 main 会触发它发一次；之后不再随 specs/ 改动重发。
+# 彻底关掉 github.io：到仓 Settings → Pages → Source 设为 None（需要 admin，由 Colin 操作）。
 
 on:
   push:
     branches: [main]
     paths:
-      - 'specs/**'
       - '.github/workflows/board.yml'
   workflow_dispatch:
 
@@ -23,18 +25,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-deploy:
+  publish-notice:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-      - name: Build board
-        run: node specs/build-board.mjs
+      - name: Build "moved to Notion" notice
+        run: |
+          mkdir -p out
+          cat > out/index.html <<'HTML'
+          <!DOCTYPE html>
+          <html lang="zh-CN"><head><meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width,initial-scale=1">
+          <meta http-equiv="refresh" content="5;url=https://www.notion.so/76c6444b609944a4a9619eed6472fcdf">
+          <title>Feature Board 已迁移到 Notion</title>
+          <style>
+            body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+                 font-family:-apple-system,"PingFang SC",Segoe UI,sans-serif;background:#fafafa;color:#1a1a1a;}
+            .box{text-align:center;padding:32px;max-width:480px;}
+            h1{font-size:20px;font-weight:600;margin:0 0 12px;}
+            p{color:#666;font-size:14px;line-height:1.7;margin:0 0 20px;}
+            a{display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;
+              padding:10px 20px;border-radius:8px;font-size:14px;}
+          </style></head>
+          <body><div class="box">
+            <h1>Feature Board 已迁移到 Notion</h1>
+            <p>这个看板现在维护在 Notion 上（「Wordspace · Feature Board」）。<br>正在为你跳转，没跳过去就点下面。</p>
+            <a href="https://www.notion.so/76c6444b609944a4a9619eed6472fcdf">前往 Notion 看板 →</a>
+          </div></body></html>
+          HTML
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

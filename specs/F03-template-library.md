@@ -1,9 +1,6 @@
 ---
 id: F03
 title: 文档模板库
-status: todo
-phase: 1
-owner:
 demo: 模板库面板（Templates）
 ---
 

@@ -1,9 +1,6 @@
 ---
 id: F09
 title: 实时协作
-status: idea
-phase: 2
-owner:
 demo:
 ---
 
