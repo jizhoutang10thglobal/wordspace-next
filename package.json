@@ -42,6 +42,7 @@
         { "target": "zip", "arch": ["arm64", "x64"] }
       ],
       "category": "public.app-category.productivity",
+      "icon": "build-resources/icon.png",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build-resources/entitlements.mac.plist",
@@ -67,6 +68,7 @@
       "target": [
         "nsis"
       ],
+      "icon": "build-resources/icon.png",
       "artifactName": "wordspace-next-win-${arch}.${ext}",
       "fileAssociations": [
         {
