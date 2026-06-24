@@ -90,6 +90,16 @@
     return root;
   }
 
+  // 文档是否自带样式（任意 <style> 或 <link rel=stylesheet>，排除编辑器自己注入的 data-ws2-ui）。
+  // 用来决定要不要套编辑器的 Notion 排版：只有「真·裸文档」（一点自带样式都没有）才套；
+  // 自带样式的文档——哪怕正文裸挂 body、blockRoot===body——也一律尊重原样，绝不用
+  // data-ws2-canvas 的高权重（[data-ws2-canvas]>h1/p）盖掉作者裸写的 h1{}/p{}（实测会把红
+  // Courier 标题改成黑无衬线、只剩 body 背景活着 = 四不像）。结构（有没有包裹容器）不等于
+  // 有没有设计意图，所以判定锚在「自带样式」而非「有没有容器」。
+  function docHasAuthorStyles(doc) {
+    return doc.querySelectorAll('style:not([data-ws2-ui]), link[rel~="stylesheet" i]').length > 0;
+  }
+
   function caretRangeAtPoint(doc, x, y) {
     if (doc.caretRangeFromPoint) return doc.caretRangeFromPoint(x, y);
     if (doc.caretPositionFromPoint) {
@@ -159,9 +169,10 @@
       st.textContent = EDITOR_CSS;
       (doc.head || doc.documentElement).appendChild(st);
     }
-    // 居中窄栏（ui-demo 820 列）——仅当文档是「裸块」结构（block root 就是 body、没有自带包裹容器）
-    // 时才套；文档自带居中容器（blockRoot ≠ body）时尊重它原有的版式，不强加编辑器的列宽。
-    if (blockRoot === body) body.setAttribute('data-ws2-canvas', '');
+    // 居中窄栏（ui-demo 820 列）+ Notion 排版——仅当文档是「裸块」结构（block root 就是 body、
+    // 没有自带包裹容器）**且文档自己一点样式都没带**时才套。文档自带居中容器（blockRoot ≠ body）
+    // 时尊重它原有版式；文档自带 <style>/<link>（哪怕裸挂 body）时同样尊重原样——见 docHasAuthorStyles。
+    if (blockRoot === body && !docHasAuthorStyles(doc)) body.setAttribute('data-ws2-canvas', '');
     blockRoot.setAttribute('data-ws2-root', ''); // 标记块容器（裸文档=body / 包裹文档=div.wrap 等）：给「空块占一行高度」等编辑器结构 CSS 用。data-ws2-* 存盘剥除。
 
     // ---- 状态 ----
@@ -978,7 +989,7 @@
       slash = null; slashMenu.style.display = 'none';
       editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false;
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
-      if (blockRoot === body) body.setAttribute('data-ws2-canvas', ''); else body.removeAttribute('data-ws2-canvas');
+      if (blockRoot === body && !docHasAuthorStyles(doc)) body.setAttribute('data-ws2-canvas', ''); else body.removeAttribute('data-ws2-canvas');
       blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
@@ -1052,7 +1063,7 @@
   .ws-slashmenu-empty{padding:8px 10px;font-size:12px;color:#8a8f96;}
   `;
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, docHasAuthorStyles, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

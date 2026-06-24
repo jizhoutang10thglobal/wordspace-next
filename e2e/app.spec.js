@@ -745,9 +745,15 @@ test('导出 PDF：超长文档退 A4 分页、不静默截断', async () => {
 });
 
 // Wordspace 样式（Mode 2）：烤进编辑器排版 → 与「原 HTML 样式」渲染不同；走 UI（点导出按钮→选样式）；临时打印文件清理。
+// 真·裸文档（无任何自带样式）：这是「编辑器会套 Notion 排版」的唯一情形——只有这种文档
+// Wordspace 样式 ≠ 原样式才成立。自带样式的文档（哪怕裸挂 body）编辑器尊重原样、两种导出相同
+// （渲染保真：见 fidelity.spec.js「作者样式不被编辑器排版覆盖」+ docHasAuthorStyles）。
+const PDF_BARE_DOC = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+  + Array.from({ length: 60 }, (_, i) => `<p>第 ${i + 1} 段，裸文档，编辑器套排版后与直印源文件不同。</p>`).join('')
+  + '</body></html>';
 test('导出 PDF（Wordspace 样式）：烤进编辑器排版、与原样式不同、临时文件清理', async () => {
   await launch();
-  const docPath = await openDoc(PDF_DOC); // 裸文档：编辑器会套 820 居中栏/字体 → 两种样式必然不同
+  const docPath = await openDoc(PDF_BARE_DOC); // 真·裸文档：编辑器会套 820 居中栏/字体 → 两种样式必然不同
   // 先 raw 导出（直接 IPC）
   const rawRes = await page.evaluate((dp) => window.ws2.exportPdf(dp, 'raw', null), docPath);
   expect(rawRes && rawRes.ok, 'raw 导出失败：' + JSON.stringify(rawRes)).toBe(true);
