@@ -12,7 +12,6 @@ const docName = document.getElementById('doc-name');
 const dirtyDot = document.getElementById('dirty-dot');
 const saveBtn = document.getElementById('save-btn');
 const exportBtn = document.getElementById('export-btn');
-const exportMenu = document.getElementById('export-menu');
 
 let savedTimer = null; // 「✓ 已保存」淡出定时器（保存成功后闪一下再消失）
 function setDirty(v) {
@@ -315,12 +314,9 @@ function buildWordspacePrintHtml() {
   return doctypeStr + '\n' + root.outerHTML;
 }
 
-// 导出按钮 → 点开样式小菜单（默认 Wordspace 样式）
-exportBtn.onclick = (e) => { e.stopPropagation(); if (!exportBtn.disabled) exportMenu.hidden = !exportMenu.hidden; };
-exportMenu.querySelectorAll('.ta-export-item').forEach((it) => {
-  it.onclick = () => { exportMenu.hidden = true; exportPdf(it.dataset.mode); };
-});
-document.addEventListener('click', (e) => { if (!e.target.closest('.ta-export-wrap')) exportMenu.hidden = true; });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') exportMenu.hidden = true; });
+// 导出按钮 → 直接导出（Wordspace 样式 = 所见即所得）。不再弹样式小菜单。
+// raw（原 HTML 样式）仍可由 exportPdf('raw') 触发、主进程 pdf-export 也保留，只是未接 UI——
+// 留作「绕开编辑器、导出磁盘原文件」的逃生口/调试用，将来要露出再接回即可。
+exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf('wordspace'); };
 
 renderRecents();
