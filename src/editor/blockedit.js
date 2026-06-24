@@ -17,8 +17,11 @@
     { key: 'h1', label: '标题 1', tag: 'h1' },
     { key: 'h2', label: '标题 2', tag: 'h2' },
     { key: 'h3', label: '标题 3', tag: 'h3' },
-    { key: 'list', label: '列表', tag: 'ul' },
+    { key: 'list', label: '无序列表', tag: 'ul' },
     { key: 'quote', label: '引用', tag: 'blockquote' },
+    // 编号/待办加在 quote 之后：块菜单按下标引用 SLASH_ITEMS[0/2/5]（正文/标题/引用），别插在它们之前打乱下标。
+    { key: 'numbered', label: '编号列表', tag: 'ol' },
+    { key: 'todo', label: '待办列表', tag: 'ul', cls: 'ws-todo' },
     { key: 'callout', label: '提示', tag: 'div', cls: 'ws-callout' },
     { key: 'divider', label: '分隔线', tag: 'hr' },
     { key: 'ai', label: '✦ AI 生成（开发中）', tag: null, ai: true },
@@ -331,14 +334,26 @@
     }
 
     // ---- 块操作（复用 format.js）----
+    // 待办勾选框样式烤进存盘文件：首次出现待办时往 <head> 注一个 <style id=ws-todo-style>（真实内容、
+    // 随 serialize 存盘，不像 EDITOR_CSS 那样不入盘）。这样 .html 在 app 外用任何浏览器打开，待办也渲染成
+    // checklist。幂等（按 id 查重），用 ::before 画框故无需 JS。
+    function ensureTodoStyle() {
+      if (!doc || doc.getElementById('ws-todo-style')) return;
+      const st = doc.createElement('style');
+      st.id = 'ws-todo-style';
+      st.textContent = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-20px;top:.3em;width:15px;height:15px;box-sizing:border-box;border:1.5px solid #b5b9c0;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#8a8f96;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
     function newBlock(item) {
       let el;
       if (item.tag === 'hr') { el = doc.createElement('hr'); }
-      else if (item.tag === 'ul') { el = doc.createElement('ul'); el.innerHTML = '<li>列表项</li>'; }
+      else if (item.tag === 'ul' || item.tag === 'ol') { el = doc.createElement(item.tag); if (item.cls) el.className = item.cls; el.innerHTML = '<li>列表项</li>'; }
       else if (item.tag === 'div' && item.cls === 'ws-callout') { el = doc.createElement('div'); el.className = 'ws-callout'; el.textContent = '提示内容'; }
       else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.textContent = '引用内容'; }
       else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.textContent = '新标题'; }
       else { el = doc.createElement('p'); }
+      if (item.cls === 'ws-todo') ensureTodoStyle();
       return el;
     }
     function insertAfter(refEl, item) {
@@ -350,10 +365,11 @@
     }
     function turnInto(el, item) {
       if (!el) return el;
-      if (item.tag === 'ul') {
-        // 转列表：retag 后原内容裸挂在 <ul> 下（非法 + 无样式 + Enter 失灵）→ 包进单个 <li>。
-        const next = fmt.retagElement(el, 'ul');
-        next.removeAttribute('class');
+      if (item.tag === 'ul' || item.tag === 'ol') {
+        // 转列表：retag 后原内容裸挂在 <ul>/<ol> 下（非法 + Enter 失灵）→ 包进单个 <li>。
+        const next = fmt.retagElement(el, item.tag);
+        if (item.cls) next.className = item.cls; else next.removeAttribute('class');
+        if (item.cls === 'ws-todo') ensureTodoStyle();
         if (!next.querySelector('li')) {
           const li = doc.createElement('li');
           while (next.firstChild) li.appendChild(next.firstChild);
@@ -571,7 +587,7 @@
       if (menu) { togglePopMenu(menu); return; }
       menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', ''); menu.className = 'ws-fmtbar-menu';
       menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
-      [['text', '正文'], ['h1', '标题 1'], ['h2', '标题 2'], ['h3', '标题 3'], ['quote', '引用'], ['list', '列表']].forEach(([key, label]) => {
+      [['text', '正文'], ['h1', '标题 1'], ['h2', '标题 2'], ['h3', '标题 3'], ['quote', '引用'], ['list', '无序列表'], ['numbered', '编号列表'], ['todo', '待办列表']].forEach(([key, label]) => {
         const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', ''); it.className = 'ws-fmtbar-menu-item'; it.textContent = label;
         it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         it.addEventListener('click', (e) => {
@@ -660,6 +676,27 @@
     function onMouseDown(e) {
       if (e.button !== 0) return; // 只管左键
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
+      // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
+      const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
+      if (todoUl && e.clientX < todoUl.getBoundingClientRect().left + 22) {
+        let li = e.target.closest('li');
+        if (!li || li.parentElement !== todoUl) {
+          li = null;
+          for (const x of todoUl.children) {
+            if (x.tagName !== 'LI') continue;
+            const r = x.getBoundingClientRect();
+            if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
+          }
+        }
+        if (li && li.parentElement === todoUl) {
+          e.preventDefault();
+          li.setAttribute('data-checked', li.getAttribute('data-checked') === 'true' ? 'false' : 'true');
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          return;
+        }
+      }
       dragStart = { x: e.clientX, y: e.clientY };
       wallDropped = false;
     }
@@ -800,6 +837,39 @@
         enterEdit(nx, { mode: 'start' });
         return;
       }
+      // Tab / Shift-Tab：仅在列表里缩进/反缩进（嵌套子列表，继承本块 ul/ol + class）；
+      // 其它块也吞掉 Tab，避免它把光标跳出编辑区。
+      if (e.key === 'Tab' && editingEl) {
+        e.preventDefault();
+        if (classify(editingEl) !== 'list') return;
+        const sel = doc.getSelection();
+        const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
+        const li = node && node.closest ? node.closest('li') : null;
+        if (!li || !editingEl.contains(li)) return;
+        if (e.shiftKey) {
+          const parentList = li.parentElement;
+          const hostLi = parentList && parentList.parentElement;
+          if (hostLi && hostLi.tagName === 'LI') {
+            hostLi.after(li);
+            if (parentList && !parentList.querySelector('li')) parentList.remove();
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+          }
+        } else {
+          const prev = li.previousElementSibling;
+          if (prev && prev.tagName === 'LI') {
+            let sub = prev.lastElementChild;
+            if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
+              sub = doc.createElement(editingEl.tagName.toLowerCase());
+              if (editingEl.className) sub.className = editingEl.className;
+              prev.appendChild(sub);
+            }
+            sub.appendChild(li);
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+          }
+        }
+        try { const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); } catch (x) {}
+        return;
+      }
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）
       if (e.key === 'Backspace' && editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
@@ -938,7 +1008,25 @@
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
     }
 
-    function onInput() { markDirty(); }
+    function onInput() { markDirty(); tryMarkdown(); }
+    // 行首 markdown：正文块里输入「marker + 空格」→ 转成对应块、清掉 marker。app 改真实 DOM、
+    // 存盘读 live DOM，故可原地 turnInto（不像 ui-demo 受控编辑会被 blur 回写打架）。
+    function tryMarkdown() {
+      if (!editingEl || classify(editingEl) !== 'text') return; // 只在正文块（p）触发
+      const m = (editingEl.textContent || '').match(/^(#{1,3}|[-*]|1\.|\[\s?\]|>)[\s ]$/);
+      if (!m) return;
+      const t = m[1];
+      const key = t[0] === '#' ? ['h1', 'h2', 'h3'][t.length - 1]
+        : (t === '-' || t === '*') ? 'list'
+        : t === '1.' ? 'numbered'
+        : t[0] === '[' ? 'todo'
+        : t === '>' ? 'quote' : null;
+      if (!key) return;
+      const item = SLASH_ITEMS.find((x) => x.key === key);
+      if (!item) return;
+      editingEl.innerHTML = ''; // 清掉 marker
+      enterEdit(turnInto(editingEl, item), { mode: 'start' });
+    }
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
     function onSelectionChange() { closeFmtPops(); positionFmtbar(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）
     function onCompStart() { if (slash) { slash = null; slashMenu.style.display = 'none'; } } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
@@ -1012,6 +1100,13 @@
   [data-ws2-canvas] > ul, [data-ws2-canvas] > ol { margin:6px 0;padding-left:22px; }
   [data-ws2-canvas] > ul > li, [data-ws2-canvas] > ol > li { font-size:15px;line-height:1.7;color:#2b2d31;margin:3px 0; }
   [data-ws2-canvas] > ul > li { list-style:disc; }
+  [data-ws2-canvas] > ol > li { list-style:decimal; }
+  /* 待办列表：左侧 CSS 复选框（点击区由 onMouseDown 判定），勾选画删除线。仅编辑器内渲染（EDITOR_CSS 不入存盘）。 */
+  ul.ws-todo, ul.ws-todo ul, ul.ws-todo ol { list-style:none; }
+  [data-ws2-canvas] > ul.ws-todo > li, .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
+  .ws-todo > li::before { content:'';position:absolute;left:-20px;top:0.3em;width:15px;height:15px;box-sizing:border-box;border:1.5px solid #b5b9c0;border-radius:4px;background:#fff;cursor:pointer; }
+  .ws-todo > li[data-checked="true"] { color:#8a8f96;text-decoration:line-through; }
+  .ws-todo > li[data-checked="true"]::before { content:'✓';border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center; }
   [data-ws2-canvas] > blockquote { border-left:3px solid #d3d6db;padding:2px 0 2px 16px;margin:10px 0;color:#5a5f66;font-size:15px; }
   [data-ws2-canvas] > .ws-callout { background:#f7f8fa;border:1px solid #e4e6e9;border-radius:7px;padding:14px 16px;margin:12px 0;font-size:14px;line-height:1.65;color:#5a5f66; }
   [data-ws2-canvas] > hr { border:none;border-top:1px solid #eceef0;margin:22px 0; }

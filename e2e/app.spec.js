@@ -100,13 +100,105 @@ test('转为列表产生合法 <ul><li>（非裸 ul，不写坏文件）', async
   await frame.locator('#p1').click();
   await frame.locator('#p1').selectText();
   await frame.locator('.ws-fmtbar [title="转为"]').click();
-  await frame.locator('.ws-fmtbar-menu-item', { hasText: '列表' }).click();
+  await frame.locator('.ws-fmtbar-menu-item', { hasText: '无序列表' }).click();
   await page.waitForTimeout(200);
   expect(await tagOf('p1')).toBe('UL');
   expect(await htmlOf('p1')).toMatch(/<li>/);
   // 存盘：列表合法（ul 内是 li，没有裸文本直挂 ul）
   const html = await serialize();
   expect(html).not.toMatch(/<ul[^>]*>\s*[^<\s]/); // <ul> 后紧跟非标签文本 = 裸文本，禁止
+});
+
+// 行首 markdown 触发：在一个空正文块里打 marker+空格 → 转成对应块。
+test('markdown 行首触发：1. / - / [] / > / # 转对应块', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  // 在 #q 后造一个空正文块、打 marker
+  const mk = async (marker) => {
+    await frame.locator('#q').click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter'); // 空正文块进编辑
+    await page.keyboard.type(marker);
+    await page.waitForTimeout(180);
+    await clearUI();
+  };
+  await mk('1. ');
+  expect(await frame.locator('ol').count()).toBeGreaterThan(0); // 编号列表
+  await mk('- ');
+  expect(await frame.locator('ul:not(.ws-todo)').count()).toBeGreaterThan(0); // 无序列表
+  await mk('[] ');
+  expect(await frame.locator('ul.ws-todo').count()).toBe(1); // 待办列表
+  const h1Before = await frame.locator('h1').count();
+  await mk('# ');
+  expect(await frame.locator('h1').count()).toBe(h1Before + 1); // 标题
+  const bqBefore = await frame.locator('blockquote').count();
+  await mk('> ');
+  expect(await frame.locator('blockquote').count()).toBe(bqBefore + 1); // 引用
+});
+
+// 待办：勾选切换 data-checked + 勾选框 CSS 烤进存盘文件（在 app 外也渲染成 checklist）。
+test('待办：勾选切换 + 样式与 data-checked 随存盘保留', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#q').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('[] '); // → 待办列表
+  await page.waitForTimeout(180);
+  await page.keyboard.type('买牛奶');
+  await page.waitForTimeout(120);
+  expect(await frame.locator('ul.ws-todo').count()).toBe(1);
+  // 勾选框样式块已注入 head
+  const hasStyle = await page.evaluate(() => !!document.getElementById('doc-frame').contentDocument.getElementById('ws-todo-style'));
+  expect(hasStyle).toBe(true);
+  // 点 li 左侧勾选框 gutter → data-checked=true（dispatch 精确命中，避开 ⋮⋮ 手柄等覆盖层 z 序干扰）
+  await frame.locator('body').evaluate(() => {
+    const li = document.querySelector('ul.ws-todo > li');
+    const r = li.getBoundingClientRect();
+    li.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: r.left - 8, clientY: r.top + 5 }));
+  });
+  await page.waitForTimeout(150);
+  expect(await frame.locator('ul.ws-todo > li').first().getAttribute('data-checked')).toBe('true');
+  // 存盘：勾选框样式 + data-checked + ws-todo 都在（文件自包含、任何浏览器渲染成 checklist）
+  const html = await serialize();
+  expect(html).toMatch(/id="ws-todo-style"/);
+  expect(html).toMatch(/class="ws-todo"/);
+  expect(html).toMatch(/data-checked="true"/);
+});
+
+// Tab 缩进：列表第二项按 Tab → 嵌进第一项的子列表。
+test('Tab 缩进：列表项嵌套成子列表', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#q').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('- 第一项'); // → 无序列表，第一项
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Enter'); // 原生新 <li>
+  await page.keyboard.type('第二项');
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Tab'); // 第二项缩进进第一项
+  await page.waitForTimeout(180);
+  // 出现嵌套：某个 li 里又有一个 ul，其中含「第二项」
+  const nested = await frame.locator('body').evaluate(() => {
+    const sub = document.querySelector('li > ul, li > ol');
+    return sub ? (sub.textContent || '').includes('第二项') : false;
+  });
+  expect(nested).toBe(true);
+});
+
+// 「转为」菜单 → 编号列表（正文转 <ol><li>，内容保留）。
+test('转为编号列表：<ol><li> 且原文保留', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#p1').click();
+  await frame.locator('#p1').selectText();
+  await frame.locator('.ws-fmtbar [title="转为"]').click();
+  await frame.locator('.ws-fmtbar-menu-item', { hasText: '编号列表' }).click();
+  await page.waitForTimeout(200);
+  expect(await tagOf('p1')).toBe('OL');
+  expect(await htmlOf('p1')).toMatch(/<li>[^<]*第一段/); // 原文进了 <li>
 });
 
 test('存盘保真：编辑后无编辑器标记泄漏；简单 + 复杂文档结构保留', async () => {
