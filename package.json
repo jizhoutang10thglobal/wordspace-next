@@ -10,6 +10,9 @@
     "start": "electron .",
     "test": "node --test test/*.test.js",
     "test:e2e": "playwright test",
+    "audit:capture": "node scripts/acceptance-audit/capture.mjs",
+    "audit:prepare": "node scripts/acceptance-audit/expectations.mjs --pair --evidence test-results/acceptance-audit/evidence.json --shotdir test-results/acceptance-audit --stage /tmp/acceptance-audit",
+    "audit:expectations": "node scripts/acceptance-audit/expectations.mjs",
     "dist": "electron-builder --mac"
   },
   "dependencies": {
