@@ -222,9 +222,10 @@ p {
   color: var(--text-primary);
 }
 
-.site-header__mark {
-  width: 28px;
-  height: 28px;
+.site-header__logo {
+  height: 26px;
+  width: auto;
+  display: block;
 }
 
 .site-header__nav {
