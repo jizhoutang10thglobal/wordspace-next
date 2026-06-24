@@ -171,6 +171,9 @@ export interface Toast {
   id: string
   message: string
   tone: 'neutral' | 'success' | 'progress' | 'danger'
+  // An optional inline action (e.g. 撤销). Toasts with an action stay longer and
+  // become clickable; dismissing or acting clears it.
+  action?: { label: string; run: () => void }
 }
 
 export const VISIBILITY_META: Record<

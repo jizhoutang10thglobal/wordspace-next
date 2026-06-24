@@ -24,3 +24,15 @@
 }
 .ws-toast-success .ws-toast-check { color: #6ee7a0; }
 .ws-toast-danger { background: var(--c-danger); }
+
+/* actionable toast (e.g. 删除…撤销): clickable, with an accent action button */
+.ws-toast.has-action { pointer-events: auto; }
+.ws-toast-action {
+  margin-left: 4px;
+  color: #8ab4ff;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-md);
+  padding: 2px 7px;
+  border-radius: var(--r-sm);
+}
+.ws-toast-action:hover { background: rgba(255, 255, 255, 0.12); }
