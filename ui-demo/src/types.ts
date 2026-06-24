@@ -22,6 +22,9 @@ export type BlockType =
   | 'callout'
   | 'embed'
 
+/** 列表三态：type 仍是 'list'，listStyle 区分无序 / 编号 / 待办。缺省按 bulleted。 */
+export type ListStyle = 'bulleted' | 'numbered' | 'todo'
+
 /**
  * A movable, in-place-editable unit. `html` is the rendered inner content.
  * `designed` marks a free-form, AI-authored region (the "B" style from the
@@ -32,6 +35,7 @@ export interface Block {
   type: BlockType
   html: string
   level?: 1 | 2 | 3
+  listStyle?: ListStyle // 仅 type==='list' 有意义
   designed?: boolean
 }
 

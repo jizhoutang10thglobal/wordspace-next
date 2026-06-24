@@ -160,6 +160,22 @@
 .ws-p { font-size: var(--fs-lg); line-height: var(--lh-doc); color: #2b2d31; margin: 6px 0; }
 .ws-ul { margin: 6px 0; padding-left: 22px; }
 .ws-ul li { font-size: var(--fs-lg); line-height: 1.7; color: #2b2d31; list-style: disc; margin: 3px 0; }
+/* 编号列表：阿拉伯数字 */
+.ws-ul.ws-ol > li { list-style: decimal; }
+/* 待办列表：左侧 CSS 复选框（点击区由 Canvas 的 onToggleCheck 判定），勾选画删除线 */
+.ws-ul.ws-todo > li { list-style: none; position: relative; padding-left: 4px; }
+.ws-ul.ws-todo > li::before {
+  content: '';
+  position: absolute; left: -20px; top: 0.28em;
+  width: 16px; height: 16px; box-sizing: border-box;
+  border: 1.5px solid var(--c-border-strong); border-radius: 4px;
+  background: #fff; cursor: pointer;
+}
+.ws-ul.ws-todo > li[data-checked='true'] { color: var(--c-text-3); text-decoration: line-through; }
+.ws-ul.ws-todo > li[data-checked='true']::before {
+  content: '✓'; border-color: #1a73e8; background: #1a73e8;
+  color: #fff; font-size: 11px; line-height: 13px; text-align: center;
+}
 .ws-quote {
   border-left: 3px solid var(--c-border-strong);
   padding: 2px 0 2px 16px; margin: 10px 0;
