@@ -151,14 +151,8 @@ ul { list-style: none; }
 .top-share:active { background: var(--c-accent-press); }
 .top-share:disabled { background: var(--c-border-strong); box-shadow: none; cursor: default; }
 
-/* 导出 PDF：保存右侧的 ghost 按钮 + 点开的样式小菜单 */
-.ta-export-wrap { position: relative; display: inline-flex; }
+/* 导出 PDF：保存右侧的 ghost 按钮（单按钮，直接导出 Wordspace 样式） */
 #export-btn { gap: 6px; }
-.ta-export-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; min-width: 200px; padding: 5px; background: var(--c-surface); border-radius: var(--r-md, 8px); box-shadow: 0 6px 20px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.06); }
-.ta-export-menu[hidden] { display: none; }
-.ta-export-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 7px 10px; border-radius: var(--r-sm); color: var(--c-text); font-size: var(--fs-base); text-align: left; cursor: pointer; }
-.ta-export-item:hover { background: var(--c-hover); }
-.ta-export-sub { color: var(--c-text-3); font-size: var(--fs-xs); }
 
 /* 「+ 插入」触发钮（WS2Insert 建在 #insert-slot），样式同 ghost action */
 #insert-slot { position: relative; display: inline-flex; align-items: center; }
