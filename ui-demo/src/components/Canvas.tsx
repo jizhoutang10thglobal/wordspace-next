@@ -1105,7 +1105,12 @@ export default function Canvas() {
         ref={scrollRef}
         onClick={deselect}
       >
-        <article className={`ws-doc ws-doc-${doc.kind}`}>
+        <article
+          className={
+            `ws-doc ws-doc-${doc.kind}` +
+            (doc.pageFormat ? ` ws-fmt ws-fmt-${doc.pageFormat}` : '')
+          }
+        >
           <DocHeader doc={doc} />
           <div className="ws-blocks">
             {doc.blocks.map((b, i) => {

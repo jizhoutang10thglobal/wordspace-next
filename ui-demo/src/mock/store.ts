@@ -629,6 +629,7 @@ export const useStore = create<State>()(
           title: tpl.name,
           emoji: '📄',
           kind: tpl.kind,
+          pageFormat: tpl.pageFormat, // 格式模板把纸张版面带到新文档（普通模板为 undefined）
           folderId: inFolder ? space!.id : cloudFolderId,
           blocks: tpl.blocks.map((b) => ({ ...b, id: uid('b') })),
           visibility: 'private',
