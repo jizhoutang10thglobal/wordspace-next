@@ -4,6 +4,7 @@ import type {
   AgentEvent,
   Block,
   BlockType,
+  ListStyle,
   Doc,
   DocKind,
   FileEntry,
@@ -97,15 +98,29 @@ interface State {
   // editing
   updateBlockHtml: (docId: string, blockId: string, html: string) => void
   reorderBlocks: (docId: string, from: number, to: number) => void
-  addBlock: (docId: string, afterId: string | null, type: BlockType) => string
+  addBlock: (
+    docId: string,
+    afterId: string | null,
+    type: BlockType,
+    listStyle?: ListStyle,
+  ) => string
   deleteBlock: (docId: string, blockId: string) => void
   setBlockType: (
     docId: string,
     blockId: string,
     type: BlockType,
     level?: 1 | 2 | 3,
+    listStyle?: ListStyle,
   ) => void
   duplicateBlock: (docId: string, blockId: string) => string
+
+  // 撤销/重做（编辑器历史）。checkpoint 由 Canvas 在每次用户手势前调一次，决定撤销粒度；
+  // _past/_future 不在 persist 的 partialize 里（不持久化到 localStorage）。
+  checkpoint: () => void
+  undo: () => void
+  redo: () => void
+  _past: Doc[][]
+  _future: Doc[][]
 
   // documents
   createDoc: (folderId: string, kind?: DocKind, title?: string) => string
@@ -152,7 +167,22 @@ function freshData() {
   }
 }
 
-const newBlock = (type: BlockType): Block => {
+// 段落内联 html ↔ 列表 html 的形态转换（转块时保内容）：转成列表把内容包成单个 <li>；
+// 离开列表把各 <li> 拆开用 <br> 连接。两个函数都幂等（已是目标形态则原样返回）。
+const toListHtml = (html: string): string =>
+  /<li[\s>]/i.test(html) ? html : `<li>${html.trim()}</li>`
+const fromListHtml = (html: string): string => {
+  const items = html.match(/<li[^>]*>[\s\S]*?<\/li>/gi)
+  return items
+    ? items.map((li) => li.replace(/<\/?li[^>]*>/gi, '')).join('<br>')
+    : html.replace(/<\/?li[^>]*>/gi, '')
+}
+
+// 撤销历史用的 docs 深拷贝（只拷到 blocks 这层，够本 mock 用）。
+const cloneDocs = (docs: Doc[]): Doc[] =>
+  docs.map((d) => ({ ...d, blocks: d.blocks.map((b) => ({ ...b })) }))
+
+const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
   const base: Record<BlockType, Partial<Block>> = {
     heading: { level: 2, html: '新标题' },
     text: { html: '' },
@@ -163,13 +193,17 @@ const newBlock = (type: BlockType): Block => {
     callout: { html: '提示内容' },
     embed: { html: '' },
   }
-  return { id: uid('b'), type, ...base[type] } as Block
+  const block = { id: uid('b'), type, ...base[type] } as Block
+  if (type === 'list') block.listStyle = listStyle ?? 'bulleted'
+  return block
 }
 
 export const useStore = create<State>()(
   persist(
     (set, get) => ({
       ...freshData(),
+      _past: [],
+      _future: [],
 
       meId: ME_ID,
       activeSpaceId: 'sp-tg',
@@ -443,8 +477,8 @@ export const useStore = create<State>()(
           }),
         })),
 
-      addBlock: (docId, afterId, type) => {
-        const block = newBlock(type)
+      addBlock: (docId, afterId, type, listStyle) => {
+        const block = newBlock(type, listStyle)
         set((s) => ({
           docs: s.docs.map((d) => {
             if (d.id !== docId) return d
@@ -470,7 +504,7 @@ export const useStore = create<State>()(
 
       // 转块类型（Notion 的「转为…」/heyhtml 的块类型切换）。进 heading 给默认 level，
       // 离开 heading 清掉 level；html（文字内容）保留。
-      setBlockType: (docId, blockId, type, level) =>
+      setBlockType: (docId, blockId, type, level, listStyle) =>
         set((s) => ({
           docs: s.docs.map((d) =>
             d.id !== docId
@@ -479,18 +513,25 @@ export const useStore = create<State>()(
                   ...d,
                   updatedAt: Date.now(),
                   updatedBy: s.meId,
-                  blocks: d.blocks.map((b) =>
-                    b.id !== blockId
-                      ? b
-                      : {
-                          ...b,
-                          type,
-                          level:
-                            type === 'heading'
-                              ? level ?? b.level ?? 2
-                              : undefined,
-                        },
-                  ),
+                  blocks: d.blocks.map((b) => {
+                    if (b.id !== blockId) return b
+                    const wasList = b.type === 'list'
+                    const willList = type === 'list'
+                    // 跨列表边界时同步转换内容形态（幂等：内容已就位则不动）
+                    let html = b.html
+                    if (willList && !wasList) html = toListHtml(b.html)
+                    else if (!willList && wasList) html = fromListHtml(b.html)
+                    return {
+                      ...b,
+                      type,
+                      html,
+                      level:
+                        type === 'heading' ? level ?? b.level ?? 2 : undefined,
+                      listStyle: willList
+                        ? listStyle ?? b.listStyle ?? 'bulleted'
+                        : undefined,
+                    }
+                  }),
                 },
           ),
         })),
@@ -510,6 +551,28 @@ export const useStore = create<State>()(
         }))
         return newId
       },
+
+      // 在一次用户手势前快照当前 docs（清空 redo 栈）。复合操作只在入口调一次 → 一次撤销回到手势前。
+      checkpoint: () =>
+        set((s) => ({ _past: [...s._past, cloneDocs(s.docs)].slice(-50), _future: [] })),
+      undo: () =>
+        set((s) => {
+          if (!s._past.length) return {}
+          return {
+            docs: s._past[s._past.length - 1],
+            _past: s._past.slice(0, -1),
+            _future: [...s._future, cloneDocs(s.docs)],
+          }
+        }),
+      redo: () =>
+        set((s) => {
+          if (!s._future.length) return {}
+          return {
+            docs: s._future[s._future.length - 1],
+            _future: s._future.slice(0, -1),
+            _past: [...s._past, cloneDocs(s.docs)],
+          }
+        }),
 
       createDoc: (folderId, kind = 'doc', title = '无标题文档') => {
         const id = uid('d')

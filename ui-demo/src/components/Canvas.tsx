@@ -13,6 +13,7 @@ import {
   type Block,
   type BlockType,
   type Doc,
+  type ListStyle,
 } from '../types'
 import { Avatar, VisibilityDot } from '../ui/primitives'
 import { relTime } from '../lib/format'
@@ -33,12 +34,15 @@ const SLASH_ITEMS: {
   kw: string
   type: BlockType | 'ai'
   level?: 1 | 2 | 3
+  listStyle?: ListStyle
 }[] = [
   { key: 'text', label: '正文', kw: 'text zhengwen p', type: 'text' },
   { key: 'h1', label: '标题 1', kw: 'h1 biaoti heading', type: 'heading', level: 1 },
   { key: 'h2', label: '标题 2', kw: 'h2 biaoti heading', type: 'heading', level: 2 },
   { key: 'h3', label: '标题 3', kw: 'h3 biaoti heading', type: 'heading', level: 3 },
-  { key: 'list', label: '列表', kw: 'list liebiao ul', type: 'list' },
+  { key: 'list', label: '无序列表', kw: 'list liebiao ul bulleted wuxu', type: 'list', listStyle: 'bulleted' },
+  { key: 'numbered', label: '编号列表', kw: 'numbered ordered ol bianhao youxu 1', type: 'list', listStyle: 'numbered' },
+  { key: 'todo', label: '待办列表', kw: 'todo task checkbox daiban checklist', type: 'list', listStyle: 'todo' },
   { key: 'quote', label: '引用', kw: 'quote yinyong', type: 'quote' },
   { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
   { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
@@ -49,6 +53,29 @@ const filterSlash = (q: string) => {
   return SLASH_ITEMS.filter(
     (it) => !s || it.label.toLowerCase().includes(s) || it.kw.includes(s),
   )
+}
+
+// 行首 markdown 前缀 → 目标块类型。仅当块内容正好是「前缀 + 一个空格」时触发
+// （用户在空行敲前缀+空格的瞬间），避免误转已有正文。
+function detectMarkdown(
+  text: string,
+): { type: BlockType; level?: 1 | 2 | 3; listStyle?: ListStyle } | null {
+  const m = text.match(/^(#{1,3}|[-*]|1\.|\[\s?\]|>)[\s ]$/)
+  if (!m) return null
+  const t = m[1]
+  if (t[0] === '#') return { type: 'heading', level: t.length as 1 | 2 | 3 }
+  if (t === '-' || t === '*') return { type: 'list', listStyle: 'bulleted' }
+  if (t === '1.') return { type: 'list', listStyle: 'numbered' }
+  if (t[0] === '[') return { type: 'list', listStyle: 'todo' }
+  return { type: 'quote' }
+}
+
+// 列表 html → 段落内联 html（转块时保内容）：各 <li> 拆开用 <br> 连接。
+const unwrapListHtml = (html: string): string => {
+  const items = html.match(/<li[^>]*>[\s\S]*?<\/li>/gi)
+  return items
+    ? items.map((li) => li.replace(/<\/?li[^>]*>/gi, '')).join('<br>')
+    : html.replace(/<\/?li[^>]*>/gi, '')
 }
 
 // 点击落点 → caret Range（Chrome/Safari/Edge: caretRangeFromPoint；Firefox: caretPositionFromPoint）
@@ -108,6 +135,7 @@ function BlockRow({
   editing,
   onSelect,
   onEdit,
+  onMarkdown,
   onFocusBlock,
   onOpenBlockMenu,
   onDragStart,
@@ -124,6 +152,7 @@ function BlockRow({
   editing: boolean
   onSelect: (id: string) => void
   onEdit: (id: string, x: number, y: number) => void
+  onMarkdown: (id: string) => void
   onFocusBlock: (id: string | null) => void
   onOpenBlockMenu: (id: string, pos: { top: number; left: number }) => void
   onDragStart: (index: number) => void
@@ -133,9 +162,11 @@ function BlockRow({
   dropEdge: 'top' | 'bottom' | null
 }) {
   const updateBlockHtml = useStore((s) => s.updateBlockHtml)
+  const checkpoint = useStore((s) => s.checkpoint)
   const elRef = useRef<HTMLElement | null>(null)
   const debounce = useRef<number | undefined>(undefined)
   const focused = useRef(false)
+  const edited = useRef(false) // 本次编辑会话是否已快照（撤销粒度=一次编辑会话一步）
 
   const canEdit = isEditable(block)
   const editableNow = canEdit && editing
@@ -164,11 +195,17 @@ function BlockRow({
     if (el) updateBlockHtml(doc.id, block.id, el.innerHTML)
   }
   const handleInput = () => {
+    if (!edited.current) {
+      checkpoint() // 本次编辑会话首个输入 → 快照，撤销回到编辑前
+      edited.current = true
+    }
+    onMarkdown(block.id) // 行首 markdown 前缀触发（即时，不等 debounce）
     window.clearTimeout(debounce.current)
     debounce.current = window.setTimeout(persist, 400)
   }
   const handleBlur = () => {
     focused.current = false
+    edited.current = false
     window.clearTimeout(debounce.current)
     persist()
   }
@@ -213,7 +250,24 @@ function BlockRow({
       <p className="ws-p" data-placeholder="输入正文,或按 / 插入" {...editProps} />
     )
   } else if (block.type === 'list') {
-    inner = <ul className="ws-ul" {...editProps} />
+    const style = block.listStyle ?? 'bulleted'
+    const Tag = (style === 'numbered' ? 'ol' : 'ul') as 'ul' | 'ol'
+    const cls =
+      'ws-ul' +
+      (style === 'numbered' ? ' ws-ol' : '') +
+      (style === 'todo' ? ' ws-todo' : '')
+    // 待办：点 <li> 左侧勾选框区（clientX 在内容左缘之外）切 data-checked，不放光标。
+    const onToggleCheck = (e: React.MouseEvent) => {
+      if (style !== 'todo') return
+      const li = (e.target as HTMLElement).closest?.('li') as HTMLElement | null
+      if (!li || !elRef.current?.contains(li)) return
+      if (e.clientX >= li.getBoundingClientRect().left) return // 点在文字上 → 正常编辑
+      e.preventDefault()
+      checkpoint()
+      li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true'
+      persist()
+    }
+    inner = <Tag className={cls} {...editProps} onMouseDown={onToggleCheck} />
   } else if (block.type === 'quote') {
     inner = <blockquote className="ws-quote" {...editProps} />
   } else {
@@ -372,6 +426,9 @@ export default function Canvas() {
   const deleteBlock = useStore((s) => s.deleteBlock)
   const setBlockType = useStore((s) => s.setBlockType)
   const duplicateBlock = useStore((s) => s.duplicateBlock)
+  const checkpoint = useStore((s) => s.checkpoint)
+  const undo = useStore((s) => s.undo)
+  const redo = useStore((s) => s.redo)
 
   const tab = tabs.find((x) => x.id === activeTabId)
   const doc = tab?.docId ? getDoc(tab.docId) : undefined
@@ -481,6 +538,7 @@ export default function Canvas() {
   const removeBlock = useCallback(
     (id: string) => {
       if (!doc) return
+      checkpoint()
       if (doc.blocks.length <= 1) {
         updateBlockHtml(doc.id, id, '')
         setBlockType(doc.id, id, 'text')
@@ -490,7 +548,7 @@ export default function Canvas() {
         deselect()
       }
     },
-    [doc, updateBlockHtml, setBlockType, editBlock, deleteBlock, deselect],
+    [doc, updateBlockHtml, setBlockType, editBlock, deleteBlock, deselect, checkpoint],
   )
 
   // 斜杠菜单选中某项：删掉已输入的「/query」，再插入新块 / 转换当前块 / 弹 AI 占位。
@@ -510,6 +568,7 @@ export default function Canvas() {
         setAiSoonOpen(true)
         return
       }
+      checkpoint()
       const el = blockEls.current.get(slash.blockId)
       const empty = !el || (el.textContent ?? '').trim() === ''
       if (it.type === 'divider' || it.type === 'image') {
@@ -518,16 +577,40 @@ export default function Canvas() {
         // 空块插列表：不在聚焦块上 setBlockType（p→ul 交换会触发 blur 把空 innerHTML 回写、
         // 得到没有 <li> 的空 <ul>）。改成 addBlock 一个带 <li> seed 的新列表块（挂载时同步进
         // DOM、没被 focus 不会被 blur 清），再删掉原空块。
-        const newId = addBlock(doc.id, slash.blockId, 'list')
+        const newId = addBlock(doc.id, slash.blockId, 'list', it.listStyle)
         deleteBlock(doc.id, slash.blockId)
         editBlock(newId, { mode: 'start' })
       } else if (empty) {
-        setBlockType(doc.id, slash.blockId, it.type, it.level)
+        setBlockType(doc.id, slash.blockId, it.type, it.level, it.listStyle)
       } else {
-        editBlock(addBlock(doc.id, slash.blockId, it.type))
+        editBlock(addBlock(doc.id, slash.blockId, it.type, it.listStyle))
       }
     },
-    [doc, slash, addBlock, deleteBlock, setBlockType, selectBlock, editBlock],
+    [doc, slash, addBlock, deleteBlock, setBlockType, selectBlock, editBlock, checkpoint],
+  )
+
+  // 行首 markdown 触发：正文块里打 `- `/`1. `/`[] `/`> `/`# ` 自动转成对应块、清掉前缀。
+  const tryMarkdown = useCallback(
+    (blockId: string) => {
+      if (!doc) return
+      const blk = doc.blocks.find((b) => b.id === blockId)
+      if (!blk || blk.type !== 'text') return // 只在正文块触发
+      const el = blockEls.current.get(blockId)
+      if (!el) return
+      const md = detectMarkdown(el.textContent ?? '')
+      if (!md) return
+      checkpoint()
+      // 「新建目标块 + 删原块」替换，而非原地 setBlockType：原块即将被删，其 contenteditable
+      // 重挂时的 blur 回写落到已删块上=无副作用，避免把残留的 marker 文本写进新块（沿用斜杠菜单做法）。
+      const newId = addBlock(doc.id, blockId, md.type, md.listStyle)
+      updateBlockHtml(doc.id, newId, md.type === 'list' ? '<li></li>' : '')
+      if (md.type === 'heading' && md.level && md.level !== 2) {
+        setBlockType(doc.id, newId, 'heading', md.level)
+      }
+      deleteBlock(doc.id, blockId)
+      editBlock(newId, { mode: 'start' })
+    },
+    [doc, addBlock, updateBlockHtml, setBlockType, deleteBlock, editBlock, checkpoint],
   )
 
   // 进入编辑态时聚焦该块，光标按 pendingCaret 意图落点（点击处 / 块首 / 块末）
@@ -543,15 +626,48 @@ export default function Canvas() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (slash) return // 斜杠菜单开时让斜杠监听处理按键
-      // Enter：可编辑块末尾 → 新建正文块（IME 组词 / Shift 软换行 / list / 中间 各自交还原生）
+      // 撤销 / 重做（Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z）。先 blur 提交并清焦点——否则被聚焦块的
+      // contenteditable 不会从 store 重渲染；再 deselect 让恢复的内容贴回 DOM。
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault()
+        ;(document.activeElement as HTMLElement | null)?.blur?.()
+        if (e.shiftKey) redo()
+        else undo()
+        deselect()
+        return
+      }
+      // Enter：可编辑块末尾 → 新建正文块（IME 组词 / Shift 软换行 / 中间 各自交还原生）
       if (e.key === 'Enter' && editingId && doc) {
         if (e.isComposing || e.keyCode === 229) return // 中文/日文输入法组词中 = 确认候选词
         if (e.shiftKey) return // 软换行
         const el = blockEls.current.get(editingId)
         const blk = doc.blocks.find((b) => b.id === editingId)
-        if (!el || !blk || blk.type === 'list') return // list 内 Enter 交原生（新 <li>）
+        if (!el || !blk) return
+        if (blk.type === 'list') {
+          // 列表内：在「空的最后一项」上回车 → 跳出列表（删空项，列表后建正文；列表删空则整块转正文）。
+          // 其余（非空 / 非末项）交原生（新 <li>）。
+          const sel = window.getSelection()
+          const sc = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null
+          const li = (sc?.nodeType === 1 ? (sc as Element) : sc?.parentElement)?.closest('li')
+          const items = [...el.querySelectorAll('li')]
+          if (li && (li.textContent ?? '').trim() === '' && items[items.length - 1] === li) {
+            e.preventDefault()
+            checkpoint()
+            if (items.length <= 1) {
+              const newId = addBlock(doc.id, editingId, 'text')
+              deleteBlock(doc.id, editingId)
+              editBlock(newId, { mode: 'start' })
+            } else {
+              li.remove()
+              updateBlockHtml(doc.id, editingId, el.innerHTML)
+              editBlock(addBlock(doc.id, editingId, 'text'), { mode: 'start' })
+            }
+          }
+          return
+        }
         if (!isCaretAtBlockEnd(el)) return // 光标在中间 → 原生换行（本期不分裂）
         e.preventDefault()
+        checkpoint()
         editBlock(addBlock(doc.id, editingId, 'text'), { mode: 'start' })
         return
       }
@@ -559,7 +675,49 @@ export default function Canvas() {
       if (e.key === 'Enter' && selectedId && !editingId && doc) {
         if (e.isComposing || e.keyCode === 229) return
         e.preventDefault()
+        checkpoint()
         editBlock(addBlock(doc.id, selectedId, 'text'), { mode: 'start' })
+        return
+      }
+      // Tab / Shift-Tab：仅在列表内做缩进/反缩进（嵌套子列表，沿用本块的 ul/ol + 样式 class）；
+      // 其他块也吞掉 Tab，避免它把光标跳出编辑区。
+      if (e.key === 'Tab' && editingId && doc) {
+        const el = blockEls.current.get(editingId)
+        const blk = doc.blocks.find((b) => b.id === editingId)
+        e.preventDefault()
+        if (!el || !blk || blk.type !== 'list') return
+        const sel = window.getSelection()
+        const sc = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null
+        const li = (sc?.nodeType === 1 ? (sc as Element) : sc?.parentElement)?.closest('li')
+        if (!li || !el.contains(li)) return
+        if (e.shiftKey) {
+          const parentList = li.parentElement
+          const hostLi = parentList?.parentElement
+          if (hostLi && hostLi.tagName === 'LI') {
+            checkpoint()
+            hostLi.after(li)
+            if (parentList && !parentList.querySelector('li')) parentList.remove()
+            updateBlockHtml(doc.id, editingId, el.innerHTML)
+          }
+        } else {
+          const prev = li.previousElementSibling
+          if (prev && prev.tagName === 'LI') {
+            checkpoint()
+            let sub = prev.lastElementChild
+            if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
+              sub = document.createElement(el.tagName.toLowerCase())
+              sub.className = el.className
+              prev.appendChild(sub)
+            }
+            sub.appendChild(li)
+            updateBlockHtml(doc.id, editingId, el.innerHTML)
+          }
+        }
+        const r = document.createRange()
+        r.selectNodeContents(li)
+        r.collapse(false)
+        sel?.removeAllRanges()
+        sel?.addRange(r)
         return
       }
       // Backspace 在可编辑块最前端：空块→删块、光标落上一块末；非空→并入上一块。
@@ -573,6 +731,7 @@ export default function Canvas() {
         const prev = doc.blocks[idx - 1]
         const curEmpty = (el.textContent ?? '').trim() === ''
         e.preventDefault()
+        checkpoint()
         if (isEditable(prev)) {
           if (!curEmpty) {
             const prevEl = blockEls.current.get(prev.id)
@@ -659,6 +818,10 @@ export default function Canvas() {
     removeBlock,
     updateBlockHtml,
     selectBlock,
+    setBlockType,
+    checkpoint,
+    undo,
+    redo,
   ])
 
   // 浮动工具栏位置：① 编辑态有文字选区 → 浮在选区上方；② 块被选中（非编辑）→ 浮在块上方；
@@ -871,9 +1034,31 @@ export default function Canvas() {
     }
   }
 
-  const turnInto = (type: BlockType, level?: 1 | 2 | 3) => {
+  const turnInto = (type: BlockType, level?: 1 | 2 | 3, listStyle?: ListStyle) => {
     if (!selectedId) return
-    setBlockType(doc.id, selectedId, type, level)
+    const blk = doc.blocks.find((b) => b.id === selectedId)
+    if (!blk) return
+    checkpoint()
+    const wasList = blk.type === 'list'
+    const willList = type === 'list'
+    // 跨列表边界（段落↔列表）用「新建块替换」而非原地 setBlockType：避免被编辑的
+    // contenteditable 在元素重挂时 blur 把旧形态内容写回、污染 <li> 包裹（沿用斜杠菜单做法）。
+    if (willList !== wasList) {
+      const el = blockEls.current.get(selectedId)
+      const live = el ? el.innerHTML : blk.html
+      const newId = addBlock(doc.id, selectedId, type, listStyle)
+      updateBlockHtml(
+        doc.id,
+        newId,
+        willList ? `<li>${live.trim()}</li>` : unwrapListHtml(live),
+      )
+      if (!willList && level) setBlockType(doc.id, newId, type, level)
+      deleteBlock(doc.id, selectedId)
+      editBlock(newId, { mode: 'end' })
+      return
+    }
+    // 同形态（列表样式互换 / 文本类互转）：直接改类型
+    setBlockType(doc.id, selectedId, type, level, listStyle)
   }
 
   const askAI = () => setAiSoonOpen(true)
@@ -901,6 +1086,7 @@ export default function Canvas() {
     const from = dragFrom.current
     const to = dropIndex
     if (from !== null && to !== null && from !== to) {
+      checkpoint()
       reorderBlocks(doc.id, from, to)
     }
     dragFrom.current = null
@@ -938,6 +1124,7 @@ export default function Canvas() {
                   editing={editingId === b.id}
                   onSelect={selectBlock}
                   onEdit={editAtPoint}
+                  onMarkdown={tryMarkdown}
                   onFocusBlock={onFocusBlock}
                   onOpenBlockMenu={openBlockMenu}
                   onDragStart={onDragStart}
@@ -962,6 +1149,7 @@ export default function Canvas() {
               ) {
                 editBlock(last.id, { mode: 'end' }) // 末块已是空可编辑块，直接进它
               } else {
+                checkpoint()
                 editBlock(addBlock(doc.id, last ? last.id : '', 'text'), {
                   mode: 'start',
                 })
@@ -988,13 +1176,18 @@ export default function Canvas() {
       {blockMenuFor && blockMenuPos && (
         <BlockActionMenu
           pos={blockMenuPos}
-          onTurnInto={(type, level) =>
+          onTurnInto={(type, level) => {
+            checkpoint()
             setBlockType(doc.id, blockMenuFor, type, level)
-          }
-          onInsertBelow={() =>
+          }}
+          onInsertBelow={() => {
+            checkpoint()
             editBlock(addBlock(doc.id, blockMenuFor as string, 'text'))
-          }
-          onDuplicate={() => duplicateBlock(doc.id, blockMenuFor as string)}
+          }}
+          onDuplicate={() => {
+            checkpoint()
+            duplicateBlock(doc.id, blockMenuFor as string)
+          }}
           onDelete={() => removeBlock(blockMenuFor as string)}
           onColor={(c) =>
             execOnBlock(blockMenuFor as string, () =>

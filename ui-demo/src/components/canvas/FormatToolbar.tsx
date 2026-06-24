@@ -9,20 +9,27 @@ import {
   Sparkles,
   ChevronDown,
 } from 'lucide-react'
-import type { BlockType } from '../../types'
+import type { BlockType, ListStyle } from '../../types'
 
 export interface FormatRect {
   top: number
   left: number
 }
 
-const TURN_INTO: { label: string; type: BlockType; level?: 1 | 2 | 3 }[] = [
+const TURN_INTO: {
+  label: string
+  type: BlockType
+  level?: 1 | 2 | 3
+  listStyle?: ListStyle
+}[] = [
   { label: '正文', type: 'text' },
   { label: '标题 1', type: 'heading', level: 1 },
   { label: '标题 2', type: 'heading', level: 2 },
   { label: '标题 3', type: 'heading', level: 3 },
   { label: '引用', type: 'quote' },
-  { label: '列表', type: 'list' },
+  { label: '无序列表', type: 'list', listStyle: 'bulleted' },
+  { label: '编号列表', type: 'list', listStyle: 'numbered' },
+  { label: '待办列表', type: 'list', listStyle: 'todo' },
 ]
 const TEXT_COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2']
 const HILITE_COLORS = ['#fff59d', '#ffd6d6', '#d7f0db', '#dbe9ff', '#f3e3ff']
@@ -40,7 +47,7 @@ export default function FormatToolbar({
 }: {
   rect: FormatRect
   onCmd: (command: string, value?: string) => void
-  onTurnInto: (type: BlockType, level?: 1 | 2 | 3) => void
+  onTurnInto: (type: BlockType, level?: 1 | 2 | 3, listStyle?: ListStyle) => void
   onAskAI: () => void
 }) {
   const [menu, setMenu] = useState<'turn' | 'color' | 'hilite' | null>(null)
@@ -51,6 +58,7 @@ export default function FormatToolbar({
       className="ws-fmtbar"
       style={{ top: rect.top, left: rect.left }}
       onMouseDown={guard}
+      onClick={(e) => e.stopPropagation()}
       role="toolbar"
     >
       {/* 转为：块类型切换 */}
@@ -71,7 +79,7 @@ export default function FormatToolbar({
                 className="ws-fmtbar-menu-item"
                 onMouseDown={guard}
                 onClick={() => {
-                  onTurnInto(it.type, it.level)
+                  onTurnInto(it.type, it.level, it.listStyle)
                   setMenu(null)
                 }}
               >
