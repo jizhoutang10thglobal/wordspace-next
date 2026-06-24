@@ -15,6 +15,15 @@ on:
   push:
     branches: [main]
 
+# 同一 PR 连推多次 → 取消上一轮还在跑的 CI，不并行白烧 Actions 分钟。
+# group 取 PR 号（pull_request 事件）/ commit SHA（push 到 main）：
+#   · PR 内连续 push 共享同一 group → 旧跑被取消、只留最新一轮；
+#   · push 到 main 时没有 PR 号 → 落到唯一的 SHA → 每个 main commit 各自一组，
+#     cancel-in-progress 永不取消 main 的验证跑（main 每次提交都要被真门验证）。
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
   # 探测「本次有没有改到 ui-demo/ 以外的文件」。保守：算不出 diff 就默认要跑真门。
   changes:
