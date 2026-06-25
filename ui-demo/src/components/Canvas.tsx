@@ -636,6 +636,29 @@ export default function Canvas() {
         deselect()
         return
       }
+      // 文字格式快捷键 → 复用工具栏现有命令（不新增操作）。仅在有文字选区或选中块时
+      // 拦截，否则交还浏览器（光标态的 Cmd+B 等仍走原生）。
+      if (e.metaKey || e.ctrlKey) {
+        const sel = window.getSelection()
+        const hasSel = !!sel && !sel.isCollapsed && sel.rangeCount > 0
+        if (hasSel || selectedId) {
+          const k = e.key.toLowerCase()
+          const cmd =
+            e.shiftKey && k === 's'
+              ? 'strikeThrough'
+              : e.shiftKey
+                ? null
+                : ({ b: 'bold', i: 'italic', u: 'underline', e: '__code__', k: 'createLink' } as Record<
+                    string,
+                    string
+                  >)[k]
+          if (cmd) {
+            e.preventDefault()
+            applyCmd(cmd)
+            return
+          }
+        }
+      }
       // Enter：可编辑块末尾 → 新建正文块（IME 组词 / Shift 软换行 / 中间 各自交还原生）
       if (e.key === 'Enter' && editingId && doc) {
         if (e.isComposing || e.keyCode === 229) return // 中文/日文输入法组词中 = 确认候选词

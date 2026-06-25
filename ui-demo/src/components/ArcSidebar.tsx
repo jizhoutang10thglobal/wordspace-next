@@ -892,6 +892,18 @@ export default function ArcSidebar() {
     setQuery('')
   }, [activeSpaceId])
 
+  // Cmd/Ctrl+\ toggles the sidebar (maps to the existing 收起/展开侧栏 action).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+        e.preventDefault()
+        toggleSidebar()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [toggleSidebar])
+
   const submitOmni = () => {
     const v = omni.trim()
     if (!v) return
