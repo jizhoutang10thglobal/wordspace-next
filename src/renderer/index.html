@@ -37,6 +37,11 @@
   </div>
   <!-- 收起态图标轨（只在 .sb.is-collapsed 显示）：置顶 + 顶层文件夹/文件的迷你图标 + hover 气泡预览。 -->
   <div class="sb-rail" id="sb-rail" hidden></div>
+  <!-- 品牌页脚：wordspace.ai logo + 版本号（左侧栏底部，增强 branding）。 -->
+  <div class="sb-foot">
+    <img class="sb-foot-logo" src="wordspace-wordmark.png" alt="wordspace.ai">
+    <span class="sb-foot-ver" id="ws-ver"></span>
+  </div>
 </aside>
 
 <!-- 编辑区（照搬 ui-demo Canvas chrome）。 -->
@@ -86,12 +91,6 @@
 
     <!-- 非 HTML 文件的应用内查看器（图片/PDF 直接预览；Word/表格/其他 → 外部打开卡片）。shell.js 填充。 -->
     <div id="viewer" class="ws-viewer" hidden></div>
-
-    <!-- 品牌页脚：logo + 版本号（增强 branding）。 -->
-    <div class="ws-foot">
-      <span class="ws-foot-brand"><span class="ws-foot-mark">W</span>Wordspace</span>
-      <span class="ws-foot-ver" id="ws-ver"></span>
-    </div>
   </div>
 </section>
 

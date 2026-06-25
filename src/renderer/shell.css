@@ -162,6 +162,12 @@ ul { list-style: none; }
 .sb-rail-pop-item { font-size: var(--fs-sm); color: var(--c-text-2); }
 .sb-rail-pop-more { margin-top: 3px; font-size: var(--fs-xs); color: var(--c-text-3); }
 
+/* 品牌页脚：wordspace.ai logo + 版本号，钉在左侧栏底部（不在编辑区）。 */
+.sb-foot { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-top: 1px solid var(--c-divider); }
+.sb-foot-logo { height: 15px; width: auto; opacity: .82; }
+.sb-foot-ver { margin-left: auto; font-size: var(--fs-xs); color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.sb.is-collapsed .sb-foot { display: none; }
+
 .sb-filter {
   flex: none; display: flex; align-items: center; gap: 6px;
   margin: 0 8px 4px; padding: 0 8px; height: 28px;
@@ -301,12 +307,6 @@ ul { list-style: none; }
 
 #doc-frame { flex: 1; border: none; width: 100%; background: var(--c-bg); }
 #doc-frame[hidden] { display: none; }
-
-/* 品牌页脚：logo + 版本号（增强 branding，文档区底部留一条窄带）。 */
-.ws-foot { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; height: 30px; padding: 0 22px; border-top: 1px solid var(--c-divider); background: var(--c-bg); }
-.ws-foot-brand { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); letter-spacing: -.01em; }
-.ws-foot-mark { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; background: var(--c-accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
-.ws-foot-ver { font-size: var(--fs-xs); color: var(--c-text-3); font-variant-numeric: tabular-nums; }
 
 /* ---- 非 HTML 文件的应用内查看器（#1） ---- */
 .ws-viewer { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--c-bg); }
