@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useStore } from '../mock/store'
 import { Pill } from '../ui/primitives'
+import { PAGE_FORMAT_META } from '../types'
 import type { DocKind, Template } from '../types'
 import './Templates.css'
 
@@ -20,6 +22,8 @@ const KIND_LABEL: Record<DocKind, string> = {
 
 function TemplateCard({ tpl }: { tpl: Template }) {
   const createFromTemplate = useStore((s) => s.createFromTemplate)
+  const navigate = useNavigate()
+  const fmt = tpl.pageFormat ? PAGE_FORMAT_META[tpl.pageFormat] : null
   return (
     <div className="tpl-card">
       <div
@@ -27,9 +31,24 @@ function TemplateCard({ tpl }: { tpl: Template }) {
         style={{ '--tpl-accent': tpl.accent } as CSSProperties}
       >
         <span className="tpl-preview-strip" />
+        {fmt ? (
+          <span
+            className="tpl-paper"
+            style={{ aspectRatio: String(fmt.ratio) }}
+          >
+            <span className="tpl-paper-tag">{fmt.label}</span>
+          </span>
+        ) : (
+          <span className="tpl-lines" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+            <i />
+          </span>
+        )}
         <span className="tpl-kind">
           <span className="tpl-kind-dot" />
-          {KIND_LABEL[tpl.kind]}
+          {fmt ? fmt.size : KIND_LABEL[tpl.kind]}
         </span>
       </div>
       <div className="tpl-body">
@@ -40,7 +59,10 @@ function TemplateCard({ tpl }: { tpl: Template }) {
         <p className="tpl-desc">{tpl.description}</p>
         <button
           className="tpl-use"
-          onClick={() => createFromTemplate(tpl.id, 'f-drafts')}
+          onClick={() => {
+            createFromTemplate(tpl.id, 'f-drafts')
+            navigate('/docs') // 创建后落进新文档（否则停在模板池，得自己找——「好用」红线）
+          }}
         >
           用此模板新建
         </button>

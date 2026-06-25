@@ -216,11 +216,95 @@ export const seedDocs: Doc[] = [
 // ---------------------------------------------------------------------------
 // templates: private (company) pool + public pool
 // ---------------------------------------------------------------------------
+// 公司模板（private）= 我们自己写的、对编辑器适配最好的模板。用原生 block 编排
+// （heading/text/list/todo/callout/divider），块类型本身承载“功能性样式”——这样
+// 拖拽/转换/格式工具栏/斜杠菜单等编辑功能在模板上全程可用、无 bug。
+// 「格式模板」额外带 pageFormat（A4/A5/书信…），把画布约束到一张实际纸的宽度。
 export const seedTemplates: Template[] = [
-  { id: 't-handbook', name: '员工手册', kind: 'doc', category: '手册', pool: 'private', description: '公司样式的制度手册,分章节。', accent: '#1a73e8', blocks: [{ id: 'tt1', type: 'heading', level: 1, html: '员工手册' }, { id: 'tt2', type: 'text', html: '欢迎加入。' }] },
-  { id: 't-bid', name: '投标书', kind: 'doc', category: '标书', pool: 'private', description: '正式标书版式,带封面与目录。', accent: '#b8541d', blocks: [{ id: 'tb1', type: 'heading', level: 1, html: '项目投标书' }] },
-  { id: 't-deck', name: '季度汇报', kind: 'slides', category: '演示', pool: 'private', description: '演示文稿模板,可放映可导 PPT。', accent: '#1e8e3e', blocks: [{ id: 'td1', type: 'heading', level: 1, html: '季度汇报' }] },
-  { id: 't-landing', name: '招聘落地页', kind: 'page', category: '落地页', pool: 'private', description: '排过版的招聘网页,一键发布。', accent: '#8a3ffc', blocks: [{ id: 'tl1', type: 'heading', level: 1, html: '我们在招聘' }] },
+  // —— 文档类模板（工作中最常见的三种）——
+  {
+    id: 't-minutes', name: '会议纪要', kind: 'doc', category: '纪要', pool: 'private',
+    description: '主题 / 参会 / 议题 / 决议 / 待办,五段式,开会即用。', accent: '#1a73e8',
+    blocks: [
+      { id: 'mn1', type: 'heading', level: 1, html: '会议纪要' },
+      { id: 'mn2', type: 'callout', html: '主题：______　·　日期：2026-00-00　·　主持：______　·　记录：______' },
+      { id: 'mn3', type: 'heading', level: 2, html: '参会人' },
+      { id: 'mn4', type: 'list', listStyle: 'bulleted', html: '<li>______</li><li>______</li>' },
+      { id: 'mn5', type: 'heading', level: 2, html: '议题与讨论' },
+      { id: 'mn6', type: 'list', listStyle: 'numbered', html: '<li><b>议题一</b>：______</li><li><b>议题二</b>：______</li>' },
+      { id: 'mn7', type: 'heading', level: 2, html: '决议' },
+      { id: 'mn8', type: 'callout', html: '✅ ______' },
+      { id: 'mn9', type: 'heading', level: 2, html: '待办事项' },
+      { id: 'mn10', type: 'list', listStyle: 'todo', html: '<li>______（负责人 __,截止 00-00）</li><li>______</li>' },
+    ],
+  },
+  {
+    id: 't-weekly', name: '工作周报', kind: 'doc', category: '周报', pool: 'private',
+    description: '本周完成 / 进行中 / 下周计划 / 风险,周会汇报标准格式。', accent: '#1e8e3e',
+    blocks: [
+      { id: 'wk1', type: 'heading', level: 1, html: '工作周报' },
+      { id: 'wk2', type: 'text', html: '<b>姓名</b>　______　｜　<b>周期</b>　第 00 周（00-00 ～ 00-00）' },
+      { id: 'wk3', type: 'heading', level: 2, html: '本周完成' },
+      { id: 'wk4', type: 'list', listStyle: 'bulleted', html: '<li>______</li><li>______</li>' },
+      { id: 'wk5', type: 'heading', level: 2, html: '进行中' },
+      { id: 'wk6', type: 'list', listStyle: 'bulleted', html: '<li>______（进度 00%）</li>' },
+      { id: 'wk7', type: 'heading', level: 2, html: '下周计划' },
+      { id: 'wk8', type: 'list', listStyle: 'todo', html: '<li>______</li><li>______</li>' },
+      { id: 'wk9', type: 'heading', level: 2, html: '问题 / 需要的支持' },
+      { id: 'wk10', type: 'callout', html: '⚠ ______' },
+    ],
+  },
+  {
+    id: 't-proposal', name: '项目方案', kind: 'doc', category: '方案', pool: 'private',
+    description: '背景 / 目标 / 方案 / 里程碑 / 风险,立项与评审通用。', accent: '#e8710a',
+    blocks: [
+      { id: 'pr1', type: 'heading', level: 1, html: '项目方案：______' },
+      { id: 'pr2', type: 'callout', html: '一句话目标：______' },
+      { id: 'pr3', type: 'heading', level: 2, html: '背景' },
+      { id: 'pr4', type: 'text', html: '当前 ______ 存在 ______ 问题,需要 ______。' },
+      { id: 'pr5', type: 'heading', level: 2, html: '目标' },
+      { id: 'pr6', type: 'list', listStyle: 'bulleted', html: '<li>______</li><li>______</li>' },
+      { id: 'pr7', type: 'heading', level: 2, html: '方案概述' },
+      { id: 'pr8', type: 'text', html: '______' },
+      { id: 'pr9', type: 'heading', level: 2, html: '里程碑' },
+      { id: 'pr10', type: 'list', listStyle: 'numbered', html: '<li>第一阶段（00-00）：______</li><li>第二阶段（00-00）：______</li>' },
+      { id: 'pr11', type: 'heading', level: 2, html: '风险与对策' },
+      { id: 'pr12', type: 'callout', html: '⚠ ______' },
+    ],
+  },
+  // —— 格式类模板（按纸张版面）——
+  {
+    id: 't-a4', name: 'A4 文档', kind: 'doc', category: 'A4', pool: 'private', pageFormat: 'A4',
+    description: '标准 A4 版面（210×297mm）,正式文档、打印、导出 PDF。', accent: '#5a5f66',
+    blocks: [
+      { id: 'a4-1', type: 'heading', level: 1, html: '文档标题' },
+      { id: 'a4-2', type: 'text', html: '<b>A4 版面</b>　210 × 297 mm。适合正式文档、合同、报告——打印 / 导出 PDF 时版心与纸张一致。' },
+      { id: 'a4-3', type: 'text', html: '在此开始写作……' },
+    ],
+  },
+  {
+    id: 't-a5', name: 'A5 便签', kind: 'doc', category: 'A5', pool: 'private', pageFormat: 'A5',
+    description: '小幅 A5 版面（148×210mm）,便签、备忘、清单。', accent: '#8a3ffc',
+    blocks: [
+      { id: 'a5-1', type: 'heading', level: 2, html: '便签' },
+      { id: 'a5-2', type: 'text', html: 'A5 版面　148 × 210 mm。窄幅,适合便签、备忘、随手清单。' },
+      { id: 'a5-3', type: 'list', listStyle: 'todo', html: '<li>______</li><li>______</li>' },
+    ],
+  },
+  {
+    id: 't-letter', name: '商务书信', kind: 'doc', category: '书信', pool: 'private', pageFormat: 'letter',
+    description: '书信版面,称呼 / 正文 / 敬语 / 署名,对外函件。', accent: '#0b8793',
+    blocks: [
+      { id: 'lt1', type: 'text', html: '2026 年 00 月 00 日' },
+      { id: 'lt2', type: 'text', html: '尊敬的 ______：' },
+      { id: 'lt3', type: 'text', html: '　　您好！' },
+      { id: 'lt4', type: 'text', html: '　　______（正文）______' },
+      { id: 'lt5', type: 'text', html: '　　此致' },
+      { id: 'lt6', type: 'text', html: '敬礼！' },
+      { id: 'lt7', type: 'text', html: '______（署名）<br>______（单位）' },
+    ],
+  },
+  // —— 公开池（联网内容,不归我们维护）——
   { id: 't-blog', name: '博客文章', kind: 'page', category: '网页', pool: 'public', description: '通用图文排版,适合对外发布。', accent: '#0b8793', blocks: [{ id: 'tg1', type: 'heading', level: 1, html: '文章标题' }] },
   { id: 't-readme', name: '产品说明', kind: 'doc', category: '文档', pool: 'public', description: '简洁的产品说明文档结构。', accent: '#5a5f66', blocks: [{ id: 'tr1', type: 'heading', level: 1, html: '产品说明' }] },
 ]

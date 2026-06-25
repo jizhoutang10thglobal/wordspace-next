@@ -12,6 +12,23 @@ export type Visibility = 'private' | 'invited' | 'internal' | 'public'
 /** A document is a plain doc, a designed web page, or a slide deck. */
 export type DocKind = 'doc' | 'page' | 'slides'
 
+/**
+ * Optional paper format for "格式模板"。把文档画布约束到一张实际纸的宽度
+ * （A4/A3/A5/书信），服务于打印 / 导出 PDF 的版式。缺省 = 不限纸张（默认列宽）。
+ */
+export type PageFormat = 'A4' | 'A3' | 'A5' | 'letter'
+
+/** 各纸张的版面元数据：宽（CSS px @96dpi）+ 给卡片预览/标签用的展示信息。 */
+export const PAGE_FORMAT_META: Record<
+  PageFormat,
+  { label: string; size: string; widthPx: number; ratio: number }
+> = {
+  A4: { label: 'A4', size: '210 × 297 mm', widthPx: 794, ratio: 210 / 297 },
+  A3: { label: 'A3', size: '297 × 420 mm', widthPx: 1123, ratio: 297 / 420 },
+  A5: { label: 'A5', size: '148 × 210 mm', widthPx: 559, ratio: 148 / 210 },
+  letter: { label: '书信', size: '215 × 279 mm', widthPx: 816, ratio: 216 / 279 },
+}
+
 export type BlockType =
   | 'heading'
   | 'text'
@@ -44,6 +61,7 @@ export interface Doc {
   title: string
   emoji?: string
   kind: DocKind
+  pageFormat?: PageFormat // 格式模板生成的文档带上纸张版面（A4/A5/书信…）；缺省=默认列宽
   folderId: string
   blocks: Block[]
   visibility: Visibility
@@ -80,6 +98,7 @@ export interface Template {
   pool: 'private' | 'public'
   description: string
   accent: string
+  pageFormat?: PageFormat // 设了 = 这是「格式模板」（按纸张版面），卡片显示纸张比例与尺寸
   blocks: Block[]
 }
 
