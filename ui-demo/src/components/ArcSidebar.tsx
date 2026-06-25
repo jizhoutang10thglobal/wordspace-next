@@ -706,10 +706,11 @@ function SpaceSwitcher() {
       </button>
       {open && (
         <div className="arc-space-menu">
-          <div className="arc-space-group">Wordspace 云盘</div>
-          {cloud.map(item)}
+          {/* local-first: connected folders lead; Wordspace cloud comes later */}
           {connected.length > 0 && <div className="arc-space-group">连接的文件夹</div>}
           {connected.map(item)}
+          {cloud.length > 0 && <div className="arc-space-group">Wordspace 云盘</div>}
+          {cloud.map(item)}
           <button
             className="arc-space-new"
             onClick={() => {
