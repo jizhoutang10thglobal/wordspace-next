@@ -8,7 +8,9 @@ interface UI {
   closePublish: () => void
 
   createOpen: boolean
-  openCreate: () => void
+  // which connected-folder subfolder the new doc should land in; null = space default (root / 我的草稿)
+  createTargetDir: string | null
+  openCreate: (targetDir?: string | null) => void
   closeCreate: () => void
 
   spaceModalOpen: boolean
@@ -32,7 +34,8 @@ export const useUI = create<UI>((set) => ({
   closePublish: () => set({ publishDocId: null }),
 
   createOpen: false,
-  openCreate: () => set({ createOpen: true }),
+  createTargetDir: null,
+  openCreate: (targetDir = null) => set({ createOpen: true, createTargetDir: targetDir }),
   closeCreate: () => set({ createOpen: false }),
 
   spaceModalOpen: false,

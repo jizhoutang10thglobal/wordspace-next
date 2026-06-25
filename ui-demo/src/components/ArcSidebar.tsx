@@ -329,7 +329,6 @@ function FileBranch({
   const renameFile = useStore((s) => s.renameFile)
   const deleteFileWithUndo = useStore((s) => s.deleteFileWithUndo)
   const moveFile = useStore((s) => s.moveFile)
-  const createFileInDir = useStore((s) => s.createFileInDir)
   const createSubfolder = useStore((s) => s.createSubfolder)
   const renameDir = useStore((s) => s.renameDir)
   const deleteDirWithUndo = useStore((s) => s.deleteDirWithUndo)
@@ -338,6 +337,7 @@ function FileBranch({
   const openState = useUI((s) => !s.collapsedKeys['file:' + path])
   const open = forceOpen || openState
   const toggle = useUI((s) => s.toggleCollapsed)
+  const openCreate = useUI((s) => s.openCreate)
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [dropOver, setDropOver] = useState(false)
@@ -448,10 +448,8 @@ function FileBranch({
       </div>
     )
   }
-  const newDocHere = () => {
-    createFileInDir(path)
-    navigate('/docs')
-  }
+  // open the create modal (template picker) targeting this folder
+  const newDocHere = () => openCreate(path)
   return (
     <div className="arc-tree-dir">
       <div
@@ -1007,7 +1005,7 @@ export default function ArcSidebar() {
 
         <div className="arc-section-label arc-tabs-label">
           <span>文档</span>
-          <button className="arc-ico arc-ico-sm" title="在此空间新建" onClick={openCreate}>
+          <button className="arc-ico arc-ico-sm" title="在此空间新建" onClick={() => openCreate()}>
             <Plus size={14} />
           </button>
         </div>

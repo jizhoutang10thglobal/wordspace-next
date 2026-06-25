@@ -40,19 +40,6 @@ const uid = (p = 'id') =>
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// A unique "<base>.html" (or "<base> 2.html", …) among a connected folder's
-// existing files, so a second new doc doesn't collide with the first.
-function uniqueFilePath(files: FileEntry[], spaceId: string, base: string): string {
-  const taken = new Set(files.filter((f) => f.spaceId === spaceId).map((f) => f.path))
-  let name = `${base}.html`
-  let n = 2
-  while (taken.has(name)) {
-    name = `${base} ${n}.html`
-    n++
-  }
-  return name
-}
-
 // Strip path separators so a typed name can't silently spawn a directory level,
 // and trim. Returns '' when nothing usable is left.
 const cleanName = (raw: string): string => raw.replace(/[/\\]/g, '').trim()
@@ -152,7 +139,6 @@ interface State {
   renameFile: (file: FileEntry, newBase: string) => void
   deleteFileWithUndo: (file: FileEntry) => void
   // connected-folder organize ops (path-based; folders are implicit + the dirs list)
-  createFileInDir: (dirPath: string) => void
   createSubfolder: (dirPath: string) => void
   renameDir: (dirPath: string, newName: string) => void
   deleteDirWithUndo: (dirPath: string) => void
@@ -193,14 +179,15 @@ interface State {
   _past: Doc[][]
   _future: Doc[][]
 
-  // documents
-  createDoc: (folderId: string, kind?: DocKind, title?: string) => string
-  createFromTemplate: (templateId: string, folderId: string) => string
+  // documents. dirPath (optional) targets a subfolder in a connected space;
+  // ignored for cloud spaces (those land in 我的草稿).
+  createDoc: (folderId: string, kind?: DocKind, title?: string, dirPath?: string) => string
+  createFromTemplate: (templateId: string, folderId: string, dirPath?: string) => string
   renameDoc: (docId: string, title: string) => void
   deleteDoc: (docId: string) => void
 
   // ai (simulated)
-  generateDoc: (prompt: string, folderId: string) => Promise<string>
+  generateDoc: (prompt: string, folderId: string, dirPath?: string) => Promise<string>
   redesignBlock: (docId: string, blockId: string, prompt: string) => Promise<void>
 
   // publishing (simulated deploy)
@@ -531,32 +518,6 @@ export const useStore = create<State>()(
               activeTabBySpace: { ...st.activeTabBySpace, [file.spaceId]: prevBySpace },
             })),
         })
-      },
-
-      // Create a new .html doc directly inside `dirPath` of the active connected
-      // folder (dirPath '' = the mount root), so 新建 lands where you clicked.
-      createFileInDir: (dirPath) => {
-        const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
-        if (!space || isCloudStorage(space.storage)) return
-        const id = uid('d')
-        const title = '无标题文档'
-        const path = uniqueFileInDir(get().files, space.id, dirPath, title, '.html')
-        const doc: Doc = {
-          id,
-          title,
-          emoji: '📄',
-          kind: 'doc',
-          folderId: space.id,
-          blocks: [{ id: uid('b'), type: 'heading', level: 1, html: title }],
-          visibility: 'private',
-          localPath: `${space.mountPath ?? '~'}/${path}`,
-          updatedAt: Date.now(),
-          updatedBy: get().meId,
-          collaborators: [get().meId],
-        }
-        const file: FileEntry = { spaceId: space.id, path, kind: 'html', docId: id }
-        set((s) => ({ docs: [doc, ...s.docs], files: [...s.files, file] }))
-        get().openFileTab(file)
       },
 
       // Create an (initially empty) subfolder under `dirPath`. Empty folders are
@@ -941,11 +902,13 @@ export const useStore = create<State>()(
           }
         }),
 
-      createDoc: (folderId, kind = 'doc', title = '无标题文档') => {
+      createDoc: (folderId, kind = 'doc', title = '无标题文档', dirPath) => {
         const id = uid('d')
         const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
         const inFolder = !!space && !isCloudStorage(space.storage)
-        const fileName = inFolder ? uniqueFilePath(get().files, space!.id, title) : `${title}.html`
+        const fileName = inFolder
+          ? uniqueFileInDir(get().files, space!.id, dirPath ?? '', title, '.html')
+          : `${title}.html`
         // A cloud doc lands in its own space's private folder (spaces are isolated);
         // a connected-folder doc is tracked by its FileEntry, not a cloud folder.
         const cloudFolderId =
@@ -980,13 +943,15 @@ export const useStore = create<State>()(
         return id
       },
 
-      createFromTemplate: (templateId, folderId) => {
+      createFromTemplate: (templateId, folderId, dirPath) => {
         const tpl = get().templates.find((t) => t.id === templateId)
         if (!tpl) return ''
         const id = uid('d')
         const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
         const inFolder = !!space && !isCloudStorage(space.storage)
-        const fileName = inFolder ? uniqueFilePath(get().files, space!.id, tpl.name) : `${tpl.name}.html`
+        const fileName = inFolder
+          ? uniqueFileInDir(get().files, space!.id, dirPath ?? '', tpl.name, '.html')
+          : `${tpl.name}.html`
         const cloudFolderId =
           !inFolder && space
             ? get().folders.find((f) => f.spaceId === space.id && f.scope === 'personal')?.id ?? folderId
@@ -1034,14 +999,16 @@ export const useStore = create<State>()(
           files: s.files.filter((f) => f.docId !== docId),
         })),
 
-      generateDoc: async (prompt, folderId) => {
+      generateDoc: async (prompt, folderId, dirPath) => {
         set({ aiBusy: true })
         await sleep(1700)
         const id = uid('d')
         const title = prompt.slice(0, 18) || 'AI 生成的文档'
         const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
         const inFolder = !!space && !isCloudStorage(space.storage)
-        const fileName = inFolder ? uniqueFilePath(get().files, space!.id, title) : `${title}.html`
+        const fileName = inFolder
+          ? uniqueFileInDir(get().files, space!.id, dirPath ?? '', title, '.html')
+          : `${title}.html`
         const cloudFolderId =
           !inFolder && space
             ? get().folders.find((f) => f.spaceId === space.id && f.scope === 'personal')?.id ?? folderId
