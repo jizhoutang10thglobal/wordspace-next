@@ -84,7 +84,11 @@
   // ---- 渲染 ----
   function render() {
     treeEl.innerHTML = '';
-    if (!current) return;
+    if (!current) {
+      if (railEl) railEl.innerHTML = '';
+      return;
+    }
+    renderRail(); // 收起态图标轨（#4），与主树同步刷新
     const q = query.trim().toLowerCase();
     const nodes = q ? filterTree(current.tree, q) : current.tree;
     if (!nodes.length) {
@@ -330,6 +334,88 @@
   // 转义属性选择器里的引号/反斜杠
   function cssAttr(v) {
     return String(v).replace(/["\\]/g, '\\$&');
+  }
+
+  // ---- 收起态图标轨（#4）：顶层文件夹/文件迷你图标 + hover 气泡（名字 + 文件夹内容缩略）----
+  const railEl = document.getElementById('sb-rail');
+  const KIND_TEXT = { html: 'HTML 文档', image: '图片', pdf: 'PDF', word: 'Word 文档', sheet: '表格', slides: '演示文稿', other: '文件' };
+  let railPopEl = null;
+  function hideRailPop() {
+    if (railPopEl) {
+      railPopEl.remove();
+      railPopEl = null;
+    }
+  }
+  function showRailPop(anchor, node) {
+    hideRailPop();
+    const r = anchor.getBoundingClientRect();
+    const pop = document.createElement('div');
+    pop.className = 'sb-rail-pop';
+    const title = document.createElement('div');
+    title.className = 'sb-rail-pop-title ws-truncate';
+    title.textContent = node.name;
+    pop.appendChild(title);
+    if (node.isDir) {
+      const kids = node.children || [];
+      if (kids.length) {
+        const list = document.createElement('div');
+        list.className = 'sb-rail-pop-list';
+        for (const c of kids.slice(0, 8)) {
+          const it = document.createElement('div');
+          it.className = 'sb-rail-pop-item ws-truncate';
+          it.textContent = c.name;
+          list.appendChild(it);
+        }
+        pop.appendChild(list);
+        if (kids.length > 8) {
+          const more = document.createElement('div');
+          more.className = 'sb-rail-pop-more';
+          more.textContent = '+' + (kids.length - 8) + ' 项';
+          pop.appendChild(more);
+        }
+      } else {
+        const sub = document.createElement('div');
+        sub.className = 'sb-rail-pop-sub';
+        sub.textContent = '空文件夹';
+        pop.appendChild(sub);
+      }
+    } else {
+      const sub = document.createElement('div');
+      sub.className = 'sb-rail-pop-sub';
+      sub.textContent = KIND_TEXT[node.kind] || '文件';
+      pop.appendChild(sub);
+    }
+    document.body.appendChild(pop);
+    pop.style.left = r.right + 8 + 'px'; // 单 CSSOM 属性，CSP 安全
+    pop.style.top = r.top + 'px';
+    railPopEl = pop;
+  }
+  function railIcon(node) {
+    const btn = document.createElement('button');
+    btn.className = 'sb-rail-ico' + (node.isDir ? ' is-dir' : ' sb-kind-' + (node.kind || 'other'));
+    btn.dataset.rel = node.rel;
+    btn.innerHTML = node.isDir ? SVG.folder : SVG.file;
+    if (!node.isDir && openPath() === node.abs) btn.classList.add('is-active');
+    btn.title = node.name;
+    btn.onmouseenter = () => showRailPop(btn, node);
+    btn.onmouseleave = hideRailPop;
+    btn.onclick = () => {
+      hideRailPop();
+      if (node.isDir) {
+        collapsed.delete(node.rel); // 点文件夹：展开侧栏 + 展开这个文件夹
+        if (sidebarEl) sidebarEl.classList.remove('is-collapsed');
+        render();
+      } else {
+        openNode(node);
+      }
+    };
+    return btn;
+  }
+  function renderRail() {
+    if (!railEl || !current) return;
+    hideRailPop();
+    railEl.innerHTML = '';
+    for (const n of current.tree) railEl.appendChild(railIcon(n));
   }
 
   // ---- 筛选输入 ----

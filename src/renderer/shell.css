@@ -131,14 +131,36 @@ ul { list-style: none; }
 }
 .sb-icobtn:hover { background: var(--c-hover); color: var(--c-text); }
 
-/* 收起态（最简版：细条，只留收起/展开按钮） */
-.sb.is-collapsed { width: 44px; }
+/* 收起态：48px 图标轨（置顶 + 顶层文件夹/文件迷你图标 + hover 气泡），对齐 ui-demo CollapsedRail。 */
+.sb.is-collapsed { width: 48px; }
 .sb.is-collapsed .sb-title,
 .sb.is-collapsed #sb-open-folder,
 .sb.is-collapsed #sb-new-doc,
 .sb.is-collapsed .sb-filter,
 .sb.is-collapsed .sb-body { display: none; }
 .sb.is-collapsed .sb-head { justify-content: center; padding: 0; }
+
+/* 图标轨：默认不显示，仅收起态显示。 */
+.sb-rail { display: none; }
+.sb.is-collapsed .sb-rail { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0 12px; overflow-y: auto; min-height: 0; }
+.sb-rail-ico { flex: none; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--c-text-3); }
+.sb-rail-ico:hover { background: var(--c-hover); color: var(--c-text); }
+.sb-rail-ico.is-dir { color: var(--c-text-2); }
+.sb-rail-ico.is-active { background: var(--c-selected); color: var(--c-accent); }
+.sb-rail-ico.sb-kind-image { color: #8a3ffc; }
+.sb-rail-ico.sb-kind-pdf { color: #d3353c; }
+.sb-rail-ico.sb-kind-word { color: #1a73e8; }
+.sb-rail-ico.sb-kind-sheet { color: #1e8e3e; }
+.sb-rail-ico.sb-kind-slides { color: #b06000; }
+.sb-rail-pin { color: var(--c-accent); }
+.sb-rail-div { flex: none; width: 22px; height: 1px; margin: 4px 0; background: var(--c-divider); }
+/* hover 气泡：名字 + 文件夹内容缩略（CSP 安全：fixed + 单 CSSOM 定位） */
+.sb-rail-pop { position: fixed; z-index: 200; min-width: 150px; max-width: 240px; padding: 8px 11px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); box-shadow: var(--shadow-menu); }
+.sb-rail-pop-title { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-text); }
+.sb-rail-pop-sub { margin-top: 2px; font-size: var(--fs-xs); color: var(--c-text-3); }
+.sb-rail-pop-list { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.sb-rail-pop-item { font-size: var(--fs-sm); color: var(--c-text-2); }
+.sb-rail-pop-more { margin-top: 3px; font-size: var(--fs-xs); color: var(--c-text-3); }
 
 .sb-filter {
   flex: none; display: flex; align-items: center; gap: 6px;

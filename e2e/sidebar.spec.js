@@ -411,6 +411,22 @@ test('点头部收起按钮 → 侧栏收成细条、再点展开', async () => 
   await expect(page.locator('#sidebar.is-collapsed')).toHaveCount(0);
 });
 
+test('收起态图标轨：顶层图标 + hover 气泡 + 点文件夹图标展开', async () => {
+  await openWorkspace();
+  await page.keyboard.press('Control+\\'); // 收起
+  await expect(page.locator('#sidebar.is-collapsed')).toBeVisible();
+  // 轨上有 4 个顶层节点（数据/空目录/a.html/README）的迷你图标
+  await expect(page.locator('#sb-rail .sb-rail-ico')).toHaveCount(4);
+  // hover 数据 → 气泡显示名字 + 子项缩略
+  await page.locator('#sb-rail .sb-rail-ico[data-rel="数据"]').hover();
+  await expect(page.locator('.sb-rail-pop-title')).toHaveText('数据');
+  await expect(page.locator('.sb-rail-pop-item', { hasText: 'b.html' })).toBeVisible();
+  // 点文件夹图标 → 展开侧栏 + 展开该文件夹
+  await page.locator('#sb-rail .sb-rail-ico[data-rel="数据"]').click();
+  await expect(page.locator('#sidebar.is-collapsed')).toHaveCount(0);
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
+});
+
 test('重启 app → 自动恢复上次工作区（读 workspace.json，不靠 seam）', async () => {
   await openWorkspace(); // 这一步把 wsDir 存进 workspace.json
   await app.close();
