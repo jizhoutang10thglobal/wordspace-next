@@ -68,11 +68,20 @@ async function walk(root) {
   return { files: filesOut, dirs: dirsOut };
 }
 
-// 读整个工作区为排序好的树。
+// 给每个节点补绝对路径（主进程算路径，渲染层不做路径运算——点 .html 直接用 abs 喂 openDoc）。
+function addAbs(nodes, root) {
+  for (const n of nodes) {
+    n.abs = path.join(root, n.rel.split('/').join(path.sep));
+    if (n.children.length) addAbs(n.children, root);
+  }
+  return nodes;
+}
+
+// 读整个工作区为排序好的树（节点带 rel + abs）。
 async function readTree(root) {
   const r = path.resolve(root);
   const { files: fl, dirs } = await walk(r);
-  return { root: r, name: path.basename(r), tree: buildFileTree(fl, dirs) };
+  return { root: r, name: path.basename(r), tree: addAbs(buildFileTree(fl, dirs), r) };
 }
 
 // 在 dirRel 目录里新建一个 .html（内容由调用方给——模板 HTML）。dirRel '' = 工作区根。
