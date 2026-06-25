@@ -34,6 +34,16 @@ test('buildFileTree sorts by pinyin/numeric', () => {
   assert.deepEqual(tree.map((n) => n.name), ['落地页.html', '说明.html', '提案.html']);
 });
 
+test('buildFileTree sorts numerically, not lexically (文件2 < 文件10 < 文件100)', () => {
+  const tree = buildFileTree([
+    { path: '文件100.html' },
+    { path: '文件10.html' },
+    { path: '文件2.html' },
+    { path: '文件1.html' },
+  ]);
+  assert.deepEqual(tree.map((n) => n.name), ['文件1.html', '文件2.html', '文件10.html', '文件100.html']);
+});
+
 test('buildFileTree shows an explicit empty dir', () => {
   const tree = buildFileTree([], ['素材']);
   assert.equal(tree.length, 1);

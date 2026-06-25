@@ -122,6 +122,43 @@ test('deletePath optionally hands to OS trash via injected trashItem', async () 
   assert.equal(trashed, path.join(root, 'a.html'));
 });
 
+// ---- 去重而非覆盖：数据安全契约（这些分支之前没被测到 → 假覆盖感） ----
+
+test('renamePath onto an existing name dedupes, never overwrites the occupant', async () => {
+  const { root } = await seed();
+  await fs.writeFile(path.join(root, 'b.html'), '<html>OCCUPANT</html>', 'utf8');
+  const r = await ws.renamePath(root, 'a.html', 'b'); // 撞 b.html
+  assert.equal(r.rel, 'b 2.html');
+  assert.ok(await isFile(path.join(root, 'b 2.html')));
+  assert.equal(await fs.readFile(path.join(root, 'b.html'), 'utf8'), '<html>OCCUPANT</html>'); // 原 b.html 没被盖
+});
+
+test('movePath into a dir holding a same-name file dedupes, never overwrites', async () => {
+  const { root } = await seed();
+  await fs.writeFile(path.join(root, '数据', 'a.html'), '<html>OCCUPANT</html>', 'utf8');
+  const r = await ws.movePath(root, 'a.html', '数据'); // 数据/ 已有 a.html
+  assert.equal(r.rel, '数据/a 2.html');
+  assert.ok(await isFile(path.join(root, '数据', 'a 2.html')));
+  assert.equal(await fs.readFile(path.join(root, '数据', 'a.html'), 'utf8'), '<html>OCCUPANT</html>'); // 目标没被盖
+});
+
+test('undoDelete restores to a deduped name when the original slot is reoccupied', async () => {
+  const { root, backup } = await seed();
+  const { token } = await ws.deletePath(root, 'a.html', backup);
+  await fs.writeFile(path.join(root, 'a.html'), '<html>NEW</html>', 'utf8'); // 原位被新文件占了
+  const r = await ws.undoDelete(root, token, backup);
+  assert.equal(r.rel, 'a 2.html');
+  assert.equal(await fs.readFile(path.join(root, 'a 2.html'), 'utf8'), HTML); // 还原的旧内容落到 a 2.html
+  assert.equal(await fs.readFile(path.join(root, 'a.html'), 'utf8'), '<html>NEW</html>'); // 占位的新文件没被盖
+});
+
+test('renamePath to blank / separators-only rejects and leaves the file untouched', async () => {
+  const { root } = await seed();
+  await assert.rejects(() => ws.renamePath(root, 'a.html', '   '));
+  await assert.rejects(() => ws.renamePath(root, 'a.html', '/'));
+  assert.ok(await isFile(path.join(root, 'a.html')));
+});
+
 test('all ops reject path traversal outside the workspace root', async () => {
   const { root } = await seed();
   await assert.rejects(() => ws.newDoc(root, '../evil', 'x', HTML));
