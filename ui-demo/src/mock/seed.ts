@@ -219,9 +219,8 @@ export const seedDocs: Doc[] = [
 // 公司模板（private）= 我们自己写的、对编辑器适配最好的模板。用原生 block 编排
 // （heading/text/list/todo/callout/divider），块类型本身承载“功能性样式”——这样
 // 拖拽/转换/格式工具栏/斜杠菜单等编辑功能在模板上全程可用、无 bug。
-// 「格式模板」额外带 pageFormat（A4/A5/书信…），把画布约束到一张实际纸的宽度。
 export const seedTemplates: Template[] = [
-  // —— 文档类模板（工作中最常见的三种）——
+  // —— 公司文档模板 ——
   {
     id: 't-minutes', name: '会议纪要', kind: 'doc', category: '纪要', pool: 'private',
     description: '主题 / 参会 / 议题 / 决议 / 待办,五段式,开会即用。', accent: '#1a73e8',
@@ -236,22 +235,6 @@ export const seedTemplates: Template[] = [
       { id: 'mn8', type: 'callout', html: '✅ ______' },
       { id: 'mn9', type: 'heading', level: 2, html: '待办事项' },
       { id: 'mn10', type: 'list', listStyle: 'todo', html: '<li>______（负责人 __,截止 00-00）</li><li>______</li>' },
-    ],
-  },
-  {
-    id: 't-weekly', name: '工作周报', kind: 'doc', category: '周报', pool: 'private',
-    description: '本周完成 / 进行中 / 下周计划 / 风险,周会汇报标准格式。', accent: '#1e8e3e',
-    blocks: [
-      { id: 'wk1', type: 'heading', level: 1, html: '工作周报' },
-      { id: 'wk2', type: 'text', html: '<b>姓名</b>　______　｜　<b>周期</b>　第 00 周（00-00 ～ 00-00）' },
-      { id: 'wk3', type: 'heading', level: 2, html: '本周完成' },
-      { id: 'wk4', type: 'list', listStyle: 'bulleted', html: '<li>______</li><li>______</li>' },
-      { id: 'wk5', type: 'heading', level: 2, html: '进行中' },
-      { id: 'wk6', type: 'list', listStyle: 'bulleted', html: '<li>______（进度 00%）</li>' },
-      { id: 'wk7', type: 'heading', level: 2, html: '下周计划' },
-      { id: 'wk8', type: 'list', listStyle: 'todo', html: '<li>______</li><li>______</li>' },
-      { id: 'wk9', type: 'heading', level: 2, html: '问题 / 需要的支持' },
-      { id: 'wk10', type: 'callout', html: '⚠ ______' },
     ],
   },
   {
@@ -293,38 +276,6 @@ export const seedTemplates: Template[] = [
       { id: 'wp15', type: 'text', html: '<b>周一例会（20 分钟）</b>　对进度 → 过 Weekly Plan、对齐 Deliverable 与项目推进、同步支持事项与风险 → 确认本周需讨论内容的时间。产出：Refined Weekly Plan + 讨论日程。' },
       { id: 'wp16', type: 'text', html: '<b>周四例会（20 分钟）</b>　逐条同步进度（预期已完成 80–90%）→ 同步收尾 Deliverable 所需支持与风险。产出：收尾 action plan。' },
       { id: 'wp17', type: 'callout', html: '⏱ 例会严格 20 分钟,只聊推进不聊内容；单议题讨论超 2 分钟另约时间。' },
-    ],
-  },
-  // —— 格式类模板（按纸张版面）——
-  {
-    id: 't-a4', name: 'A4 文档', kind: 'doc', category: 'A4', pool: 'private', pageFormat: 'A4',
-    description: '标准 A4 版面（210×297mm）,正式文档、打印、导出 PDF。', accent: '#5a5f66',
-    blocks: [
-      { id: 'a4-1', type: 'heading', level: 1, html: '文档标题' },
-      { id: 'a4-2', type: 'text', html: '<b>A4 版面</b>　210 × 297 mm。适合正式文档、合同、报告——打印 / 导出 PDF 时版心与纸张一致。' },
-      { id: 'a4-3', type: 'text', html: '在此开始写作……' },
-    ],
-  },
-  {
-    id: 't-a5', name: 'A5 便签', kind: 'doc', category: 'A5', pool: 'private', pageFormat: 'A5',
-    description: '小幅 A5 版面（148×210mm）,便签、备忘、清单。', accent: '#8a3ffc',
-    blocks: [
-      { id: 'a5-1', type: 'heading', level: 2, html: '便签' },
-      { id: 'a5-2', type: 'text', html: 'A5 版面　148 × 210 mm。窄幅,适合便签、备忘、随手清单。' },
-      { id: 'a5-3', type: 'list', listStyle: 'todo', html: '<li>______</li><li>______</li>' },
-    ],
-  },
-  {
-    id: 't-letter', name: '商务书信', kind: 'doc', category: '书信', pool: 'private', pageFormat: 'letter',
-    description: '书信版面,称呼 / 正文 / 敬语 / 署名,对外函件。', accent: '#0b8793',
-    blocks: [
-      { id: 'lt1', type: 'text', html: '2026 年 00 月 00 日' },
-      { id: 'lt2', type: 'text', html: '尊敬的 ______：' },
-      { id: 'lt3', type: 'text', html: '　　您好！' },
-      { id: 'lt4', type: 'text', html: '　　______（正文）______' },
-      { id: 'lt5', type: 'text', html: '　　此致' },
-      { id: 'lt6', type: 'text', html: '敬礼！' },
-      { id: 'lt7', type: 'text', html: '______（署名）<br>______（单位）' },
     ],
   },
   // —— 公开池（联网内容,不归我们维护）——
