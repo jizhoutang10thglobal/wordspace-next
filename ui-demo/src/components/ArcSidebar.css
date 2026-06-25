@@ -383,6 +383,23 @@
   font-style: italic;
 }
 
+/* folder row is a div (role=button) so it can host a hover + button */
+.arc-folder-head { cursor: pointer; }
+.arc-folder-name { flex: 1; min-width: 0; }
+.arc-folder-add {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-3);
+  flex: none;
+  opacity: 0;
+}
+.arc-folder-head:hover .arc-folder-add { opacity: 1; }
+.arc-folder-add:hover { background: var(--c-active); color: var(--c-text); }
+
 /* collapsed sidebar: a vertical icon rail (Arc-style), not a blank strip */
 .arc-rail {
   flex: 1;

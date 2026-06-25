@@ -448,12 +448,24 @@ function FileBranch({
       </div>
     )
   }
+  const newDocHere = () => {
+    createFileInDir(path)
+    navigate('/docs')
+  }
   return (
     <div className="arc-tree-dir">
-      <button
+      <div
         className={`arc-folder-head ${dropOver ? 'is-drop' : ''}`}
+        role="button"
+        tabIndex={0}
         style={{ paddingLeft: 8 + depth * 16 }}
         onClick={() => toggle('file:' + path)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            toggle('file:' + path)
+          }
+        }}
         onContextMenu={(e) => {
           e.preventDefault()
           setMenu({ x: e.clientX, y: e.clientY })
@@ -480,15 +492,25 @@ function FileBranch({
       >
         <ChevronRight size={12} className={`arc-caret ${open ? 'is-open' : ''}`} />
         <FolderClosed size={13} />
-        <span className="ws-truncate">{node.name}</span>
-      </button>
+        <span className="ws-truncate arc-folder-name">{node.name}</span>
+        <button
+          className="arc-folder-add"
+          title="在此文件夹新建文档"
+          onClick={(e) => {
+            e.stopPropagation()
+            newDocHere()
+          }}
+        >
+          <Plus size={13} />
+        </button>
+      </div>
       {menu && (
         <ContextMenu
           x={menu.x}
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            { label: '新建文档', onClick: () => createFileInDir(path) },
+            { label: '新建文档', onClick: newDocHere },
             { label: '新建子文件夹', onClick: () => createSubfolder(path) },
             { label: '重命名', onClick: () => setRenaming(true) },
             { label: '删除', danger: true, onClick: () => deleteDirWithUndo(path) },

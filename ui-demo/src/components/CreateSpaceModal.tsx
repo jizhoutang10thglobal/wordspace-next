@@ -134,6 +134,7 @@ export default function CreateSpaceModal() {
                     选择本地文件夹…
                   </button>
                 )}
+                <p className="csm-hint">演示环境:选定后会载入一组示例文件,可直接在树里浏览、打开 .html 编辑。</p>
               </div>
             )}
           </div>
