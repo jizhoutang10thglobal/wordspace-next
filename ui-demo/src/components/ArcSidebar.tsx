@@ -726,6 +726,140 @@ function SpaceSwitcher() {
   )
 }
 
+// The collapsed (48px) sidebar: a condensed icon rail of the active space —
+// its badge, open tabs, and top-level folders — each with a hover bubble that
+// previews its name + contents. Click a folder/badge to expand; a tab to switch.
+function CollapsedRail() {
+  const navigate = useNavigate()
+  const tabs = useStore((s) => s.tabs)
+  const activeTabId = useStore((s) => s.activeTabId)
+  const activeSpaceId = useStore((s) => s.activeSpaceId)
+  const spaces = useStore((s) => s.spaces)
+  const setActiveTab = useStore((s) => s.setActiveTab)
+  const folders = useStore((s) => s.folders)
+  const docs = useStore((s) => s.docs)
+  const files = useStore((s) => s.files)
+  const dirs = useStore((s) => s.dirs)
+  const expand = useUI((s) => s.toggleSidebar)
+  const [pop, setPop] = useState<{ top: number; title: string; sub?: string; items: string[] } | null>(null)
+
+  const space = spaces.find((s) => s.id === activeSpaceId)
+  const spaceTabs = tabs.filter((t) => t.spaceId === activeSpaceId)
+  const tabItems = [...spaceTabs.filter((t) => t.pinned), ...spaceTabs.filter((t) => !t.pinned)]
+
+  // Top-level folder groups for the active space (cloud folders or tree dirs).
+  let groups: { id: string; name: string; items: string[] }[] = []
+  if (space && isCloudStorage(space.storage)) {
+    groups = folders
+      .filter((f) => f.spaceId === space.id)
+      .sort((a, b) => a.order - b.order)
+      .map((f) => ({
+        id: f.id,
+        name: f.name,
+        items: docs
+          .filter((d) => d.folderId === f.id)
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+          .map((d) => d.title),
+      }))
+  } else if (space) {
+    const tree = buildFileTree(
+      files.filter((f) => f.spaceId === space.id),
+      dirs.filter((d) => d.spaceId === space.id).map((d) => d.path),
+    )
+    groups = tree
+      .filter((n) => !n.file)
+      .map((n) => ({ id: n.name, name: n.name, items: n.children.map((c) => c.name) }))
+  }
+
+  const showPop = (e: React.MouseEvent, title: string, items: string[], sub?: string) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setPop({ top: r.top, title, items, sub })
+  }
+  const hide = () => setPop(null)
+
+  return (
+    <>
+      <div className="arc-rail">
+        {space && (
+          <button
+            className="arc-rail-badge-btn"
+            onMouseEnter={(e) =>
+              showPop(
+                e,
+                space.name,
+                [],
+                space.storage === 'local'
+                  ? '本地文件夹'
+                  : space.storage === 'gdrive'
+                    ? 'Google Drive'
+                    : 'Wordspace 云盘',
+              )
+            }
+            onMouseLeave={hide}
+            onClick={expand}
+            title=""
+          >
+            <span className="arc-rail-badge" style={{ background: space.color }}>
+              {space.badge}
+            </span>
+          </button>
+        )}
+        {(tabItems.length > 0 || groups.length > 0) && <div className="arc-rail-div" />}
+        {tabItems.map((t) => (
+          <button
+            key={t.id}
+            className={`arc-rail-ico ${t.id === activeTabId ? 'is-active' : ''}`}
+            onMouseEnter={(e) => showPop(e, t.title, [])}
+            onMouseLeave={hide}
+            onClick={() => {
+              setActiveTab(t.id)
+              navigate('/docs')
+            }}
+          >
+            {t.kind === 'web' ? (
+              <Globe2 size={15} />
+            ) : t.fileKind ? (
+              <FileIcon kind={t.fileKind} />
+            ) : (
+              <FileText size={15} />
+            )}
+          </button>
+        ))}
+        {tabItems.length > 0 && groups.length > 0 && <div className="arc-rail-div" />}
+        {groups.map((g) => (
+          <button
+            key={g.id}
+            className="arc-rail-ico arc-rail-folder"
+            onMouseEnter={(e) => showPop(e, g.name, g.items, g.items.length ? undefined : '空文件夹')}
+            onMouseLeave={hide}
+            onClick={expand}
+          >
+            <FolderClosed size={15} />
+          </button>
+        ))}
+      </div>
+      {pop && (
+        <div className="arc-rail-pop" style={{ top: pop.top }}>
+          <div className="arc-rail-pop-title ws-truncate">{pop.title}</div>
+          {pop.sub && <div className="arc-rail-pop-sub">{pop.sub}</div>}
+          {pop.items.length > 0 && (
+            <div className="arc-rail-pop-list">
+              {pop.items.slice(0, 8).map((n, i) => (
+                <div key={i} className="arc-rail-pop-item ws-truncate">
+                  {n}
+                </div>
+              ))}
+              {pop.items.length > 8 && (
+                <div className="arc-rail-pop-more">+{pop.items.length - 8} 项</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function ArcSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -736,7 +870,6 @@ export default function ArcSidebar() {
     spaces,
     activeSpaceId,
     setActiveSpace,
-    setActiveTab,
     newBrowserTab,
     openCreate,
   } = { ...useStore(), openCreate: useUI((s) => s.openCreate) }
@@ -803,10 +936,6 @@ export default function ArcSidebar() {
   ]
 
   if (collapsed) {
-    // Keep a usable vertical icon rail (Arc-style) instead of a blank strip:
-    // this space's tabs, pinned first, clickable to switch.
-    const spaceTabs = tabs.filter((t) => t.spaceId === activeSpaceId)
-    const rail = [...spaceTabs.filter((t) => t.pinned), ...spaceTabs.filter((t) => !t.pinned)]
     return (
       <aside className="arc-sidebar is-collapsed">
         <div className="arc-top arc-top-collapsed">
@@ -814,32 +943,7 @@ export default function ArcSidebar() {
             <PanelLeft size={15} />
           </button>
         </div>
-        <div className="arc-rail">
-          {rail.map((t) => (
-            <button
-              key={t.id}
-              className={`arc-rail-ico ${t.id === activeTabId ? 'is-active' : ''}`}
-              title={t.title}
-              onClick={() => {
-                setActiveTab(t.id)
-                navigate('/docs')
-              }}
-            >
-              {t.kind === 'web' ? (
-                <Globe2 size={15} />
-              ) : t.fileKind ? (
-                <FileIcon kind={t.fileKind} />
-              ) : (
-                <FileText size={15} />
-              )}
-            </button>
-          ))}
-        </div>
-        <div className="arc-rail-foot">
-          <button className="arc-ico" title="新建标签页" onClick={onNewTab}>
-            <Plus size={15} />
-          </button>
-        </div>
+        <CollapsedRail />
       </aside>
     )
   }
