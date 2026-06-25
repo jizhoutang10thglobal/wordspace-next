@@ -1,14 +1,37 @@
 const { ipcMain, dialog, app, BrowserWindow, shell } = require('electron');
+const fsp = require('fs/promises');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const files = require('./files');
 const history = require('./history');
 const recents = require('./recents');
 const docWatcher = require('./doc-watcher');
+const workspace = require('./workspace');
+const workspaceStore = require('./workspace-store');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
 const { pathInfo } = require('../lib/path-url');
+const { assertInsideWorkspace } = require('../lib/file-tree');
+const { TEMPLATES } = require('../lib/doc-templates');
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recentsFile = () => path.join(app.getPath('userData'), 'recents.json');
+const workspaceFile = () => path.join(app.getPath('userData'), 'workspace.json');
+const trashRoot = () => path.join(app.getPath('userData'), '.ws2-trash');
+
+// 当前工作区根：服务端唯一真相。pick-folder / ws-set-root 校验后设置；所有文件操作只收 relPath、
+// 用这个根（渲染层不传根——防篡改 workspace.json 注入任意根越权）。
+let activeRoot = null;
+function requireRoot() {
+  if (!activeRoot) throw new Error('没有打开的工作区');
+  return activeRoot;
+}
+async function dirExists(p) {
+  try {
+    return (await fsp.stat(p)).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 // 纵深防御：读写只接受 .html/.htm 路径。app 本就只开 HTML（对话框/文件关联都限 .html），
 // 这道守卫挡住「篡改 recents.json 注入 /etc/passwd 等任意路径越权读写」的向量，不影响正常流。
@@ -95,10 +118,76 @@ function registerIpc() {
       return { error: String((err && err.message) || err) };
     }
   });
+  ipcMain.handle('app-version', () => app.getVersion());
   ipcMain.handle('recents-list', () => recents.load(recentsFile()));
   ipcMain.handle('recents-add', (_e, p) => recents.add(recentsFile(), p));
   ipcMain.handle('history-list', (_e, p) => history.list(historyRoot(), p));
   ipcMain.handle('history-read', (_e, p, id) => history.read(historyRoot(), p, id));
+
+  // ---- 本地文件夹工作区 (F06) ----
+  // 选文件夹当工作区。WS2_FOLDER_IN 测试 seam（仅非打包态）：设了就跳过原生目录对话框
+  // （e2e 点不了原生对话框），照 WS2_PDF_OUT 先例。
+  ipcMain.handle('pick-folder', async () => {
+    const seam = !app.isPackaged ? process.env.WS2_FOLDER_IN : null;
+    let dir = seam;
+    if (!dir) {
+      const r = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+      if (r.canceled || !r.filePaths[0]) return null;
+      dir = r.filePaths[0];
+    }
+    activeRoot = path.resolve(dir);
+    await workspaceStore.save(workspaceFile(), activeRoot);
+    return workspace.readTree(activeRoot);
+  });
+  // 启动恢复：返回上次工作区根（仍存在才认），renderer 据此自动渲染。
+  ipcMain.handle('ws-get-root', async () => {
+    if (activeRoot) return activeRoot;
+    const saved = await workspaceStore.load(workspaceFile());
+    if (saved && (await dirExists(saved.root))) {
+      activeRoot = path.resolve(saved.root);
+      return activeRoot;
+    }
+    return null;
+  });
+  ipcMain.handle('ws-read-tree', () => (activeRoot ? workspace.readTree(activeRoot) : null));
+  ipcMain.handle('ws-new-doc', (_e, dirRel, base, html) =>
+    workspace.newDoc(requireRoot(), dirRel, base, html),
+  );
+  ipcMain.handle('ws-make-dir', (_e, dirRel, name) => workspace.makeDir(requireRoot(), dirRel, name));
+  ipcMain.handle('ws-rename', (_e, relPath, newLeaf) =>
+    workspace.renamePath(requireRoot(), relPath, newLeaf),
+  );
+  ipcMain.handle('ws-move', (_e, relPath, destDirRel) =>
+    workspace.movePath(requireRoot(), relPath, destDirRel),
+  );
+  ipcMain.handle('ws-delete', (_e, relPath) =>
+    workspace.deletePath(requireRoot(), relPath, trashRoot(), { trashItem: (p) => shell.trashItem(p) }),
+  );
+  ipcMain.handle('ws-undo-delete', (_e, token) =>
+    workspace.undoDelete(requireRoot(), token, trashRoot()),
+  );
+  // 置顶常用文件（按当前工作区根存进 workspace.json，换工作区各自保留）。
+  ipcMain.handle('ws-get-pins', () => workspaceStore.getPins(workspaceFile(), requireRoot()));
+  ipcMain.handle('ws-set-pins', (_e, pins) =>
+    workspaceStore.setPins(workspaceFile(), requireRoot(), pins),
+  );
+  // 新建文档模板（含空文档，第一项）。
+  ipcMain.handle('ws-templates', () => TEMPLATES);
+  // 非 .html 文件 → 系统默认程序打开（编辑器只认 html）。
+  ipcMain.handle('ws-open-external', async (_e, relPath) => {
+    const abs = assertInsideWorkspace(requireRoot(), relPath);
+    await shell.openPath(abs);
+    return { ok: true };
+  });
+  // 工作区内任意文件的 file:// URL（给图片/PDF 内置查看器；assertInsideWorkspace 约束在根内防越权）。
+  // pathInfo 那条只放 .html，这条放任意类型，所以单独开一个。
+  ipcMain.handle('ws-file-url', (_e, relPath) => {
+    const abs = assertInsideWorkspace(requireRoot(), relPath);
+    return pathToFileURL(abs).href;
+  });
+
+  // 启动机会性清掉过期的删除备份。
+  workspace.sweepBackups(trashRoot()).catch(() => {});
 }
 
 module.exports = { registerIpc };

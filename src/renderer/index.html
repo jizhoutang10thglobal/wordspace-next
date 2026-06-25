@@ -8,7 +8,43 @@
 </head>
 <body>
 
-<!-- 编辑区（照搬 ui-demo Canvas chrome）。左侧文件管理栏暂不做（Wendi：先只做编辑区）→ 单栏铺满。 -->
+<!-- 左侧本地文件栏（F06，对齐 ui-demo ArcSidebar 的「连接文件夹」一支）。body 是 flex 行：侧栏定宽，#main flex:1。 -->
+<aside id="sidebar" class="sb">
+  <div class="sb-head">
+    <button id="sb-toggle" class="sb-icobtn" title="收起/展开侧栏 (Cmd+\)">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+    </button>
+    <span class="sb-title ws-truncate" id="sb-root-name">本地文件</span>
+    <button id="sb-new-doc" class="sb-icobtn" title="新建文档（选模板）">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <button id="sb-open-folder" class="sb-icobtn" title="打开文件夹">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
+    </button>
+  </div>
+  <div class="sb-filter" id="sb-filter" hidden>
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+    <input id="sb-filter-input" type="text" placeholder="筛选文件" spellcheck="false">
+  </div>
+  <div class="sb-body" id="sb-body">
+    <div class="sb-empty" id="sb-empty">
+      <div class="sb-empty-note">打开一个本地文件夹，把这里当工作区</div>
+      <button id="sb-empty-open" class="sb-empty-btn">打开文件夹</button>
+    </div>
+    <!-- 置顶常用文件（#5）：有置顶时显示在文件树上方，右键/hover 钉。 -->
+    <div class="sb-pins" id="sb-pins" hidden></div>
+    <div class="sb-tree" id="sb-tree" hidden></div>
+  </div>
+  <!-- 收起态图标轨（只在 .sb.is-collapsed 显示）：置顶 + 顶层文件夹/文件的迷你图标 + hover 气泡预览。 -->
+  <div class="sb-rail" id="sb-rail" hidden></div>
+  <!-- 品牌页脚：wordspace.ai logo + 版本号（左侧栏底部，增强 branding）。 -->
+  <div class="sb-foot">
+    <img class="sb-foot-logo" src="wordspace-wordmark.png" alt="wordspace.ai">
+    <span class="sb-foot-ver" id="ws-ver"></span>
+  </div>
+</aside>
+
+<!-- 编辑区（照搬 ui-demo Canvas chrome）。 -->
 <section id="main" class="ws-main-doc">
   <!-- 右上角浮动 actions（照 ui-demo TopActions 风格，承载真功能键） -->
   <div class="top-actions">
@@ -26,13 +62,15 @@
   </div>
 
   <div class="ws-canvas">
-    <!-- 文档头：面包屑 本地 / 文件名 + 元信息（仅开文档时显示） -->
+    <!-- 文档头：面包屑 本地 / 文件名 + 元信息（仅开文档时显示）。定高实心条 + 底分隔线，把顶栏与编辑区隔开。 -->
     <div id="doc-header" class="ws-doc-header" hidden>
       <div class="ws-breadcrumb">
         <span>本地</span>
         <span class="ws-bc-sep">/</span>
         <span id="doc-name" class="ws-doc-crumb"></span>
         <span id="dirty-dot" class="ws-dirty" hidden>● 未保存</span>
+        <!-- 当前文件状态标（本地未发布）。对齐 ui-demo omnibox 的「本地」tag，复用面包屑、不另起地址栏。 -->
+        <span id="doc-status" class="ws-status-tag" hidden>本地</span>
       </div>
     </div>
 
@@ -40,13 +78,19 @@
     <div id="home" class="ws-empty-wrap">
       <div class="ws-empty">
         <div class="ws-empty-title">Wordspace Next</div>
-        <div class="ws-empty-note">打开一个 HTML 文档开始编辑</div>
-        <button id="home-open" class="top-share">打开文档</button>
+        <div class="ws-empty-note">打开一个 HTML 文档，或把一个文件夹当工作区</div>
+        <div class="ws-empty-actions">
+          <button id="home-open" class="top-share">打开文档</button>
+          <button id="home-open-folder" class="ta-ghost ws-empty-ghost">打开文件夹</button>
+        </div>
         <ul id="recent-list"></ul>
       </div>
     </div>
 
     <iframe id="doc-frame" sandbox="allow-same-origin" hidden></iframe>
+
+    <!-- 非 HTML 文件的应用内查看器（图片/PDF 直接预览；Word/表格/其他 → 外部打开卡片）。shell.js 填充。 -->
+    <div id="viewer" class="ws-viewer" hidden></div>
   </div>
 </section>
 
@@ -55,5 +99,6 @@
 <script src="../editor/format.js"></script>
 <script src="../editor/blockedit.js"></script>
 <script src="shell.js"></script>
+<script src="sidebar.js"></script>
 </body>
 </html>

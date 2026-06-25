@@ -10,6 +10,8 @@ const home = document.getElementById('home');
 const docHeader = document.getElementById('doc-header');
 const docName = document.getElementById('doc-name');
 const dirtyDot = document.getElementById('dirty-dot');
+const docStatus = document.getElementById('doc-status');
+const viewer = document.getElementById('viewer');
 const saveBtn = document.getElementById('save-btn');
 const exportBtn = document.getElementById('export-btn');
 
@@ -145,11 +147,109 @@ function wireEditor() {
 function prepFrame(asDirty) {
   home.hidden = true;
   docHeader.hidden = false;
+  if (docStatus) docStatus.hidden = false; // 本地状态标
+  closeViewer();
   frame.hidden = false;
   docName.textContent = docInfo.name;
   exportBtn.disabled = false; // 开了文档就能导出（不像保存要脏才亮）
   setDirty(!!asDirty);
 }
+
+// ---- 非 HTML 文件的应用内查看器（#1）：图片/PDF 直接预览，其余 → 外部打开卡片 ----
+const KIND_LABEL = { word: 'Word 文档', pdf: 'PDF', image: '图片', sheet: '表格', slides: '演示文稿', other: '文件' };
+const EXT_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>';
+function bigIconSvg() {
+  return '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
+}
+function closeViewer() {
+  if (!viewer) return;
+  viewer.hidden = true;
+  viewer.innerHTML = '';
+}
+function openExternalBtn(node, cls) {
+  const b = document.createElement('button');
+  b.className = cls;
+  b.innerHTML = EXT_SVG + '<span>用默认程序打开</span>';
+  b.onclick = () => window.ws2.wsOpenExternal(node.rel);
+  return b;
+}
+// node = { name, rel, abs, kind } —— 来自侧栏文件树
+async function showViewer(node) {
+  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
+  // 退出编辑器态：停 watch、拆块编辑、清 docPath（非可编辑文件没有保存目标）
+  window.ws2.unwatchDoc();
+  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  docPath = null;
+  docInfo = null;
+  setDirty(false);
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  home.hidden = true;
+  docHeader.hidden = true;
+  if (docStatus) docStatus.hidden = true;
+  exportBtn.disabled = true; // 非 html 不能导出
+  if (window.__sbHooks) window.__sbHooks.onOpen(node.abs); // 侧栏高亮当前查看的文件
+
+  const kind = node.kind || 'other';
+  viewer.innerHTML = '';
+  if (kind === 'image' || kind === 'pdf') {
+    let url = null;
+    try { url = await window.ws2.wsFileUrl(node.rel); } catch (e) { /* 取不到就退化成卡片 */ }
+    if (url) {
+      const bar = document.createElement('div');
+      bar.className = 'fv-bar';
+      const name = document.createElement('span');
+      name.className = 'fv-name';
+      name.textContent = node.name;
+      const tag = document.createElement('span');
+      tag.className = 'fv-tag';
+      tag.textContent = (kind === 'pdf' ? 'PDF' : '图片') + ' · 只读';
+      const sp = document.createElement('div');
+      sp.className = 'fv-sp';
+      bar.append(name, tag, sp, openExternalBtn(node, 'fv-open'));
+      viewer.appendChild(bar);
+      if (kind === 'image') {
+        const scroll = document.createElement('div');
+        scroll.className = 'imgv-scroll';
+        const img = document.createElement('img');
+        img.className = 'imgv-img';
+        img.src = url;
+        img.alt = node.name;
+        scroll.appendChild(img);
+        viewer.appendChild(scroll);
+      } else {
+        const f = document.createElement('iframe');
+        f.className = 'pdfv-frame';
+        f.src = url; // Chromium 内置 PDF 查看器（webPreferences.plugins:true）
+        viewer.appendChild(f);
+      }
+      viewer.hidden = false;
+      return;
+    }
+  }
+  // Word/表格/演示/其他（或图片/PDF 取 URL 失败）→ 外部打开卡片
+  const wrap = document.createElement('div');
+  wrap.className = 'efp';
+  const card = document.createElement('div');
+  card.className = 'efp-card';
+  const ico = document.createElement('div');
+  ico.className = 'efp-ico';
+  ico.innerHTML = bigIconSvg();
+  const name = document.createElement('div');
+  name.className = 'efp-name ws-truncate';
+  name.textContent = node.name;
+  const meta = document.createElement('div');
+  meta.className = 'efp-meta ws-truncate';
+  meta.textContent = (KIND_LABEL[kind] || '文件') + ' · ' + node.rel;
+  const note = document.createElement('p');
+  note.className = 'efp-note';
+  note.textContent = '这不是 HTML 文档，Wordspace 不能直接编辑它。可以一键用默认程序打开。';
+  card.append(ico, name, meta, note, openExternalBtn(node, 'efp-open'));
+  wrap.appendChild(card);
+  viewer.appendChild(wrap);
+  viewer.hidden = false;
+}
+window.__shellShowViewer = showViewer;
 
 // 打开真实文件：iframe 直接指向 file:// URL（主进程 pathInfo 算，跨平台正确），
 // 文档拥有自己的 CSP 上下文、相对资源天然解析。
@@ -206,7 +306,35 @@ async function openDoc(p) {
   window.ws2.watchDoc(p); // 盯外部磁盘改动（Bug2）；换文档时主进程会重指向到新路径
   await window.ws2.recentsAdd(p);
   renderRecents();
+  if (window.__sbHooks) window.__sbHooks.onOpen(docPath); // 文件树高亮当前打开文件（侧栏存在才调）
 }
+
+// 给侧栏（sidebar.js）用：当前打开文件被改名/移动后，把 app 内部状态指向新路径（不重载内容，
+// 只换保存目标 + watcher + 面包屑/高亮）。被删则回到空态。
+function shellRetargetDoc(newAbs, newName) {
+  docPath = newAbs;
+  docInfo = Object.assign({}, docInfo, { name: newName });
+  docName.textContent = newName;
+  window.ws2.watchDoc(newAbs);
+  if (window.__sbHooks) window.__sbHooks.onOpen(docPath);
+}
+function shellCloseDoc() {
+  window.ws2.unwatchDoc();
+  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  docPath = null;
+  docInfo = null;
+  setDirty(false);
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  docHeader.hidden = true;
+  if (docStatus) docStatus.hidden = true;
+  closeViewer();
+  exportBtn.disabled = true;
+  home.hidden = false;
+}
+window.__shellRetargetDoc = shellRetargetDoc;
+window.__shellCloseDoc = shellCloseDoc;
+window.__shellDocPath = () => docPath;
 
 async function pickAndOpen() {
   const p = await window.ws2.pickFile();
@@ -320,3 +448,12 @@ function buildWordspacePrintHtml() {
 exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf('wordspace'); };
 
 renderRecents();
+
+// 品牌页脚版本号（#3）：真实 app 版本。
+(async () => {
+  try {
+    const v = await window.ws2.appVersion();
+    const el = document.getElementById('ws-ver');
+    if (el && v) el.textContent = 'v' + v;
+  } catch (e) { /* 取不到就留空 */ }
+})();

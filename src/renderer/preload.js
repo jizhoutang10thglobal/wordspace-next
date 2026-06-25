@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('ws2', {
   pickFile: () => ipcRenderer.invoke('pick-file'),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),
+  appVersion: () => ipcRenderer.invoke('app-version'),
   saveDoc: (p, c) => ipcRenderer.invoke('save-doc', p, c),
   exportPdf: (p, mode, html) => ipcRenderer.invoke('export-pdf', p, mode, html),
   recents: () => ipcRenderer.invoke('recents-list'),
@@ -15,5 +16,21 @@ contextBridge.exposeInMainWorld('ws2', {
   unwatchDoc: () => ipcRenderer.send('unwatch-doc'),
   onDocChanged: (cb) => ipcRenderer.on('doc-changed', (_e, p) => cb(p)),
   onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, p) => cb(p)),
-  onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
+  onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
+
+  // 本地文件夹工作区 (F06)
+  pickFolder: () => ipcRenderer.invoke('pick-folder'),
+  wsGetRoot: () => ipcRenderer.invoke('ws-get-root'),
+  wsReadTree: () => ipcRenderer.invoke('ws-read-tree'),
+  wsNewDoc: (dirRel, base, html) => ipcRenderer.invoke('ws-new-doc', dirRel, base, html),
+  wsMakeDir: (dirRel, name) => ipcRenderer.invoke('ws-make-dir', dirRel, name),
+  wsRename: (relPath, newLeaf) => ipcRenderer.invoke('ws-rename', relPath, newLeaf),
+  wsMove: (relPath, destDirRel) => ipcRenderer.invoke('ws-move', relPath, destDirRel),
+  wsDelete: (relPath) => ipcRenderer.invoke('ws-delete', relPath),
+  wsUndoDelete: (token) => ipcRenderer.invoke('ws-undo-delete', token),
+  wsOpenExternal: (relPath) => ipcRenderer.invoke('ws-open-external', relPath),
+  wsFileUrl: (relPath) => ipcRenderer.invoke('ws-file-url', relPath),
+  wsGetPins: () => ipcRenderer.invoke('ws-get-pins'),
+  wsSetPins: (pins) => ipcRenderer.invoke('ws-set-pins', pins),
+  wsTemplates: () => ipcRenderer.invoke('ws-templates')
 });
