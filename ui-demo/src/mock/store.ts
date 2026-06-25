@@ -150,7 +150,6 @@ interface State {
   openWebTab: (url: string, title: string) => void
   openFileTab: (file: FileEntry) => void
   renameFile: (file: FileEntry, newBase: string) => void
-  deleteFile: (file: FileEntry) => void
   deleteFileWithUndo: (file: FileEntry) => void
   // connected-folder organize ops (path-based; folders are implicit + the dirs list)
   createFileInDir: (dirPath: string) => void
@@ -404,26 +403,14 @@ export const useStore = create<State>()(
         }))
       },
 
-      // Delete a file from a connected folder: drop its FileEntry, its open tab,
-      // and (for HTML) the backing doc.
-      deleteFile: (file) => {
-        set((s) => ({
-          docs: file.docId ? s.docs.filter((d) => d.id !== file.docId) : s.docs,
-          files: s.files.filter(
-            (f) => !(f.spaceId === file.spaceId && f.path === file.path),
-          ),
-          tabs: s.tabs.filter((t) =>
-            t.fileName && t.spaceId === file.spaceId && t.url === file.path ? false : true,
-          ),
-        }))
-      },
-
       // Delete a file but keep it recoverable: snapshot what we remove, then show
       // a toast with 撤销 that puts it back. Guard against the cross-file cascade —
       // only drop the backing doc if NO other file (in any space) still points at
       // it, so deleting one .html never silently destroys another file's content.
       deleteFileWithUndo: (file) => {
         const s = get()
+        const prevActiveTabId = s.activeTabId
+        const prevBySpace = s.activeTabBySpace[file.spaceId]
         const sharedByOther = s.files.some(
           (f) =>
             f.docId &&
@@ -460,6 +447,9 @@ export const useStore = create<State>()(
               files: [...st.files, file],
               docs: removedDoc ? [removedDoc, ...st.docs] : st.docs,
               tabs: [...st.tabs, ...removedTabs],
+              // re-focus the restored file, so 撤销 truly returns to pre-delete state
+              activeTabId: prevActiveTabId,
+              activeTabBySpace: { ...st.activeTabBySpace, [file.spaceId]: prevBySpace },
             })),
         })
       },
@@ -542,6 +532,8 @@ export const useStore = create<State>()(
       deleteDirWithUndo: (dirPath) => {
         const spaceId = get().activeSpaceId
         const s = get()
+        const prevActiveTabId = s.activeTabId
+        const prevBySpace = s.activeTabBySpace[spaceId]
         const prefix = `${dirPath}/`
         const removedFiles = s.files.filter(
           (f) => f.spaceId === spaceId && (f.path === dirPath || f.path.startsWith(prefix)),
@@ -597,6 +589,8 @@ export const useStore = create<State>()(
                 dirs: [...st.dirs, ...removedDirs],
                 docs: removedDocs.length ? [...removedDocs, ...st.docs] : st.docs,
                 tabs: [...st.tabs, ...removedTabs],
+                activeTabId: prevActiveTabId,
+                activeTabBySpace: { ...st.activeTabBySpace, [spaceId]: prevBySpace },
               })),
           },
         )
@@ -613,7 +607,7 @@ export const useStore = create<State>()(
           (f) => !(f.spaceId === file.spaceId && f.path === file.path),
         )
         const newPath = uniqueFileInDir(others, file.spaceId, destDir, base, ext)
-        if (newPath === file.path) return
+        if (newPath === file.path) return // dropped onto its own folder — no-op
         set((s) => ({
           files: s.files.map((f) =>
             f.spaceId === file.spaceId && f.path === file.path ? { ...f, path: newPath } : f,
@@ -624,6 +618,7 @@ export const useStore = create<State>()(
               : t,
           ),
         }))
+        get().toast(`已移动「${leaf}」到 ${destDir || '根目录'}`, 'neutral')
       },
 
       newBrowserTab: () => {

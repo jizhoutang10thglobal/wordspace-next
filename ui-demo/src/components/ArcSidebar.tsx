@@ -48,6 +48,14 @@ let dragTabId: string | null = null
 // (preserving docId/kind). Same-space moves only. getData() is blocked during
 // dragover, so we stash it module-side, mirroring dragTabId.
 let dragFile: FileEntry | null = null
+// The most-recently-hovered drop target's highlight-clear fn, so a cancelled
+// drag (Esc) can reset a stuck highlight the dragleave never cleared.
+let clearDrop: (() => void) | null = null
+/** The parent directory of a file path ('' = mount root). */
+function parentDir(p: string): string {
+  const i = p.lastIndexOf('/')
+  return i >= 0 ? p.slice(0, i) : ''
+}
 
 type InsertPos = 'before' | 'after'
 /** Where to drop, from cursor Y vs the hovered row's midpoint. */
@@ -386,6 +394,8 @@ function FileBranch({
           }}
           onDragEnd={() => {
             dragFile = null
+            clearDrop?.() // reset a stuck drop-highlight on cancel (Esc) / drop-end
+            clearDrop = null
           }}
           onClick={openIt}
           onContextMenu={(e) => {
@@ -449,17 +459,22 @@ function FileBranch({
           setMenu({ x: e.clientX, y: e.clientY })
         }}
         onDragOver={(e) => {
-          if (!dragFile || dragFile.spaceId !== spaceId) return
+          // skip if no file dragged, cross-space, or already in this folder
+          if (!dragFile || dragFile.spaceId !== spaceId || parentDir(dragFile.path) === path) return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
+          clearDrop = () => setDropOver(false)
           setDropOver(true)
         }}
-        onDragLeave={() => setDropOver(false)}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOver(false)
+        }}
         onDrop={(e) => {
           if (!dragFile || dragFile.spaceId !== spaceId) return
           e.preventDefault()
           e.stopPropagation()
           setDropOver(false)
+          clearDrop = null
           moveFile(dragFile, path)
         }}
       >
@@ -540,16 +555,21 @@ function SpaceLibrary({ space, query }: { space: Space; query: string }) {
           className={`arc-connected ${rootDrop ? 'is-drop' : ''}`}
           title="连接进来的外部文件夹 · 拖文件到这里可移到根目录"
           onDragOver={(e) => {
-            if (!dragFile || dragFile.spaceId !== space.id) return
+            // skip if no file dragged, cross-space, or already at the root
+            if (!dragFile || dragFile.spaceId !== space.id || parentDir(dragFile.path) === '') return
             e.preventDefault()
             e.dataTransfer.dropEffect = 'move'
+            clearDrop = () => setRootDrop(false)
             setRootDrop(true)
           }}
-          onDragLeave={() => setRootDrop(false)}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setRootDrop(false)
+          }}
           onDrop={(e) => {
             if (!dragFile || dragFile.spaceId !== space.id) return
             e.preventDefault()
             setRootDrop(false)
+            clearDrop = null
             moveFile(dragFile, '')
           }}
         >
