@@ -39,6 +39,8 @@
     emptyEl.hidden = true;
     treeEl.hidden = false;
     filterWrap.hidden = false;
+    const sb = document.getElementById('sidebar');
+    if (sb) sb.classList.add('sb-on'); // 打开工作区才显示侧栏（单文件编辑保持全宽）
     render();
   }
   async function refresh() {
@@ -324,6 +326,8 @@
   }
   if (openFolderBtn) openFolderBtn.onclick = pickFolder;
   if (emptyOpenBtn) emptyOpenBtn.onclick = pickFolder;
+  const homeOpenFolder = document.getElementById('home-open-folder'); // 首页空态的「打开文件夹」入口（无工作区时侧栏隐藏）
+  if (homeOpenFolder) homeOpenFolder.onclick = pickFolder;
 
   // 侧栏头作根目录 drop 目标：拖文件到这里 = 移到工作区根。
   const headEl = document.querySelector('.sb-head');
