@@ -21,7 +21,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, '../renderer/preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      plugins: true // 启用 Chromium 内置 PDF 查看器（非 html 文件在编辑区直接预览 PDF）
     }
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));

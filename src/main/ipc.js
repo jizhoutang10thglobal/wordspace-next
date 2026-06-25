@@ -1,6 +1,7 @@
 const { ipcMain, dialog, app, BrowserWindow, shell } = require('electron');
 const fsp = require('fs/promises');
 const path = require('path');
+const { pathToFileURL } = require('url');
 const files = require('./files');
 const history = require('./history');
 const recents = require('./recents');
@@ -117,6 +118,7 @@ function registerIpc() {
       return { error: String((err && err.message) || err) };
     }
   });
+  ipcMain.handle('app-version', () => app.getVersion());
   ipcMain.handle('recents-list', () => recents.load(recentsFile()));
   ipcMain.handle('recents-add', (_e, p) => recents.add(recentsFile(), p));
   ipcMain.handle('history-list', (_e, p) => history.list(historyRoot(), p));
@@ -171,6 +173,12 @@ function registerIpc() {
     const abs = assertInsideWorkspace(requireRoot(), relPath);
     await shell.openPath(abs);
     return { ok: true };
+  });
+  // 工作区内任意文件的 file:// URL（给图片/PDF 内置查看器；assertInsideWorkspace 约束在根内防越权）。
+  // pathInfo 那条只放 .html，这条放任意类型，所以单独开一个。
+  ipcMain.handle('ws-file-url', (_e, relPath) => {
+    const abs = assertInsideWorkspace(requireRoot(), relPath);
+    return pathToFileURL(abs).href;
   });
 
   // 启动机会性清掉过期的删除备份。

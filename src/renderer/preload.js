@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('ws2', {
   pickFile: () => ipcRenderer.invoke('pick-file'),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),
+  appVersion: () => ipcRenderer.invoke('app-version'),
   saveDoc: (p, c) => ipcRenderer.invoke('save-doc', p, c),
   exportPdf: (p, mode, html) => ipcRenderer.invoke('export-pdf', p, mode, html),
   recents: () => ipcRenderer.invoke('recents-list'),
@@ -28,5 +29,6 @@ contextBridge.exposeInMainWorld('ws2', {
   wsDelete: (relPath) => ipcRenderer.invoke('ws-delete', relPath),
   wsUndoDelete: (token) => ipcRenderer.invoke('ws-undo-delete', token),
   wsOpenExternal: (relPath) => ipcRenderer.invoke('ws-open-external', relPath),
+  wsFileUrl: (relPath) => ipcRenderer.invoke('ws-file-url', relPath),
   wsTemplates: () => ipcRenderer.invoke('ws-templates')
 });

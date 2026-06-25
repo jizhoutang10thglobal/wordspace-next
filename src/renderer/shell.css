@@ -135,6 +135,7 @@ ul { list-style: none; }
 .sb.is-collapsed { width: 44px; }
 .sb.is-collapsed .sb-title,
 .sb.is-collapsed #sb-open-folder,
+.sb.is-collapsed #sb-new-doc,
 .sb.is-collapsed .sb-filter,
 .sb.is-collapsed .sb-body { display: none; }
 .sb.is-collapsed .sb-head { justify-content: center; padding: 0; }
@@ -241,11 +242,23 @@ ul { list-style: none; }
 }
 .ws-canvas { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--c-bg); min-height: 0; }
 
-/* 文档头：本地 / 文件名 ● 未保存
-   右侧 padding 给浮在右上角的 .top-actions（打开/保存，position:absolute）留位——否则文件名一长
-   会顶到绝对定位的保存按钮上、把它切成两半（Bug3）。配合文件名 nowrap+ellipsis 截断兜底。 */
-.ws-doc-header { flex: none; padding: 16px 176px 0 56px; }
+/* 文档头：本地 / 文件名 ● 未保存 [本地]
+   定高实心条 + 底分隔线，把顶栏跟编辑区隔开（修顶栏溢出到内容区：原来无高度约束，
+   iframe 顶到浮动 actions 下方、文档 h1 透到打开/保存按钮后面）。
+   右侧 padding 给浮在右上角的 .top-actions（打开/保存/导出，position:absolute）留位——
+   文件名一长会顶到按钮（Bug3），配合 .ws-doc-crumb nowrap+ellipsis 截断兜底。 */
+.ws-doc-header {
+  flex: none;
+  display: flex; align-items: center;
+  min-height: 52px;
+  padding: 0 208px 0 56px;
+  background: var(--c-bg);
+  border-bottom: 1px solid var(--c-divider);
+}
 .ws-doc-header[hidden] { display: none; }
+/* 当前文件状态标（本地未发布）。 */
+.ws-status-tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 8px; border-radius: var(--r-pill); background: var(--c-bg-rail); color: var(--c-text-2); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
+.ws-status-tag[hidden] { display: none; }
 .ws-breadcrumb { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--c-text-3); font-size: var(--fs-sm); }
 .ws-bc-sep { color: var(--c-border-strong); flex: none; }
 /* 文件名过长时截断省略，不换行、不撑高、不溢出顶到按钮 */
@@ -257,6 +270,42 @@ ul { list-style: none; }
 
 #doc-frame { flex: 1; border: none; width: 100%; background: var(--c-bg); }
 #doc-frame[hidden] { display: none; }
+
+/* 品牌页脚：logo + 版本号（增强 branding，文档区底部留一条窄带）。 */
+.ws-foot { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; height: 30px; padding: 0 22px; border-top: 1px solid var(--c-divider); background: var(--c-bg); }
+.ws-foot-brand { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); letter-spacing: -.01em; }
+.ws-foot-mark { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; background: var(--c-accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
+.ws-foot-ver { font-size: var(--fs-xs); color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+
+/* ---- 非 HTML 文件的应用内查看器（#1） ---- */
+.ws-viewer { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--c-bg); }
+.ws-viewer[hidden] { display: none; }
+
+/* 外部打开卡片（Word/表格/演示/其他，或 PDF 兜底）。对齐 ui-demo ExternalFilePanel。 */
+.efp { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.efp-card { width: 420px; max-width: 100%; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 32px 28px; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface); box-shadow: var(--shadow-sm); }
+.efp-ico { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: var(--r-md); background: var(--c-accent-tint); color: var(--c-accent); margin-bottom: 14px; }
+.efp-name { font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--c-text); max-width: 100%; }
+.efp-meta { margin-top: 4px; font-size: var(--fs-sm); color: var(--c-text-3); max-width: 100%; }
+.efp-note { font-size: var(--fs-base); color: var(--c-text-2); line-height: 1.6; margin: 12px 0 18px; }
+.efp-open { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 20px; border-radius: var(--r-sm); background: var(--c-accent); color: #fff; font-size: var(--fs-md); font-weight: var(--fw-medium); }
+.efp-open:hover { background: var(--c-accent-hover); }
+.efp-open:active { background: var(--c-accent-press); }
+
+/* 图片/PDF 内置查看器共用顶条（文件名 + 只读标 + 用默认程序打开）。对齐 ui-demo FileViewerBar。 */
+.fv-bar { flex: none; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px 0 56px; border-bottom: 1px solid var(--c-divider); background: var(--c-bg); }
+.fv-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--c-text); }
+.fv-tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 8px; border-radius: var(--r-pill); background: var(--c-bg-rail); color: var(--c-text-2); font-size: var(--fs-xs); }
+.fv-sp { flex: 1; }
+.fv-open { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-sm); color: var(--c-text-2); font-size: var(--fs-base); }
+.fv-open:hover { background: var(--c-hover); color: var(--c-text); }
+
+/* 图片：浏览器原生渲染真实文件（file://），只读、居中、可滚动。 */
+.imgv-scroll { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 28px; background: var(--c-bg-sunken); }
+.imgv-img { max-width: 100%; height: auto; border-radius: var(--r-sm); box-shadow: var(--shadow-sm); background: #fff; }
+
+/* PDF：Chromium 内置查看器（file:// 直载 iframe）。 */
+.pdfv-frame { flex: 1; width: 100%; border: none; background: var(--c-bg-sunken); }
 
 /* 空态 */
 .ws-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
@@ -270,8 +319,8 @@ ul { list-style: none; }
 #recent-list li { padding: 9px 12px; border-radius: var(--r-sm); cursor: pointer; color: var(--c-text-2); font-size: var(--fs-base); transition: background var(--dur-fast) var(--ease); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #recent-list li:hover { background: var(--c-hover); color: var(--c-text); }
 
-/* 右上角浮动 actions（照 ui-demo TopActions） */
-.top-actions { position: absolute; top: 14px; right: 22px; z-index: 30; display: flex; align-items: center; gap: 8px; }
+/* 右上角浮动 actions（照 ui-demo TopActions）。top 居中于 52px 文档头条：(52-30)/2≈11。 */
+.top-actions { position: absolute; top: 11px; right: 22px; z-index: 30; display: flex; align-items: center; gap: 8px; }
 .ta-ghost { height: 30px; padding: 0 12px; border-radius: var(--r-sm); color: var(--c-text-2); font-size: var(--fs-base); display: inline-flex; align-items: center; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
 .ta-ghost:hover { background: var(--c-hover); color: var(--c-text); }
 .ta-ghost:active { background: var(--c-active); }

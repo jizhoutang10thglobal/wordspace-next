@@ -309,10 +309,12 @@
     }
   }
 
-  // ---- 打开节点：.html 进编辑器；其余走系统默认程序 ----
+  // ---- 打开节点：.html 进编辑器；其余进应用内查看器（图片/PDF 预览，其余给外部打开卡片）----
   function openNode(node) {
     if (node.kind === 'html') {
       openDoc(node.abs); // shell.js 的漏斗（脏检查/载入/watch/recents）
+    } else if (window.__shellShowViewer) {
+      window.__shellShowViewer(node); // 编辑区出预览/卡片，不再直接外部打开
     } else {
       window.ws2.wsOpenExternal(node.rel);
     }
@@ -339,6 +341,8 @@
   }
   if (openFolderBtn) openFolderBtn.onclick = pickFolder;
   if (emptyOpenBtn) emptyOpenBtn.onclick = pickFolder;
+  const newDocBtn = document.getElementById('sb-new-doc'); // 侧栏头「+新建文档」→ 模板台（落在工作区根）
+  if (newDocBtn) newDocBtn.onclick = () => openCreateModal('');
   const homeOpenFolder = document.getElementById('home-open-folder'); // 首页空态的「打开文件夹」入口（无工作区时侧栏隐藏）
   if (homeOpenFolder) homeOpenFolder.onclick = pickFolder;
 
