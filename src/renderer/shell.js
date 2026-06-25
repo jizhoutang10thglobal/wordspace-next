@@ -206,7 +206,33 @@ async function openDoc(p) {
   window.ws2.watchDoc(p); // 盯外部磁盘改动（Bug2）；换文档时主进程会重指向到新路径
   await window.ws2.recentsAdd(p);
   renderRecents();
+  if (window.__sbHooks) window.__sbHooks.onOpen(docPath); // 文件树高亮当前打开文件（侧栏存在才调）
 }
+
+// 给侧栏（sidebar.js）用：当前打开文件被改名/移动后，把 app 内部状态指向新路径（不重载内容，
+// 只换保存目标 + watcher + 面包屑/高亮）。被删则回到空态。
+function shellRetargetDoc(newAbs, newName) {
+  docPath = newAbs;
+  docInfo = Object.assign({}, docInfo, { name: newName });
+  docName.textContent = newName;
+  window.ws2.watchDoc(newAbs);
+  if (window.__sbHooks) window.__sbHooks.onOpen(docPath);
+}
+function shellCloseDoc() {
+  window.ws2.unwatchDoc();
+  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  docPath = null;
+  docInfo = null;
+  setDirty(false);
+  frame.hidden = true;
+  frame.removeAttribute('src');
+  docHeader.hidden = true;
+  exportBtn.disabled = true;
+  home.hidden = false;
+}
+window.__shellRetargetDoc = shellRetargetDoc;
+window.__shellCloseDoc = shellCloseDoc;
+window.__shellDocPath = () => docPath;
 
 async function pickAndOpen() {
   const p = await window.ws2.pickFile();

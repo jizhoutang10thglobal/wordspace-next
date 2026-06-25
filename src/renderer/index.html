@@ -8,7 +8,28 @@
 </head>
 <body>
 
-<!-- 编辑区（照搬 ui-demo Canvas chrome）。左侧文件管理栏暂不做（Wendi：先只做编辑区）→ 单栏铺满。 -->
+<!-- 左侧本地文件栏（F06，对齐 ui-demo ArcSidebar 的「连接文件夹」一支）。body 是 flex 行：侧栏定宽，#main flex:1。 -->
+<aside id="sidebar" class="sb">
+  <div class="sb-head">
+    <span class="sb-title ws-truncate" id="sb-root-name">本地文件</span>
+    <button id="sb-open-folder" class="sb-icobtn" title="打开文件夹">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
+    </button>
+  </div>
+  <div class="sb-filter" id="sb-filter" hidden>
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+    <input id="sb-filter-input" type="text" placeholder="筛选文件" spellcheck="false">
+  </div>
+  <div class="sb-body" id="sb-body">
+    <div class="sb-empty" id="sb-empty">
+      <div class="sb-empty-note">打开一个本地文件夹，把这里当工作区</div>
+      <button id="sb-empty-open" class="sb-empty-btn">打开文件夹</button>
+    </div>
+    <div class="sb-tree" id="sb-tree" hidden></div>
+  </div>
+</aside>
+
+<!-- 编辑区（照搬 ui-demo Canvas chrome）。 -->
 <section id="main" class="ws-main-doc">
   <!-- 右上角浮动 actions（照 ui-demo TopActions 风格，承载真功能键） -->
   <div class="top-actions">
@@ -55,5 +76,6 @@
 <script src="../editor/format.js"></script>
 <script src="../editor/blockedit.js"></script>
 <script src="shell.js"></script>
+<script src="sidebar.js"></script>
 </body>
 </html>
