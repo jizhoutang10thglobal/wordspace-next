@@ -216,11 +216,69 @@ export const seedDocs: Doc[] = [
 // ---------------------------------------------------------------------------
 // templates: private (company) pool + public pool
 // ---------------------------------------------------------------------------
+// 公司模板（private）= 我们自己写的、对编辑器适配最好的模板。用原生 block 编排
+// （heading/text/list/todo/callout/divider），块类型本身承载“功能性样式”——这样
+// 拖拽/转换/格式工具栏/斜杠菜单等编辑功能在模板上全程可用、无 bug。
 export const seedTemplates: Template[] = [
-  { id: 't-handbook', name: '员工手册', kind: 'doc', category: '手册', pool: 'private', description: '公司样式的制度手册,分章节。', accent: '#1a73e8', blocks: [{ id: 'tt1', type: 'heading', level: 1, html: '员工手册' }, { id: 'tt2', type: 'text', html: '欢迎加入。' }] },
-  { id: 't-bid', name: '投标书', kind: 'doc', category: '标书', pool: 'private', description: '正式标书版式,带封面与目录。', accent: '#b8541d', blocks: [{ id: 'tb1', type: 'heading', level: 1, html: '项目投标书' }] },
-  { id: 't-deck', name: '季度汇报', kind: 'slides', category: '演示', pool: 'private', description: '演示文稿模板,可放映可导 PPT。', accent: '#1e8e3e', blocks: [{ id: 'td1', type: 'heading', level: 1, html: '季度汇报' }] },
-  { id: 't-landing', name: '招聘落地页', kind: 'page', category: '落地页', pool: 'private', description: '排过版的招聘网页,一键发布。', accent: '#8a3ffc', blocks: [{ id: 'tl1', type: 'heading', level: 1, html: '我们在招聘' }] },
+  // —— 公司文档模板 ——
+  {
+    id: 't-minutes', name: '会议纪要', kind: 'doc', category: '纪要', pool: 'private',
+    description: '主题 / 参会 / 议题 / 决议 / 待办,五段式,开会即用。', accent: '#1a73e8',
+    blocks: [
+      { id: 'mn1', type: 'heading', level: 1, html: '会议纪要' },
+      { id: 'mn2', type: 'callout', html: '主题：______　·　日期：2026-00-00　·　主持：______　·　记录：______' },
+      { id: 'mn3', type: 'heading', level: 2, html: '参会人' },
+      { id: 'mn4', type: 'list', listStyle: 'bulleted', html: '<li>______</li><li>______</li>' },
+      { id: 'mn5', type: 'heading', level: 2, html: '议题与讨论' },
+      { id: 'mn6', type: 'list', listStyle: 'numbered', html: '<li><b>议题一</b>：______</li><li><b>议题二</b>：______</li>' },
+      { id: 'mn7', type: 'heading', level: 2, html: '决议' },
+      { id: 'mn8', type: 'callout', html: '✅ ______' },
+      { id: 'mn9', type: 'heading', level: 2, html: '待办事项' },
+      { id: 'mn10', type: 'list', listStyle: 'todo', html: '<li>______（负责人 __,截止 00-00）</li><li>______</li>' },
+    ],
+  },
+  {
+    id: 't-proposal', name: '项目方案', kind: 'doc', category: '方案', pool: 'private',
+    description: '背景 / 目标 / 方案 / 里程碑 / 风险,立项与评审通用。', accent: '#e8710a',
+    blocks: [
+      { id: 'pr1', type: 'heading', level: 1, html: '项目方案：______' },
+      { id: 'pr2', type: 'callout', html: '一句话目标：______' },
+      { id: 'pr3', type: 'heading', level: 2, html: '背景' },
+      { id: 'pr4', type: 'text', html: '当前 ______ 存在 ______ 问题,需要 ______。' },
+      { id: 'pr5', type: 'heading', level: 2, html: '目标' },
+      { id: 'pr6', type: 'list', listStyle: 'bulleted', html: '<li>______</li><li>______</li>' },
+      { id: 'pr7', type: 'heading', level: 2, html: '方案概述' },
+      { id: 'pr8', type: 'text', html: '______' },
+      { id: 'pr9', type: 'heading', level: 2, html: '里程碑' },
+      { id: 'pr10', type: 'list', listStyle: 'numbered', html: '<li>第一阶段（00-00）：______</li><li>第二阶段（00-00）：______</li>' },
+      { id: 'pr11', type: 'heading', level: 2, html: '风险与对策' },
+      { id: 'pr12', type: 'callout', html: '⚠ ______' },
+    ],
+  },
+  {
+    id: 't-weekly-plan', name: '周计划', kind: 'doc', category: '周计划', pool: 'private',
+    description: 'Weekly Plan / 例会节奏 / End of Week Update,团队周节奏标准格式（Wendi）。', accent: '#d4356b',
+    blocks: [
+      { id: 'wp1', type: 'heading', level: 1, html: 'Weekly Plan　MM/DD – MM/DD' },
+      { id: 'wp2', type: 'callout', html: '注：Deliverable 需是明确、可衡量、可验证的「结果」,不是推进的「动作」。' },
+      { id: 'wp3', type: 'heading', level: 2, html: 'A. Deliverable' },
+      { id: 'wp4', type: 'list', listStyle: 'todo', html: '<li>Deliverable 1</li><li>Deliverable 2</li><li>Deliverable 3</li>' },
+      { id: 'wp5', type: 'heading', level: 2, html: 'B. Need Support / Review' },
+      { id: 'wp6', type: 'list', listStyle: 'todo', html: '<li>Item 1</li><li>Item 2</li><li>Item 3</li>' },
+      { id: 'wp7', type: 'heading', level: 2, html: 'C. Risks / Uncertainties' },
+      { id: 'wp8', type: 'list', listStyle: 'bulleted', html: '<li>Item 1</li><li>Item 2</li><li>Item 3</li>' },
+      { id: 'wp9', type: 'heading', level: 2, html: 'End of Week Update　MM/DD – MM/DD' },
+      { id: 'wp10', type: 'heading', level: 3, html: 'A. Deliverable Update' },
+      { id: 'wp11', type: 'list', listStyle: 'bulleted', html: '<li>Deliverable 1 — ______</li><li>Deliverable 2 — ______</li><li>Deliverable 3 — ______</li>' },
+      { id: 'wp12', type: 'heading', level: 3, html: 'B. Items to note' },
+      { id: 'wp13', type: 'list', listStyle: 'bulleted', html: '<li>______</li><li>______</li>' },
+      { id: 'wp14', type: 'heading', level: 2, html: '例会节奏' },
+      { id: 'wp15', type: 'text', html: '<b>周一例会（20 分钟）</b>　对进度 → 过 Weekly Plan、对齐 Deliverable 与项目推进、同步支持事项与风险 → 确认本周需讨论内容的时间。产出：Refined Weekly Plan + 讨论日程。' },
+      { id: 'wp16', type: 'text', html: '<b>周四例会（20 分钟）</b>　逐条同步进度（预期已完成 80–90%）→ 同步收尾 Deliverable 所需支持与风险。产出：收尾 action plan。' },
+      { id: 'wp17', type: 'callout', html: '⏱ 例会严格 20 分钟,只聊推进不聊内容；单议题讨论超 2 分钟另约时间。' },
+    ],
+  },
+  // —— 公开池（联网内容,不归我们维护）——
   { id: 't-blog', name: '博客文章', kind: 'page', category: '网页', pool: 'public', description: '通用图文排版,适合对外发布。', accent: '#0b8793', blocks: [{ id: 'tg1', type: 'heading', level: 1, html: '文章标题' }] },
   { id: 't-readme', name: '产品说明', kind: 'doc', category: '文档', pool: 'public', description: '简洁的产品说明文档结构。', accent: '#5a5f66', blocks: [{ id: 'tr1', type: 'heading', level: 1, html: '产品说明' }] },
 ]

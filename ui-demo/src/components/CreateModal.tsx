@@ -1,33 +1,38 @@
 import { useEffect, useState } from 'react'
-import {
-  FileText,
-  LayoutTemplate,
-  Sparkles,
-  X,
-} from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { FileText, Sparkles, X } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
-import { Pill, Spinner } from '../ui/primitives'
+import { isCloudStorage, type DocKind } from '../types'
+import { Spinner } from '../ui/primitives'
 import './CreateModal.css'
 
 const DRAFTS = 'f-drafts'
 
-type Mode = 'pick' | 'ai' | 'template'
+const kindLabel = (k: DocKind) => (k === 'page' ? '网页' : k === 'slides' ? '演示' : '文档')
 
+/**
+ * 新建文档：先给一张模板选择台。第一张永远是「空文档」（一键直达，不强迫选模板），
+ * 后面是公司模板卡，再一张「用 AI 生成」。从哪个文件夹触发的就建到哪个文件夹
+ * （createTargetDir）。
+ */
 export default function CreateModal() {
+  const navigate = useNavigate()
   const createOpen = useUI((s) => s.createOpen)
   const closeCreate = useUI((s) => s.closeCreate)
+  const targetDir = useUI((s) => s.createTargetDir)
 
   const createDoc = useStore((s) => s.createDoc)
   const generateDoc = useStore((s) => s.generateDoc)
   const createFromTemplate = useStore((s) => s.createFromTemplate)
   const templates = useStore((s) => s.templates)
+  const spaces = useStore((s) => s.spaces)
+  const activeSpaceId = useStore((s) => s.activeSpaceId)
 
-  const [mode, setMode] = useState<Mode>('pick')
+  const [mode, setMode] = useState<'pick' | 'ai'>('pick')
   const [prompt, setPrompt] = useState('')
   const [generating, setGenerating] = useState(false)
 
-  // reset to the picker each time the modal opens
   useEffect(() => {
     if (createOpen) {
       setMode('pick')
@@ -47,26 +52,34 @@ export default function CreateModal() {
 
   if (!createOpen) return null
 
-  const handleBlank = () => {
-    createDoc(DRAFTS, 'doc', '无标题文档')
-    closeCreate()
-  }
+  const space = spaces.find((s) => s.id === activeSpaceId)
+  const dir = targetDir ?? undefined // undefined → store defaults (root / 我的草稿)
+  const companyTemplates = templates.filter((t) => t.pool === 'private')
+  const where =
+    targetDir && targetDir !== '' ? `${space?.name} / ${targetDir}` : (space?.name ?? '当前空间')
 
-  const handleGenerate = async () => {
+  const done = () => {
+    closeCreate()
+    navigate('/docs')
+  }
+  const blank = () => {
+    createDoc(DRAFTS, 'doc', '无标题文档', dir)
+    done()
+  }
+  const fromTemplate = (id: string) => {
+    createFromTemplate(id, DRAFTS, dir)
+    done()
+  }
+  const generate = async () => {
     const value = prompt.trim()
     if (!value || generating) return
     setGenerating(true)
     try {
-      await generateDoc(value, DRAFTS)
-      closeCreate()
+      await generateDoc(value, DRAFTS, dir)
+      done()
     } finally {
       setGenerating(false)
     }
-  }
-
-  const handleTemplate = (id: string) => {
-    createFromTemplate(id, DRAFTS)
-    closeCreate()
   }
 
   return (
@@ -77,105 +90,81 @@ export default function CreateModal() {
       }}
     >
       <div
-        className="ws-modal create"
+        className="ws-modal cm-new"
         role="dialog"
         aria-modal="true"
-        aria-label="新建"
+        aria-label="新建文档"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="ws-modal-head">
           <div className="ws-modal-head-text">
-            <div className="ws-modal-title">新建</div>
+            <div className="ws-modal-title">新建文档</div>
+            <div className="cm-where">在 {where}</div>
           </div>
-          <button
-            className="ws-modal-x"
-            onClick={closeCreate}
-            aria-label="关闭"
-            disabled={generating}
-          >
+          <button className="ws-modal-x" onClick={closeCreate} aria-label="关闭" disabled={generating}>
             <X size={16} />
           </button>
         </header>
 
         <div className="ws-modal-body">
-          <div className="cm-choices">
-            {/* blank doc */}
-            <button className="cm-choice" onClick={handleBlank}>
-              <span className="cm-choice-ico">
-                <FileText size={18} />
-              </span>
-              <span className="cm-choice-text">
-                <span className="cm-choice-title">空白文档</span>
-                <span className="cm-choice-desc">从一张白纸开始</span>
-              </span>
-            </button>
+          {mode === 'pick' ? (
+            <div className="cm-grid">
+              <button className="cm-card cm-card-blank" onClick={blank}>
+                <span className="cm-card-ico">
+                  <FileText size={18} />
+                </span>
+                <span className="cm-card-name">空文档</span>
+                <span className="cm-card-desc">从一张白纸开始</span>
+              </button>
 
-            {/* AI generate */}
-            <button
-              className={`cm-choice${mode === 'ai' ? ' is-open' : ''}`}
-              onClick={() => setMode('ai')}
-            >
-              <span className="cm-choice-ico cm-choice-ico-ai">
-                <Sparkles size={18} />
-              </span>
-              <span className="cm-choice-text">
-                <span className="cm-choice-title">用 AI 生成</span>
-                <span className="cm-choice-desc">描述需求,自动起草</span>
-              </span>
-            </button>
-            {mode === 'ai' && (
-              <div className="cm-panel">
-                <textarea
-                  className="cm-textarea"
-                  placeholder="描述你想要的文档,例如:给新客户的项目方案"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  disabled={generating}
-                  autoFocus
-                />
-                <div className="cm-panel-foot">
-                  <button
-                    className="ws-btn ws-btn-primary"
-                    onClick={handleGenerate}
-                    disabled={generating || !prompt.trim()}
-                  >
-                    {generating ? <Spinner size={14} /> : null}
-                    {generating ? '正在生成…' : '生成'}
-                  </button>
-                </div>
-              </div>
-            )}
+              {companyTemplates.map((t) => (
+                <button
+                  key={t.id}
+                  className="cm-card cm-card-tpl"
+                  style={{ borderTopColor: t.accent }}
+                  onClick={() => fromTemplate(t.id)}
+                >
+                  <span className="cm-card-kind" style={{ color: t.accent }}>
+                    {kindLabel(t.kind)}
+                  </span>
+                  <span className="cm-card-name">{t.name}</span>
+                  <span className="cm-card-desc">{t.description}</span>
+                </button>
+              ))}
 
-            {/* from template */}
-            <button
-              className={`cm-choice${mode === 'template' ? ' is-open' : ''}`}
-              onClick={() => setMode('template')}
-            >
-              <span className="cm-choice-ico">
-                <LayoutTemplate size={18} />
-              </span>
-              <span className="cm-choice-text">
-                <span className="cm-choice-title">从模板</span>
-                <span className="cm-choice-desc">套用现成的版式</span>
-              </span>
-            </button>
-            {mode === 'template' && (
-              <div className="cm-panel">
-                <div className="cm-tpl-list">
-                  {templates.map((tpl) => (
-                    <button
-                      key={tpl.id}
-                      className="cm-tpl"
-                      onClick={() => handleTemplate(tpl.id)}
-                    >
-                      <span className="cm-tpl-name">{tpl.name}</span>
-                      <Pill>{tpl.category}</Pill>
-                    </button>
-                  ))}
-                </div>
+              <button className="cm-card cm-card-ai" onClick={() => setMode('ai')}>
+                <span className="cm-card-ico">
+                  <Sparkles size={18} />
+                </span>
+                <span className="cm-card-name">用 AI 生成</span>
+                <span className="cm-card-desc">描述需求,自动起草</span>
+              </button>
+            </div>
+          ) : (
+            <div className="cm-ai">
+              <textarea
+                className="cm-ai-input"
+                placeholder="描述你想要的文档,例如:给新客户的项目方案"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                disabled={generating}
+                autoFocus
+              />
+              <div className="cm-ai-foot">
+                <button className="ws-btn" onClick={() => setMode('pick')} disabled={generating}>
+                  返回
+                </button>
+                <button
+                  className="ws-btn ws-btn-primary"
+                  onClick={generate}
+                  disabled={generating || !prompt.trim()}
+                >
+                  {generating ? <Spinner size={14} /> : null}
+                  {generating ? '正在生成…' : '生成'}
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

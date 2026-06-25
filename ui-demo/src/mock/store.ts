@@ -33,21 +33,72 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 7
+const SEED_VERSION = 13
 
 const uid = (p = 'id') =>
   `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-// A unique "<base>.html" (or "<base> 2.html", …) among a connected folder's
-// existing files, so a second new doc doesn't collide with the first.
-function uniqueFilePath(files: FileEntry[], spaceId: string, base: string): string {
+// Strip path separators so a typed name can't silently spawn a directory level,
+// and trim. Returns '' when nothing usable is left.
+const cleanName = (raw: string): string => raw.replace(/[/\\]/g, '').trim()
+
+// Every directory path that exists in a space — both explicit (dirs list) and
+// implied by a file's path prefix.
+function dirPathsOf(
+  files: FileEntry[],
+  dirs: { spaceId: string; path: string }[],
+  spaceId: string,
+): Set<string> {
+  const set = new Set<string>()
+  for (const d of dirs) if (d.spaceId === spaceId) set.add(d.path)
+  for (const f of files)
+    if (f.spaceId === spaceId) {
+      const segs = f.path.split('/')
+      segs.pop()
+      let acc = ''
+      for (const s of segs) {
+        acc = acc ? `${acc}/${s}` : s
+        set.add(acc)
+      }
+    }
+  return set
+}
+
+// A collision-free "<dir>/<base><ext>" among a space's files.
+function uniqueFileInDir(
+  files: FileEntry[],
+  spaceId: string,
+  dir: string,
+  base: string,
+  ext: string,
+): string {
   const taken = new Set(files.filter((f) => f.spaceId === spaceId).map((f) => f.path))
-  let name = `${base}.html`
+  const prefix = dir ? `${dir}/` : ''
+  let name = `${prefix}${base}${ext}`
   let n = 2
   while (taken.has(name)) {
-    name = `${base} ${n}.html`
+    name = `${prefix}${base} ${n}${ext}`
+    n++
+  }
+  return name
+}
+
+// A collision-free "<parent>/<base>" among a space's directories.
+function uniqueDirPath(
+  files: FileEntry[],
+  dirs: { spaceId: string; path: string }[],
+  spaceId: string,
+  parent: string,
+  base: string,
+): string {
+  const taken = dirPathsOf(files, dirs, spaceId)
+  const prefix = parent ? `${parent}/` : ''
+  let name = `${prefix}${base}`
+  let n = 2
+  while (taken.has(name)) {
+    name = `${prefix}${base} ${n}`
     n++
   }
   return name
@@ -65,6 +116,7 @@ interface State {
   agentEvents: AgentEvent[]
   spaces: Space[]
   files: FileEntry[] // contents of connected-folder spaces
+  dirs: { spaceId: string; path: string }[] // known directories (incl. empty ones)
 
   // transient ui (not persisted)
   meId: string
@@ -85,7 +137,12 @@ interface State {
   openWebTab: (url: string, title: string) => void
   openFileTab: (file: FileEntry) => void
   renameFile: (file: FileEntry, newBase: string) => void
-  deleteFile: (file: FileEntry) => void
+  deleteFileWithUndo: (file: FileEntry) => void
+  // connected-folder organize ops (path-based; folders are implicit + the dirs list)
+  createSubfolder: (dirPath: string) => void
+  renameDir: (dirPath: string, newName: string) => void
+  deleteDirWithUndo: (dirPath: string) => void
+  moveFile: (file: FileEntry, destDir: string) => void
   newBrowserTab: () => void
   setTabUrl: (tabId: string, url: string, title?: string) => void
   closeTab: (tabId: string) => void
@@ -122,14 +179,15 @@ interface State {
   _past: Doc[][]
   _future: Doc[][]
 
-  // documents
-  createDoc: (folderId: string, kind?: DocKind, title?: string) => string
-  createFromTemplate: (templateId: string, folderId: string) => string
+  // documents. dirPath (optional) targets a subfolder in a connected space;
+  // ignored for cloud spaces (those land in 我的草稿).
+  createDoc: (folderId: string, kind?: DocKind, title?: string, dirPath?: string) => string
+  createFromTemplate: (templateId: string, folderId: string, dirPath?: string) => string
   renameDoc: (docId: string, title: string) => void
   deleteDoc: (docId: string) => void
 
   // ai (simulated)
-  generateDoc: (prompt: string, folderId: string) => Promise<string>
+  generateDoc: (prompt: string, folderId: string, dirPath?: string) => Promise<string>
   redesignBlock: (docId: string, blockId: string, prompt: string) => Promise<void>
 
   // publishing (simulated deploy)
@@ -147,11 +205,33 @@ interface State {
   addAgentEvent: (e: Omit<AgentEvent, 'id' | 'at'>) => void
 
   // toasts
-  toast: (message: string, tone?: Toast['tone']) => string
+  toast: (message: string, tone?: Toast['tone'], action?: Toast['action']) => string
   dismissToast: (id: string) => void
   dismissAllProgress: () => void
 
   resetAll: () => void
+}
+
+// Every directory implied by a file's path, made explicit — so folders are
+// first-class: emptying a folder (deleting/moving out its last file) leaves the
+// folder standing instead of letting it silently vanish from the tree.
+function dirsFromFiles(files: FileEntry[]): { spaceId: string; path: string }[] {
+  const seen = new Set<string>()
+  const out: { spaceId: string; path: string }[] = []
+  for (const f of files) {
+    const segs = f.path.split('/')
+    segs.pop()
+    let acc = ''
+    for (const s of segs) {
+      acc = acc ? `${acc}/${s}` : s
+      const key = `${f.spaceId}::${acc}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        out.push({ spaceId: f.spaceId, path: acc })
+      }
+    }
+  }
+  return out
 }
 
 function freshData() {
@@ -164,7 +244,63 @@ function freshData() {
     agentEvents: seedAgentEvents.map((e) => ({ ...e })),
     spaces: seedSpaces.map((s) => ({ ...s })),
     files: seedFiles.map((f) => ({ ...f })),
+    dirs: dirsFromFiles(seedFiles),
   }
+}
+
+// A believable sample of files for a freshly "opened" connected folder — the
+// demo has no real filesystem, so picking a folder loads this instead, giving a
+// real tree to browse + editable .html docs to open. Folders are registered in
+// `dirs` so they persist even when emptied.
+function sampleConnectedFolder(
+  spaceId: string,
+  mountPath?: string,
+): { docs: Doc[]; files: FileEntry[]; dirs: { spaceId: string; path: string }[] } {
+  const me = ME_ID
+  const now = Date.now()
+  const mount = mountPath ?? '~'
+  const mkHtml = (path: string, title: string, paras: string[]) => {
+    const id = uid('d')
+    const blocks: Block[] = [
+      { id: uid('b'), type: 'heading', level: 1, html: title },
+      ...paras.map((p) => ({ id: uid('b'), type: 'text', html: p }) as Block),
+    ]
+    const doc: Doc = {
+      id,
+      title,
+      emoji: '📄',
+      kind: 'doc',
+      folderId: spaceId,
+      blocks,
+      visibility: 'private',
+      localPath: `${mount}/${path}`,
+      updatedAt: now,
+      updatedBy: me,
+      collaborators: [me],
+    }
+    const file: FileEntry = { spaceId, path, kind: 'html', docId: id }
+    return { doc, file }
+  }
+  const home = mkHtml('首页.html', '首页', [
+    '这是从你刚选的文件夹里加载进来的本地文档。在 Wordspace 里编辑它,就是在改硬盘上这份 .html 文件。',
+    '左边把鼠标移到任意文件夹上,点那个 + 就能在该文件夹里新建一篇并直接打开编辑;右键文件夹还能改名 / 新建子文件夹 / 删除。',
+  ])
+  const about = mkHtml('关于.html', '关于', ['介绍页示例。随便改两笔试试,保存后就是磁盘上的真文件。'])
+  const plan = mkHtml('方案/项目方案.html', '项目方案', [
+    '这是子文件夹「方案」里的一篇。把文件拖到别的文件夹可以移动,删掉里面所有文件后文件夹会保留为空文件夹。',
+  ])
+  const docs = [home.doc, about.doc, plan.doc]
+  const files: FileEntry[] = [
+    home.file,
+    about.file,
+    plan.file,
+    { spaceId, path: '方案/报价单.pdf', kind: 'pdf' },
+    { spaceId, path: '素材/封面.png', kind: 'image' },
+    { spaceId, path: '素材/Logo.png', kind: 'image' },
+    { spaceId, path: '文档/会议纪要.docx', kind: 'word' },
+  ]
+  const dirs = ['方案', '素材', '文档'].map((p) => ({ spaceId, path: p }))
+  return { docs, files, dirs }
 }
 
 // 段落内联 html ↔ 列表 html 的形态转换（转块时保内容）：转成列表把内容包成单个 <li>；
@@ -206,7 +342,9 @@ export const useStore = create<State>()(
       _future: [],
 
       meId: ME_ID,
-      activeSpaceId: 'sp-tg',
+      // Default to the local connected folder — local-first is the focus; the
+      // cloud (Wordspace 云盘 / 团队空间) comes later.
+      activeSpaceId: 'sp-local',
       tabs: [
         // sp-tg · 置顶 (pinned)
         { id: 'tab-1', spaceId: 'sp-tg', docId: 'd-handbook', kind: 'doc', pinned: true, title: '员工手册', url: 'https://team.tenthglobal.com/handbook' },
@@ -215,11 +353,11 @@ export const useStore = create<State>()(
         // sp-tg · 标签页 (transient)
         { id: 'tab-strategy', spaceId: 'sp-tg', docId: 'd-strategy', kind: 'doc', title: '2026 公司战略', url: '~/Wordspace/团队/战略/2026战略.html' },
         { id: 'tab-web', spaceId: 'sp-tg', kind: 'web', title: 'Designer News · 行业动态', url: 'https://news.design/today' },
-        // connected folders start with a transient new tab
         { id: 'tab-drive', spaceId: 'sp-drive', kind: 'web', title: '新标签页', url: '' },
-        { id: 'tab-local', spaceId: 'sp-local', kind: 'web', title: '新标签页', url: '' },
+        // sp-local opens on a local .html doc so you land right in the editor
+        { id: 'tab-local', spaceId: 'sp-local', kind: 'doc', docId: 'd-recruit', title: '落地页.html', url: '落地页.html', fileName: '落地页.html', fileKind: 'html' },
       ],
-      activeTabId: 'tab-1',
+      activeTabId: 'tab-local',
       activeTabBySpace: { 'sp-tg': 'tab-1', 'sp-drive': 'tab-drive', 'sp-local': 'tab-local' },
       toasts: [],
       presence: [],
@@ -306,15 +444,19 @@ export const useStore = create<State>()(
       // change the leaf name; the open tab and (for HTML) the file's tab label
       // follow.
       renameFile: (file, newBase) => {
-        const base = newBase.trim()
+        const base = cleanName(newBase) // strip '/' so a rename can't move the file
         if (!base) return
         const slash = file.path.lastIndexOf('/')
-        const dir = slash >= 0 ? file.path.slice(0, slash + 1) : ''
+        const dir = slash >= 0 ? file.path.slice(0, slash) : ''
         const dot = file.path.lastIndexOf('.')
         const ext = dot > slash ? file.path.slice(dot) : ''
-        const newPath = `${dir}${base}${ext}`
-        const newName = `${base}${ext}`
-        if (newPath === file.path) return
+        if (`${dir ? dir + '/' : ''}${base}${ext}` === file.path) return
+        // dedupe against siblings (excluding this file), like the create flow does
+        const others = get().files.filter(
+          (f) => !(f.spaceId === file.spaceId && f.path === file.path),
+        )
+        const newPath = uniqueFileInDir(others, file.spaceId, dir, base, ext)
+        const newName = newPath.split('/').pop() ?? newPath
         set((s) => ({
           files: s.files.map((f) =>
             f.spaceId === file.spaceId && f.path === file.path ? { ...f, path: newPath } : f,
@@ -327,18 +469,196 @@ export const useStore = create<State>()(
         }))
       },
 
-      // Delete a file from a connected folder: drop its FileEntry, its open tab,
-      // and (for HTML) the backing doc.
-      deleteFile: (file) => {
-        set((s) => ({
-          docs: file.docId ? s.docs.filter((d) => d.id !== file.docId) : s.docs,
-          files: s.files.filter(
+      // Delete a file but keep it recoverable: snapshot what we remove, then show
+      // a toast with 撤销 that puts it back. Guard against the cross-file cascade —
+      // only drop the backing doc if NO other file (in any space) still points at
+      // it, so deleting one .html never silently destroys another file's content.
+      deleteFileWithUndo: (file) => {
+        const s = get()
+        const prevActiveTabId = s.activeTabId
+        const prevBySpace = s.activeTabBySpace[file.spaceId]
+        const sharedByOther = s.files.some(
+          (f) =>
+            f.docId &&
+            f.docId === file.docId &&
+            !(f.spaceId === file.spaceId && f.path === file.path),
+        )
+        const removedDoc =
+          file.docId && !sharedByOther ? s.docs.find((d) => d.id === file.docId) : undefined
+        const removedTabs = s.tabs.filter(
+          (t) => t.fileName && t.spaceId === file.spaceId && t.url === file.path,
+        )
+        const removedTabIds = new Set(removedTabs.map((t) => t.id))
+        set((st) => {
+          const files = st.files.filter(
             (f) => !(f.spaceId === file.spaceId && f.path === file.path),
-          ),
-          tabs: s.tabs.filter((t) =>
-            t.fileName && t.spaceId === file.spaceId && t.url === file.path ? false : true,
+          )
+          const docs = removedDoc ? st.docs.filter((d) => d.id !== removedDoc.id) : st.docs
+          const tabs = st.tabs.filter((t) => !removedTabIds.has(t.id))
+          let activeTabId = st.activeTabId
+          const activeTabBySpace = { ...st.activeTabBySpace }
+          if (removedTabIds.has(st.activeTabId)) {
+            const sameSpace = tabs.filter((t) => t.spaceId === file.spaceId)
+            const next = sameSpace[sameSpace.length - 1]?.id ?? ''
+            activeTabBySpace[file.spaceId] = next
+            if (st.activeSpaceId === file.spaceId) activeTabId = next
+          }
+          return { files, docs, tabs, activeTabId, activeTabBySpace }
+        })
+        const name = file.path.split('/').pop() ?? file.path
+        get().toast(`已删除「${name}」`, 'neutral', {
+          label: '撤销',
+          run: () =>
+            set((st) => ({
+              files: [...st.files, file],
+              docs: removedDoc ? [removedDoc, ...st.docs] : st.docs,
+              tabs: [...st.tabs, ...removedTabs],
+              // re-focus the restored file, so 撤销 truly returns to pre-delete state
+              activeTabId: prevActiveTabId,
+              activeTabBySpace: { ...st.activeTabBySpace, [file.spaceId]: prevBySpace },
+            })),
+        })
+      },
+
+      // Create an (initially empty) subfolder under `dirPath`. Empty folders are
+      // tracked in `dirs` so the tree can show them before they hold any file.
+      createSubfolder: (dirPath) => {
+        const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
+        if (!space || isCloudStorage(space.storage)) return
+        const path = uniqueDirPath(get().files, get().dirs, space.id, dirPath, '新建文件夹')
+        set((s) => ({ dirs: [...s.dirs, { spaceId: space.id, path }] }))
+      },
+
+      // Rename a directory: rewrite the path prefix of every file, sub-dir, and
+      // open tab living under it. Sanitized + deduped against sibling dirs.
+      renameDir: (dirPath, newName) => {
+        const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
+        if (!space || isCloudStorage(space.storage)) return
+        const clean = cleanName(newName)
+        if (!clean) return
+        const segs = dirPath.split('/')
+        segs.pop()
+        const parent = segs.join('/')
+        const base = parent ? `${parent}/` : ''
+        const naive = `${base}${clean}`
+        if (naive === dirPath) return
+        const oldPrefix = `${dirPath}/`
+        const taken = dirPathsOf(get().files, get().dirs, space.id)
+        for (const p of [...taken]) if (p === dirPath || p.startsWith(oldPrefix)) taken.delete(p)
+        let target = naive
+        let n = 2
+        while (taken.has(target)) {
+          target = `${base}${clean} ${n}`
+          n++
+        }
+        const remap = (p: string) =>
+          p === dirPath
+            ? target
+            : p.startsWith(oldPrefix)
+              ? `${target}/${p.slice(oldPrefix.length)}`
+              : p
+        set((s) => ({
+          files: s.files.map((f) => (f.spaceId === space.id ? { ...f, path: remap(f.path) } : f)),
+          dirs: s.dirs.map((d) => (d.spaceId === space.id ? { ...d, path: remap(d.path) } : d)),
+          tabs: s.tabs.map((t) =>
+            t.fileName && t.spaceId === space.id && t.url ? { ...t, url: remap(t.url) } : t,
           ),
         }))
+      },
+
+      // Delete a directory and everything under it, recoverably. Same backing-doc
+      // guard as deleteFileWithUndo: a doc is dropped only if no surviving file
+      // still references it.
+      deleteDirWithUndo: (dirPath) => {
+        const spaceId = get().activeSpaceId
+        const s = get()
+        const prevActiveTabId = s.activeTabId
+        const prevBySpace = s.activeTabBySpace[spaceId]
+        const prefix = `${dirPath}/`
+        const removedFiles = s.files.filter(
+          (f) => f.spaceId === spaceId && (f.path === dirPath || f.path.startsWith(prefix)),
+        )
+        const removedKeys = new Set(removedFiles.map((f) => f.path))
+        const removedDirs = s.dirs.filter(
+          (d) => d.spaceId === spaceId && (d.path === dirPath || d.path.startsWith(prefix)),
+        )
+        if (!removedFiles.length && !removedDirs.length) return
+        const survivingFiles = s.files.filter(
+          (f) => !(f.spaceId === spaceId && removedKeys.has(f.path)),
+        )
+        const removedDocs = s.docs.filter(
+          (d) =>
+            removedFiles.some((f) => f.docId === d.id) &&
+            !survivingFiles.some((sf) => sf.docId === d.id),
+        )
+        const removedTabs = s.tabs.filter(
+          (t) => t.fileName && t.spaceId === spaceId && removedKeys.has(t.url),
+        )
+        const removedTabIds = new Set(removedTabs.map((t) => t.id))
+        set((st) => {
+          const files = st.files.filter(
+            (f) => !(f.spaceId === spaceId && removedKeys.has(f.path)),
+          )
+          const dirs = st.dirs.filter(
+            (d) => !(d.spaceId === spaceId && (d.path === dirPath || d.path.startsWith(prefix))),
+          )
+          const docs = removedDocs.length
+            ? st.docs.filter((d) => !removedDocs.some((rd) => rd.id === d.id))
+            : st.docs
+          const tabs = st.tabs.filter((t) => !removedTabIds.has(t.id))
+          let activeTabId = st.activeTabId
+          const activeTabBySpace = { ...st.activeTabBySpace }
+          if (removedTabIds.has(st.activeTabId)) {
+            const sameSpace = tabs.filter((t) => t.spaceId === spaceId)
+            const next = sameSpace[sameSpace.length - 1]?.id ?? ''
+            activeTabBySpace[spaceId] = next
+            if (st.activeSpaceId === spaceId) activeTabId = next
+          }
+          return { files, dirs, docs, tabs, activeTabId, activeTabBySpace }
+        })
+        const leaf = dirPath.split('/').pop() ?? dirPath
+        const cnt = removedFiles.length
+        get().toast(
+          cnt ? `已删除文件夹「${leaf}」(${cnt} 个文件)` : `已删除文件夹「${leaf}」`,
+          'neutral',
+          {
+            label: '撤销',
+            run: () =>
+              set((st) => ({
+                files: [...st.files, ...removedFiles],
+                dirs: [...st.dirs, ...removedDirs],
+                docs: removedDocs.length ? [...removedDocs, ...st.docs] : st.docs,
+                tabs: [...st.tabs, ...removedTabs],
+                activeTabId: prevActiveTabId,
+                activeTabBySpace: { ...st.activeTabBySpace, [spaceId]: prevBySpace },
+              })),
+          },
+        )
+      },
+
+      // Move a file into `destDir` (relative to the mount; '' = root) by rewriting
+      // its path prefix, deduping the leaf against whatever already lives there.
+      moveFile: (file, destDir) => {
+        const leaf = file.path.split('/').pop() ?? file.path
+        const dot = leaf.lastIndexOf('.')
+        const base = dot > 0 ? leaf.slice(0, dot) : leaf
+        const ext = dot > 0 ? leaf.slice(dot) : ''
+        const others = get().files.filter(
+          (f) => !(f.spaceId === file.spaceId && f.path === file.path),
+        )
+        const newPath = uniqueFileInDir(others, file.spaceId, destDir, base, ext)
+        if (newPath === file.path) return // dropped onto its own folder — no-op
+        set((s) => ({
+          files: s.files.map((f) =>
+            f.spaceId === file.spaceId && f.path === file.path ? { ...f, path: newPath } : f,
+          ),
+          tabs: s.tabs.map((t) =>
+            t.fileName && t.spaceId === file.spaceId && t.url === file.path
+              ? { ...t, url: newPath }
+              : t,
+          ),
+        }))
+        get().toast(`已移动「${leaf}」到 ${destDir || '根目录'}`, 'neutral')
       },
 
       newBrowserTab: () => {
@@ -385,20 +705,28 @@ export const useStore = create<State>()(
           mountPath,
         }
         // A cloud space is an isolated workspace, so it gets its own private
-        // folder; a connected folder uses its on-disk files instead.
+        // folder; a connected folder "opens" with a believable sample tree (the
+        // demo has no real filesystem) so it isn't an empty, dead workspace.
         const newFolders: Folder[] = isCloudStorage(storage)
           ? [{ id: uid('f'), name: '我的草稿', scope: 'personal', spaceId: id, order: 0 }]
           : []
+        const sample = isCloudStorage(storage) ? null : sampleConnectedFolder(id, mountPath)
         const tab: Tab = { id: uid('tab'), spaceId: id, kind: 'web', title: '新标签页', url: '' }
         set((s) => ({
           spaces: [...s.spaces, space],
           folders: [...s.folders, ...newFolders],
+          docs: sample ? [...sample.docs, ...s.docs] : s.docs,
+          files: sample ? [...s.files, ...sample.files] : s.files,
+          dirs: sample ? [...s.dirs, ...sample.dirs] : s.dirs,
           tabs: [...s.tabs, tab],
           activeSpaceId: id,
           activeTabId: tab.id,
           activeTabBySpace: { ...s.activeTabBySpace, [id]: tab.id },
         }))
-        get().toast(`已新建空间「${trimmed}」`, 'success')
+        get().toast(
+          sample ? `已打开文件夹「${trimmed}」,载入示例文件` : `已新建空间「${trimmed}」`,
+          'success',
+        )
       },
 
       closeTab: (tabId) =>
@@ -574,11 +902,13 @@ export const useStore = create<State>()(
           }
         }),
 
-      createDoc: (folderId, kind = 'doc', title = '无标题文档') => {
+      createDoc: (folderId, kind = 'doc', title = '无标题文档', dirPath) => {
         const id = uid('d')
         const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
         const inFolder = !!space && !isCloudStorage(space.storage)
-        const fileName = inFolder ? uniqueFilePath(get().files, space!.id, title) : `${title}.html`
+        const fileName = inFolder
+          ? uniqueFileInDir(get().files, space!.id, dirPath ?? '', title, '.html')
+          : `${title}.html`
         // A cloud doc lands in its own space's private folder (spaces are isolated);
         // a connected-folder doc is tracked by its FileEntry, not a cloud folder.
         const cloudFolderId =
@@ -613,13 +943,15 @@ export const useStore = create<State>()(
         return id
       },
 
-      createFromTemplate: (templateId, folderId) => {
+      createFromTemplate: (templateId, folderId, dirPath) => {
         const tpl = get().templates.find((t) => t.id === templateId)
         if (!tpl) return ''
         const id = uid('d')
         const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
         const inFolder = !!space && !isCloudStorage(space.storage)
-        const fileName = inFolder ? uniqueFilePath(get().files, space!.id, tpl.name) : `${tpl.name}.html`
+        const fileName = inFolder
+          ? uniqueFileInDir(get().files, space!.id, dirPath ?? '', tpl.name, '.html')
+          : `${tpl.name}.html`
         const cloudFolderId =
           !inFolder && space
             ? get().folders.find((f) => f.spaceId === space.id && f.scope === 'personal')?.id ?? folderId
@@ -629,6 +961,7 @@ export const useStore = create<State>()(
           title: tpl.name,
           emoji: '📄',
           kind: tpl.kind,
+          pageFormat: tpl.pageFormat, // 格式模板把纸张版面带到新文档（普通模板为 undefined）
           folderId: inFolder ? space!.id : cloudFolderId,
           blocks: tpl.blocks.map((b) => ({ ...b, id: uid('b') })),
           visibility: 'private',
@@ -666,14 +999,16 @@ export const useStore = create<State>()(
           files: s.files.filter((f) => f.docId !== docId),
         })),
 
-      generateDoc: async (prompt, folderId) => {
+      generateDoc: async (prompt, folderId, dirPath) => {
         set({ aiBusy: true })
         await sleep(1700)
         const id = uid('d')
         const title = prompt.slice(0, 18) || 'AI 生成的文档'
         const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
         const inFolder = !!space && !isCloudStorage(space.storage)
-        const fileName = inFolder ? uniqueFilePath(get().files, space!.id, title) : `${title}.html`
+        const fileName = inFolder
+          ? uniqueFileInDir(get().files, space!.id, dirPath ?? '', title, '.html')
+          : `${title}.html`
         const cloudFolderId =
           !inFolder && space
             ? get().folders.find((f) => f.spaceId === space.id && f.scope === 'personal')?.id ?? folderId
@@ -802,11 +1137,12 @@ export const useStore = create<State>()(
           ].slice(0, 40),
         })),
 
-      toast: (message, tone = 'neutral') => {
+      toast: (message, tone = 'neutral', action) => {
         const id = uid('toast')
-        set((s) => ({ toasts: [...s.toasts, { id, message, tone }] }))
+        set((s) => ({ toasts: [...s.toasts, { id, message, tone, action }] }))
+        // actionable toasts (e.g. 撤销) linger so the user can reach the button
         if (tone !== 'progress')
-          setTimeout(() => get().dismissToast(id), 2600)
+          setTimeout(() => get().dismissToast(id), action ? 6500 : 2600)
         return id
       },
 
@@ -834,6 +1170,7 @@ export const useStore = create<State>()(
         agentEvents: s.agentEvents,
         spaces: s.spaces,
         files: s.files,
+        dirs: s.dirs,
       }),
       migrate: () => ({ ...freshData() }) as never,
     },

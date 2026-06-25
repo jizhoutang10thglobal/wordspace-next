@@ -17,6 +17,21 @@
   padding: 30px 56px 140px;
 }
 
+/* 格式模板（pageFormat）：把画布约束到一张实际纸的宽度，并给出纸张观感
+   （白页 + 阴影边框 + 页边距），服务于打印 / 导出 PDF 的版式。 */
+.ws-doc.ws-fmt {
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 10px 28px rgba(0, 0, 0, 0.06);
+  margin: 24px auto 48px;
+  padding: 60px 64px 96px;
+}
+.ws-doc.ws-fmt-a4 { max-width: 794px; }
+.ws-doc.ws-fmt-a3 { max-width: 1123px; }
+.ws-doc.ws-fmt-a5 { max-width: 559px; padding: 44px 48px 72px; }
+.ws-doc.ws-fmt-letter { max-width: 816px; }
+
 /* header */
 .ws-doc-header { margin-bottom: 26px; }
 .ws-breadcrumb {

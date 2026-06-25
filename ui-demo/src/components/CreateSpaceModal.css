@@ -121,6 +121,12 @@
 .csm-picker {
   margin-top: 8px;
 }
+.csm-hint {
+  margin: 8px 2px 0;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
 .csm-pickbtn {
   display: flex;
   align-items: center;
