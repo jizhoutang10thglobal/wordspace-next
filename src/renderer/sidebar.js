@@ -14,6 +14,7 @@
 
   let current = null; // { root, name, tree }
   let query = '';
+  let pins = []; // 置顶文件的 rel 列表（按工作区根持久化进 workspace.json）
   const collapsed = new Set(); // 收起的文件夹 rel（打开工作区时全部收起，只显示顶层）
 
   // 收集树里所有文件夹的 rel（打开工作区时一次性塞进 collapsed → 默认全收起）。
@@ -44,6 +45,7 @@
   function setWorkspace(data) {
     current = data;
     query = '';
+    pins = []; // 先清旧工作区的置顶，loadPins 再按新根拉回
     collapsed.clear();
     collectDirRels(current.tree, collapsed); // 默认全部收起：一打开只露顶层，要看哪层自己点开
     if (filterInput) filterInput.value = '';
@@ -55,6 +57,7 @@
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.add('sb-on'); // 打开工作区才显示侧栏（单文件编辑保持全宽）
     render();
+    loadPins(); // 异步按新根拉置顶，到了再 render
   }
   async function refresh() {
     if (!current) return;
@@ -89,6 +92,7 @@
       return;
     }
     renderRail(); // 收起态图标轨（#4），与主树同步刷新
+    renderPins(); // 置顶区（#5）
     const q = query.trim().toLowerCase();
     const nodes = q ? filterTree(current.tree, q) : current.tree;
     if (!nodes.length) {
@@ -305,6 +309,7 @@
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
           { label: '打开', run: () => openNode(node) },
+          { label: isPinned(node.rel) ? '取消置顶' : '置顶', run: () => togglePin(node) },
           { label: '重命名', run: () => startInlineRename(node, row) },
           { label: '删除', danger: true, run: () => doDelete(node) },
         ]);
@@ -415,7 +420,97 @@
     if (!railEl || !current) return;
     hideRailPop();
     railEl.innerHTML = '';
+    const pinned = pins.map(findNode).filter((n) => n && !n.isDir);
+    for (const n of pinned) {
+      const btn = railIcon(n);
+      btn.classList.add('sb-rail-pin');
+      railEl.appendChild(btn);
+    }
+    if (pinned.length && current.tree.length) {
+      const div = document.createElement('div');
+      div.className = 'sb-rail-div';
+      railEl.appendChild(div);
+    }
     for (const n of current.tree) railEl.appendChild(railIcon(n));
+  }
+
+  // ---- 置顶常用文件（#5） ----
+  const pinsEl = document.getElementById('sb-pins');
+  const PIN_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+  function findNode(rel) {
+    let found = null;
+    (function walk(nodes) {
+      for (const n of nodes) {
+        if (found) return;
+        if (n.rel === rel) { found = n; return; }
+        if (n.children && n.children.length) walk(n.children);
+      }
+    })(current ? current.tree : []);
+    return found;
+  }
+  function isPinned(rel) {
+    return pins.indexOf(rel) >= 0;
+  }
+  async function togglePin(node) {
+    const i = pins.indexOf(node.rel);
+    if (i >= 0) pins.splice(i, 1);
+    else pins.push(node.rel);
+    try { await window.ws2.wsSetPins(pins); } catch (e) { /* 存不上也先更新 UI */ }
+    render();
+  }
+  async function loadPins() {
+    try { pins = (await window.ws2.wsGetPins()) || []; } catch (e) { pins = []; }
+    // 清掉已不存在（上次会话后被删/改名/移走）的死置顶并回写
+    const valid = pins.filter((rel) => findNode(rel));
+    if (valid.length !== pins.length) {
+      pins = valid;
+      try { await window.ws2.wsSetPins(pins); } catch (e) { /* ignore */ }
+    }
+    render();
+  }
+  function renderPins() {
+    if (!pinsEl) return;
+    pinsEl.innerHTML = '';
+    const valid = pins.map(findNode).filter((n) => n && !n.isDir);
+    if (!valid.length) {
+      pinsEl.hidden = true;
+      return;
+    }
+    pinsEl.hidden = false;
+    const label = document.createElement('div');
+    label.className = 'sb-sec-label';
+    label.textContent = '置顶';
+    pinsEl.appendChild(label);
+    for (const node of valid) {
+      const row = document.createElement('button');
+      row.className = 'sb-row sb-file sb-pin-row sb-kind-' + (node.kind || 'other');
+      row.dataset.rel = node.rel;
+      if (openPath() === node.abs) row.classList.add('is-active');
+      const ico = document.createElement('span');
+      ico.className = 'sb-ico';
+      ico.innerHTML = SVG.file;
+      const name = document.createElement('span');
+      name.className = 'sb-name ws-truncate';
+      name.textContent = node.name;
+      const unpin = document.createElement('button');
+      unpin.className = 'sb-unpin';
+      unpin.title = '取消置顶';
+      unpin.innerHTML = PIN_SVG;
+      unpin.onclick = (e) => {
+        e.stopPropagation();
+        togglePin(node);
+      };
+      row.append(ico, name, unpin);
+      row.onclick = () => openNode(node);
+      row.oncontextmenu = (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, [
+          { label: '打开', run: () => openNode(node) },
+          { label: '取消置顶', run: () => togglePin(node) },
+        ]);
+      };
+      pinsEl.appendChild(row);
+    }
   }
 
   // ---- 筛选输入 ----

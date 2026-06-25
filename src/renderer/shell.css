@@ -205,6 +205,15 @@ ul { list-style: none; }
 
 .sb-tree-empty { font-size: var(--fs-sm); color: var(--c-text-3); font-style: italic; padding: 4px 8px; }
 
+/* 置顶区（#5）：文件树上方，有置顶时才显示。 */
+.sb-pins[hidden] { display: none; }
+.sb-pins { margin: 0 0 4px; padding-bottom: 4px; border-bottom: 1px solid var(--c-divider); }
+.sb-sec-label { padding: 6px 8px 4px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-3); letter-spacing: .02em; }
+.sb-pin-row { padding-left: 8px; }
+.sb-unpin { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--c-accent); opacity: 0; }
+.sb-row:hover .sb-unpin { opacity: 1; }
+.sb-unpin:hover { background: var(--c-active); }
+
 /* 缩进档（CSP 安全：不用 inline style）。每级 +14px，从 8px 起。 */
 .sb-d0 { padding-left: 8px; }
 .sb-d1 { padding-left: 22px; }
