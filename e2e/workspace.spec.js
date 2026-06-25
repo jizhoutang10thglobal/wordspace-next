@@ -52,9 +52,11 @@ test.afterEach(async () => {
 
 test('opens a folder → renders the file tree, click .html opens it', async () => {
   await page.click('#home-open-folder'); // WS2_FOLDER_IN → 返回 wsDir
-  // 树列出：数据(文件夹) + a.html + 展开后的 b.html / c.png
+  // 树列出：数据(文件夹) + a.html；子文件默认收起，点开 数据 才出现
   await expect(page.locator('.sb-dir .sb-name', { hasText: '数据' })).toBeVisible();
   await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toHaveCount(0); // 默认收起
+  await page.click('.sb-dir[data-rel="数据"]'); // 展开
   await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
   await expect(page.locator('.sb-file[data-rel="数据/c.png"]')).toBeVisible();
   // 点 a.html → 进编辑器

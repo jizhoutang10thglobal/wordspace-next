@@ -14,7 +14,18 @@
 
   let current = null; // { root, name, tree }
   let query = '';
-  const collapsed = new Set(); // 收起的文件夹 rel（默认全展开）
+  const collapsed = new Set(); // 收起的文件夹 rel（打开工作区时全部收起，只显示顶层）
+
+  // 收集树里所有文件夹的 rel（打开工作区时一次性塞进 collapsed → 默认全收起）。
+  function collectDirRels(nodes, acc) {
+    for (const n of nodes) {
+      if (n.isDir) {
+        acc.add(n.rel);
+        collectDirRels(n.children, acc);
+      }
+    }
+    return acc;
+  }
 
   // ---- 内联 SVG 图标（CSP 允许 SVG 元素；用 innerHTML 注入，非脚本）----
   const SVG = {
@@ -33,6 +44,8 @@
   function setWorkspace(data) {
     current = data;
     query = '';
+    collapsed.clear();
+    collectDirRels(current.tree, collapsed); // 默认全部收起：一打开只露顶层，要看哪层自己点开
     if (filterInput) filterInput.value = '';
     rootNameEl.textContent = data.name;
     rootNameEl.title = data.root;
