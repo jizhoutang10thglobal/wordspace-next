@@ -129,6 +129,14 @@ ul { list-style: none; }
 }
 .sb-icobtn:hover { background: var(--c-hover); color: var(--c-text); }
 
+/* 收起态（最简版：细条，只留收起/展开按钮） */
+.sb.is-collapsed { width: 44px; }
+.sb.is-collapsed .sb-title,
+.sb.is-collapsed #sb-open-folder,
+.sb.is-collapsed .sb-filter,
+.sb.is-collapsed .sb-body { display: none; }
+.sb.is-collapsed .sb-head { justify-content: center; padding: 0; }
+
 .sb-filter {
   flex: none; display: flex; align-items: center; gap: 6px;
   margin: 0 8px 4px; padding: 0 8px; height: 28px;
@@ -183,6 +191,43 @@ ul { list-style: none; }
 .sb-d7 { padding-left: 106px; }
 .sb-d8 { padding-left: 120px; }
 .sb-d9 { padding-left: 134px; }
+
+/* 文件夹行 hover「+」（在此文件夹新建文档） */
+.sb-add { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--c-text-3); opacity: 0; }
+.sb-row:hover .sb-add { opacity: 1; }
+.sb-add:hover { background: var(--c-active); color: var(--c-text); }
+
+/* 拖拽 drop 目标高亮 */
+.sb-drop { background: var(--c-accent-tint) !important; box-shadow: inset 0 0 0 1px var(--c-accent); }
+
+/* 内联改名输入 */
+.sb-rename { flex: 1; min-width: 0; font-size: var(--fs-base); color: var(--c-text); background: var(--c-surface); border: 1px solid var(--c-accent); border-radius: var(--r-xs); padding: 1px 4px; }
+
+/* 右键菜单 */
+.sb-ctx { position: fixed; z-index: 200; min-width: 150px; padding: 4px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); box-shadow: var(--shadow-menu); display: flex; flex-direction: column; gap: 1px; }
+.sb-ctx-item { width: 100%; text-align: left; padding: 6px 10px; border-radius: var(--r-sm); font-size: var(--fs-base); color: var(--c-text); }
+.sb-ctx-item:hover { background: var(--c-hover); }
+.sb-ctx-item.is-danger { color: var(--c-danger); }
+.sb-ctx-item.is-danger:hover { background: var(--c-danger-tint); }
+
+/* 删除「撤销」toast */
+.sb-toast-host { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 300; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.sb-toast { display: flex; align-items: center; gap: 10px; background: #23262b; color: #fff; font-size: var(--fs-md); padding: 9px 15px; border-radius: var(--r-md); box-shadow: var(--shadow-menu); }
+.sb-toast-action { color: #8ab4ff; font-weight: var(--fw-semibold); font-size: var(--fs-md); padding: 2px 7px; border-radius: var(--r-sm); }
+.sb-toast-action:hover { background: rgba(255,255,255,.12); }
+
+/* 新建文档模板选择台 */
+.sb-modal-overlay { position: fixed; inset: 0; z-index: 400; background: rgba(20,22,26,.32); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.sb-modal { width: 520px; max-width: calc(100vw - 32px); background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-menu); padding: 18px; }
+.sb-modal-head { margin-bottom: 14px; }
+.sb-modal-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--c-text); }
+.sb-modal-where { margin-top: 2px; font-size: var(--fs-sm); color: var(--c-text-3); }
+.sb-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 64px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); }
+.sb-card:hover { background: var(--c-hover); box-shadow: var(--shadow-sm); }
+.sb-card-blank { border-top-color: var(--c-accent); }
+.sb-card-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
+.sb-card-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.45; }
 
 /* ============================================================ 编辑区（照搬 Canvas chrome） */
 #main {

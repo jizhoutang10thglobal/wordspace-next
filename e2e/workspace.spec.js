@@ -107,3 +107,55 @@ test('makeDir creates a real directory on disk', async () => {
   expect(r.rel).toBe('素材');
   expect(await exists(path.join(wsDir, '素材'))).toBe(true);
 });
+
+// ---- U6/U7/U8 UI 手势真验（驱动已通的 IPC，断言落在真实 fs）----
+
+test('folder hover + → 模板台 → 选模板在该文件夹建文档并打开', async () => {
+  await page.click('#sb-open-folder');
+  const folder = page.locator('.sb-dir', { hasText: '数据' }).first();
+  await folder.hover();
+  await folder.locator('.sb-add').click();
+  await expect(page.locator('.sb-modal')).toBeVisible();
+  await page.locator('.sb-card', { hasText: '空文档' }).click();
+  await expect.poll(() => exists(path.join(wsDir, '数据', '无标题文档.html'))).toBe(true);
+  // 新建后进编辑器
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('无标题文档');
+});
+
+test('右键文件 → 重命名 → 改真实文件名', async () => {
+  await page.click('#sb-open-folder');
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '重命名' }).click();
+  const input = page.locator('.sb-rename');
+  await input.fill('改名后');
+  await input.press('Enter');
+  await expect.poll(() => exists(path.join(wsDir, '改名后.html'))).toBe(true);
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+});
+
+test('右键文件 → 删除 → toast 撤销 → 文件回来', async () => {
+  await page.click('#sb-open-folder');
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(true);
+});
+
+test('删除当前打开的文件 → 编辑区回空态、不崩', async () => {
+  await page.click('#sb-open-folder');
+  await page.click('.sb-file[data-rel="a.html"]'); // 打开
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  await expect(page.locator('#home')).toBeVisible(); // 回空态
+});
+
+test('Cmd/Ctrl+\\ 收起/展开侧栏', async () => {
+  await page.click('#sb-open-folder');
+  await page.keyboard.press('Control+\\');
+  await expect(page.locator('#sidebar.is-collapsed')).toBeVisible();
+  await page.keyboard.press('Control+\\');
+  await expect(page.locator('#sidebar.is-collapsed')).toHaveCount(0);
+});

@@ -27,5 +27,6 @@ contextBridge.exposeInMainWorld('ws2', {
   wsMove: (relPath, destDirRel) => ipcRenderer.invoke('ws-move', relPath, destDirRel),
   wsDelete: (relPath) => ipcRenderer.invoke('ws-delete', relPath),
   wsUndoDelete: (token) => ipcRenderer.invoke('ws-undo-delete', token),
-  wsOpenExternal: (relPath) => ipcRenderer.invoke('ws-open-external', relPath)
+  wsOpenExternal: (relPath) => ipcRenderer.invoke('ws-open-external', relPath),
+  wsTemplates: () => ipcRenderer.invoke('ws-templates')
 });

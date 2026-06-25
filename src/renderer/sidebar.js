@@ -83,6 +83,115 @@
     highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
   }
 
+  // ===== 整理操作（U6）：右键菜单 / hover+ / 内联改名 / 拖拽移动 / 删除撤销 + 当前文件边界同步 =====
+  let dragNode = null;
+  const PLUS_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
+
+  const parentDirOf = (rel) => {
+    const i = rel.lastIndexOf('/');
+    return i >= 0 ? rel.slice(0, i) : '';
+  };
+  const openPath = () => (window.__shellDocPath ? window.__shellDocPath() : null);
+  function isUnder(child, parentAbs) {
+    if (!child || !parentAbs) return false;
+    if (child === parentAbs) return true;
+    return child.indexOf(parentAbs) === 0 && (child[parentAbs.length] === '/' || child[parentAbs.length] === '\\');
+  }
+
+  async function commitRenameOp(node, newLeaf) {
+    const wasOpen = !node.isDir && openPath() === node.abs;
+    const r = await window.ws2.wsRename(node.rel, newLeaf);
+    if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
+    await refresh();
+  }
+  async function doMove(node, destDirRel) {
+    const wasOpen = !node.isDir && openPath() === node.abs;
+    const r = await window.ws2.wsMove(node.rel, destDirRel);
+    if (wasOpen && window.__shellRetargetDoc && r.abs !== node.abs) {
+      window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
+    }
+    await refresh();
+  }
+  async function doDelete(node) {
+    const op = openPath();
+    const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
+    const r = await window.ws2.wsDelete(node.rel);
+    if (affectsOpen && window.__shellCloseDoc) window.__shellCloseDoc();
+    await refresh();
+    showToast('已删除「' + node.name + '」', '撤销', async () => {
+      await window.ws2.wsUndoDelete(r.token);
+      await refresh();
+    });
+  }
+  async function newSubfolder(dirRel) {
+    await window.ws2.wsMakeDir(dirRel, '新建文件夹');
+    await refresh();
+  }
+
+  function closeContextMenu() {
+    const m = document.getElementById('sb-ctx');
+    if (m) m.remove();
+  }
+  function showContextMenu(x, y, items) {
+    closeContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'sb-ctx';
+    menu.id = 'sb-ctx';
+    for (const it of items) {
+      const b = document.createElement('button');
+      b.className = 'sb-ctx-item' + (it.danger ? ' is-danger' : '');
+      b.textContent = it.label;
+      b.onclick = () => {
+        closeContextMenu();
+        it.run();
+      };
+      menu.appendChild(b);
+    }
+    document.body.appendChild(menu);
+    menu.style.left = x + 'px'; // 单 CSSOM 属性，CSP 安全
+    menu.style.top = y + 'px';
+    setTimeout(() => {
+      const off = (e) => {
+        if (!e.target.closest('#sb-ctx')) closeContextMenu();
+        document.removeEventListener('mousedown', off);
+      };
+      document.addEventListener('mousedown', off);
+    }, 0);
+  }
+
+  function startInlineRename(node, rowEl) {
+    const nameEl = rowEl.querySelector('.sb-name');
+    if (!nameEl) return;
+    const dot = node.name.lastIndexOf('.');
+    const base = !node.isDir && dot > 0 ? node.name.slice(0, dot) : node.name;
+    const input = document.createElement('input');
+    input.className = 'sb-rename';
+    input.value = base;
+    input.onclick = (e) => e.stopPropagation();
+    input.onmousedown = (e) => e.stopPropagation();
+    nameEl.replaceWith(input);
+    input.focus();
+    input.select();
+    let done = false;
+    input.onblur = async () => {
+      if (done) return;
+      done = true;
+      if (input.value && input.value !== base) await commitRenameOp(node, input.value);
+      else await refresh();
+    };
+    input.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        done = true;
+        refresh();
+      }
+    };
+  }
+
   function renderNode(node, depth, parent, forceOpen) {
     if (node.isDir) {
       const open = forceOpen || !collapsed.has(node.rel);
@@ -100,11 +209,44 @@
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
-      row.append(caret, ico, name);
+      const add = document.createElement('button');
+      add.className = 'sb-add';
+      add.title = '在此文件夹新建文档';
+      add.innerHTML = PLUS_SVG;
+      add.onclick = (e) => {
+        e.stopPropagation();
+        openCreateModal(node.rel);
+      };
+      row.append(caret, ico, name, add);
       row.onclick = () => {
         if (collapsed.has(node.rel)) collapsed.delete(node.rel);
         else collapsed.add(node.rel);
         render();
+      };
+      row.oncontextmenu = (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, [
+          { label: '新建文档', run: () => openCreateModal(node.rel) },
+          { label: '新建子文件夹', run: () => newSubfolder(node.rel) },
+          { label: '重命名', run: () => startInlineRename(node, row) },
+          { label: '删除', danger: true, run: () => doDelete(node) },
+        ]);
+      };
+      row.ondragover = (e) => {
+        if (!dragNode || parentDirOf(dragNode.rel) === node.rel) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.classList.add('sb-drop');
+      };
+      row.ondragleave = (e) => {
+        if (!row.contains(e.relatedTarget)) row.classList.remove('sb-drop');
+      };
+      row.ondrop = (e) => {
+        if (!dragNode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        row.classList.remove('sb-drop');
+        doMove(dragNode, node.rel);
       };
       parent.appendChild(row);
       if (open) {
@@ -123,6 +265,7 @@
       row.dataset.rel = node.rel;
       row.dataset.abs = node.abs;
       row.dataset.kind = node.kind || 'other';
+      row.draggable = true;
       const ico = document.createElement('span');
       ico.className = 'sb-ico';
       ico.innerHTML = SVG.file;
@@ -131,6 +274,22 @@
       name.textContent = node.name;
       row.append(ico, name);
       row.onclick = () => openNode(node);
+      row.ondragstart = (e) => {
+        dragNode = node;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', node.rel);
+      };
+      row.ondragend = () => {
+        dragNode = null;
+      };
+      row.oncontextmenu = (e) => {
+        e.preventDefault();
+        showContextMenu(e.clientX, e.clientY, [
+          { label: '打开', run: () => openNode(node) },
+          { label: '重命名', run: () => startInlineRename(node, row) },
+          { label: '删除', danger: true, run: () => doDelete(node) },
+        ]);
+      };
       parent.appendChild(row);
     }
   }
@@ -165,6 +324,132 @@
   }
   if (openFolderBtn) openFolderBtn.onclick = pickFolder;
   if (emptyOpenBtn) emptyOpenBtn.onclick = pickFolder;
+
+  // 侧栏头作根目录 drop 目标：拖文件到这里 = 移到工作区根。
+  const headEl = document.querySelector('.sb-head');
+  if (headEl) {
+    headEl.ondragover = (e) => {
+      if (!dragNode || parentDirOf(dragNode.rel) === '') return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      headEl.classList.add('sb-drop');
+    };
+    headEl.ondragleave = (e) => {
+      if (!headEl.contains(e.relatedTarget)) headEl.classList.remove('sb-drop');
+    };
+    headEl.ondrop = (e) => {
+      if (!dragNode) return;
+      e.preventDefault();
+      headEl.classList.remove('sb-drop');
+      doMove(dragNode, '');
+    };
+  }
+
+  // ---- 轻量 toast（删除「撤销」用）。CSP 安全：classes，无 inline style。----
+  let toastTimer = null;
+  function showToast(message, actionLabel, onAction) {
+    let host = document.getElementById('sb-toast-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'sb-toast-host';
+      host.className = 'sb-toast-host';
+      document.body.appendChild(host);
+    }
+    host.innerHTML = '';
+    const t = document.createElement('div');
+    t.className = 'sb-toast';
+    const msg = document.createElement('span');
+    msg.textContent = message;
+    t.appendChild(msg);
+    if (actionLabel && onAction) {
+      const btn = document.createElement('button');
+      btn.className = 'sb-toast-action';
+      btn.textContent = actionLabel;
+      btn.onclick = () => {
+        clearTimeout(toastTimer);
+        host.innerHTML = '';
+        onAction();
+      };
+      t.appendChild(btn);
+    }
+    host.appendChild(t);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      host.innerHTML = '';
+    }, 6500);
+  }
+
+  // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。落点 dirRel。----
+  async function openCreateModal(dirRel) {
+    let templates = [];
+    try {
+      templates = await window.ws2.wsTemplates();
+    } catch (e) {
+      /* ignore */
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay';
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+    };
+    function close() {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+    }
+    const modal = document.createElement('div');
+    modal.className = 'sb-modal';
+    const head = document.createElement('div');
+    head.className = 'sb-modal-head';
+    const title = document.createElement('div');
+    title.className = 'sb-modal-title';
+    title.textContent = '新建文档';
+    const where = document.createElement('div');
+    where.className = 'sb-modal-where';
+    where.textContent = '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : '');
+    head.append(title, where);
+    const grid = document.createElement('div');
+    grid.className = 'sb-modal-grid';
+    for (const t of templates) {
+      const card = document.createElement('button');
+      card.className = 'sb-card' + (t.id === 'blank' ? ' sb-card-blank' : '');
+      if (t.id !== 'blank' && t.accent) card.style.borderTopColor = t.accent; // 单 CSSOM 属性，CSP 安全
+      const name = document.createElement('div');
+      name.className = 'sb-card-name';
+      name.textContent = t.name;
+      const desc = document.createElement('div');
+      desc.className = 'sb-card-desc';
+      desc.textContent = t.desc || '';
+      card.append(name, desc);
+      card.onclick = async () => {
+        close();
+        const r = await window.ws2.wsNewDoc(dirRel || '', t.base, t.html);
+        await refresh();
+        if (r && r.abs) openDoc(r.abs);
+      };
+      grid.appendChild(card);
+    }
+    modal.append(head, grid);
+    overlay.appendChild(modal);
+    overlay.onclick = (e) => {
+      if (e.target === overlay) close();
+    };
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  }
+
+  // ---- 收起/展开侧栏（最简版：收成细条；Cmd+\ 或头部按钮）----
+  const sidebarEl = document.getElementById('sidebar');
+  const toggleBtn = document.getElementById('sb-toggle');
+  function toggleCollapsed() {
+    if (sidebarEl) sidebarEl.classList.toggle('is-collapsed');
+  }
+  if (toggleBtn) toggleBtn.onclick = toggleCollapsed;
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+      e.preventDefault();
+      toggleCollapsed();
+    }
+  });
 
   // shell.js 用的钩子：打开文件 → 高亮。
   window.__sbHooks = {

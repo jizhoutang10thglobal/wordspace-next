@@ -10,6 +10,7 @@ const workspaceStore = require('./workspace-store');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
 const { pathInfo } = require('../lib/path-url');
 const { assertInsideWorkspace } = require('../lib/file-tree');
+const { TEMPLATES } = require('../lib/doc-templates');
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recentsFile = () => path.join(app.getPath('userData'), 'recents.json');
@@ -163,6 +164,8 @@ function registerIpc() {
   ipcMain.handle('ws-undo-delete', (_e, token) =>
     workspace.undoDelete(requireRoot(), token, trashRoot()),
   );
+  // 新建文档模板（含空文档，第一项）。
+  ipcMain.handle('ws-templates', () => TEMPLATES);
   // 非 .html 文件 → 系统默认程序打开（编辑器只认 html）。
   ipcMain.handle('ws-open-external', async (_e, relPath) => {
     const abs = assertInsideWorkspace(requireRoot(), relPath);
