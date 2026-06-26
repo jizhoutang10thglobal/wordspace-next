@@ -228,3 +228,76 @@ test('标签页区「+」→ 模板台 → 新文档成为激活标签', async (
   await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('无标题文档');
   await expect(tabRow('无标题文档.html')).toHaveClass(/is-active/);
 });
+
+// 选到「打开」对话框的文件：原生对话框 e2e 点不了，stub 主进程 dialog.showOpenDialog 返回固定路径。
+async function stubPick(absPath) {
+  await app.evaluate(({ dialog }, p) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+  }, absPath);
+}
+
+test('空状态：开工作区 0 标签 0 置顶 → 置顶/标签页两区恒显示带占位提示（Wendi bug1）', async () => {
+  await openWorkspace();
+  // 什么都没打开、没置顶——两个区都得在
+  await expect(page.locator('#sb-pinned')).toBeVisible();
+  await expect(page.locator('#sb-pinned .sb-zone-hint')).toHaveText('把标签拖到这里置顶');
+  await expect(page.locator('#sb-pinned .sb-tab')).toHaveCount(0);
+  await expect(page.locator('#sb-tabs')).toBeVisible();
+  await expect(page.locator('#sb-tabs .sb-zone-hint')).toHaveText('没有打开的标签');
+  await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(0);
+});
+
+test('「打开」按钮开非 html（工作区内）→ 应用内预览 + 进标签页（Wendi bug2+3）', async () => {
+  await openWorkspace();
+  await stubPick(path.join(wsDir, '数据', 'c.png'));
+  await page.click('#open-btn');
+  await expect(page.locator('#viewer .fv-bar')).toBeVisible(); // 应用内查看器，不是只能开 html
+  await expect(tabRow('数据/c.png')).toBeVisible(); // 像浏览器一样进了标签页
+  await expect(tabRow('数据/c.png')).toHaveClass(/is-active/);
+});
+
+test('「打开」按钮开 html（工作区内）→ 进编辑器 + 进标签页', async () => {
+  await openWorkspace();
+  await stubPick(path.join(wsDir, 'a.html'));
+  await page.click('#open-btn');
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  await expect(tabRow('a.html')).toHaveClass(/is-active/);
+});
+
+test('「打开」按钮开工作区外文件 → 能预览但不进标签页（产品决策 B）', async () => {
+  await openWorkspace();
+  const outside = path.join(tmp, 'outside.png'); // 在 tmp 下、但不在 wsDir 工作区内
+  await fs.writeFile(outside, 'png', 'utf8');
+  await stubPick(outside);
+  await page.click('#open-btn');
+  await expect(page.locator('#viewer .fv-bar')).toBeVisible(); // 预览出来了
+  await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(0); // 但没进标签页（没有 rel）
+});
+
+// UI 防重叠门：右上角 .top-actions（打开/保存/导出）是 position:absolute 浮层，贴顶的横条若不给它
+// reserve 右 padding 就会被压住。功能 e2e（按钮能点）测不出这类视觉重叠 → 这里用 boundingBox 直接验。
+test('UI 防重叠+对齐：查看器「用默认程序打开」与右上角浮动 actions 不重叠且垂直对齐', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/c.png"]');
+  await expect(page.locator('#viewer .fv-bar')).toBeVisible();
+  const ta = await page.locator('.top-actions').boundingBox();
+  const fo = await page.locator('.fv-open').boundingBox();
+  // 水平：fv-open 整体在 top-actions 左侧、不重叠
+  expect(fo.x + fo.width, 'fv-open 右边缘应在 top-actions 左侧、不重叠').toBeLessThanOrEqual(ta.x);
+  // 垂直：两者中线对齐（fv-bar 与文档头同高 52px 才齐）——上次只验 x 漏了 y，这条补上
+  const taC = ta.y + ta.height / 2, foC = fo.y + fo.height / 2;
+  expect(Math.abs(taC - foC), 'fv-open 与 top-actions 垂直中线应对齐').toBeLessThanOrEqual(2);
+});
+
+test('UI 防重叠：编辑器长文件名面包屑不压到右上角浮动 actions', async () => {
+  await openWorkspace();
+  const longName = 'A'.repeat(200) + '.html'; // 极长名 → 面包屑截断并填满到 padding 边界，逼近浮层
+  await fs.writeFile(path.join(wsDir, longName), HTML('LONG'), 'utf8');
+  await stubPick(path.join(wsDir, longName));
+  await page.click('#open-btn');
+  await expect(page.locator('#doc-name')).toHaveText(longName);
+  const ta = await page.locator('.top-actions').boundingBox();
+  const bc = await page.locator('.ws-breadcrumb').boundingBox();
+  expect(bc.x + bc.width, '面包屑右边缘应在 top-actions 左侧、不重叠').toBeLessThanOrEqual(ta.x);
+});

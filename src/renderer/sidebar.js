@@ -659,31 +659,28 @@
     d.textContent = text;
     return d;
   }
-  // 有任何被跟踪的文件就把两区都显示（置顶在上、标签页在下）——空的那区给提示，仍是拖拽 drop 目标；
-  // 全空（刚开工作区、什么都没打开）则两区都收起，保持干净。
+  // 置顶 + 标签页两区恒显示（像浏览器标签栏区域常在，Wendi 反馈）：即使 0 置顶 0 标签也留着段标 + 空占位
+  // 提示，空区仍是合法 drop 目标。注意要显式置 hidden=false——index.html 上两个 .sb-zone 带初始 hidden 属性，
+  // 不主动清掉就算 append 了内容也看不见（renderZones 只在开工作区后跑，没工作区时侧栏整个 display:none）。
   function renderZones() {
     if (!pinnedEl || !tabsEl) return;
     const pinned = window.WS2Tabs.pinnedEntries(tabState.entries);
     const tabs = window.WS2Tabs.tabEntries(tabState.entries);
-    const any = tabState.entries.length > 0;
     pinnedEl.innerHTML = '';
-    pinnedEl.hidden = !any;
-    if (any) {
-      pinnedEl.appendChild(zoneHeader('置顶', null));
-      const list = zoneList('pinned');
-      if (pinned.length) for (const e of pinned) list.appendChild(tabRow(e, 'pinned'));
-      else list.appendChild(zoneHint('把标签拖到这里置顶'));
-      pinnedEl.appendChild(list);
-    }
+    pinnedEl.hidden = false;
+    pinnedEl.appendChild(zoneHeader('置顶', null));
+    const plist = zoneList('pinned');
+    if (pinned.length) for (const e of pinned) plist.appendChild(tabRow(e, 'pinned'));
+    else plist.appendChild(zoneHint('把标签拖到这里置顶'));
+    pinnedEl.appendChild(plist);
+
     tabsEl.innerHTML = '';
-    tabsEl.hidden = !any;
-    if (any) {
-      tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal('')));
-      const list = zoneList('tabs');
-      if (tabs.length) for (const e of tabs) list.appendChild(tabRow(e, 'tabs'));
-      else list.appendChild(zoneHint('没有打开的标签'));
-      tabsEl.appendChild(list);
-    }
+    tabsEl.hidden = false;
+    tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal('')));
+    const tlist = zoneList('tabs');
+    if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
+    else tlist.appendChild(zoneHint('没有打开的标签'));
+    tabsEl.appendChild(tlist);
   }
 
   // ---- 筛选输入 ----
@@ -826,16 +823,33 @@
     }
   });
 
-  // shell.js 用的钩子：打开文件 → 树高亮 + 建/激活标签（工作区外文件找不到节点 → 只高亮、不建标签）。
+  function openTabEntry(entry) {
+    tabState = window.WS2Tabs.openEntry(tabState, entry);
+    persistTabs();
+    renderZones();
+    renderRail();
+  }
+  // abs 不在当前树里（从「打开」按钮选的、macOS /private 软链让 abs 字符串对不上、或刚建还没 refresh）：
+  // 让主进程把 abs 归一化算成 workspace 内 rel（kindOf 只在主进程有），是工作区内就建标签；工作区外 rel=null
+  // → 不建标签（产品决策 B：工作区外文件能预览但不进标签页）。
+  async function openTabFromAbs(abs) {
+    const rootBefore = current && current.root;
+    let meta = null;
+    try { meta = await window.ws2.classifyFile(abs); } catch (e) { return; }
+    if (!meta || !meta.rel) return;
+    if (!current || current.root !== rootBefore) return; // await 期间用户切了工作区 → 放弃，防把旧文件塞进新工作区标签
+    openTabEntry({ rel: meta.rel, kind: meta.kind || 'other', title: meta.name || meta.rel.split('/').pop() });
+  }
+  // shell.js 用的钩子：打开文件 → 树高亮 + 建/激活标签。命中树节点走同步快路；没命中（工作区内但 abs 对不上、
+  // 或工作区外）走 openTabFromAbs 异步兜底（工作区外不建标签）。
   window.__sbHooks = {
     onOpen: (abs) => {
       highlightActive(abs);
       const node = abs ? findNodeByAbs(abs) : null;
       if (node) {
-        tabState = window.WS2Tabs.openEntry(tabState, { rel: node.rel, kind: node.kind || 'other', title: node.name });
-        persistTabs();
-        renderZones();
-        renderRail();
+        openTabEntry({ rel: node.rel, kind: node.kind || 'other', title: node.name });
+      } else if (abs) {
+        openTabFromAbs(abs);
       }
     },
     refresh,

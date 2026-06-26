@@ -67,6 +67,10 @@
 
   --h-titlebar: 40px;
   --maxdoc-w: 820px;
+  /* 右上角浮动 .top-actions（打开/保存/导出，position:absolute）实测占 ~232px（含 right:22px）。
+     任何贴在编辑区顶部、内容可能右伸到这块的横条都要 reserve 这么多右 padding，否则会被浮层压住
+     （文档头面包屑、查看器顶栏都用它）。改按钮文案/数量要同步核这个值（有 e2e 防重叠门兜底）。 */
+  --top-actions-reserve: 240px;
 
   --ease: cubic-bezier(.2, .6, .2, 1);
   --dur-fast: 120ms;
@@ -303,7 +307,7 @@ ul { list-style: none; }
   flex: none;
   display: flex; align-items: center;
   min-height: 52px;
-  padding: 0 208px 0 56px;
+  padding: 0 var(--top-actions-reserve) 0 56px;
   background: var(--c-bg);
   border-bottom: 1px solid var(--c-divider);
 }
@@ -338,8 +342,10 @@ ul { list-style: none; }
 .efp-open:hover { background: var(--c-accent-hover); }
 .efp-open:active { background: var(--c-accent-press); }
 
-/* 图片/PDF 内置查看器共用顶条（文件名 + 只读标 + 用默认程序打开）。对齐 ui-demo FileViewerBar。 */
-.fv-bar { flex: none; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px 0 56px; border-bottom: 1px solid var(--c-divider); background: var(--c-bg); }
+/* 图片/PDF 内置查看器共用顶条（文件名 + 只读标 + 用默认程序打开）。对齐 ui-demo FileViewerBar。
+   高度对齐文档头 52px：右上角浮动 .top-actions 的 top:11px 是按 52px 条居中算的（中线 y=26）。查看器顶栏
+   若只有 44px，内容中线在 y=22、跟浮层差 ~4px 肉眼可见地不齐。两条横条等高才共享得了同一个浮层。 */
+.fv-bar { flex: none; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 var(--top-actions-reserve) 0 56px; border-bottom: 1px solid var(--c-divider); background: var(--c-bg); }
 .fv-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--c-text); }
 .fv-tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 8px; border-radius: var(--r-pill); background: var(--c-bg-rail); color: var(--c-text-2); font-size: var(--fs-xs); }
 .fv-sp { flex: 1; }
