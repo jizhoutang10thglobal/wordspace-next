@@ -335,6 +335,8 @@ function shellCloseDoc() {
 window.__shellRetargetDoc = shellRetargetDoc;
 window.__shellCloseDoc = shellCloseDoc;
 window.__shellDocPath = () => docPath;
+window.__shellIsDirty = () => dirty; // 给侧栏关标签时的脏检查
+window.__shellDiscard = () => setDirty(false); // 已确认丢弃 → 清脏，切下一个时不再追问
 
 async function pickAndOpen() {
   const p = await window.ws2.pickFile();

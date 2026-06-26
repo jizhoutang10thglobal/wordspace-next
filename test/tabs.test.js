@@ -145,3 +145,67 @@ test('非 html 文件也进标签页（kind 保留）', () => {
   assert.equal(s.entries[0].kind, 'image');
   invariant(s);
 });
+
+// ===== 对抗审计补的边界（守去重不变式不被破） =====
+
+test('retargetEntry 撞名→合并成一个（open/pinned 取并集），不出现重复 rel', () => {
+  // a 开+钉(置顶)，b 开(标签页)；把 b 改名/移成 a → 合并
+  let s = T.openEntry(T.pinEntry(T.openEntry(empty(), f('a.html')), f('a.html')), f('b.html'));
+  s = T.retargetEntry(s, 'b.html', 'a.html', 'a.html', 'html');
+  assert.equal(s.entries.filter((e) => e.rel === 'a.html').length, 1); // 唯一
+  const e = s.entries.find((x) => x.rel === 'a.html');
+  assert.equal(e.open, true);
+  assert.equal(e.pinned, true); // 并集
+  invariant(s); // 不在两区重复
+});
+
+test('dropEntry 把没开过的纯置顶快捷方式拖进标签页→变成开着的标签（不销毁）', () => {
+  let s = T.pinEntry(empty(), f('z.html')); // {open:false,pinned:true}
+  s = T.dropEntry(s, 'z.html', false, 0); // 拖进标签页区
+  assert.deepEqual(rels(T.tabEntries(s.entries)), ['z.html']); // 成了开着的标签
+  assert.deepEqual(rels(T.pinnedEntries(s.entries)), []);
+  const e = s.entries.find((x) => x.rel === 'z.html');
+  assert.equal(e.open, true);
+  invariant(s);
+});
+
+test('dropEntry 负 index 夹紧到 0；不存在的 rel 原样返回', () => {
+  let s = empty();
+  for (const r of ['a.html', 'b.html']) s = T.openEntry(s, f(r));
+  s = T.dropEntry(s, 'b.html', false, -5); // 负 → 0
+  assert.deepEqual(rels(T.tabEntries(s.entries)), ['b.html', 'a.html']);
+  const same = T.dropEntry(s, '不存在.html', true, 0);
+  assert.deepEqual(same.entries, s.entries);
+  invariant(s);
+});
+
+test('关激活的「钉+开」标签：另有开着的标签时落到那个，不落到没开的纯置顶', () => {
+  // a 开+钉+激活；b 开；z 钉未开
+  let s = T.openEntry(empty(), f('a.html'));
+  s = T.pinEntry(s, f('a.html')); // a 钉(仍激活、仍 open)
+  s = T.openEntry(s, f('b.html')); // active=b
+  s = T.openEntry(s, f('a.html')); // 切回 a，active=a (a 开+钉)
+  s = T.pinEntry(s, f('z.html')); // z 钉未开
+  s = T.closeEntry(s, 'a.html'); // 关激活 a（a 仍 pinned→留置顶，但 open=false）
+  assert.equal(s.activeRel, 'b.html'); // 落到还开着的 b，不落到没开的 z
+  assert.equal(s.entries.find((e) => e.rel === 'a.html').open, false);
+  assert.equal(s.entries.find((e) => e.rel === 'a.html').pinned, true); // 钉的还在置顶
+  invariant(s);
+});
+
+test('setActive 只激活已跟踪项；不存在的 rel 不改激活', () => {
+  let s = T.openEntry(empty(), f('a.html'));
+  s = T.setActive(s, 'ghost.html');
+  assert.equal(s.activeRel, 'a.html'); // 没被改成 ghost
+  s = T.setActive(s, 'a.html');
+  assert.equal(s.activeRel, 'a.html');
+});
+
+test('removeEntry 删一个没开的纯置顶项时不动别人的激活', () => {
+  let s = T.openEntry(empty(), f('a.html')); // active=a
+  s = T.pinEntry(s, f('z.html')); // z 钉未开
+  s = T.removeEntry(s, 'z.html'); // 删 z
+  assert.equal(s.activeRel, 'a.html'); // a 仍激活
+  assert.ok(!s.entries.some((e) => e.rel === 'z.html'));
+  invariant(s);
+});
