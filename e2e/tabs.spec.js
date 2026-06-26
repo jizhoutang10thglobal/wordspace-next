@@ -273,3 +273,27 @@ test('「打开」按钮开工作区外文件 → 能预览但不进标签页（
   await expect(page.locator('#viewer .fv-bar')).toBeVisible(); // 预览出来了
   await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(0); // 但没进标签页（没有 rel）
 });
+
+// UI 防重叠门：右上角 .top-actions（打开/保存/导出）是 position:absolute 浮层，贴顶的横条若不给它
+// reserve 右 padding 就会被压住。功能 e2e（按钮能点）测不出这类视觉重叠 → 这里用 boundingBox 直接验。
+test('UI 防重叠：查看器「用默认程序打开」不压到右上角浮动 actions（功能测试漏的那类）', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/c.png"]');
+  await expect(page.locator('#viewer .fv-bar')).toBeVisible();
+  const ta = await page.locator('.top-actions').boundingBox();
+  const fo = await page.locator('.fv-open').boundingBox();
+  expect(fo.x + fo.width, 'fv-open 右边缘应在 top-actions 左侧、不重叠').toBeLessThanOrEqual(ta.x);
+});
+
+test('UI 防重叠：编辑器长文件名面包屑不压到右上角浮动 actions', async () => {
+  await openWorkspace();
+  const longName = 'A'.repeat(200) + '.html'; // 极长名 → 面包屑截断并填满到 padding 边界，逼近浮层
+  await fs.writeFile(path.join(wsDir, longName), HTML('LONG'), 'utf8');
+  await stubPick(path.join(wsDir, longName));
+  await page.click('#open-btn');
+  await expect(page.locator('#doc-name')).toHaveText(longName);
+  const ta = await page.locator('.top-actions').boundingBox();
+  const bc = await page.locator('.ws-breadcrumb').boundingBox();
+  expect(bc.x + bc.width, '面包屑右边缘应在 top-actions 左侧、不重叠').toBeLessThanOrEqual(ta.x);
+});
