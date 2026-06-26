@@ -170,10 +170,11 @@ function openExternalBtn(node, cls) {
   const b = document.createElement('button');
   b.className = cls;
   b.innerHTML = EXT_SVG + '<span>用默认程序打开</span>';
-  b.onclick = () => window.ws2.wsOpenExternal(node.rel);
+  // 工作区内走 rel（assertInsideWorkspace 守卫）；工作区外（「打开」按钮选的）没 rel，走吃 abs 的那条。
+  b.onclick = () => (node.rel ? window.ws2.wsOpenExternal(node.rel) : window.ws2.openExternalAbs(node.abs));
   return b;
 }
-// node = { name, rel, abs, kind } —— 来自侧栏文件树
+// node = { name, rel, abs, kind } —— rel 来自侧栏文件树；「打开」按钮选的工作区外文件 rel 为 null、走 abs
 async function showViewer(node) {
   if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
   // 退出编辑器态：停 watch、拆块编辑、清 docPath（非可编辑文件没有保存目标）
@@ -194,7 +195,8 @@ async function showViewer(node) {
   viewer.innerHTML = '';
   if (kind === 'image' || kind === 'pdf') {
     let url = null;
-    try { url = await window.ws2.wsFileUrl(node.rel); } catch (e) { /* 取不到就退化成卡片 */ }
+    // 工作区内走 rel，工作区外走 abs（「打开」按钮选的）；取不到就退化成外部打开卡片。
+    try { url = node.rel ? await window.ws2.wsFileUrl(node.rel) : await window.ws2.fileUrlAbs(node.abs); } catch (e) { /* 退化成卡片 */ }
     if (url) {
       const bar = document.createElement('div');
       bar.className = 'fv-bar';
@@ -240,7 +242,7 @@ async function showViewer(node) {
   name.textContent = node.name;
   const meta = document.createElement('div');
   meta.className = 'efp-meta ws-truncate';
-  meta.textContent = (KIND_LABEL[kind] || '文件') + ' · ' + node.rel;
+  meta.textContent = (KIND_LABEL[kind] || '文件') + ' · ' + (node.rel || node.name);
   const note = document.createElement('p');
   note.className = 'efp-note';
   note.textContent = '这不是 HTML 文档，Wordspace 不能直接编辑它。可以一键用默认程序打开。';
@@ -338,9 +340,20 @@ window.__shellDocPath = () => docPath;
 window.__shellIsDirty = () => dirty; // 给侧栏关标签时的脏检查
 window.__shellDiscard = () => setDirty(false); // 已确认丢弃 → 清脏，切下一个时不再追问
 
+// 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
+// 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
+// （像浏览器开标签页）；工作区外的能预览但不进标签（产品决策 B）。
 async function pickAndOpen() {
   const p = await window.ws2.pickFile();
-  if (p) openDoc(p);
+  if (!p) return;
+  let meta;
+  try { meta = await window.ws2.classifyFile(p); }
+  catch (e) { meta = { kind: 'other', name: baseName(p), rel: null }; }
+  if (meta.kind === 'html') {
+    openDoc(p);
+  } else {
+    showViewer({ abs: p, rel: meta.rel, name: meta.name || baseName(p), kind: meta.kind });
+  }
 }
 
 async function save() {

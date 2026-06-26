@@ -10,7 +10,7 @@ const workspace = require('./workspace');
 const workspaceStore = require('./workspace-store');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
 const { pathInfo } = require('../lib/path-url');
-const { assertInsideWorkspace } = require('../lib/file-tree');
+const { assertInsideWorkspace, kindOf } = require('../lib/file-tree');
 const { TEMPLATES } = require('../lib/doc-templates');
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
@@ -41,12 +41,41 @@ function assertHtmlPath(p) {
 
 function registerIpc() {
   ipcMain.handle('pick-file', async () => {
+    // 放开到任意类型（原来只放 HTML）：「打开」按钮要能开 PDF/图片/Word 等，renderer 再按 kind 分流
+    //（html→编辑器 / 图片·PDF→应用内查看器 / 其余→默认程序打开）。所有文件在前作默认筛选，HTML 仍单列一项。
     const r = await dialog.showOpenDialog({
-      filters: [{ name: 'HTML', extensions: ['html', 'htm'] }],
+      filters: [
+        { name: '所有文件', extensions: ['*'] },
+        { name: 'HTML 文档', extensions: ['html', 'htm'] },
+      ],
       properties: ['openFile']
     });
     return r.canceled ? null : r.filePaths[0];
   });
+  // 给「打开」按钮选到的任意绝对路径分类：kind（按扩展名）+ 文件名 + 若在当前工作区内则算出 rel（否则 null）。
+  // rel 用 realpath 归一化 root 与 abs 再 path.relative——macOS 上 /tmp→/private/tmp 这类软链会让原始 abs
+  // 跟 path.join(root, rel) 算出的 abs 字符串对不上，不归一化的话「工作区内文件」也会被判成工作区外、建不出标签。
+  ipcMain.handle('classify-file', async (_e, abs) => {
+    const name = path.basename(abs);
+    const kind = kindOf(name);
+    let rel = null;
+    if (activeRoot) {
+      try {
+        const real = await fsp.realpath(abs);
+        const rootReal = await fsp.realpath(activeRoot);
+        const r = path.relative(rootReal, real);
+        if (r && r !== '..' && !r.startsWith('..' + path.sep) && !path.isAbsolute(r)) {
+          rel = r.split(path.sep).join('/'); // 统一成 / 分隔，跟文件树 rel 一致（Windows path.sep 是 \）
+        }
+      } catch { /* abs 不存在 / 无法 realpath：rel 留 null（当作工作区外处理） */ }
+    }
+    return { name, kind, rel };
+  });
+  // 工作区外文件（「打开」按钮自由选择）的 file:// URL / 默认程序打开。不经 assertInsideWorkspace：这些 abs
+  // 不是 workspace-relative、也不来自可被篡改的 recents/workspace.json，而是用户当场在原生 showOpenDialog
+  // 里亲手选的（可信来源）。仅服务「打开」按钮这一条 pick→view 流，别把这两个 IPC 接到其它入口。
+  ipcMain.handle('file-url-abs', (_e, abs) => pathToFileURL(abs).href);
+  ipcMain.handle('open-external-abs', async (_e, abs) => { await shell.openPath(abs); return { ok: true }; });
   ipcMain.handle('read-doc', async (_e, p) => {
     assertHtmlPath(p);
     const buf = await files.readDocBuffer(p);

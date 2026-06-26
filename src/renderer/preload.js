@@ -2,6 +2,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ws2', {
   pickFile: () => ipcRenderer.invoke('pick-file'),
+  classifyFile: (abs) => ipcRenderer.invoke('classify-file', abs),
+  fileUrlAbs: (abs) => ipcRenderer.invoke('file-url-abs', abs),
+  openExternalAbs: (abs) => ipcRenderer.invoke('open-external-abs', abs),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),
   appVersion: () => ipcRenderer.invoke('app-version'),

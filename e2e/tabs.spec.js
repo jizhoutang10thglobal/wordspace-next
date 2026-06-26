@@ -228,3 +228,48 @@ test('标签页区「+」→ 模板台 → 新文档成为激活标签', async (
   await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('无标题文档');
   await expect(tabRow('无标题文档.html')).toHaveClass(/is-active/);
 });
+
+// 选到「打开」对话框的文件：原生对话框 e2e 点不了，stub 主进程 dialog.showOpenDialog 返回固定路径。
+async function stubPick(absPath) {
+  await app.evaluate(({ dialog }, p) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+  }, absPath);
+}
+
+test('空状态：开工作区 0 标签 0 置顶 → 置顶/标签页两区恒显示带占位提示（Wendi bug1）', async () => {
+  await openWorkspace();
+  // 什么都没打开、没置顶——两个区都得在
+  await expect(page.locator('#sb-pinned')).toBeVisible();
+  await expect(page.locator('#sb-pinned .sb-zone-hint')).toHaveText('把标签拖到这里置顶');
+  await expect(page.locator('#sb-pinned .sb-tab')).toHaveCount(0);
+  await expect(page.locator('#sb-tabs')).toBeVisible();
+  await expect(page.locator('#sb-tabs .sb-zone-hint')).toHaveText('没有打开的标签');
+  await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(0);
+});
+
+test('「打开」按钮开非 html（工作区内）→ 应用内预览 + 进标签页（Wendi bug2+3）', async () => {
+  await openWorkspace();
+  await stubPick(path.join(wsDir, '数据', 'c.png'));
+  await page.click('#open-btn');
+  await expect(page.locator('#viewer .fv-bar')).toBeVisible(); // 应用内查看器，不是只能开 html
+  await expect(tabRow('数据/c.png')).toBeVisible(); // 像浏览器一样进了标签页
+  await expect(tabRow('数据/c.png')).toHaveClass(/is-active/);
+});
+
+test('「打开」按钮开 html（工作区内）→ 进编辑器 + 进标签页', async () => {
+  await openWorkspace();
+  await stubPick(path.join(wsDir, 'a.html'));
+  await page.click('#open-btn');
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  await expect(tabRow('a.html')).toHaveClass(/is-active/);
+});
+
+test('「打开」按钮开工作区外文件 → 能预览但不进标签页（产品决策 B）', async () => {
+  await openWorkspace();
+  const outside = path.join(tmp, 'outside.png'); // 在 tmp 下、但不在 wsDir 工作区内
+  await fs.writeFile(outside, 'png', 'utf8');
+  await stubPick(outside);
+  await page.click('#open-btn');
+  await expect(page.locator('#viewer .fv-bar')).toBeVisible(); // 预览出来了
+  await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(0); // 但没进标签页（没有 rel）
+});
