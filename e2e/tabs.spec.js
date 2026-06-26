@@ -276,14 +276,18 @@ test('「打开」按钮开工作区外文件 → 能预览但不进标签页（
 
 // UI 防重叠门：右上角 .top-actions（打开/保存/导出）是 position:absolute 浮层，贴顶的横条若不给它
 // reserve 右 padding 就会被压住。功能 e2e（按钮能点）测不出这类视觉重叠 → 这里用 boundingBox 直接验。
-test('UI 防重叠：查看器「用默认程序打开」不压到右上角浮动 actions（功能测试漏的那类）', async () => {
+test('UI 防重叠+对齐：查看器「用默认程序打开」与右上角浮动 actions 不重叠且垂直对齐', async () => {
   await openWorkspace();
   await page.locator('.sb-dir[data-rel="数据"]').click();
   await page.click('.sb-file[data-rel="数据/c.png"]');
   await expect(page.locator('#viewer .fv-bar')).toBeVisible();
   const ta = await page.locator('.top-actions').boundingBox();
   const fo = await page.locator('.fv-open').boundingBox();
+  // 水平：fv-open 整体在 top-actions 左侧、不重叠
   expect(fo.x + fo.width, 'fv-open 右边缘应在 top-actions 左侧、不重叠').toBeLessThanOrEqual(ta.x);
+  // 垂直：两者中线对齐（fv-bar 与文档头同高 52px 才齐）——上次只验 x 漏了 y，这条补上
+  const taC = ta.y + ta.height / 2, foC = fo.y + fo.height / 2;
+  expect(Math.abs(taC - foC), 'fv-open 与 top-actions 垂直中线应对齐').toBeLessThanOrEqual(2);
 });
 
 test('UI 防重叠：编辑器长文件名面包屑不压到右上角浮动 actions', async () => {
