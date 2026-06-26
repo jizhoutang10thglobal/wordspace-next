@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsUndoDelete: (token) => ipcRenderer.invoke('ws-undo-delete', token),
   wsOpenExternal: (relPath) => ipcRenderer.invoke('ws-open-external', relPath),
   wsFileUrl: (relPath) => ipcRenderer.invoke('ws-file-url', relPath),
-  wsGetPins: () => ipcRenderer.invoke('ws-get-pins'),
-  wsSetPins: (pins) => ipcRenderer.invoke('ws-set-pins', pins),
+  wsGetTabs: () => ipcRenderer.invoke('ws-get-tabs'),
+  wsSetTabs: (state) => ipcRenderer.invoke('ws-set-tabs', state),
   wsTemplates: () => ipcRenderer.invoke('ws-templates')
 });

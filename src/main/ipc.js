@@ -166,10 +166,10 @@ function registerIpc() {
   ipcMain.handle('ws-undo-delete', (_e, token) =>
     workspace.undoDelete(requireRoot(), token, trashRoot()),
   );
-  // 置顶常用文件（按当前工作区根存进 workspace.json，换工作区各自保留）。
-  ipcMain.handle('ws-get-pins', () => workspaceStore.getPins(workspaceFile(), requireRoot()));
-  ipcMain.handle('ws-set-pins', (_e, pins) =>
-    workspaceStore.setPins(workspaceFile(), requireRoot(), pins),
+  // 标签/置顶状态（按当前工作区根存进 workspace.json，换工作区各自保留、重启恢复）。
+  ipcMain.handle('ws-get-tabs', () => workspaceStore.getTabs(workspaceFile(), requireRoot()));
+  ipcMain.handle('ws-set-tabs', (_e, state) =>
+    workspaceStore.setTabs(workspaceFile(), requireRoot(), state),
   );
   // 新建文档模板（含空文档，第一项）。
   ipcMain.handle('ws-templates', () => TEMPLATES);
