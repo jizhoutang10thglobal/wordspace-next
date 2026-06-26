@@ -1,0 +1,230 @@
+// 文档标签页 + 置顶（双标记模型）e2e 真门：宿主真启动 Electron。
+// 标签=打开记录，置顶=钉住的；同一批文件带 open/pinned 双标记，置顶优先去重。
+// 拖拽用合成 DragEvent 驱动真实 ondragstart/ondrop（→ window.WS2Tabs.dropEntry），判定落渲染/持久化顺序。
+const { test, expect, _electron: electron } = require('@playwright/test');
+const fs = require('fs/promises');
+const path = require('path');
+const os = require('os');
+
+const ROOT = path.join(__dirname, '..');
+const HTML = (m) => `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>${m}</h1></body></html>`;
+
+let app, page, tmp, wsDir;
+
+async function seedWorkspace(dir) {
+  await fs.mkdir(path.join(dir, '数据'), { recursive: true });
+  await fs.writeFile(path.join(dir, 'a.html'), HTML('AAA'), 'utf8');
+  await fs.writeFile(path.join(dir, 'README'), 'no-ext', 'utf8');
+  await fs.writeFile(path.join(dir, '数据', 'b.html'), HTML('BBB'), 'utf8');
+  await fs.writeFile(path.join(dir, '数据', 'c.png'), 'png', 'utf8');
+  await fs.writeFile(path.join(dir, '数据', 'd.html'), HTML('DDD'), 'utf8');
+}
+
+async function launch(env) {
+  const a = await electron.launch({
+    args: ['--no-sandbox', ROOT],
+    env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', ...env },
+  });
+  const p = await a.firstWindow();
+  await p.waitForLoadState('domcontentloaded');
+  await p.setViewportSize({ width: 1280, height: 860 });
+  await p.evaluate(() => {
+    window.confirm = () => true;
+    window.alert = () => {};
+  });
+  return { a, p };
+}
+async function openWorkspace() {
+  await page.click('#home-open-folder');
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
+}
+const tabRow = (rel) => page.locator(`#sb-tabs .sb-tab[data-rel="${rel}"]`);
+const pinnedRow = (rel) => page.locator(`#sb-pinned .sb-tab[data-rel="${rel}"]`);
+
+// 合成拖拽：把标签 srcRel 拖到某区（'pinned' / 'tabs'）的某 Y 位置。
+async function tabDnd(srcRel, destZone, clientY = 0) {
+  await page.evaluate(
+    ({ srcRel, destZone, clientY }) => {
+      const src = document.querySelector(`.sb-tab[data-rel="${srcRel}"]`);
+      const dst = document.querySelector(`.sb-zone-list[data-zone="${destZone}"]`);
+      if (!src || !dst) throw new Error('tab dnd 节点没找到: ' + srcRel + ' → ' + destZone);
+      const dt = new DataTransfer();
+      const ev = (t, el) => el.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt, clientY }));
+      ev('dragstart', src);
+      ev('dragover', dst);
+      ev('drop', dst);
+      ev('dragend', src);
+    },
+    { srcRel, destZone, clientY },
+  );
+}
+
+test.beforeEach(async () => {
+  tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-tabs-'));
+  wsDir = path.join(tmp, 'workspace');
+  await fs.mkdir(wsDir, { recursive: true });
+  await seedWorkspace(wsDir);
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata'), WS2_FOLDER_IN: wsDir }));
+});
+test.afterEach(async () => {
+  await app.close().catch(() => {});
+  await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
+});
+
+test('打开文件→进标签页区且激活；开第二个→两标签；点标签切回', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  await expect(tabRow('a.html')).toBeVisible();
+  await expect(tabRow('a.html')).toHaveClass(/is-active/);
+  // 开第二个
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/b.html"]');
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('BBB');
+  await expect(tabRow('数据/b.html')).toHaveClass(/is-active/);
+  await expect(tabRow('a.html')).not.toHaveClass(/is-active/);
+  // 点 a 标签切回
+  await tabRow('a.html').click();
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  await expect(tabRow('a.html')).toHaveClass(/is-active/);
+});
+
+test('重复打开同一文件不新增标签', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await page.click('.sb-file[data-rel="a.html"]'); // 再点树里的 a
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="a.html"]')).toHaveCount(1);
+});
+
+test('关激活标签→激活剩下最后一个；关到空→回空态', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/b.html"]'); // active=b
+  // 关激活 b → 激活 a
+  await tabRow('数据/b.html').hover();
+  await tabRow('数据/b.html').locator('.sb-tab-close').click();
+  await expect(tabRow('数据/b.html')).toHaveCount(0);
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  await expect(tabRow('a.html')).toHaveClass(/is-active/);
+  // 关 a → 空 → 回 home
+  await tabRow('a.html').hover();
+  await tabRow('a.html').locator('.sb-tab-close').click();
+  await expect(page.locator('#home')).toBeVisible();
+  await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(0);
+});
+
+test('非 html（c.png）也进标签页 + 查看器；关闭正常', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/c.png"]');
+  await expect(page.locator('#viewer .fv-bar')).toBeVisible();
+  await expect(tabRow('数据/c.png')).toHaveClass(/is-active/);
+  await tabRow('数据/c.png').hover();
+  await tabRow('数据/c.png').locator('.sb-tab-close').click();
+  await expect(tabRow('数据/c.png')).toHaveCount(0);
+});
+
+test('改名被打开的文件→标签 title/rel 跟随', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '重命名' }).click();
+  const input = page.locator('.sb-rename');
+  await input.fill('改名后');
+  await input.press('Enter');
+  await expect(tabRow('改名后.html')).toBeVisible(); // 标签跟到新 rel
+  await expect(tabRow('改名后.html')).toContainText('改名后.html');
+  await expect(tabRow('a.html')).toHaveCount(0);
+});
+
+test('删除被打开的文件→标签消失 + 回空态（仅一个标签时）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect(tabRow('a.html')).toHaveCount(0);
+  await expect(page.locator('#home')).toBeVisible();
+});
+
+test('重启 app→标签 + 上次激活恢复并打开', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/b.html"]'); // active=b
+  // 等标签状态落盘再关（持久化是 fire-and-forget IPC，关太快会丢最后一次写）
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect
+    .poll(async () => {
+      try {
+        return (await fs.readFile(wsJson, 'utf8')).includes('数据/b.html');
+      } catch {
+        return false;
+      }
+    }, { timeout: 4000 })
+    .toBe(true);
+  await app.close();
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(tabRow('a.html')).toBeVisible();
+  await expect(tabRow('数据/b.html')).toBeVisible();
+  await expect(tabRow('数据/b.html')).toHaveClass(/is-active/); // 上次激活的恢复
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('BBB');
+});
+
+test('标签 📌→移进置顶区（× 消失）；取消钉→落回标签页', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await tabRow('a.html').hover();
+  await tabRow('a.html').locator('.sb-tab-pin').click(); // 钉
+  await expect(pinnedRow('a.html')).toBeVisible(); // 进置顶
+  await expect(tabRow('a.html')).toHaveCount(0); // 离开标签页（去重）
+  await expect(pinnedRow('a.html').locator('.sb-tab-close')).toHaveCount(0); // 置顶项无 ×
+  // 取消钉（点置顶里的 📌）→ 还开着 → 落回标签页
+  await pinnedRow('a.html').locator('.sb-tab-pin').click();
+  await expect(tabRow('a.html')).toBeVisible();
+  await expect(pinnedRow('a.html')).toHaveCount(0);
+});
+
+test('既钉又开：钉一个开着的文件→只在置顶不在标签页（去重）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]'); // a 开着、激活
+  await tabRow('a.html').hover();
+  await tabRow('a.html').locator('.sb-tab-pin').click(); // 钉
+  await expect(pinnedRow('a.html')).toBeVisible();
+  await expect(tabRow('a.html')).toHaveCount(0); // 不在标签页重复
+  await expect(pinnedRow('a.html')).toHaveClass(/is-active/); // 仍是激活
+});
+
+test('拖标签进置顶区→变 pinned（合成 DragEvent，落持久化）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]'); // 有一个标签 → 两区都出现
+  await expect(page.locator('.sb-zone-list[data-zone="pinned"]')).toBeVisible();
+  await tabDnd('a.html', 'pinned');
+  await expect(pinnedRow('a.html')).toBeVisible();
+  await expect(tabRow('a.html')).toHaveCount(0);
+});
+
+test('同区拖拽重排标签→顺序变', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/b.html"]');
+  await page.click('.sb-file[data-rel="数据/d.html"]'); // 标签页顺序 a, b, d
+  const order = async () =>
+    page.locator('#sb-tabs .sb-tab').evaluateAll((els) => els.map((e) => e.dataset.rel));
+  expect(await order()).toEqual(['a.html', '数据/b.html', '数据/d.html']);
+  await tabDnd('数据/d.html', 'tabs', 0); // 拖 d 到顶部（clientY=0）
+  expect(await order()).toEqual(['数据/d.html', 'a.html', '数据/b.html']);
+});
+
+test('标签页区「+」→ 模板台 → 新文档成为激活标签', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]'); // 先有标签，标签页区头部出现 +
+  await page.locator('#sb-tabs .sb-zone-add').click();
+  await expect(page.locator('.sb-modal')).toBeVisible();
+  await page.locator('.sb-card', { hasText: '空文档' }).click();
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('无标题文档');
+  await expect(tabRow('无标题文档.html')).toHaveClass(/is-active/);
+});

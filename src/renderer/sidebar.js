@@ -5,6 +5,7 @@
 (function () {
   const rootNameEl = document.getElementById('sb-root-name');
   const filterWrap = document.getElementById('sb-filter');
+  const filesLabel = document.getElementById('sb-files-label');
   const filterInput = document.getElementById('sb-filter-input');
   const emptyEl = document.getElementById('sb-empty');
   const treeEl = document.getElementById('sb-tree');
@@ -14,7 +15,7 @@
 
   let current = null; // { root, name, tree }
   let query = '';
-  let pins = []; // 置顶文件的 rel 列表（按工作区根持久化进 workspace.json）
+  let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，按根持久化）
   const collapsed = new Set(); // 收起的文件夹 rel（打开工作区时全部收起，只显示顶层）
 
   // 收集树里所有文件夹的 rel（打开工作区时一次性塞进 collapsed → 默认全收起）。
@@ -45,7 +46,7 @@
   function setWorkspace(data) {
     current = data;
     query = '';
-    pins = []; // 先清旧工作区的置顶，loadPins 再按新根拉回
+    tabState = { entries: [], activeRel: null }; // 先清旧工作区的标签，loadTabs 再按新根拉回
     collapsed.clear();
     collectDirRels(current.tree, collapsed); // 默认全部收起：一打开只露顶层，要看哪层自己点开
     if (filterInput) filterInput.value = '';
@@ -54,10 +55,11 @@
     emptyEl.hidden = true;
     treeEl.hidden = false;
     filterWrap.hidden = false;
+    if (filesLabel) filesLabel.hidden = false;
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.add('sb-on'); // 打开工作区才显示侧栏（单文件编辑保持全宽）
     render();
-    loadPins(); // 异步按新根拉置顶，到了再 render
+    loadTabs(); // 异步按新根拉标签/置顶，到了再 render + 恢复上次激活
   }
   async function refresh() {
     if (!current) return;
@@ -92,7 +94,7 @@
       return;
     }
     renderRail(); // 收起态图标轨（#4），与主树同步刷新
-    renderPins(); // 置顶区（#5）
+    renderZones(); // 置顶区 + 标签页区
     const q = query.trim().toLowerCase();
     const nodes = q ? filterTree(current.tree, q) : current.tree;
     if (!nodes.length) {
@@ -125,6 +127,7 @@
     const wasOpen = !node.isDir && openPath() === node.abs;
     const r = await window.ws2.wsRename(node.rel, newLeaf);
     if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
+    if (r.rel !== node.rel) retargetTabsUnder(node.rel, r.rel, node.isDir); // 标签跟随改名
     await refresh();
   }
   async function doMove(node, destDirRel) {
@@ -133,14 +136,20 @@
     if (wasOpen && window.__shellRetargetDoc && r.abs !== node.abs) {
       window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     }
+    if (r.rel !== node.rel) retargetTabsUnder(node.rel, r.rel, node.isDir); // 标签跟随移动
     await refresh();
   }
   async function doDelete(node) {
     const op = openPath();
     const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
     const r = await window.ws2.wsDelete(node.rel);
-    if (affectsOpen && window.__shellCloseDoc) window.__shellCloseDoc();
+    removeTabsUnder(node); // 移除被删文件的标签
     await refresh();
+    if (affectsOpen) { // 删了当前打开的 → 切到下一个标签 / 回空态
+      const n = tabState.activeRel ? findNode(tabState.activeRel) : null;
+      if (n) openNode(n);
+      else if (window.__shellCloseDoc) window.__shellCloseDoc();
+    }
     showToast('已删除「' + node.name + '」', '撤销', async () => {
       await window.ws2.wsUndoDelete(r.token);
       await refresh();
@@ -309,7 +318,7 @@
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
           { label: '打开', run: () => openNode(node) },
-          { label: isPinned(node.rel) ? '取消置顶' : '置顶', run: () => togglePin(node) },
+          { label: isPinned(node.rel) ? '取消置顶' : '置顶', run: () => (isPinned(node.rel) ? unpinRel(node.rel) : pinFromTree(node)) },
           { label: '重命名', run: () => startInlineRename(node, row) },
           { label: '删除', danger: true, run: () => doDelete(node) },
         ]);
@@ -420,13 +429,21 @@
     if (!railEl || !current) return;
     hideRailPop();
     railEl.innerHTML = '';
-    const pinned = pins.map(findNode).filter((n) => n && !n.isDir);
-    for (const n of pinned) {
+    // 置顶 + 开着的标签 的图标（去重：pinned 优先）
+    const tabbed = [
+      ...window.WS2Tabs.pinnedEntries(tabState.entries),
+      ...window.WS2Tabs.tabEntries(tabState.entries),
+    ];
+    let shown = 0;
+    for (const e of tabbed) {
+      const n = findNode(e.rel);
+      if (!n) continue;
       const btn = railIcon(n);
-      btn.classList.add('sb-rail-pin');
+      if (e.pinned) btn.classList.add('sb-rail-pin');
       railEl.appendChild(btn);
+      shown++;
     }
-    if (pinned.length && current.tree.length) {
+    if (shown && current.tree.length) {
       const div = document.createElement('div');
       div.className = 'sb-rail-div';
       railEl.appendChild(div);
@@ -434,9 +451,14 @@
     for (const n of current.tree) railEl.appendChild(railIcon(n));
   }
 
-  // ---- 置顶常用文件（#5） ----
-  const pinsEl = document.getElementById('sb-pins');
+  // ===== 标签页 + 置顶（双标记模型，纯逻辑在 window.WS2Tabs，按根持久化）=====
+  const pinnedEl = document.getElementById('sb-pinned'); // 置顶区
+  const tabsEl = document.getElementById('sb-tabs'); // 标签页区
   const PIN_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+  const PIN_OFF_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h9"/><path d="M15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H10"/></svg>';
+  const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+  let dragTabRel = null;
+
   function findNode(rel) {
     let found = null;
     (function walk(nodes) {
@@ -448,68 +470,219 @@
     })(current ? current.tree : []);
     return found;
   }
+  function findNodeByAbs(abs) {
+    let found = null;
+    (function walk(nodes) {
+      for (const n of nodes) {
+        if (found) return;
+        if (!n.isDir && n.abs === abs) { found = n; return; }
+        if (n.children && n.children.length) walk(n.children);
+      }
+    })(current ? current.tree : []);
+    return found;
+  }
   function isPinned(rel) {
-    return pins.indexOf(rel) >= 0;
+    return tabState.entries.some((e) => e.rel === rel && e.pinned);
   }
-  async function togglePin(node) {
-    const i = pins.indexOf(node.rel);
-    if (i >= 0) pins.splice(i, 1);
-    else pins.push(node.rel);
-    try { await window.ws2.wsSetPins(pins); } catch (e) { /* 存不上也先更新 UI */ }
-    render();
+  function persistTabs() {
+    if (window.ws2.wsSetTabs) window.ws2.wsSetTabs(tabState).catch(() => {});
   }
-  async function loadPins() {
-    try { pins = (await window.ws2.wsGetPins()) || []; } catch (e) { pins = []; }
-    // 清掉已不存在（上次会话后被删/改名/移走）的死置顶并回写
-    const valid = pins.filter((rel) => findNode(rel));
-    if (valid.length !== pins.length) {
-      pins = valid;
-      try { await window.ws2.wsSetPins(pins); } catch (e) { /* ignore */ }
+  function applyTabs(next) {
+    tabState = next;
+    persistTabs();
+    renderZones();
+    renderRail();
+  }
+
+  function pinFromTree(node) {
+    applyTabs(window.WS2Tabs.pinEntry(tabState, { rel: node.rel, kind: node.kind || 'other', title: node.name }));
+  }
+  function pinRel(entry) {
+    applyTabs(window.WS2Tabs.pinEntry(tabState, { rel: entry.rel, kind: entry.kind, title: entry.title }));
+  }
+  function unpinRel(rel) {
+    applyTabs(window.WS2Tabs.unpinEntry(tabState, rel));
+  }
+  function closeTabRel(rel) {
+    const wasActive = tabState.activeRel === rel;
+    if (wasActive && window.__shellIsDirty && window.__shellIsDirty() &&
+        !confirm('这个文档有未保存的修改，关闭标签会丢弃，确定吗？')) return;
+    if (wasActive && window.__shellDiscard) window.__shellDiscard(); // 已确认丢弃 → 切下一个时不再追问
+    applyTabs(window.WS2Tabs.closeEntry(tabState, rel));
+    if (wasActive) {
+      const n = tabState.activeRel ? findNode(tabState.activeRel) : null;
+      if (n) openNode(n);
+      else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
-    render();
   }
-  function renderPins() {
-    if (!pinsEl) return;
-    pinsEl.innerHTML = '';
-    const valid = pins.map(findNode).filter((n) => n && !n.isDir);
-    if (!valid.length) {
-      pinsEl.hidden = true;
-      return;
+  function dropTabRel(rel, toPinned, toIndex) {
+    applyTabs(window.WS2Tabs.dropEntry(tabState, rel, toPinned, toIndex));
+  }
+  // 删文件(或目录下所有文件) → 移除其标签；改名/移动 → 标签 rel 跟随。
+  function removeTabsUnder(node) {
+    const under = (rel) => rel === node.rel || rel.indexOf(node.rel + '/') === 0;
+    const targets = node.isDir ? tabState.entries.filter((e) => under(e.rel)).map((e) => e.rel) : [node.rel];
+    for (const rel of targets) tabState = window.WS2Tabs.removeEntry(tabState, rel);
+    persistTabs();
+  }
+  function retargetTabsUnder(oldRel, newRel, isDir) {
+    if (!isDir) {
+      tabState = window.WS2Tabs.retargetEntry(tabState, oldRel, newRel, newRel.split('/').pop());
+    } else {
+      const affected = tabState.entries
+        .filter((e) => e.rel === oldRel || e.rel.indexOf(oldRel + '/') === 0)
+        .map((e) => e.rel);
+      for (const rel of affected) {
+        const nr = newRel + rel.slice(oldRel.length);
+        tabState = window.WS2Tabs.retargetEntry(tabState, rel, nr, nr.split('/').pop());
+      }
     }
-    pinsEl.hidden = false;
-    const label = document.createElement('div');
-    label.className = 'sb-sec-label';
-    label.textContent = '置顶';
-    pinsEl.appendChild(label);
-    for (const node of valid) {
-      const row = document.createElement('button');
-      row.className = 'sb-row sb-file sb-pin-row sb-kind-' + (node.kind || 'other');
-      row.dataset.rel = node.rel;
-      if (openPath() === node.abs) row.classList.add('is-active');
-      const ico = document.createElement('span');
-      ico.className = 'sb-ico';
-      ico.innerHTML = SVG.file;
-      const name = document.createElement('span');
-      name.className = 'sb-name ws-truncate';
-      name.textContent = node.name;
-      const unpin = document.createElement('button');
-      unpin.className = 'sb-unpin';
-      unpin.title = '取消置顶';
-      unpin.innerHTML = PIN_SVG;
-      unpin.onclick = (e) => {
+    persistTabs();
+  }
+
+  // 按根拉标签：清掉已不存在的文件、回落激活、恢复上次激活进编辑器。
+  async function loadTabs() {
+    let st;
+    try { st = await window.ws2.wsGetTabs(); } catch (e) { st = { entries: [], activeRel: null }; }
+    const entries = (st.entries || []).filter((e) => findNode(e.rel));
+    const activeRel = window.WS2Tabs.resolveActive(entries, st.activeRel);
+    const changed = entries.length !== (st.entries || []).length || activeRel !== st.activeRel;
+    tabState = { entries, activeRel };
+    if (changed) persistTabs();
+    renderZones();
+    renderRail();
+    if (activeRel) {
+      const n = findNode(activeRel);
+      if (n) openNode(n);
+    }
+  }
+
+  // ---- 渲染两区 ----
+  function tabRow(entry, zone) {
+    const node = findNode(entry.rel);
+    const row = document.createElement('div');
+    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other');
+    row.dataset.rel = entry.rel;
+    row.setAttribute('role', 'button');
+    row.draggable = true;
+    if (entry.rel === tabState.activeRel) row.classList.add('is-active');
+    const ico = document.createElement('span');
+    ico.className = 'sb-ico';
+    ico.innerHTML = SVG.file;
+    const name = document.createElement('span');
+    name.className = 'sb-name ws-truncate';
+    name.textContent = entry.title;
+    const pin = document.createElement('button');
+    pin.className = 'sb-tab-pin' + (entry.pinned ? ' is-pinned' : '');
+    pin.title = entry.pinned ? '取消置顶' : '置顶';
+    pin.innerHTML = entry.pinned ? PIN_OFF_SVG : PIN_SVG;
+    pin.onclick = (e) => {
+      e.stopPropagation();
+      if (entry.pinned) unpinRel(entry.rel);
+      else pinRel(entry);
+    };
+    row.append(ico, name, pin);
+    if (zone === 'tabs') {
+      const x = document.createElement('button');
+      x.className = 'sb-tab-close';
+      x.title = '关闭';
+      x.innerHTML = X_SVG;
+      x.onclick = (e) => {
         e.stopPropagation();
-        togglePin(node);
+        closeTabRel(entry.rel);
       };
-      row.append(ico, name, unpin);
-      row.onclick = () => openNode(node);
-      row.oncontextmenu = (e) => {
-        e.preventDefault();
-        showContextMenu(e.clientX, e.clientY, [
-          { label: '打开', run: () => openNode(node) },
-          { label: '取消置顶', run: () => togglePin(node) },
-        ]);
-      };
-      pinsEl.appendChild(row);
+      row.append(x);
+    }
+    row.onclick = () => {
+      if (node) openNode(node);
+    };
+    row.ondragstart = (e) => {
+      dragTabRel = entry.rel;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', entry.rel);
+    };
+    row.ondragend = () => {
+      dragTabRel = null;
+    };
+    return row;
+  }
+  function dropIndex(list, y) {
+    const rows = Array.prototype.slice.call(list.querySelectorAll('.sb-tab'));
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) return i;
+    }
+    return rows.length;
+  }
+  function zoneList(zone) {
+    const list = document.createElement('div');
+    list.className = 'sb-zone-list';
+    list.dataset.zone = zone;
+    list.ondragover = (e) => {
+      if (!dragTabRel) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      list.classList.add('sb-drop');
+    };
+    list.ondragleave = (e) => {
+      if (!list.contains(e.relatedTarget)) list.classList.remove('sb-drop');
+    };
+    list.ondrop = (e) => {
+      if (!dragTabRel) return;
+      e.preventDefault();
+      e.stopPropagation();
+      list.classList.remove('sb-drop');
+      dropTabRel(dragTabRel, zone === 'pinned', dropIndex(list, e.clientY));
+    };
+    return list;
+  }
+  function zoneHeader(text, onPlus) {
+    const head = document.createElement('div');
+    head.className = 'sb-zone-head';
+    const label = document.createElement('span');
+    label.className = 'sb-sec-label';
+    label.textContent = text;
+    head.appendChild(label);
+    if (onPlus) {
+      const plus = document.createElement('button');
+      plus.className = 'sb-zone-add';
+      plus.title = '新建文档';
+      plus.innerHTML = PLUS_SVG;
+      plus.onclick = onPlus;
+      head.appendChild(plus);
+    }
+    return head;
+  }
+  function zoneHint(text) {
+    const d = document.createElement('div');
+    d.className = 'sb-zone-hint';
+    d.textContent = text;
+    return d;
+  }
+  // 有任何被跟踪的文件就把两区都显示（置顶在上、标签页在下）——空的那区给提示，仍是拖拽 drop 目标；
+  // 全空（刚开工作区、什么都没打开）则两区都收起，保持干净。
+  function renderZones() {
+    if (!pinnedEl || !tabsEl) return;
+    const pinned = window.WS2Tabs.pinnedEntries(tabState.entries);
+    const tabs = window.WS2Tabs.tabEntries(tabState.entries);
+    const any = tabState.entries.length > 0;
+    pinnedEl.innerHTML = '';
+    pinnedEl.hidden = !any;
+    if (any) {
+      pinnedEl.appendChild(zoneHeader('置顶', null));
+      const list = zoneList('pinned');
+      if (pinned.length) for (const e of pinned) list.appendChild(tabRow(e, 'pinned'));
+      else list.appendChild(zoneHint('把标签拖到这里置顶'));
+      pinnedEl.appendChild(list);
+    }
+    tabsEl.innerHTML = '';
+    tabsEl.hidden = !any;
+    if (any) {
+      tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal('')));
+      const list = zoneList('tabs');
+      if (tabs.length) for (const e of tabs) list.appendChild(tabRow(e, 'tabs'));
+      else list.appendChild(zoneHint('没有打开的标签'));
+      tabsEl.appendChild(list);
     }
   }
 
@@ -653,9 +826,18 @@
     }
   });
 
-  // shell.js 用的钩子：打开文件 → 高亮。
+  // shell.js 用的钩子：打开文件 → 树高亮 + 建/激活标签（工作区外文件找不到节点 → 只高亮、不建标签）。
   window.__sbHooks = {
-    onOpen: (abs) => highlightActive(abs),
+    onOpen: (abs) => {
+      highlightActive(abs);
+      const node = abs ? findNodeByAbs(abs) : null;
+      if (node) {
+        tabState = window.WS2Tabs.openEntry(tabState, { rel: node.rel, kind: node.kind || 'other', title: node.name });
+        persistTabs();
+        renderZones();
+        renderRail();
+      }
+    },
     refresh,
   };
 

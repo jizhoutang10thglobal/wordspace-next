@@ -413,23 +413,33 @@ test('点头部收起按钮 → 侧栏收成细条、再点展开', async () => 
   await expect(page.locator('#sidebar.is-collapsed')).toHaveCount(0);
 });
 
-test('置顶：右键文件→置顶→进置顶区，重启仍在，取消置顶移除', async () => {
+test('置顶：右键树文件→进置顶区（不必先打开），重启仍在，取消置顶移除', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
   await page.locator('.sb-ctx-item', { hasText: /^置顶$/ }).click();
-  await expect(page.locator('#sb-pins .sb-sec-label')).toHaveText('置顶');
-  await expect(page.locator('#sb-pins .sb-pin-row[data-rel="a.html"]')).toBeVisible();
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toBeVisible(); // 没打开也进置顶区
 
+  // 等置顶落盘再关（持久化是 fire-and-forget IPC）
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect
+    .poll(async () => {
+      try {
+        return (await fs.readFile(wsJson, 'utf8')).includes('tabsByRoot') && (await fs.readFile(wsJson, 'utf8')).includes('a.html');
+      } catch {
+        return false;
+      }
+    }, { timeout: 4000 })
+    .toBe(true);
   // 重启 app（同 WS2_USERDATA）→ 置顶持久化恢复
   await app.close();
   ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
   await expect(page.locator('#sidebar.sb-on')).toBeVisible();
-  await expect(page.locator('#sb-pins .sb-pin-row[data-rel="a.html"]')).toBeVisible();
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toBeVisible();
 
-  // 取消置顶 → 置顶区消失
-  await page.locator('#sb-pins .sb-pin-row[data-rel="a.html"]').hover();
-  await page.locator('#sb-pins .sb-pin-row[data-rel="a.html"] .sb-unpin').click();
-  await expect(page.locator('#sb-pins')).toBeHidden();
+  // 取消置顶（点该行的 📌）→ 没开过 → 销毁 → 置顶区消失
+  await page.locator('#sb-pinned .sb-tab[data-rel="a.html"]').hover();
+  await page.locator('#sb-pinned .sb-tab[data-rel="a.html"] .sb-tab-pin').click();
+  await expect(page.locator('#sb-pinned')).toBeHidden();
 });
 
 test('收起态图标轨：顶层图标 + hover 气泡 + 点文件夹图标展开', async () => {

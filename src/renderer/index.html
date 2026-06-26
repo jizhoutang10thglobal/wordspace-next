@@ -22,17 +22,21 @@
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
     </button>
   </div>
-  <div class="sb-filter" id="sb-filter" hidden>
-    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-    <input id="sb-filter-input" type="text" placeholder="筛选文件" spellcheck="false">
-  </div>
   <div class="sb-body" id="sb-body">
     <div class="sb-empty" id="sb-empty">
       <div class="sb-empty-note">打开一个本地文件夹，把这里当工作区</div>
       <button id="sb-empty-open" class="sb-empty-btn">打开文件夹</button>
     </div>
-    <!-- 置顶常用文件（#5）：有置顶时显示在文件树上方，右键/hover 钉。 -->
-    <div class="sb-pins" id="sb-pins" hidden></div>
+    <!-- 置顶区（钉住的文件）：有置顶才显示。sidebar.js 填充。 -->
+    <div class="sb-zone" id="sb-pinned" hidden></div>
+    <!-- 标签页区（打开记录，浏览器式 tab）：有打开的才显示，头部带 + 新建。sidebar.js 填充。 -->
+    <div class="sb-zone" id="sb-tabs" hidden></div>
+    <!-- 文档区：「文件」段标 + 筛选 + 文件树（对齐 ui-demo 的 置顶/标签页/文件 三段节奏） -->
+    <div class="sb-sec-label sb-files-label" id="sb-files-label" hidden>文件</div>
+    <div class="sb-filter" id="sb-filter" hidden>
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+      <input id="sb-filter-input" type="text" placeholder="筛选文件" spellcheck="false">
+    </div>
     <div class="sb-tree" id="sb-tree" hidden></div>
   </div>
   <!-- 收起态图标轨（只在 .sb.is-collapsed 显示）：置顶 + 顶层文件夹/文件的迷你图标 + hover 气泡预览。 -->
@@ -99,6 +103,7 @@
 <script src="../editor/format.js"></script>
 <script src="../editor/blockedit.js"></script>
 <script src="shell.js"></script>
+<script src="../lib/tabs.js"></script>
 <script src="sidebar.js"></script>
 </body>
 </html>
