@@ -5,6 +5,7 @@
 (function () {
   const rootNameEl = document.getElementById('sb-root-name');
   const filterWrap = document.getElementById('sb-filter');
+  const filesLabel = document.getElementById('sb-files-label');
   const filterInput = document.getElementById('sb-filter-input');
   const emptyEl = document.getElementById('sb-empty');
   const treeEl = document.getElementById('sb-tree');
@@ -54,6 +55,7 @@
     emptyEl.hidden = true;
     treeEl.hidden = false;
     filterWrap.hidden = false;
+    if (filesLabel) filesLabel.hidden = false;
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.add('sb-on'); // 打开工作区才显示侧栏（单文件编辑保持全宽）
     render();
