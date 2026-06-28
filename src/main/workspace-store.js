@@ -19,9 +19,10 @@ async function writeRaw(storeFile, raw) {
   await fs.writeFile(storeFile, JSON.stringify(raw, null, 2), 'utf8');
 }
 
-// 一条 entry 合法 = 有字符串 rel 且 open||pinned（丢幽灵/坏数据）。
+// 一条 entry 合法 = 有字符串 rel（工作区内）或字符串 abs（工作区外文件）且 open||pinned（丢幽灵/坏数据）。
+// 放行无 rel 的外部标签——否则它每次 setTabs 都被静默扔掉、重启恢复落空。
 function validEntry(e) {
-  return e && typeof e.rel === 'string' && (e.open === true || e.pinned === true);
+  return e && (typeof e.rel === 'string' || typeof e.abs === 'string') && (e.open === true || e.pinned === true);
 }
 function sanitize(state) {
   const entries = Array.isArray(state && state.entries) ? state.entries.filter(validEntry) : [];

@@ -197,9 +197,16 @@ function registerIpc() {
   );
   // 标签/置顶状态（按当前工作区根存进 workspace.json，换工作区各自保留、重启恢复）。
   ipcMain.handle('ws-get-tabs', () => workspaceStore.getTabs(workspaceFile(), requireRoot()));
-  ipcMain.handle('ws-set-tabs', (_e, state) =>
-    workspaceStore.setTabs(workspaceFile(), requireRoot(), state),
-  );
+  // renderer 传 root（它当时的 current.root）：persist 是 fire-and-forget，若 A 的写在用户已切到 B、
+  // activeRoot 已变后才到达，盲信 requireRoot() 会把 A 的标签（含外部标签的绝对路径）写进 B 桶、在 B 里
+  // 点开错文件。这里校验 root===activeRoot 不符就丢弃（也顺带硬化老的跨工作区竞态）。
+  ipcMain.handle('ws-set-tabs', (_e, state, root) => {
+    const active = requireRoot();
+    if (root && path.resolve(root) !== active) return null;
+    return workspaceStore.setTabs(workspaceFile(), active, state);
+  });
+  // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
+  ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
   // 新建文档模板（含空文档，第一项）。
   ipcMain.handle('ws-templates', () => TEMPLATES);
   // 非 .html 文件 → 系统默认程序打开（编辑器只认 html）。
