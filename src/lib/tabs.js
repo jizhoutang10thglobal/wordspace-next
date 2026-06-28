@@ -143,8 +143,23 @@
     return { entries, activeRel: resolveActive(entries, seed) };
   }
 
+  // 外部磁盘变化对账（workspace 监听到增删改后调）：内部标签的文件若从新树消失，按 inode 找它的新位置——
+  // 找到 = 改名/移动 → retargetEntry 跟随；找不到 = 真删了 → removeEntry。外部标签（无 rel、不在工作区树里）
+  // 不处理。relSet = 新树所有文件 rel 的集合；inoToRel = 新树 inode(字符串)→rel 的映射。
+  // 安全性：撞名（renamed-to 的路径已有标签）由 retargetEntry 的合并逻辑兜住，不会留重复项。
+  function reconcileTree(state, relSet, inoToRel) {
+    let s = state;
+    for (const e of state.entries.filter((x) => x.rel)) {
+      if (relSet.has(e.rel)) continue; // 文件还在原位
+      const newRel = e.ino != null ? inoToRel.get(String(e.ino)) : undefined;
+      s = newRel ? retargetEntry(s, e.rel, newRel, newRel.split('/').pop()) : removeEntry(s, e.rel);
+    }
+    return s;
+  }
+
   const API = {
     keyOf,
+    reconcileTree,
     openEntry,
     setActive,
     closeEntry,

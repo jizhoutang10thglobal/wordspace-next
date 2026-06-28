@@ -270,3 +270,51 @@ test('removeEntry(内部 rel) 不误删外部 abs entry', () => {
   assert.ok(s.entries.some((e) => e.abs === '/tmp/out.html')); // 外部纹丝不动
   invariant(s);
 });
+
+// ===== reconcileTree（外部磁盘变化对账：inode 匹配做改名/移动跟随）=====
+test('reconcileTree：文件原位→保留；ino 匹配新位置→改名/移动跟随；无匹配→删除；外部标签不动', () => {
+  let s = T.openEntry(empty(), f('a.html'));
+  s = T.openEntry(s, f('b.html'));
+  s = T.openEntry(s, f('gone.html'));
+  s = T.openEntry(s, ext('/tmp/x.html'));
+  s.entries.find((e) => e.rel === 'a.html').ino = '1';
+  s.entries.find((e) => e.rel === 'b.html').ino = '2';
+  s.entries.find((e) => e.rel === 'gone.html').ino = '3';
+  // 新树：a 原位(ino1)；b 改名成 sub/c.html(ino2 不变)；gone 真删了(ino3 不在新树)
+  const relSet = new Set(['a.html', 'sub/c.html']);
+  const inoToRel = new Map([['1', 'a.html'], ['2', 'sub/c.html']]);
+  const r = T.reconcileTree(s, relSet, inoToRel);
+  assert.ok(r.entries.some((e) => e.rel === 'a.html')); // 原位保留
+  assert.ok(!r.entries.some((e) => e.rel === 'b.html')); // b 改名走了
+  assert.ok(r.entries.some((e) => e.rel === 'sub/c.html')); // 跟到新位置
+  assert.ok(!r.entries.some((e) => e.rel === 'gone.html')); // 真删了
+  assert.ok(r.entries.some((e) => e.abs === '/tmp/x.html')); // 外部标签不动
+  invariant(r);
+});
+
+test('reconcileTree：激活文档被外部删除→activeRel 回落到还在的标签', () => {
+  let s = T.openEntry(empty(), f('a.html'));
+  s = T.openEntry(s, f('b.html')); // active=b
+  s.entries.find((e) => e.rel === 'a.html').ino = '1';
+  s.entries.find((e) => e.rel === 'b.html').ino = '2';
+  const r = T.reconcileTree(s, new Set(['a.html']), new Map([['1', 'a.html']])); // b(ino2) 删了
+  assert.ok(!r.entries.some((e) => e.rel === 'b.html'));
+  assert.equal(r.activeRel, 'a.html');
+  invariant(r);
+});
+
+test('reconcileTree：激活文档被外部改名→activeRel 跟到新名', () => {
+  let s = T.openEntry(empty(), f('a.html')); // active=a
+  s.entries.find((e) => e.rel === 'a.html').ino = '7';
+  const r = T.reconcileTree(s, new Set(['renamed.html']), new Map([['7', 'renamed.html']]));
+  assert.equal(r.activeRel, 'renamed.html');
+  assert.ok(r.entries.some((e) => e.rel === 'renamed.html'));
+  invariant(r);
+});
+
+test('reconcileTree：没 ino 的标签文件消失→当删除处理（不乱跟）', () => {
+  let s = T.openEntry(empty(), f('a.html')); // 没设 ino
+  const r = T.reconcileTree(s, new Set(['b.html']), new Map([['9', 'b.html']]));
+  assert.ok(!r.entries.some((e) => e.rel === 'a.html')); // 删掉，不会乱认成 b
+  assert.ok(!r.entries.some((e) => e.rel === 'b.html'));
+});

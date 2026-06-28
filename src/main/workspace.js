@@ -77,10 +77,22 @@ function addAbs(nodes, root) {
   return nodes;
 }
 
-// 读整个工作区为排序好的树（节点带 rel + abs）。
+// 读整个工作区为排序好的树（节点带 rel + abs + ino）。
+// ino（inode，文件在磁盘上的唯一身份号，改名/移动不变）给「外部改名/移动 → 标签跟随」做匹配身份。
+// 并行 stat 填充（bigint 防大 inode 精度丢失，转字符串作比较键）；stat 失败留 undefined（该文件退化成「删=关标签」）。
 async function readTree(root) {
   const r = path.resolve(root);
   const { files: fl, dirs } = await walk(r);
+  await Promise.all(
+    fl.map(async (f) => {
+      try {
+        const st = await fs.stat(path.join(r, f.path.split('/').join(path.sep)), { bigint: true });
+        f.ino = String(st.ino);
+      } catch {
+        f.ino = undefined;
+      }
+    }),
+  );
   return { root: r, name: path.basename(r), tree: addAbs(buildFileTree(fl, dirs), r) };
 }
 

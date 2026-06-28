@@ -6,6 +6,7 @@ const files = require('./files');
 const history = require('./history');
 const recents = require('./recents');
 const docWatcher = require('./doc-watcher');
+const workspaceWatcher = require('./workspace-watcher');
 const workspace = require('./workspace');
 const workspaceStore = require('./workspace-store');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
@@ -24,6 +25,14 @@ let activeRoot = null;
 function requireRoot() {
   if (!activeRoot) throw new Error('没有打开的工作区');
   return activeRoot;
+}
+// 起对工作区根的递归监听：外部增删改 → 通知 renderer 重读树 + reconcile 标签。换根时重指向（watch 内部先 close）。
+function startWorkspaceWatch(root) {
+  workspaceWatcher.watch(root, () => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed');
+    }
+  });
 }
 async function dirExists(p) {
   try {
@@ -166,6 +175,7 @@ function registerIpc() {
     }
     activeRoot = path.resolve(dir);
     await workspaceStore.save(workspaceFile(), activeRoot);
+    startWorkspaceWatch(activeRoot);
     return workspace.readTree(activeRoot);
   });
   // 启动恢复：返回上次工作区根（仍存在才认），renderer 据此自动渲染。
@@ -174,6 +184,7 @@ function registerIpc() {
     const saved = await workspaceStore.load(workspaceFile());
     if (saved && (await dirExists(saved.root))) {
       activeRoot = path.resolve(saved.root);
+      startWorkspaceWatch(activeRoot);
       return activeRoot;
     }
     return null;

@@ -881,6 +881,53 @@
   }
   // shell.js 用的钩子：打开文件 → 树高亮 + 建/激活标签。命中树节点走同步快路；没命中（工作区内但 abs 对不上、
   // 或工作区外）走 openTabFromAbs 异步兜底（工作区外不建标签）。
+  // 工作区根的外部磁盘变化（主进程 workspace-watcher 去抖后发 ws-tree-changed）：重读树 + reconcile 标签。
+  // 关键：先用「变化前的内存旧树」（current.tree，此刻磁盘已变但内存还列着消失的文件）给内部标签补 inode，
+  // 再读新树——这样不用在每处建标签时穿 ino，消失文件的 ino 也一定取得到，给「改名/移动→标签跟随」做匹配。
+  async function onTreeChanged() {
+    if (!current) return;
+    const rootBefore = current.root;
+    for (const e of tabState.entries) {
+      if (e.rel) { const n = findNode(e.rel); if (n && n.ino != null) e.ino = n.ino; }
+    }
+    const data = await window.ws2.wsReadTree();
+    if (!data || !current || current.root !== rootBefore) return; // 期间切了工作区 → 放弃
+    const relSet = new Set();
+    const inoToRel = new Map();
+    (function w(nodes) {
+      for (const n of nodes) {
+        if (n.isDir) w(n.children || []);
+        else { relSet.add(n.rel); if (n.ino != null) inoToRel.set(String(n.ino), n.rel); }
+      }
+    })(data.tree);
+    // 文件集合没变（只是某文件内容被改了，如保存）→ 不重渲染树：免得打断进行中的内联改名/拖拽，也省 DOM 重建。
+    const oldRels = new Set();
+    (function w(nodes) { for (const n of nodes) { if (n.isDir) w(n.children || []); else oldRels.add(n.rel); } })(current.tree);
+    const sameStructure = oldRels.size === relSet.size && [...relSet].every((r) => oldRels.has(r));
+    current = data; // 总更新：保持树/ino 新鲜（即使不重渲染）
+    if (sameStructure) return;
+    // 结构变了（增/删/改名/移动）→ reconcile 标签 + 重渲染 + 同步编辑器
+    const prevEntry = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
+    const activeRelGone = prevEntry && prevEntry.rel && !relSet.has(prevEntry.rel);
+    const activeIno = prevEntry && prevEntry.ino;
+    tabState = window.WS2Tabs.reconcileTree(tabState, relSet, inoToRel);
+    persistTabs();
+    render();
+    renderZones();
+    renderRail();
+    if (activeRelGone) {
+      const newRel = activeIno != null ? inoToRel.get(String(activeIno)) : undefined;
+      if (newRel) {
+        const n = findNode(newRel); // 激活文档被外部改名/移动 → 编辑器重指向（保内容/脏态），不重载
+        if (n && window.__shellRetargetDoc) window.__shellRetargetDoc(n.abs, n.name);
+      } else {
+        const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+        if (e) openTabRow(e); // 激活文档被外部删 → 回落到新激活项
+        else if (window.__shellCloseDoc) window.__shellCloseDoc(); // 没得回落 → 空态
+      }
+    }
+  }
+
   window.__sbHooks = {
     onOpen: (abs) => {
       highlightActive(abs);
@@ -893,6 +940,10 @@
     },
     refresh,
   };
+  // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
+  // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。
+  if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
+  window.addEventListener('focus', () => { if (current) onTreeChanged(); });
 
   // 启动恢复上次工作区。
   (async () => {

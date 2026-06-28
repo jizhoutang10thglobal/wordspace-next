@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('ws2', {
   watchDoc: (p) => ipcRenderer.send('watch-doc', p),
   unwatchDoc: () => ipcRenderer.send('unwatch-doc'),
   onDocChanged: (cb) => ipcRenderer.on('doc-changed', (_e, p) => cb(p)),
+  onWsTreeChanged: (cb) => ipcRenderer.on('ws-tree-changed', () => cb()),
   onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, p) => cb(p)),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
 
