@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('ws2', {
   classifyFile: (abs) => ipcRenderer.invoke('classify-file', abs),
   fileUrlAbs: (abs) => ipcRenderer.invoke('file-url-abs', abs),
   openExternalAbs: (abs) => ipcRenderer.invoke('open-external-abs', abs),
+  pathExists: (abs) => ipcRenderer.invoke('path-exists', abs),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),
   appVersion: () => ipcRenderer.invoke('app-version'),
@@ -18,6 +19,7 @@ contextBridge.exposeInMainWorld('ws2', {
   watchDoc: (p) => ipcRenderer.send('watch-doc', p),
   unwatchDoc: () => ipcRenderer.send('unwatch-doc'),
   onDocChanged: (cb) => ipcRenderer.on('doc-changed', (_e, p) => cb(p)),
+  onWsTreeChanged: (cb) => ipcRenderer.on('ws-tree-changed', () => cb()),
   onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, p) => cb(p)),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
 
@@ -34,6 +36,6 @@ contextBridge.exposeInMainWorld('ws2', {
   wsOpenExternal: (relPath) => ipcRenderer.invoke('ws-open-external', relPath),
   wsFileUrl: (relPath) => ipcRenderer.invoke('ws-file-url', relPath),
   wsGetTabs: () => ipcRenderer.invoke('ws-get-tabs'),
-  wsSetTabs: (state) => ipcRenderer.invoke('ws-set-tabs', state),
+  wsSetTabs: (state, root) => ipcRenderer.invoke('ws-set-tabs', state, root),
   wsTemplates: () => ipcRenderer.invoke('ws-templates')
 });

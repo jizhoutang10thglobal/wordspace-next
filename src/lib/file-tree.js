@@ -85,6 +85,7 @@ function buildFileTree(files, dirs = []) {
       rel: f.path,
       isDir: false,
       kind: f.kind || kindOf(leaf),
+      ino: f.ino, // 文件 inode（字符串）：改名/移动不变，给「外部改名→标签跟随」做匹配身份；无则 undefined
       children: [],
     });
   }

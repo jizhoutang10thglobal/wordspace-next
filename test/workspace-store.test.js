@@ -64,6 +64,25 @@ test('getTabs drops ghost/invalid entries', async () => {
   assert.deepEqual(r.entries.map((e) => e.rel), ['ok.html']);
 });
 
+test('外部标签（无 rel、有 abs）能 round-trip；abs/kind/title 字段保留', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-wstore-'));
+  const f = path.join(dir, 'workspace.json');
+  const state = {
+    entries: [
+      { rel: 'in.html', kind: 'html', title: 'in.html', open: true, pinned: false },
+      { abs: '/Users/x/Downloads/out.pdf', kind: 'pdf', title: 'out.pdf', open: true, pinned: false }, // 外部
+      { kind: 'html', open: true }, // 既无 rel 又无 abs → 仍丢
+    ],
+    activeRel: '/Users/x/Downloads/out.pdf', // 外部激活项的 keyOf 是 abs
+  };
+  await store.setTabs(f, '/w', state);
+  const r = await store.getTabs(f, '/w');
+  assert.equal(r.entries.length, 2); // 内部 + 外部，坏项丢掉
+  const e = r.entries.find((x) => x.abs === '/Users/x/Downloads/out.pdf');
+  assert.ok(e && e.kind === 'pdf' && e.title === 'out.pdf' && !e.rel); // 字段完整保留
+  assert.equal(r.activeRel, '/Users/x/Downloads/out.pdf'); // abs 作 activeRel
+});
+
 test('getTabs migrates old pinsByRoot to pinned entries', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-wstore-'));
   const f = path.join(dir, 'workspace.json');

@@ -238,6 +238,11 @@ ul { list-style: none; }
 .sb-tab-pin:hover, .sb-tab-close:hover { background: var(--c-active); color: var(--c-text); }
 .sb-tab.is-active { background: var(--c-selected); color: var(--c-accent); }
 .sb-tab.is-active .sb-ico { color: var(--c-accent); }
+/* 外部标签（工作区外文件，无 rel）：淡一档 + 名旁 ↗ 小标记，一眼区别于工作区内标签（它们不在侧栏树里）。 */
+.sb-tab-ext .sb-name { color: var(--c-text-2); }
+.sb-tab-ext .sb-ico { color: var(--c-text-3); }
+.sb-tab-ext-ico { flex: none; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; color: var(--c-text-3); }
+.sb-tab.is-active.sb-tab-ext .sb-name, .sb-tab.is-active.sb-tab-ext .sb-ico, .sb-tab.is-active .sb-tab-ext-ico { color: var(--c-accent); }
 
 /* 缩进档（CSP 安全：不用 inline style）。每级 +14px，从 8px 起。 */
 .sb-d0 { padding-left: 8px; }

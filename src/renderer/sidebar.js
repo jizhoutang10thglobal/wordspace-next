@@ -458,6 +458,12 @@
   const PIN_OFF_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h9"/><path d="M15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H10"/></svg>';
   const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
   let dragTabRel = null;
+  // 身份键：工作区内用 rel、工作区外用 abs（跟 tabs.js 一致）。外部标签 = 没有 rel。
+  const keyOf = (e) => e.rel || e.abs;
+  const isExternal = (e) => !e.rel;
+  const baseName = (p) => String(p).split(/[\\/]/).pop();
+  // 外部标签的「↗」轻标记图标（shell.js 的 EXT_SVG 是 script 作用域 const、跨不到这里，单独定义）。
+  const EXT_ICO_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>';
 
   function findNode(rel) {
     let found = null;
@@ -481,11 +487,12 @@
     })(current ? current.tree : []);
     return found;
   }
-  function isPinned(rel) {
-    return tabState.entries.some((e) => e.rel === rel && e.pinned);
+  function isPinned(key) {
+    return tabState.entries.some((e) => keyOf(e) === key && e.pinned);
   }
   function persistTabs() {
-    if (window.ws2.wsSetTabs) window.ws2.wsSetTabs(tabState).catch(() => {});
+    // 带上当前 root：主进程校验 === activeRoot，防 fire-and-forget 的写在切工作区后到达、把标签写错桶。
+    if (window.ws2.wsSetTabs) window.ws2.wsSetTabs(tabState, current && current.root).catch(() => {});
   }
   function applyTabs(next) {
     tabState = next;
@@ -498,30 +505,31 @@
     applyTabs(window.WS2Tabs.pinEntry(tabState, { rel: node.rel, kind: node.kind || 'other', title: node.name }));
   }
   function pinRel(entry) {
-    applyTabs(window.WS2Tabs.pinEntry(tabState, { rel: entry.rel, kind: entry.kind, title: entry.title }));
+    applyTabs(window.WS2Tabs.pinEntry(tabState, { rel: entry.rel, abs: entry.abs, kind: entry.kind, title: entry.title }));
   }
-  function unpinRel(rel) {
-    applyTabs(window.WS2Tabs.unpinEntry(tabState, rel));
+  function unpinRel(key) {
+    applyTabs(window.WS2Tabs.unpinEntry(tabState, key));
   }
-  function closeTabRel(rel) {
-    const wasActive = tabState.activeRel === rel;
+  function closeTabRel(key) {
+    const wasActive = tabState.activeRel === key;
     if (wasActive && window.__shellIsDirty && window.__shellIsDirty() &&
         !confirm('这个文档有未保存的修改，关闭标签会丢弃，确定吗？')) return;
     if (wasActive && window.__shellDiscard) window.__shellDiscard(); // 已确认丢弃 → 切下一个时不再追问
-    applyTabs(window.WS2Tabs.closeEntry(tabState, rel));
+    applyTabs(window.WS2Tabs.closeEntry(tabState, key));
     if (wasActive) {
-      const n = tabState.activeRel ? findNode(tabState.activeRel) : null;
-      if (n) openNode(n);
+      const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+      if (e) openTabRow(e); // 回落项可能是外部标签 → 走 abs 分发，不只 findNode
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
   }
-  function dropTabRel(rel, toPinned, toIndex) {
-    applyTabs(window.WS2Tabs.dropEntry(tabState, rel, toPinned, toIndex));
+  function dropTabRel(key, toPinned, toIndex) {
+    applyTabs(window.WS2Tabs.dropEntry(tabState, key, toPinned, toIndex));
   }
-  // 删文件(或目录下所有文件) → 移除其标签；改名/移动 → 标签 rel 跟随。
+  // 删文件(或目录下所有文件) → 移除其标签；改名/移动 → 标签 rel 跟随。外部标签(无 rel)天然不被波及，
+  // 但前缀匹配里 e.rel 可能是 undefined，必须加 e.rel && 守卫，否则 undefined.indexOf 抛错整个回调崩。
   function removeTabsUnder(node) {
     const under = (rel) => rel === node.rel || rel.indexOf(node.rel + '/') === 0;
-    const targets = node.isDir ? tabState.entries.filter((e) => under(e.rel)).map((e) => e.rel) : [node.rel];
+    const targets = node.isDir ? tabState.entries.filter((e) => e.rel && under(e.rel)).map((e) => e.rel) : [node.rel];
     for (const rel of targets) tabState = window.WS2Tabs.removeEntry(tabState, rel);
     persistTabs();
   }
@@ -530,7 +538,7 @@
       tabState = window.WS2Tabs.retargetEntry(tabState, oldRel, newRel, newRel.split('/').pop());
     } else {
       const affected = tabState.entries
-        .filter((e) => e.rel === oldRel || e.rel.indexOf(oldRel + '/') === 0)
+        .filter((e) => e.rel && (e.rel === oldRel || e.rel.indexOf(oldRel + '/') === 0))
         .map((e) => e.rel);
       for (const rel of affected) {
         const nr = newRel + rel.slice(oldRel.length);
@@ -541,47 +549,77 @@
   }
 
   // 按根拉标签：清掉已不存在的文件、回落激活、恢复上次激活进编辑器。
+  // 存在性校验分流：内部 entry 看文件树里有没有；外部 entry(无 rel) 问主进程 fs.stat 文件还在不在
+  // （不在 = 静默丢，符合拍板①）。两处 await 都加「期间切了工作区就放弃」的竞态守卫。
   async function loadTabs() {
+    const rootBefore = current && current.root;
     let st;
     try { st = await window.ws2.wsGetTabs(); } catch (e) { st = { entries: [], activeRel: null }; }
-    const entries = (st.entries || []).filter((e) => findNode(e.rel));
+    if (!current || current.root !== rootBefore) return;
+    const raw = st.entries || [];
+    const checks = await Promise.all(raw.map((e) =>
+      e.rel ? Promise.resolve(!!findNode(e.rel)) : window.ws2.pathExists(e.abs).catch(() => false),
+    ));
+    if (!current || current.root !== rootBefore) return;
+    const entries = raw.filter((_e, i) => checks[i]);
     const activeRel = window.WS2Tabs.resolveActive(entries, st.activeRel);
-    const changed = entries.length !== (st.entries || []).length || activeRel !== st.activeRel;
+    const changed = entries.length !== raw.length || activeRel !== st.activeRel;
     tabState = { entries, activeRel };
     if (changed) persistTabs();
     renderZones();
     renderRail();
     if (activeRel) {
-      const n = findNode(activeRel);
-      if (n) openNode(n);
+      const e = tabState.entries.find((x) => keyOf(x) === activeRel);
+      if (e) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发
     }
   }
 
   // ---- 渲染两区 ----
+  // 点标签开它：内部文件走树节点 openNode；外部文件(无 rel)按 kind 分发 abs（跟「打开」按钮一条路，
+  // shell.js 的 openDoc/showViewer 已支持纯 abs）。
+  function openTabRow(entry) {
+    if (entry.rel) {
+      const n = findNode(entry.rel);
+      if (n) openNode(n);
+      return;
+    }
+    if (entry.kind === 'html') openDoc(entry.abs);
+    else if (window.__shellShowViewer) window.__shellShowViewer({ abs: entry.abs, rel: null, kind: entry.kind, name: entry.title });
+  }
   function tabRow(entry, zone) {
-    const node = findNode(entry.rel);
+    const key = keyOf(entry);
+    const external = isExternal(entry);
     const row = document.createElement('div');
-    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other');
-    row.dataset.rel = entry.rel;
+    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '');
+    row.dataset.rel = key; // 属性名沿用 data-rel（e2e 选择器靠它）；值=keyOf（内部=rel、外部=abs）
     row.setAttribute('role', 'button');
     row.draggable = true;
-    if (entry.rel === tabState.activeRel) row.classList.add('is-active');
+    if (external) row.title = entry.abs; // 外部标签悬停显完整绝对路径
+    if (key === tabState.activeRel) row.classList.add('is-active');
     const ico = document.createElement('span');
     ico.className = 'sb-ico';
     ico.innerHTML = SVG.file;
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
+    row.append(ico, name);
+    if (external) {
+      const ext = document.createElement('span');
+      ext.className = 'sb-tab-ext-ico';
+      ext.title = '工作区外的文件';
+      ext.innerHTML = EXT_ICO_SVG;
+      row.append(ext);
+    }
     const pin = document.createElement('button');
     pin.className = 'sb-tab-pin' + (entry.pinned ? ' is-pinned' : '');
     pin.title = entry.pinned ? '取消置顶' : '置顶';
     pin.innerHTML = entry.pinned ? PIN_OFF_SVG : PIN_SVG;
     pin.onclick = (e) => {
       e.stopPropagation();
-      if (entry.pinned) unpinRel(entry.rel);
+      if (entry.pinned) unpinRel(key);
       else pinRel(entry);
     };
-    row.append(ico, name, pin);
+    row.append(pin);
     if (zone === 'tabs') {
       const x = document.createElement('button');
       x.className = 'sb-tab-close';
@@ -589,17 +627,15 @@
       x.innerHTML = X_SVG;
       x.onclick = (e) => {
         e.stopPropagation();
-        closeTabRel(entry.rel);
+        closeTabRel(key);
       };
       row.append(x);
     }
-    row.onclick = () => {
-      if (node) openNode(node);
-    };
+    row.onclick = () => openTabRow(entry);
     row.ondragstart = (e) => {
-      dragTabRel = entry.rel;
+      dragTabRel = key;
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', entry.rel);
+      e.dataTransfer.setData('text/plain', key);
     };
     row.ondragend = () => {
       dragTabRel = null;
@@ -830,18 +866,68 @@
     renderRail();
   }
   // abs 不在当前树里（从「打开」按钮选的、macOS /private 软链让 abs 字符串对不上、或刚建还没 refresh）：
-  // 让主进程把 abs 归一化算成 workspace 内 rel（kindOf 只在主进程有），是工作区内就建标签；工作区外 rel=null
-  // → 不建标签（产品决策 B：工作区外文件能预览但不进标签页）。
+  // 主进程把 abs 归一化算 workspace 内 rel（kindOf 只在主进程有）。是工作区内 → 建 rel 标签；
+  // 工作区外 rel=null → 建 abs 身份的外部标签（像浏览器开标签页）。竞态守卫放 rel 判定之前，对两条分支都生效。
   async function openTabFromAbs(abs) {
     const rootBefore = current && current.root;
     let meta = null;
     try { meta = await window.ws2.classifyFile(abs); } catch (e) { return; }
-    if (!meta || !meta.rel) return;
-    if (!current || current.root !== rootBefore) return; // await 期间用户切了工作区 → 放弃，防把旧文件塞进新工作区标签
-    openTabEntry({ rel: meta.rel, kind: meta.kind || 'other', title: meta.name || meta.rel.split('/').pop() });
+    if (!meta || !current || current.root !== rootBefore) return; // await 期间切了工作区 → 放弃
+    if (meta.rel) {
+      openTabEntry({ rel: meta.rel, kind: meta.kind || 'other', title: meta.name || meta.rel.split('/').pop() });
+    } else {
+      openTabEntry({ rel: null, abs, kind: meta.kind || 'other', title: meta.name || baseName(abs) });
+    }
   }
   // shell.js 用的钩子：打开文件 → 树高亮 + 建/激活标签。命中树节点走同步快路；没命中（工作区内但 abs 对不上、
   // 或工作区外）走 openTabFromAbs 异步兜底（工作区外不建标签）。
+  // 工作区根的外部磁盘变化（主进程 workspace-watcher 去抖后发 ws-tree-changed）：重读树 + reconcile 标签。
+  // 关键：先用「变化前的内存旧树」（current.tree，此刻磁盘已变但内存还列着消失的文件）给内部标签补 inode，
+  // 再读新树——这样不用在每处建标签时穿 ino，消失文件的 ino 也一定取得到，给「改名/移动→标签跟随」做匹配。
+  async function onTreeChanged() {
+    if (!current) return;
+    const rootBefore = current.root;
+    for (const e of tabState.entries) {
+      if (e.rel) { const n = findNode(e.rel); if (n && n.ino != null) e.ino = n.ino; }
+    }
+    const data = await window.ws2.wsReadTree();
+    if (!data || !current || current.root !== rootBefore) return; // 期间切了工作区 → 放弃
+    const relSet = new Set();
+    const inoToRel = new Map();
+    (function w(nodes) {
+      for (const n of nodes) {
+        if (n.isDir) w(n.children || []);
+        else { relSet.add(n.rel); if (n.ino != null) inoToRel.set(String(n.ino), n.rel); }
+      }
+    })(data.tree);
+    // 文件集合没变（只是某文件内容被改了，如保存）→ 不重渲染树：免得打断进行中的内联改名/拖拽，也省 DOM 重建。
+    const oldRels = new Set();
+    (function w(nodes) { for (const n of nodes) { if (n.isDir) w(n.children || []); else oldRels.add(n.rel); } })(current.tree);
+    const sameStructure = oldRels.size === relSet.size && [...relSet].every((r) => oldRels.has(r));
+    current = data; // 总更新：保持树/ino 新鲜（即使不重渲染）
+    if (sameStructure) return;
+    // 结构变了（增/删/改名/移动）→ reconcile 标签 + 重渲染 + 同步编辑器
+    const prevEntry = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
+    const activeRelGone = prevEntry && prevEntry.rel && !relSet.has(prevEntry.rel);
+    const activeIno = prevEntry && prevEntry.ino;
+    tabState = window.WS2Tabs.reconcileTree(tabState, relSet, inoToRel);
+    persistTabs();
+    render();
+    renderZones();
+    renderRail();
+    if (activeRelGone) {
+      const newRel = activeIno != null ? inoToRel.get(String(activeIno)) : undefined;
+      if (newRel) {
+        const n = findNode(newRel); // 激活文档被外部改名/移动 → 编辑器重指向（保内容/脏态），不重载
+        if (n && window.__shellRetargetDoc) window.__shellRetargetDoc(n.abs, n.name);
+      } else {
+        const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+        if (e) openTabRow(e); // 激活文档被外部删 → 回落到新激活项
+        else if (window.__shellCloseDoc) window.__shellCloseDoc(); // 没得回落 → 空态
+      }
+    }
+  }
+
   window.__sbHooks = {
     onOpen: (abs) => {
       highlightActive(abs);
@@ -854,6 +940,10 @@
     },
     refresh,
   };
+  // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
+  // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。
+  if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
+  window.addEventListener('focus', () => { if (current) onTreeChanged(); });
 
   // 启动恢复上次工作区。
   (async () => {

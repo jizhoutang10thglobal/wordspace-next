@@ -9,12 +9,15 @@ const rels = (arr) => arr.map((e) => e.rel);
 // 不变式：没有 !open&&!pinned 的幽灵 entry；置顶区(pinned) 与 标签页区(open&&!pinned) 天然互斥（去重）。
 function invariant(state) {
   for (const e of state.entries) {
-    assert.ok(e.open || e.pinned, `ghost entry leaked: ${e.rel}`);
+    assert.ok(e.open || e.pinned, `ghost entry leaked: ${T.keyOf(e)}`);
   }
-  const pinnedSet = new Set(T.pinnedEntries(state.entries).map((e) => e.rel));
-  const tabSet = new Set(T.tabEntries(state.entries).map((e) => e.rel));
+  // 用 keyOf（rel||abs）而非裸 rel：多个外部 entry 的 rel 都是 undefined，用 rel 会误判「同时在两区」。
+  const pinnedSet = new Set(T.pinnedEntries(state.entries).map((e) => T.keyOf(e)));
+  const tabSet = new Set(T.tabEntries(state.entries).map((e) => T.keyOf(e)));
   for (const r of pinnedSet) assert.ok(!tabSet.has(r), `entry in both zones: ${r}`);
 }
+// 外部文件（工作区外，无 rel，用 abs 作身份）。
+const ext = (abs, kind = 'html') => ({ abs, kind, title: abs.split('/').pop() });
 
 test('openEntry: 新文件追加到标签页区并激活；重复打开只激活不新增', () => {
   let s = T.openEntry(empty(), f('a.html'));
@@ -208,4 +211,110 @@ test('removeEntry 删一个没开的纯置顶项时不动别人的激活', () =>
   assert.equal(s.activeRel, 'a.html'); // a 仍激活
   assert.ok(!s.entries.some((e) => e.rel === 'z.html'));
   invariant(s);
+});
+
+// ===== 外部标签（工作区外文件，abs 作身份）=====
+test('keyOf：内部 entry 落回 rel，外部 entry 用 abs', () => {
+  assert.equal(T.keyOf({ rel: 'a.html' }), 'a.html');
+  assert.equal(T.keyOf({ abs: '/x/out.html' }), '/x/out.html');
+  assert.equal(T.keyOf({ rel: 'a.html', abs: '/x/a.html' }), 'a.html'); // rel 优先
+});
+
+test('openEntry 外部文件：进标签页区、activeRel=abs、重复打开同 abs 不新增', () => {
+  let s = T.openEntry(empty(), ext('/Users/x/Downloads/out.html'));
+  assert.deepEqual(T.tabEntries(s.entries).map((e) => e.abs), ['/Users/x/Downloads/out.html']);
+  assert.equal(s.activeRel, '/Users/x/Downloads/out.html');
+  const before = s.entries.length;
+  s = T.openEntry(s, ext('/Users/x/Downloads/out.html')); // 重复
+  assert.equal(s.entries.length, before);
+  invariant(s);
+});
+
+test('混合 rel + abs entry：互不串键、各自独立', () => {
+  let s = T.openEntry(empty(), f('a.html')); // 内部 rel
+  s = T.openEntry(s, ext('/tmp/a.html')); // 外部 abs（basename 同名但不同身份）
+  assert.equal(s.entries.length, 2); // 两条独立，不被当成同一文件去重
+  assert.equal(s.activeRel, '/tmp/a.html');
+  s = T.openEntry(s, f('a.html')); // 切回内部 a
+  assert.equal(s.entries.length, 2);
+  assert.equal(s.activeRel, 'a.html');
+  invariant(s);
+});
+
+test('外部 abs entry 走 close/pin/unpin/drop 不变式仍成立', () => {
+  let s = T.openEntry(empty(), ext('/tmp/p.html'));
+  s = T.openEntry(s, ext('/tmp/q.pdf', 'pdf'));
+  s = T.pinEntry(s, ext('/tmp/p.html')); // 钉 p → 进置顶、离开标签页（去重）
+  assert.deepEqual(T.pinnedEntries(s.entries).map((e) => e.abs), ['/tmp/p.html']);
+  assert.ok(!T.tabEntries(s.entries).some((e) => e.abs === '/tmp/p.html'));
+  invariant(s);
+  s = T.unpinEntry(s, '/tmp/p.html'); // 取消钉、还开着 → 落回标签页
+  assert.ok(T.tabEntries(s.entries).some((e) => e.abs === '/tmp/p.html'));
+  s = T.closeEntry(s, '/tmp/q.pdf'); // 关 q
+  assert.ok(!s.entries.some((e) => e.abs === '/tmp/q.pdf'));
+  invariant(s);
+});
+
+test('resolveActive：activeRel 是外部 abs 时正确保留/回落', () => {
+  let s = T.openEntry(empty(), f('a.html'));
+  s = T.openEntry(s, ext('/tmp/out.html')); // active=/tmp/out.html
+  assert.equal(T.resolveActive(s.entries, '/tmp/out.html'), '/tmp/out.html'); // 保留外部激活
+  s = T.closeEntry(s, '/tmp/out.html'); // 关外部激活 → 回落到 a
+  assert.equal(s.activeRel, 'a.html');
+});
+
+test('removeEntry(内部 rel) 不误删外部 abs entry', () => {
+  let s = T.openEntry(empty(), f('a.html'));
+  s = T.openEntry(s, ext('/tmp/out.html'));
+  s = T.removeEntry(s, 'a.html'); // 删内部 a
+  assert.ok(s.entries.some((e) => e.abs === '/tmp/out.html')); // 外部纹丝不动
+  invariant(s);
+});
+
+// ===== reconcileTree（外部磁盘变化对账：inode 匹配做改名/移动跟随）=====
+test('reconcileTree：文件原位→保留；ino 匹配新位置→改名/移动跟随；无匹配→删除；外部标签不动', () => {
+  let s = T.openEntry(empty(), f('a.html'));
+  s = T.openEntry(s, f('b.html'));
+  s = T.openEntry(s, f('gone.html'));
+  s = T.openEntry(s, ext('/tmp/x.html'));
+  s.entries.find((e) => e.rel === 'a.html').ino = '1';
+  s.entries.find((e) => e.rel === 'b.html').ino = '2';
+  s.entries.find((e) => e.rel === 'gone.html').ino = '3';
+  // 新树：a 原位(ino1)；b 改名成 sub/c.html(ino2 不变)；gone 真删了(ino3 不在新树)
+  const relSet = new Set(['a.html', 'sub/c.html']);
+  const inoToRel = new Map([['1', 'a.html'], ['2', 'sub/c.html']]);
+  const r = T.reconcileTree(s, relSet, inoToRel);
+  assert.ok(r.entries.some((e) => e.rel === 'a.html')); // 原位保留
+  assert.ok(!r.entries.some((e) => e.rel === 'b.html')); // b 改名走了
+  assert.ok(r.entries.some((e) => e.rel === 'sub/c.html')); // 跟到新位置
+  assert.ok(!r.entries.some((e) => e.rel === 'gone.html')); // 真删了
+  assert.ok(r.entries.some((e) => e.abs === '/tmp/x.html')); // 外部标签不动
+  invariant(r);
+});
+
+test('reconcileTree：激活文档被外部删除→activeRel 回落到还在的标签', () => {
+  let s = T.openEntry(empty(), f('a.html'));
+  s = T.openEntry(s, f('b.html')); // active=b
+  s.entries.find((e) => e.rel === 'a.html').ino = '1';
+  s.entries.find((e) => e.rel === 'b.html').ino = '2';
+  const r = T.reconcileTree(s, new Set(['a.html']), new Map([['1', 'a.html']])); // b(ino2) 删了
+  assert.ok(!r.entries.some((e) => e.rel === 'b.html'));
+  assert.equal(r.activeRel, 'a.html');
+  invariant(r);
+});
+
+test('reconcileTree：激活文档被外部改名→activeRel 跟到新名', () => {
+  let s = T.openEntry(empty(), f('a.html')); // active=a
+  s.entries.find((e) => e.rel === 'a.html').ino = '7';
+  const r = T.reconcileTree(s, new Set(['renamed.html']), new Map([['7', 'renamed.html']]));
+  assert.equal(r.activeRel, 'renamed.html');
+  assert.ok(r.entries.some((e) => e.rel === 'renamed.html'));
+  invariant(r);
+});
+
+test('reconcileTree：没 ino 的标签文件消失→当删除处理（不乱跟）', () => {
+  let s = T.openEntry(empty(), f('a.html')); // 没设 ino
+  const r = T.reconcileTree(s, new Set(['b.html']), new Map([['9', 'b.html']]));
+  assert.ok(!r.entries.some((e) => e.rel === 'a.html')); // 删掉，不会乱认成 b
+  assert.ok(!r.entries.some((e) => e.rel === 'b.html'));
 });

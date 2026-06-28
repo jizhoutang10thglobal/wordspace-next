@@ -6,6 +6,7 @@ const files = require('./files');
 const history = require('./history');
 const recents = require('./recents');
 const docWatcher = require('./doc-watcher');
+const workspaceWatcher = require('./workspace-watcher');
 const workspace = require('./workspace');
 const workspaceStore = require('./workspace-store');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
@@ -24,6 +25,14 @@ let activeRoot = null;
 function requireRoot() {
   if (!activeRoot) throw new Error('没有打开的工作区');
   return activeRoot;
+}
+// 起对工作区根的递归监听：外部增删改 → 通知 renderer 重读树 + reconcile 标签。换根时重指向（watch 内部先 close）。
+function startWorkspaceWatch(root) {
+  workspaceWatcher.watch(root, () => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed');
+    }
+  });
 }
 async function dirExists(p) {
   try {
@@ -166,6 +175,7 @@ function registerIpc() {
     }
     activeRoot = path.resolve(dir);
     await workspaceStore.save(workspaceFile(), activeRoot);
+    startWorkspaceWatch(activeRoot);
     return workspace.readTree(activeRoot);
   });
   // 启动恢复：返回上次工作区根（仍存在才认），renderer 据此自动渲染。
@@ -174,6 +184,7 @@ function registerIpc() {
     const saved = await workspaceStore.load(workspaceFile());
     if (saved && (await dirExists(saved.root))) {
       activeRoot = path.resolve(saved.root);
+      startWorkspaceWatch(activeRoot);
       return activeRoot;
     }
     return null;
@@ -197,9 +208,16 @@ function registerIpc() {
   );
   // 标签/置顶状态（按当前工作区根存进 workspace.json，换工作区各自保留、重启恢复）。
   ipcMain.handle('ws-get-tabs', () => workspaceStore.getTabs(workspaceFile(), requireRoot()));
-  ipcMain.handle('ws-set-tabs', (_e, state) =>
-    workspaceStore.setTabs(workspaceFile(), requireRoot(), state),
-  );
+  // renderer 传 root（它当时的 current.root）：persist 是 fire-and-forget，若 A 的写在用户已切到 B、
+  // activeRoot 已变后才到达，盲信 requireRoot() 会把 A 的标签（含外部标签的绝对路径）写进 B 桶、在 B 里
+  // 点开错文件。这里校验 root===activeRoot 不符就丢弃（也顺带硬化老的跨工作区竞态）。
+  ipcMain.handle('ws-set-tabs', (_e, state, root) => {
+    const active = requireRoot();
+    if (root && path.resolve(root) !== active) return null;
+    return workspaceStore.setTabs(workspaceFile(), active, state);
+  });
+  // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
+  ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
   // 新建文档模板（含空文档，第一项）。
   ipcMain.handle('ws-templates', () => TEMPLATES);
   // 非 .html 文件 → 系统默认程序打开（编辑器只认 html）。
