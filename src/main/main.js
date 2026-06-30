@@ -210,6 +210,9 @@ if (!app.requestSingleInstanceLock()) {
       const p = htmlPathFromArgv(process.argv);
       if (p) pendingOpenPath = p;
     }
+    // 测试 seam（仅非打包态，仿 WS2_FOLDER_IN）：挂 pendingOpenPath 忠实复现 macOS 冷启动
+    // 「Finder 双击」那条路（open-file 在 ready 前到、等 did-finish-load 才发），e2e 点不了真 Finder。
+    if (!app.isPackaged && process.env.WS2_OPEN_FILE) pendingOpenPath = process.env.WS2_OPEN_FILE;
   });
   app.on('window-all-closed', () => app.quit());
 }

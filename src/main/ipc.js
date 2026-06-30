@@ -189,7 +189,13 @@ function registerIpc() {
     }
     return null;
   });
-  ipcMain.handle('ws-read-tree', () => (activeRoot ? workspace.readTree(activeRoot) : null));
+  ipcMain.handle('ws-read-tree', async () => {
+    // 测试 seam（仅非打包态）：模拟真机大目录读树慢（逐文件 stat 取 inode），让「恢复工作区」确定性
+    // 落后于冷启动 open-file，复现并守住「冷启动建标签」竞态——读树快的干净小工作区测不出这个 bug。
+    const slow = !app.isPackaged ? +process.env.WS2_SLOW_TREE_MS || 0 : 0;
+    if (slow) await new Promise((r) => setTimeout(r, slow));
+    return activeRoot ? workspace.readTree(activeRoot) : null;
+  });
   ipcMain.handle('ws-new-doc', (_e, dirRel, base, html) =>
     workspace.newDoc(requireRoot(), dirRel, base, html),
   );

@@ -291,7 +291,9 @@ function loadFromHtml(html, opts) {
 }
 
 async function openDoc(p) {
-  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) return;
+  // 没真打开成 → 撤销 onOpenFile 设的 __pendingColdOpen，否则它会一直抑制后续 loadTabs 的「恢复激活标签」
+  // （如 app 已开 + 当前文档脏，第二实例双击别的文件、用户点「取消」时会走到这）。
+  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
   let info;
   try {
     // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；再取跨平台 file:// URL / 文件名 / 目录URL
@@ -299,6 +301,7 @@ async function openDoc(p) {
     info = await window.ws2.pathInfo(p);
   } catch (e) {
     alert('无法打开文件：' + p + '\n' + (e.message || e));
+    window.__pendingColdOpen = null;
     return;
   }
   docPath = p;
@@ -400,7 +403,10 @@ window.ws2.onDocChanged((p) => {
   reloadDoc();
 });
 
-window.ws2.onOpenFile((p) => openDoc(p));
+// 主进程发来「打开这个文件」（Finder 双击 / 文件关联 / 第二实例）。冷启动时这跟侧栏「恢复上次工作区」
+// 并发：同步先标记 __pendingColdOpen，让 loadTabs 知道「这个文件该占 viewer，别拿上次激活标签抢」；
+// 标签实际创建在 sidebar onOpen 里等恢复跑完才做（见 sidebar.js restoreReady）。
+window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
 window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
