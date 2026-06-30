@@ -858,6 +858,7 @@
     refresh,
     newTab: () => openCreateModal(''),                                                // Cmd+T：新建文档（模板台，落工作区根）
     closeActiveTab: () => { if (tabState.activeRel) closeTabRel(tabState.activeRel); }, // Cmd+W：关当前活跃标签
+    focusFilter: () => { if (sidebarEl) sidebarEl.classList.remove('is-collapsed'); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
   };
   // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
   // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。

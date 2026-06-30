@@ -104,6 +104,14 @@ test('UX2: Cmd+W 关当前标签 / Cmd+T 弹模板台（菜单 onMenu 路由）'
   await expect(page.locator('.sb-modal-title')).toHaveText('新建文档');
 });
 
+// UX3（Wendi F5-②）：Cmd+F 经菜单路由聚焦筛选框，可按文件名查找定位。
+test('UX3: Cmd+F 聚焦筛选框（菜单 find-file 路由）', async () => {
+  await openWorkspace();
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'find-file'));
+  const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
+  expect(focused).toBe('sb-filter-input');
+});
+
 test('重复打开同一文件不新增标签', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');

@@ -87,7 +87,9 @@ function buildMenu() {
         { role: 'cut', label: '剪切' },
         { role: 'copy', label: '拷贝' },
         { role: 'paste', label: '粘贴' },
-        { role: 'selectAll', label: '全选' }
+        { role: 'selectAll', label: '全选' },
+        { type: 'separator' },
+        { label: '查找文件…', accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-file') }
       ]
     },
     { role: 'windowMenu', label: '窗口' }
