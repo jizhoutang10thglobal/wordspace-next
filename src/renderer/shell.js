@@ -209,6 +209,7 @@ async function showViewer(node) {
       const name = document.createElement('span');
       name.className = 'fv-name';
       name.textContent = node.name;
+      name.title = node.name; // 名字过长被截断时，悬停显示全名
       const tag = document.createElement('span');
       tag.className = 'fv-tag';
       tag.textContent = '图片 · 只读';

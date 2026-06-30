@@ -26,6 +26,7 @@
     const name = document.createElement('span');
     name.className = 'fv-name';
     name.textContent = opts.fileName || 'PDF';
+    name.title = opts.fileName || 'PDF'; // 名字过长被截断时，悬停显示全名
     const pageInfo = document.createElement('span');
     pageInfo.className = 'pdfv-pageinfo';
     pageInfo.textContent = '… / …';
