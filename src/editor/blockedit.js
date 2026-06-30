@@ -13,6 +13,10 @@
   // 内容模型适配纯函数（schema-model）：闭合的单一来源——叶子判定 / 可否合并 / 列表拍平。
   const SM = (typeof WS2SchemaModel !== 'undefined') ? WS2SchemaModel
     : (typeof require !== 'undefined' ? require('../lib/schema-model.js') : null);
+  // 覆盖层（⋮⋮手柄/块菜单/斜杠菜单/格式气泡）的 data-ws2-ui 值用这个 sentinel——serialize.cleanRoot
+  // 按它精确删，用户自带 data-ws2-ui="任意值" 不受影响（F1）。单一来源 = serialize.OVERLAY_VAL。
+  const WS2_OVERLAY = (((typeof WS2Serialize !== 'undefined') ? WS2Serialize
+    : (typeof require !== 'undefined' ? require('./serialize.js') : {})).OVERLAY_VAL) || '__ws2-overlay__';
 
   // 斜杠 / 块操作的类型表（对齐 ui-demo SLASH_ITEMS）
   const SLASH_ITEMS = [
@@ -157,7 +161,7 @@
     } catch (e) {
       // 退路：构造样式表不可用时，用一个 data-ws2-ui 的 <style>（仍不入序列化，因 data-ws2-ui 整节点剥除）
       const st = doc.createElement('style');
-      st.setAttribute('data-ws2-ui', '');
+      st.setAttribute('data-ws2-ui', WS2_OVERLAY);
       st.textContent = EDITOR_CSS;
       (doc.head || doc.documentElement).appendChild(st);
     }
@@ -175,7 +179,7 @@
     let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
 
     // ---- 覆盖层节点（data-ws2-ui，存盘剥除）----
-    function mk(tag, cls) { const n = doc.createElement(tag); n.setAttribute('data-ws2-ui', ''); n.setAttribute('contenteditable', 'false'); if (cls) n.className = cls; return n; }
+    function mk(tag, cls) { const n = doc.createElement(tag); n.setAttribute('data-ws2-ui', WS2_OVERLAY); n.setAttribute('contenteditable', 'false'); if (cls) n.className = cls; return n; }
 
     // ⋮⋮ 手柄（单个浮动，跟随 hover/选中块）
     const grip = mk('div', 'ws-grip');
@@ -574,7 +578,7 @@
     function persistEditing() { /* DOM 即模型：编辑直接改 DOM，无需额外落库；标脏即可 */ }
 
     function fmtBtn(title, html, on) {
-      const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', ''); b.className = 'ws-fmtbar-btn'; b.title = title; b.innerHTML = html;
+      const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', WS2_OVERLAY); b.className = 'ws-fmtbar-btn'; b.title = title; b.innerHTML = html;
       b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
       b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); on(); });
       return b;
@@ -600,17 +604,17 @@
       ai.className = 'ws-fmtbar-btn ws-fmtbar-ai';
       fmtbar.appendChild(ai);
     }
-    function sepEl() { const s = doc.createElement('span'); s.setAttribute('data-ws2-ui', ''); s.className = 'ws-fmtbar-sep'; return s; }
+    function sepEl() { const s = doc.createElement('span'); s.setAttribute('data-ws2-ui', WS2_OVERLAY); s.className = 'ws-fmtbar-sep'; return s; }
     const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
     const HILITE_COLORS = ['#fff3bf', '#ffd8d8', '#d7f0db', '#d6e4ff', '#eadcff', '#eceef0'];
     function colorHolder(title, hilite) {
-      const holder = doc.createElement('span'); holder.setAttribute('data-ws2-ui', ''); holder.className = 'ws-fmtbar-holder';
+      const holder = doc.createElement('span'); holder.setAttribute('data-ws2-ui', WS2_OVERLAY); holder.className = 'ws-fmtbar-holder';
       const btn = fmtBtn(title, hilite
         ? '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 7l3 3"/></svg>'
         : '<span class="ws-fmtbar-aglyph">A</span>', () => togglePop(pop));
-      const pop = doc.createElement('div'); pop.setAttribute('data-ws2-ui', ''); pop.className = 'ws-fmtbar-swatches'; pop.style.display = 'none';
+      const pop = doc.createElement('div'); pop.setAttribute('data-ws2-ui', WS2_OVERLAY); pop.className = 'ws-fmtbar-swatches'; pop.style.display = 'none';
       (hilite ? HILITE_COLORS : TEXT_COLORS).forEach((c) => {
-        const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', ''); sw.className = 'ws-fmtbar-swatch'; sw.style.background = c;
+        const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', WS2_OVERLAY); sw.className = 'ws-fmtbar-swatch'; sw.style.background = c;
         sw.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (hilite) wrapMark(c); else applyColor('color', c); pop.style.display = 'none'; });
         pop.appendChild(sw);
@@ -626,10 +630,10 @@
     function openTurnMenu() {
       let menu = fmtbar.querySelector('.ws-fmtbar-menu');
       if (menu) { togglePopMenu(menu); return; }
-      menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', ''); menu.className = 'ws-fmtbar-menu';
+      menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
       menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
       [['text', '正文'], ['h1', '标题 1'], ['h2', '标题 2'], ['h3', '标题 3'], ['quote', '引用'], ['list', '无序列表'], ['numbered', '编号列表'], ['todo', '待办列表']].forEach(([key, label]) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', ''); it.className = 'ws-fmtbar-menu-item'; it.textContent = label;
+        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.textContent = label;
         it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         it.addEventListener('click', (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -649,20 +653,20 @@
       selectBlock(el);
       blockMenu.innerHTML = '';
       const add = (label, on, danger) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', ''); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : ''); it.textContent = label;
+        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : ''); it.textContent = label;
         it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         it.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); on(); });
         blockMenu.appendChild(it); return it;
       };
       const sub = (label, item) => add(label, () => { const nx = turnInto(el, item); closeBlockMenu(); selectBlock(nx); });
       sub('转为正文', itemByKey('text')); sub('转为标题', itemByKey('h2')); sub('转为引用', itemByKey('quote'));
-      const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', ''); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
+      const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       add('在下方插入', () => { const nx = insertAfter(el, SLASH_ITEMS[0]); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); });
       add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); });
       add('删除', () => { closeBlockMenu(); removeBlock(el); }, true);
       // 颜色行
-      const colors = doc.createElement('div'); colors.setAttribute('data-ws2-ui', ''); colors.className = 'ws-blockmenu-colors';
-      TEXT_COLORS.forEach((c) => { const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', ''); sw.className = 'ws-blockmenu-swatch'; sw.style.background = c;
+      const colors = doc.createElement('div'); colors.setAttribute('data-ws2-ui', WS2_OVERLAY); colors.className = 'ws-blockmenu-colors';
+      TEXT_COLORS.forEach((c) => { const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', WS2_OVERLAY); sw.className = 'ws-blockmenu-swatch'; sw.style.background = c;
         sw.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         // A2/§0决策1：块级上色用 ws-color class（不写 el.style——块 style 被校验器判非法）。默认色=清 class。
         sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (isEditableEl(el)) { TEXT_COLORS.forEach((c2) => el.classList.remove('ws-color-' + c2.slice(1))); if (c !== TEXT_COLORS[0]) { el.classList.add('ws-color-' + c.slice(1)); ensureColorStyle(); } if (undoMgr) undoMgr.checkpoint(); markDirty(); } closeBlockMenu(); });
@@ -684,9 +688,9 @@
       if (!slash) { slashMenu.style.display = 'none'; return; }
       const items = filterSlash(slash.query);
       slashMenu.innerHTML = '';
-      if (!items.length) { const e = doc.createElement('div'); e.setAttribute('data-ws2-ui', ''); e.className = 'ws-slashmenu-empty'; e.textContent = '无匹配'; slashMenu.appendChild(e); }
+      if (!items.length) { const e = doc.createElement('div'); e.setAttribute('data-ws2-ui', WS2_OVERLAY); e.className = 'ws-slashmenu-empty'; e.textContent = '无匹配'; slashMenu.appendChild(e); }
       items.forEach((it, i) => {
-        const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', ''); b.className = 'ws-slashmenu-item' + (i === slash.active ? ' active' : ''); b.textContent = it.label;
+        const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', WS2_OVERLAY); b.className = 'ws-slashmenu-item' + (i === slash.active ? ' active' : ''); b.textContent = it.label;
         b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applySlash(it.key); });
         slashMenu.appendChild(b);

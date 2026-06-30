@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { JSDOM } = require('jsdom');
-const { serializeDocument } = require('../src/editor/serialize.js');
+const { serializeDocument, OVERLAY_VAL } = require('../src/editor/serialize.js');
 
 // U15 —— Phase-1 收尾审计 + FileManager/Serializer 复用确认。
 //
@@ -24,7 +24,7 @@ test('审计：所有 Phase-1 画布标记被剥、覆盖节点删除、用户 d
     '<div data-ws2-canvas>' +
     '<p data-ws2-eid="3" data-ws2-editing data-ws2-ce contenteditable="true" data-ws2-sc spellcheck="false" ' +
     'data-ws2-foo="keep" style="position:absolute;left:200px;top:40px;width:120px;color:red;">x</p>' +
-    '<div data-ws2-ui>选中框/手柄/对齐线覆盖节点</div>' +
+    '<div data-ws2-ui="' + OVERLAY_VAL + '">选中框/手柄/对齐线覆盖节点</div>' + // 覆盖层 = sentinel 值（F1）
     '</div>'
   );
   const out = serializeDocument(doc);

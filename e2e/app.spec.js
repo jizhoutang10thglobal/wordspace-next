@@ -143,6 +143,22 @@ test('U5: callout 框 CSS 入盘（data-ws-schema-css，校验器 head 白名单
   expect(html).toMatch(/\.ws-callout\s*\{[^}]*border/);           // 真有边框（修 C1：不是无样式纯文本）
 });
 
+// U1b/F1（对抗审计，保真红线端到端门）：真编辑器打开带 data-ws2-ui 的文档，存盘时用户内容不丢、
+// 编辑器自己的覆盖层（sentinel 值）被删干净。
+test('U1b/F1: 用户带 data-ws2-ui 的内容存盘不丢、编辑器覆盖层删', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"></head>'
+    + '<body><div data-ws2-ui="user-keep">用户重要内容</div><p id="p1">正文</p></body></html>');
+  await page.waitForTimeout(200);
+  await frame.locator('#p1').click(); // 进编辑，编辑器注入覆盖层（sentinel）
+  await page.waitForTimeout(150);
+  const html = await serialize();
+  expect(html, 'F1：用户带 data-ws2-ui 的内容被误删').toContain('用户重要内容');
+  expect(html, '用户的 data-ws2-ui 属性应保留').toContain('data-ws2-ui="user-keep"');
+  expect(html, '编辑器覆盖层 sentinel 不该泄漏进存盘').not.toContain('__ws2-overlay__');
+  expect(html, '编辑器覆盖层不该泄漏进存盘').not.toMatch(/ws-grip|ws-fmtbar|ws-slashmenu/);
+});
+
 // U7：H4 作 heading 可创建——markdown #### + 斜杠菜单「标题 4」。h5/h6 不接（= 不符合 Schema，校验器判）。
 test('U7: H4 可创建（markdown #### → h4）', async () => {
   await launch();
