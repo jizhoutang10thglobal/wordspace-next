@@ -125,6 +125,21 @@ test('UX4: 点标签 → 文件树展开定位到该文件', async () => {
   await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
 });
 
+// UX5（Wendi F1）：侧栏宽度可鼠标拖拽 + 持久化。
+test('UX5: 侧栏宽度可拖拽 + 持久化', async () => {
+  await openWorkspace();
+  const w0 = await page.locator('#sidebar').evaluate((el) => el.getBoundingClientRect().width);
+  const box = await page.locator('#sb-resize').boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const w1 = await page.locator('#sidebar').evaluate((el) => el.getBoundingClientRect().width);
+  expect(w1, '拖拽后侧栏没变宽').toBeGreaterThan(w0 + 40);
+  const saved = await page.evaluate(() => parseInt(localStorage.getItem('ws2-sb-width'), 10));
+  expect(saved, '宽度没持久化到 localStorage').toBeGreaterThan(w0 + 40);
+});
+
 test('重复打开同一文件不新增标签', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');

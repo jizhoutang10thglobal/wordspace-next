@@ -781,6 +781,33 @@
     }
   });
 
+  // 侧栏宽度可拖拽（UX5 / Wendi F1）：右边界拖拽柄改 --sb-width（夹 min/max），存 localStorage、重启恢复。
+  const SB_MIN = 180, SB_MAX = 520, SB_KEY = 'ws2-sb-width';
+  (function initSidebarResize() {
+    if (!sidebarEl) return;
+    const saved = parseInt(localStorage.getItem(SB_KEY), 10);
+    if (saved >= SB_MIN && saved <= SB_MAX) sidebarEl.style.setProperty('--sb-width', saved + 'px');
+    const handle = document.getElementById('sb-resize');
+    if (!handle) return;
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const startX = e.clientX, startW = sidebarEl.getBoundingClientRect().width;
+      document.body.style.cursor = 'col-resize';
+      const onMove = (ev) => {
+        const w = Math.max(SB_MIN, Math.min(SB_MAX, startW + (ev.clientX - startX)));
+        sidebarEl.style.setProperty('--sb-width', w + 'px');
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        localStorage.setItem(SB_KEY, String(Math.round(sidebarEl.getBoundingClientRect().width)));
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  })();
+
   function openTabEntry(entry) {
     tabState = window.WS2Tabs.openEntry(tabState, entry);
     persistTabs();

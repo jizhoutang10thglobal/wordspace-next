@@ -112,7 +112,8 @@ ul { list-style: none; }
 .sb { display: none; }
 .sb.sb-on {
   flex: none;
-  width: 260px;
+  width: var(--sb-width, 260px);
+  position: relative; /* 给宽度拖拽柄 .sb-resize 定位 */
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -120,6 +121,10 @@ ul { list-style: none; }
   border-right: 1px solid var(--c-border);
   user-select: none;
 }
+/* 侧栏宽度拖拽柄（UX5 / Wendi F1）：贴右边界、col-resize；收起态不显示。 */
+.sb-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 10; }
+.sb-resize:hover { background: var(--c-accent); opacity: 0.35; }
+.sb.is-collapsed .sb-resize, .sb:not(.sb-on) .sb-resize { display: none; }
 .sb-head {
   flex: none;
   display: flex;
