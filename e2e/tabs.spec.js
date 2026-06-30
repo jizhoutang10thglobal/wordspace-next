@@ -108,8 +108,8 @@ test('UX2: Cmd+W 关当前标签 / Cmd+T 弹模板台（菜单 onMenu 路由）'
 test('UX3: Cmd+F 聚焦筛选框（菜单 find-file 路由）', async () => {
   await openWorkspace();
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'find-file'));
-  const focused = await page.evaluate(() => document.activeElement && document.activeElement.id);
-  expect(focused).toBe('sb-filter-input');
+  // send menu 是异步 IPC → poll 等焦点落定（消除 race，否则全量跑偶发未就绪）
+  await expect.poll(() => page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('sb-filter-input');
 });
 
 // UX4（Wendi F6-①）：点标签时文件树自动展开并定位到该文件。
