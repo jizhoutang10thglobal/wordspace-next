@@ -305,7 +305,7 @@ test('右键文件夹 → 删除整棵子树 → 撤销整棵回来', async () =
   await expect.poll(() => exists(path.join(wsDir, '数据', 'b.html'))).toBe(false);
   await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
   await expect.poll(() => exists(path.join(wsDir, '数据', 'b.html'))).toBe(true); // 子文件也回来了
-  expect(await exists(path.join(wsDir, '数据', 'c.png'))).toBe(true);
+  await expect.poll(() => exists(path.join(wsDir, '数据', 'c.png'))).toBe(true); // poll：撤销恢复是异步的，别用即时断言（flaky）
 });
 
 // ============================ 内联改名取消 ============================

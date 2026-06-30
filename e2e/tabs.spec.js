@@ -173,18 +173,45 @@ test('重启 app→标签 + 上次激活恢复并打开', async () => {
   await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('BBB');
 });
 
-test('标签 📌→移进置顶区（× 消失）；取消钉→落回标签页', async () => {
+test('标签 📌→移进置顶区（× 保留可关闭）；取消钉→落回标签页', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');
   await tabRow('a.html').hover();
   await tabRow('a.html').locator('.sb-tab-pin').click(); // 钉
   await expect(pinnedRow('a.html')).toBeVisible(); // 进置顶
   await expect(tabRow('a.html')).toHaveCount(0); // 离开标签页（去重）
-  await expect(pinnedRow('a.html').locator('.sb-tab-close')).toHaveCount(0); // 置顶项无 ×
+  await expect(pinnedRow('a.html').locator('.sb-tab-close')).toHaveCount(1); // 置顶项也有 ×（Wendi 要的）
   // 取消钉（点置顶里的 📌）→ 还开着 → 落回标签页
   await pinnedRow('a.html').locator('.sb-tab-pin').click();
   await expect(tabRow('a.html')).toBeVisible();
   await expect(pinnedRow('a.html')).toHaveCount(0);
+});
+
+test('置顶区的 ×：直接关闭（整条移出置顶，不只取消钉）', async () => {
+  await openWorkspace();
+  // 从树右键直接钉一个没打开的文件 → 置顶区有它、但没开（open:false）
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '置顶' }).click();
+  await expect(pinnedRow('a.html')).toBeVisible();
+  await expect(tabRow('a.html')).toHaveCount(0); // 没开、只在置顶
+  // 点置顶区的 × → 整条删掉
+  await pinnedRow('a.html').hover();
+  await pinnedRow('a.html').locator('.sb-tab-close').click();
+  await expect(pinnedRow('a.html')).toHaveCount(0); // 移出置顶
+  await expect(tabRow('a.html')).toHaveCount(0); // 也不落回标签页（是删、不是取消钉）
+});
+
+test('置顶区的 ×：关掉「既钉又开且激活」的项 → 编辑器回落/空态', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]'); // a 开着、激活
+  await tabRow('a.html').hover();
+  await tabRow('a.html').locator('.sb-tab-pin').click(); // 钉 a（进置顶、仍激活）
+  await expect(pinnedRow('a.html')).toHaveClass(/is-active/);
+  // 点置顶区 × 关掉激活的 a → 没有别的标签 → 回空态
+  await pinnedRow('a.html').hover();
+  await pinnedRow('a.html').locator('.sb-tab-close').click();
+  await expect(pinnedRow('a.html')).toHaveCount(0);
+  await expect(page.locator('#home')).toBeVisible();
 });
 
 test('既钉又开：钉一个开着的文件→只在置顶不在标签页（去重）', async () => {
