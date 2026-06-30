@@ -490,10 +490,20 @@
   // ---- 渲染两区 ----
   // 点标签开它：内部文件走树节点 openNode；外部文件(无 rel)按 kind 分发 abs（跟「打开」按钮一条路，
   // shell.js 的 openDoc/showViewer 已支持纯 abs）。
+  // UX4（Wendi F6-①）：把文件树展开到 rel 指向的文件（逐级删父文件夹 collapsed）并滚动定位。
+  function expandToFile(rel) {
+    const parts = rel.split('/'); parts.pop(); // 去掉文件名，只留父文件夹链
+    let acc = '';
+    let changed = false;
+    for (const p of parts) { acc = acc ? acc + '/' + p : p; if (collapsed.has(acc)) { collapsed.delete(acc); changed = true; } }
+    if (changed) render();
+    const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel);
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+  }
   function openTabRow(entry) {
     if (entry.rel) {
       const n = findNode(entry.rel);
-      if (n) openNode(n);
+      if (n) { openNode(n); expandToFile(entry.rel); } // 点标签 → 文件树展开到该文件并滚动定位
       return;
     }
     if (entry.kind === 'html') openDoc(entry.abs);

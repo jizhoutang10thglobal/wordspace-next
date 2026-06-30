@@ -112,6 +112,19 @@ test('UX3: Cmd+F 聚焦筛选框（菜单 find-file 路由）', async () => {
   expect(focused).toBe('sb-filter-input');
 });
 
+// UX4（Wendi F6-①）：点标签时文件树自动展开并定位到该文件。
+test('UX4: 点标签 → 文件树展开定位到该文件', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click();            // 展开"数据"
+  await page.click('.sb-file[data-rel="数据/b.html"]');             // 开 b.html
+  await expect(tabRow('数据/b.html')).toBeVisible();
+  await page.locator('.sb-dir[data-rel="数据"]').click();            // 收起"数据" → b.html 在树里隐藏
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toHaveCount(0);
+  // 点 b.html 标签 → 文件树重新展开"数据"、b.html 可见（定位）
+  await tabRow('数据/b.html').click();
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
+});
+
 test('重复打开同一文件不新增标签', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');
