@@ -93,15 +93,8 @@
     return root;
   }
 
-  // 文档是否自带样式（任意 <style> 或 <link rel=stylesheet>，排除编辑器自己注入的 data-ws2-ui）。
-  // 用来决定要不要套编辑器的 Notion 排版：只有「真·裸文档」（一点自带样式都没有）才套；
-  // 自带样式的文档——哪怕正文裸挂 body、blockRoot===body——也一律尊重原样，绝不用
-  // data-ws2-canvas 的高权重（[data-ws2-canvas]>h1/p）盖掉作者裸写的 h1{}/p{}（实测会把红
-  // Courier 标题改成黑无衬线、只剩 body 背景活着 = 四不像）。结构（有没有包裹容器）不等于
-  // 有没有设计意图，所以判定锚在「自带样式」而非「有没有容器」。
-  function docHasAuthorStyles(doc) {
-    return doc.querySelectorAll('style:not([data-ws2-ui]), link[rel~="stylesheet" i]').length > 0;
-  }
+  // §0 决策：编辑器不主动套装饰排版（原 docHasAuthorStyles + data-ws2-canvas 那套 Notion 居中窄栏已删）。
+  // 显示永远按 .html 原生；让块渲染正确的最小语义 CSS（margin/callout/todo）由 Schema baseline 随文件入盘（U5）。
 
   function caretRangeAtPoint(doc, x, y) {
     if (doc.caretRangeFromPoint) return doc.caretRangeFromPoint(x, y);
@@ -172,11 +165,8 @@
       st.textContent = EDITOR_CSS;
       (doc.head || doc.documentElement).appendChild(st);
     }
-    // 居中窄栏（ui-demo 820 列）+ Notion 排版——仅当文档是「裸块」结构（block root 就是 body、
-    // 没有自带包裹容器）**且文档自己一点样式都没带**时才套。文档自带居中容器（blockRoot ≠ body）
-    // 时尊重它原有版式；文档自带 <style>/<link>（哪怕裸挂 body）时同样尊重原样——见 docHasAuthorStyles。
-    if (blockRoot === body && !docHasAuthorStyles(doc)) body.setAttribute('data-ws2-canvas', '');
-    blockRoot.setAttribute('data-ws2-root', ''); // 标记块容器（裸文档=body / 包裹文档=div.wrap 等）：给「空块占一行高度」等编辑器结构 CSS 用。data-ws2-* 存盘剥除。
+    // §0：编辑器不套 canvas 装饰排版（已删）。data-ws2-root 仍打——只驱动「空块占一行高度」这种编辑可用性 CSS（非装饰），存盘剥除。
+    blockRoot.setAttribute('data-ws2-root', '');
 
     // ---- 状态 ----
     let selectedEl = null;   // 灰选中的不可编辑块
@@ -1077,8 +1067,7 @@
       slash = null; slashMenu.style.display = 'none';
       editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false;
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
-      if (blockRoot === body && !docHasAuthorStyles(doc)) body.setAttribute('data-ws2-canvas', ''); else body.removeAttribute('data-ws2-canvas');
-      blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标
+      blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标（空块占高度用，非装饰）
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
@@ -1091,25 +1080,14 @@
 
   // ===== 注入到 iframe 的编辑器样式（ui-demo Canvas.css 移植；选择器既命中 .ws-* 也命中裸标签）=====
   const EDITOR_CSS = `
-  [data-ws2-canvas] { max-width: 820px; margin: 0 auto; padding: 30px 56px 140px;
-    font-family: -apple-system,"SF Pro Text",system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
-  [data-ws2-canvas] > h1, [data-ws2-canvas] > .ws-h1 { font-size:30px;font-weight:700;letter-spacing:-.01em;margin:8px 0 10px;line-height:1.3;color:#1c1d1f; }
-  [data-ws2-canvas] > h2 { font-size:20px;font-weight:600;margin:26px 0 8px;line-height:1.3;color:#1c1d1f; }
-  [data-ws2-canvas] > h3 { font-size:16px;font-weight:600;margin:20px 0 6px;line-height:1.3;color:#1c1d1f; }
-  [data-ws2-canvas] > p { font-size:15px;line-height:1.75;color:#2b2d31;margin:6px 0; }
-  [data-ws2-canvas] > ul, [data-ws2-canvas] > ol { margin:6px 0;padding-left:22px; }
-  [data-ws2-canvas] > ul > li, [data-ws2-canvas] > ol > li { font-size:15px;line-height:1.7;color:#2b2d31;margin:3px 0; }
-  [data-ws2-canvas] > ul > li { list-style:disc; }
-  [data-ws2-canvas] > ol > li { list-style:decimal; }
-  /* 待办列表：左侧 CSS 复选框（点击区由 onMouseDown 判定），勾选画删除线。仅编辑器内渲染（EDITOR_CSS 不入存盘）。 */
+  /* §0：编辑器不套 canvas 装饰排版（max-width/居中/字号/颜色那套已删）；显示按 .html 原生，
+     让块渲染正确的最小语义 CSS（margin/callout/todo）由 Schema baseline 随文件入盘（U5）。
+     下面只保留「编辑器内」功能渲染（待办勾选框 + 编辑态高亮/占位/空块高度），均不入序列化。 */
   ul.ws-todo, ul.ws-todo ul, ul.ws-todo ol { list-style:none; }
-  [data-ws2-canvas] > ul.ws-todo > li, .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
+  .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
   .ws-todo > li::before { content:'';position:absolute;left:-20px;top:0.3em;width:15px;height:15px;box-sizing:border-box;border:1.5px solid #b5b9c0;border-radius:4px;background:#fff;cursor:pointer; }
   .ws-todo > li[data-checked="true"] { color:#8a8f96;text-decoration:line-through; }
   .ws-todo > li[data-checked="true"]::before { content:'✓';border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center; }
-  [data-ws2-canvas] > blockquote { border-left:3px solid #d3d6db;padding:2px 0 2px 16px;margin:10px 0;color:#5a5f66;font-size:15px; }
-  [data-ws2-canvas] > .ws-callout { background:#f7f8fa;border:1px solid #e4e6e9;border-radius:7px;padding:14px 16px;margin:12px 0;font-size:14px;line-height:1.65;color:#5a5f66; }
-  [data-ws2-canvas] > hr { border:none;border-top:1px solid #eceef0;margin:22px 0; }
 
   [contenteditable='true']{outline:none;}
   p[data-ws2-editing]:empty::before{content:'输入正文，或按 / 插入';color:#8a8f96;pointer-events:none;}
@@ -1117,8 +1095,7 @@
      用 em 跟字号缩放（空标题行更高）。纯渲染、不进序列化。 */
   [data-ws2-root] > p:empty, [data-ws2-root] > h1:empty, [data-ws2-root] > h2:empty,
   [data-ws2-root] > h3:empty, [data-ws2-root] > blockquote:empty, [data-ws2-root] > .ws-callout:empty{min-height:1.6em;}
-  /* 选中/编辑高亮只用 box-shadow + background（不影响布局），绝不用 padding/margin——否则 padding 把文字推右、
-     而 margin 补偿会被 [data-ws2-canvas]>tag 的更高权重盖掉、补不回来，导致选中时文字右移几像素。 */
+  /* 选中/编辑高亮只用 box-shadow + background（不影响布局），绝不用 padding/margin——否则 padding 把文字推右。 */
   [data-ws2-selected]:not([data-ws2-editing]){border-radius:4px;box-shadow:0 0 0 2px rgba(0,0,0,.16),0 0 0 6px rgba(0,0,0,.05);background:rgba(0,0,0,.03);}
   [data-ws2-editing]{border-radius:4px;background:rgba(0,0,0,.015);}
   [data-ws2-drop='top']{box-shadow:0 -2px 0 0 #1a73e8;}
@@ -1158,7 +1135,7 @@
   .ws-slashmenu-empty{padding:8px 10px;font-size:12px;color:#8a8f96;}
   `;
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, docHasAuthorStyles, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);
