@@ -47,20 +47,33 @@
   }
 }
 
-/* ---- 左：渲染的示例文档（白纸） ---- */
+/* ---- 左：渲染的示例文档（白纸，可编辑） ---- */
 .spx-paper {
+  position: relative;
   background: #fff;
   border: 1px solid var(--c-border);
   border-radius: 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 10px 30px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
 }
 /* 复用真编辑器的 .ws-doc 块样式，但收掉它的超大留白、约束在卡片里 */
 .spx-paper .ws-doc.spx-doc {
   max-width: none;
   margin: 0;
   padding: 36px 44px 44px;
-  position: relative;
+}
+.spx-doc[contenteditable='true'] {
+  outline: none;
+}
+.spx-doc[contenteditable='true']:focus-visible {
+  outline: none;
+}
+/* 可编辑提示：hover 时极淡底色，暗示「这里能改」 */
+.spx-doc:hover {
+  background: linear-gradient(0deg, rgba(26, 115, 232, 0.012), rgba(26, 115, 232, 0.012));
+}
+/* 浮动格式气泡定位（外观来自全局 .ws-fmtbar） */
+.spx-bubble {
+  z-index: 60;
 }
 /* 行号标号：浮在每个被讲解块的右外侧 */
 .spx-mark {
@@ -159,29 +172,43 @@
   line-height: 1.6;
 }
 
-.spx-forbid {
+/* ---- 底部：这些写法不允许 ---- */
+.spx-dont-wrap {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 8px 32px 80px;
+}
+.spx-dont-h {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+  margin: 0 0 4px;
+}
+.spx-dont-sub {
+  font-size: var(--fs-md);
+  color: var(--c-text-2);
+  margin: 0 0 16px;
+}
+.spx-dont-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 12px;
+}
+.spx-dont-card {
   background: #fff;
   border: 1px solid var(--c-border);
   border-left: 3px solid var(--c-danger);
   border-radius: 11px;
-  padding: 13px 15px;
-  margin-top: 4px;
+  padding: 14px 16px;
 }
-.spx-forbid-title {
-  font-size: var(--fs-base);
+.spx-dont-title {
+  font-size: var(--fs-md);
   font-weight: var(--fw-semibold);
   color: var(--c-text);
-  margin-bottom: 8px;
+  margin-bottom: 5px;
 }
-.spx-forbid ul {
-  margin: 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.spx-forbid li {
+.spx-dont-body {
   font-size: var(--fs-sm);
   color: var(--c-text-2);
-  line-height: 1.5;
+  line-height: 1.6;
 }
