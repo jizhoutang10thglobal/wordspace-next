@@ -355,9 +355,11 @@
       if (cls === 'ws-todo') ensureTodoStyle();
       else if (cls === 'ws-callout') ensureCalloutStyle();
     }
-    // baseline 页边距（§0 决策2 / Wendi）：给文档四周留白（内容不贴边），data-ws-schema-css 入盘随文件走。
-    // :where(body) 零权重 → 文档自带的 body 样式优先（baseline 只是地板），不覆盖作者排版；
-    // **不加 max-width 居中窄栏**（那是 Template 装饰，§0 删 canvas 的原因）。attach 注入、不 markDirty（初始化非用户改动）。
+    // baseline 排版底线（§0 决策2 / Wendi 2026-07-01 拍：要居中可读宽度，像 Notion/Word）：
+    // 给文档可读宽度（max-width 居中 + 四周留白），data-ws-schema-css 入盘随文件走。
+    // 跟「删 canvas」不矛盾——canvas 是编辑器运行时强套、不入盘的整套装饰（820窄栏+字号+颜色）；
+    // baseline 是**入盘随文件走的格式约束**（只管宽度+留白、不碰字号颜色），按原生渲染时它在文件里。
+    // :where(body) 零权重 → 文档自带 body 样式优先（baseline 只是地板，不覆盖作者排版）。attach 注入、不 markDirty。
     function ensureSchemaBaseline() {
       if (!doc) return;
       const head = doc.head || doc.documentElement;
@@ -365,7 +367,7 @@
       const st = doc.createElement('style');
       st.id = 'ws-schema-baseline';
       st.setAttribute('data-ws-schema-css', 'baseline');
-      st.textContent = ':where(body){margin:0;padding:40px 56px;box-sizing:border-box}';
+      st.textContent = ':where(body){max-width:820px;margin:0 auto;padding:48px 60px;box-sizing:border-box}';
       head.appendChild(st);
     }
     // U6（§0 决策1 + A2）：固定色板文字色 CSS 入盘。块级上色用 class 不写 style（块 style 非法），

@@ -66,19 +66,21 @@ test('自带 <style> 但正文裸挂 body：作者样式不被编辑器排版覆
   expect(hasCanvas).toBe(false);
 });
 
-// §0：真·裸文档不再被套编辑器 Notion 装饰排版，按 .html 原生渲染（编辑器不主动套样式）。
-// 反掉旧行为（曾「裸文档 blockRoot===body 就套 data-ws2-canvas 排版」）。最小语义 baseline 留 U5 入盘。
-test('真·裸文档：编辑器不套 canvas 装饰排版，按原生渲染', async () => {
+// §0：真·裸文档不再被套编辑器**运行时 canvas 装饰**（不入盘的整套 820+字号+颜色）；宽度改由 baseline 入盘格式给。
+// 反掉旧行为（曾「裸文档 blockRoot===body 就套 data-ws2-canvas 排版」）。区别：canvas=运行时装饰、baseline=入盘格式。
+test('真·裸文档：不套 canvas 运行时装饰；宽度由 baseline 入盘格式给', async () => {
   await launch();
   await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
     + '<body><h1 id="h">标题</h1><p id="p">正文</p></body></html>');
-  // body 不再被打 data-ws2-canvas（装饰开关已删）
+  // body 不再被打 data-ws2-canvas（运行时装饰开关已删）
   const hasCanvas = await frame.locator('body').evaluate((el) => el.hasAttribute('data-ws2-canvas'));
   expect(hasCanvas).toBe(false);
-  // 强断言：不套 Notion 居中窄栏——body 没有 canvas 的 max-width:820px（原生默认 none）
+  // max-width 来自 baseline 入盘格式（data-ws-schema-css），不是 canvas 运行时装饰——随文件走、app 外也有
+  const baselineIn = await frame.locator('body').evaluate(() => !!document.querySelector('style[data-ws-schema-css="baseline"]'));
+  expect(baselineIn, 'baseline 入盘格式应在').toBe(true);
   const maxW = await frame.locator('body').evaluate((el) => getComputedStyle(el).maxWidth);
-  expect(maxW).toBe('none');
-  // 内容仍在、可见（删 canvas 没破坏裸文档主路）
+  expect(maxW).toBe('820px');
+  // 内容仍在
   const htext = await frame.locator('#h').evaluate((el) => el.textContent);
   expect(htext).toBe('标题');
 });
