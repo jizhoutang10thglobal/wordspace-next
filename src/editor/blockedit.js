@@ -167,6 +167,7 @@
     }
     // §0：编辑器不套 canvas 装饰排版（已删）。data-ws2-root 仍打——只驱动「空块占一行高度」这种编辑可用性 CSS（非装饰），存盘剥除。
     blockRoot.setAttribute('data-ws2-root', '');
+    ensureSchemaBaseline(); // baseline 页边距入盘（四周留白；不 markDirty）
 
     // ---- 状态 ----
     let selectedEl = null;   // 灰选中的不可编辑块
@@ -353,6 +354,19 @@
     function ensureBlockStyle(cls) {
       if (cls === 'ws-todo') ensureTodoStyle();
       else if (cls === 'ws-callout') ensureCalloutStyle();
+    }
+    // baseline 页边距（§0 决策2 / Wendi）：给文档四周留白（内容不贴边），data-ws-schema-css 入盘随文件走。
+    // :where(body) 零权重 → 文档自带的 body 样式优先（baseline 只是地板），不覆盖作者排版；
+    // **不加 max-width 居中窄栏**（那是 Template 装饰，§0 删 canvas 的原因）。attach 注入、不 markDirty（初始化非用户改动）。
+    function ensureSchemaBaseline() {
+      if (!doc) return;
+      const head = doc.head || doc.documentElement;
+      if (head.querySelector('style[data-ws-schema-css="baseline"]')) return; // 属性查重（不靠固定 id，S9）
+      const st = doc.createElement('style');
+      st.id = 'ws-schema-baseline';
+      st.setAttribute('data-ws-schema-css', 'baseline');
+      st.textContent = ':where(body){margin:0;padding:40px 56px;box-sizing:border-box}';
+      head.appendChild(st);
     }
     // U6（§0 决策1 + A2）：固定色板文字色 CSS 入盘。块级上色用 class 不写 style（块 style 非法），
     // 显示按原生（class + 入盘 CSS 随文件走，app 外浏览器也显示）。class 名 = ws-color-<hex 去#>。
