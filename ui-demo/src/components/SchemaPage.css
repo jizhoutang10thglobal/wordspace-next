@@ -1,357 +1,187 @@
-.sp {
+.spx {
   height: 100%;
   overflow: auto;
   background: var(--c-bg-sunken);
 }
-.sp-inner {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 40px 32px 80px;
-}
 
 /* ---- header ---- */
-.sp-head {
-  margin-bottom: 36px;
+.spx-head {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 40px 32px 8px;
 }
-.sp-eyebrow {
+.spx-eyebrow {
   font-size: var(--fs-xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--c-accent);
   font-weight: var(--fw-semibold);
 }
-.sp-title {
+.spx-title {
   font-size: 30px;
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--c-text);
   margin: 8px 0 12px;
 }
-.sp-lede {
+.spx-lede {
   font-size: var(--fs-lg);
   line-height: 1.7;
   color: var(--c-text-2);
-  max-width: 760px;
+  max-width: 720px;
 }
 
-/* ---- sections ---- */
-.sp-sec {
-  margin-top: 40px;
-}
-.sp-h2 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-semibold);
-  color: var(--c-text);
-  margin: 0 0 4px;
-}
-.sp-h2-ico {
-  color: var(--c-accent);
-}
-.sp-sub {
-  font-size: var(--fs-md);
-  color: var(--c-text-2);
-  margin: 0 0 16px;
-  line-height: 1.6;
-}
-.sp-note {
-  font-size: var(--fs-sm);
-  color: var(--c-text-3);
-  margin-top: 12px;
-  line-height: 1.6;
-}
-
-/* ---- block cards ---- */
-.sp-blocks {
+/* ---- two-column ---- */
+.spx-cols {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 24px 32px 80px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 28px;
+  align-items: start;
 }
-.sp-bcard {
-  background: var(--c-bg);
-  border: 1px solid var(--c-border);
-  border-radius: 12px;
-  padding: 14px 15px;
-}
-.sp-bcard-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 9px;
-}
-.sp-bname {
-  font-size: var(--fs-md);
-  font-weight: var(--fw-semibold);
-  color: var(--c-text);
-}
-.sp-badge {
-  font-size: 10px;
-  font-weight: var(--fw-semibold);
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-.st-ok {
-  color: var(--c-success);
-  background: var(--c-success-tint);
-}
-.st-wip {
-  color: var(--c-warning);
-  background: #fdf0dc;
-}
-.st-planned {
-  color: var(--c-text-3);
-  background: var(--c-bg-sunken);
-}
-.sp-bhtml {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--c-accent);
-  background: var(--c-accent-tint);
-  padding: 6px 9px;
-  border-radius: 7px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin-bottom: 10px;
-}
-.sp-bmeta {
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.sp-bmeta > div {
-  display: flex;
-  gap: 8px;
-  font-size: var(--fs-sm);
-}
-.sp-bmeta dt {
-  flex: none;
-  width: 42px;
-  color: var(--c-text-3);
-}
-.sp-bmeta dd {
-  margin: 0;
-  color: var(--c-text-2);
+@media (max-width: 920px) {
+  .spx-cols {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* ---- inline chips ---- */
-.sp-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
+/* ---- 左：渲染的示例文档（白纸） ---- */
+.spx-paper {
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 10px 30px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
 }
-.sp-chip {
+/* 复用真编辑器的 .ws-doc 块样式，但收掉它的超大留白、约束在卡片里 */
+.spx-paper .ws-doc.spx-doc {
+  max-width: none;
+  margin: 0;
+  padding: 36px 44px 44px;
+  position: relative;
+}
+/* 行号标号：浮在每个被讲解块的右外侧 */
+.spx-mark {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: var(--c-bg);
-  border: 1px solid var(--c-border);
-  border-radius: 999px;
-  padding: 6px 8px 6px 14px;
-  font-size: var(--fs-base);
-  color: var(--c-text);
-  font-weight: var(--fw-medium);
-}
-.sp-chip code {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--c-text-2);
-  background: var(--c-bg-sunken);
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-/* ---- decisions ---- */
-.sp-dec {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
-}
-.sp-deccard {
-  display: flex;
-  gap: 12px;
-  background: var(--c-bg);
-  border: 1px solid var(--c-border);
-  border-radius: 12px;
-  padding: 15px;
-}
-.sp-decn {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 8px;
+  border-radius: 50%;
   background: var(--c-accent);
   color: #fff;
+  font-size: 11px;
   font-weight: var(--fw-semibold);
-  font-size: var(--fs-sm);
+  vertical-align: middle;
+  transform: translateY(-1px);
+}
+
+/* 示例文档里的表格（ui-demo 真编辑器还没有表格块，这里给 Schema 矩形表的样式） */
+.spx-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: var(--fs-md);
+}
+.spx-table th,
+.spx-table td {
+  border: 1px solid var(--c-border);
+  padding: 7px 12px;
+  text-align: left;
+}
+.spx-table th {
+  background: var(--c-bg-sunken);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+.spx-table td {
+  color: var(--c-text-2);
+}
+
+/* 代码块 */
+.spx-code {
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md, 8px);
+  padding: 12px 14px;
+  margin: 12px 0;
+  overflow: auto;
+}
+.spx-code code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #2b2d31;
+  white-space: pre;
+}
+
+/* ---- 右：侧边讲解 ---- */
+.spx-rail {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.spx-note {
+  display: flex;
+  gap: 11px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: 11px;
+  padding: 12px 13px;
+}
+.spx-note-n {
+  flex: none;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.sp-dectitle {
+.spx-note-title {
   font-size: var(--fs-md);
   font-weight: var(--fw-semibold);
   color: var(--c-text);
   margin-bottom: 3px;
 }
-.sp-decbody {
+.spx-note-body {
   font-size: var(--fs-sm);
   color: var(--c-text-2);
   line-height: 1.6;
 }
 
-/* ---- forbidden ---- */
-.sp-forbid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 9px;
-}
-.sp-forbid li {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: var(--c-bg);
+.spx-forbid {
+  background: #fff;
   border: 1px solid var(--c-border);
   border-left: 3px solid var(--c-danger);
-  border-radius: 9px;
-  padding: 10px 13px;
+  border-radius: 11px;
+  padding: 13px 15px;
+  margin-top: 4px;
+}
+.spx-forbid-title {
   font-size: var(--fs-base);
-  color: var(--c-text);
-}
-.sp-forbid svg {
-  color: var(--c-danger);
-  flex: none;
-}
-
-/* ---- live validate widget ---- */
-.sp-try {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-@media (max-width: 760px) {
-  .sp-try {
-    grid-template-columns: 1fr;
-  }
-}
-.sp-try-left {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.sp-textarea {
-  width: 100%;
-  min-height: 220px;
-  resize: vertical;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--c-text);
-  background: var(--c-bg);
-  border: 1px solid var(--c-border-strong);
-  border-radius: 10px;
-  padding: 12px 13px;
-  box-sizing: border-box;
-}
-.sp-textarea:focus {
-  outline: none;
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px var(--c-accent-tint);
-}
-.sp-presets {
-  display: flex;
-  gap: 8px;
-}
-.sp-presets button {
-  font-size: var(--fs-sm);
-  color: var(--c-text-2);
-  background: var(--c-bg);
-  border: 1px solid var(--c-border);
-  border-radius: 8px;
-  padding: 6px 12px;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease);
-}
-.sp-presets button:hover {
-  background: var(--c-hover);
-}
-
-.sp-try-right {
-  background: var(--c-bg);
-  border: 1px solid var(--c-border);
-  border-radius: 12px;
-  padding: 14px;
-  min-height: 220px;
-}
-.sp-verdict {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: var(--fs-md);
   font-weight: var(--fw-semibold);
-  padding: 9px 12px;
-  border-radius: 9px;
-  margin-bottom: 12px;
+  color: var(--c-text);
+  margin-bottom: 8px;
 }
-.sp-verdict.is-ok {
-  color: var(--c-success);
-  background: var(--c-success-tint);
-}
-.sp-verdict.is-bad {
-  color: var(--c-danger);
-  background: var(--c-danger-tint);
-}
-.sp-clean {
-  font-size: var(--fs-sm);
-  color: var(--c-text-3);
-  padding: 4px 2px;
-}
-.sp-vlist {
-  list-style: none;
+.spx-forbid ul {
   margin: 0;
-  padding: 0;
+  padding-left: 18px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
-.sp-vrow {
-  display: flex;
-  gap: 9px;
-}
-.sp-vdot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-top: 5px;
-  flex: none;
-}
-.sp-vrow.sev-block .sp-vdot {
-  background: var(--c-danger);
-}
-.sp-vrow.sev-warn .sp-vdot {
-  background: var(--c-warning);
-}
-.sp-vtitle {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-  color: var(--c-text);
-}
-.sp-vcount {
-  font-size: var(--fs-xs);
-  color: var(--c-text-3);
-}
-.sp-vdetail {
+.spx-forbid li {
   font-size: var(--fs-sm);
   color: var(--c-text-2);
   line-height: 1.5;
-  margin-top: 2px;
 }

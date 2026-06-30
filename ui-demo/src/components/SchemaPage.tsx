@@ -1,226 +1,150 @@
-import { useMemo, useState } from 'react'
-import { ShieldCheck, ShieldX, Ban, Sparkles } from 'lucide-react'
-import { checkSchema } from '../lib/schemaCheck'
 import './SchemaPage.css'
 
-// Schema #1 可视化页：把 docs/schema-1-draft-v0.md 的定义/限制可视化（块表 §2 / 行内 §3 /
-// 6 决策 §0 / 不变式 + 禁止项），外加一个实时校验 widget——复用同一个确定性校验器 checkSchema
-// （跟非合规基础编辑演示同源，体现「校验器=脊梁」）。内容是给 Wendi/Colin 看的静态速查 + 可玩 demo。
+// Schema 可视化页（按 Colin 回炉要求）：不再列规则表 / 不做实时校验。
+// 改成「真实渲染的示例 Wordspace 文档 + 侧边讲解」——左边是一份符合 Schema #1 的文档，用跟真编辑器
+// 同一套块样式（.ws-doc / .ws-h* / .ws-callout / .ws-todo …）渲染出来，看起来就是真打开的样子；
+// 文档里关键处打了 ①②③ 标号，右边侧栏对应每个标号讲「schema 在这儿做了什么限制、样式体现在哪」。
+// 给 Wendi 一眼看懂：我们这套受限 HTML 长什么样、限制在哪。
 
-type Status = 'ok' | 'wip' | 'planned'
-const STATUS_META: Record<Status, { label: string; cls: string }> = {
-  ok: { label: '可用', cls: 'st-ok' },
-  wip: { label: '完善中', cls: 'st-wip' },
-  planned: { label: '规划中', cls: 'st-planned' },
-}
-
-interface BlockRow {
-  name: string
-  html: string
-  children: string
-  inline: string
-  nesting: string
-  status: Status
-}
-
-const BLOCKS: BlockRow[] = [
-  { name: '正文', html: '<p>', children: '文字 + 行内标记', inline: '全部', nesting: '顶层块，不互嵌', status: 'ok' },
-  { name: '标题 1–3', html: '<h1> <h2> <h3>', children: '文字 + 行内标记', inline: '全部', nesting: '顶层块', status: 'ok' },
-  { name: '标题 4', html: '<h4>', children: '文字 + 行内标记', inline: '全部', nesting: '顶层块（封顶 h4）', status: 'wip' },
-  { name: '无序列表', html: '<ul><li>', children: 'li = 文字 + 可选子列表', inline: '全部', nesting: '可嵌同构子列表', status: 'ok' },
-  { name: '有序列表', html: '<ol><li>', children: 'li = 文字 + 可选子列表', inline: '全部', nesting: '可嵌子列表（可选 start）', status: 'ok' },
-  { name: '待办', html: '<ul class="ws-todo"><li data-checked>', children: 'li = 文字', inline: '全部', nesting: '子列表抄 ws-todo', status: 'ok' },
-  { name: '引用', html: '<blockquote>', children: '多段文字（多个 <p>）', inline: '全部', nesting: '顶层块，内不嵌块', status: 'ok' },
-  { name: '提示框', html: '<div class="ws-callout">', children: '多段文字', inline: '全部', nesting: '顶层块，内不嵌块', status: 'wip' },
-  { name: '分隔线', html: '<hr>', children: '无', inline: '无', nesting: '顶层块', status: 'ok' },
-  { name: '折叠', html: '<details><summary>', children: 'summary + flow', inline: 'summary 内全部', nesting: 'body 可嵌块', status: 'planned' },
-  { name: '表格', html: '<table class="ws-table">', children: 'cell = 纯文字', inline: 'cell 内全部', nesting: '禁合并格 · 不嵌块', status: 'planned' },
-  { name: '图片', html: '<img>（<figure>+<figcaption>）', children: '—', inline: '—', nesting: '原子叶子块', status: 'planned' },
-  { name: '代码', html: '<pre><code>', children: '纯文本', inline: '—', nesting: '顶层块', status: 'planned' },
-]
-
-interface InlineRow {
-  name: string
-  tag: string
-}
-const INLINES: InlineRow[] = [
-  { name: '加粗', tag: '<b>' },
-  { name: '斜体', tag: '<i>' },
-  { name: '下划线', tag: '<u>' },
-  { name: '删除线', tag: '<s>' },
-  { name: '行内代码', tag: '<code>' },
-  { name: '链接', tag: '<a href>' },
-  { name: '文字色', tag: 'class ws-color-*' },
-  { name: '高亮', tag: '<mark>' },
-  { name: '软换行', tag: '<br>' },
-]
-
-interface Decision {
+interface Note {
   n: number
   title: string
   body: string
 }
-const DECISIONS: Decision[] = [
-  { n: 1, title: '颜色 / 高亮', body: '固定调色板（≈Notion 十来色）= 编辑器能用的色，走 class + 入盘 CSS；高亮用 <mark>。文件本有的颜色照常原生显示。' },
-  { n: 2, title: '样式 / 保真', body: '编辑器不主动套装饰；存盘 = 干净内容 + 让块渲染正确的最小语义 CSS（+ 用户选的 Template）。' },
-  { n: 3, title: 'Toggle 持久态', body: '<details open> 的展开 / 收起状态入盘、跨会话记住，零文档 JS。' },
-  { n: 4, title: '容器内部模型', body: 'callout / quote 内 = 多段文字（不嵌列表 / 别的块）；表格单元格 = 纯文字 + 行内标记。' },
-  { n: 5, title: 'Heading 封顶 h4', body: 'h5 / h6 = 不符合 Schema → 走基础编辑，不静默压成 h4。' },
-  { n: 6, title: 'Table 禁合并格', body: '不允许 colspan / rowspan，像 Notion 保持矩形表。' },
+
+const NOTES: Note[] = [
+  { n: 1, title: '标题：只有 H1–H4', body: '四级标题封顶 H4，H5 / H6 不符合 Schema。样式上逐级变小、加粗——层级靠标签本身表达，不靠字号手调。' },
+  { n: 2, title: '行内标记：固定一小套', body: '加粗 / 斜体 / 下划线 / 删除线 / 行内代码 / 链接 / 高亮，文字色走固定调色板。任意内联 style（随手改字体字号颜色）不允许。' },
+  { n: 3, title: '列表：无序 / 有序 / 待办', body: '三种列表，可缩进出子列表。结构是真的 <ul>/<ol><li>，不是排版凑出来的。' },
+  { n: 4, title: '待办勾选框 = 语义样式', body: '勾没勾是文件里的 data-checked 属性，配 Schema 自带的勾选框 CSS 一起存进文件、随文件走。零脚本，换任何浏览器双击打开都是这个样子。' },
+  { n: 5, title: '提示框 callout', body: '固定的提示框外观（浅底 + 圆角边框），里面只放文字，不嵌别的块。样式属于 Schema、不是用户随手画的。' },
+  { n: 6, title: '引用 quote', body: '左侧一条竖线的引用块，承载多段文字。' },
+  { n: 7, title: '表格：矩形、不能合并', body: '每行格子数一样、禁止合并单元格（no colspan / rowspan），单元格里只放文字。复杂的合并表 / 单元格塞图塞块 → 不符合。' },
+  { n: 8, title: '代码块', body: '等宽字体的 <pre><code>，原样保留缩进与符号。' },
 ]
 
 const FORBIDDEN = [
-  '不跑文档 JS：无 <script> / on* 事件 / iframe 等活嵌入',
-  '绝不绝对定位：所有块留在文档流、能 reflow、可发布',
-  '块上不写 style：颜色等走固定 class，不写内联样式',
-  '表格无合并格（colspan / rowspan）',
-  'Heading 封顶 h4（h5 / h6 不符合）',
-  'ul / ol 的直接子只能是 <li>',
-  'body 扁平挂块：无多层布局容器嵌套',
-  '干净存盘：不夹带编辑器交互标记',
+  '脚本 / on* 事件（不跑文档 JS）',
+  '绝对定位（一切留在文档流）',
+  '块上的内联 style',
+  '合并单元格',
+  'H5 / H6 标题',
+  'iframe / object 等活嵌入',
 ]
 
-const SAMPLE_CONFORM = `<h2>季度复盘</h2>
-<p>切到 <code>iframe</code> 直载，<a href="https://x.com">见调研</a>。</p>
-<ul class="ws-todo"><li data-checked="true">写草案</li><li data-checked="false">评审</li></ul>
-<blockquote>引用，可带<b>加粗</b>。</blockquote>`
-
-const SAMPLE_BAD = `<div style="position:absolute;top:0">
-  <h5>小标题</h5>
-  <table><tr><td colspan="2">合并格</td></tr></table>
-  <script>alert(1)</script>
-</div>`
+function Mark({ n }: { n: number }) {
+  return <span className="spx-mark">{n}</span>
+}
 
 export default function SchemaPage() {
-  const [src, setSrc] = useState(SAMPLE_CONFORM)
-  const result = useMemo(() => checkSchema(src), [src])
-
   return (
-    <div className="sp">
-      <div className="sp-inner">
-        <header className="sp-head">
-          <div className="sp-eyebrow">Wordspace Schema #1 · 草案 v0</div>
-          <h1 className="sp-title">受限 HTML，编辑器对它闭合</h1>
-          <p className="sp-lede">
-            Schema = 一套受限 HTML（reduced HTML）+ 编辑方式 + 结构规则。编辑器与它 co-design、对它「操作闭合」——
-            任何编辑动作把合法文档变成合法文档，从构造上消灭结构 bug。装饰好不好看归 Template，显示永远按 .html 原生。
-          </p>
-        </header>
+    <div className="spx">
+      <div className="spx-head">
+        <div className="spx-eyebrow">Wordspace Schema #1</div>
+        <h1 className="spx-title">我们的 .html 长这样</h1>
+        <p className="spx-lede">
+          Schema = 一套受限 HTML。编辑器只产出这套结构、对它闭合，所以不出结构 bug。下面是一份符合 Schema
+          的文档真实渲染的样子——标了号的地方，右边讲它做了哪些限制、样式体现在哪。
+        </p>
+      </div>
 
-        {/* 块表 */}
-        <section className="sp-sec">
-          <h2 className="sp-h2">块（Blocks）</h2>
-          <p className="sp-sub">每个块的 canonical reduced-HTML 表示与约束。状态：可用 / 完善中 / 规划中。</p>
-          <div className="sp-blocks">
-            {BLOCKS.map((b) => (
-              <div className="sp-bcard" key={b.name}>
-                <div className="sp-bcard-top">
-                  <span className="sp-bname">{b.name}</span>
-                  <span className={`sp-badge ${STATUS_META[b.status].cls}`}>{STATUS_META[b.status].label}</span>
-                </div>
-                <code className="sp-bhtml">{b.html}</code>
-                <dl className="sp-bmeta">
-                  <div><dt>子内容</dt><dd>{b.children}</dd></div>
-                  <div><dt>行内</dt><dd>{b.inline}</dd></div>
-                  <div><dt>嵌套</dt><dd>{b.nesting}</dd></div>
-                </dl>
-              </div>
-            ))}
+      <div className="spx-cols">
+        {/* 左：真实渲染的示例文档 */}
+        <div className="spx-paper">
+          <div className="ws-doc spx-doc">
+            <h1 className="ws-h ws-h1">
+              产品周报 · 第 24 周
+              <Mark n={1} />
+            </h1>
+            <p className="ws-p">
+              本周把<b>编辑器内核</b>切到了 <code>schema-first</code> 架构，<i>结构 bug 明显减少</i>。详情见{' '}
+              <a href="#">技术评审记录</a>，重点结论已<mark>高亮</mark>。
+              <Mark n={2} />
+            </p>
+
+            <h2 className="ws-h ws-h2">本周进展</h2>
+            <ul className="ws-ul">
+              <li>编辑器对 Schema #1 闭合：合法进 → 合法出</li>
+              <li>非合规文件降级为基础编辑</li>
+              <li>导出 PDF 版式对齐</li>
+            </ul>
+            <Mark n={3} />
+
+            <h3 className="ws-h ws-h3">下周待办</h3>
+            <ul className="ws-ul ws-todo">
+              <li data-checked="true">冻结 Schema #1 块集合</li>
+              <li data-checked="true">校验器接入打开流程</li>
+              <li data-checked="false">Toggle / 表格块落地</li>
+              <li data-checked="false">富粘贴净化</li>
+            </ul>
+            <Mark n={4} />
+
+            <div className="ws-callout">
+              提示：Schema 只管「能放什么结构、怎么编辑」，不管「好不好看」——好看是 Template 的事。
+              <Mark n={5} />
+            </div>
+
+            <blockquote className="ws-quote">
+              「受限不是少了自由，而是换来了永不崩坏的结构。」
+              <Mark n={6} />
+            </blockquote>
+
+            <h2 className="ws-h ws-h2">区域数据</h2>
+            <table className="spx-table">
+              <thead>
+                <tr>
+                  <th>区域</th>
+                  <th>本周营收</th>
+                  <th>环比</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>华东</td>
+                  <td>¥1.5M</td>
+                  <td>+25%</td>
+                </tr>
+                <tr>
+                  <td>华南</td>
+                  <td>¥1.1M</td>
+                  <td>+9%</td>
+                </tr>
+              </tbody>
+            </table>
+            <Mark n={7} />
+
+            <hr className="ws-hr" />
+
+            <pre className="spx-code">
+              <code>{`function isLeafTextBlock(el) {
+  return BLOCK_TAGS.every(t => !el.querySelector(t))
+}`}</code>
+            </pre>
+            <Mark n={8} />
           </div>
-        </section>
+        </div>
 
-        {/* 行内标记 */}
-        <section className="sp-sec">
-          <h2 className="sp-h2">行内标记（Inline）</h2>
-          <div className="sp-chips">
-            {INLINES.map((i) => (
-              <span className="sp-chip" key={i.name}>
-                {i.name}
-                <code>{i.tag}</code>
-              </span>
-            ))}
-          </div>
-          <p className="sp-note">硬约束：&lt;a&gt; 不嵌 &lt;a&gt;；行内里不放块级；&lt;code&gt; 内只放文本。链接经 safeHref 过滤（禁 javascript:/data:）。</p>
-        </section>
-
-        {/* 6 决策 */}
-        <section className="sp-sec">
-          <h2 className="sp-h2">六个冻结决策（§0 · Colin 拍板）</h2>
-          <div className="sp-dec">
-            {DECISIONS.map((d) => (
-              <div className="sp-deccard" key={d.n}>
-                <div className="sp-decn">{d.n}</div>
-                <div>
-                  <div className="sp-dectitle">{d.title}</div>
-                  <div className="sp-decbody">{d.body}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* 禁止项 */}
-        <section className="sp-sec">
-          <h2 className="sp-h2">物理约束 / 禁止项</h2>
-          <ul className="sp-forbid">
-            {FORBIDDEN.map((f) => (
-              <li key={f}>
-                <Ban size={14} />
-                {f}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        {/* 实时校验 widget */}
-        <section className="sp-sec">
-          <h2 className="sp-h2">
-            <Sparkles size={17} className="sp-h2-ico" />
-            实时校验
-          </h2>
-          <p className="sp-sub">
-            粘一段 HTML，确定性校验器即时判定是否符合 Schema #1——这正是「文件进来即校验、不合规走基础编辑」用的同一个校验器。
-          </p>
-          <div className="sp-try">
-            <div className="sp-try-left">
-              <textarea
-                className="sp-textarea"
-                value={src}
-                onChange={(e) => setSrc(e.target.value)}
-                spellCheck={false}
-                placeholder="<p>粘 HTML 试试…</p>"
-              />
-              <div className="sp-presets">
-                <button onClick={() => setSrc(SAMPLE_CONFORM)}>载入合规样例</button>
-                <button onClick={() => setSrc(SAMPLE_BAD)}>载入违规样例</button>
+        {/* 右：侧边讲解 */}
+        <aside className="spx-rail">
+          {NOTES.map((note) => (
+            <div className="spx-note" key={note.n}>
+              <span className="spx-note-n">{note.n}</span>
+              <div>
+                <div className="spx-note-title">{note.title}</div>
+                <div className="spx-note-body">{note.body}</div>
               </div>
             </div>
-            <div className="sp-try-right">
-              <div className={`sp-verdict ${result.conform ? 'is-ok' : 'is-bad'}`}>
-                {result.conform ? <ShieldCheck size={18} /> : <ShieldX size={18} />}
-                {result.conform ? '符合 Schema #1' : `不符合 · ${result.violations.filter((v) => v.severity === 'block').length} 处阻断`}
-              </div>
-              {result.violations.length === 0 ? (
-                <div className="sp-clean">没有发现违规。</div>
-              ) : (
-                <ul className="sp-vlist">
-                  {result.violations.map((v) => (
-                    <li key={v.rule} className={`sp-vrow sev-${v.severity}`}>
-                      <span className="sp-vdot" />
-                      <div>
-                        <div className="sp-vtitle">
-                          {v.title}
-                          {v.count > 1 && <span className="sp-vcount">×{v.count}</span>}
-                        </div>
-                        <div className="sp-vdetail">{v.detail}</div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+          ))}
+
+          <div className="spx-forbid">
+            <div className="spx-forbid-title">这些不允许（所以野 HTML 会被判不符合）</div>
+            <ul>
+              {FORBIDDEN.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
           </div>
-        </section>
+        </aside>
       </div>
     </div>
   )

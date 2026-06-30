@@ -1,153 +1,137 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  Bold,
-  Italic,
-  Underline,
-  Strikethrough,
-  AlertTriangle,
-  Lock,
-  ChevronDown,
-  ShieldAlert,
-} from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Bold, Italic, Underline, Strikethrough, Info } from 'lucide-react'
 import type { Doc } from '../types'
-import { checkSchema, type Violation } from '../lib/schemaCheck'
 import './BasicEditor.css'
 
-// 非合规文件的「降级基础编辑」视图。
-// 真 app 用沙箱 iframe 直载文件 → 这里照搬：raw HTML 进 <iframe srcdoc>，sandbox="allow-same-origin"
-// 无 allow-scripts —— 样例的花哨 <style> 被隔离（不污染 ui-demo）、<script>/onclick 不执行（对齐
-// 真 app「不跑文档 JS」），但父层仍可把 body 设 contentEditable + 对 iframe document 跑 execCommand
-// 做基础文字编辑（B/I/U/S）。Schema 的结构编辑（块/斜杠/块菜单/AI 重排）一律不提供，并显式标灰，
-// 让对比一眼可见。降级原因来自确定性校验器 checkSchema（同一个，可视化页的实时 widget 也用它）。
+// 打开「不符合 Schema」的野生 HTML 文件时的视图。
+// 立场（按 Colin 回炉要求）：文件照常全保真渲染——就像打开任何 .html 一样；只在顶部加一条轻提示
+// 说「不符合 Schema、仅基础编辑」，不展开「哪里不符合」的清单。编辑只给基础文字格式（加粗/斜体/
+// 下划线/删除线），通过跟完整编辑器同款的浮动格式气泡（复用 .ws-fmtbar 样式）呈现——选中文字才浮出，
+// UX 跟正常文档一致，只是没有「转换块 / 颜色 / AI / 斜杠菜单」这些结构化能力。
+//
+// 渲染走沙箱 iframe（srcDoc + sandbox="allow-same-origin" 无 allow-scripts）：野文件的 <style> 被
+// 隔离不污染 app、<script>/onclick 不执行（对齐真 app「不跑文档 JS」），body 设 contentEditable +
+// 对 iframe document 跑 execCommand 做基础编辑。
 
-// 标灰展示「被禁用的 Schema 工具」——不是真按钮，纯对照说明。
-const DISABLED_TOOLS = ['结构块', '斜杠菜单 /', '块菜单', '拖拽重排', 'AI 重排版', '插入块']
-
-function ViolationRow({ v }: { v: Violation }) {
-  return (
-    <li className={`be-vrow be-sev-${v.severity}`}>
-      <span className="be-vdot" />
-      <div className="be-vbody">
-        <div className="be-vtitle">
-          {v.title}
-          {v.count > 1 && <span className="be-vcount">×{v.count}</span>}
-          <span className="be-vrule">{v.rule}</span>
-        </div>
-        <div className="be-vdetail">{v.detail}</div>
-        {v.sample && <code className="be-vsample">{v.sample}</code>}
-      </div>
-    </li>
-  )
+interface Bubble {
+  top: number
+  left: number
 }
+
+const TOOLS: { cmd: string; icon: typeof Bold; label: string }[] = [
+  { cmd: 'bold', icon: Bold, label: '加粗' },
+  { cmd: 'italic', icon: Italic, label: '斜体' },
+  { cmd: 'underline', icon: Underline, label: '下划线' },
+  { cmd: 'strikeThrough', icon: Strikethrough, label: '删除线' },
+]
 
 export default function BasicEditor({ doc }: { doc: Doc }) {
   const html = doc.rawHtml ?? ''
-  const result = useMemo(() => checkSchema(html), [html])
-  const blocking = result.violations.filter((v) => v.severity === 'block')
+  const hostRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
-  const [open, setOpen] = useState(true)
+  const [bubble, setBubble] = useState<Bubble | null>(null)
 
-  // iframe 载入后把 body 设为可编辑（基础编辑的载体）。
   useEffect(() => {
     const f = frameRef.current
-    if (!f) return
+    const host = hostRef.current
+    if (!f || !host) return
+
+    const refresh = () => {
+      const d = f.contentDocument
+      const sel = d?.getSelection()
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        setBubble(null)
+        return
+      }
+      const r = sel.getRangeAt(0).getBoundingClientRect()
+      if (!r || (r.width === 0 && r.height === 0)) {
+        setBubble(null)
+        return
+      }
+      const fr = f.getBoundingClientRect()
+      const hr = host.getBoundingClientRect()
+      const top = fr.top - hr.top + r.top - 42 // 浮在选区上方
+      const left = fr.left - hr.left + r.left + r.width / 2
+      setBubble({ top: Math.max(6, top), left })
+    }
+
     const wire = () => {
       const d = f.contentDocument
       if (!d || !d.body) return
       d.body.contentEditable = 'true'
       d.body.style.outline = 'none'
       d.body.style.cursor = 'text'
-      d.body.style.minHeight = '100%'
+      d.addEventListener('selectionchange', refresh)
+      d.addEventListener('mouseup', refresh)
+      d.addEventListener('keyup', refresh)
+      d.addEventListener('scroll', refresh, true)
+      d.addEventListener('blur', () => setTimeout(() => setBubble(null), 120), true)
     }
+
     f.addEventListener('load', wire)
     if (f.contentDocument?.readyState === 'complete') wire()
-    return () => f.removeEventListener('load', wire)
+    return () => {
+      const d = f.contentDocument
+      d?.removeEventListener('selectionchange', refresh)
+      d?.removeEventListener('mouseup', refresh)
+      d?.removeEventListener('keyup', refresh)
+      d?.removeEventListener('scroll', refresh, true)
+      f.removeEventListener('load', wire)
+    }
   }, [html])
 
-  // 对 iframe 文档跑 execCommand（B/I/U/S）。onMouseDown preventDefault 防按钮抢走 iframe 选区。
   const exec = (cmd: string) => {
     const d = frameRef.current?.contentDocument
     if (!d) return
     try {
       d.execCommand(cmd, false)
     } catch {
-      /* execCommand 已废弃但浏览器仍支持；失败静默 */
+      /* execCommand 已废弃但浏览器仍支持 */
     }
   }
 
-  const TOOLS: { cmd: string; icon: typeof Bold; label: string }[] = [
-    { cmd: 'bold', icon: Bold, label: '加粗' },
-    { cmd: 'italic', icon: Italic, label: '斜体' },
-    { cmd: 'underline', icon: Underline, label: '下划线' },
-    { cmd: 'strikeThrough', icon: Strikethrough, label: '删除线' },
-  ]
-
   return (
-    <div className="be">
-      {/* 降级横幅 */}
-      <div className="be-banner">
-        <div className="be-banner-head" onClick={() => setOpen((o) => !o)}>
-          <AlertTriangle size={17} className="be-banner-ico" />
-          <div className="be-banner-text">
-            <strong>此文件不符合 Wordspace Schema，已降级为基础编辑。</strong>
-            <span className="be-banner-sub">{doc.title} · 确定性校验器判定 {blocking.length} 处不符合</span>
-          </div>
-          <ChevronDown size={16} className={`be-chev ${open ? 'is-open' : ''}`} />
-        </div>
-        {open && (
-          <ul className="be-vlist">
-            {result.violations.map((v) => (
-              <ViolationRow key={v.rule} v={v} />
-            ))}
-          </ul>
-        )}
+    <div className="nce" ref={hostRef}>
+      {/* 轻提示：不符合 Schema → 仅基础编辑（不展开违规细节） */}
+      <div className="nce-notice">
+        <Info size={15} />
+        <span>
+          这个文件不符合 Wordspace Schema，<strong>仅支持基础文字编辑</strong>（加粗 / 斜体 / 下划线 / 删除线）。结构化编辑（块、斜杠菜单、AI 排版）对它停用。
+        </span>
       </div>
 
-      {/* 工具区：基础工具条 + 标灰的 Schema 工具对照 */}
-      <div className="be-toolbar">
-        <div className="be-tools-basic">
+      {/* 全保真渲染（像打开任何 .html 一样） */}
+      <div className="nce-stage">
+        <iframe
+          ref={frameRef}
+          className="nce-frame"
+          title={doc.title}
+          sandbox="allow-same-origin"
+          srcDoc={html}
+        />
+      </div>
+
+      {/* 浮动格式气泡：复用完整编辑器同款 .ws-fmtbar 样式，只保留基础文字格式 */}
+      {bubble && (
+        <div
+          className="ws-fmtbar nce-bubble"
+          style={{ top: bubble.top, left: bubble.left }}
+          onMouseDown={(e) => e.preventDefault()}
+          role="toolbar"
+        >
           {TOOLS.map((t) => (
             <button
               key={t.cmd}
-              className="be-tbtn"
+              className="ws-fmtbar-btn"
               title={t.label}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                exec(t.cmd)
-              }}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => exec(t.cmd)}
             >
-              <t.icon size={16} />
+              <t.icon size={15} />
             </button>
           ))}
-          <span className="be-tools-tag">基础文字编辑</span>
         </div>
-        <div className="be-tools-locked" title="非合规文件不提供结构化编辑">
-          <Lock size={13} />
-          {DISABLED_TOOLS.map((d) => (
-            <span key={d} className="be-locked-chip">
-              {d}
-            </span>
-          ))}
-          <span className="be-locked-note">已禁用</span>
-        </div>
-      </div>
-
-      {/* 隔离渲染：raw HTML 进沙箱 iframe，body 可编辑 */}
-      <div className="be-stage">
-        <div className="be-paper">
-          <iframe
-            ref={frameRef}
-            className="be-frame"
-            title={doc.title}
-            sandbox="allow-same-origin"
-            srcDoc={html}
-          />
-        </div>
-        <div className="be-foot">
-          <ShieldAlert size={13} />
-          只保住文字增删改 + 基础样式；该文件的交互逻辑 / 复杂结构在 Schema 范式内无法保留。
-        </div>
-      </div>
+      )}
     </div>
   )
 }
