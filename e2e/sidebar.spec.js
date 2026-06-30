@@ -198,9 +198,11 @@ test('点图片（数据/c.png）→ 编辑区内置图片预览（真实 file:/
   await expect(page.locator('#doc-frame')).toBeHidden();
 });
 
-test('侧栏头「+新建文档」→ 模板台 → 在工作区根建文档并打开', async () => {
+test('B9: 侧栏头加号已删；新建文档走 Cmd+T → 模板台 → 建文档并打开', async () => {
   await openWorkspace();
-  await page.click('#sb-new-doc');
+  await expect(page.locator('#sb-new-doc')).toHaveCount(0); // B9：侧栏头「+新建文档」加号已删（跟标签页加号重复）
+  // 新建入口 = 标签页区加号 / Cmd+T（同 openCreateModal）。用 Cmd+T 触发模板台。
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
   await expect(page.locator('.sb-modal')).toBeVisible();
   await page.locator('.sb-card', { hasText: '空文档' }).click();
   await expect.poll(() => exists(path.join(wsDir, '无标题文档.html'))).toBe(true);
