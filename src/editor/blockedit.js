@@ -10,6 +10,9 @@
 
   const fmt = (typeof WS2Format !== 'undefined') ? WS2Format
     : (typeof require !== 'undefined' ? require('./format.js') : null);
+  // 内容模型适配纯函数（schema-model）：闭合的单一来源——叶子判定 / 可否合并 / 列表拍平。
+  const SM = (typeof WS2SchemaModel !== 'undefined') ? WS2SchemaModel
+    : (typeof require !== 'undefined' ? require('../lib/schema-model.js') : null);
 
   // 斜杠 / 块操作的类型表（对齐 ui-demo SLASH_ITEMS）
   const SLASH_ITEMS = [
@@ -53,18 +56,9 @@
     if (c === 'other' && fmt && fmt.isTextEditable(el)) return true;
     return false;
   }
-  // 叶子文字块 = 直接承载文字、可安全做「节点级拼接」（合并）的块：它的元素子节点全是行内标签。
-  // 「透明包裹块」（div.lead>p、section>… 这种内部裹块级元素的）不是叶子——对它做 appendChild 平搬子节点
-  // 会把块级 <p> 塞进 <p>（非法嵌套）或把裸文本灌进容器，存盘即坏（对抗验证 A 组）。合并前必须用它把关。
-  const INLINE_TAGS = new Set(['B', 'I', 'EM', 'STRONG', 'U', 'S', 'A', 'CODE', 'SPAN', 'BR', 'IMG', 'SUB', 'SUP', 'MARK', 'SMALL', 'BIG', 'FONT', 'LABEL', 'ABBR', 'TIME', 'CITE', 'Q', 'KBD', 'SAMP', 'VAR', 'WBR', 'DEL', 'INS']);
-  function isLeafTextBlock(el) {
-    if (!el || el.nodeType !== 1) return false;
-    for (const n of el.children) {
-      if (n.hasAttribute && n.hasAttribute('data-ws2-ui')) continue;
-      if (!INLINE_TAGS.has(n.tagName)) return false; // 含块级/列表/表格/未知元素子节点 → 非叶子
-    }
-    return true;
-  }
+  // 叶子文字块 = 可安全做「节点级拼接」（合并）的块。单一来源 = schema-model（已对抗加固：正向白名单，
+  // 空 <ul>/void 块/透明包裹块都判非叶子——对它做 appendChild 平搬会产非法嵌套 / 吞文字）。合并前必须把关。
+  function isLeafTextBlock(el) { return SM.isLeafTextBlock(el); }
 
   // 真正承载「块」的容器。多数「像样」的文档把正文包在一个居中/限宽的容器里
   // （<body> 底下只有这一个 <div class="wrap"> / <main> 之类）。若死认 <body> 为块容器，
@@ -373,6 +367,17 @@
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return next;
       }
+      // 修 A1：源是列表、目标非列表（正文/标题/引用/callout）→ 先把 li 拍平成 phrasing，
+      // 否则 retag 后 <li> 孤儿挂在 <blockquote>/<p> 下（非法 HTML）。
+      if (el.tagName === 'UL' || el.tagName === 'OL') {
+        const frag = SM.flattenListToPhrasing(el);
+        const nx = fmt.retagElement(el, item.tag);
+        while (nx.firstChild) nx.removeChild(nx.firstChild);
+        nx.appendChild(frag);
+        if (item.cls) nx.className = item.cls; else if (nx.classList && nx.classList.contains('ws-callout')) nx.classList.remove('ws-callout');
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return nx;
+      }
       const next = fmt.retagElement(el, item.tag); // p / h1 / h2 / h3 / blockquote / div(callout)
       if (item.cls) next.className = item.cls; else if (next.classList && next.classList.contains('ws-callout')) next.classList.remove('ws-callout');
       if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -461,7 +466,7 @@
       const r2 = doc.createRange(); r2.setStart(eBlk, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents();                       // 裁末块：块首→选区终点
       for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === blockRoot) m.remove(); }                            // 删中间整块
       const prefixEnd = sBlk.lastChild; // 接合点（合并前 prefix 末尾）
-      if (isEditableEl(sBlk) && isEditableEl(eBlk) && classify(sBlk) !== 'list' && classify(eBlk) !== 'list') {
+      if (SM.canMerge(sBlk, eBlk)) { // 修 B1/B2：两端都是叶子文字块才节点级拼接（替代弱的 classify!=='list'，挡透明包裹块/空容器/void）
         while (eBlk.firstChild) sBlk.appendChild(eBlk.firstChild); // 起末都是文字块 → 末块剩余并入起块
         eBlk.remove();
       }

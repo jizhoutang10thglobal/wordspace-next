@@ -109,6 +109,24 @@ test('转为列表产生合法 <ul><li>（非裸 ul，不写坏文件）', async
   expect(html).not.toMatch(/<ul[^>]*>\s*[^<\s]/); // <ul> 后紧跟非标签文本 = 裸文本，禁止
 });
 
+// A1（对抗发现，U3 修）：列表转引用/正文/标题前必须把 li 拍平成 phrasing，不能留孤儿 <li> 挂 blockquote 下。
+test('A1: 列表转为引用 → 合法 <blockquote>、无孤儿 <li>、内容保留', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"></head>'
+    + '<body><h1 id="h">标题</h1><ul id="mylist"><li>甲 <b>粗</b></li><li>乙</li></ul></body></html>');
+  await frame.locator('#mylist').click();
+  await frame.locator('#mylist').selectText();
+  await frame.locator('.ws-fmtbar [title="转为"]').click();
+  await frame.locator('.ws-fmtbar-menu-item', { hasText: '引用' }).click();
+  await page.waitForTimeout(200);
+  expect(await tagOf('mylist')).toBe('BLOCKQUOTE');         // 变成引用块
+  expect(await htmlOf('mylist')).not.toMatch(/<li/i);        // 无孤儿 <li>（A1 的 bug）
+  expect(await htmlOf('mylist')).toMatch(/甲[\s\S]*乙/);     // 两项内容保留
+  expect(await htmlOf('mylist')).toMatch(/<b>/i);            // 行内格式保留
+  const html = await serialize();
+  expect(html).not.toMatch(/<blockquote[^>]*>[\s\S]*?<li/i); // 存盘：blockquote 里没有 li
+});
+
 // 行首 markdown 触发：在一个空正文块里打 marker+空格 → 转成对应块。
 test('markdown 行首触发：1. / - / [] / > / # 转对应块', async () => {
   await launch();
