@@ -291,7 +291,9 @@ function loadFromHtml(html, opts) {
 }
 
 async function openDoc(p) {
-  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) return;
+  // 没真打开成 → 撤销 onOpenFile 设的 __pendingColdOpen，否则它会一直抑制后续 loadTabs 的「恢复激活标签」
+  // （如 app 已开 + 当前文档脏，第二实例双击别的文件、用户点「取消」时会走到这）。
+  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
   let info;
   try {
     // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；再取跨平台 file:// URL / 文件名 / 目录URL
@@ -299,6 +301,7 @@ async function openDoc(p) {
     info = await window.ws2.pathInfo(p);
   } catch (e) {
     alert('无法打开文件：' + p + '\n' + (e.message || e));
+    window.__pendingColdOpen = null;
     return;
   }
   docPath = p;
@@ -306,9 +309,12 @@ async function openDoc(p) {
   zoomFactor = 1; // 新文档从 100% 开始（wireEditor 会按这个重挂缩放）
   loadFromFile();
   window.ws2.watchDoc(p); // 盯外部磁盘改动（Bug2）；换文档时主进程会重指向到新路径
-  await window.ws2.recentsAdd(p);
+  // 先建标签/高亮（onOpen 内会清 __pendingColdOpen）。放在 recents 之前，且 recents 设成尽力而为：
+  // recents 写盘失败（userData 只读/满）不该把建标签和清标记一起拖死——否则冷启动标签丢 + 标记泄漏。
+  if (window.__sbHooks) window.__sbHooks.onOpen(docPath);
+  else window.__pendingColdOpen = null; // 无侧栏（单文件态）：没有 onOpen 来清，自己清，免得泄漏到将来开工作区
+  try { await window.ws2.recentsAdd(p); } catch (e) { /* recents 是尽力而为，失败不影响打开 */ }
   renderRecents();
-  if (window.__sbHooks) window.__sbHooks.onOpen(docPath); // 文件树高亮当前打开文件（侧栏存在才调）
 }
 
 // 给侧栏（sidebar.js）用：当前打开文件被改名/移动后，把 app 内部状态指向新路径（不重载内容，
@@ -400,7 +406,10 @@ window.ws2.onDocChanged((p) => {
   reloadDoc();
 });
 
-window.ws2.onOpenFile((p) => openDoc(p));
+// 主进程发来「打开这个文件」（Finder 双击 / 文件关联 / 第二实例）。冷启动时这跟侧栏「恢复上次工作区」
+// 并发：同步先标记 __pendingColdOpen，让 loadTabs 知道「这个文件该占 viewer，别拿上次激活标签抢」；
+// 标签实际创建在 sidebar onOpen 里等恢复跑完才做（见 sidebar.js restoreReady）。
+window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
 window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();

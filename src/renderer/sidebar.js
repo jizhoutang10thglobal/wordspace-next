@@ -16,6 +16,11 @@
   let current = null; // { root, name, tree }
   let query = '';
   let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，按根持久化）
+  // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复上次工作区 + 标签」
+  // 整条跑完才做，否则会被 loadTabs 整体覆盖 / 被 openTabFromAbs 的过期根守卫中止（Colin 报的「文档开了没标签」）。
+  // 一旦 resolve 永久 resolved：app 已开着时再 open（热路径）不阻塞，立即建标签。
+  let resolveRestore;
+  const restoreReady = new Promise((r) => { resolveRestore = r; });
   const collapsed = new Set(); // 收起的文件夹 rel（打开工作区时全部收起，只显示顶层）
 
   // 收集树里所有文件夹的 rel（打开工作区时一次性塞进 collapsed → 默认全收起）。
@@ -59,7 +64,7 @@
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.add('sb-on'); // 打开工作区才显示侧栏（单文件编辑保持全宽）
     render();
-    loadTabs(); // 异步按新根拉标签/置顶，到了再 render + 恢复上次激活
+    return loadTabs(); // 异步按新根拉标签/置顶，到了再 render + 恢复上次激活（返回 promise 给启动恢复 await）
   }
   async function refresh() {
     if (!current) return;
@@ -572,7 +577,9 @@
     if (changed) persistTabs();
     renderZones();
     renderRail();
-    if (activeRel) {
+    // 有冷启动 open-file 在路上（用户刚双击的文件该占 viewer）→ 别把上次激活的标签开进 viewer 抢走它；
+    // 标签状态仍恢复，只是不自动载入。onOpen 随后会把冷启动文件设为激活。
+    if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
       if (e) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发
     }
@@ -932,14 +939,19 @@
   }
 
   window.__sbHooks = {
-    onOpen: (abs) => {
+    onOpen: async (abs) => {
+      // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
+      // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc
+      // 已经先载入了，这里只补标签，不影响打开速度。
+      await restoreReady;
       highlightActive(abs);
       const node = abs ? findNodeByAbs(abs) : null;
       if (node) {
         openTabEntry({ rel: node.rel, kind: node.kind || 'other', title: node.name });
       } else if (abs) {
-        openTabFromAbs(abs);
+        await openTabFromAbs(abs);
       }
+      window.__pendingColdOpen = null; // 标签已建，撤销 loadTabs 的「别抢 viewer」抑制
     },
     refresh,
   };
@@ -948,16 +960,19 @@
   if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
   window.addEventListener('focus', () => { if (current) onTreeChanged(); });
 
-  // 启动恢复上次工作区。
+  // 启动恢复上次工作区。await setWorkspace（含 loadTabs）整条跑完才 resolveRestore，
+  // 让冷启动的 open-file 建标签等在这后面（无工作区 / 出错也要 resolve，否则 onOpen 永久挂起）。
   (async () => {
     try {
       const root = await window.ws2.wsGetRoot();
       if (root) {
         const data = await window.ws2.wsReadTree();
-        if (data) setWorkspace(data);
+        if (data) await setWorkspace(data);
       }
     } catch (e) {
       /* 无工作区 / 已不存在：保持空态 */
+    } finally {
+      resolveRestore();
     }
   })();
 })();
