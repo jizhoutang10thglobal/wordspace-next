@@ -16,6 +16,7 @@ import {
   LayoutTemplate,
   Bot,
   Settings2,
+  Shapes,
   Globe2,
   Cloud,
   HardDrive,
@@ -942,6 +943,7 @@ export default function ArcSidebar() {
 
   const util = [
     { to: '/templates', icon: LayoutTemplate, label: '模板' },
+    { to: '/schema', icon: Shapes, label: 'Schema' },
     { to: '/agents', icon: Bot, label: 'Agent' },
     { to: '/settings', icon: Settings2, label: '设置' },
   ]

@@ -133,7 +133,7 @@
 /* ------------------------------------------------------------------ */
 /* Create modal — template picker                                     */
 /* ------------------------------------------------------------------ */
-.ws-modal.cm-new { width: 540px; max-width: calc(100vw - 32px); }
+.ws-modal.cm-new { width: 720px; max-width: calc(100vw - 32px); }
 
 .cm-where {
   margin-top: 2px;
@@ -141,11 +141,130 @@
   color: var(--c-text-3);
 }
 
+/* two-column: 左「范式」轨 + 右「该范式的模板」 */
+.cm-split {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  min-height: 348px;
+  max-height: calc(100vh - 150px);
+}
+
+/* 左：范式轨 */
+.cm-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 12px;
+  border-right: 1px solid var(--c-divider);
+  background: var(--c-bg-sunken);
+}
+.cm-rail-label {
+  padding: 2px 8px 6px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+}
+.cm-para {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+.cm-para:hover { background: var(--c-hover); }
+.cm-para.is-active {
+  background: var(--c-surface);
+  border-color: var(--c-border);
+  box-shadow: var(--shadow-sm);
+}
+.cm-para.is-soon { opacity: 0.6; }
+.cm-para.is-soon:hover { opacity: 0.82; }
+.cm-para-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  color: var(--c-text-2);
+}
+.cm-para.is-active .cm-para-ico { background: var(--c-accent-tint); color: var(--c-accent); }
+.cm-para-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cm-para-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+.cm-para-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  background: var(--c-accent-tint);
+  color: var(--c-accent);
+}
+.cm-para-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.4; }
+.cm-rail-foot {
+  margin-top: auto;
+  padding: 12px 8px 2px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
+
+/* 右：该范式的模板 / AI / placeholder */
+.cm-pane {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.cm-pane-label {
+  margin-bottom: 10px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text-2);
+}
+
 .cm-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+
+/* 还没上线的范式：占位 */
+.cm-soon {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px 24px;
+  text-align: center;
+}
+.cm-soon-ico {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--c-bg-sunken);
+  color: var(--c-text-3);
+}
+.cm-soon-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+.cm-soon-desc { max-width: 290px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.55; }
 
 .cm-card {
   display: flex;
@@ -221,3 +340,132 @@
   box-shadow: 0 0 0 2px var(--c-accent-tint);
 }
 .cm-ai-foot { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* AI pane: intro + 两个选项（复制 Prompt / 安装 Skill） */
+.cm-ai-intro {
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--c-text-2);
+}
+.cm-ai-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--c-bg-sunken);
+}
+.cm-ai-tab {
+  padding: 5px 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--c-text-2);
+}
+.cm-ai-tab:hover { color: var(--c-text); }
+.cm-ai-tab.is-active {
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: var(--shadow-sm);
+}
+
+.cm-ai-sec { display: flex; flex-direction: column; gap: 8px; }
+.cm-ai-flabel {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text-3);
+}
+.cm-ai-flabel-row { display: flex; align-items: center; justify-content: space-between; }
+
+.cm-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--c-accent);
+}
+.cm-copy:hover { color: var(--c-accent-hover); }
+.cm-copy.is-done { color: var(--c-success); }
+
+.cm-prompt {
+  max-height: 176px;
+  overflow: auto;
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  color: var(--c-text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.cm-ai-hint { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.5; }
+
+/* skill steps */
+.cm-skill {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cm-skill-step { display: flex; gap: 11px; }
+.cm-step-n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--c-accent);
+  color: var(--c-text-invert);
+  font-size: 12px;
+  font-weight: var(--fw-semibold);
+}
+.cm-step-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cm-step-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
+.cm-step-desc { font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.5; }
+.cm-step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+
+.cm-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--c-text);
+  background: var(--c-surface);
+}
+.cm-link-btn:hover { background: var(--c-hover); }
+.cm-link-plain {
+  height: auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--c-accent);
+}
+.cm-link-plain:hover { background: none; color: var(--c-accent-hover); text-decoration: underline; }
+
+.cm-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  color: var(--c-text-2);
+}
+.cm-cmd:hover { background: var(--c-hover); }
+.cm-cmd code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text); }
+.cm-cmd.is-done { color: var(--c-success); }

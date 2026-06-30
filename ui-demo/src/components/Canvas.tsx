@@ -416,7 +416,9 @@ function DocHeader({ doc }: { doc: Doc }) {
 // ---------------------------------------------------------------------------
 // Canvas
 // ---------------------------------------------------------------------------
-export default function Canvas() {
+// docId：编辑指定文档而非当前激活 tab（给 Schema 演示页内嵌真编辑器用）。
+// embedded：内嵌模式——去掉文档头（面包屑/标题/发布）和页脚，只留可编辑的块 + 全套编辑 UX。
+export default function Canvas({ docId, embedded }: { docId?: string; embedded?: boolean } = {}) {
   const tabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const getDoc = useStore((s) => s.getDoc)
@@ -431,7 +433,7 @@ export default function Canvas() {
   const redo = useStore((s) => s.redo)
 
   const tab = tabs.find((x) => x.id === activeTabId)
-  const doc = tab?.docId ? getDoc(tab.docId) : undefined
+  const doc = docId ? getDoc(docId) : tab?.docId ? getDoc(tab.docId) : undefined
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
@@ -1121,7 +1123,7 @@ export default function Canvas() {
   }
 
   return (
-    <main className="ws-canvas">
+    <main className={'ws-canvas' + (embedded ? ' ws-canvas-embed' : '')}>
       {/* 点空白处（非任何块）取消选中——块的 onClick 会 stopPropagation，故此处只接到空白点击 */}
       <div
         className="ws-canvas-scroll"
@@ -1134,7 +1136,7 @@ export default function Canvas() {
             (doc.pageFormat ? ` ws-fmt ws-fmt-${doc.pageFormat}` : '')
           }
         >
-          <DocHeader doc={doc} />
+          {!embedded && <DocHeader doc={doc} />}
           <div className="ws-blocks">
             {doc.blocks.map((b, i) => {
               let edge: 'top' | 'bottom' | null = null
@@ -1184,9 +1186,11 @@ export default function Canvas() {
               }
             }}
           />
-          <div className="ws-doc-end ws-muted">
-            这是一个本地 HTML 文件 · {doc.localPath}
-          </div>
+          {!embedded && (
+            <div className="ws-doc-end ws-muted">
+              这是一个本地 HTML 文件 · {doc.localPath}
+            </div>
+          )}
         </article>
 
         {fmtRect && (
