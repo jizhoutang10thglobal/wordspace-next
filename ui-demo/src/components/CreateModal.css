@@ -376,7 +376,6 @@
   color: var(--c-text-3);
 }
 .cm-ai-flabel-row { display: flex; align-items: center; justify-content: space-between; }
-.cm-ai-input-sm { min-height: 54px; }
 
 .cm-copy {
   display: inline-flex;
