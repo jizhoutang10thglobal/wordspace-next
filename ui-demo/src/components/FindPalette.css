@@ -1,0 +1,102 @@
+/* 查找文件面板（Cmd+P）。复用 .ws-modal-overlay，但靠上摆，像 Arc / VS Code 的 Go-to-file。 */
+.fp-overlay {
+  align-items: flex-start;
+  padding-top: 12vh;
+}
+
+.fp {
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  background: var(--c-surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: ws-modal-pop var(--dur) var(--ease);
+}
+
+.fp-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--c-divider);
+}
+.fp-bar-ico {
+  flex: none;
+  color: var(--c-text-3);
+}
+.fp-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: none;
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg);
+  color: var(--c-text);
+}
+.fp-input:focus {
+  outline: none;
+}
+.fp-input::placeholder {
+  color: var(--c-text-3);
+}
+.fp-hint {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  color: var(--c-text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.fp-list {
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 6px;
+}
+.fp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  text-align: left;
+}
+.fp-row.is-sel {
+  background: var(--c-accent-tint);
+}
+.fp-row-ico {
+  flex: none;
+  color: var(--c-text-3);
+}
+.fp-row.is-sel .fp-row-ico {
+  color: var(--c-accent);
+}
+.fp-name {
+  flex: none;
+  max-width: 55%;
+  font-size: var(--fs-md);
+  color: var(--c-text);
+}
+.fp-sub {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+
+.fp-empty {
+  padding: 22px 12px;
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
