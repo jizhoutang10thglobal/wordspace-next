@@ -8,6 +8,7 @@ import type {
   Template,
   Workspace,
 } from '../types'
+import { NON_CONFORM_SAMPLES } from '../lib/nonConformSamples'
 
 const now = Date.now()
 const MIN = 60_000
@@ -211,6 +212,22 @@ export const seedDocs: Doc[] = [
       { id: 'tw2', type: 'list', html: '<li>定稿招聘页</li><li>过一遍 Q2 汇报</li><li>约客户周会</li>' },
     ],
   },
+  // 非合规样例（野生 HTML）：blocks 留空、带 rawHtml；打开后由校验器判定不符合 → BasicEditor 基础编辑。
+  ...NON_CONFORM_SAMPLES.map(
+    (s): Doc => ({
+      id: s.id,
+      title: s.fileName.replace(/\.html$/, ''),
+      kind: 'doc',
+      folderId: 'sp-local', // 本地空间文件以 spaceId 作 folderId（见 store loadSpaceData）
+      blocks: [],
+      rawHtml: s.html,
+      visibility: 'private',
+      localPath: '~/Projects/品牌升级/' + s.fileName,
+      updatedAt: now - 3 * HR,
+      updatedBy: ME_ID,
+      collaborators: [ME_ID],
+    }),
+  ),
 ]
 
 // ---------------------------------------------------------------------------
@@ -335,4 +352,8 @@ export const seedFiles: FileEntry[] = [
   { spaceId: 'sp-local', path: '素材/封面.png', kind: 'image' },
   { spaceId: 'sp-local', path: '数据/转化分析.xlsx', kind: 'sheet' },
   { spaceId: 'sp-local', path: '说明.html', kind: 'html', docId: 'd-handbook' },
+  // 非合规样例（野生 HTML）：HTML 文件 + docId 指向带 rawHtml 的样例文档 → 打开走 BasicEditor 降级编辑
+  { spaceId: 'sp-local', path: '外部导入/新品落地页.html', kind: 'html', docId: 'd-nc-landing' },
+  { spaceId: 'sp-local', path: '外部导入/季度数据表.html', kind: 'html', docId: 'd-nc-table' },
+  { spaceId: 'sp-local', path: '外部导入/活动报名页.html', kind: 'html', docId: 'd-nc-signup' },
 ]
