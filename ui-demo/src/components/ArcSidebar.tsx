@@ -729,137 +729,6 @@ function SpaceSwitcher() {
 // The collapsed (48px) sidebar: a condensed icon rail of the active space —
 // its badge, open tabs, and top-level folders — each with a hover bubble that
 // previews its name + contents. Click a folder/badge to expand; a tab to switch.
-function CollapsedRail() {
-  const navigate = useNavigate()
-  const tabs = useStore((s) => s.tabs)
-  const activeTabId = useStore((s) => s.activeTabId)
-  const activeSpaceId = useStore((s) => s.activeSpaceId)
-  const spaces = useStore((s) => s.spaces)
-  const setActiveTab = useStore((s) => s.setActiveTab)
-  const folders = useStore((s) => s.folders)
-  const docs = useStore((s) => s.docs)
-  const files = useStore((s) => s.files)
-  const dirs = useStore((s) => s.dirs)
-  const expand = useUI((s) => s.toggleSidebar)
-  const [pop, setPop] = useState<{ top: number; title: string; sub?: string; items: string[] } | null>(null)
-
-  const space = spaces.find((s) => s.id === activeSpaceId)
-  const spaceTabs = tabs.filter((t) => t.spaceId === activeSpaceId)
-  const tabItems = [...spaceTabs.filter((t) => t.pinned), ...spaceTabs.filter((t) => !t.pinned)]
-
-  // Top-level folder groups for the active space (cloud folders or tree dirs).
-  let groups: { id: string; name: string; items: string[] }[] = []
-  if (space && isCloudStorage(space.storage)) {
-    groups = folders
-      .filter((f) => f.spaceId === space.id)
-      .sort((a, b) => a.order - b.order)
-      .map((f) => ({
-        id: f.id,
-        name: f.name,
-        items: docs
-          .filter((d) => d.folderId === f.id)
-          .sort((a, b) => b.updatedAt - a.updatedAt)
-          .map((d) => d.title),
-      }))
-  } else if (space) {
-    const tree = buildFileTree(
-      files.filter((f) => f.spaceId === space.id),
-      dirs.filter((d) => d.spaceId === space.id).map((d) => d.path),
-    )
-    groups = tree
-      .filter((n) => !n.file)
-      .map((n) => ({ id: n.name, name: n.name, items: n.children.map((c) => c.name) }))
-  }
-
-  const showPop = (e: React.MouseEvent, title: string, items: string[], sub?: string) => {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    setPop({ top: r.top, title, items, sub })
-  }
-  const hide = () => setPop(null)
-
-  return (
-    <>
-      <div className="arc-rail">
-        {space && (
-          <button
-            className="arc-rail-badge-btn"
-            onMouseEnter={(e) =>
-              showPop(
-                e,
-                space.name,
-                [],
-                space.storage === 'local'
-                  ? '本地文件夹'
-                  : space.storage === 'gdrive'
-                    ? 'Google Drive'
-                    : 'Wordspace 云盘',
-              )
-            }
-            onMouseLeave={hide}
-            onClick={expand}
-            title=""
-          >
-            <span className="arc-rail-badge" style={{ background: space.color }}>
-              {space.badge}
-            </span>
-          </button>
-        )}
-        {(tabItems.length > 0 || groups.length > 0) && <div className="arc-rail-div" />}
-        {tabItems.map((t) => (
-          <button
-            key={t.id}
-            className={`arc-rail-ico ${t.id === activeTabId ? 'is-active' : ''}`}
-            onMouseEnter={(e) => showPop(e, t.title, [])}
-            onMouseLeave={hide}
-            onClick={() => {
-              setActiveTab(t.id)
-              navigate('/docs')
-            }}
-          >
-            {t.kind === 'web' ? (
-              <Globe2 size={15} />
-            ) : t.fileKind ? (
-              <FileIcon kind={t.fileKind} />
-            ) : (
-              <FileText size={15} />
-            )}
-          </button>
-        ))}
-        {tabItems.length > 0 && groups.length > 0 && <div className="arc-rail-div" />}
-        {groups.map((g) => (
-          <button
-            key={g.id}
-            className="arc-rail-ico arc-rail-folder"
-            onMouseEnter={(e) => showPop(e, g.name, g.items, g.items.length ? undefined : '空文件夹')}
-            onMouseLeave={hide}
-            onClick={expand}
-          >
-            <FolderClosed size={15} />
-          </button>
-        ))}
-      </div>
-      {pop && (
-        <div className="arc-rail-pop" style={{ top: pop.top }}>
-          <div className="arc-rail-pop-title ws-truncate">{pop.title}</div>
-          {pop.sub && <div className="arc-rail-pop-sub">{pop.sub}</div>}
-          {pop.items.length > 0 && (
-            <div className="arc-rail-pop-list">
-              {pop.items.slice(0, 8).map((n, i) => (
-                <div key={i} className="arc-rail-pop-item ws-truncate">
-                  {n}
-                </div>
-              ))}
-              {pop.items.length > 8 && (
-                <div className="arc-rail-pop-more">+{pop.items.length - 8} 项</div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </>
-  )
-}
-
 export default function ArcSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -872,10 +741,14 @@ export default function ArcSidebar() {
     setActiveSpace,
     newBrowserTab,
     openNewTab,
+    toast,
   } = { ...useStore(), openNewTab: useUI((s) => s.openNewTab) }
   const me = useStore((s) => s.getMember(s.meId))
   const collapsed = useUI((s) => s.sidebarCollapsed)
   const toggleSidebar = useUI((s) => s.toggleSidebar)
+  const openFind = useUI((s) => s.openFind)
+  const revealFolders = useUI((s) => s.revealFolders)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const doc = activeTab?.docId ? getDoc(activeTab.docId) : undefined
@@ -893,17 +766,42 @@ export default function ArcSidebar() {
     setQuery('')
   }, [activeSpaceId])
 
-  // Cmd/Ctrl+\ toggles the sidebar (maps to the existing 收起/展开侧栏 action).
+  // 全局快捷键：Cmd/Ctrl+\ 收起/展开侧栏；Cmd+T 新建（开 Arc modal）；Cmd+S 假装保存；Cmd+P 查找文件。
+  // 注意：浏览器会抢 Cmd+T/Cmd+W，所以 Cmd+T 这条主要在真 Electron app 里生效，网页 demo 里多半被浏览器吞掉。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod) return
+      if (e.key === '\\') {
         e.preventDefault()
         toggleSidebar()
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault()
+        openNewTab()
+      } else if ((e.key === 's' || e.key === 'S') && !e.shiftKey) {
+        e.preventDefault()
+        toast('已保存', 'success')
+      } else if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault()
+        openFind()
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [toggleSidebar])
+  }, [toggleSidebar, openNewTab, toast, openFind])
+
+  // F6：切到某个文件标签页时，在左侧树展开它的祖先文件夹并滚动定位（高亮由 is-active 负责）。
+  useEffect(() => {
+    const path = activeTab?.fileName ? activeTab.url : ''
+    if (!path) return
+    const parts = path.split('/').filter(Boolean)
+    const dirs = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'))
+    if (dirs.length) revealFolders(dirs)
+    const id = window.setTimeout(() => {
+      scrollRef.current?.querySelector('.arc-file.is-active')?.scrollIntoView({ block: 'nearest' })
+    }, 40)
+    return () => window.clearTimeout(id)
+  }, [activeTabId, activeTab?.url, activeTab?.fileName, revealFolders])
 
   const submitOmni = () => {
     const v = omni.trim()
@@ -956,7 +854,6 @@ export default function ArcSidebar() {
             <PanelLeft size={15} />
           </button>
         </div>
-        <CollapsedRail />
       </aside>
     )
   }
@@ -974,6 +871,7 @@ export default function ArcSidebar() {
           <button className="arc-ico" title="后退" onClick={goBack}><ChevronLeft size={16} /></button>
           <button className="arc-ico" title="前进" onClick={goForward}><ChevronRight size={16} /></button>
           <button className="arc-ico" title="刷新" onClick={reload}><RotateCw size={13} /></button>
+          <button className="arc-ico" title="查找文件 ⌘P" onClick={openFind}><Search size={14} /></button>
         </div>
       </div>
 
@@ -1005,7 +903,7 @@ export default function ArcSidebar() {
         <SpaceSwitcher />
       </div>
 
-      <div className="arc-scroll" onWheel={onWheel}>
+      <div className="arc-scroll" onWheel={onWheel} ref={scrollRef}>
         <div className="arc-section-label">置顶</div>
         <TabStrip spaceId={activeSpaceId} pinned emptyHint="把标签页拖到这里置顶" />
 

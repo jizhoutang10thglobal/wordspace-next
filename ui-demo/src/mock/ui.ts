@@ -21,12 +21,19 @@ interface UI {
   openSpaceModal: () => void
   closeSpaceModal: () => void
 
+  // 查找文件面板（Cmd+P）
+  findOpen: boolean
+  openFind: () => void
+  closeFind: () => void
+
   sidebarCollapsed: boolean
   toggleSidebar: () => void
 
   // collapsed sidebar folders, keyed by 'folder:<id>' or 'tree:<path>'.
   collapsedKeys: Record<string, boolean>
   toggleCollapsed: (key: string) => void
+  // 展开（取消折叠）一批文件夹路径，让某个文件在树里可见（F6：点标签页定位到文件）
+  revealFolders: (paths: string[]) => void
 
   aiPrompt: string
   setAiPrompt: (v: string) => void
@@ -48,12 +55,22 @@ export const useUI = create<UI>((set) => ({
   openSpaceModal: () => set({ spaceModalOpen: true }),
   closeSpaceModal: () => set({ spaceModalOpen: false }),
 
+  findOpen: false,
+  openFind: () => set({ findOpen: true }),
+  closeFind: () => set({ findOpen: false }),
+
   sidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
   collapsedKeys: {},
   toggleCollapsed: (key) =>
     set((s) => ({ collapsedKeys: { ...s.collapsedKeys, [key]: !s.collapsedKeys[key] } })),
+  revealFolders: (paths) =>
+    set((s) => {
+      const m = { ...s.collapsedKeys }
+      for (const p of paths) m['file:' + p] = false
+      return { collapsedKeys: m }
+    }),
 
   aiPrompt: '',
   setAiPrompt: (v) => set({ aiPrompt: v }),

@@ -15,6 +15,7 @@ import SchemaPage from './components/SchemaPage'
 import PublishDialog from './components/PublishDialog'
 import CreateModal from './components/CreateModal'
 import CreateSpaceModal from './components/CreateSpaceModal'
+import FindPalette from './components/FindPalette'
 import { useStore } from './mock/store'
 import { checkSchema } from './lib/schemaCheck'
 import './App.css'
@@ -61,6 +62,7 @@ export default function App() {
       <PublishDialog />
       <CreateModal />
       <CreateSpaceModal />
+      <FindPalette />
     </div>
   )
 }
