@@ -33,7 +33,7 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 14
+const SEED_VERSION = 15
 
 const uid = (p = 'id') =>
   `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`

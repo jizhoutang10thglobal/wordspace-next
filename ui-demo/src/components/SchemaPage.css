@@ -6,9 +6,9 @@
 
 /* ---- header ---- */
 .spx-head {
-  max-width: 1120px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 40px 32px 8px;
+  padding: 36px 32px 8px;
 }
 .spx-eyebrow {
   font-size: var(--fs-xs);
@@ -28,110 +28,50 @@
   font-size: var(--fs-lg);
   line-height: 1.7;
   color: var(--c-text-2);
-  max-width: 720px;
+  max-width: 760px;
 }
 
-/* ---- two-column ---- */
+/* ---- two-column：左编辑器 + 右要点 ---- */
 .spx-cols {
-  max-width: 1120px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 24px 32px 80px;
+  padding: 22px 32px 36px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 28px;
   align-items: start;
 }
-@media (max-width: 920px) {
+@media (max-width: 960px) {
   .spx-cols {
     grid-template-columns: 1fr;
   }
 }
 
-/* ---- 左：渲染的示例文档（白纸，可编辑） ---- */
+/* ---- 左：内嵌真编辑器（白纸卡片） ---- */
 .spx-paper {
-  position: relative;
   background: #fff;
   border: 1px solid var(--c-border);
   border-radius: 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 10px 30px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
 }
-/* 复用真编辑器的 .ws-doc 块样式，但收掉它的超大留白、约束在卡片里 */
-.spx-paper .ws-doc.spx-doc {
+.spx-editor {
+  height: calc(100vh - 230px);
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
+/* Canvas 内嵌：填满卡片、内部滚动；收掉默认的超大文档留白，但左右留够空间给 ⋮⋮ 手柄 / 删除按钮 */
+.spx-editor .ws-canvas {
+  border-radius: 14px;
+}
+.ws-canvas-embed .ws-doc {
   max-width: none;
   margin: 0;
-  padding: 36px 44px 44px;
-}
-.spx-doc[contenteditable='true'] {
-  outline: none;
-}
-.spx-doc[contenteditable='true']:focus-visible {
-  outline: none;
-}
-/* 可编辑提示：hover 时极淡底色，暗示「这里能改」 */
-.spx-doc:hover {
-  background: linear-gradient(0deg, rgba(26, 115, 232, 0.012), rgba(26, 115, 232, 0.012));
-}
-/* 浮动格式气泡定位（外观来自全局 .ws-fmtbar） */
-.spx-bubble {
-  z-index: 60;
-}
-/* 行号标号：浮在每个被讲解块的右外侧 */
-.spx-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  margin-left: 8px;
-  border-radius: 50%;
-  background: var(--c-accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: var(--fw-semibold);
-  vertical-align: middle;
-  transform: translateY(-1px);
+  padding: 26px 46px 80px;
 }
 
-/* 示例文档里的表格（ui-demo 真编辑器还没有表格块，这里给 Schema 矩形表的样式） */
-.spx-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 12px 0;
-  font-size: var(--fs-md);
-}
-.spx-table th,
-.spx-table td {
-  border: 1px solid var(--c-border);
-  padding: 7px 12px;
-  text-align: left;
-}
-.spx-table th {
-  background: var(--c-bg-sunken);
-  font-weight: var(--fw-semibold);
-  color: var(--c-text);
-}
-.spx-table td {
-  color: var(--c-text-2);
-}
-
-/* 代码块 */
-.spx-code {
-  background: var(--c-bg-sunken);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md, 8px);
-  padding: 12px 14px;
-  margin: 12px 0;
-  overflow: auto;
-}
-.spx-code code {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: #2b2d31;
-  white-space: pre;
-}
-
-/* ---- 右：侧边讲解 ---- */
+/* ---- 右：这套 Schema 的要点 ---- */
 .spx-rail {
   position: sticky;
   top: 16px;
@@ -174,7 +114,7 @@
 
 /* ---- 底部：这些写法不允许 ---- */
 .spx-dont-wrap {
-  max-width: 1120px;
+  max-width: 1180px;
   margin: 0 auto;
   padding: 8px 32px 80px;
 }
