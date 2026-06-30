@@ -20,6 +20,7 @@
     { key: 'h1', label: '标题 1', tag: 'h1' },
     { key: 'h2', label: '标题 2', tag: 'h2' },
     { key: 'h3', label: '标题 3', tag: 'h3' },
+    { key: 'h4', label: '标题 4', tag: 'h4' },
     { key: 'list', label: '无序列表', tag: 'ul' },
     { key: 'quote', label: '引用', tag: 'blockquote' },
     // 编号/待办加在 quote 之后：块菜单按下标引用 SLASH_ITEMS[0/2/5]（正文/标题/引用），别插在它们之前打乱下标。
@@ -33,12 +34,13 @@
     const s = (q || '').toLowerCase();
     return SLASH_ITEMS.filter((it) => !s || it.label.toLowerCase().includes(s) || it.key.includes(s));
   };
+  const itemByKey = (k) => SLASH_ITEMS.find((it) => it.key === k); // 按 key 取（不依赖下标——加 h4 后下标会移）
 
   // 顶层块类型推断（标签 → ui-demo 块类型）
   function classify(el) {
     if (!el || el.nodeType !== 1) return 'other';
     const t = el.tagName;
-    if (t === 'H1' || t === 'H2' || t === 'H3') return 'heading';
+    if (t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') return 'heading'; // U7：H4 封顶（h5/h6 = 不符合 Schema，由校验器判，不在此当 heading）
     if (t === 'P') return 'text';
     if (t === 'UL' || t === 'OL') return 'list';
     if (t === 'BLOCKQUOTE') return 'quote';
@@ -653,7 +655,7 @@
         blockMenu.appendChild(it); return it;
       };
       const sub = (label, item) => add(label, () => { const nx = turnInto(el, item); closeBlockMenu(); selectBlock(nx); });
-      sub('转为正文', SLASH_ITEMS[0]); sub('转为标题', SLASH_ITEMS[2]); sub('转为引用', SLASH_ITEMS[5]);
+      sub('转为正文', itemByKey('text')); sub('转为标题', itemByKey('h2')); sub('转为引用', itemByKey('quote'));
       const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', ''); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       add('在下方插入', () => { const nx = insertAfter(el, SLASH_ITEMS[0]); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); });
       add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); });
@@ -1058,10 +1060,10 @@
     // 存盘读 live DOM，故可原地 turnInto（不像 ui-demo 受控编辑会被 blur 回写打架）。
     function tryMarkdown() {
       if (!editingEl || classify(editingEl) !== 'text') return; // 只在正文块（p）触发
-      const m = (editingEl.textContent || '').match(/^(#{1,3}|[-*]|1\.|\[\s?\]|>)[\s ]$/);
+      const m = (editingEl.textContent || '').match(/^(#{1,4}|[-*]|1\.|\[\s?\]|>)[\s ]$/);
       if (!m) return;
       const t = m[1];
-      const key = t[0] === '#' ? ['h1', 'h2', 'h3'][t.length - 1]
+      const key = t[0] === '#' ? ['h1', 'h2', 'h3', 'h4'][t.length - 1]
         : (t === '-' || t === '*') ? 'list'
         : t === '1.' ? 'numbered'
         : t[0] === '[' ? 'todo'

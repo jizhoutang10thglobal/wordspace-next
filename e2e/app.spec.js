@@ -143,6 +143,20 @@ test('U5: callout 框 CSS 入盘（data-ws-schema-css，校验器 head 白名单
   expect(html).toMatch(/\.ws-callout\s*\{[^}]*border/);           // 真有边框（修 C1：不是无样式纯文本）
 });
 
+// U7：H4 作 heading 可创建——markdown #### + 斜杠菜单「标题 4」。h5/h6 不接（= 不符合 Schema，校验器判）。
+test('U7: H4 可创建（markdown #### → h4）', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#q').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await page.keyboard.type('#### ');
+  await page.waitForTimeout(150);
+  expect(await frame.locator('h4').count(), 'markdown #### 没转 H4').toBeGreaterThan(0);
+  // 斜杠菜单也有「标题 4」
+  await frame.locator('h4').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await page.keyboard.type('/标题 4');
+  await expect(frame.locator('.ws-slashmenu-item', { hasText: '标题 4' })).toBeVisible();
+});
+
 // 行首 markdown 触发：在一个空正文块里打 marker+空格 → 转成对应块。
 test('markdown 行首触发：1. / - / [] / > / # 转对应块', async () => {
   await launch();

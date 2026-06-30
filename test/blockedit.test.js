@@ -15,6 +15,8 @@ function bodyOf(html) {
 test('classify: 标签 → ui-demo 块类型', () => {
   assert.equal(be.classify(el('<h1>x</h1>')), 'heading');
   assert.equal(be.classify(el('<h3>x</h3>')), 'heading');
+  assert.equal(be.classify(el('<h4>x</h4>')), 'heading'); // U7：H4 封顶、作 heading
+  assert.equal(be.classify(el('<h5>x</h5>')), 'other');   // h5 不是 schema heading（不符合，校验器判）
   assert.equal(be.classify(el('<p>x</p>')), 'text');
   assert.equal(be.classify(el('<ul><li>x</li></ul>')), 'list');
   assert.equal(be.classify(el('<ol><li>x</li></ol>')), 'list');
