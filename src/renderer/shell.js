@@ -198,6 +198,11 @@ async function showViewer(node) {
     // 工作区内走 rel，工作区外走 abs（「打开」按钮选的）；取不到就退化成外部打开卡片。
     try { url = node.rel ? await window.ws2.wsFileUrl(node.rel) : await window.ws2.fileUrlAbs(node.abs); } catch (e) { /* 退化成卡片 */ }
     if (url) {
+      if (kind === 'pdf') {
+        // PDF.js 渲染（连续滚动 canvas + 自己的一行工具栏）；替代 Chromium 内置 viewer（B7 合并工具栏 / B8 无预览栏）
+        await window.WS2PdfViewer.mount(viewer, url, { fileName: node.name, openExternalEl: openExternalBtn(node, 'fv-open') });
+        return;
+      }
       const bar = document.createElement('div');
       bar.className = 'fv-bar';
       const name = document.createElement('span');
@@ -205,26 +210,19 @@ async function showViewer(node) {
       name.textContent = node.name;
       const tag = document.createElement('span');
       tag.className = 'fv-tag';
-      tag.textContent = (kind === 'pdf' ? 'PDF' : '图片') + ' · 只读';
+      tag.textContent = '图片 · 只读';
       const sp = document.createElement('div');
       sp.className = 'fv-sp';
       bar.append(name, tag, sp, openExternalBtn(node, 'fv-open'));
       viewer.appendChild(bar);
-      if (kind === 'image') {
-        const scroll = document.createElement('div');
-        scroll.className = 'imgv-scroll';
-        const img = document.createElement('img');
-        img.className = 'imgv-img';
-        img.src = url;
-        img.alt = node.name;
-        scroll.appendChild(img);
-        viewer.appendChild(scroll);
-      } else {
-        const f = document.createElement('iframe');
-        f.className = 'pdfv-frame';
-        f.src = url; // Chromium 内置 PDF 查看器（webPreferences.plugins:true）
-        viewer.appendChild(f);
-      }
+      const scroll = document.createElement('div');
+      scroll.className = 'imgv-scroll';
+      const img = document.createElement('img');
+      img.className = 'imgv-img';
+      img.src = url;
+      img.alt = node.name;
+      scroll.appendChild(img);
+      viewer.appendChild(scroll);
       viewer.hidden = false;
       return;
     }

@@ -347,7 +347,16 @@ ul { list-style: none; }
 .imgv-img { max-width: 100%; height: auto; border-radius: var(--r-sm); box-shadow: var(--shadow-sm); background: #fff; }
 
 /* PDF：Chromium 内置查看器（file:// 直载 iframe）。 */
-.pdfv-frame { flex: 1; width: 100%; border: none; background: var(--c-bg-sunken); }
+/* PDF.js viewer（替代 Chromium 内置 iframe，B7 一行工具栏 / B8 无预览栏）：连续滚动 canvas。 */
+.pdfv-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; background: var(--c-bg-sunken); }
+.pdfv-page { box-shadow: 0 1px 6px rgba(0,0,0,.18); background: #fff; max-width: 100%; }
+.pdfv-pageinfo { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; }
+.pdfv-zbtn { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: 15px; }
+.pdfv-zbtn:hover { background: var(--c-hover); }
+.pdfv-zlabel { font-size: var(--fs-xs); color: var(--c-text-2); min-width: 38px; text-align: center; }
+.pdfv-fit { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: var(--fs-xs); }
+.pdfv-fit:hover { background: var(--c-hover); }
+.pdfv-err { margin: 40px; color: var(--c-text-3); }
 
 /* 空态 */
 .ws-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
