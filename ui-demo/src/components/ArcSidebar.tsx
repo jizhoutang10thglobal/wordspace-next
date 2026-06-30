@@ -626,7 +626,7 @@ function SpaceLibrary({ space, query }: { space: Space; query: string }) {
   return (
     <div className="arc-lib" key={space.id}>
       {!hasDocs ? (
-        <div className="arc-lib-empty">这个空间还没有文档,点上面的 + 新建一篇。</div>
+        <div className="arc-lib-empty">这个空间还没有文档，点上方「标签页」右边的 + 新建。</div>
       ) : q && !matches ? (
         <div className="arc-lib-empty">没有匹配的文档</div>
       ) : (
@@ -871,8 +871,8 @@ export default function ArcSidebar() {
     activeSpaceId,
     setActiveSpace,
     newBrowserTab,
-    openCreate,
-  } = { ...useStore(), openCreate: useUI((s) => s.openCreate) }
+    openNewTab,
+  } = { ...useStore(), openNewTab: useUI((s) => s.openNewTab) }
   const me = useStore((s) => s.getMember(s.meId))
   const collapsed = useUI((s) => s.sidebarCollapsed)
   const toggleSidebar = useUI((s) => s.toggleSidebar)
@@ -921,8 +921,8 @@ export default function ArcSidebar() {
     navigate('/docs')
   }
   const onNewTab = () => {
-    newBrowserTab()
-    navigate('/docs')
+    // 打开「新建」modal（顶部地址栏 + 下面新建文档）；网页标签页在地址栏回车时才真正创建
+    openNewTab()
   }
   const reload = () => {
     if (activeTab?.kind === 'web' && activeTab.url) useBrowser.getState().navigate(activeTab.url)
@@ -1017,12 +1017,7 @@ export default function ArcSidebar() {
         </div>
         <TabStrip spaceId={activeSpaceId} pinned={false} />
 
-        <div className="arc-section-label arc-tabs-label">
-          <span>文档</span>
-          <button className="arc-ico arc-ico-sm" title="在此空间新建" onClick={() => openCreate()}>
-            <Plus size={14} />
-          </button>
-        </div>
+        <div className="arc-section-label">文档</div>
         <div className="arc-filter">
           <Search size={13} className="arc-filter-ico" />
           <input

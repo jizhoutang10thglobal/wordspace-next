@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, Sparkles, X, Blocks, Lock, Copy, Check, ExternalLink } from 'lucide-react'
+import { FileText, X, Blocks, Lock, Globe, CornerDownLeft } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
+import { useBrowser } from '../mock/browser'
 import type { DocKind } from '../types'
 import './CreateModal.css'
 
@@ -25,59 +26,42 @@ const PARADIGMS: Paradigm[] = [
   { id: 'p3', name: '范式 3', desc: '敬请期待', soon: true },
 ]
 
-// 「用 AI 生成」= 帮用户用自己的 AI 生成一份合规文档。把 Schema 规则写进提示词，
-// 只要 AI 守着这套规则，产出的 .html 就是 Wordspace 能直接打开的合规文件。
-// （mockup：提示词内容是示意，足够说明思路；复制是真的。）
-const SCHEMA_PROMPT = `你是 Wordspace 文档生成器。请只输出一个完整的 HTML 文档，并严格遵守 Wordspace Schema #1（受限 HTML）：
-
-【结构】正文由一段段「块」直接平铺在 <body> 下：
-标题 h1–h4 / 段落 p / 列表 ul·ol>li / 待办（li 带 data-checked）/ 引用 blockquote / 提示框 div.callout / 分隔线 hr / 规整矩形表格（不合并单元格）。标题最深到 h4。
-
-【行内】只用 <strong> <em> <u> <s> <code> <a>，文字颜色和高亮走固定 class。
-
-【禁止】
-- 不要 <script> 或任何 on* 事件
-- 不要 position:absolute 等绝对定位
-- 不要在块元素上写 style=""（颜色用固定 class）
-- 表格不要 colspan / rowspan
-- 不要 <iframe> / <object> 等外部嵌入
-- 不要外链 CSS 或 <style> 排版
-
-只输出完整 HTML，不要额外解释。我接下来会描述想要的文档。`
-
-const SKILL_CMD = 'npx skills add wordspace-ai/schema'
-const SKILL_URL = 'https://wordspace.ai/skill'
-const SKILL_DOCS = 'https://wordspace.ai/skill/guide'
-
 /**
- * 新建文档：左侧选范式，右侧是该范式下的模板。「类 Notion」范式下：空文档（一键直达）+ 公司模板 +
- * 用 AI 生成。从哪个文件夹触发就建到哪个文件夹（createTargetDir）。
+ * 新建入口。两种打开方式（由 ui.createOmni 区分）：
+ *  - 从「标签页 +」打开（omni）：Arc 式 modal——顶部一条地址栏（输网址/搜索 → 开网页标签页），
+ *    下面接新建文档的范式 + 模板。把「新标签页」和「新建文档」拼成一个。
+ *  - 从文件夹「+」/右键打开（非 omni）：只有新建文档选择器，建到 createTargetDir。
+ * （「用 AI 生成」已挪出，未来集成进右下角 Agent 接入。）
  */
 export default function CreateModal() {
   const navigate = useNavigate()
   const createOpen = useUI((s) => s.createOpen)
   const closeCreate = useUI((s) => s.closeCreate)
+  const omni = useUI((s) => s.createOmni)
   const targetDir = useUI((s) => s.createTargetDir)
 
   const createDoc = useStore((s) => s.createDoc)
   const createFromTemplate = useStore((s) => s.createFromTemplate)
+  const newBrowserTab = useStore((s) => s.newBrowserTab)
   const templates = useStore((s) => s.templates)
   const spaces = useStore((s) => s.spaces)
   const activeSpaceId = useStore((s) => s.activeSpaceId)
 
   const [paradigm, setParadigm] = useState('notion')
-  const [mode, setMode] = useState<'pick' | 'ai'>('pick')
-  const [aiTab, setAiTab] = useState<'prompt' | 'skill'>('prompt')
-  const [copied, setCopied] = useState<string | null>(null)
+  const [url, setUrl] = useState('')
+  const urlRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (createOpen) {
       setParadigm('notion')
-      setMode('pick')
-      setAiTab('prompt')
-      setCopied(null)
+      setUrl('')
     }
   }, [createOpen])
+
+  // Arc 式：打开 omni 入口就把光标放进地址栏，可直接打字
+  useEffect(() => {
+    if (createOpen && omni) urlRef.current?.focus()
+  }, [createOpen, omni])
 
   useEffect(() => {
     if (!createOpen) return
@@ -109,35 +93,60 @@ export default function CreateModal() {
     createFromTemplate(id, DRAFTS, dir)
     done()
   }
-  const copy = (key: string, text: string) => {
-    navigator.clipboard?.writeText(text)
-    setCopied(key)
-    window.setTimeout(() => setCopied((c) => (c === key ? null : c)), 1600)
-  }
 
-  const pickParadigm = (p: Paradigm) => {
-    setParadigm(p.id)
-    setMode('pick')
+  // 地址栏：开一个新网页标签页并导航过去（跟侧栏地址栏 submitOmni 同一套）
+  const submitUrl = () => {
+    const v = url.trim()
+    if (!v) return
+    newBrowserTab()
+    useBrowser.getState().navigate(v)
+    done()
   }
 
   return (
     <div className="ws-modal-overlay" onMouseDown={closeCreate}>
       <div
-        className="ws-modal cm-new"
+        className={'ws-modal cm-new' + (omni ? ' cm-omni' : '')}
         role="dialog"
         aria-modal="true"
-        aria-label="新建文档"
+        aria-label={omni ? '新建标签页或文档' : '新建文档'}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <header className="ws-modal-head">
-          <div className="ws-modal-head-text">
-            <div className="ws-modal-title">新建文档</div>
-            <div className="cm-where">在 {where}</div>
+        {omni ? (
+          // 顶部：Arc 式地址栏（输网址/搜索 → 开网页标签页）
+          <div className="cm-omnibar">
+            <Globe size={17} className="cm-omnibar-ico" />
+            <input
+              ref={urlRef}
+              className="cm-omnibar-input"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitUrl()
+              }}
+              placeholder="搜索，或输入网址"
+              spellCheck={false}
+            />
+            {url.trim() && (
+              <span className="cm-omnibar-kbd">
+                <CornerDownLeft size={12} /> 打开
+              </span>
+            )}
+            <button className="ws-modal-x cm-omnibar-x" onClick={closeCreate} aria-label="关闭">
+              <X size={16} />
+            </button>
           </div>
-          <button className="ws-modal-x" onClick={closeCreate} aria-label="关闭">
-            <X size={16} />
-          </button>
-        </header>
+        ) : (
+          <header className="ws-modal-head">
+            <div className="ws-modal-head-text">
+              <div className="ws-modal-title">新建文档</div>
+              <div className="cm-where">在 {where}</div>
+            </div>
+            <button className="ws-modal-x" onClick={closeCreate} aria-label="关闭">
+              <X size={16} />
+            </button>
+          </header>
+        )}
 
         <div className="cm-split">
           {/* 左：范式 */}
@@ -146,10 +155,14 @@ export default function CreateModal() {
             {PARADIGMS.map((p) => (
               <button
                 key={p.id}
-                className={'cm-para' + (p.id === paradigm ? ' is-active' : '') + (p.soon ? ' is-soon' : '')}
-                onClick={() => pickParadigm(p)}
+                className={
+                  'cm-para' + (p.id === paradigm ? ' is-active' : '') + (p.soon ? ' is-soon' : '')
+                }
+                onClick={() => setParadigm(p.id)}
               >
-                <span className="cm-para-ico">{p.soon ? <Lock size={15} /> : <Blocks size={15} />}</span>
+                <span className="cm-para-ico">
+                  {p.soon ? <Lock size={15} /> : <Blocks size={15} />}
+                </span>
                 <span className="cm-para-text">
                   <span className="cm-para-name">
                     {p.name}
@@ -174,7 +187,7 @@ export default function CreateModal() {
                   每个范式是一套独立的编辑内核与文档结构。这个范式上线后，会在这里列出它自己的模板。
                 </div>
               </div>
-            ) : mode === 'pick' ? (
+            ) : (
               <>
                 <div className="cm-pane-label">{active.name} 模板</div>
                 <div className="cm-grid">
@@ -200,117 +213,8 @@ export default function CreateModal() {
                       <span className="cm-card-desc">{t.description}</span>
                     </button>
                   ))}
-
-                  <button className="cm-card cm-card-ai" onClick={() => setMode('ai')}>
-                    <span className="cm-card-ico">
-                      <Sparkles size={18} />
-                    </span>
-                    <span className="cm-card-name">用 AI 生成</span>
-                    <span className="cm-card-desc">生成符合 Schema 的文档</span>
-                  </button>
                 </div>
               </>
-            ) : (
-              <div className="cm-ai">
-                <p className="cm-ai-intro">
-                  用你自己的 AI 生成符合 Schema 的文档，下面两种方式任选。
-                </p>
-
-                <div className="cm-ai-tabs" role="tablist">
-                  <button
-                    className={'cm-ai-tab' + (aiTab === 'prompt' ? ' is-active' : '')}
-                    onClick={() => setAiTab('prompt')}
-                  >
-                    复制 Prompt · 单次
-                  </button>
-                  <button
-                    className={'cm-ai-tab' + (aiTab === 'skill' ? ' is-active' : '')}
-                    onClick={() => setAiTab('skill')}
-                  >
-                    安装 Skill · 长期
-                  </button>
-                </div>
-
-                {aiTab === 'prompt' ? (
-                  <div className="cm-ai-sec">
-                    <div className="cm-ai-flabel cm-ai-flabel-row">
-                      <span>带 Schema 规则的提示词</span>
-                      <button
-                        className={'cm-copy' + (copied === 'prompt' ? ' is-done' : '')}
-                        onClick={() => copy('prompt', SCHEMA_PROMPT)}
-                      >
-                        {copied === 'prompt' ? (
-                          <>
-                            <Check size={13} /> 已复制
-                          </>
-                        ) : (
-                          <>
-                            <Copy size={13} /> 一键复制
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <pre className="cm-prompt">{SCHEMA_PROMPT}</pre>
-                    <p className="cm-ai-hint">
-                      复制后贴进 ChatGPT / Claude，再说你想要什么文档；把它生成的 .html 拖回 Wordspace 打开即可。
-                    </p>
-                  </div>
-                ) : (
-                  <div className="cm-ai-sec">
-                    <ol className="cm-skill">
-                      <li className="cm-skill-step">
-                        <span className="cm-step-n">1</span>
-                        <div className="cm-step-body">
-                          <div className="cm-step-title">安装 Wordspace Schema Skill</div>
-                          <div className="cm-step-desc">装一次，你的 AI（Claude、Gemini 等）就长期记得这套 Schema。</div>
-                          <div className="cm-step-actions">
-                            <a className="cm-link-btn" href={SKILL_URL} target="_blank" rel="noreferrer">
-                              打开 wordspace.ai/skill <ExternalLink size={12} />
-                            </a>
-                            <button
-                              className={'cm-cmd' + (copied === 'cmd' ? ' is-done' : '')}
-                              onClick={() => copy('cmd', SKILL_CMD)}
-                            >
-                              <code>{SKILL_CMD}</code>
-                              {copied === 'cmd' ? <Check size={13} /> : <Copy size={13} />}
-                            </button>
-                          </div>
-                        </div>
-                      </li>
-                      <li className="cm-skill-step">
-                        <span className="cm-step-n">2</span>
-                        <div className="cm-step-body">
-                          <div className="cm-step-title">在你的 AI 里调用它</div>
-                          <div className="cm-step-desc">例：「用 Wordspace Schema 帮我写一份产品周报」</div>
-                        </div>
-                      </li>
-                      <li className="cm-skill-step">
-                        <span className="cm-step-n">3</span>
-                        <div className="cm-step-body">
-                          <div className="cm-step-title">生成即合规</div>
-                          <div className="cm-step-desc">
-                            Skill 内置 Schema，输出的文档直接能在 Wordspace 打开、继续块编辑。
-                          </div>
-                          <a
-                            className="cm-link-btn cm-link-plain"
-                            href={SKILL_DOCS}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            查看完整教程 <ExternalLink size={12} />
-                          </a>
-                        </div>
-                      </li>
-                    </ol>
-                  </div>
-                )}
-
-                <div className="cm-ai-foot">
-                  <button className="ws-btn" onClick={() => setMode('pick')}>
-                    返回
-                  </button>
-                </div>
-              </div>
             )}
           </div>
         </div>
