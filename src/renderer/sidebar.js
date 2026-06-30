@@ -510,18 +510,22 @@
   function unpinRel(key) {
     applyTabs(window.WS2Tabs.unpinEntry(tabState, key));
   }
-  function closeTabRel(key) {
+  // 关/删一条标签：脏检查（关激活项前问一下）→ 应用 op → 关的是激活项就回落到下一个/空态。
+  // op = closeEntry（标签页区的 ×：open=false，pinned 项留在置顶）/ removeEntry（置顶区的 ×：整条删掉）。
+  function closeOrRemove(key, op) {
     const wasActive = tabState.activeRel === key;
     if (wasActive && window.__shellIsDirty && window.__shellIsDirty() &&
         !confirm('这个文档有未保存的修改，关闭标签会丢弃，确定吗？')) return;
     if (wasActive && window.__shellDiscard) window.__shellDiscard(); // 已确认丢弃 → 切下一个时不再追问
-    applyTabs(window.WS2Tabs.closeEntry(tabState, key));
+    applyTabs(op(tabState, key));
     if (wasActive) {
       const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
       if (e) openTabRow(e); // 回落项可能是外部标签 → 走 abs 分发，不只 findNode
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
   }
+  function closeTabRel(key) { closeOrRemove(key, window.WS2Tabs.closeEntry); } // 标签页区 ×
+  function removeTabRel(key) { closeOrRemove(key, window.WS2Tabs.removeEntry); } // 置顶区 ×：整条移出置顶
   function dropTabRel(key, toPinned, toIndex) {
     applyTabs(window.WS2Tabs.dropEntry(tabState, key, toPinned, toIndex));
   }
@@ -620,17 +624,16 @@
       else pinRel(entry);
     };
     row.append(pin);
-    if (zone === 'tabs') {
-      const x = document.createElement('button');
-      x.className = 'sb-tab-close';
-      x.title = '关闭';
-      x.innerHTML = X_SVG;
-      x.onclick = (e) => {
-        e.stopPropagation();
-        closeTabRel(key);
-      };
-      row.append(x);
-    }
+    // × 关闭：两个区都有。标签页区 = 关标签；置顶区 = 直接移出置顶（Wendi 要的，整条删掉、不只取消钉）。
+    const x = document.createElement('button');
+    x.className = 'sb-tab-close';
+    x.title = zone === 'pinned' ? '移出置顶' : '关闭';
+    x.innerHTML = X_SVG;
+    x.onclick = (e) => {
+      e.stopPropagation();
+      (zone === 'pinned' ? removeTabRel : closeTabRel)(key);
+    };
+    row.append(x);
     row.onclick = () => openTabRow(entry);
     row.ondragstart = (e) => {
       dragTabRel = key;
