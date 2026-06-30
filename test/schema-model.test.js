@@ -44,6 +44,27 @@ test('canMerge: 两叶子可合并、含包裹块拒绝（B1/B2）', () => {
   assert.equal(M.canMerge(el('<p>a</p>'), el('<div class="lead"><p>b</p></div>')), false);
 });
 
+// 对抗验证攻破：空结构容器 / void 块原被误判叶子
+test('P1-1 空结构容器不是叶子、不可合并（防产 <ul>text</ul> 非法落盘）', () => {
+  const emptyUl = el('<ul></ul>'); // §7 D1 可达中间态：嵌套子项 Enter 退出留空 ul
+  assert.equal(M.isLeafTextBlock(emptyUl), false);
+  assert.equal(M.canMerge(emptyUl, el('<p>x</p>')), false);
+  assert.equal(M.canMerge(el('<ol></ol>'), el('<p>x</p>')), false);
+  assert.equal(M.isLeafTextBlock(el('<table><tbody><tr><td>x</td></tr></tbody></table>')), false);
+  assert.equal(M.isLeafTextBlock(el('<details><summary>s</summary></details>')), false);
+});
+
+test('P2-5 void 块（hr/img）不是叶子、不可合并（防静默吞文字）', () => {
+  assert.equal(M.isLeafTextBlock(el('<hr>')), false);
+  assert.equal(M.isLeafTextBlock(el('<img src="x">')), false);
+  assert.equal(M.canMerge(el('<hr>'), el('<p>abc</p>')), false);
+});
+
+test('isLeafTextBlock fail-closed：未知/结构容器一律非叶子（正向白名单非黑名单）', () => {
+  assert.equal(M.isLeafTextBlock(el('<section></section>')), false);
+  assert.equal(M.isLeafTextBlock(el('<custom-widget></custom-widget>')), false);
+});
+
 test('flattenListToPhrasing A1: ul → <br> 分隔 phrasing，无 <li>', () => {
   const ul = el('<ul><li>a<b>1</b></li><li>b</li></ul>');
   const d = wrap(M.flattenListToPhrasing(ul));

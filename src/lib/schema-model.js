@@ -21,10 +21,15 @@
     return false;
   }
 
-  // 叶子文字块 = 直接承载文字、可安全做节点级拼接（合并）的块：所有后代元素都是 phrasing。
-  // 修 S1：旧版只查直接子，行内标签里包块级会被误判为叶子。
+  // 只有「文字承载块」才可能是叶子文字块（fail-closed 正向白名单）：结构容器（ul/ol/table/details）、
+  // void（hr/img）、嵌入（iframe/object/svg…）、未知标签一律非叶子——哪怕「无块级后代」也不行。
+  // 修 P1-1/P2-5（对抗验证实证）：空 <ul>/void 块原判 !hasBlockLevelDescendant=叶子 → canMerge 放行 →
+  // 节点级拼接产 <ul>text</ul>（非法落盘）或把文字灌进 <hr>（重序列化静默丢失）。
+  // 修 S1：白名单内的块仍递归确认内部无块级（行内 <a> 里藏 <h2> 不算叶子）。
+  const LEAF_TEXT_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'DIV']);
   function isLeafTextBlock(el) {
     if (!el || el.nodeType !== 1) return false;
+    if (!LEAF_TEXT_TAGS.has(el.tagName)) return false; // 非文字承载块 → 永不叶子
     return !hasBlockLevelDescendant(el);
   }
 
