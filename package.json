@@ -1,6 +1,6 @@
 {
   "name": "wordspace-next",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "Wordspace Next — local in-place HTML document editor (Notion-like). Signed/notarized macOS builds with auto-update.",
   "license": "UNLICENSED",
