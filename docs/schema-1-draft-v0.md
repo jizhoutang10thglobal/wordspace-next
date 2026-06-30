@@ -12,6 +12,32 @@ origin: workflow define-schema-1 (25 agents · ground+spec+behaviors+verify+synt
 
 ---
 
+## 0. 决策冻结（2026-06-30 · Colin 拍板 · 覆盖下文冲突处）
+
+> 本节是人拍板的权威覆盖。下文 §1–§7 的分析与对抗发现仍有效，但**与本节冲突处，以本节为准**。
+
+### Schema / Template 模型校正（最重要）
+
+- **Schema** = 编辑方式 + 结构规则 + 文件格式约束（页边距 / 宽高底线）+ 让块渲染正确的**最小语义 CSS**。管"怎么编辑、能放什么结构"，**不管装饰好不好看**。
+- **Template** = 在 Schema 约束内的视觉装饰（字体 / 配色 / 那套"漂亮的 Notion 居中窄栏"——它本身就是一个 Template）。
+- **显示 = 永远按 `.html` 原生渲染（所见即所得）；编辑器不主动套装饰样式。** 调色板只是"编辑器能用哪些色"，文件本有的颜色照常原生显示。
+- **符合 Schema → 完整 schema 编辑；不符合 → 只给基础文字编辑（feature 3），不强行修成符合。**
+- ⛔ **删，不是修**：下文 §1 原则 6 / §7 C2 里"编辑器给裸文档套 Notion canvas 排版（`docHasAuthorStyles` / `data-ws2-canvas`）"那套**整体删除**——漂亮 = Template，不是编辑器硬套。删后 C2 自然消失。
+- ✅ **保留并升级为"Schema baseline"**：让块长对样子的**语义 CSS** 入盘（to-do 勾选框、callout 提示框、table 边框/对齐）+ 页边距/宽度底线，全部打 `data-ws-schema-css` 标记随文件走 = "Schema 自带的最小样式"。所以 §7 C1（callout 无入盘 CSS）的修法照做 = 把 callout 语义 CSS 纳入 Schema baseline。
+
+### 六个决策（覆盖下文对应处）
+
+1. **颜色/高亮**：固定调色板（≈Notion 十来色）= 编辑器能用的色；高亮用 `<mark>`（最稳）；**显示按原生**——文件本有的任意颜色不动、照常渲染。
+2. **样式/保真**：编辑器不套装饰；存盘 = 干净内容 + Schema baseline 语义 CSS（+ 用户选的 Template）。覆盖 §2 末 / §7 F2 的"保真哲学"纠结——不再有"存盘要不要带漂亮"的问题。
+3. **Toggle `open`**：**持久态**（`<details open>` 入盘、记住收/展）。
+4. **callout / quote / 表格单元格 内部模型（中间档 b）**：callout / quote 内 = **多段文字**（可多个 `<p>` + 行内标记 + `<br>`），**但不嵌列表/别的块**；**表格单元格 = phrasing-only（单文字 + 行内标记）**。覆盖 §2 把 callout/quote 写成"单文字区"的描述（升级为多段）；cell 维持 phrasing-only。
+5. **Heading**：封顶 **h4**；**h5/h6 = 不符合 Schema → 走基础编辑**（不压成 h4、不静默 normalize）。覆盖 §7 S8 的"normalize"取向。
+6. **Table**：**禁合并格**（no `colspan`/`rowspan`），像 Notion（与 §2.3 文法一致）。
+
+> §7 的 bug 收口（A1/A2/B1/B2/F1 等内容模型 + 存盘 bug）**不受本节影响、照修**——它们是现有代码的真缺陷，跟 Schema/Template 模型独立。
+
+---
+
 ## 1. 概述 + 设计原则
 
 Wordspace = Electron HTML-native 本地编辑器。Schema #1 = 一套**受限 HTML 格式（reduced HTML）**，编辑器与它 co-design、对它"操作闭合"——任何编辑动作把"合法 Schema 文档"变成"合法 Schema 文档"，从构造上消灭结构 bug。块集合 = Notion Basic blocks（去掉 Page / Link to page）。
