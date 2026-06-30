@@ -133,7 +133,7 @@
 /* ------------------------------------------------------------------ */
 /* Create modal — template picker                                     */
 /* ------------------------------------------------------------------ */
-.ws-modal.cm-new { width: 540px; max-width: calc(100vw - 32px); }
+.ws-modal.cm-new { width: 720px; max-width: calc(100vw - 32px); }
 
 .cm-where {
   margin-top: 2px;
@@ -141,11 +141,130 @@
   color: var(--c-text-3);
 }
 
+/* two-column: 左「范式」轨 + 右「该范式的模板」 */
+.cm-split {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  min-height: 348px;
+  max-height: calc(100vh - 150px);
+}
+
+/* 左：范式轨 */
+.cm-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 12px;
+  border-right: 1px solid var(--c-divider);
+  background: var(--c-bg-sunken);
+}
+.cm-rail-label {
+  padding: 2px 8px 6px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+}
+.cm-para {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+.cm-para:hover { background: var(--c-hover); }
+.cm-para.is-active {
+  background: var(--c-surface);
+  border-color: var(--c-border);
+  box-shadow: var(--shadow-sm);
+}
+.cm-para.is-soon { opacity: 0.6; }
+.cm-para.is-soon:hover { opacity: 0.82; }
+.cm-para-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  color: var(--c-text-2);
+}
+.cm-para.is-active .cm-para-ico { background: var(--c-accent-tint); color: var(--c-accent); }
+.cm-para-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cm-para-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+.cm-para-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  background: var(--c-accent-tint);
+  color: var(--c-accent);
+}
+.cm-para-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.4; }
+.cm-rail-foot {
+  margin-top: auto;
+  padding: 12px 8px 2px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
+
+/* 右：该范式的模板 / AI / placeholder */
+.cm-pane {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.cm-pane-label {
+  margin-bottom: 10px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text-2);
+}
+
 .cm-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+
+/* 还没上线的范式：占位 */
+.cm-soon {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px 24px;
+  text-align: center;
+}
+.cm-soon-ico {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--c-bg-sunken);
+  color: var(--c-text-3);
+}
+.cm-soon-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+.cm-soon-desc { max-width: 290px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.55; }
 
 .cm-card {
   display: flex;
