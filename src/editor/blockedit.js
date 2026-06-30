@@ -225,7 +225,9 @@
       const { sx, sy } = vp();
       fmtbar.style.position = 'absolute';
       fmtbar.style.left = (left + sx) + 'px';
-      fmtbar.style.top = (top + sy - 46) + 'px';
+      // 视口顶部保护：选区/块在文档顶部时（如首块），上方 46px 放不下会把气泡推到屏外、按钮点不到。
+      // 之前被 canvas padding-top 掩盖（块被推下），§0 删 canvas 后块贴顶暴露此缺陷。clamp 到视口顶 +6。
+      fmtbar.style.top = Math.max(top + sy - 46, sy + 6) + 'px';
       fmtbar.style.display = 'flex';
       fmtShown = true;
     }
@@ -325,9 +327,26 @@
       if (!doc || doc.getElementById('ws-todo-style')) return;
       const st = doc.createElement('style');
       st.id = 'ws-todo-style';
+      st.setAttribute('data-ws-schema-css', 'todo'); // U5：标 schema baseline 语义 CSS——存盘保留 + 校验器 head 白名单认它合规
       st.textContent = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-20px;top:.3em;width:15px;height:15px;box-sizing:border-box;border:1.5px solid #b5b9c0;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#8a8f96;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
+    }
+    // U5：callout 框 CSS 烤进存盘文件（修 C1：原 callout 无入盘 CSS、存盘成无样式纯文本）。照 ensureTodoStyle 范式。
+    // 最小语义版：只给提示框的底/边/内距/外距（让 callout 渲染成框），不碰字色字号（那是装饰、按原生）。
+    function ensureCalloutStyle() {
+      if (!doc || doc.getElementById('ws-callout-style')) return;
+      const st = doc.createElement('style');
+      st.id = 'ws-callout-style';
+      st.setAttribute('data-ws-schema-css', 'callout');
+      st.textContent = '.ws-callout{background:#f7f8fa;border:1px solid #e4e6e9;border-radius:7px;padding:14px 16px;margin:12px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
+    // 按块的 schema class 注入对应入盘语义 CSS（创建/转换块时调）。
+    function ensureBlockStyle(cls) {
+      if (cls === 'ws-todo') ensureTodoStyle();
+      else if (cls === 'ws-callout') ensureCalloutStyle();
     }
     function newBlock(item) {
       let el;
@@ -337,7 +356,7 @@
       else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.textContent = '引用内容'; }
       else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.textContent = '新标题'; }
       else { el = doc.createElement('p'); }
-      if (item.cls === 'ws-todo') ensureTodoStyle();
+      ensureBlockStyle(item.cls);
       return el;
     }
     function insertAfter(refEl, item) {
@@ -375,11 +394,13 @@
         while (nx.firstChild) nx.removeChild(nx.firstChild);
         nx.appendChild(frag);
         if (item.cls) nx.className = item.cls; else if (nx.classList && nx.classList.contains('ws-callout')) nx.classList.remove('ws-callout');
+        ensureBlockStyle(item.cls);
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return nx;
       }
       const next = fmt.retagElement(el, item.tag); // p / h1 / h2 / h3 / blockquote / div(callout)
       if (item.cls) next.className = item.cls; else if (next.classList && next.classList.contains('ws-callout')) next.classList.remove('ws-callout');
+      ensureBlockStyle(item.cls);
       if (undoMgr) undoMgr.checkpoint(); markDirty();
       return next;
     }
@@ -674,7 +695,8 @@
       // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
       // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
       const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
-      if (todoUl && e.clientX < todoUl.getBoundingClientRect().left + 22) {
+      if (todoUl) {
+        // 先定位该行 li（点 ::before 时 target=li，点 ul padding 时=ul，按 Y 兜底找该行）
         let li = e.target.closest('li');
         if (!li || li.parentElement !== todoUl) {
           li = null;
@@ -684,7 +706,9 @@
             if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
           }
         }
-        if (li && li.parentElement === todoUl) {
+        // 勾选框 gutter = li 内容左缘左侧（::before left:-20..-5）。判 clientX 落在 li 左缘附近及左侧。
+        // 不硬编码 ul padding：§0 删 canvas 后 ul 回默认 padding(40)≠旧 canvas 的 22，原 `ul.left+22` 边界失效、点不中勾选框。
+        if (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) {
           e.preventDefault();
           li.setAttribute('data-checked', li.getAttribute('data-checked') === 'true' ? 'false' : 'true');
           if (undoMgr) undoMgr.checkpoint();
