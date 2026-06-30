@@ -66,16 +66,21 @@ test('自带 <style> 但正文裸挂 body：作者样式不被编辑器排版覆
   expect(hasCanvas).toBe(false);
 });
 
-// 反向：真·裸文档（无任何自带样式）仍要套编辑器排版——确认修复没误伤裸文档这条主路。
-test('真·裸文档（无自带样式）仍套编辑器 Notion 排版', async () => {
+// §0：真·裸文档不再被套编辑器 Notion 装饰排版，按 .html 原生渲染（编辑器不主动套样式）。
+// 反掉旧行为（曾「裸文档 blockRoot===body 就套 data-ws2-canvas 排版」）。最小语义 baseline 留 U5 入盘。
+test('真·裸文档：编辑器不套 canvas 装饰排版，按原生渲染', async () => {
   await launch();
   await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
     + '<body><h1 id="h">标题</h1><p id="p">正文</p></body></html>');
+  // body 不再被打 data-ws2-canvas（装饰开关已删）
   const hasCanvas = await frame.locator('body').evaluate((el) => el.hasAttribute('data-ws2-canvas'));
-  expect(hasCanvas).toBe(true);
-  // canvas 排版生效：h1 用编辑器的深灰、无衬线
-  const pfont = await frame.locator('#p').evaluate((el) => getComputedStyle(el).fontFamily);
-  expect(pfont.toLowerCase()).not.toContain('courier');
+  expect(hasCanvas).toBe(false);
+  // 强断言：不套 Notion 居中窄栏——body 没有 canvas 的 max-width:820px（原生默认 none）
+  const maxW = await frame.locator('body').evaluate((el) => getComputedStyle(el).maxWidth);
+  expect(maxW).toBe('none');
+  // 内容仍在、可见（删 canvas 没破坏裸文档主路）
+  const htext = await frame.locator('#h').evaluate((el) => el.textContent);
+  expect(htext).toBe('标题');
 });
 
 test('文档自带 inline <style> 真实生效（所见即所得）', async () => {
