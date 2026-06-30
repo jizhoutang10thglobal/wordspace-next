@@ -151,6 +151,7 @@ function prepFrame(asDirty) {
   closeViewer();
   frame.hidden = false;
   docName.textContent = docInfo.name;
+  docName.title = docInfo.name; // 名字过长被截断时，悬停显示全名
   exportBtn.disabled = false; // 开了文档就能导出（不像保存要脏才亮）
   setDirty(!!asDirty);
 }
@@ -238,6 +239,7 @@ async function showViewer(node) {
   const name = document.createElement('div');
   name.className = 'efp-name ws-truncate';
   name.textContent = node.name;
+  name.title = node.name; // 名字过长被截断时，悬停显示全名
   const meta = document.createElement('div');
   meta.className = 'efp-meta ws-truncate';
   meta.textContent = (KIND_LABEL[kind] || '文件') + ' · ' + (node.rel || node.name);
@@ -321,6 +323,7 @@ function shellRetargetDoc(newAbs, newName) {
   docPath = newAbs;
   docInfo = Object.assign({}, docInfo, { name: newName });
   docName.textContent = newName;
+  docName.title = newName; // 名字过长被截断时，悬停显示全名
   window.ws2.watchDoc(newAbs);
   if (window.__sbHooks) window.__sbHooks.onOpen(docPath);
 }

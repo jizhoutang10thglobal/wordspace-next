@@ -246,6 +246,7 @@
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
+      name.title = node.name; // 名字过长被截断时，悬停显示全名
       const add = document.createElement('button');
       add.className = 'sb-add';
       add.title = '在此文件夹新建文档';
@@ -309,6 +310,7 @@
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
+      name.title = node.name; // 名字过长被截断时，悬停显示全名
       row.append(ico, name);
       row.onclick = () => openNode(node);
       row.ondragstart = (e) => {
@@ -525,6 +527,7 @@
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
+    name.title = external ? entry.abs : entry.title; // 截断时悬停显全名（外部标签显完整绝对路径）
     row.append(ico, name);
     if (external) {
       const ext = document.createElement('span');

@@ -165,6 +165,17 @@ test('点 .html 切换文件 → 高亮跟着当前文件走', async () => {
   await expect(page.locator('.sb-file[data-rel="a.html"].is-active')).toHaveCount(0); // 旧的取消高亮
 });
 
+test('文件名带 title：截断时悬停显全名（文件树文件/文件夹、面包屑）', async () => {
+  await openWorkspace();
+  // 文件树文件：name span 的 title = 全名（ws-truncate 截断时浏览器原生悬停浮出）
+  await expect(page.locator('.sb-file[data-rel="a.html"] .sb-name')).toHaveAttribute('title', 'a.html');
+  // 文件树文件夹：title = 文件夹名
+  await expect(page.locator('.sb-dir[data-rel="数据"] .sb-name')).toHaveAttribute('title', '数据');
+  // 打开文档后，文档头面包屑也带 title = 文件名
+  await page.click('.sb-file[data-rel="a.html"]');
+  await expect(page.locator('#doc-name')).toHaveAttribute('title', 'a.html');
+});
+
 test('点非 .html（README）→ 编辑区出外部打开卡片，点按钮才走系统程序', async () => {
   await openWorkspace();
   // window.ws2 是 contextBridge 冻结对象、改不了，所以在主进程桩掉 shell.openPath（同时避免真启动宿主程序）。
