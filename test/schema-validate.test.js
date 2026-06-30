@@ -73,3 +73,49 @@ test('行内 javascript: 链接 → non-conform', () => {
   assert.equal(r.conform, false);
   assert.ok(rules(r).includes('unsafe-href'));
 });
+
+// ===== 对抗验证攻破：安全绕过 + 校验盲区（全部 node 真跑确认过）=====
+
+test('P0-1 href 控制字符/空白绕过 → unsafe-href（浏览器导航会剥 tab/newline/前导控制字符再执行）', () => {
+  assert.equal(v('<p><a href="java\tscript:alert(1)">x</a></p>').conform, false);
+  assert.equal(v('<p><a href="java\nscript:alert(1)">x</a></p>').conform, false);
+  assert.equal(v('<p><a href="\x01javascript:alert(1)">x</a></p>').conform, false);
+  assert.equal(v('<p><a href="https://ok.com">x</a></p>').conform, true); // 不误杀正常 https
+});
+
+test('P0-2 SVG 命名空间 <script> → script（命名空间无关，不被小写 tagName 绕过）', () => {
+  const r = v('<table class="ws-table"><tbody><tr><td><svg><script>alert(1)</' + 'script></svg></td></tr></tbody></table>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('script'));
+});
+
+test('P1-2 表格单元格只能 phrasing：iframe/object/块 → non-conform；纯行内 cell 仍 conform', () => {
+  assert.equal(v('<table class="ws-table"><tbody><tr><td><iframe src="https://evil"></iframe></td></tr></tbody></table>').conform, false);
+  assert.equal(v('<table class="ws-table"><tbody><tr><td><p>x</p></td></tr></tbody></table>').conform, false);
+  assert.equal(v('<table class="ws-table"><tbody><tr><td><ul><li>x</li></ul></td></tr></tbody></table>').conform, false);
+  assert.equal(v('<table class="ws-table"><tbody><tr><td>x <b>粗</b></td></tr></tbody></table>').conform, true);
+});
+
+test('P1-3 head 白名单：base/meta-refresh/外联 link/作者 style → non-conform；schema-css 合法', () => {
+  const mk = (headExtra) => validate(docOf('<!DOCTYPE html><html><head>' + headExtra + '</head><body><p>x</p></body></html>'));
+  assert.equal(mk('<base href="https://evil/">').conform, false);
+  assert.equal(mk('<meta http-equiv="refresh" content="0;url=https://evil">').conform, false);
+  assert.equal(mk('<link rel="stylesheet" href="https://evil/x.css">').conform, false);
+  assert.equal(mk('<style>@import url(https://evil/x.css)</style>').conform, false);
+  assert.equal(mk('<style data-ws-schema-css="baseline">p{margin:0}</style>').conform, true);
+});
+
+test('P2-1 表格不变式：非矩形 / caption / 多行 thead → non-conform', () => {
+  assert.equal(v('<table class="ws-table"><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></tbody></table>').conform, false);
+  assert.equal(v('<table class="ws-table"><caption>t</caption><tbody><tr><td>a</td></tr></tbody></table>').conform, false);
+});
+
+test('P2-2 块级 style → non-conform（带 style 块走基础编辑，显示仍原生）；行内 span style 仍合法', () => {
+  assert.equal(v('<p style="color:red">x</p>').conform, false);
+  assert.equal(v('<p><span style="color:red">x</span></p>').conform, true);
+});
+
+test('P2-3 figure+figcaption 合法（§5 captioned image canonical）', () => {
+  assert.equal(v('<figure><img src="data:image/png;base64,AAAA"><figcaption>说明</figcaption></figure>').conform, true);
+  assert.equal(v('<figure><img src="x"><p>不该有块</p></figure>').conform, false);
+});
