@@ -348,6 +348,17 @@
       if (cls === 'ws-todo') ensureTodoStyle();
       else if (cls === 'ws-callout') ensureCalloutStyle();
     }
+    // U6（§0 决策1 + A2）：固定色板文字色 CSS 入盘。块级上色用 class 不写 style（块 style 非法），
+    // 显示按原生（class + 入盘 CSS 随文件走，app 外浏览器也显示）。class 名 = ws-color-<hex 去#>。
+    function ensureColorStyle() {
+      if (!doc || doc.getElementById('ws-color-style')) return;
+      const st = doc.createElement('style');
+      st.id = 'ws-color-style';
+      st.setAttribute('data-ws-schema-css', 'color');
+      st.textContent = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
     function newBlock(item) {
       let el;
       if (item.tag === 'hr') { el = doc.createElement('hr'); }
@@ -373,6 +384,7 @@
         const next = fmt.retagElement(el, item.tag);
         if (item.cls) next.className = item.cls; else next.removeAttribute('class');
         if (item.cls === 'ws-todo') ensureTodoStyle();
+        else next.querySelectorAll('li[data-checked]').forEach((li) => li.removeAttribute('data-checked')); // A3：todo→普通列表，清残留勾选态
         if (!next.querySelector('li')) {
           const li = doc.createElement('li');
           while (next.firstChild) li.appendChild(next.firstChild);
@@ -537,6 +549,17 @@
       doc.execCommand('createLink', false, href);
       markDirty(); persistEditing();
     }
+    // U6（§0 决策1）：高亮用 <mark>（行内、语义对、无 CSS 也黄底）；多色靠 mark 行内 style（校验器允许行内 style）。
+    function wrapMark(bg) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      if (!selWithinOneBlock()) return; // 跨块拒绝：否则 extractContents 把块级元素拽进 <mark>
+      const range = sel.getRangeAt(0);
+      const mk = doc.createElement('mark');
+      if (bg) mk.style.background = bg;
+      try { range.surroundContents(mk); } catch (e) { mk.appendChild(range.extractContents()); range.insertNode(mk); }
+      markDirty(); persistEditing();
+    }
     function wrapCode() {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
@@ -587,7 +610,7 @@
       (hilite ? HILITE_COLORS : TEXT_COLORS).forEach((c) => {
         const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', ''); sw.className = 'ws-fmtbar-swatch'; sw.style.background = c;
         sw.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyColor(hilite ? 'backgroundColor' : 'color', c); pop.style.display = 'none'; });
+        sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (hilite) wrapMark(c); else applyColor('color', c); pop.style.display = 'none'; });
         pop.appendChild(sw);
       });
       holder.appendChild(btn); holder.appendChild(pop);
@@ -639,7 +662,8 @@
       const colors = doc.createElement('div'); colors.setAttribute('data-ws2-ui', ''); colors.className = 'ws-blockmenu-colors';
       TEXT_COLORS.forEach((c) => { const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', ''); sw.className = 'ws-blockmenu-swatch'; sw.style.background = c;
         sw.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (isEditableEl(el)) { el.style.color = c; if (undoMgr) undoMgr.checkpoint(); markDirty(); } closeBlockMenu(); });
+        // A2/§0决策1：块级上色用 ws-color class（不写 el.style——块 style 被校验器判非法）。默认色=清 class。
+        sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (isEditableEl(el)) { TEXT_COLORS.forEach((c2) => el.classList.remove('ws-color-' + c2.slice(1))); if (c !== TEXT_COLORS[0]) { el.classList.add('ws-color-' + c.slice(1)); ensureColorStyle(); } if (undoMgr) undoMgr.checkpoint(); markDirty(); } closeBlockMenu(); });
         colors.appendChild(sw); });
       blockMenu.appendChild(colors);
       const r = grip.getBoundingClientRect(); const { sx, sy } = vp();
@@ -878,8 +902,10 @@
           if (prev && prev.tagName === 'LI') {
             let sub = prev.lastElementChild;
             if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
-              sub = doc.createElement(editingEl.tagName.toLowerCase());
-              if (editingEl.className) sub.className = editingEl.className;
+              // D3：子列表继承 li 的直接父列表类型/class（如 todo 缩进仍是 todo），不是顶层 editingEl 的。
+              const parentList = li.parentElement;
+              sub = doc.createElement(parentList.tagName.toLowerCase());
+              if (parentList.className) sub.className = parentList.className;
               prev.appendChild(sub);
             }
             sub.appendChild(li);
