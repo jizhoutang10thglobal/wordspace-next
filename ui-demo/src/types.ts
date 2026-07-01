@@ -74,6 +74,9 @@ export interface Doc {
   updatedBy: string // member id
   collaborators: string[] // member ids with access
   deployedAt?: number
+  // 从「标签页 +」新建、还没手动保存的临时文档：只作为标签页存在，不进文件树/库；
+  // Cmd+S / 「保存」按钮才把它落进当前空间。标签页在心智里是临时的（Wendi 反馈）。
+  unsaved?: boolean
 }
 
 export interface Folder {

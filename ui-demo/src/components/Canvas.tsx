@@ -1188,7 +1188,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           />
           {!embedded && (
             <div className="ws-doc-end ws-muted">
-              这是一个本地 HTML 文件 · {doc.localPath}
+              {doc.unsaved
+                ? '未保存的新文档 · ⌘S（或右上角「保存」）存进当前空间'
+                : `这是一个本地 HTML 文件 · ${doc.localPath}`}
             </div>
           )}
         </article>

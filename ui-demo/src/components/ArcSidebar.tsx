@@ -84,6 +84,10 @@ function TabRow({
   const { activeTabId, setActiveTab, closeTab, togglePin } = useStore()
   const active = tab.id === activeTabId
   const pinned = !!tab.pinned
+  const unsaved = useStore((s) => {
+    const d = tab.docId ? s.docs.find((x) => x.id === tab.docId) : undefined
+    return !!d?.unsaved
+  })
   return (
     <div
       className={`arc-tab ${active ? 'is-active' : ''} ${insert ? 'drop-' + insert : ''}`}
@@ -103,6 +107,7 @@ function TabRow({
         {tab.kind === 'web' ? <Globe2 size={13} /> : <FileText size={13} />}
       </span>
       <span className="arc-tab-title ws-truncate">{tab.title}</span>
+      {unsaved && <span className="arc-tab-dot" title="未保存（还没存进文件夹）" />}
       <button
         className="arc-tab-act"
         title={pinned ? '取消置顶' : '置顶'}
@@ -215,7 +220,9 @@ function DocRow({ doc }: { doc: Doc }) {
 
 function FolderGroup({ folder, query }: { folder: Folder; query: string }) {
   const docs = useStore((s) =>
-    s.docs.filter((d) => d.folderId === folder.id).sort((a, b) => b.updatedAt - a.updatedAt),
+    s.docs
+      .filter((d) => d.folderId === folder.id && !d.unsaved)
+      .sort((a, b) => b.updatedAt - a.updatedAt),
   )
   const q = query.trim().toLowerCase()
   const shown = q ? docs.filter((d) => d.title.toLowerCase().includes(q)) : docs
@@ -619,9 +626,9 @@ function SpaceLibrary({ space, query }: { space: Space; query: string }) {
     .filter((f) => f.spaceId === space.id && f.scope === 'personal')
     .sort((a, b) => a.order - b.order)
   const folderIds = new Set([...team, ...personal].map((f) => f.id))
-  const hasDocs = docs.some((d) => folderIds.has(d.folderId))
+  const hasDocs = docs.some((d) => folderIds.has(d.folderId) && !d.unsaved)
   const matches = q
-    ? docs.some((d) => folderIds.has(d.folderId) && d.title.toLowerCase().includes(q))
+    ? docs.some((d) => folderIds.has(d.folderId) && !d.unsaved && d.title.toLowerCase().includes(q))
     : true
   return (
     <div className="arc-lib" key={space.id}>
@@ -741,7 +748,7 @@ export default function ArcSidebar() {
     setActiveSpace,
     newBrowserTab,
     openNewTab,
-    toast,
+    saveActiveDoc,
   } = { ...useStore(), openNewTab: useUI((s) => s.openNewTab) }
   const me = useStore((s) => s.getMember(s.meId))
   const collapsed = useUI((s) => s.sidebarCollapsed)
@@ -780,7 +787,7 @@ export default function ArcSidebar() {
         openNewTab()
       } else if ((e.key === 's' || e.key === 'S') && !e.shiftKey) {
         e.preventDefault()
-        toast('已保存', 'success')
+        saveActiveDoc()
       } else if (e.key === 'p' || e.key === 'P') {
         e.preventDefault()
         openFind()
@@ -788,7 +795,7 @@ export default function ArcSidebar() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [toggleSidebar, openNewTab, toast, openFind])
+  }, [toggleSidebar, openNewTab, saveActiveDoc, openFind])
 
   // F6：切到某个文件标签页时，在左侧树展开它的祖先文件夹并滚动定位（高亮由 is-active 负责）。
   useEffect(() => {

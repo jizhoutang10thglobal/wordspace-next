@@ -181,8 +181,10 @@ interface State {
 
   // documents. dirPath (optional) targets a subfolder in a connected space;
   // ignored for cloud spaces (those land in 我的草稿).
-  createDoc: (folderId: string, kind?: DocKind, title?: string, dirPath?: string) => string
-  createFromTemplate: (templateId: string, folderId: string, dirPath?: string) => string
+  createDoc: (folderId: string, kind?: DocKind, title?: string, dirPath?: string, unsaved?: boolean) => string
+  createFromTemplate: (templateId: string, folderId: string, dirPath?: string, unsaved?: boolean) => string
+  // 手动保存当前标签页里的「临时文档」（unsaved）到当前空间
+  saveActiveDoc: () => void
   renameDoc: (docId: string, title: string) => void
   deleteDoc: (docId: string) => void
 
@@ -902,7 +904,7 @@ export const useStore = create<State>()(
           }
         }),
 
-      createDoc: (folderId, kind = 'doc', title = '无标题文档', dirPath) => {
+      createDoc: (folderId, kind = 'doc', title = '无标题文档', dirPath, unsaved = false) => {
         const id = uid('d')
         const space = get().spaces.find((sp) => sp.id === get().activeSpaceId)
         const inFolder = !!space && !isCloudStorage(space.storage)
@@ -930,9 +932,14 @@ export const useStore = create<State>()(
           updatedBy: get().meId,
           collaborators: [get().meId],
         }
-        // In a connected folder the new doc is a real .html file in that folder,
-        // so it shows up in the file tree; in a cloud space it is just a document.
-        if (inFolder) {
+        if (unsaved) doc.unsaved = true
+        // 临时文档（从「标签页 +」新建）：只开标签页，不建 FileEntry、不进文件树/库；手动保存才落地。
+        if (unsaved) {
+          set((s) => ({ docs: [doc, ...s.docs] }))
+          get().openDoc(id)
+        } else if (inFolder) {
+          // In a connected folder the new doc is a real .html file in that folder,
+          // so it shows up in the file tree; in a cloud space it is just a document.
           const file: FileEntry = { spaceId: space!.id, path: fileName, kind: 'html', docId: id }
           set((s) => ({ docs: [doc, ...s.docs], files: [...s.files, file] }))
           get().openFileTab(file)
@@ -943,7 +950,38 @@ export const useStore = create<State>()(
         return id
       },
 
-      createFromTemplate: (templateId, folderId, dirPath) => {
+      // 手动保存：把「临时文档」（unsaved）落进当前空间——连接文件夹里补一个 FileEntry
+      // 让它进树，然后清掉 unsaved 标记；已保存的文档只提示一下。
+      saveActiveDoc: () => {
+        const st = get()
+        const tab = st.tabs.find((t) => t.id === st.activeTabId)
+        const doc = tab?.docId ? st.getDoc(tab.docId) : undefined
+        if (!doc || !doc.unsaved) {
+          st.toast('已保存', 'success')
+          return
+        }
+        const space = st.spaces.find((sp) => sp.id === st.activeSpaceId)
+        const inFolder = !!space && !isCloudStorage(space.storage)
+        if (inFolder && space) {
+          const fileName = uniqueFileInDir(st.files, space.id, '', doc.title, '.html')
+          const file: FileEntry = { spaceId: space.id, path: fileName, kind: 'html', docId: doc.id }
+          set((s) => ({
+            docs: s.docs.map((d) =>
+              d.id === doc.id
+                ? { ...d, unsaved: false, localPath: `${space.mountPath ?? '~'}/${fileName}` }
+                : d,
+            ),
+            files: [...s.files, file],
+          }))
+        } else {
+          set((s) => ({
+            docs: s.docs.map((d) => (d.id === doc.id ? { ...d, unsaved: false } : d)),
+          }))
+        }
+        st.toast(`已保存到 ${space?.name ?? '文档'}`, 'success')
+      },
+
+      createFromTemplate: (templateId, folderId, dirPath, unsaved = false) => {
         const tpl = get().templates.find((t) => t.id === templateId)
         if (!tpl) return ''
         const id = uid('d')
@@ -972,7 +1010,11 @@ export const useStore = create<State>()(
           updatedBy: get().meId,
           collaborators: [get().meId],
         }
-        if (inFolder) {
+        if (unsaved) doc.unsaved = true
+        if (unsaved) {
+          set((s) => ({ docs: [doc, ...s.docs] }))
+          get().openDoc(id)
+        } else if (inFolder) {
           const file: FileEntry = { spaceId: space!.id, path: fileName, kind: 'html', docId: id }
           set((s) => ({ docs: [doc, ...s.docs], files: [...s.files, file] }))
           get().openFileTab(file)
