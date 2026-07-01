@@ -1,0 +1,18 @@
+/* 非合规基础编辑器（Feature 3）的样式。降级提示条 + 宿主浮层（格式条/焦点框/悬停删除/🔒）。
+   浮层类 .nce-* 移植自 ui-demo BasicEditor.css（真 app 无这些类，是移植不是复用）。U2/U3 续填。 */
+
+/* ---- 降级提示条（U1）：doc-header 与 iframe 之间的一条轻提示 ---- */
+.ws-degrade-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #8a5a00;
+  background: #fff8e6;
+  border-bottom: 1px solid #f0e2b8;
+  flex: 0 0 auto;
+}
+.ws-degrade-notice svg { flex: 0 0 auto; color: #c8930a; }
+.ws-degrade-notice strong { font-weight: 600; }
