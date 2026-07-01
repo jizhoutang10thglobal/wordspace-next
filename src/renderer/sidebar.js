@@ -929,13 +929,19 @@
     document.body.appendChild(overlay);
   }
 
-  // ---- 收起/展开侧栏（最简版：收成细条；Cmd+\ 或头部按钮）----
+  // ---- 收起/展开侧栏（真收起 = 全隐藏；Cmd+\ / 头部按钮收，编辑区悬浮按钮 / Cmd+\ 展开）----
   const sidebarEl = document.getElementById('sidebar');
   const toggleBtn = document.getElementById('sb-toggle');
-  function toggleCollapsed() {
-    if (sidebarEl) sidebarEl.classList.toggle('is-collapsed');
+  const reopenBtn = document.getElementById('sb-reopen');
+  // body.is-sb-collapsed 让编辑区那颗悬浮「展开」按钮现身（侧栏全隐后自己的 toggle 也没了）。
+  function setSidebarCollapsed(v) {
+    if (!sidebarEl) return;
+    sidebarEl.classList.toggle('is-collapsed', v);
+    document.body.classList.toggle('is-sb-collapsed', v);
   }
+  function toggleCollapsed() { if (sidebarEl) setSidebarCollapsed(!sidebarEl.classList.contains('is-collapsed')); }
   if (toggleBtn) toggleBtn.onclick = toggleCollapsed;
+  if (reopenBtn) reopenBtn.onclick = () => setSidebarCollapsed(false);
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
       e.preventDefault();
@@ -1057,7 +1063,7 @@
     refresh,
     newTab: () => { if (current) openCreateModal('', { temp: true }); },              // Cmd+T：新建临时文档（无工作区时不建，没地方保存）
     closeActiveTab: () => { if (tabState.activeRel) closeTabRel(tabState.activeRel); }, // Cmd+W：关当前活跃标签
-    focusFilter: () => { if (sidebarEl) sidebarEl.classList.remove('is-collapsed'); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
+    focusFilter: () => { setSidebarCollapsed(false); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
     openSaveModal: (closeAfter) => openSaveModal(closeAfter),                          // shell.save() 遇临时文档 → 弹「保存到哪里」
   };
   // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，

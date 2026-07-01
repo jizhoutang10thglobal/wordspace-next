@@ -140,16 +140,20 @@ ul { list-style: none; }
 }
 .sb-icobtn:hover { background: var(--c-hover); color: var(--c-text); }
 
-/* 收起态：48px 图标轨（置顶 + 顶层文件夹/文件迷你图标 + hover 气泡），对齐 ui-demo CollapsedRail。 */
-.sb.is-collapsed { width: 48px; }
-.sb.is-collapsed .sb-title,
-.sb.is-collapsed #sb-open-folder,
-.sb.is-collapsed #sb-new-doc,
-.sb.is-collapsed .sb-filter,
-.sb.is-collapsed .sb-body { display: none; }
-.sb.is-collapsed .sb-head { justify-content: center; padding: 0; }
+/* 收起态：真收起（全隐藏，不留细条；图标轨 + hover 气泡早已删）。侧栏整个滑没，编辑区靠悬浮
+   .sb-reopen / Cmd+\ 重开。（ui-demo 留 48px 细条放展开钮；这里按 Colin「收起就是真收起」全隐藏。）*/
+.sb.is-collapsed { width: 0; min-width: 0; overflow: hidden; border-right: none; }
 
-/* 图标轨（收起态竖排图标）已删 — Wendi B2。 */
+/* 编辑区左上角悬浮「展开侧栏」入口：仅全收起时显示（顶栏左内边距 56px 给它让位，不压面包屑）。 */
+.sb-reopen {
+  position: absolute; top: 11px; left: 14px; z-index: 40;
+  width: 30px; height: 30px; display: none;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--c-border); border-radius: var(--r-md);
+  background: var(--c-surface); color: var(--c-text-2); box-shadow: var(--shadow-sm);
+}
+.sb-reopen:hover { background: var(--c-hover); color: var(--c-text); }
+body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 /* 品牌页脚：wordspace.ai logo + 版本号，钉在左侧栏底部（不在编辑区）。 */
 .sb-foot { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-top: 1px solid var(--c-divider); }
