@@ -157,7 +157,7 @@ test('删除当前打开的文件 → 编辑区回空态、不崩', async () => 
 test('Cmd/Ctrl+\\ 收起/展开侧栏', async () => {
   await page.click('#home-open-folder');
   await page.keyboard.press('Control+\\');
-  await expect(page.locator('#sidebar.is-collapsed')).toBeVisible();
+  await expect(page.locator('#sidebar')).toHaveClass(/is-collapsed/); // 真收起 = 全隐藏（宽 0），断类名不断可见性
   await page.keyboard.press('Control+\\');
   await expect(page.locator('#sidebar.is-collapsed')).toHaveCount(0);
 });

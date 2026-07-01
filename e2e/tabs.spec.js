@@ -68,6 +68,8 @@ test.beforeEach(async () => {
   ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata'), WS2_FOLDER_IN: wsDir }));
 });
 test.afterEach(async () => {
+  // 有未保存的临时文档时主进程关窗守卫会让 app.close() 卡住 → 先 destroy 强制关（纯测试收尾）。
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
   await app.close().catch(() => {});
   await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
 });
