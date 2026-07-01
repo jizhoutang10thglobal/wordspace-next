@@ -64,6 +64,9 @@ export interface Doc {
   pageFormat?: PageFormat // 格式模板生成的文档带上纸张版面（A4/A5/书信…）；缺省=默认列宽
   folderId: string
   blocks: Block[]
+  // 野生 / 非合规 HTML 文件（打开后由校验器判定不符合 Schema → 走基础编辑，不拆成 blocks）。
+  // 设了它的文档不进块编辑器（Canvas），改进 BasicEditor。仅演示「非合规降级」用。
+  rawHtml?: string
   visibility: Visibility
   publishedUrl?: string
   localPath: string // e.g. ~/Wordspace/团队/员工手册.html
@@ -71,6 +74,9 @@ export interface Doc {
   updatedBy: string // member id
   collaborators: string[] // member ids with access
   deployedAt?: number
+  // 从「标签页 +」新建、还没手动保存的临时文档：只作为标签页存在，不进文件树/库；
+  // Cmd+S / 「保存」按钮才把它落进当前空间。标签页在心智里是临时的（Wendi 反馈）。
+  unsaved?: boolean
 }
 
 export interface Folder {

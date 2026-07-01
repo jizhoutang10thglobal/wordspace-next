@@ -66,16 +66,23 @@ test('自带 <style> 但正文裸挂 body：作者样式不被编辑器排版覆
   expect(hasCanvas).toBe(false);
 });
 
-// 反向：真·裸文档（无任何自带样式）仍要套编辑器排版——确认修复没误伤裸文档这条主路。
-test('真·裸文档（无自带样式）仍套编辑器 Notion 排版', async () => {
+// §0：真·裸文档不再被套编辑器**运行时 canvas 装饰**（不入盘的整套 820+字号+颜色）；宽度改由 baseline 入盘格式给。
+// 反掉旧行为（曾「裸文档 blockRoot===body 就套 data-ws2-canvas 排版」）。区别：canvas=运行时装饰、baseline=入盘格式。
+test('真·裸文档：不套 canvas 运行时装饰；宽度由 baseline 入盘格式给', async () => {
   await launch();
   await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8"></head>'
     + '<body><h1 id="h">标题</h1><p id="p">正文</p></body></html>');
+  // body 不再被打 data-ws2-canvas（运行时装饰开关已删）
   const hasCanvas = await frame.locator('body').evaluate((el) => el.hasAttribute('data-ws2-canvas'));
-  expect(hasCanvas).toBe(true);
-  // canvas 排版生效：h1 用编辑器的深灰、无衬线
-  const pfont = await frame.locator('#p').evaluate((el) => getComputedStyle(el).fontFamily);
-  expect(pfont.toLowerCase()).not.toContain('courier');
+  expect(hasCanvas).toBe(false);
+  // max-width 来自 baseline 入盘格式（data-ws-schema-css），不是 canvas 运行时装饰——随文件走、app 外也有
+  const baselineIn = await frame.locator('body').evaluate(() => !!document.querySelector('style[data-ws-schema-css="baseline"]'));
+  expect(baselineIn, 'baseline 入盘格式应在').toBe(true);
+  const maxW = await frame.locator('body').evaluate((el) => getComputedStyle(el).maxWidth);
+  expect(maxW).toBe('820px');
+  // 内容仍在
+  const htext = await frame.locator('#h').evaluate((el) => el.textContent);
+  expect(htext).toBe('标题');
 });
 
 test('文档自带 inline <style> 真实生效（所见即所得）', async () => {
@@ -104,7 +111,14 @@ test('收紧 CSP 下打开文档无 CSP 违规（外壳资源照常加载）', a
   await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8">'
     + '<style>p{color:red}</style></head><body><p>x</p></body></html>');
   await page.waitForTimeout(300);
-  expect(cspErrors, 'CSP 违规：\n' + cspErrors.join('\n')).toEqual([]);
+  // 正面验：作者内联 <style> 在 file:// iframe 里照常渲染（红字）。sandbox=allow-same-origin 的同源 iframe 会让
+  // 父层 CSP 顺带把 iframe 内文档自己的内联样式「评估」一次、报一条 style-src「applying inline style」，但 iframe
+  // 自身无 CSP、样式实际生效（report-only、非真拦——sha256(p{color:red}) 即那条违规的 hash）。故把这条无害自报
+  // 排除，真正要守的「外壳资源被拦」(refused to load/execute 脚本/样式表/字体) 仍全捕；渲染生效本身是最强反证。
+  const pColor = await page.frameLocator('#doc-frame').locator('p').evaluate((el) => getComputedStyle(el).color);
+  expect(pColor, '作者内联样式应照常渲染（红字）= CSP 没真拦文档渲染').toBe('rgb(255, 0, 0)');
+  const shellViolations = cspErrors.filter((t) => !/applying inline style/i.test(t));
+  expect(shellViolations, '外壳资源 CSP 违规：\n' + shellViolations.join('\n')).toEqual([]);
 });
 
 test('恶意 meta refresh 不能把 iframe 导航到远程（frame-src file: 挡住）', async () => {

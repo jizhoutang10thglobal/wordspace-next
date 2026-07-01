@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="wordspace-schema" content="1">
+<title>用 Git 恢复误删文件的操作教程</title>
+</head>
+<body>
+<h1>用 Git 恢复误删文件的操作教程</h1>
+<p>手滑删掉了某个文件，还没提交，慌了？别慌。只要文件曾经被 Git 跟踪过，绝大多数情况都能<b>一条命令找回来</b>。这篇教程带你一步步操作，覆盖「删了没提交」和「删了还提交了」两种最常见的情况。</p>
+
+<h2>简介</h2>
+<p>Git 的工作区（working tree）和历史记录是分开的。你删的只是工作区里的那份拷贝，历史里那份还在。所以恢复的本质，就是<i>把历史里的版本重新拿回工作区</i>。下面用到的命令都是安全的读操作，不会破坏你的提交历史，放心跟着敲。</p>
+
+<h2>操作步骤</h2>
+<ol>
+<li>先确认文件的状态，运行 <code>git status</code> 看看它是被标记为已删除，还是压根不在跟踪列表里。</li>
+<li>如果只是删了、还没 commit，直接运行 <code>git restore 文件路径</code> 就能把它从暂存区拉回工作区。</li>
+<li>老版本 Git 没有 <code>restore</code> 命令，用 <code>git checkout -- 文件路径</code> 达到同样效果。</li>
+<li>如果文件已经在某次提交里被删掉了，先用 <code>git log --diff-filter=D -- 文件路径</code> 找到那次删除对应的 commit。</li>
+<li>拿到那次删除的 commit 哈希后，从它的<b>父提交</b>里取回文件：运行 <code>git checkout 哈希^ -- 文件路径</code>（末尾的 <code>^</code> 表示上一个提交）。</li>
+<li>最后再跑一次 <code>git status</code> 确认文件回来了，然后照常 <code>git add</code> 和 <code>git commit</code> 保存这次恢复。</li>
+</ol>
+
+<div class="ws-callout"><p>注意：<code>git restore</code> 会用暂存区或最近提交的内容<b>直接覆盖</b>当前工作区的同名文件。如果你在删除后又新建了一个同名文件并写了东西，这一步会把你的新内容冲掉——操作前先确认没有未保存的改动。</p></div>
+
+<div class="ws-callout"><p>注意：路径写<i>相对仓库根目录</i>的路径最稳妥。如果你在子目录里执行命令，Git 是以当前目录为基准解析路径的，容易找不到文件而报错。拿不准就先 <code>cd</code> 到仓库根目录再操作。</p></div>
+
+<details>
+<summary>进阶技巧：找回连你自己都忘了的丢失提交</summary>
+<p>上面的方法只能救「还留在历史里」的文件。但如果你做了 <code>git reset --hard</code> 或者删了某个分支，那些提交看起来彻底没了——其实还没有。</p>
+<p>Git 有个叫 reflog（引用日志）的东西，记录了 <code>HEAD</code> 每一次移动。哪怕提交已经从分支上脱钩，它通常还在 reflog 里躺着，默认保留约 90 天。</p>
+<ol>
+<li>运行 <code>git reflog</code>，你会看到一长串带哈希的历史移动记录。</li>
+<li>找到你想恢复的那个状态对应的哈希，比如误操作前的那一条。</li>
+<li>用 <code>git checkout 哈希</code> 跳过去查看，确认无误后再 <code>git branch 新分支名</code> 把它固定下来。</li>
+</ol>
+<blockquote><p>reflog 是你的后悔药。<br>只要没到过期时间、没手动跑过 <code>git gc</code>，几乎没有真正找不回来的提交。</p></blockquote>
+</details>
+
+<hr>
+<p>掌握了这几招，误删文件基本不再是事故，而是一次两分钟的小插曲。建议把 <code>git restore</code> 和 <code>git reflog</code> 这两个命令记牢，它们能救你无数次。</p>
+</body>
+</html>

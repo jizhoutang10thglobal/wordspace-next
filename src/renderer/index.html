@@ -5,6 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; frame-src file:; img-src 'self' file: data:; style-src 'self' file:; script-src 'self' file:">
 <title>Wordspace Next</title>
 <link rel="stylesheet" href="shell.css">
+<link rel="stylesheet" href="basic-edit.css">
 </head>
 <body>
 
@@ -92,6 +93,12 @@
       </div>
     </div>
 
+    <!-- 非合规文件降级提示条（Feature 3）：仅非合规文档时显示，shell.js 切换 hidden。位于 doc-header 与 iframe 之间。 -->
+    <div id="ws-degrade-notice" class="ws-degrade-notice" hidden>
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      <span>此文件不符合 Wordspace Schema，仅支持<strong>基础编辑</strong>：点文字改字（选中出格式条：粗/斜/下/删 + 文字色/高亮/清除）· 悬停任意块右上角 <strong>🗑 删除</strong> · 按 <strong>Esc</strong> 后用方向键在块间移动、Delete 删除。</span>
+    </div>
+
     <iframe id="doc-frame" sandbox="allow-same-origin" hidden></iframe>
 
     <!-- 非 HTML 文件的应用内查看器（图片/PDF 直接预览；Word/表格/其他 → 外部打开卡片）。shell.js 填充。 -->
@@ -102,7 +109,11 @@
 <script src="../editor/serialize.js"></script>
 <script src="../editor/undo.js"></script>
 <script src="../editor/format.js"></script>
+<script src="../lib/schema-model.js"></script>
+<script src="../lib/schema-validate.js"></script>
+<script src="../lib/schema-registry.js"></script>
 <script src="../editor/blockedit.js"></script>
+<script src="../editor/basic-edit.js"></script>
 <script src="pdf-viewer.js"></script>
 <script src="shell.js"></script>
 <script src="../lib/tabs.js"></script>

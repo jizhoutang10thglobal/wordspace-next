@@ -1,0 +1,47 @@
+/* 复用全局 .ws-modal 外壳（见 CreateModal.css）。这里只写「保存到哪里」特有的样式。 */
+.ws-modal.sm-modal {
+  width: 460px;
+  max-width: calc(100vw - 32px);
+}
+
+.sm-list {
+  padding: 8px 12px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.sm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease);
+}
+.sm-row:hover {
+  background: var(--c-hover);
+}
+.sm-row.is-on {
+  background: var(--c-accent-tint);
+}
+.sm-ico {
+  flex: none;
+  color: var(--c-text-3);
+  display: flex;
+}
+.sm-row.is-on .sm-ico {
+  color: var(--c-accent);
+}
+.sm-label {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-base);
+  color: var(--c-text);
+}
+.sm-check {
+  flex: none;
+  color: var(--c-accent);
+}

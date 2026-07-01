@@ -8,6 +8,7 @@ import type {
   Template,
   Workspace,
 } from '../types'
+import { NON_CONFORM_SAMPLES } from '../lib/nonConformSamples'
 
 const now = Date.now()
 const MIN = 60_000
@@ -211,6 +212,64 @@ export const seedDocs: Doc[] = [
       { id: 'tw2', type: 'list', html: '<li>定稿招聘页</li><li>过一遍 Q2 汇报</li><li>约客户周会</li>' },
     ],
   },
+  // Schema 演示页内嵌真编辑器用的「符合 Schema」示例文档（块模型，跑完整块编辑 UX）。
+  {
+    id: 'd-schema-sample',
+    title: '产品周报 · 第 24 周',
+    kind: 'doc',
+    folderId: 'sp-local',
+    visibility: 'private',
+    localPath: '~/Projects/品牌升级/产品周报.html',
+    updatedAt: now - 2 * HR,
+    updatedBy: ME_ID,
+    collaborators: [ME_ID],
+    blocks: [
+      { id: 'ss1', type: 'heading', level: 1, html: '产品周报 · 第 24 周' },
+      {
+        id: 'ss2',
+        type: 'text',
+        html: '本周把<b>编辑器内核</b>切到了 <code>schema-first</code> 架构，<i>结构 bug 明显减少</i>。详情见 <a href="#">技术评审记录</a>，重点结论已<mark>高亮</mark>。',
+      },
+      { id: 'ss3', type: 'heading', level: 2, html: '本周进展' },
+      {
+        id: 'ss4',
+        type: 'list',
+        listStyle: 'bulleted',
+        html: '<li>编辑器对 Schema #1 闭合：合法进 → 合法出</li><li>非合规文件降级为基础编辑</li><li>导出 PDF 版式对齐</li>',
+      },
+      { id: 'ss5', type: 'heading', level: 3, html: '下周待办' },
+      {
+        id: 'ss6',
+        type: 'list',
+        listStyle: 'todo',
+        html: '<li data-checked="true">冻结 Schema #1 块集合</li><li data-checked="true">校验器接入打开流程</li><li data-checked="false">Toggle / 表格块落地</li><li data-checked="false">富粘贴净化</li>',
+      },
+      {
+        id: 'ss7',
+        type: 'callout',
+        html: '提示：Schema 只管「能放什么结构、怎么编辑」，不管「好不好看」——好看是 Template 的事。',
+      },
+      { id: 'ss8', type: 'quote', html: '「受限不是少了自由，而是换来了永不崩坏的结构。」' },
+      { id: 'ss9', type: 'divider', html: '' },
+      { id: 'ss10', type: 'text', html: '试试看：把光标放进任意一段就能改；左侧 ⋮⋮ 拖动重排，行首打 <code>/</code> 调出块菜单，选中文字弹出格式条。' },
+    ],
+  },
+  // 非合规样例（野生 HTML）：blocks 留空、带 rawHtml；打开后由校验器判定不符合 → BasicEditor 基础编辑。
+  ...NON_CONFORM_SAMPLES.map(
+    (s): Doc => ({
+      id: s.id,
+      title: s.fileName.replace(/\.html$/, ''),
+      kind: 'doc',
+      folderId: 'sp-local', // 本地空间文件以 spaceId 作 folderId（见 store loadSpaceData）
+      blocks: [],
+      rawHtml: s.html,
+      visibility: 'private',
+      localPath: '~/Projects/品牌升级/' + s.fileName,
+      updatedAt: now - 3 * HR,
+      updatedBy: ME_ID,
+      collaborators: [ME_ID],
+    }),
+  ),
 ]
 
 // ---------------------------------------------------------------------------
@@ -335,4 +394,9 @@ export const seedFiles: FileEntry[] = [
   { spaceId: 'sp-local', path: '素材/封面.png', kind: 'image' },
   { spaceId: 'sp-local', path: '数据/转化分析.xlsx', kind: 'sheet' },
   { spaceId: 'sp-local', path: '说明.html', kind: 'html', docId: 'd-handbook' },
+  // 非合规样例（野生 HTML）：HTML 文件 + docId 指向带 rawHtml 的样例文档 → 打开走 BasicEditor 降级编辑
+  { spaceId: 'sp-local', path: '外部导入/新品落地页.html', kind: 'html', docId: 'd-nc-landing' },
+  { spaceId: 'sp-local', path: '外部导入/季度数据表.html', kind: 'html', docId: 'd-nc-table' },
+  { spaceId: 'sp-local', path: '外部导入/活动报名页.html', kind: 'html', docId: 'd-nc-signup' },
+  { spaceId: 'sp-local', path: '外部导入/产品页.html', kind: 'html', docId: 'd-nc-interactive' },
 ]
