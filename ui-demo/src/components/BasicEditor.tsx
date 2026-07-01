@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bold, Italic, Underline, Strikethrough, Eraser, Info, Trash2 } from 'lucide-react'
 import type { Doc } from '../types'
+import { DocHeader } from './Canvas'
 import './BasicEditor.css'
 
 // 打开「不符合 Schema」的野生 HTML 时的基础编辑视图。见 docs/brainstorms/2026-07-01-nonconform-html-editing-requirements.md。
@@ -222,11 +223,16 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
 
   return (
     <div className="nce" ref={hostRef}>
-      <div className="nce-stage">
+      {/* 顶边栏：始终保留（跟合规文档一致的面包屑 + … 菜单 + 编辑于），右侧放 编辑/预览 切换 */}
+      <div className="nce-head">
+        <div className="nce-head-doc"><DocHeader doc={doc} /></div>
         <div className="nce-modes" onMouseDown={guard}>
-          <button className={view === 'edit' ? 'on' : ''} onClick={() => setView('edit')}>编辑（展开全部）</button>
-          <button className={view === 'preview' ? 'on' : ''} onClick={() => setView('preview')}>预览（跑 JS · 只读）</button>
+          <button className={view === 'edit' ? 'on' : ''} onClick={() => setView('edit')}>编辑</button>
+          <button className={view === 'preview' ? 'on' : ''} onClick={() => setView('preview')}>预览</button>
         </div>
+      </div>
+
+      <div className="nce-stage">
         <iframe
           key={view}
           ref={frameRef}

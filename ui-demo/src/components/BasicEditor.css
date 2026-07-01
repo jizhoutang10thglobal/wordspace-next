@@ -32,20 +32,27 @@
   display: flex;
 }
 
-/* 编辑（展开全部）/ 预览（跑 JS·只读）切换 —— 右上角浮层 */
+/* 顶边栏：始终保留（面包屑 + … + 编辑于），右侧放 编辑/预览 切换；HTML 在它下面渲染，不浮层重叠 */
+.nce-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px 12px;
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--c-divider);
+}
+.nce-head-doc { flex: 1; min-width: 0; }
+.nce-head-doc .ws-doc-header { margin-bottom: 0; }
 .nce-modes {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  z-index: 58;
+  flex: none;
+  margin-top: 2px;
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid var(--c-border);
+  background: var(--c-bg-sunken);
   border-radius: 9px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  backdrop-filter: blur(4px);
 }
 .nce-modes button {
   border: 0;
@@ -53,11 +60,11 @@
   font-size: 12px;
   font-weight: var(--fw-semibold);
   color: var(--c-text-3);
-  padding: 5px 10px;
+  padding: 5px 14px;
   border-radius: 6px;
   cursor: pointer;
 }
-.nce-modes button.on { background: var(--c-accent); color: #fff; }
+.nce-modes button.on { background: var(--c-surface); color: var(--c-accent); box-shadow: var(--shadow-sm); }
 .nce-frame {
   flex: 1;
   width: 100%;
