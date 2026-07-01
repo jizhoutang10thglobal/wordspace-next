@@ -85,12 +85,13 @@ export default function CreateModal() {
     closeCreate()
     navigate('/docs')
   }
+  // omni（从「标签页 +」进）→ 临时文档，不进文件树/库，手动保存才落地。
   const blank = () => {
-    createDoc(DRAFTS, 'doc', '无标题文档', dir)
+    createDoc(DRAFTS, 'doc', '无标题文档', dir, omni)
     done()
   }
   const fromTemplate = (id: string) => {
-    createFromTemplate(id, DRAFTS, dir)
+    createFromTemplate(id, DRAFTS, dir, omni)
     done()
   }
 

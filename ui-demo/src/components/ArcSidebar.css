@@ -124,6 +124,16 @@
 .arc-tab-ico { display: flex; flex: none; color: var(--c-text-3); }
 .arc-tab.is-active .arc-tab-ico { color: var(--c-accent); }
 .arc-tab-title { flex: 1; min-width: 0; font-size: var(--fs-base); }
+/* 未保存（临时文档）圆点：闲置时显示，hover 出置顶/关闭按钮时让位隐藏 */
+.arc-tab-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--c-accent);
+}
+.arc-tab:hover .arc-tab-dot { display: none; }
 .arc-tab-act {
   width: 18px; height: 18px; border-radius: var(--r-xs);
   display: flex; align-items: center; justify-content: center;
