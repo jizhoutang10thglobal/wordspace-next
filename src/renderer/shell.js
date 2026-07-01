@@ -124,6 +124,7 @@ function attachBasic() {
   detachEditors();
   basicEdit = WS2BasicEdit.attach(doc, { win: frame.contentWindow, host: mainEl, markDirty });
   if (degradeNotice) degradeNotice.hidden = false;
+  exportBtn.disabled = true; // 非合规文档不支持 Wordspace 样式导出（那是块编辑器排版的概念）——MVP 禁用
   doc.addEventListener('keydown', (e) => {
     if (handleZoomKey(e)) return;
     const mod = e.metaKey || e.ctrlKey;
