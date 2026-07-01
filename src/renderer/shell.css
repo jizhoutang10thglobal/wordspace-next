@@ -302,6 +302,22 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* 临时（未保存）标签：标题前一个小圆点提示未保存。 */
 .sb-tab-temp .sb-name::before { content: '● '; color: var(--c-warn, #b06000); font-size: 9px; vertical-align: 1px; }
 
+/* Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层 + 模糊搜结果列表。 */
+.fp-overlay { align-items: flex-start; padding-top: 88px; } /* 覆盖 .sb-modal-overlay 的居中，改顶部锚定 */
+.fp { width: 560px; max-width: calc(100vw - 32px); background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-menu); overflow: hidden; }
+.fp-bar { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--c-divider); }
+.fp-bar-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.fp-input { flex: 1; min-width: 0; border: none; background: none; outline: none; font-size: var(--fs-md); color: var(--c-text); }
+.fp-input::placeholder { color: var(--c-text-3); }
+.fp-hint { flex: none; font-size: var(--fs-xs); color: var(--c-text-3); }
+.fp-list { max-height: 320px; overflow: auto; padding: 6px; }
+.fp-empty { padding: 18px; text-align: center; color: var(--c-text-3); font-size: var(--fs-sm); }
+.fp-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; text-align: left; border: none; border-radius: var(--r-md); background: transparent; color: var(--c-text); }
+.fp-row.is-sel { background: var(--c-accent-tint, #eef4ff); }
+.fp-row-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.fp-name { flex: none; max-width: 58%; font-size: var(--fs-md); }
+.fp-sub { flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--c-text-3); }
+
 /* ============================================================ 编辑区（照搬 Canvas chrome） */
 #main {
   flex: 1;

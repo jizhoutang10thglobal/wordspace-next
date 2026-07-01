@@ -929,6 +929,79 @@
     document.body.appendChild(overlay);
   }
 
+  // ---- Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层，模糊搜文件名/路径，↑↓ 选、Enter 开、Esc 关。----
+  const SEARCH_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>';
+  function openFindPalette() {
+    if (!current) return; // 没工作区没得搜
+    if (document.getElementById('fp-overlay')) return; // 已开着，别叠一层
+    const allFiles = [];
+    (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(current.tree);
+    let q = '', sel = 0, hits = [];
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay fp-overlay';
+    overlay.id = 'fp-overlay';
+    const onKeyGlobal = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKeyGlobal); }
+    const panel = document.createElement('div');
+    panel.className = 'fp';
+    const bar = document.createElement('div');
+    bar.className = 'fp-bar';
+    const ico = document.createElement('span'); ico.className = 'fp-bar-ico'; ico.innerHTML = SEARCH_SVG;
+    const input = document.createElement('input');
+    input.className = 'fp-input'; input.type = 'text'; input.placeholder = '按文件名查找…'; input.spellcheck = false;
+    const hint = document.createElement('span'); hint.className = 'fp-hint'; hint.textContent = '⏎ 打开';
+    bar.append(ico, input, hint);
+    const list = document.createElement('div');
+    list.className = 'fp-list';
+    panel.append(bar, list);
+    overlay.appendChild(panel);
+    overlay.onmousedown = (e) => { if (e.target === overlay) close(); };
+    function computeHits() {
+      const term = q.trim().toLowerCase();
+      const matched = term ? allFiles.filter((n) => n.name.toLowerCase().includes(term) || n.rel.toLowerCase().includes(term)) : allFiles;
+      hits = matched.slice(0, 12);
+      if (sel >= hits.length) sel = Math.max(0, hits.length - 1);
+    }
+    function highlight() { [...list.querySelectorAll('.fp-row')].forEach((r, i) => r.classList.toggle('is-sel', i === sel)); }
+    function scrollSel() { const r = list.querySelectorAll('.fp-row')[sel]; if (r && r.scrollIntoView) r.scrollIntoView({ block: 'nearest' }); }
+    function renderList() {
+      list.innerHTML = '';
+      if (!hits.length) {
+        const empty = document.createElement('div'); empty.className = 'fp-empty'; empty.textContent = '没有匹配的文件';
+        list.appendChild(empty);
+        return;
+      }
+      hits.forEach((n, i) => {
+        const row = document.createElement('button');
+        row.className = 'fp-row' + (i === sel ? ' is-sel' : '');
+        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = SVG.file;
+        const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.name;
+        const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.rel;
+        row.append(ic, nm, sub);
+        row.onmouseenter = () => { sel = i; highlight(); };
+        row.onclick = () => choose(n);
+        list.appendChild(row);
+      });
+    }
+    function choose(node) {
+      if (!node) return;
+      close();
+      openNode(node);           // .html 进编辑器 / 其余进查看器（同点树节点）
+      expandToFile(node.rel);   // 顺带在树里展开定位（F6）
+    }
+    input.addEventListener('input', () => { q = input.value; sel = 0; computeHits(); renderList(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); if (sel < hits.length - 1) { sel++; highlight(); scrollSel(); } }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (sel > 0) { sel--; highlight(); scrollSel(); } }
+      else if (e.key === 'Enter') { e.preventDefault(); choose(hits[sel]); }
+    });
+    document.addEventListener('keydown', onKeyGlobal);
+    document.body.appendChild(overlay);
+    computeHits(); renderList();
+    input.focus();
+  }
+
   // ---- 收起/展开侧栏（真收起 = 全隐藏；Cmd+\ / 头部按钮收，编辑区悬浮按钮 / Cmd+\ 展开）----
   const sidebarEl = document.getElementById('sidebar');
   const toggleBtn = document.getElementById('sb-toggle');
@@ -1064,6 +1137,7 @@
     newTab: () => { if (current) openCreateModal('', { temp: true }); },              // Cmd+T：新建临时文档（无工作区时不建，没地方保存）
     closeActiveTab: () => { if (tabState.activeRel) closeTabRel(tabState.activeRel); }, // Cmd+W：关当前活跃标签
     focusFilter: () => { setSidebarCollapsed(false); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
+    findPalette: () => openFindPalette(),                                              // Cmd+P：命令面板（模糊搜文件跳转）
     openSaveModal: (closeAfter) => openSaveModal(closeAfter),                          // shell.save() 遇临时文档 → 弹「保存到哪里」
   };
   // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
