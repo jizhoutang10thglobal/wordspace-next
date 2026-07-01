@@ -26,7 +26,7 @@
   // 修 P1-1/P2-5（对抗验证实证）：空 <ul>/void 块原判 !hasBlockLevelDescendant=叶子 → canMerge 放行 →
   // 节点级拼接产 <ul>text</ul>（非法落盘）或把文字灌进 <hr>（重序列化静默丢失）。
   // 修 S1：白名单内的块仍递归确认内部无块级（行内 <a> 里藏 <h2> 不算叶子）。
-  const LEAF_TEXT_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'DIV']);
+  const LEAF_TEXT_TAGS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'BLOCKQUOTE', 'DIV']); // 去 H5/H6：校验器 TOP_BLOCKS 只到 H4，两处对齐（review M-02，防将来漂移）
   function isLeafTextBlock(el) {
     if (!el || el.nodeType !== 1) return false;
     if (!LEAF_TEXT_TAGS.has(el.tagName)) return false; // 非文字承载块 → 永不叶子

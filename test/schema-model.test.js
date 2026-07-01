@@ -28,6 +28,11 @@ test('isLeafTextBlock: 含块级子 = 非叶子', () => {
   assert.equal(M.isLeafTextBlock(el('<li>x<ul><li>y</li></ul></li>')), false);     // 含嵌套列表
 });
 
+test('isLeafTextBlock: H5/H6 非叶子（与校验器 TOP_BLOCKS 只到 H4 对齐，M-02）', () => {
+  assert.equal(M.isLeafTextBlock(el('<h5>五</h5>')), false);
+  assert.equal(M.isLeafTextBlock(el('<h6>六</h6>')), false);
+});
+
 test('isLeafTextBlock S1: 块的直接子是行内 <a>、但 <a> 里藏块级 = 非叶子（递归）', () => {
   // <div> 是 flow 容器、<a> 透明可含 <h2>：直接子是行内 <a>（旧版只查直接子会误判叶子），递归才发现块级
   const div = el('<div><a href="#"><h2>x</h2></a></div>');

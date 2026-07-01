@@ -107,7 +107,7 @@ function setZoom(z) {
 function routeDoc(rawHtml) {
   try {
     return !!WS2SchemaValidate.validate(new DOMParser().parseFromString(rawHtml, 'text/html')).conform;
-  } catch (e) { return true; }
+  } catch (e) { return false; } // fail-closed：判不了就走基础编辑器（对任意 HTML 都安全、不套块模型），别 fail-open 把坏文档送进完整编辑器
 }
 
 // 换文档 / 关文档：两个编辑内核都拆、降级条收起（统一收口，防堆叠）。

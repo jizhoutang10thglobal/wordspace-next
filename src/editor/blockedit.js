@@ -331,7 +331,7 @@
     // 随 serialize 存盘，不像 EDITOR_CSS 那样不入盘）。这样 .html 在 app 外用任何浏览器打开，待办也渲染成
     // checklist。幂等（按 id 查重），用 ::before 画框故无需 JS。
     function ensureTodoStyle() {
-      if (!doc || doc.getElementById('ws-todo-style')) return;
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="todo"]')) return; // 属性查重（不靠固定 id，防作者内容碰撞，S9）
       const st = doc.createElement('style');
       st.id = 'ws-todo-style';
       st.setAttribute('data-ws-schema-css', 'todo'); // U5：标 schema baseline 语义 CSS——存盘保留 + 校验器 head 白名单认它合规
@@ -342,7 +342,7 @@
     // U5：callout 框 CSS 烤进存盘文件（修 C1：原 callout 无入盘 CSS、存盘成无样式纯文本）。照 ensureTodoStyle 范式。
     // 最小语义版：只给提示框的底/边/内距/外距（让 callout 渲染成框），不碰字色字号（那是装饰、按原生）。
     function ensureCalloutStyle() {
-      if (!doc || doc.getElementById('ws-callout-style')) return;
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="callout"]')) return; // 属性查重（S9）
       const st = doc.createElement('style');
       st.id = 'ws-callout-style';
       st.setAttribute('data-ws-schema-css', 'callout');
@@ -373,7 +373,7 @@
     // U6（§0 决策1 + A2）：固定色板文字色 CSS 入盘。块级上色用 class 不写 style（块 style 非法），
     // 显示按原生（class + 入盘 CSS 随文件走，app 外浏览器也显示）。class 名 = ws-color-<hex 去#>。
     function ensureColorStyle() {
-      if (!doc || doc.getElementById('ws-color-style')) return;
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="color"]')) return; // 属性查重（S9）
       const st = doc.createElement('style');
       st.id = 'ws-color-style';
       st.setAttribute('data-ws-schema-css', 'color');
@@ -971,6 +971,7 @@
           return;
         }
         if (classify(prev) === 'list') {
+          if (!isLeafTextBlock(cur)) return; // B2 守卫对称（补）：cur 是容器块(callout/quote)时不能把块级 <p> 塞进 <li>（产 <li><p> 非法）
           // 上一块是列表：当前块内容作为新 <li> 追加（不能把裸文本塞进 <ul>）
           const li = doc.createElement('li');
           while (cur.firstChild) li.appendChild(cur.firstChild);
