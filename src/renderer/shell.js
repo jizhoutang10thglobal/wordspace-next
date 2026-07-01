@@ -423,19 +423,17 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F
 });
 
-// 导出 PDF。两种样式：
-//   'wordspace'（默认）= 烤进编辑器排版，跟 app 里看到的一致（所见即所得）；
-//   'raw'              = 直印源文件、文档原本的渲染效果。
-// 有未保存改动先落盘（印的是磁盘版本）。
+// 导出 PDF。只有一种样式：Wordspace 所见即所得——把当前文档 + 编辑器排版烤成静态 HTML 再印，
+// 跟 app 里看到的一致。有未保存改动先落盘（印的是磁盘版本）。
+// （底层还有个「直印源文件」的打印原语，只在测试/内部用、不接 UI，见 main/pdf-export.js。）
 let exporting = false; // single-flight：连按不并发开多个隐藏窗口/叠多个对话框
-async function exportPdf(mode) {
+async function exportPdf() {
   if (exporting || !docPath) return;
   exporting = true; // 必须在 await save() 之前置位——否则脏文档连按时第二次调用会在 save 的 await 让出期溜过守卫
   try {
-    mode = mode === 'raw' ? 'raw' : 'wordspace';
     if (dirty) { await save(); if (dirty) return; } // save 失败（仍脏）→ 不导出
-    const html = mode === 'wordspace' ? buildWordspacePrintHtml() : null; // 可能抛错（文档未就绪），下面 catch 兜
-    const res = await window.ws2.exportPdf(docPath, mode, html);
+    const html = buildWordspacePrintHtml(); // 可能抛错（文档未就绪），下面 catch 兜
+    const res = await window.ws2.exportPdf(docPath, 'wordspace', html);
     if (res && res.error) alert('导出 PDF 失败：' + res.error);
   } catch (e) {
     alert('导出 PDF 失败：' + ((e && e.message) || e));
@@ -471,10 +469,8 @@ function buildWordspacePrintHtml() {
   return doctypeStr + '\n' + root.outerHTML;
 }
 
-// 导出按钮 → 直接导出（Wordspace 样式 = 所见即所得）。不再弹样式小菜单。
-// raw（原 HTML 样式）仍可由 exportPdf('raw') 触发、主进程 pdf-export 也保留，只是未接 UI——
-// 留作「绕开编辑器、导出磁盘原文件」的逃生口/调试用，将来要露出再接回即可。
-exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf('wordspace'); };
+// 导出按钮 → 直接导出（Wordspace 所见即所得），单一路径、无样式菜单。
+exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(); };
 
 renderRecents();
 

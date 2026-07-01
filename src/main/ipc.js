@@ -123,7 +123,9 @@ function registerIpc() {
   // 跨平台路径派生值（file:// URL / 目录URL / 文件名）在主进程算——完整 Node 的 url.pathToFileURL
   // 正确处理 Windows 盘符与反斜杠；renderer 不自己拼路径（沙箱 preload 没有可靠的 path/url）。
   ipcMain.handle('path-info', (_e, p) => { assertHtmlPath(p); return pathInfo(p); });
-  // 导出 PDF（连续单页，直印源文件）：弹保存对话框选输出路径 → pdf-export 隐藏窗口印出来。
+  // 导出 PDF（连续单页）：弹保存对话框选输出路径 → pdf-export 隐藏窗口印出来。
+  // 有 html（Wordspace 所见即所得，UI 唯一路径）→ 印烤好的静态 HTML；无 html → 直印源文件
+  // （只测试/内部用，不接 UI；也是「编辑器排版真烤进导出」e2e 的差分基线）。
   // WS2_PDF_OUT 是测试 seam：设了就跳过原生对话框直接用该路径（原生对话框 e2e 点不了）。
   ipcMain.handle('export-pdf', async (e, p, mode, html) => {
     assertHtmlPath(p);
@@ -147,7 +149,7 @@ function registerIpc() {
         // （相对资源原生解析），印完删。
         await exportPdfFromHtml(html, path.dirname(p), outPath);
       } else {
-        await exportPdf(p, outPath); // raw：直印源文件
+        await exportPdf(p, outPath); // 无 html：直印源文件（测试/内部用）
       }
       if (!seamPath) shell.showItemInFolder(outPath); // 成功：在 Finder 高亮文件（确认成功 + 告诉用户落在哪）；测试 seam 路径不弹
       return { ok: true, path: outPath };
