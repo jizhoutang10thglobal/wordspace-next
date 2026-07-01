@@ -88,6 +88,7 @@ function TabRow({
     const d = tab.docId ? s.docs.find((x) => x.id === tab.docId) : undefined
     return !!d?.unsaved
   })
+  const askCloseTab = useUI((s) => s.askCloseTab)
   return (
     <div
       className={`arc-tab ${active ? 'is-active' : ''} ${insert ? 'drop-' + insert : ''}`}
@@ -124,7 +125,9 @@ function TabRow({
           title="关闭"
           onClick={(e) => {
             e.stopPropagation()
-            closeTab(tab.id)
+            // 未保存的临时文档 → 弹确认；否则直接关。切换标签页不走这里（不提示）。
+            if (unsaved) askCloseTab(tab.id)
+            else closeTab(tab.id)
           }}
         >
           <X size={12} />

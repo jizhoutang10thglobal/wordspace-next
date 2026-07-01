@@ -20,6 +20,7 @@ import type {
   Workspace,
 } from '../types'
 import { STORAGE_META, isCloudStorage } from '../types'
+import { useUI } from './ui'
 import {
   ME_ID,
   seedAgentEvents,
@@ -183,8 +184,12 @@ interface State {
   // ignored for cloud spaces (those land in 我的草稿).
   createDoc: (folderId: string, kind?: DocKind, title?: string, dirPath?: string, unsaved?: boolean) => string
   createFromTemplate: (templateId: string, folderId: string, dirPath?: string, unsaved?: boolean) => string
-  // 手动保存当前标签页里的「临时文档」（unsaved）到当前空间
+  // Cmd+S / 保存：临时文档弹「保存到哪里」modal；已保存的只提示
   saveActiveDoc: () => void
+  // 把临时文档保存到指定文件夹（dir=''=空间根）
+  saveDocTo: (docId: string, dir: string) => void
+  // 丢弃未保存文档（未保存关闭选「不保存」）
+  discardDoc: (docId: string) => void
   renameDoc: (docId: string, title: string) => void
   deleteDoc: (docId: string) => void
 
@@ -952,6 +957,7 @@ export const useStore = create<State>()(
 
       // 手动保存：把「临时文档」（unsaved）落进当前空间——连接文件夹里补一个 FileEntry
       // 让它进树，然后清掉 unsaved 标记；已保存的文档只提示一下。
+      // Cmd+S / 「保存」：临时文档 → 弹「保存到哪里」modal（选位置）；已保存的文档只提示。
       saveActiveDoc: () => {
         const st = get()
         const tab = st.tabs.find((t) => t.id === st.activeTabId)
@@ -960,26 +966,33 @@ export const useStore = create<State>()(
           st.toast('已保存', 'success')
           return
         }
+        useUI.getState().openSave(doc.id)
+      },
+
+      // 把临时文档保存到指定文件夹（dir=''=空间根）。连接文件夹补 FileEntry 进树、清 unsaved。
+      saveDocTo: (docId, dir) => {
+        const st = get()
+        const doc = st.getDoc(docId)
+        if (!doc) return
         const space = st.spaces.find((sp) => sp.id === st.activeSpaceId)
         const inFolder = !!space && !isCloudStorage(space.storage)
         if (inFolder && space) {
-          const fileName = uniqueFileInDir(st.files, space.id, '', doc.title, '.html')
-          const file: FileEntry = { spaceId: space.id, path: fileName, kind: 'html', docId: doc.id }
+          const path = uniqueFileInDir(st.files, space.id, dir, doc.title, '.html')
+          const file: FileEntry = { spaceId: space.id, path, kind: 'html', docId }
           set((s) => ({
             docs: s.docs.map((d) =>
-              d.id === doc.id
-                ? { ...d, unsaved: false, localPath: `${space.mountPath ?? '~'}/${fileName}` }
-                : d,
+              d.id === docId ? { ...d, unsaved: false, localPath: `${space.mountPath ?? '~'}/${path}` } : d,
             ),
             files: [...s.files, file],
           }))
         } else {
-          set((s) => ({
-            docs: s.docs.map((d) => (d.id === doc.id ? { ...d, unsaved: false } : d)),
-          }))
+          set((s) => ({ docs: s.docs.map((d) => (d.id === docId ? { ...d, unsaved: false } : d)) }))
         }
-        st.toast(`已保存到 ${space?.name ?? '文档'}`, 'success')
+        st.toast(`已保存到 ${dir ? `${space?.name} / ${dir}` : (space?.name ?? '文档')}`, 'success')
       },
+
+      // 丢弃未保存文档（未保存关闭时选「不保存直接关闭」）。
+      discardDoc: (docId) => set((s) => ({ docs: s.docs.filter((d) => d.id !== docId) })),
 
       createFromTemplate: (templateId, folderId, dirPath, unsaved = false) => {
         const tpl = get().templates.find((t) => t.id === templateId)
