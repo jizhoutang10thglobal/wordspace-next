@@ -75,6 +75,22 @@
     }
   }
 
+  // U0：toggle（<details>）内部校验（§2.1 规格 + §0 决策3）= 恰一个 <summary> 作首子（phrasing-only）
+  // + 正文 = flow（逐块 validateBlock，可嵌块 / 再嵌 details —— Schema 唯一允许块嵌套处）。open 属性放行。
+  function validateDetails(el, V) {
+    const kids = [...el.children];
+    const summaries = kids.filter((c) => c.tagName === 'SUMMARY');
+    if (summaries.length !== 1) {
+      V.push({ rule: 'details-summary', tag: 'DETAILS', msg: 'toggle 必须恰有一个 <summary>，当前 ' + summaries.length + ' 个' });
+    } else if (kids[0].tagName !== 'SUMMARY') {
+      V.push({ rule: 'details-summary', tag: 'DETAILS', msg: '<summary> 必须是 details 的第一个子元素' });
+    }
+    for (const c of kids) {
+      if (c.tagName === 'SUMMARY') phrasingOnly(c, V, 'details-summary-content', 'summary');
+      else validateBlock(c, V); // 正文=flow：逐块校验（可嵌块 / 再嵌 details）
+    }
+  }
+
   function validateBlock(el, V) {
     const t = el.tagName;
     // 修 P2-2：块级禁 style（带 style 的块 → 不符合 → 走基础编辑；显示仍按原生，不在这剥色）。行内 span style 仍合法。
@@ -93,8 +109,10 @@
       validateList(el, V);
     } else if (t === 'TABLE') {
       validateTable(el, V);
+    } else if (t === 'DETAILS') {
+      validateDetails(el, V); // U0：toggle 内部（summary + 正文 flow）
     }
-    // HR / IMG / DETAILS：void 或 v1 暂不深验
+    // HR / IMG：void，v1 不深验
   }
 
   // 修 P1-3：head 白名单（§4.1）。只放 meta[charset]/meta[name=...]（禁 http-equiv）、<title>、

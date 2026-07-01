@@ -119,3 +119,42 @@ test('P2-3 figure+figcaption 合法（§5 captioned image canonical）', () => {
   assert.equal(v('<figure><img src="data:image/png;base64,AAAA"><figcaption>说明</figcaption></figure>').conform, true);
   assert.equal(v('<figure><img src="x"><p>不该有块</p></figure>').conform, false);
 });
+
+// ===== U0：toggle（<details>）内部校验（validateDetails，§2.1 规格 + §0 决策 3）=====
+
+test('toggle 正例：open + summary 首子 + 正文可嵌块（含嵌套 details）→ conform', () => {
+  assert.equal(v('<details open><summary>标题</summary><p>正文</p><ul><li>x</li></ul></details>').conform, true,
+    JSON.stringify(v('<details open><summary>标题</summary><p>正文</p><ul><li>x</li></ul></details>').violations));
+  // 正文里再嵌一个 toggle —— Schema 唯一允许块嵌套处
+  assert.equal(v('<details><summary>外</summary><details><summary>内</summary><p>x</p></details></details>').conform, true);
+});
+
+test('toggle 缺 summary → non-conform（rule details-summary）', () => {
+  const r = v('<details><p>x</p></details>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('details-summary'));
+});
+
+test('toggle 多个 summary → non-conform（rule details-summary）', () => {
+  const r = v('<details><summary>a</summary><summary>b</summary></details>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('details-summary'));
+});
+
+test('toggle summary 非首子 → non-conform（rule details-summary）', () => {
+  const r = v('<details><p>x</p><summary>t</summary></details>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('details-summary'));
+});
+
+test('toggle summary 内塞块 → non-conform（rule details-summary-content）', () => {
+  const r = v('<details><summary>t<p>x</p></summary></details>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('details-summary-content'));
+});
+
+test('toggle 正文含非法块（h5）→ non-conform（正文走 validateBlock 继承 block-tag）', () => {
+  const r = v('<details><summary>t</summary><h5>五级</h5></details>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('block-tag'));
+});
