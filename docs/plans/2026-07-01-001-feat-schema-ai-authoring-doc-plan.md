@@ -32,17 +32,34 @@ Wordspace 的新方向：AI 按 Schema #1 生成 / 编辑合规 HTML。冻结架
 
 - **KD-a｜AI 文档形态 = 可移植 markdown 参考文档**（`docs/schema-1-ai-authoring.md`），**先不做成 Claude Skill / 不做 MCP**。
   理由：origin KD3 明确 MVP = prompt/documentation、no MCP。markdown 参考文档最可移植——外部 agent 可当上下文喂、将来要包成 SKILL.md 或系统 prompt 也是零成本再封装。**先文档、后封装**。
-- **KD-b｜防漂移靠「实证绑定 + 完整性元测试」而非代码生成**：AI 文档里的每个正例必须被校验器判 conform、每个反例必须被判 violation 且 rule 名对得上；**且 U3 有元测试断言「反例覆盖校验器全部 rule」**（校验器有 20 条 rule，新增一条没补 fixture 就红）。
+- **KD-b｜防漂移靠「实证绑定 + 完整性元测试」而非代码生成**：AI 文档里的每个正例必须被校验器判 conform、每个反例必须被判 violation 且 rule 名对得上；**且 U3 有元测试断言「反例覆盖校验器全部 rule」**（校验器当前 20 条 rule、U0 后 +2 = 22；以校验器源码为单一来源，新增一条没补 fixture 就红）。
   理由：校验器是权威（KD2）。让文档的每条断言都被校验器背书，是最简单可靠的防漂移手段——文档吹的规则若和校验器不符，U3 立刻红。但「每条都背书」只有在「反例集完整覆盖 rule 全集」时才成立，否则漏钉的 rule 可任意漂移（doc-review 抓到 U2/U3 原本只列 14/12 条、漏 8 条）——所以完整性靠元测试自动兜、不靠人肉核对。
 - **KD-c｜校验门复用 `schema-validate.js` + jsdom 跑 node**：`new JSDOM(html).window.document` → `validate(doc)`（已有 pattern，见 `test/doc-templates.test.js`）。
   理由：校验器本就是框架无关纯 JS；jsdom 提供「磁盘字节 reparse 出的 Document」正合 §4.3 铁律③（判 reparse DOM、不判活 DOM）。
 - **KD-d｜范围 = 只做外部文件式回路**：no in-app AI、no MCP、no 自动多轮修复。violations 回喂 AI 修复只定**约定 + 单步工具**，不做编排。
   理由：用户已拍板走 Feature 2 / 冻结架构；把面收窄到「文档 + 校验门 + 实证」，是能独立交付、且被校验器兜底的最小完整回路。
-- **KD-e｜本 plan 消费校验器、不改校验器规则**：Schema #1 本身的 bug 收口 / 规则演进是 `2026-06-30-001-feat-schema-1-closed-editor-plan.md` 的活。本 plan 如实描述**校验器当前**的规则；校验器变了，U2 文档 + U3 fixtures 跟着走（U3 会逼同步）。
+- **KD-e｜校验器与 Schema 定义是一体的、随需同步扩**（Colin 校正 2026-07-01，覆盖原「本 plan 不改校验器」）：Schema 边界画到哪、校验器就执行到哪，二者 aligned。写 AI 文档若暴露校验器的空白（如 toggle 内部没校验），**正解 = 补校验器让规则真被门兜住**，不是在文档里标 advisory 绕过去。本轮具体 = **U0 补 `validateDetails`**。**边界**：已完备的其余规则不动；Schema #1 §7 更大的 bug 收口（A/F/C 档编辑器操作 / 存盘保真）仍归 closed-editor plan，本 plan 只补「为让 AI 文档规则有门兜」所需的校验器缺口。校验器变了 → U2 文档 + U3 fixtures 跟着走（U3 元测试逼同步）。
 - **KD-f｜文档分发形态（⚠ 待 Colin 确认，先填 MVP 默认）**：U2 文档怎么送到外部 agent 的上下文？MVP 默认 = **人工喂**（Colin / 用户手动把 `schema-1-ai-authoring.md` 贴进 Claude 会话，或放进项目 repo 让 coding agent 自己读），**不做自动分发 / 不做工具**。
   理由：doc-review（product-lens）指出「文档怎么被读到」是价值链里唯一没 owner 的一环、决定命中率对谁有意义。文件式回路本身没问题，缺的是把这个前提从隐含变显式。填「人工喂」是最小可交付默认，让 U4 命中率有明确适用边界（「在人工喂整份文档的条件下」）。**Colin 若想要别的分发形态（可分享 prompt/link、自动注入），改这条**——但不阻塞 U1–U4。
 
 ## Implementation Units
+
+### U0 —（前置）校验器补 toggle 内部校验（validateDetails）
+**Goal**：给 `src/lib/schema-validate.js` 加一段 `validateDetails`，让校验器真管 `<details>` 内部结构（现在它对 details 内部睁眼瞎——`schema-validate.js:97` 写着「暂不深验」，任意畸形 toggle 都判 conform）。补上后 toggle 规则才能被门兜住、U2 教的 toggle 规则 U3 能写反例验证（体现 KD-e：校验器随 schema 同步扩）。
+**Files**：
+- 改 `src/lib/schema-validate.js`（加 `validateDetails`，在 `validateBlock` 的 DETAILS 分支调用；新增 rule `details-summary` / `details-summary-content`）
+- 改/补 `test/schema-validate.test.js`（toggle 正例 + 各类坏 toggle 反例）
+**Execution note**：test-first。
+**Approach**（按草案 §2.1 toggle 规格 + §0 决策 3，⚠ 这几条 = schema 边界，动前已跟 Colin 过）：
+- 第一个元素子必须是**恰好一个** `<summary>`（缺 / 多 / 非首子 → rule `details-summary`）。
+- `<summary>` = phrasing-only（内塞块 → rule `details-summary-content`，复用现有 `phrasingOnly`）。
+- summary 之后的正文 = flow：逐个当块跑 `validateBlock`（**这是 Schema 唯一允许块嵌套的地方**——正文可嵌块、可再嵌 details）。
+- details 属性只允许 `open`（布尔）；块级禁 style 已由现有 `block-style` 覆盖，不重复。
+**Test scenarios**：
+- 正例：`<details open><summary>标题</summary><p>正文</p><ul><li>可嵌列表</li></ul></details>` → conform。
+- 反例：无 summary / 两个 summary / summary 非首子 → 含 `details-summary`；summary 里放 `<p>` → 含 `details-summary-content`；正文里放非法块（h5）→ 含 `block-tag`（正文走 validateBlock 自然继承）。
+**Verification**：`node --test test/schema-validate.test.js` 全绿；U3 的 toggle 反例门能立起来。
+**依赖**：先于 U2/U3 的 toggle 部分；U1（校验 CLI）不依赖它、可并行。
 
 ### U1 — 校验 CLI（文件式回路的「门」）
 **Goal**：一个 node 脚本 `scripts/validate-schema.js <file.html>`：读磁盘 HTML → jsdom reparse → 跑 `validate` → 打印 `{conform, violations:[{rule,tag,msg}]}`（JSON）+ 人读摘要，退出码 `conform?0:1`。这是外部 agent「产出 → 校验」回路的校验一环，也是 U3/U4 的公共底座。
@@ -60,7 +77,7 @@ Wordspace 的新方向：AI 按 Schema #1 生成 / 编辑合规 HTML。冻结架
 - 表格带 `colspan` → 含 `table-merge`。
 - **容器嵌块**（`<blockquote><ul><li>a</li></ul></blockquote>`）→ 含 `nested-block`。⚠ **别用 `<p><div></div></p>` 当 nested-block 例子**：HTML5 reparse 会把 `<div>` 踢出 `<p>` 成 body 裸块 → 实际命中 `block-tag` 而非 nested-block（这正是 §4.3 铁律③「判 reparse DOM」的直接后果；顶层叶子块 reparse 后永远不含块级后代，nested-block 只在 callout/quote 容器内触发）。
 - 不存在的文件 → 退出码 2、stderr 有提示。
-- **系统性全覆盖**：U1 CLI 对校验器**全部 20 条 rule** 各至少有一个反例被正确拒（fixture 数据以 U3 的 `test/fixtures/ai-doc/bad/` 为单一来源，别各写一套）。
+- **系统性全覆盖**：U1 CLI 对校验器**全部 rule**（当前 20 + U0 的 details-* 2 条，以校验器源码为准）各至少有一个反例被正确拒（fixture 数据以 U3 的 `test/fixtures/ai-doc/bad/` 为单一来源，别各写一套）。
 **Verification**：`node scripts/validate-schema.js <ok.html>` 打印 conform、退出 0；`<bad.html>` 列出 violations、退出 1。`node --test test/validate-schema-cli.test.js` 全绿。
 
 ### U2 — AI 可读 Schema #1 创作文档（核心交付物）
@@ -72,11 +89,11 @@ Wordspace 的新方向：AI 按 Schema #1 生成 / 编辑合规 HTML。冻结架
   1. **30 秒骨架**：doctype + `html[lang]` + head（charset meta / `meta[name=wordspace-schema][content="1"]` / title / 仅 `style[data-ws-schema-css]`）+ body 扁平挂块。
   2. **块速查表**（分清顶层 vs 嵌套，别让 AI 以为 li 是顶层块）：**顶层块** = `p / h1–h4 / ul / ol / blockquote / div.ws-callout / hr / table.ws-table / details / img / figure`；**嵌套结构** = `li`（只在 ul/ol 直接子，+ `ul.ws-todo>li[data-checked]`）、`summary`+body（在 details 内）、`thead/tbody/tr/th/td`（在 table 内，矩形、无合并、cell phrasing-only）、`figcaption`（在 figure 内、phrasing-only）。每块给 canonical 正例。
   3. **行内标记**：b/i/u/s、code（内只放文本）、a[href]（过 safeHref、禁 `on*`/`target`）、span 色/高亮（或 mark）、br。叠加规则三条硬约束。
-  4. **硬禁清单 = 校验器全部 20 条 rule 的逐条镜像**（U3 的元测试强制「清单 = 校验器 rule 全集」，见 U3）。逐条：`script` / `event-attr`(on*) / `unsafe-href` / `nested-block` / `list-child` / `todo-checked`(data-checked 只能 true/false) / `li-content` / `table-merge` / `cell-content` / `table-structure`(禁 caption/colgroup/tfoot、表头至多一行) / `table-ragged`(表格须矩形) / `figure-content` / `figcaption-content`(图注只放行内) / `block-style`(块带 style) / `block-tag`(h5/h6/section/裸 div) / `head-meta-http-equiv` / `head-style`(无 `data-ws-schema-css` 的作者 style) / `head-base` / `head-link` / `head-tag`(head 其余非法标签)。**head-* 一律展开成 5 条具名、别用通配**（AI 读通配学不到具体禁什么）。每条：**为什么禁（追到 KD1–KD5 / 安全向量）+ 合规替代写法**。
+  4. **硬禁清单 = 校验器全部 rule 的逐条镜像**（当前 20 条 + U0 补的 `details-summary`/`details-summary-content`；U3 元测试强制「清单 = 校验器 rule 全集」）。逐条：`script` / `event-attr`(on*) / `unsafe-href` / `nested-block` / `list-child` / `todo-checked`(data-checked 只能 true/false) / `li-content` / `table-merge` / `cell-content` / `table-structure`(禁 caption/colgroup/tfoot、表头至多一行) / `table-ragged`(表格须矩形) / `figure-content` / `figcaption-content`(图注只放行内) / `block-style`(块带 style) / `block-tag`(h5/h6/section/裸 div) / `head-meta-http-equiv` / `head-style`(无 `data-ws-schema-css` 的作者 style) / `head-base` / `head-link` / `head-tag`(head 其余非法标签)。**head-* 一律展开成 5 条具名、别用通配**（AI 读通配学不到具体禁什么）。每条：**为什么禁（追到 KD1–KD5 / 安全向量）+ 合规替代写法**。
   5. **reparse 行为教学**：明确写「顶层块级嵌套会被浏览器 reparse 自动拆开、命中 `block-tag` 而非 `nested-block`；nested-block 只在 callout/quote 容器内放列表/块时触发」——防 AI 和后续维护者复制「p 嵌 div = nested-block」的误解。
   6. **完整样例文档**（可直接过校验器）。
   7. **marker 声明 ≠ 合规**：写清「校验器只看内容、不信 meta 自称」（KD4）。
-**Advisory 边界（诚实标注）**：校验器 v1 对 `<details>` 内部**不深验**（`schema-validate.js:97`）——所以 U2 里 toggle 的内部结构规则（summary 首子唯一等）是**创作约定、非校验器强制**，须在 toggle 小节明确标 advisory（U3 不为它写反例门，见 U3）。`<img>` 双重身份是草案 §7 S7 待决项——U2 只教**块级 img**（body 直接子 / figure 内），行内 img 暂不覆盖、注明待决。
+**Advisory 边界（诚实标注）**：toggle 内部规则**由 U0 补的 `validateDetails` 真强制**（不再是 advisory）——U2 照常教、U3 有反例门兜。唯一仍 advisory 的是 `<img>` 双重身份（草案 §7 S7 待决）——U2 只教**块级 img**（body 直接子 / figure 内），行内 img 暂不覆盖、注明待决。
 **Test scenarios**：文档本身是文档，其正确性由 U3 强制（文档内每个正例过校验器、每个反例被拒且 rule 对得上）。
 **Verification**：U3 全绿（含「清单 = 校验器 20 条 rule 全集」元测试）；人读一遍确认覆盖 §2/§3/§4 全部块与行内、无遗漏、无与校验器冲突的措辞。
 
@@ -90,9 +107,9 @@ Wordspace 的新方向：AI 按 Schema #1 生成 / 编辑合规 HTML。冻结架
 **Execution note**：test-first —— fixtures + 断言先写，逼 U2 文档的每条规则都有对应例子。断言用「violations **含**期望 rule」（`some`），别用「恰一条 / 唯一 rule」（一个反例可命中多条，如 body 内 script 同时命中 `script`+`block-tag`）。
 **Test scenarios**：
 - 每个 canonical 块正例（顶层块：p/h1-4/ul/ol/blockquote/callout/table/img/figure；+ todo/子列表/thead）→ `conform:true`。
-- **反例必须覆盖校验器全部 20 条 rule**，各至少一个 fixture、`conform:false` 且含期望 rule：`script` / `event-attr` / `unsafe-href` / `nested-block`（用 `<blockquote><ul><li>x</li></ul></blockquote>`，**不用 p 嵌 div**）/ `list-child` / `todo-checked` / `li-content` / `table-merge` / `cell-content` / `table-structure` / `table-ragged` / `figure-content` / `figcaption-content` / `block-style` / `block-tag`(h5) / `head-meta-http-equiv` / `head-style`(无标记作者 style) / `head-base` / `head-link` / `head-tag`。
+- **反例必须覆盖校验器全部 rule**（当前 20 条 + U0 的 `details-summary`/`details-summary-content`），各至少一个 fixture、`conform:false` 且含期望 rule：`script` / `event-attr` / `unsafe-href` / `nested-block`（用 `<blockquote><ul><li>x</li></ul></blockquote>`，**不用 p 嵌 div**）/ `list-child` / `todo-checked` / `li-content` / `table-merge` / `cell-content` / `table-structure` / `table-ragged` / `figure-content` / `figcaption-content` / `block-style` / `block-tag`(h5) / `head-meta-http-equiv` / `head-style`(无标记作者 style) / `head-base` / `head-link` / `head-tag`。
 - **元测试（防漏钉）**：断言「所有 bad fixtures 实际命中的 rule 集合 ⊇ 校验器源码里出现的 rule 全集」——校验器新增一条 rule 而没补 fixture 就红。这是「清单完整」的自动门，不靠人肉核对。
-- **toggle 例外**：校验器对 `<details>` 内部不深验（`schema-validate.js:97`）→ toggle 只写**正例**（`conform:true`），**不写反例门**；在 fixtures 说明里注明「toggle 内部规则是 U2 创作约定、校验器 v1 不强制」，让 KD-b 防漂移承诺的边界诚实（要真兜 toggle 得改校验器 = 越 KD-e 边界，本 plan 不做）。
+- **toggle（U0 后 gate-backed）**：U0 给校验器补了 `validateDetails`，toggle 跟别的块一样有反例门——坏 toggle（无 summary / 多 summary / summary 非首子 → `details-summary`；summary 内塞块 → `details-summary-content`）断言被拒；正例（含 open、正文嵌块）→ conform。
 **Verification**：`node --test test/schema-1-ai-doc-conformance.test.js` 全绿（含元测试）。改文档规则 / 校验器加 rule → 必须同步改 fixture，否则红（这就是防漂移的门）。
 
 ### U4 — 真 AI 生成实证（裁判≠运动员 / 教训要实证）
@@ -111,12 +128,17 @@ Wordspace 的新方向：AI 按 Schema #1 生成 / 编辑合规 HTML。冻结架
 ## 顺序 / 依赖
 
 ```
-U1（校验门, test-first）
-   └─► U2（创作文档, 派生自校验器）  ← U2 起草可与 U1 并行, 但其验证依赖 U1/U3
-          └─► U3（文档↔校验器一致性, test-first）  ← 需要 U1 + U2 的正反例
-                 └─► U4（真 AI 实证）  ← 需要 U1 门 + U2 文档
+U0（校验器补 toggle 校验, test-first）─┐  U1（校验 CLI 门, test-first）─┐
+   （先于 U2/U3 的 toggle 部分）        │     （与 U0 可并行）          │
+                                       └──────────┬───────────────────┘
+                                                  ▼
+        U2（创作文档, 派生自校验器）  ← 起草可与 U0/U1 并行, 验证依赖 U1/U3
+                                                  ▼
+        U3（文档↔校验器一致性, test-first）  ← 需要 U0（toggle 门）+ U1 + U2 的正反例
+                                                  ▼
+        U4（真 AI 实证）  ← 需要 U1 门 + U2 文档
 ```
-建议：先 U1 落门 + U2 起草并行 → U3 把二者钉死 → U4 拿真 AI 压。每个单元绿了 commit（注 U 号），worktree = `feat/schema-1`（与 schema 其他工作同分支）或另开短命 `feat/schema-ai-doc` 分支，独立合 main。
+建议：U0（校验器补 toggle）+ U1（CLI 门）+ U2（起草）并行起 → U3 把文档与校验器钉死 → U4 拿真 AI 压。每个单元绿了 commit（注 U 号），worktree = `feat/schema-1`（与 schema 其他工作同分支）或另开短命 `feat/schema-ai-doc` 分支，独立合 main。
 
 ## 风险 & 依赖
 
@@ -130,7 +152,7 @@ U1（校验门, test-first）
 - ❌ **in-app AI UI**（ui-demo 的 `AiSoonModal` / Ask AI / 斜杠 `/ai` / 右下角 Agent 面板）——origin 划为「后续阶段」，本 plan 一律不碰。
 - ❌ **MCP / 校验器-as-tool**——origin R7 MVP 明确不上。
 - ❌ **自动多轮修复回路 / 生成编排机器人**——只定 violations 回喂的人读约定 + U1 单步校验工具。
-- ❌ **改校验器规则 / Schema #1 本身的 bug 收口**——那是 closed-editor plan 的活；本 plan 只消费校验器。
+- ⚠ **校验器**：本 plan **会按需补校验器**让 schema 规则有门兜（本轮 = toggle 内部校验，U0；KD-e）——校验器与 schema aligned、一体演进。但 Schema #1 §7 更大的 bug 收口（A/F/C 档编辑器操作 / 存盘保真）仍归 closed-editor plan，不在此。
 - ❌ **不动 ui-demo（React/Vite）**——本 feature 是文档 + node 工具产物。
 
 ## Deferred to Implementation（执行时定）
