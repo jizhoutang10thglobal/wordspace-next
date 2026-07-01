@@ -72,3 +72,70 @@
   padding: 0;
 }
 .ws-fmtbar-swatch:hover { transform: scale(1.12); }
+
+/* ---- 焦点框 + 删除（U3，宿主浮层 position:fixed；块模式 Esc 后）---- */
+.nce-focus {
+  position: fixed;
+  z-index: 55;
+  pointer-events: none;
+  border: 2px solid #e8654f;
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px rgba(232, 101, 79, 0.15);
+}
+.nce-focus[hidden] { display: none; }
+.nce-focus-del {
+  position: absolute;
+  top: -30px;
+  right: -2px;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  background: #1c1e21;
+  color: #fff;
+  border: 0;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.nce-focus-del:hover { background: #33363b; }
+
+/* ---- 悬停某块 → 右上角 🗑（鼠标删除路径）+ 只读 🔒 ---- */
+.nce-hover {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  border: 1.5px dashed rgba(232, 101, 79, 0.55);
+  border-radius: 6px;
+}
+.nce-hover[hidden] { display: none; }
+.nce-hover-del {
+  position: absolute;
+  top: -13px;
+  right: -13px;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: #e8654f;
+  color: #fff;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(232, 101, 79, 0.45);
+}
+.nce-hover-del:hover { background: #d64f38; }
+.nce-lock {
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  pointer-events: none;
+  font-size: 13px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
