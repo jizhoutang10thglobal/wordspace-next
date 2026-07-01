@@ -8,7 +8,7 @@
 }
 
 /* ---- 轻提示条 ---- */
-/* 中立、精简，放在文档下方（border-top） */
+/* 中立精简文案，放文档下方（border-top）；浅黄底更显眼 */
 .nce-notice {
   flex: none;
   display: flex;
@@ -16,13 +16,13 @@
   gap: 8px;
   padding: 8px 20px;
   font-size: var(--fs-sm);
-  color: var(--c-text-3);
-  background: var(--c-bg-sunken);
-  border-top: 1px solid var(--c-divider);
+  color: #8a6d1a;
+  background: #fdf6d8;
+  border-top: 1px solid #f0e4b0;
 }
 .nce-notice svg {
   flex: none;
-  color: var(--c-text-3);
+  color: #b7943a;
 }
 
 /* ---- 全保真渲染舞台 ---- */
