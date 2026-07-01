@@ -10,6 +10,13 @@
 
   const fmt = (typeof WS2Format !== 'undefined') ? WS2Format
     : (typeof require !== 'undefined' ? require('./format.js') : null);
+  // 内容模型适配纯函数（schema-model）：闭合的单一来源——叶子判定 / 可否合并 / 列表拍平。
+  const SM = (typeof WS2SchemaModel !== 'undefined') ? WS2SchemaModel
+    : (typeof require !== 'undefined' ? require('../lib/schema-model.js') : null);
+  // 覆盖层（⋮⋮手柄/块菜单/斜杠菜单/格式气泡）的 data-ws2-ui 值用这个 sentinel——serialize.cleanRoot
+  // 按它精确删，用户自带 data-ws2-ui="任意值" 不受影响（F1）。单一来源 = serialize.OVERLAY_VAL。
+  const WS2_OVERLAY = (((typeof WS2Serialize !== 'undefined') ? WS2Serialize
+    : (typeof require !== 'undefined' ? require('./serialize.js') : {})).OVERLAY_VAL) || '__ws2-overlay__';
 
   // 斜杠 / 块操作的类型表（对齐 ui-demo SLASH_ITEMS）
   const SLASH_ITEMS = [
@@ -17,6 +24,7 @@
     { key: 'h1', label: '标题 1', tag: 'h1' },
     { key: 'h2', label: '标题 2', tag: 'h2' },
     { key: 'h3', label: '标题 3', tag: 'h3' },
+    { key: 'h4', label: '标题 4', tag: 'h4' },
     { key: 'list', label: '无序列表', tag: 'ul' },
     { key: 'quote', label: '引用', tag: 'blockquote' },
     // 编号/待办加在 quote 之后：块菜单按下标引用 SLASH_ITEMS[0/2/5]（正文/标题/引用），别插在它们之前打乱下标。
@@ -30,12 +38,13 @@
     const s = (q || '').toLowerCase();
     return SLASH_ITEMS.filter((it) => !s || it.label.toLowerCase().includes(s) || it.key.includes(s));
   };
+  const itemByKey = (k) => SLASH_ITEMS.find((it) => it.key === k); // 按 key 取（不依赖下标——加 h4 后下标会移）
 
   // 顶层块类型推断（标签 → ui-demo 块类型）
   function classify(el) {
     if (!el || el.nodeType !== 1) return 'other';
     const t = el.tagName;
-    if (t === 'H1' || t === 'H2' || t === 'H3') return 'heading';
+    if (t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') return 'heading'; // U7：H4 封顶（h5/h6 = 不符合 Schema，由校验器判，不在此当 heading）
     if (t === 'P') return 'text';
     if (t === 'UL' || t === 'OL') return 'list';
     if (t === 'BLOCKQUOTE') return 'quote';
@@ -53,18 +62,9 @@
     if (c === 'other' && fmt && fmt.isTextEditable(el)) return true;
     return false;
   }
-  // 叶子文字块 = 直接承载文字、可安全做「节点级拼接」（合并）的块：它的元素子节点全是行内标签。
-  // 「透明包裹块」（div.lead>p、section>… 这种内部裹块级元素的）不是叶子——对它做 appendChild 平搬子节点
-  // 会把块级 <p> 塞进 <p>（非法嵌套）或把裸文本灌进容器，存盘即坏（对抗验证 A 组）。合并前必须用它把关。
-  const INLINE_TAGS = new Set(['B', 'I', 'EM', 'STRONG', 'U', 'S', 'A', 'CODE', 'SPAN', 'BR', 'IMG', 'SUB', 'SUP', 'MARK', 'SMALL', 'BIG', 'FONT', 'LABEL', 'ABBR', 'TIME', 'CITE', 'Q', 'KBD', 'SAMP', 'VAR', 'WBR', 'DEL', 'INS']);
-  function isLeafTextBlock(el) {
-    if (!el || el.nodeType !== 1) return false;
-    for (const n of el.children) {
-      if (n.hasAttribute && n.hasAttribute('data-ws2-ui')) continue;
-      if (!INLINE_TAGS.has(n.tagName)) return false; // 含块级/列表/表格/未知元素子节点 → 非叶子
-    }
-    return true;
-  }
+  // 叶子文字块 = 可安全做「节点级拼接」（合并）的块。单一来源 = schema-model（已对抗加固：正向白名单，
+  // 空 <ul>/void 块/透明包裹块都判非叶子——对它做 appendChild 平搬会产非法嵌套 / 吞文字）。合并前必须把关。
+  function isLeafTextBlock(el) { return SM.isLeafTextBlock(el); }
 
   // 真正承载「块」的容器。多数「像样」的文档把正文包在一个居中/限宽的容器里
   // （<body> 底下只有这一个 <div class="wrap"> / <main> 之类）。若死认 <body> 为块容器，
@@ -93,15 +93,8 @@
     return root;
   }
 
-  // 文档是否自带样式（任意 <style> 或 <link rel=stylesheet>，排除编辑器自己注入的 data-ws2-ui）。
-  // 用来决定要不要套编辑器的 Notion 排版：只有「真·裸文档」（一点自带样式都没有）才套；
-  // 自带样式的文档——哪怕正文裸挂 body、blockRoot===body——也一律尊重原样，绝不用
-  // data-ws2-canvas 的高权重（[data-ws2-canvas]>h1/p）盖掉作者裸写的 h1{}/p{}（实测会把红
-  // Courier 标题改成黑无衬线、只剩 body 背景活着 = 四不像）。结构（有没有包裹容器）不等于
-  // 有没有设计意图，所以判定锚在「自带样式」而非「有没有容器」。
-  function docHasAuthorStyles(doc) {
-    return doc.querySelectorAll('style:not([data-ws2-ui]), link[rel~="stylesheet" i]').length > 0;
-  }
+  // §0 决策：编辑器不主动套装饰排版（原 docHasAuthorStyles + data-ws2-canvas 那套 Notion 居中窄栏已删）。
+  // 显示永远按 .html 原生；让块渲染正确的最小语义 CSS（margin/callout/todo）由 Schema baseline 随文件入盘（U5）。
 
   function caretRangeAtPoint(doc, x, y) {
     if (doc.caretRangeFromPoint) return doc.caretRangeFromPoint(x, y);
@@ -168,15 +161,13 @@
     } catch (e) {
       // 退路：构造样式表不可用时，用一个 data-ws2-ui 的 <style>（仍不入序列化，因 data-ws2-ui 整节点剥除）
       const st = doc.createElement('style');
-      st.setAttribute('data-ws2-ui', '');
+      st.setAttribute('data-ws2-ui', WS2_OVERLAY);
       st.textContent = EDITOR_CSS;
       (doc.head || doc.documentElement).appendChild(st);
     }
-    // 居中窄栏（ui-demo 820 列）+ Notion 排版——仅当文档是「裸块」结构（block root 就是 body、
-    // 没有自带包裹容器）**且文档自己一点样式都没带**时才套。文档自带居中容器（blockRoot ≠ body）
-    // 时尊重它原有版式；文档自带 <style>/<link>（哪怕裸挂 body）时同样尊重原样——见 docHasAuthorStyles。
-    if (blockRoot === body && !docHasAuthorStyles(doc)) body.setAttribute('data-ws2-canvas', '');
-    blockRoot.setAttribute('data-ws2-root', ''); // 标记块容器（裸文档=body / 包裹文档=div.wrap 等）：给「空块占一行高度」等编辑器结构 CSS 用。data-ws2-* 存盘剥除。
+    // §0：编辑器不套 canvas 装饰排版（已删）。data-ws2-root 仍打——只驱动「空块占一行高度」这种编辑可用性 CSS（非装饰），存盘剥除。
+    blockRoot.setAttribute('data-ws2-root', '');
+    ensureSchemaBaseline(); // baseline 页边距入盘（四周留白；不 markDirty）
 
     // ---- 状态 ----
     let selectedEl = null;   // 灰选中的不可编辑块
@@ -189,7 +180,7 @@
     let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
 
     // ---- 覆盖层节点（data-ws2-ui，存盘剥除）----
-    function mk(tag, cls) { const n = doc.createElement(tag); n.setAttribute('data-ws2-ui', ''); n.setAttribute('contenteditable', 'false'); if (cls) n.className = cls; return n; }
+    function mk(tag, cls) { const n = doc.createElement(tag); n.setAttribute('data-ws2-ui', WS2_OVERLAY); n.setAttribute('contenteditable', 'false'); if (cls) n.className = cls; return n; }
 
     // ⋮⋮ 手柄（单个浮动，跟随 hover/选中块）
     const grip = mk('div', 'ws-grip');
@@ -241,7 +232,9 @@
       const { sx, sy } = vp();
       fmtbar.style.position = 'absolute';
       fmtbar.style.left = (left + sx) + 'px';
-      fmtbar.style.top = (top + sy - 46) + 'px';
+      // 视口顶部保护：选区/块在文档顶部时（如首块），上方 46px 放不下会把气泡推到屏外、按钮点不到。
+      // 之前被 canvas padding-top 掩盖（块被推下），§0 删 canvas 后块贴顶暴露此缺陷。clamp 到视口顶 +6。
+      fmtbar.style.top = Math.max(top + sy - 46, sy + 6) + 'px';
       fmtbar.style.display = 'flex';
       fmtShown = true;
     }
@@ -338,10 +331,53 @@
     // 随 serialize 存盘，不像 EDITOR_CSS 那样不入盘）。这样 .html 在 app 外用任何浏览器打开，待办也渲染成
     // checklist。幂等（按 id 查重），用 ::before 画框故无需 JS。
     function ensureTodoStyle() {
-      if (!doc || doc.getElementById('ws-todo-style')) return;
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="todo"]')) return; // 属性查重（不靠固定 id，防作者内容碰撞，S9）
       const st = doc.createElement('style');
       st.id = 'ws-todo-style';
+      st.setAttribute('data-ws-schema-css', 'todo'); // U5：标 schema baseline 语义 CSS——存盘保留 + 校验器 head 白名单认它合规
       st.textContent = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-20px;top:.3em;width:15px;height:15px;box-sizing:border-box;border:1.5px solid #b5b9c0;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#8a8f96;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
+    // U5：callout 框 CSS 烤进存盘文件（修 C1：原 callout 无入盘 CSS、存盘成无样式纯文本）。照 ensureTodoStyle 范式。
+    // 最小语义版：只给提示框的底/边/内距/外距（让 callout 渲染成框），不碰字色字号（那是装饰、按原生）。
+    function ensureCalloutStyle() {
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="callout"]')) return; // 属性查重（S9）
+      const st = doc.createElement('style');
+      st.id = 'ws-callout-style';
+      st.setAttribute('data-ws-schema-css', 'callout');
+      st.textContent = '.ws-callout{background:#f7f8fa;border:1px solid #e4e6e9;border-radius:7px;padding:14px 16px;margin:12px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
+    // 按块的 schema class 注入对应入盘语义 CSS（创建/转换块时调）。
+    function ensureBlockStyle(cls) {
+      if (cls === 'ws-todo') ensureTodoStyle();
+      else if (cls === 'ws-callout') ensureCalloutStyle();
+    }
+    // baseline 排版底线（§0 决策2 / Wendi 2026-07-01 拍：要居中可读宽度，像 Notion/Word）：
+    // 给文档可读宽度（max-width 居中 + 四周留白），data-ws-schema-css 入盘随文件走。
+    // 跟「删 canvas」不矛盾——canvas 是编辑器运行时强套、不入盘的整套装饰（820窄栏+字号+颜色）；
+    // baseline 是**入盘随文件走的格式约束**（只管宽度+留白、不碰字号颜色），按原生渲染时它在文件里。
+    // :where(body) 零权重 → 文档自带 body 样式优先（baseline 只是地板，不覆盖作者排版）。attach 注入、不 markDirty。
+    function ensureSchemaBaseline() {
+      if (!doc) return;
+      const head = doc.head || doc.documentElement;
+      if (head.querySelector('style[data-ws-schema-css="baseline"]')) return; // 属性查重（不靠固定 id，S9）
+      const st = doc.createElement('style');
+      st.id = 'ws-schema-baseline';
+      st.setAttribute('data-ws-schema-css', 'baseline');
+      st.textContent = ':where(body){max-width:820px;margin:0 auto;padding:48px 60px;box-sizing:border-box}';
+      head.appendChild(st);
+    }
+    // U6（§0 决策1 + A2）：固定色板文字色 CSS 入盘。块级上色用 class 不写 style（块 style 非法），
+    // 显示按原生（class + 入盘 CSS 随文件走，app 外浏览器也显示）。class 名 = ws-color-<hex 去#>。
+    function ensureColorStyle() {
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="color"]')) return; // 属性查重（S9）
+      const st = doc.createElement('style');
+      st.id = 'ws-color-style';
+      st.setAttribute('data-ws-schema-css', 'color');
+      st.textContent = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
     }
@@ -353,7 +389,7 @@
       else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.textContent = '引用内容'; }
       else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.textContent = '新标题'; }
       else { el = doc.createElement('p'); }
-      if (item.cls === 'ws-todo') ensureTodoStyle();
+      ensureBlockStyle(item.cls);
       return el;
     }
     function insertAfter(refEl, item) {
@@ -365,12 +401,22 @@
     }
     function turnInto(el, item) {
       if (!el) return el;
+      // 修 P1：源是「多段容器块」(callout/quote 含 <p> 子) 时，先把内部块拍平成「行」——否则块级 <p> 被
+      // 原样搬进目标块，产 <ul><li><p>..</p></li> / <p><p>..</p></p> 等非法结构（闭合破坏）。列表源(<ul>/<ol>)
+      // 由下面既有的 flattenListToPhrasing 分支处理，这里只管非列表容器；转容器目标(引用/callout)保留 <p> 不拍。
+      const LEAF_TARGETS = { p: 1, h1: 1, h2: 1, h3: 1, h4: 1 };
+      const containerLines = (el.tagName !== 'UL' && el.tagName !== 'OL' && SM.hasBlockLevelDescendant(el))
+        ? SM.flattenBlocksToLines(el) : null;
       if (item.tag === 'ul' || item.tag === 'ol') {
-        // 转列表：retag 后原内容裸挂在 <ul>/<ol> 下（非法 + Enter 失灵）→ 包进单个 <li>。
+        // 转列表：retag 后原内容裸挂在 <ul>/<ol> 下（非法 + Enter 失灵）→ 包进单个 <li>；容器块每段各成一 <li>。
         const next = fmt.retagElement(el, item.tag);
         if (item.cls) next.className = item.cls; else next.removeAttribute('class');
         if (item.cls === 'ws-todo') ensureTodoStyle();
-        if (!next.querySelector('li')) {
+        else next.querySelectorAll('li[data-checked]').forEach((li) => li.removeAttribute('data-checked')); // A3：todo→普通列表，清残留勾选态
+        if (containerLines) {
+          while (next.firstChild) next.removeChild(next.firstChild);
+          for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); next.appendChild(li); } // 容器每段 → 一个 <li>
+        } else if (!next.querySelector('li')) {
           const li = doc.createElement('li');
           while (next.firstChild) li.appendChild(next.firstChild);
           next.appendChild(li); // 空内容时得到 <ul><li></li></ul>（合法、可继续编辑）
@@ -383,8 +429,27 @@
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return next;
       }
+      // 修 A1：源是列表、目标非列表（正文/标题/引用/callout）→ 先把 li 拍平成 phrasing，
+      // 否则 retag 后 <li> 孤儿挂在 <blockquote>/<p> 下（非法 HTML）。
+      if (el.tagName === 'UL' || el.tagName === 'OL') {
+        const frag = SM.flattenListToPhrasing(el);
+        const nx = fmt.retagElement(el, item.tag);
+        while (nx.firstChild) nx.removeChild(nx.firstChild);
+        nx.appendChild(frag);
+        if (item.cls) nx.className = item.cls; else if (nx.classList && nx.classList.contains('ws-callout')) nx.classList.remove('ws-callout');
+        ensureBlockStyle(item.cls);
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return nx;
+      }
       const next = fmt.retagElement(el, item.tag); // p / h1 / h2 / h3 / blockquote / div(callout)
+      // 修 P1：容器块 → 叶子块(p/h1-4)：内部 <p> 不能进叶子块，拍平成 <br> 分隔的 phrasing。
+      // → 容器目标(引用/callout)：保留内部 <p>（两者都放行多段 <p>），不拍。
+      if (containerLines && LEAF_TARGETS[item.tag]) {
+        while (next.firstChild) next.removeChild(next.firstChild);
+        containerLines.forEach((line, i) => { if (i > 0) next.appendChild(doc.createElement('br')); next.appendChild(line); });
+      }
       if (item.cls) next.className = item.cls; else if (next.classList && next.classList.contains('ws-callout')) next.classList.remove('ws-callout');
+      ensureBlockStyle(item.cls);
       if (undoMgr) undoMgr.checkpoint(); markDirty();
       return next;
     }
@@ -471,7 +536,7 @@
       const r2 = doc.createRange(); r2.setStart(eBlk, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents();                       // 裁末块：块首→选区终点
       for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === blockRoot) m.remove(); }                            // 删中间整块
       const prefixEnd = sBlk.lastChild; // 接合点（合并前 prefix 末尾）
-      if (isEditableEl(sBlk) && isEditableEl(eBlk) && classify(sBlk) !== 'list' && classify(eBlk) !== 'list') {
+      if (SM.canMerge(sBlk, eBlk)) { // 修 B1/B2：两端都是叶子文字块才节点级拼接（替代弱的 classify!=='list'，挡透明包裹块/空容器/void）
         while (eBlk.firstChild) sBlk.appendChild(eBlk.firstChild); // 起末都是文字块 → 末块剩余并入起块
         eBlk.remove();
       }
@@ -521,6 +586,17 @@
       doc.execCommand('createLink', false, href);
       markDirty(); persistEditing();
     }
+    // U6（§0 决策1）：高亮用 <mark>（行内、语义对、无 CSS 也黄底）；多色靠 mark 行内 style（校验器允许行内 style）。
+    function wrapMark(bg) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      if (!selWithinOneBlock()) return; // 跨块拒绝：否则 extractContents 把块级元素拽进 <mark>
+      const range = sel.getRangeAt(0);
+      const mk = doc.createElement('mark');
+      if (bg) mk.style.background = bg;
+      try { range.surroundContents(mk); } catch (e) { mk.appendChild(range.extractContents()); range.insertNode(mk); }
+      markDirty(); persistEditing();
+    }
     function wrapCode() {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
@@ -533,7 +609,7 @@
     function persistEditing() { /* DOM 即模型：编辑直接改 DOM，无需额外落库；标脏即可 */ }
 
     function fmtBtn(title, html, on) {
-      const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', ''); b.className = 'ws-fmtbar-btn'; b.title = title; b.innerHTML = html;
+      const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', WS2_OVERLAY); b.className = 'ws-fmtbar-btn'; b.title = title; b.innerHTML = html;
       b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
       b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); on(); });
       return b;
@@ -559,19 +635,19 @@
       ai.className = 'ws-fmtbar-btn ws-fmtbar-ai';
       fmtbar.appendChild(ai);
     }
-    function sepEl() { const s = doc.createElement('span'); s.setAttribute('data-ws2-ui', ''); s.className = 'ws-fmtbar-sep'; return s; }
+    function sepEl() { const s = doc.createElement('span'); s.setAttribute('data-ws2-ui', WS2_OVERLAY); s.className = 'ws-fmtbar-sep'; return s; }
     const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
     const HILITE_COLORS = ['#fff3bf', '#ffd8d8', '#d7f0db', '#d6e4ff', '#eadcff', '#eceef0'];
     function colorHolder(title, hilite) {
-      const holder = doc.createElement('span'); holder.setAttribute('data-ws2-ui', ''); holder.className = 'ws-fmtbar-holder';
+      const holder = doc.createElement('span'); holder.setAttribute('data-ws2-ui', WS2_OVERLAY); holder.className = 'ws-fmtbar-holder';
       const btn = fmtBtn(title, hilite
         ? '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21l3-1 11-11-2-2L4 18z"/><path d="M14 7l3 3"/></svg>'
         : '<span class="ws-fmtbar-aglyph">A</span>', () => togglePop(pop));
-      const pop = doc.createElement('div'); pop.setAttribute('data-ws2-ui', ''); pop.className = 'ws-fmtbar-swatches'; pop.style.display = 'none';
+      const pop = doc.createElement('div'); pop.setAttribute('data-ws2-ui', WS2_OVERLAY); pop.className = 'ws-fmtbar-swatches'; pop.style.display = 'none';
       (hilite ? HILITE_COLORS : TEXT_COLORS).forEach((c) => {
-        const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', ''); sw.className = 'ws-fmtbar-swatch'; sw.style.background = c;
+        const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', WS2_OVERLAY); sw.className = 'ws-fmtbar-swatch'; sw.style.background = c;
         sw.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applyColor(hilite ? 'backgroundColor' : 'color', c); pop.style.display = 'none'; });
+        sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (hilite) wrapMark(c); else applyColor('color', c); pop.style.display = 'none'; });
         pop.appendChild(sw);
       });
       holder.appendChild(btn); holder.appendChild(pop);
@@ -585,10 +661,10 @@
     function openTurnMenu() {
       let menu = fmtbar.querySelector('.ws-fmtbar-menu');
       if (menu) { togglePopMenu(menu); return; }
-      menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', ''); menu.className = 'ws-fmtbar-menu';
+      menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
       menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
       [['text', '正文'], ['h1', '标题 1'], ['h2', '标题 2'], ['h3', '标题 3'], ['quote', '引用'], ['list', '无序列表'], ['numbered', '编号列表'], ['todo', '待办列表']].forEach(([key, label]) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', ''); it.className = 'ws-fmtbar-menu-item'; it.textContent = label;
+        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.textContent = label;
         it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         it.addEventListener('click', (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -608,22 +684,23 @@
       selectBlock(el);
       blockMenu.innerHTML = '';
       const add = (label, on, danger) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', ''); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : ''); it.textContent = label;
+        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : ''); it.textContent = label;
         it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         it.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); on(); });
         blockMenu.appendChild(it); return it;
       };
       const sub = (label, item) => add(label, () => { const nx = turnInto(el, item); closeBlockMenu(); selectBlock(nx); });
-      sub('转为正文', SLASH_ITEMS[0]); sub('转为标题', SLASH_ITEMS[2]); sub('转为引用', SLASH_ITEMS[5]);
-      const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', ''); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
+      sub('转为正文', itemByKey('text')); sub('转为标题', itemByKey('h2')); sub('转为引用', itemByKey('quote'));
+      const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       add('在下方插入', () => { const nx = insertAfter(el, SLASH_ITEMS[0]); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); });
       add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); });
       add('删除', () => { closeBlockMenu(); removeBlock(el); }, true);
       // 颜色行
-      const colors = doc.createElement('div'); colors.setAttribute('data-ws2-ui', ''); colors.className = 'ws-blockmenu-colors';
-      TEXT_COLORS.forEach((c) => { const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', ''); sw.className = 'ws-blockmenu-swatch'; sw.style.background = c;
+      const colors = doc.createElement('div'); colors.setAttribute('data-ws2-ui', WS2_OVERLAY); colors.className = 'ws-blockmenu-colors';
+      TEXT_COLORS.forEach((c) => { const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', WS2_OVERLAY); sw.className = 'ws-blockmenu-swatch'; sw.style.background = c;
         sw.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (isEditableEl(el)) { el.style.color = c; if (undoMgr) undoMgr.checkpoint(); markDirty(); } closeBlockMenu(); });
+        // A2/§0决策1：块级上色用 ws-color class（不写 el.style——块 style 被校验器判非法）。默认色=清 class。
+        sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (isEditableEl(el)) { TEXT_COLORS.forEach((c2) => el.classList.remove('ws-color-' + c2.slice(1))); if (c !== TEXT_COLORS[0]) { el.classList.add('ws-color-' + c.slice(1)); ensureColorStyle(); } if (undoMgr) undoMgr.checkpoint(); markDirty(); } closeBlockMenu(); });
         colors.appendChild(sw); });
       blockMenu.appendChild(colors);
       const r = grip.getBoundingClientRect(); const { sx, sy } = vp();
@@ -642,9 +719,9 @@
       if (!slash) { slashMenu.style.display = 'none'; return; }
       const items = filterSlash(slash.query);
       slashMenu.innerHTML = '';
-      if (!items.length) { const e = doc.createElement('div'); e.setAttribute('data-ws2-ui', ''); e.className = 'ws-slashmenu-empty'; e.textContent = '无匹配'; slashMenu.appendChild(e); }
+      if (!items.length) { const e = doc.createElement('div'); e.setAttribute('data-ws2-ui', WS2_OVERLAY); e.className = 'ws-slashmenu-empty'; e.textContent = '无匹配'; slashMenu.appendChild(e); }
       items.forEach((it, i) => {
-        const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', ''); b.className = 'ws-slashmenu-item' + (i === slash.active ? ' active' : ''); b.textContent = it.label;
+        const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', WS2_OVERLAY); b.className = 'ws-slashmenu-item' + (i === slash.active ? ' active' : ''); b.textContent = it.label;
         b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applySlash(it.key); });
         slashMenu.appendChild(b);
@@ -679,7 +756,8 @@
       // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
       // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
       const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
-      if (todoUl && e.clientX < todoUl.getBoundingClientRect().left + 22) {
+      if (todoUl) {
+        // 先定位该行 li（点 ::before 时 target=li，点 ul padding 时=ul，按 Y 兜底找该行）
         let li = e.target.closest('li');
         if (!li || li.parentElement !== todoUl) {
           li = null;
@@ -689,7 +767,9 @@
             if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
           }
         }
-        if (li && li.parentElement === todoUl) {
+        // 勾选框 gutter = li 内容左缘左侧（::before left:-20..-5）。判 clientX 落在 li 左缘附近及左侧。
+        // 不硬编码 ul padding：§0 删 canvas 后 ul 回默认 padding(40)≠旧 canvas 的 22，原 `ul.left+22` 边界失效、点不中勾选框。
+        if (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) {
           e.preventDefault();
           li.setAttribute('data-checked', li.getAttribute('data-checked') === 'true' ? 'false' : 'true');
           if (undoMgr) undoMgr.checkpoint();
@@ -859,8 +939,10 @@
           if (prev && prev.tagName === 'LI') {
             let sub = prev.lastElementChild;
             if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
-              sub = doc.createElement(editingEl.tagName.toLowerCase());
-              if (editingEl.className) sub.className = editingEl.className;
+              // D3：子列表继承 li 的直接父列表类型/class（如 todo 缩进仍是 todo），不是顶层 editingEl 的。
+              const parentList = li.parentElement;
+              sub = doc.createElement(parentList.tagName.toLowerCase());
+              if (parentList.className) sub.className = parentList.className;
               prev.appendChild(sub);
             }
             sub.appendChild(li);
@@ -889,6 +971,7 @@
           return;
         }
         if (classify(prev) === 'list') {
+          if (!isLeafTextBlock(cur)) return; // B2 守卫对称（补）：cur 是容器块(callout/quote)时不能把块级 <p> 塞进 <li>（产 <li><p> 非法）
           // 上一块是列表：当前块内容作为新 <li> 追加（不能把裸文本塞进 <ul>）
           const li = doc.createElement('li');
           while (cur.firstChild) li.appendChild(cur.firstChild);
@@ -1013,10 +1096,10 @@
     // 存盘读 live DOM，故可原地 turnInto（不像 ui-demo 受控编辑会被 blur 回写打架）。
     function tryMarkdown() {
       if (!editingEl || classify(editingEl) !== 'text') return; // 只在正文块（p）触发
-      const m = (editingEl.textContent || '').match(/^(#{1,3}|[-*]|1\.|\[\s?\]|>)[\s ]$/);
+      const m = (editingEl.textContent || '').match(/^(#{1,4}|[-*]|1\.|\[\s?\]|>)[\s ]$/);
       if (!m) return;
       const t = m[1];
-      const key = t[0] === '#' ? ['h1', 'h2', 'h3'][t.length - 1]
+      const key = t[0] === '#' ? ['h1', 'h2', 'h3', 'h4'][t.length - 1]
         : (t === '-' || t === '*') ? 'list'
         : t === '1.' ? 'numbered'
         : t[0] === '[' ? 'todo'
@@ -1077,8 +1160,7 @@
       slash = null; slashMenu.style.display = 'none';
       editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false;
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
-      if (blockRoot === body && !docHasAuthorStyles(doc)) body.setAttribute('data-ws2-canvas', ''); else body.removeAttribute('data-ws2-canvas');
-      blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标
+      blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标（空块占高度用，非装饰）
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
@@ -1091,25 +1173,14 @@
 
   // ===== 注入到 iframe 的编辑器样式（ui-demo Canvas.css 移植；选择器既命中 .ws-* 也命中裸标签）=====
   const EDITOR_CSS = `
-  [data-ws2-canvas] { max-width: 820px; margin: 0 auto; padding: 30px 56px 140px;
-    font-family: -apple-system,"SF Pro Text",system-ui,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
-  [data-ws2-canvas] > h1, [data-ws2-canvas] > .ws-h1 { font-size:30px;font-weight:700;letter-spacing:-.01em;margin:8px 0 10px;line-height:1.3;color:#1c1d1f; }
-  [data-ws2-canvas] > h2 { font-size:20px;font-weight:600;margin:26px 0 8px;line-height:1.3;color:#1c1d1f; }
-  [data-ws2-canvas] > h3 { font-size:16px;font-weight:600;margin:20px 0 6px;line-height:1.3;color:#1c1d1f; }
-  [data-ws2-canvas] > p { font-size:15px;line-height:1.75;color:#2b2d31;margin:6px 0; }
-  [data-ws2-canvas] > ul, [data-ws2-canvas] > ol { margin:6px 0;padding-left:22px; }
-  [data-ws2-canvas] > ul > li, [data-ws2-canvas] > ol > li { font-size:15px;line-height:1.7;color:#2b2d31;margin:3px 0; }
-  [data-ws2-canvas] > ul > li { list-style:disc; }
-  [data-ws2-canvas] > ol > li { list-style:decimal; }
-  /* 待办列表：左侧 CSS 复选框（点击区由 onMouseDown 判定），勾选画删除线。仅编辑器内渲染（EDITOR_CSS 不入存盘）。 */
+  /* §0：编辑器不套 canvas 装饰排版（max-width/居中/字号/颜色那套已删）；显示按 .html 原生，
+     让块渲染正确的最小语义 CSS（margin/callout/todo）由 Schema baseline 随文件入盘（U5）。
+     下面只保留「编辑器内」功能渲染（待办勾选框 + 编辑态高亮/占位/空块高度），均不入序列化。 */
   ul.ws-todo, ul.ws-todo ul, ul.ws-todo ol { list-style:none; }
-  [data-ws2-canvas] > ul.ws-todo > li, .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
+  .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
   .ws-todo > li::before { content:'';position:absolute;left:-20px;top:0.3em;width:15px;height:15px;box-sizing:border-box;border:1.5px solid #b5b9c0;border-radius:4px;background:#fff;cursor:pointer; }
   .ws-todo > li[data-checked="true"] { color:#8a8f96;text-decoration:line-through; }
   .ws-todo > li[data-checked="true"]::before { content:'✓';border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center; }
-  [data-ws2-canvas] > blockquote { border-left:3px solid #d3d6db;padding:2px 0 2px 16px;margin:10px 0;color:#5a5f66;font-size:15px; }
-  [data-ws2-canvas] > .ws-callout { background:#f7f8fa;border:1px solid #e4e6e9;border-radius:7px;padding:14px 16px;margin:12px 0;font-size:14px;line-height:1.65;color:#5a5f66; }
-  [data-ws2-canvas] > hr { border:none;border-top:1px solid #eceef0;margin:22px 0; }
 
   [contenteditable='true']{outline:none;}
   p[data-ws2-editing]:empty::before{content:'输入正文，或按 / 插入';color:#8a8f96;pointer-events:none;}
@@ -1117,8 +1188,7 @@
      用 em 跟字号缩放（空标题行更高）。纯渲染、不进序列化。 */
   [data-ws2-root] > p:empty, [data-ws2-root] > h1:empty, [data-ws2-root] > h2:empty,
   [data-ws2-root] > h3:empty, [data-ws2-root] > blockquote:empty, [data-ws2-root] > .ws-callout:empty{min-height:1.6em;}
-  /* 选中/编辑高亮只用 box-shadow + background（不影响布局），绝不用 padding/margin——否则 padding 把文字推右、
-     而 margin 补偿会被 [data-ws2-canvas]>tag 的更高权重盖掉、补不回来，导致选中时文字右移几像素。 */
+  /* 选中/编辑高亮只用 box-shadow + background（不影响布局），绝不用 padding/margin——否则 padding 把文字推右。 */
   [data-ws2-selected]:not([data-ws2-editing]){border-radius:4px;box-shadow:0 0 0 2px rgba(0,0,0,.16),0 0 0 6px rgba(0,0,0,.05);background:rgba(0,0,0,.03);}
   [data-ws2-editing]{border-radius:4px;background:rgba(0,0,0,.015);}
   [data-ws2-drop='top']{box-shadow:0 -2px 0 0 #1a73e8;}
@@ -1158,7 +1228,7 @@
   .ws-slashmenu-empty{padding:8px 10px;font-size:12px;color:#8a8f96;}
   `;
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, docHasAuthorStyles, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

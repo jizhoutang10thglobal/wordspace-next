@@ -3,9 +3,13 @@ let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name
 let dirty = false;
 let undoMgr = null;
 let blockEdit = null; // 当前文档的块编辑内核（WS2BlockEdit.attach 返回）；换文档前 detach 防堆叠
+let basicEdit = null; // 非合规文档的基础编辑内核（WS2BasicEdit.attach 返回，Feature 3）
+let docConform = true; // openDoc 判定：文件合规→完整块编辑；不合规→基础编辑（分流 seam，KD-e）
 let loadGen = 0;       // 每次载入/重载自增；旧的 frame.onload 闭包据此作废，防并发载入（如外部连改 + 重载）交叉 wireEditor
 
 const frame = document.getElementById('doc-frame');
+const mainEl = document.getElementById('main');
+const degradeNotice = document.getElementById('ws-degrade-notice'); // 非合规降级提示条（Feature 3）
 const home = document.getElementById('home');
 const docHeader = document.getElementById('doc-header');
 const docName = document.getElementById('doc-name');
@@ -95,11 +99,59 @@ function setZoom(z) {
   zoomFactor = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
   applyZoom();
   if (blockEdit) blockEdit.reposition(); // 缩放后手柄/气泡按新内容尺寸重定位
+  if (basicEdit) basicEdit.reposition();  // 基础编辑器的宿主浮层同理（Feature 3）
+}
+
+// 分流判定（Feature 3，KD-e）：纯函数、不碰控制流——判「磁盘原始字节 reparse 出的 DOM」是否合规。
+// 判失败（理论上不会，validate 是纯函数 + DOMParser 不抛）保守当合规、走现有完整编辑，不改现状行为。
+function routeDoc(rawHtml) {
+  try {
+    // 走 Schema 注册表分类（多 Schema 就绪：classify 遍历已注册 schema、认出属于哪个）。现阶段仍只用 .conform
+    // 二值分流；将来把 docConform 升成 docSchema 后，可按 classify().schemaId 路由到各自编辑器（待 align 的 shell.js 落地后做）。
+    return !!WS2SchemaRegistry.classify(new DOMParser().parseFromString(rawHtml, 'text/html')).conform;
+  } catch (e) { return false; } // fail-closed：判不了就走基础编辑器（对任意 HTML 都安全、不套块模型），别 fail-open 把坏文档送进完整编辑器
+}
+
+// 换文档 / 关文档：两个编辑内核都拆、降级条收起（统一收口，防堆叠）。
+function detachEditors() {
+  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  if (basicEdit) { basicEdit.detach(); basicEdit = null; }
+  if (degradeNotice) degradeNotice.hidden = true;
+}
+
+// 非合规文档：挂基础编辑器 + 亮降级条。与 wireEditor 平级（KD-e：不嵌进 loadFromFile）。
+// 基础模式不挂 undoMgr（Cmd+Z no-op）；快捷键 Cmd+S 存 / Cmd+B·I·U 富文字 / 缩放键 —— 对称 wireEditor。
+function attachBasic() {
+  const doc = frame.contentDocument;
+  detachEditors();
+  basicEdit = WS2BasicEdit.attach(doc, { win: frame.contentWindow, host: mainEl, markDirty });
+  if (degradeNotice) degradeNotice.hidden = false;
+  // 导出仍可用：基础模式走 raw（直印源文件、忠于野文件原貌），不走块编辑器的 Wordspace 排版（见导出触发点）
+  doc.addEventListener('keydown', (e) => {
+    if (handleZoomKey(e)) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    const k = e.key.toLowerCase();
+    if (k === 's') { e.preventDefault(); save(); }
+    else if (k === 'b') { e.preventDefault(); doc.execCommand('bold'); markDirty(); }
+    else if (k === 'i') { e.preventDefault(); doc.execCommand('italic'); markDirty(); }
+    else if (k === 'u') { e.preventDefault(); doc.execCommand('underline'); markDirty(); }
+    else if (k === 'z') { e.preventDefault(); } // 基础模式不支持撤销：吞掉、no-op（防浏览器默认 undo 乱来）
+  });
+  doc.addEventListener('wheel', (e) => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    const d = Math.max(-50, Math.min(50, e.deltaY));
+    setZoom(zoomFactor * (1 - d * 0.01));
+  }, { passive: false });
+  zoomSheet = null; applyZoom();
 }
 
 // 块编辑内核（WS2BlockEdit）跑在父层、操作 iframe 的 contentDocument（iframe sandbox 不跑脚本）。
 function wireEditor() {
   const doc = frame.contentDocument;
+  if (basicEdit) { basicEdit.detach(); basicEdit = null; } // 合规路径：清掉可能残留的基础编辑器 + 收起降级条
+  if (degradeNotice) degradeNotice.hidden = true;
   if (undoMgr && undoMgr.timer) clearTimeout(undoMgr.timer); // 取消上个文档悬挂的 checkpoint 定时器（防 stale 闭包）
   undoMgr = new WS2Undo.UndoManager(doc);
   try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
@@ -178,9 +230,9 @@ function openExternalBtn(node, cls) {
 // node = { name, rel, abs, kind } —— rel 来自侧栏文件树；「打开」按钮选的工作区外文件 rel 为 null、走 abs
 async function showViewer(node) {
   if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
-  // 退出编辑器态：停 watch、拆块编辑、清 docPath（非可编辑文件没有保存目标）
+  // 退出编辑器态：停 watch、拆编辑内核、清 docPath（非可编辑文件没有保存目标）
   window.ws2.unwatchDoc();
-  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  detachEditors();
   docPath = null;
   docInfo = null;
   setDirty(false);
@@ -257,9 +309,10 @@ window.__shellShowViewer = showViewer;
 // 打开真实文件：iframe 直接指向 file:// URL（主进程 pathInfo 算，跨平台正确），
 // 文档拥有自己的 CSP 上下文、相对资源天然解析。
 function loadFromFile(opts) {
-  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  detachEditors();
   const gen = ++loadGen;
-  frame.onload = () => { if (gen !== loadGen) return; wireEditor(); };
+  // 分流（Feature 3）：docConform 由 openDoc/reloadDoc 先判好。合规→完整块编辑；不合规→基础编辑 + 降级条。
+  frame.onload = () => { if (gen !== loadGen) return; docConform ? wireEditor() : attachBasic(); };
   frame.removeAttribute('srcdoc');
   frame.src = docInfo.fileUrl;
   prepFrame(opts && opts.asDirty);
@@ -269,12 +322,14 @@ function loadFromFile(opts) {
 // 同一 file:// URL 直接赋 frame.src 不会重导航 → 先 about:blank 再设回，强制刷新一次。
 // loadGen 守卫：若重载途中又来一次载入（外部连续改动 / 同时打开别的文档），旧 onload 作废，
 // 不把 wireEditor 跑在 about:blank 或错误文档上。setDirty(false) 放到真正载完磁盘版本后才清。
-function reloadDoc() {
-  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+async function reloadDoc() {
+  detachEditors();
+  // 外部改动可能翻转合规性（如 Claude 改完变合规/变不合规）→ 重判分流
+  try { if (docPath) docConform = routeDoc(await window.ws2.readDoc(docPath)); } catch (e) { /* 保持上次判定 */ }
   const gen = ++loadGen;
   frame.onload = () => {
     if (gen !== loadGen) return; // 被更晚的载入抢占
-    frame.onload = () => { if (gen !== loadGen) return; wireEditor(); setDirty(false); };
+    frame.onload = () => { if (gen !== loadGen) return; docConform ? wireEditor() : attachBasic(); setDirty(false); };
     frame.src = docInfo.fileUrl;
   };
   frame.removeAttribute('srcdoc');
@@ -283,9 +338,10 @@ function reloadDoc() {
 
 // 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录（用 docInfo.dirUrl）
 function loadFromHtml(html, opts) {
-  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  detachEditors();
   const gen = ++loadGen;
-  frame.onload = () => { if (gen !== loadGen) return; injectBase(frame.contentDocument, docInfo.dirUrl); wireEditor(); };
+  // 历史恢复走当前文档的既有分流判定（docConform 不变——恢复的是同一文档的旧内容）
+  frame.onload = () => { if (gen !== loadGen) return; injectBase(frame.contentDocument, docInfo.dirUrl); docConform ? wireEditor() : attachBasic(); };
   frame.removeAttribute('src');
   frame.srcdoc = html;
   prepFrame(opts && opts.asDirty);
@@ -295,10 +351,10 @@ async function openDoc(p) {
   // 没真打开成 → 撤销 onOpenFile 设的 __pendingColdOpen，否则它会一直抑制后续 loadTabs 的「恢复激活标签」
   // （如 app 已开 + 当前文档脏，第二实例双击别的文件、用户点「取消」时会走到这）。
   if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
-  let info;
+  let info; let raw; // raw：接住磁盘原始文本做 Feature 3 分流判定（routeDoc）
   try {
-    // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；再取跨平台 file:// URL / 文件名 / 目录URL
-    await window.ws2.readDoc(p);
+    // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；接住返回的原始文本做分流判定（Feature 3，不新增 IPC）；再取 file:// URL 等
+    raw = await window.ws2.readDoc(p);
     info = await window.ws2.pathInfo(p);
   } catch (e) {
     alert('无法打开文件：' + p + '\n' + (e.message || e));
@@ -307,6 +363,7 @@ async function openDoc(p) {
   }
   docPath = p;
   docInfo = info;
+  docConform = routeDoc(raw); // 合规→完整编辑 / 不合规→基础编辑（判磁盘原始字节 reparse，§4.3 铁律③）
   zoomFactor = 1; // 新文档从 100% 开始（wireEditor 会按这个重挂缩放）
   loadFromFile();
   window.ws2.watchDoc(p); // 盯外部磁盘改动（Bug2）；换文档时主进程会重指向到新路径
@@ -330,7 +387,7 @@ function shellRetargetDoc(newAbs, newName) {
 }
 function shellCloseDoc() {
   window.ws2.unwatchDoc();
-  if (blockEdit) { blockEdit.detach(); blockEdit = null; }
+  detachEditors();
   docPath = null;
   docInfo = null;
   setDirty(false);
@@ -366,7 +423,10 @@ async function pickAndOpen() {
 
 async function save() {
   if (!docPath || !dirty) return;
-  const html = WS2Serialize.serializeDocument(frame.contentDocument);
+  // 基础编辑（非合规）走结构保真序列化（剥编辑态、不 Schema 规整）；完整编辑走 block serialize。
+  const html = basicEdit
+    ? WS2BasicEdit.serialize(frame.contentDocument)
+    : WS2Serialize.serializeDocument(frame.contentDocument);
   let result;
   try {
     result = await window.ws2.saveDoc(docPath, html);
@@ -398,7 +458,7 @@ document.getElementById('open-btn').onclick = pickAndOpen;
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = save;
-window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); }); // 窗口尺寸变 → 手柄/气泡跟上
+window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); }); // 窗口尺寸变 → 浮层跟上
 window.addEventListener('keydown', handleZoomKey); // 焦点在父层 shell（点过保存按钮/首页）时也能 Cmd± 缩放（iframe 内事件不冒泡到这）
 
 // 外部磁盘改动（Bug2）：是当前文档才处理；有未保存改动先问，免得静默覆盖用户的编辑。
@@ -415,7 +475,7 @@ window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
 window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
-  if (cmd === 'export-pdf') exportPdf();
+  if (cmd === 'export-pdf') exportPdf(basicEdit ? 'raw' : 'wordspace'); // 基础模式=raw 直印源文件
   if (cmd === 'undo' && undoMgr) { if (undoMgr.undo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
   if (cmd === 'redo' && undoMgr) { if (undoMgr.redo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
@@ -423,17 +483,19 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F
 });
 
-// 导出 PDF。只有一种样式：Wordspace 所见即所得——把当前文档 + 编辑器排版烤成静态 HTML 再印，
-// 跟 app 里看到的一致。有未保存改动先落盘（印的是磁盘版本）。
-// （底层还有个「直印源文件」的打印原语，只在测试/内部用、不接 UI，见 main/pdf-export.js。）
+// 导出 PDF。两条内部路径（单按钮、无 UI 菜单）：
+//   'wordspace'（合规文档默认）= 把当前文档 + 编辑器排版烤成静态 HTML 再印，跟 app 里看到的一致；
+//   'raw'（非合规=基础编辑）    = 主进程直印磁盘源文件（忠于野文件原貌，不烤块编辑器排版，缺块标记不会抛错）。
+// 有未保存改动先落盘（印的是磁盘版本）。合并注意：ux-fixes 曾把 raw 当死代码收敛掉，F3 又让它成活路径 → 保 mode 版。
 let exporting = false; // single-flight：连按不并发开多个隐藏窗口/叠多个对话框
-async function exportPdf() {
+async function exportPdf(mode) {
   if (exporting || !docPath) return;
   exporting = true; // 必须在 await save() 之前置位——否则脏文档连按时第二次调用会在 save 的 await 让出期溜过守卫
   try {
     if (dirty) { await save(); if (dirty) return; } // save 失败（仍脏）→ 不导出
-    const html = buildWordspacePrintHtml(); // 可能抛错（文档未就绪），下面 catch 兜
-    const res = await window.ws2.exportPdf(docPath, 'wordspace', html);
+    mode = mode === 'raw' ? 'raw' : 'wordspace';
+    const html = mode === 'wordspace' ? buildWordspacePrintHtml() : null; // raw 无需烤 HTML（主进程直印源文件）；wordspace 可能抛错，下面 catch 兜
+    const res = await window.ws2.exportPdf(docPath, mode, html);          // 主进程按 mode 分 exportPdfFromHtml / 直印源文件
     if (res && res.error) alert('导出 PDF 失败：' + res.error);
   } catch (e) {
     alert('导出 PDF 失败：' + ((e && e.message) || e));
@@ -469,8 +531,10 @@ function buildWordspacePrintHtml() {
   return doctypeStr + '\n' + root.outerHTML;
 }
 
-// 导出按钮 → 直接导出（Wordspace 所见即所得），单一路径、无样式菜单。
-exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(); };
+// 导出按钮 → 单按钮、无样式菜单。合规文档走 Wordspace 样式（所见即所得）；非合规（基础编辑）走 raw
+// 直印源文件（忠于野文件原貌、不套块编辑器排版，否则缺块标记会抛错）。Feature 3 让 raw 从「未接 UI 的逃生口」
+// 变回活路径 —— 故此处保 mode 版，不用 ux-fixes 那版收敛掉 raw 的无参 exportPdf()。
+exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(basicEdit ? 'raw' : 'wordspace'); };
 
 renderRecents();
 

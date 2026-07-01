@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { JSDOM } = require('jsdom');
 const blocks = require('../src/editor/blocks.js');
-const { serializeDocument } = require('../src/editor/serialize.js');
+const { serializeDocument, OVERLAY_VAL } = require('../src/editor/serialize.js');
 
 const SAMPLE = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><style>p { color: red; }</style></head><body><div class="wrap"><p>一段文字</p><table><tbody><tr><td>x</td></tr></tbody></table></div><script>var a = 1;</' + 'script></body></html>';
 
@@ -11,7 +11,7 @@ test('roundtrip: applyEditable + injected ui + serialize == original structure',
   const doc = dom.window.document;
   blocks.applyEditable(doc);
   const ui = doc.createElement('div');
-  ui.setAttribute('data-ws2-ui', '');
+  ui.setAttribute('data-ws2-ui', OVERLAY_VAL); // 覆盖层用 sentinel 值（F1）
   ui.textContent = 'toolbar';
   doc.documentElement.appendChild(ui);
 
@@ -63,4 +63,13 @@ test('whitelist is exact, not prefix: keeps author data-ws2-* but strips editor 
   // 用户自带属性 + 内联样式（拖动/缩放写的几何）保留
   assert.ok(out.includes('data-ws2-foo="keep"'), '用户自带 data-ws2-foo 必须保留（非前缀剥）');
   assert.ok(out.includes('left:'), '内联样式（画布几何）必须保留');
+});
+
+// F1（对抗审计）：文档自带 data-ws2-ui 属性的**元素及其内容**必须存盘不丢——它不是编辑器覆盖层。
+// 编辑器覆盖层用 sentinel 值（OVERLAY_VAL）区分；用户写的任意值原样保留（保真红线）。
+test('F1: 文档自带 data-ws2-ui 的元素及内容存盘不丢（不被当覆盖层整删）', () => {
+  const dom = new JSDOM('<!DOCTYPE html><html><body><div data-ws2-ui="user-stuff">重要内容</div><p>正文</p></body></html>');
+  const out = serializeDocument(dom.window.document);
+  assert.ok(out.includes('重要内容'), '用户带 data-ws2-ui 的内容被误删（F1）');
+  assert.ok(out.includes('正文'));
 });

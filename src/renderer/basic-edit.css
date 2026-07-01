@@ -1,0 +1,142 @@
+/* 非合规基础编辑器（Feature 3）的样式。降级提示条 + 宿主浮层（格式条/焦点框/悬停删除/🔒）。
+   浮层类 .nce-* 移植自 ui-demo BasicEditor.css（真 app 无这些类，是移植不是复用）。U2/U3 续填。 */
+
+/* ---- 降级提示条（U1）：doc-header 与 iframe 之间的一条轻提示 ---- */
+.ws-degrade-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #8a5a00;
+  background: #fff8e6;
+  border-bottom: 1px solid #f0e2b8;
+  flex: 0 0 auto;
+}
+.ws-degrade-notice[hidden] { display: none; } /* 类选择器 display:flex 会盖过 [hidden] 默认的 display:none，须显式复位 */
+.ws-degrade-notice svg { flex: 0 0 auto; color: #c8930a; }
+.ws-degrade-notice strong { font-weight: 600; }
+
+/* ---- 富文字格式条（U2）：宿主浮层，append 到 document.body、position:fixed、JS 给坐标 ---- */
+.ws-fmtbar {
+  position: fixed;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 4px;
+  background: #fff;
+  border: 1px solid #e2e4e8;
+  border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  font-size: 13px;
+  color: #2b2d31;
+}
+.ws-fmtbar[hidden] { display: none; }
+.ws-fmtbar-btn {
+  min-width: 28px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  color: #2b2d31;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.ws-fmtbar-btn:hover { background: #f0f1f3; }
+.ws-fmtbar-aglyph { font-weight: 700; font-size: 14px; }
+.ws-fmtbar-sep { width: 1px; height: 18px; background: #e2e4e8; margin: 0 3px; align-self: center; }
+.ws-fmtbar-holder { position: relative; display: inline-flex; }
+.ws-fmtbar-swatches {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+}
+.ws-fmtbar-swatches[hidden] { display: none; }
+.ws-fmtbar-swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 5px;
+  cursor: pointer;
+  padding: 0;
+}
+.ws-fmtbar-swatch:hover { transform: scale(1.12); }
+
+/* ---- 焦点框 + 删除（U3，宿主浮层 position:fixed；块模式 Esc 后）---- */
+.nce-focus {
+  position: fixed;
+  z-index: 55;
+  pointer-events: none;
+  border: 2px solid #e8654f;
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px rgba(232, 101, 79, 0.15);
+}
+.nce-focus[hidden] { display: none; }
+.nce-focus-del {
+  position: absolute;
+  top: -30px;
+  right: -2px;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  background: #1c1e21;
+  color: #fff;
+  border: 0;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.nce-focus-del:hover { background: #33363b; }
+
+/* ---- 悬停某块 → 右上角 🗑（鼠标删除路径）+ 只读 🔒 ---- */
+.nce-hover {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  border: 1.5px dashed rgba(232, 101, 79, 0.55);
+  border-radius: 6px;
+}
+.nce-hover[hidden] { display: none; }
+.nce-hover-del {
+  position: absolute;
+  top: -13px;
+  right: -13px;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: #e8654f;
+  color: #fff;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 3px 10px rgba(232, 101, 79, 0.45);
+}
+.nce-hover-del:hover { background: #d64f38; }
+.nce-lock {
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  pointer-events: none;
+  font-size: 13px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}

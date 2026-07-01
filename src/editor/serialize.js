@@ -7,17 +7,23 @@
     return s + '>';
   }
 
+  // 编辑器覆盖层（⋮⋮手柄/块菜单/斜杠菜单/格式气泡）的 data-ws2-ui 值用这个 sentinel 标记——
+  // cleanRoot 只删**值匹配它**的节点，用户文件自带的 data-ws2-ui="任意值" 原样保留（保真红线，对抗审计 F1）。
+  const OVERLAY_VAL = '__ws2-overlay__';
   // 只剥编辑器自己加的标记（白名单）。**不能**用 startsWith('data-ws2') 前缀剥——
   // 那会误删文档自带的 data-ws2-* 属性（用户内容损坏，保真红线）。
+  // 注意：data-ws2-ui **不在**此集合——覆盖层节点按 sentinel 值整删（见 cleanRoot），不靠属性剥除；
+  // 用户自带的 data-ws2-ui 属性必须保留（F1）。
   const WS2_MARKERS = new Set([
-    'data-ws2-ui', 'data-ws2-ce', 'data-ws2-sc', 'data-ws2-block', 'data-ws2-container',
+    'data-ws2-ce', 'data-ws2-sc', 'data-ws2-block', 'data-ws2-container',
     'data-ws2-canvas', 'data-ws2-eid', 'data-ws2-editing',
     'data-ws2-selected', 'data-ws2-drop', // 块编辑：灰选中 / 拖拽投放标记（仅交互态，存盘剥除）
     'data-ws2-root', // 块容器标记（给空块占行高等结构 CSS 用，存盘剥除）
   ]);
 
   function cleanRoot(root) {
-    root.querySelectorAll('[data-ws2-ui]').forEach(n => n.remove());
+    // 只删本编辑器覆盖层（data-ws2-ui 值 = sentinel），保留用户自带的 data-ws2-ui="任意其他值"（F1）
+    root.querySelectorAll('[data-ws2-ui="' + OVERLAY_VAL + '"]').forEach(n => n.remove());
     const all = [root, ...root.querySelectorAll('*')];
     for (const el of all) {
       if (el.hasAttribute('data-ws2-ce')) el.removeAttribute('contenteditable');
@@ -47,7 +53,7 @@
     return cleanRoot(body.cloneNode(true)).innerHTML;
   }
 
-  const api = { serializeDocument, cleanedBodyHtml };
+  const api = { serializeDocument, cleanedBodyHtml, OVERLAY_VAL };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2Serialize = api;
 })(typeof window !== 'undefined' ? window : globalThis);

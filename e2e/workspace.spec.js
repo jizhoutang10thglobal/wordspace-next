@@ -103,6 +103,26 @@ test('fs ops via IPC truly change disk (new/rename/move/delete+undo)', async () 
   expect(await exists(path.join(wsDir, 'a.html'))).toBe(true);
 });
 
+// 「新建文档」feature 端到端真门（后端跑通验证）：renderer 经 IPC 用真实内置模板新建 → 主进程字节落盘 →
+// 读磁盘真实落盘字节 → 确定性校验器判仍符合 Schema #1。串起「模板 conform + newDoc 字节保真 + 真 app IPC 路径」，
+// 证明「在 Wordspace 新建文档 → 产出合法 Schema 文档」端到端成立。
+test('新建文档端到端：每个内置模板落盘后符合 Schema #1', async () => {
+  await page.click('#home-open-folder');
+  const { TEMPLATES } = require('../src/lib/doc-templates.js');
+  const { validate } = require('../src/lib/schema-validate.js');
+  const { JSDOM } = require('jsdom');
+  for (const t of TEMPLATES) {
+    const created = await page.evaluate(
+      (a) => window.ws2.wsNewDoc('', a.name, a.html),
+      { name: 'sc-' + t.id, html: t.html },
+    );
+    expect(await exists(path.join(wsDir, created.rel)), `${t.id} 没落盘`).toBe(true);
+    const onDisk = await fs.readFile(path.join(wsDir, created.rel), 'utf8'); // 读磁盘真实字节，不是内存
+    const r = validate(new JSDOM(onDisk).window.document);                   // 校验器对 reparse 字节判（§4.3）
+    expect(r.conform, `模板 ${t.id} 落盘后不符合 Schema: ` + JSON.stringify(r.violations)).toBe(true);
+  }
+});
+
 test('makeDir creates a real directory on disk', async () => {
   await page.click('#home-open-folder');
   const r = await page.evaluate(() => window.ws2.wsMakeDir('', '素材'));

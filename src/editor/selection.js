@@ -1,4 +1,7 @@
 (function (global) {
+  // 覆盖框的 data-ws2-ui 值用 serialize 的 sentinel（F1：serialize 按它精确删，用户自带 data-ws2-ui 不受影响）。
+  const OVERLAY_VAL = (((typeof WS2Serialize !== 'undefined') ? WS2Serialize
+    : (typeof require !== 'undefined' ? require('./serialize.js') : {})).OVERLAY_VAL) || '__ws2-overlay__';
   // HVE_Selector 等价物：命中测试 + 选父 + in-doc CSSOM 选中/悬停框。取代 blocks.js 的推断块分类
   // 成为交互核。选中态只存在 controller（WS2Canvas）闭包里，绝不污染存盘。覆盖框是独立的
   // [data-ws2-ui] 节点，serialize 走节点删除路径剥掉。
@@ -53,7 +56,7 @@
     // ---- in-doc CSSOM 覆盖框（KTD2：只用 el.style.x=，绝不 setAttribute('style')/<style>）----
     function makeBox(border) {
       const box = doc.createElement('div');
-      box.setAttribute('data-ws2-ui', '');
+      box.setAttribute('data-ws2-ui', OVERLAY_VAL);
       box.setAttribute('contenteditable', 'false');
       box.style.position = 'absolute';
       box.style.display = 'none';
