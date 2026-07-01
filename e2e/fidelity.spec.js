@@ -111,7 +111,14 @@ test('收紧 CSP 下打开文档无 CSP 违规（外壳资源照常加载）', a
   await openFile('<!DOCTYPE html><html><head><meta charset="UTF-8">'
     + '<style>p{color:red}</style></head><body><p>x</p></body></html>');
   await page.waitForTimeout(300);
-  expect(cspErrors, 'CSP 违规：\n' + cspErrors.join('\n')).toEqual([]);
+  // 正面验：作者内联 <style> 在 file:// iframe 里照常渲染（红字）。sandbox=allow-same-origin 的同源 iframe 会让
+  // 父层 CSP 顺带把 iframe 内文档自己的内联样式「评估」一次、报一条 style-src「applying inline style」，但 iframe
+  // 自身无 CSP、样式实际生效（report-only、非真拦——sha256(p{color:red}) 即那条违规的 hash）。故把这条无害自报
+  // 排除，真正要守的「外壳资源被拦」(refused to load/execute 脚本/样式表/字体) 仍全捕；渲染生效本身是最强反证。
+  const pColor = await page.frameLocator('#doc-frame').locator('p').evaluate((el) => getComputedStyle(el).color);
+  expect(pColor, '作者内联样式应照常渲染（红字）= CSP 没真拦文档渲染').toBe('rgb(255, 0, 0)');
+  const shellViolations = cspErrors.filter((t) => !/applying inline style/i.test(t));
+  expect(shellViolations, '外壳资源 CSP 违规：\n' + shellViolations.join('\n')).toEqual([]);
 });
 
 test('恶意 meta refresh 不能把 iframe 导航到远程（frame-src file: 挡住）', async () => {
