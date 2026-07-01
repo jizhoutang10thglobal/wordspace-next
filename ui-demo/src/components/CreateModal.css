@@ -133,7 +133,7 @@
 /* ------------------------------------------------------------------ */
 /* Create modal — template picker                                     */
 /* ------------------------------------------------------------------ */
-.ws-modal.cm-new { width: 540px; max-width: calc(100vw - 32px); }
+.ws-modal.cm-new { width: 720px; max-width: calc(100vw - 32px); }
 
 .cm-where {
   margin-top: 2px;
@@ -141,11 +141,130 @@
   color: var(--c-text-3);
 }
 
+/* two-column: 左「范式」轨 + 右「该范式的模板」 */
+.cm-split {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  min-height: 348px;
+  max-height: calc(100vh - 150px);
+}
+
+/* 左：范式轨 */
+.cm-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 12px;
+  border-right: 1px solid var(--c-divider);
+  background: var(--c-bg-sunken);
+}
+.cm-rail-label {
+  padding: 2px 8px 6px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+}
+.cm-para {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+}
+.cm-para:hover { background: var(--c-hover); }
+.cm-para.is-active {
+  background: var(--c-surface);
+  border-color: var(--c-border);
+  box-shadow: var(--shadow-sm);
+}
+.cm-para.is-soon { opacity: 0.6; }
+.cm-para.is-soon:hover { opacity: 0.82; }
+.cm-para-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  color: var(--c-text-2);
+}
+.cm-para.is-active .cm-para-ico { background: var(--c-accent-tint); color: var(--c-accent); }
+.cm-para-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cm-para-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+.cm-para-tag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  background: var(--c-accent-tint);
+  color: var(--c-accent);
+}
+.cm-para-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.4; }
+.cm-rail-foot {
+  margin-top: auto;
+  padding: 12px 8px 2px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
+
+/* 右：该范式的模板 / AI / placeholder */
+.cm-pane {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+.cm-pane-label {
+  margin-bottom: 10px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text-2);
+}
+
 .cm-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
 }
+
+/* 还没上线的范式：占位 */
+.cm-soon {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 30px 24px;
+  text-align: center;
+}
+.cm-soon-ico {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--c-bg-sunken);
+  color: var(--c-text-3);
+}
+.cm-soon-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+.cm-soon-desc { max-width: 290px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.55; }
 
 .cm-card {
   display: flex;
@@ -195,29 +314,39 @@
 .cm-card-blank:hover { border-color: var(--c-accent); border-top-color: var(--c-accent); }
 .cm-card-blank .cm-card-ico { background: var(--c-accent-tint); color: var(--c-accent); }
 
-/* AI card accent */
-.cm-card-ai { border-top-color: #8a3ffc; }
-.cm-card-ai .cm-card-ico { background: rgba(138, 63, 252, 0.12); color: #8a3ffc; }
-
-/* AI prompt panel */
-.cm-ai { display: flex; flex-direction: column; gap: 12px; }
-.cm-ai-input {
-  width: 100%;
-  min-height: 110px;
-  resize: vertical;
-  padding: 11px 12px;
-  border: 1px solid var(--c-border-strong);
-  border-radius: var(--r-md);
+/* ------------------------------------------------------------------ */
+/* Omni 入口（从「标签页 +」打开）：顶部一条 Arc 式地址栏，拼在新建文档上面 */
+/* ------------------------------------------------------------------ */
+.cm-omnibar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--c-divider);
+}
+.cm-omnibar-ico { flex: none; color: var(--c-text-3); }
+.cm-omnibar-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  border: none;
+  background: none;
   font-family: var(--font-ui);
-  font-size: var(--fs-base);
-  line-height: var(--lh-base);
+  font-size: var(--fs-lg);
   color: var(--c-text);
-  background: var(--c-surface);
 }
-.cm-ai-input::placeholder { color: var(--c-text-3); }
-.cm-ai-input:focus {
-  outline: none;
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 2px var(--c-accent-tint);
+.cm-omnibar-input:focus { outline: none; }
+.cm-omnibar-input::placeholder { color: var(--c-text-3); }
+.cm-omnibar-kbd {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  color: var(--c-text-3);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
 }
-.cm-ai-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.cm-omnibar-x { margin: 0; }

@@ -1,5 +1,6 @@
 .arc-sidebar {
   width: 274px;
+  position: relative; /* 给宽度拖拽柄 .arc-resize 定位 */
   flex: none;
   background: var(--c-bg-sunken);
   border-right: 1px solid var(--c-border);
@@ -9,6 +10,9 @@
   user-select: none;
 }
 .arc-sidebar.is-collapsed { width: 48px; }
+/* 侧栏宽度拖拽柄（F1，对齐真 app 的 .sb-resize）：贴右边界、col-resize；只在展开态渲染。 */
+.arc-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 30; }
+.arc-resize:hover { background: var(--c-accent); opacity: 0.35; }
 .arc-top-collapsed { justify-content: center; padding: 0; }
 
 /* top: traffic + nav */
@@ -124,6 +128,16 @@
 .arc-tab-ico { display: flex; flex: none; color: var(--c-text-3); }
 .arc-tab.is-active .arc-tab-ico { color: var(--c-accent); }
 .arc-tab-title { flex: 1; min-width: 0; font-size: var(--fs-base); }
+/* 未保存（临时文档）圆点：闲置时显示，hover 出置顶/关闭按钮时让位隐藏 */
+.arc-tab-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--c-accent);
+}
+.arc-tab:hover .arc-tab-dot { display: none; }
 .arc-tab-act {
   width: 18px; height: 18px; border-radius: var(--r-xs);
   display: flex; align-items: center; justify-content: center;
@@ -400,99 +414,5 @@
 .arc-folder-head:hover .arc-folder-add { opacity: 1; }
 .arc-folder-add:hover { background: var(--c-active); color: var(--c-text); }
 
-/* collapsed sidebar: a vertical icon rail (Arc-style), not a blank strip */
-.arc-rail {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 0;
-}
-.arc-rail-ico {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-sm);
-  color: var(--c-text-2);
-  flex: none;
-}
-.arc-rail-ico:hover { background: var(--c-hover); color: var(--c-text); }
-.arc-rail-ico.is-active {
-  background: var(--c-surface);
-  color: var(--c-accent);
-  box-shadow: var(--shadow-sm);
-}
-.arc-rail-folder { color: var(--c-text-3); }
-.arc-rail-folder:hover { color: var(--c-text); }
-
-/* the active space's identity badge, pinned at the rail top */
-.arc-rail-badge-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 32px;
-  height: 32px;
-}
-.arc-rail-badge {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 10px;
-  font-weight: var(--fw-semibold);
-  line-height: 1;
-}
-.arc-rail-div {
-  flex: none;
-  width: 18px;
-  height: 1px;
-  background: var(--c-border);
-  margin: 4px auto;
-}
-
-/* hover bubble that previews a rail icon's name + contents */
-.arc-rail-pop {
-  position: fixed;
-  left: 52px;
-  z-index: 60;
-  min-width: 150px;
-  max-width: 230px;
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.04);
-  padding: 8px 10px;
-  pointer-events: none;
-}
-.arc-rail-pop-title {
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  color: var(--c-text);
-}
-.arc-rail-pop-sub {
-  margin-top: 2px;
-  font-size: var(--fs-xs);
-  color: var(--c-text-3);
-}
-.arc-rail-pop-list {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.arc-rail-pop-item {
-  font-size: var(--fs-xs);
-  color: var(--c-text-2);
-}
-.arc-rail-pop-more {
-  font-size: var(--fs-xs);
-  color: var(--c-text-3);
-  margin-top: 2px;
-}
+/* collapsed sidebar: a thin strip with just the expand button (vertical icon
+   rail removed per B2 — collapsed view no longer lists files/folders as icons). */
