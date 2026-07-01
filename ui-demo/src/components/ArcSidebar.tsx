@@ -757,6 +757,34 @@ export default function ArcSidebar() {
   const revealFolders = useUI((s) => s.revealFolders)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // 侧栏宽度可拖拽（F1，对齐真 app 的 .sb-resize）：右边界拖拽柄改宽度（夹 180–520），
+  // 存 localStorage、刷新恢复；收起态不渲染柄。
+  const asideRef = useRef<HTMLElement>(null)
+  const [sbWidth, setSbWidth] = useState(() => {
+    const v = parseInt(localStorage.getItem('ws-arc-width') ?? '', 10)
+    return v >= 180 && v <= 520 ? v : 274
+  })
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = asideRef.current?.getBoundingClientRect().width ?? sbWidth
+    document.body.style.cursor = 'col-resize'
+    const onMove = (ev: MouseEvent) => {
+      const w = Math.max(180, Math.min(520, startW + (ev.clientX - startX)))
+      if (asideRef.current) asideRef.current.style.width = `${w}px`
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      const w = Math.round(asideRef.current?.getBoundingClientRect().width ?? sbWidth)
+      setSbWidth(w)
+      localStorage.setItem('ws-arc-width', String(w))
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const doc = activeTab?.docId ? getDoc(activeTab.docId) : undefined
   const space = spaces.find((s) => s.id === activeSpaceId) ?? spaces[0]
@@ -866,7 +894,8 @@ export default function ArcSidebar() {
   }
 
   return (
-    <aside className="arc-sidebar">
+    <aside className="arc-sidebar" ref={asideRef} style={{ width: `${sbWidth}px` }}>
+      <div className="arc-resize" onMouseDown={startResize} title="拖拽调整侧栏宽度" />
       <div className="arc-top">
         <div className="arc-traffic">
           <span style={{ background: '#ff5f57' }} />
