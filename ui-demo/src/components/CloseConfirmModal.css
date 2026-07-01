@@ -1,0 +1,45 @@
+/* 复用全局 .ws-modal 外壳。未保存关闭确认特有样式。 */
+.ws-modal.cc-modal {
+  width: 430px;
+  max-width: calc(100vw - 32px);
+}
+.cc-body {
+  display: flex;
+  gap: 12px;
+  padding: 20px 20px 14px;
+}
+.cc-ico {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #fff4e5;
+  color: #b26a00;
+}
+.cc-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+  margin-bottom: 4px;
+}
+.cc-desc {
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  line-height: 1.55;
+}
+.cc-foot {
+  align-items: center;
+}
+.cc-spacer {
+  flex: 1;
+}
+.cc-discard {
+  color: var(--c-danger);
+  border-color: var(--c-border);
+}
+.cc-discard:hover {
+  background: var(--c-danger-tint, #fdecec);
+  border-color: var(--c-danger);
+}
