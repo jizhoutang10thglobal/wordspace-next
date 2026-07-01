@@ -67,6 +67,8 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
   const [menu, setMenu] = useState<'color' | 'hilite' | null>(null)
   const [focus, setFocus] = useState<Rect | null>(null)
   const [hover, setHover] = useState<Rect | null>(null)
+  // C 方案：编辑态（默认）= 不跑 JS + 展开全部（reveal-all）；预览态 = 跑文档 JS 看交互原貌、只读。
+  const [view, setView] = useState<'edit' | 'preview'>('edit')
 
   const blocksRef = useRef<HTMLElement[]>([])
   const focusElRef = useRef<HTMLElement | null>(null)
@@ -79,8 +81,26 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
     const host = hostRef.current
     if (!f || !host) return
 
+    // 预览态：iframe 用 allow-scripts（跑文档 JS、隔离），只读，不挂任何编辑 chrome。
+    if (view === 'preview') { setBubble(null); setMenu(null); setFocus(null); setHover(null); return }
+
     const docOf = () => f.contentDocument
     const bodyOf = () => f.contentDocument?.body
+
+    // 展开全部：不跑 JS，所以用 CSS + 类把被隐藏（[hidden] / display:none / visibility:hidden）的内容
+    // 强制显示出来，让 JS 藏起来的 tab 面板、折叠内容都可见可编辑。编辑器托管的 style 带 data-ws-schema-css。
+    const revealAll = (d: Document) => {
+      const st = d.createElement('style'); st.setAttribute('data-ws-schema-css', 'reveal')
+      st.textContent = '[hidden],.ws-nce-reveal{display:revert !important;visibility:visible !important;opacity:1 !important;height:auto !important;max-height:none !important;}'
+      d.head?.appendChild(st)
+      const win = d.defaultView; if (!win) return
+      const SKIP = new Set(['SCRIPT', 'STYLE', 'HEAD', 'META', 'LINK', 'TITLE', 'TEMPLATE', 'BR', 'NOSCRIPT', 'BASE'])
+      d.body?.querySelectorAll('*').forEach((el) => {
+        if (SKIP.has(el.tagName)) return
+        const cs = win.getComputedStyle(el)
+        if (cs.display === 'none' || cs.visibility === 'hidden') el.classList.add('ws-nce-reveal')
+      })
+    }
 
     const toHost = (el: HTMLElement): Rect => {
       const fr = f.getBoundingClientRect(); const hr = host.getBoundingClientRect(); const r = el.getBoundingClientRect()
@@ -161,6 +181,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
 
     const wire = () => {
       const d = docOf(); if (!d || !d.body) return
+      revealAll(d) // 先展开全部被 JS 藏起来的内容，再收集块
       d.body.contentEditable = 'true'; d.body.style.outline = 'none'; d.body.style.cursor = 'text'
       modeRef.current = 'text'; blocksRef.current = collectBlocks(d.body)
       d.addEventListener('selectionchange', refreshBubble)
@@ -188,7 +209,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       d?.removeEventListener('keyup', refreshBubble)
       f.removeEventListener('load', wire)
     }
-  }, [html])
+  }, [html, view])
 
   const api = () => (hostRef.current as unknown as { _nce?: { deleteHovered(): void; deleteFocused(): void; cancelHoverClear(): void } })?._nce
   const exec = (cmd: string, val?: string) => {
@@ -202,7 +223,18 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
   return (
     <div className="nce" ref={hostRef}>
       <div className="nce-stage">
-        <iframe ref={frameRef} className="nce-frame" title={doc.title} sandbox="allow-same-origin" srcDoc={html} />
+        <div className="nce-modes" onMouseDown={guard}>
+          <button className={view === 'edit' ? 'on' : ''} onClick={() => setView('edit')}>编辑（展开全部）</button>
+          <button className={view === 'preview' ? 'on' : ''} onClick={() => setView('preview')}>预览（跑 JS · 只读）</button>
+        </div>
+        <iframe
+          key={view}
+          ref={frameRef}
+          className="nce-frame"
+          title={doc.title}
+          sandbox={view === 'preview' ? 'allow-scripts' : 'allow-same-origin'}
+          srcDoc={html}
+        />
       </div>
 
       {/* 中立、精简的提示，放文档下方 */}

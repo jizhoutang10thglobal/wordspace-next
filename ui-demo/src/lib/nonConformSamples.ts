@@ -123,6 +123,49 @@ const SIGNUP_PAGE = `<!doctype html>
 </form>
 </body></html>`
 
+// ④ 交互产品页 —— 用 JS（标签页 + 折叠）切换内容。不跑文档 JS 时只显示初始那部分（tab 1 + 折叠关闭），
+//    其余内容被藏起来看不见 → 编辑走「展开全部（reveal-all）」把它们静态拍出来；想看交互原貌走只读「预览」。
+const INTERACTIVE_PAGE = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>WriteFlow · 产品页</title>
+<style>
+  body { font-family:'PingFang SC',sans-serif; max-width:640px; margin:0 auto; padding:26px 24px; color:#1c1e21; }
+  h1 { font-size:28px; margin:0 0 8px; letter-spacing:-.5px; }
+  .lead { color:#555; font-size:16px; line-height:1.7; }
+  .tabs { border:1px solid #e6e8eb; border-radius:12px; overflow:hidden; margin:22px 0; }
+  .tabbar { display:flex; gap:4px; padding:6px; background:#f7f8fa; border-bottom:1px solid #e6e8eb; }
+  .tab { border:0; background:none; padding:6px 15px; border-radius:8px; cursor:pointer; font-weight:600; color:#6b7280; font-size:14px; }
+  .tab.on { background:#fff; color:#e8654f; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+  .panel { padding:16px 18px; font-size:14px; line-height:1.7; }
+  .panel[hidden] { display:none; }
+  .panel ul { margin:0; padding-left:18px; } .panel blockquote { margin:0; color:#555; border-left:3px solid #e6e8eb; padding-left:12px; }
+  .col-head { width:100%; text-align:left; border:0; background:#f7f8fa; padding:12px 16px; border-radius:10px; cursor:pointer; font-weight:600; }
+  .col-body { padding:12px 16px; font-size:13.5px; color:#5a5f66; }
+  .col-body[hidden] { display:none; }
+</style></head>
+<body>
+  <h1>WriteFlow 2.0</h1>
+  <p class="lead">本地优先的写作工具。这一页用了<b>标签页</b>和<b>折叠</b>这类靠 JS 切换的交互。</p>
+  <div class="tabs">
+    <div class="tabbar">
+      <button class="tab on" onclick="pick(0)">简介</button>
+      <button class="tab" onclick="pick(1)">规格</button>
+      <button class="tab" onclick="pick(2)">用户评价</button>
+    </div>
+    <div class="panel" data-p="0"><p style="margin:0;">WriteFlow 让写作回到纯粹——秒开、离线，你的文件永远属于你。</p></div>
+    <div class="panel" data-p="1" hidden><ul><li>体积：12 MB</li><li>平台：macOS / Windows</li><li>格式：HTML / Markdown</li></ul></div>
+    <div class="panel" data-p="2" hidden><blockquote>「终于有个不把我文件锁在云上的编辑器。」——一位早期用户</blockquote></div>
+  </div>
+  <button class="col-head" onclick="toggle()">查看更多规格 ▾</button>
+  <div class="col-body" id="more" hidden><p style="margin:0;">离线可用 · 端到端加密 · 支持 20 种语言 · 开源内核。</p></div>
+  <script>
+    function pick(i){
+      document.querySelectorAll('.panel').forEach(function(p,k){ p.hidden = k!==i; });
+      document.querySelectorAll('.tab').forEach(function(t,k){ t.classList.toggle('on', k===i); });
+    }
+    function toggle(){ var m=document.getElementById('more'); m.hidden=!m.hidden; }
+  </script>
+</body></html>`
+
 export const NON_CONFORM_SAMPLES: NonConformSample[] = [
   {
     id: 'd-nc-landing',
@@ -141,6 +184,12 @@ export const NON_CONFORM_SAMPLES: NonConformSample[] = [
     fileName: '活动报名页.html',
     blurb: '内嵌 <script> + 表单控件 + 地图 <iframe> + h5/h6 —— 带交互逻辑和越界结构，只能保住文字、丢掉交互。',
     html: SIGNUP_PAGE,
+  },
+  {
+    id: 'd-nc-interactive',
+    fileName: '产品页.html',
+    blurb: '标签页 + 折叠靠 JS 切换内容 —— 不跑文档 JS 时只显示初始那部分、其余被藏起来。编辑走「展开全部」把内容拍平可编辑，预览跑 JS 看交互原貌（只读）。',
+    html: INTERACTIVE_PAGE,
   },
 ]
 

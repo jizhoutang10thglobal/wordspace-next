@@ -398,4 +398,5 @@ export const seedFiles: FileEntry[] = [
   { spaceId: 'sp-local', path: '外部导入/新品落地页.html', kind: 'html', docId: 'd-nc-landing' },
   { spaceId: 'sp-local', path: '外部导入/季度数据表.html', kind: 'html', docId: 'd-nc-table' },
   { spaceId: 'sp-local', path: '外部导入/活动报名页.html', kind: 'html', docId: 'd-nc-signup' },
+  { spaceId: 'sp-local', path: '外部导入/产品页.html', kind: 'html', docId: 'd-nc-interactive' },
 ]
