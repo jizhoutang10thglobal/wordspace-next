@@ -1011,6 +1011,8 @@
     if (!sidebarEl) return;
     sidebarEl.classList.toggle('is-collapsed', v);
     document.body.classList.toggle('is-sb-collapsed', v);
+    // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
+    if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
   }
   function toggleCollapsed() { if (sidebarEl) setSidebarCollapsed(!sidebarEl.classList.contains('is-collapsed')); }
   if (toggleBtn) toggleBtn.onclick = toggleCollapsed;

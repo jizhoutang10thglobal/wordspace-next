@@ -334,6 +334,10 @@ function renderTemp(id) {
   docInfo = { name: rec.base };
   tempDoc = { id, base: rec.base };
   zoomFactor = 1;
+  // ⚠ schema-1 rebase 钩子（handoff-schema1-integration.md §2）：schema-1 的 iframe onload 按模块变量
+  // docConform 决定挂块编辑器还是基础编辑器，而 loadFromHtml 故意不改 docConform（历史恢复复用既有判定）。
+  // 临时文档是新文档、必须显式设，否则读到上一个文档的陈旧 docConform、编辑器错挂。
+  // rebase 到 schema-1 后在此加：docConform = routeDoc(rec.html);（模板产物合规→块编辑；万一非合规也正确降级）
   loadFromHtml(rec.html, { asDirty: true }); // srcdoc 渲染；临时 = 未保存 = 脏（面包屑显「● 未保存」）
   docName.textContent = rec.base;
   docName.title = rec.base;
@@ -445,6 +449,10 @@ window.__shellFinalizeTemp = shellFinalizeTemp;
 window.__shellDiscardTemp = shellDiscardTemp;
 window.__shellIsTemp = () => !!tempDoc; // 当前活跃的是不是临时文档
 window.__shellSaveActive = () => save(); // 「保存并关闭」里保存已落盘的脏文档用（返回 promise）
+// 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
+// position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
+// ⚠ schema-1 rebase：这里再加 if (basicEdit) basicEdit.reposition();（基础编辑器的格式条同样是宿主浮层）
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -463,7 +471,9 @@ async function pickAndOpen() {
 }
 
 async function save() {
-  // 临时文档：没有落盘目标 → 弹「保存到哪里」（侧栏 SaveModal，它有文件树 + wsNewDoc）。
+  // 临时文档：没有落盘目标 → 弹「保存到哪里」（侧栏 SaveModal，它有文件树 + wsNewDoc）。early-return 在
+  // 序列化行之前，所以跟 schema-1 的 `basicEdit ? WS2BasicEdit.serialize : WS2Serialize` 三元不打架。
+  // ⚠ schema-1 rebase（handoff §1）：下面这行取 schema-1 的三元版，别覆盖成单一 WS2Serialize。
   if (tempDoc) { if (window.__sbHooks && window.__sbHooks.openSaveModal) window.__sbHooks.openSaveModal(false); return; }
   if (!docPath || !dirty) return;
   const html = WS2Serialize.serializeDocument(frame.contentDocument);
