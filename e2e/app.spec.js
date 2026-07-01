@@ -930,13 +930,19 @@ const CSP_DOC = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">'
   + '<meta http-equiv="Content-Security-Policy" content="default-src \'self\' file:; style-src \'self\' file:">'
   + '<title>t</title><style>body{padding:5px;font-family:serif;color:#222}</style></head><body>'
   + Array.from({ length: 20 }, (_, i) => `<p>第 ${i + 1} 段，CSP 文档。</p>`).join('') + '</body></html>';
-// F3 取代：CSP meta（head-meta-http-equiv）+ 作者 style（head-style）本身就非合规 → 路由到基础编辑器。
-// 「Wordspace 样式导出」是块编辑器排版概念，基础模式下不适用 → 导出按钮禁用（本轮 MVP，验导出 gap 修复）。
-test('导出 PDF（F3）：非合规文档（CSP/作者 style）→ 基础编辑器 + Wordspace 导出按钮禁用', async () => {
+// F3：CSP meta（head-meta-http-equiv）+ 作者 style（head-style）本身就非合规 → 路由到基础编辑器。
+// 「Wordspace 样式导出」是块编辑器排版概念，基础模式下改走 **raw（直印源文件，忠于野文件原貌）**——
+// 所以导出仍可用、能出合法 PDF（不是禁用）。
+test('导出 PDF（F3）：非合规文档 → 基础编辑器，导出走 raw 直印源文件、出合法 PDF', async () => {
   await launch();
   await openDoc(CSP_DOC);
   await expect(page.locator('#ws-degrade-notice')).toBeVisible();
-  await expect(page.locator('#export-btn')).toBeDisabled();
+  await expect(page.locator('#export-btn')).toBeEnabled(); // 导出仍可用（走 raw）
+  await page.click('#export-btn');
+  await expect.poll(async () => {
+    try { const b = await fs.readFile(path.join(tmpDir, 'export.pdf')); return b.slice(0, 5).toString('latin1') === '%PDF-' && b.length > 500; }
+    catch (e) { return false; }
+  }, { message: '非合规文档 raw 导出没出合法 PDF' }).toBe(true);
 });
 
 // Wordspace 导出前清掉历史残留的临时打印文件（上次 SIGKILL/崩溃跳过 finally 留下的）。

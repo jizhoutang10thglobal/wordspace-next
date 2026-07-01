@@ -124,7 +124,7 @@ function attachBasic() {
   detachEditors();
   basicEdit = WS2BasicEdit.attach(doc, { win: frame.contentWindow, host: mainEl, markDirty });
   if (degradeNotice) degradeNotice.hidden = false;
-  exportBtn.disabled = true; // 非合规文档不支持 Wordspace 样式导出（那是块编辑器排版的概念）——MVP 禁用
+  // 导出仍可用：基础模式走 raw（直印源文件、忠于野文件原貌），不走块编辑器的 Wordspace 排版（见导出触发点）
   doc.addEventListener('keydown', (e) => {
     if (handleZoomKey(e)) return;
     const mod = e.metaKey || e.ctrlKey;
@@ -462,7 +462,7 @@ window.ws2.onOpenFile((p) => openDoc(p));
 window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
-  if (cmd === 'export-pdf') exportPdf();
+  if (cmd === 'export-pdf') exportPdf(basicEdit ? 'raw' : 'wordspace'); // 基础模式=raw 直印源文件
   if (cmd === 'undo' && undoMgr) { if (undoMgr.undo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
   if (cmd === 'redo' && undoMgr) { if (undoMgr.redo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
 });
@@ -518,7 +518,8 @@ function buildWordspacePrintHtml() {
 // 导出按钮 → 直接导出（Wordspace 样式 = 所见即所得）。不再弹样式小菜单。
 // raw（原 HTML 样式）仍可由 exportPdf('raw') 触发、主进程 pdf-export 也保留，只是未接 UI——
 // 留作「绕开编辑器、导出磁盘原文件」的逃生口/调试用，将来要露出再接回即可。
-exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf('wordspace'); };
+// 导出：合规文档走 Wordspace 样式（所见即所得）；非合规（基础编辑）走 raw 直印源文件（忠于野文件原貌）。
+exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(basicEdit ? 'raw' : 'wordspace'); };
 
 renderRecents();
 
