@@ -84,3 +84,28 @@
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
 .nce-focus-del:hover { background: #33363b; }
+
+/* ---- 悬停某块 → 右上角 🗑（鼠标删除路径） ---- */
+.nce-hover {
+  position: absolute;
+  z-index: 50;
+  pointer-events: none;
+  border: 1.5px dashed rgba(232, 101, 79, 0.55);
+  border-radius: 6px;
+}
+.nce-hover-del {
+  position: absolute;
+  top: -13px;
+  right: -13px;
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: var(--c-accent);
+  color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 3px 10px rgba(232, 101, 79, 0.45);
+}
+.nce-hover-del:hover { background: var(--c-accent-hover); }

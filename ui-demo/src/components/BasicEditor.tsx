@@ -1,30 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bold, Italic, Underline, Strikethrough, Baseline, Highlighter, Eraser, Info, Trash2 } from 'lucide-react'
+import { Bold, Italic, Underline, Strikethrough, Eraser, Info, Trash2 } from 'lucide-react'
 import type { Doc } from '../types'
 import './BasicEditor.css'
 
 // 打开「不符合 Schema」的野生 HTML 时的基础编辑视图。见 docs/brainstorms/2026-07-01-nonconform-html-editing-requirements.md。
-// 立场：文件在沙箱 iframe 里全保真渲染（<style> 隔离、<script> 不执行）；编辑器 chrome（格式条 / 焦点框 /
-// 删除按钮）一律走**宿主浮层**、绝不注进 iframe DOM（不污染文件字节）。三个能力：
-//   A 富就地文字编辑（B/I/U/S + 文字色/高亮/清除）  B 删整块  C 空间切块（方向键按渲染几何找最近的块）
-// 编辑/删除 keyed 到节点身份；导航用 getBoundingClientRect 的渲染矩形做 nearestInDirection，都不依赖 DOM 顺序。
+// 文件在沙箱 iframe 里全保真渲染（<style> 隔离、<script> 不执行）；编辑器 chrome（格式条 / 焦点框 / 悬停删除）
+// 一律走**宿主浮层**、绝不注进 iframe DOM。三个能力：A 富就地文字（B/I/U/S + 文字色/高亮/清除）· B 删整块
+// （悬停右上角 🗑，或 Esc 选块后 Delete）· C 空间切块（Esc 后方向键按渲染几何找最近的块）。
+// 编辑/删除 keyed 到节点身份；导航用 getBoundingClientRect 的渲染矩形做 nearestInDirection，不依赖 DOM 顺序。
+
+// 跟正规编辑器（components/canvas/FormatToolbar.tsx）同一套调色板。
+const TEXT_COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2']
+const HILITE_COLORS = ['#fff59d', '#ffd6d6', '#d7f0db', '#dbe9ff', '#f3e3ff']
 
 interface Rect { top: number; left: number; width: number; height: number }
 type Bubble = { top: number; left: number }
 
-const TOOLS = [
-  { cmd: 'bold', icon: Bold, label: '加粗' },
-  { cmd: 'italic', icon: Italic, label: '斜体' },
-  { cmd: 'underline', icon: Underline, label: '下划线' },
-  { cmd: 'strikeThrough', icon: Strikethrough, label: '删除线' },
-  { sep: true as const },
-  { cmd: 'foreColor', val: '#e8654f', icon: Baseline, label: '文字色' },
-  { cmd: 'hiliteColor', val: '#fff3a0', icon: Highlighter, label: '高亮' },
-  { cmd: 'removeFormat', icon: Eraser, label: '清除格式' },
-]
-
-// 收集「可导航 / 可删除的块」：媒体 / 表格 / 列表整块，加上不在这些容器里的「有直接文字」的元素；
-// 跳过表格 / 列表内部（它们作为一个块）和文字块的行内子（如 <h1> 里的 <span>）。
 function collectBlocks(body: HTMLElement): HTMLElement[] {
   const blocks: HTMLElement[] = []
   const skip = new Set<Element>()
@@ -39,7 +30,6 @@ function collectBlocks(body: HTMLElement): HTMLElement[] {
     if (el.closest('table,ul,ol,svg')) return
     if (['SCRIPT', 'STYLE', 'BR', 'HEAD'].includes(el.tagName)) return
     if (!hasDirectText(el)) return
-    // 跳过「有直接文字的父」的行内子（例：<h1>让灵感<span>流动</span>起来</h1> 里的 span）
     if (el.parentElement && hasDirectText(el.parentElement) && !skip.has(el.parentElement)) return
     blocks.push(el as HTMLElement)
   })
@@ -74,12 +64,15 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
   const [bubble, setBubble] = useState<Bubble | null>(null)
+  const [menu, setMenu] = useState<'color' | 'hilite' | null>(null)
   const [focus, setFocus] = useState<Rect | null>(null)
+  const [hover, setHover] = useState<Rect | null>(null)
 
-  // 可变状态放 ref，避免高频 re-render
   const blocksRef = useRef<HTMLElement[]>([])
   const focusElRef = useRef<HTMLElement | null>(null)
+  const hoverElRef = useRef<HTMLElement | null>(null)
   const modeRef = useRef<'text' | 'block'>('text')
+  const hoverTimer = useRef<number>(0)
 
   useEffect(() => {
     const f = frameRef.current
@@ -89,38 +82,31 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
     const docOf = () => f.contentDocument
     const bodyOf = () => f.contentDocument?.body
 
-    // 把 iframe 内元素的矩形换算成宿主浮层坐标（.nce 是定位上下文）
     const toHost = (el: HTMLElement): Rect => {
-      const fr = f.getBoundingClientRect()
-      const hr = host.getBoundingClientRect()
-      const r = el.getBoundingClientRect()
+      const fr = f.getBoundingClientRect(); const hr = host.getBoundingClientRect(); const r = el.getBoundingClientRect()
       return { top: fr.top - hr.top + r.top, left: fr.left - hr.left + r.left, width: r.width, height: r.height }
     }
 
     const clearFocus = () => { focusElRef.current = null; setFocus(null) }
-    const paintFocus = () => { const el = focusElRef.current; setFocus(el ? toHost(el) : null) }
     const setFocusEl = (el: HTMLElement | null) => {
       focusElRef.current = el
-      if (el) { el.scrollIntoView({ block: 'nearest' }); paintFocus() } else setFocus(null)
+      if (el) { el.scrollIntoView({ block: 'nearest' }); setFocus(toHost(el)) } else setFocus(null)
     }
+    const clearHover = () => { hoverElRef.current = null; setHover(null) }
 
     const refreshBubble = () => {
       const d = docOf(); const sel = d?.getSelection()
-      if (modeRef.current !== 'text' || !sel || sel.isCollapsed || sel.rangeCount === 0) { setBubble(null); return }
+      if (modeRef.current !== 'text' || !sel || sel.isCollapsed || sel.rangeCount === 0) { setBubble(null); setMenu(null); return }
       const r = sel.getRangeAt(0).getBoundingClientRect()
-      if (!r || (r.width === 0 && r.height === 0)) { setBubble(null); return }
+      if (!r || (r.width === 0 && r.height === 0)) { setBubble(null); setMenu(null); return }
       const fr = f.getBoundingClientRect(); const hr = host.getBoundingClientRect()
-      setBubble({ top: Math.max(6, fr.top - hr.top + r.top - 44), left: fr.left - hr.left + r.left + r.width / 2 })
+      setBubble({ top: Math.max(6, fr.top - hr.top + r.top - 46), left: fr.left - hr.left + r.left + r.width / 2 })
     }
 
-    // 进入「文字模式」：body 可编辑；进入「块模式」：body 不可编辑，方向键切块
-    const toText = () => { const b = bodyOf(); if (b) b.contentEditable = 'true'; modeRef.current = 'text'; clearFocus() }
     const toBlock = (from?: HTMLElement | null) => {
       const b = bodyOf(); if (!b) return
-      setBubble(null); b.contentEditable = 'false'; modeRef.current = 'block'
-      const blocks = blocksRef.current
-      const start = from || blocks[0] || null
-      setFocusEl(start)
+      setBubble(null); setMenu(null); clearHover(); b.contentEditable = 'false'; modeRef.current = 'block'
+      setFocusEl(from || blocksRef.current[0] || null)
     }
     const caretTo = (el: HTMLElement) => {
       const d = docOf(); if (!d) return
@@ -128,47 +114,72 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       modeRef.current = 'text'; clearFocus()
       const range = d.createRange(); range.selectNodeContents(el); range.collapse(true)
       const sel = d.getSelection(); sel?.removeAllRanges(); sel?.addRange(range)
-      ;(el as HTMLElement).focus?.()
     }
-    const delFocus = () => {
-      const el = focusElRef.current; if (!el) return
-      const next = nearestInDir(el, 'down', blocksRef.current) || nearestInDir(el, 'up', blocksRef.current)
+    const removeBlock = (el: HTMLElement, keepFocusNext: boolean) => {
+      const next = keepFocusNext
+        ? nearestInDir(el, 'down', blocksRef.current) || nearestInDir(el, 'up', blocksRef.current)
+        : null
       el.remove()
-      blocksRef.current = collectBlocks(bodyOf()!)
-      setFocusEl(next && blocksRef.current.includes(next) ? next : blocksRef.current[0] || null)
+      const body = bodyOf(); blocksRef.current = body ? collectBlocks(body) : []
+      clearHover()
+      if (keepFocusNext) setFocusEl(next && blocksRef.current.includes(next) ? next : blocksRef.current[0] || null)
+      else if (focusElRef.current === el) clearFocus()
+    }
+
+    const blockAt = (target: EventTarget | null): HTMLElement | null => {
+      const t = target as Element | null; if (!t) return null
+      const hits = blocksRef.current.filter((b) => b === t || b.contains(t))
+      if (!hits.length) return null
+      return hits.reduce((a, b) => (a.getBoundingClientRect().width * a.getBoundingClientRect().height <=
+        b.getBoundingClientRect().width * b.getBoundingClientRect().height ? a : b))
     }
 
     const onMouseDown = () => {
-      // 块模式下点一下 → 回文字模式，让这次点击自然落光标
       if (modeRef.current === 'block') { const b = bodyOf(); if (b) b.contentEditable = 'true'; modeRef.current = 'text'; clearFocus() }
     }
+    const onMouseMove = (e: MouseEvent) => {
+      if (modeRef.current !== 'text') return
+      const blk = blockAt(e.target)
+      if (!blk) { window.clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(clearHover, 160); return }
+      window.clearTimeout(hoverTimer.current)
+      if (blk !== hoverElRef.current) { hoverElRef.current = blk; setHover(toHost(blk)) }
+    }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); const d = docOf(); const anchor = d?.getSelection()?.anchorNode as Node | null; const blk = anchor && (anchor.nodeType === 3 ? anchor.parentElement : (anchor as HTMLElement))?.closest?.('*'); const near = blocksRef.current.find((x) => blk && x.contains(blk)) || null; toBlock(near); return }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        const d = docOf(); const a = d?.getSelection()?.anchorNode as Node | null
+        const start = a ? (a.nodeType === 3 ? a.parentElement : (a as HTMLElement)) : null
+        toBlock(blocksRef.current.find((x) => start && x.contains(start)) || null)
+        return
+      }
       if (modeRef.current !== 'block') return
       const map: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
-      if (map[e.key]) { e.preventDefault(); const el = focusElRef.current; if (!el) { setFocusEl(blocksRef.current[0] || null); return } const n = nearestInDir(el, map[e.key], blocksRef.current); if (n) setFocusEl(n) }
-      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); delFocus() }
-      else if (e.key === 'Enter') { e.preventDefault(); const el = focusElRef.current; if (el) caretTo(el) }
+      if (map[e.key]) { e.preventDefault(); const el = focusElRef.current; const n = el ? nearestInDir(el, map[e.key], blocksRef.current) : blocksRef.current[0]; if (n) setFocusEl(n) }
+      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (focusElRef.current) removeBlock(focusElRef.current, true) }
+      else if (e.key === 'Enter') { e.preventDefault(); if (focusElRef.current) caretTo(focusElRef.current) }
     }
 
     const wire = () => {
       const d = docOf(); if (!d || !d.body) return
       d.body.contentEditable = 'true'; d.body.style.outline = 'none'; d.body.style.cursor = 'text'
-      modeRef.current = 'text'
-      blocksRef.current = collectBlocks(d.body)
+      modeRef.current = 'text'; blocksRef.current = collectBlocks(d.body)
       d.addEventListener('selectionchange', refreshBubble)
       d.addEventListener('mouseup', refreshBubble)
       d.addEventListener('keyup', refreshBubble)
       d.addEventListener('mousedown', onMouseDown, true)
+      d.addEventListener('mousemove', onMouseMove, true)
       d.addEventListener('keydown', onKeyDown, true)
-      d.addEventListener('scroll', () => { refreshBubble(); paintFocus() }, true)
+      d.addEventListener('scroll', () => { refreshBubble(); if (focusElRef.current) setFocus(toHost(focusElRef.current)); clearHover() }, true)
+      d.body.addEventListener('mouseleave', () => { window.clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(clearHover, 160) })
     }
 
     f.addEventListener('load', wire)
     if (f.contentDocument?.readyState === 'complete') wire()
-
-    // 宿主侧暴露给按钮用
-    ;(host as unknown as { _nce?: unknown })._nce = { toText, delFocus }
+    ;(host as unknown as { _nce?: unknown })._nce = {
+      deleteHovered: () => { if (hoverElRef.current) removeBlock(hoverElRef.current, false) },
+      deleteFocused: () => { if (focusElRef.current) removeBlock(focusElRef.current, true) },
+      cancelHoverClear: () => window.clearTimeout(hoverTimer.current),
+    }
 
     return () => {
       const d = docOf()
@@ -179,20 +190,21 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
     }
   }, [html])
 
+  const api = () => (hostRef.current as unknown as { _nce?: { deleteHovered(): void; deleteFocused(): void; cancelHoverClear(): void } })?._nce
   const exec = (cmd: string, val?: string) => {
-    const d = frameRef.current?.contentDocument
-    if (!d) return
+    const d = frameRef.current?.contentDocument; if (!d) return
     try { d.execCommand('styleWithCSS', false, 'true') } catch { /* noop */ }
     try { d.execCommand(cmd, false, val) } catch { /* execCommand 已废弃但浏览器仍支持 */ }
+    setMenu(null)
   }
-  const deleteFocused = () => (hostRef.current as unknown as { _nce?: { delFocus: () => void } })?._nce?.delFocus?.()
+  const guard = (e: React.MouseEvent) => e.preventDefault()
 
   return (
     <div className="nce" ref={hostRef}>
       <div className="nce-notice">
         <Info size={15} />
         <span>
-          这个文件不符合 Wordspace Schema，<strong>仅支持基础编辑</strong>：改文字（粗/斜/下/删 + 文字色/高亮/清除）、按方向键在块间移动、删整块。结构化编辑（斜杠菜单、AI 排版）对它停用。
+          这个文件不符合 Wordspace Schema，<strong>仅支持基础编辑</strong>：点文字改字（选中出格式条：粗/斜/下/删 + 文字色/高亮/清除）· 悬停任意块右上角 <strong>🗑 删除</strong> · 按 <strong>Esc</strong> 后用方向键在块间移动、Delete 删除。
         </span>
       </div>
 
@@ -200,10 +212,25 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
         <iframe ref={frameRef} className="nce-frame" title={doc.title} sandbox="allow-same-origin" srcDoc={html} />
       </div>
 
-      {/* 焦点框 + 删除按钮（宿主浮层，不进 iframe） */}
+      {/* 悬停某块 → 右上角删除（鼠标路径，不用记 Esc） */}
+      {hover && (
+        <div className="nce-hover" style={{ top: hover.top, left: hover.left, width: hover.width, height: hover.height }}>
+          <button
+            className="nce-hover-del"
+            title="删除这一块"
+            onMouseEnter={() => api()?.cancelHoverClear()}
+            onMouseDown={guard}
+            onClick={() => api()?.deleteHovered()}
+          >
+            <Trash2 size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* 焦点框 + 删除（Esc 块模式 / 键盘） */}
       {focus && (
         <div className="nce-focus" style={{ top: focus.top, left: focus.left, width: focus.width, height: focus.height }}>
-          <button className="nce-focus-del" title="删除此块 (Delete)" onMouseDown={(e) => e.preventDefault()} onClick={deleteFocused}>
+          <button className="nce-focus-del" title="删除此块 (Delete)" onMouseDown={guard} onClick={() => api()?.deleteFocused()}>
             <Trash2 size={13} /> 删除此块
           </button>
         </div>
@@ -211,16 +238,37 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
 
       {/* 富文字浮动格式条 */}
       {bubble && (
-        <div className="ws-fmtbar nce-bubble" style={{ top: bubble.top, left: bubble.left }} onMouseDown={(e) => e.preventDefault()} role="toolbar">
-          {TOOLS.map((t, i) =>
-            'sep' in t ? (
-              <span key={i} className="nce-bubble-sep" />
-            ) : (
-              <button key={i} className="ws-fmtbar-btn" title={t.label} onMouseDown={(e) => e.preventDefault()} onClick={() => exec(t.cmd!, t.val)}>
-                <t.icon size={15} />
-              </button>
-            ),
-          )}
+        <div className="ws-fmtbar nce-bubble" style={{ top: bubble.top, left: bubble.left }} onMouseDown={guard} role="toolbar">
+          <button className="ws-fmtbar-btn" title="加粗" onMouseDown={guard} onClick={() => exec('bold')}><Bold size={15} /></button>
+          <button className="ws-fmtbar-btn" title="斜体" onMouseDown={guard} onClick={() => exec('italic')}><Italic size={15} /></button>
+          <button className="ws-fmtbar-btn" title="下划线" onMouseDown={guard} onClick={() => exec('underline')}><Underline size={15} /></button>
+          <button className="ws-fmtbar-btn" title="删除线" onMouseDown={guard} onClick={() => exec('strikeThrough')}><Strikethrough size={15} /></button>
+          <span className="ws-fmtbar-sep" />
+
+          <div className="ws-fmtbar-holder">
+            <button className="ws-fmtbar-btn ws-fmtbar-aglyph" title="文字颜色" onMouseDown={guard} onClick={() => setMenu(menu === 'color' ? null : 'color')}>A</button>
+            {menu === 'color' && (
+              <div className="ws-fmtbar-swatches" onMouseDown={guard}>
+                {TEXT_COLORS.map((c) => (
+                  <button key={c} className="ws-fmtbar-swatch" style={{ background: c }} title={c} onMouseDown={guard} onClick={() => exec('foreColor', c)} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="ws-fmtbar-holder">
+            <button className="ws-fmtbar-btn" title="背景高亮" onMouseDown={guard} onClick={() => setMenu(menu === 'hilite' ? null : 'hilite')}>🖍</button>
+            {menu === 'hilite' && (
+              <div className="ws-fmtbar-swatches" onMouseDown={guard}>
+                {HILITE_COLORS.map((c) => (
+                  <button key={c} className="ws-fmtbar-swatch" style={{ background: c }} title={c} onMouseDown={guard} onClick={() => exec('hiliteColor', c)} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          <span className="ws-fmtbar-sep" />
+          <button className="ws-fmtbar-btn" title="清除格式" onMouseDown={guard} onClick={() => exec('removeFormat')}><Eraser size={15} /></button>
         </div>
       )}
     </div>
