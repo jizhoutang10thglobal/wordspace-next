@@ -16,3 +16,59 @@
 }
 .ws-degrade-notice svg { flex: 0 0 auto; color: #c8930a; }
 .ws-degrade-notice strong { font-weight: 600; }
+
+/* ---- 富文字格式条（U2）：宿主浮层，append 到 document.body、position:fixed、JS 给坐标 ---- */
+.ws-fmtbar {
+  position: fixed;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 4px;
+  background: #fff;
+  border: 1px solid #e2e4e8;
+  border-radius: 9px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  font-size: 13px;
+  color: #2b2d31;
+}
+.ws-fmtbar[hidden] { display: none; }
+.ws-fmtbar-btn {
+  min-width: 28px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  color: #2b2d31;
+  cursor: pointer;
+  padding: 0 6px;
+}
+.ws-fmtbar-btn:hover { background: #f0f1f3; }
+.ws-fmtbar-aglyph { font-weight: 700; font-size: 14px; }
+.ws-fmtbar-sep { width: 1px; height: 18px; background: #e2e4e8; margin: 0 3px; align-self: center; }
+.ws-fmtbar-holder { position: relative; display: inline-flex; }
+.ws-fmtbar-swatches {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #e2e4e8;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+}
+.ws-fmtbar-swatches[hidden] { display: none; }
+.ws-fmtbar-swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 5px;
+  cursor: pointer;
+  padding: 0;
+}
+.ws-fmtbar-swatch:hover { transform: scale(1.12); }
