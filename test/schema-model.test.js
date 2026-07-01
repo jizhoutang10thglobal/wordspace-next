@@ -85,3 +85,34 @@ test('wrapInlineAsLi: 块 inline 内容裹进 <li>', () => {
   assert.equal(li.tagName, 'LI');
   assert.ok(/hi <b>x<\/b>/.test(li.innerHTML), li.innerHTML);
 });
+
+// ---- P1 闭合破坏回归：多段容器块 turn-into（拍平 → 按 turnInto 方式组装 → validate 恒 conform）----
+const { validate } = require('../src/lib/schema-validate.js');
+const conformOf = (bodyHtml) => validate(new JSDOM(
+  '<!DOCTYPE html><html><head><meta charset="utf-8"><title>t</title></head><body>' + bodyHtml + '</body></html>'
+).window.document).conform;
+
+test('flattenBlocksToLines: 多段 callout 拆行（每 <p> 一行、取 inline 内容）', () => {
+  const callout = el('<div class="ws-callout"><p>a<b>粗</b></p><p>b</p></div>');
+  const lines = M.flattenBlocksToLines(callout);
+  assert.equal(lines.length, 2);
+  assert.ok(/a<b>粗<\/b>/.test(wrap(lines[0].cloneNode(true)).innerHTML));
+  assert.ok(/^b$/.test(wrap(lines[1].cloneNode(true)).innerHTML));
+});
+
+test('闭合：多段 callout/quote → list 组装（每段一 <li>）→ conform（原 turnInto 产 <li><p> 非法）', () => {
+  for (const src of ['<div class="ws-callout"><p>a</p><p>b</p></div>', '<blockquote><p>a</p><p>b</p></blockquote>']) {
+    const lines = M.flattenBlocksToLines(el(src));
+    const d = wrap(lines[0].ownerDocument.createDocumentFragment());
+    const ul = d.ownerDocument.createElement('ul');
+    for (const ln of lines) { const li = d.ownerDocument.createElement('li'); li.appendChild(ln.cloneNode(true)); ul.appendChild(li); }
+    assert.equal(conformOf(ul.outerHTML), true, ul.outerHTML); // 组装成 <ul><li>a</li><li>b</li></ul>
+  }
+});
+
+test('闭合：多段 callout → 叶子块(p) 组装（<br> 分隔）→ conform（原 turnInto 产 <p><p> 非法）', () => {
+  const lines = M.flattenBlocksToLines(el('<div class="ws-callout"><p>a</p><p>b</p></div>'));
+  const p = new JSDOM('<!DOCTYPE html><body>').window.document.createElement('p');
+  lines.forEach((ln, i) => { if (i > 0) p.appendChild(p.ownerDocument.createElement('br')); p.appendChild(ln.cloneNode(true)); });
+  assert.equal(conformOf(p.outerHTML), true, p.outerHTML); // 组装成 <p>a<br>b</p>
+});

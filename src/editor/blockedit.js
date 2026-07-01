@@ -401,13 +401,22 @@
     }
     function turnInto(el, item) {
       if (!el) return el;
+      // 修 P1：源是「多段容器块」(callout/quote 含 <p> 子) 时，先把内部块拍平成「行」——否则块级 <p> 被
+      // 原样搬进目标块，产 <ul><li><p>..</p></li> / <p><p>..</p></p> 等非法结构（闭合破坏）。列表源(<ul>/<ol>)
+      // 由下面既有的 flattenListToPhrasing 分支处理，这里只管非列表容器；转容器目标(引用/callout)保留 <p> 不拍。
+      const LEAF_TARGETS = { p: 1, h1: 1, h2: 1, h3: 1, h4: 1 };
+      const containerLines = (el.tagName !== 'UL' && el.tagName !== 'OL' && SM.hasBlockLevelDescendant(el))
+        ? SM.flattenBlocksToLines(el) : null;
       if (item.tag === 'ul' || item.tag === 'ol') {
-        // 转列表：retag 后原内容裸挂在 <ul>/<ol> 下（非法 + Enter 失灵）→ 包进单个 <li>。
+        // 转列表：retag 后原内容裸挂在 <ul>/<ol> 下（非法 + Enter 失灵）→ 包进单个 <li>；容器块每段各成一 <li>。
         const next = fmt.retagElement(el, item.tag);
         if (item.cls) next.className = item.cls; else next.removeAttribute('class');
         if (item.cls === 'ws-todo') ensureTodoStyle();
         else next.querySelectorAll('li[data-checked]').forEach((li) => li.removeAttribute('data-checked')); // A3：todo→普通列表，清残留勾选态
-        if (!next.querySelector('li')) {
+        if (containerLines) {
+          while (next.firstChild) next.removeChild(next.firstChild);
+          for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); next.appendChild(li); } // 容器每段 → 一个 <li>
+        } else if (!next.querySelector('li')) {
           const li = doc.createElement('li');
           while (next.firstChild) li.appendChild(next.firstChild);
           next.appendChild(li); // 空内容时得到 <ul><li></li></ul>（合法、可继续编辑）
@@ -433,6 +442,12 @@
         return nx;
       }
       const next = fmt.retagElement(el, item.tag); // p / h1 / h2 / h3 / blockquote / div(callout)
+      // 修 P1：容器块 → 叶子块(p/h1-4)：内部 <p> 不能进叶子块，拍平成 <br> 分隔的 phrasing。
+      // → 容器目标(引用/callout)：保留内部 <p>（两者都放行多段 <p>），不拍。
+      if (containerLines && LEAF_TARGETS[item.tag]) {
+        while (next.firstChild) next.removeChild(next.firstChild);
+        containerLines.forEach((line, i) => { if (i > 0) next.appendChild(doc.createElement('br')); next.appendChild(line); });
+      }
       if (item.cls) next.className = item.cls; else if (next.classList && next.classList.contains('ws-callout')) next.classList.remove('ws-callout');
       ensureBlockStyle(item.cls);
       if (undoMgr) undoMgr.checkpoint(); markDirty();

@@ -69,6 +69,30 @@
     return frag;
   }
 
+  // 把「多段容器块」(callout/quote 里的 <p> + 行内/裸文本) 拆成 phrasing「行」(DocumentFragment 数组)。
+  // 每个块级直接子（合规容器里只会是 <p>）各成一行、取其 inline 内容；连续行内/裸文本合成一行。
+  // 修 P1：容器块 turn-into 到叶子块/列表前先过它——否则块级 <p> 被原样搬进目标块，产 <li><p>../<p><p>.. 非法（闭合破坏）。
+  function flattenBlocksToLines(el) {
+    const doc = el.ownerDocument;
+    const lines = [];
+    let run = null;
+    const flushRun = () => { if (run && run.childNodes.length) lines.push(run); run = null; };
+    for (const node of [...el.childNodes]) {
+      const isBlockChild = node.nodeType === 1 && !PHRASING_TAGS.has(node.tagName);
+      if (isBlockChild) {
+        flushRun();
+        const line = doc.createDocumentFragment();
+        for (const c of [...node.childNodes]) line.appendChild(c.cloneNode(true));
+        lines.push(line);
+      } else {
+        if (!run) run = doc.createDocumentFragment();
+        run.appendChild(node.cloneNode(true));
+      }
+    }
+    flushRun();
+    return lines;
+  }
+
   // 把一个块的 inline 内容裹进单个 <li>（A→B turn-into 用；调用方建外层 ul/ol）。
   function wrapInlineAsLi(srcEl) {
     const doc = srcEl.ownerDocument;
@@ -77,7 +101,7 @@
     return li;
   }
 
-  const api = { PHRASING_TAGS, isOverlay, hasBlockLevelDescendant, isLeafTextBlock, canMerge, flattenListToPhrasing, wrapInlineAsLi };
+  const api = { PHRASING_TAGS, isOverlay, hasBlockLevelDescendant, isLeafTextBlock, canMerge, flattenListToPhrasing, flattenBlocksToLines, wrapInlineAsLi };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2SchemaModel = api;
 })(typeof window !== 'undefined' ? window : globalThis);
