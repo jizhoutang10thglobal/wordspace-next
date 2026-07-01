@@ -209,15 +209,18 @@ test('点图片（数据/c.png）→ 编辑区内置图片预览（真实 file:/
   await expect(page.locator('#doc-frame')).toBeHidden();
 });
 
-test('B9: 侧栏头加号已删；新建文档走 Cmd+T → 模板台 → 建文档并打开', async () => {
+test('B9: 侧栏头加号已删；Cmd+T → 模板台 → 建临时文档（不落盘，手动保存才写）', async () => {
   await openWorkspace();
   await expect(page.locator('#sb-new-doc')).toHaveCount(0); // B9：侧栏头「+新建文档」加号已删（跟标签页加号重复）
-  // 新建入口 = 标签页区加号 / Cmd+T（同 openCreateModal）。用 Cmd+T 触发模板台。
+  // 新建入口 = 标签页区加号 / Cmd+T（同 openCreateModal，temp 模式）。
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
   await expect(page.locator('.sb-modal')).toBeVisible();
   await page.locator('.sb-card', { hasText: '空文档' }).click();
-  await expect.poll(() => exists(path.join(wsDir, '无标题文档.html'))).toBe(true);
   await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('无标题文档');
+  // 临时文档：不落盘（对齐 ui-demo：手动保存才进文件夹）
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(1);
+  await page.waitForTimeout(200);
+  expect(await exists(path.join(wsDir, '无标题文档.html'))).toBe(false);
 });
 
 test('品牌页脚在左侧栏底部：logo + 版本号；面包屑「本地」状态标', async () => {
