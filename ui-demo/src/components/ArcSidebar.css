@@ -1,5 +1,6 @@
 .arc-sidebar {
   width: 274px;
+  position: relative; /* 给宽度拖拽柄 .arc-resize 定位 */
   flex: none;
   background: var(--c-bg-sunken);
   border-right: 1px solid var(--c-border);
@@ -9,6 +10,9 @@
   user-select: none;
 }
 .arc-sidebar.is-collapsed { width: 48px; }
+/* 侧栏宽度拖拽柄（F1，对齐真 app 的 .sb-resize）：贴右边界、col-resize；只在展开态渲染。 */
+.arc-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 30; }
+.arc-resize:hover { background: var(--c-accent); opacity: 0.35; }
 .arc-top-collapsed { justify-content: center; padding: 0; }
 
 /* top: traffic + nav */
