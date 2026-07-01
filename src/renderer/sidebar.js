@@ -16,6 +16,11 @@
   let current = null; // { root, name, tree }
   let query = '';
   let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，按根持久化）
+  // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复上次工作区 + 标签」
+  // 整条跑完才做，否则会被 loadTabs 整体覆盖 / 被 openTabFromAbs 的过期根守卫中止（Colin 报的「文档开了没标签」）。
+  // 一旦 resolve 永久 resolved：app 已开着时再 open（热路径）不阻塞，立即建标签。
+  let resolveRestore;
+  const restoreReady = new Promise((r) => { resolveRestore = r; });
   const collapsed = new Set(); // 收起的文件夹 rel（打开工作区时全部收起，只显示顶层）
 
   // 收集树里所有文件夹的 rel（打开工作区时一次性塞进 collapsed → 默认全收起）。
@@ -59,7 +64,7 @@
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.add('sb-on'); // 打开工作区才显示侧栏（单文件编辑保持全宽）
     render();
-    loadTabs(); // 异步按新根拉标签/置顶，到了再 render + 恢复上次激活
+    return loadTabs(); // 异步按新根拉标签/置顶，到了再 render + 恢复上次激活（返回 promise 给启动恢复 await）
   }
   async function refresh() {
     if (!current) return;
@@ -241,6 +246,7 @@
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
+      name.title = node.name; // 名字过长被截断时，悬停显示全名
       const add = document.createElement('button');
       add.className = 'sb-add';
       add.title = '在此文件夹新建文档';
@@ -304,6 +310,7 @@
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
+      name.title = node.name; // 名字过长被截断时，悬停显示全名
       row.append(ico, name);
       row.onclick = () => openNode(node);
       row.ondragstart = (e) => {
@@ -350,106 +357,8 @@
     return String(v).replace(/["\\]/g, '\\$&');
   }
 
-  // ---- 收起态图标轨（#4）：顶层文件夹/文件迷你图标 + hover 气泡（名字 + 文件夹内容缩略）----
-  const railEl = document.getElementById('sb-rail');
-  const KIND_TEXT = { html: 'HTML 文档', image: '图片', pdf: 'PDF', word: 'Word 文档', sheet: '表格', slides: '演示文稿', other: '文件' };
-  let railPopEl = null;
-  function hideRailPop() {
-    if (railPopEl) {
-      railPopEl.remove();
-      railPopEl = null;
-    }
-  }
-  function showRailPop(anchor, node) {
-    hideRailPop();
-    const r = anchor.getBoundingClientRect();
-    const pop = document.createElement('div');
-    pop.className = 'sb-rail-pop';
-    const title = document.createElement('div');
-    title.className = 'sb-rail-pop-title ws-truncate';
-    title.textContent = node.name;
-    pop.appendChild(title);
-    if (node.isDir) {
-      const kids = node.children || [];
-      if (kids.length) {
-        const list = document.createElement('div');
-        list.className = 'sb-rail-pop-list';
-        for (const c of kids.slice(0, 8)) {
-          const it = document.createElement('div');
-          it.className = 'sb-rail-pop-item ws-truncate';
-          it.textContent = c.name;
-          list.appendChild(it);
-        }
-        pop.appendChild(list);
-        if (kids.length > 8) {
-          const more = document.createElement('div');
-          more.className = 'sb-rail-pop-more';
-          more.textContent = '+' + (kids.length - 8) + ' 项';
-          pop.appendChild(more);
-        }
-      } else {
-        const sub = document.createElement('div');
-        sub.className = 'sb-rail-pop-sub';
-        sub.textContent = '空文件夹';
-        pop.appendChild(sub);
-      }
-    } else {
-      const sub = document.createElement('div');
-      sub.className = 'sb-rail-pop-sub';
-      sub.textContent = KIND_TEXT[node.kind] || '文件';
-      pop.appendChild(sub);
-    }
-    document.body.appendChild(pop);
-    pop.style.left = r.right + 8 + 'px'; // 单 CSSOM 属性，CSP 安全
-    pop.style.top = r.top + 'px';
-    railPopEl = pop;
-  }
-  function railIcon(node) {
-    const btn = document.createElement('button');
-    btn.className = 'sb-rail-ico' + (node.isDir ? ' is-dir' : ' sb-kind-' + (node.kind || 'other'));
-    btn.dataset.rel = node.rel;
-    btn.innerHTML = node.isDir ? SVG.folder : SVG.file;
-    if (!node.isDir && openPath() === node.abs) btn.classList.add('is-active');
-    btn.title = node.name;
-    btn.onmouseenter = () => showRailPop(btn, node);
-    btn.onmouseleave = hideRailPop;
-    btn.onclick = () => {
-      hideRailPop();
-      if (node.isDir) {
-        collapsed.delete(node.rel); // 点文件夹：展开侧栏 + 展开这个文件夹
-        if (sidebarEl) sidebarEl.classList.remove('is-collapsed');
-        render();
-      } else {
-        openNode(node);
-      }
-    };
-    return btn;
-  }
-  function renderRail() {
-    if (!railEl || !current) return;
-    hideRailPop();
-    railEl.innerHTML = '';
-    // 置顶 + 开着的标签 的图标（去重：pinned 优先）
-    const tabbed = [
-      ...window.WS2Tabs.pinnedEntries(tabState.entries),
-      ...window.WS2Tabs.tabEntries(tabState.entries),
-    ];
-    let shown = 0;
-    for (const e of tabbed) {
-      const n = findNode(e.rel);
-      if (!n) continue;
-      const btn = railIcon(n);
-      if (e.pinned) btn.classList.add('sb-rail-pin');
-      railEl.appendChild(btn);
-      shown++;
-    }
-    if (shown && current.tree.length) {
-      const div = document.createElement('div');
-      div.className = 'sb-rail-div';
-      railEl.appendChild(div);
-    }
-    for (const n of current.tree) railEl.appendChild(railIcon(n));
-  }
+  // ---- 收起态图标轨已删（Wendi B2：去掉竖排图标）。renderRail 留 no-op 兼容调用点。----
+  function renderRail() {}
 
   // ===== 标签页 + 置顶（双标记模型，纯逻辑在 window.WS2Tabs，按根持久化）=====
   const pinnedEl = document.getElementById('sb-pinned'); // 置顶区
@@ -510,18 +419,22 @@
   function unpinRel(key) {
     applyTabs(window.WS2Tabs.unpinEntry(tabState, key));
   }
-  function closeTabRel(key) {
+  // 关/删一条标签：脏检查（关激活项前问一下）→ 应用 op → 关的是激活项就回落到下一个/空态。
+  // op = closeEntry（标签页区的 ×：open=false，pinned 项留在置顶）/ removeEntry（置顶区的 ×：整条删掉）。
+  function closeOrRemove(key, op) {
     const wasActive = tabState.activeRel === key;
     if (wasActive && window.__shellIsDirty && window.__shellIsDirty() &&
         !confirm('这个文档有未保存的修改，关闭标签会丢弃，确定吗？')) return;
     if (wasActive && window.__shellDiscard) window.__shellDiscard(); // 已确认丢弃 → 切下一个时不再追问
-    applyTabs(window.WS2Tabs.closeEntry(tabState, key));
+    applyTabs(op(tabState, key));
     if (wasActive) {
       const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
       if (e) openTabRow(e); // 回落项可能是外部标签 → 走 abs 分发，不只 findNode
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
   }
+  function closeTabRel(key) { closeOrRemove(key, window.WS2Tabs.closeEntry); } // 标签页区 ×
+  function removeTabRel(key) { closeOrRemove(key, window.WS2Tabs.removeEntry); } // 置顶区 ×：整条移出置顶
   function dropTabRel(key, toPinned, toIndex) {
     applyTabs(window.WS2Tabs.dropEntry(tabState, key, toPinned, toIndex));
   }
@@ -568,7 +481,9 @@
     if (changed) persistTabs();
     renderZones();
     renderRail();
-    if (activeRel) {
+    // 有冷启动 open-file 在路上（用户刚双击的文件该占 viewer）→ 别把上次激活的标签开进 viewer 抢走它；
+    // 标签状态仍恢复，只是不自动载入。onOpen 随后会把冷启动文件设为激活。
+    if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
       if (e) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发
     }
@@ -577,10 +492,20 @@
   // ---- 渲染两区 ----
   // 点标签开它：内部文件走树节点 openNode；外部文件(无 rel)按 kind 分发 abs（跟「打开」按钮一条路，
   // shell.js 的 openDoc/showViewer 已支持纯 abs）。
+  // UX4（Wendi F6-①）：把文件树展开到 rel 指向的文件（逐级删父文件夹 collapsed）并滚动定位。
+  function expandToFile(rel) {
+    const parts = rel.split('/'); parts.pop(); // 去掉文件名，只留父文件夹链
+    let acc = '';
+    let changed = false;
+    for (const p of parts) { acc = acc ? acc + '/' + p : p; if (collapsed.has(acc)) { collapsed.delete(acc); changed = true; } }
+    if (changed) render();
+    const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel);
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+  }
   function openTabRow(entry) {
     if (entry.rel) {
       const n = findNode(entry.rel);
-      if (n) openNode(n);
+      if (n) { openNode(n); expandToFile(entry.rel); } // 点标签 → 文件树展开到该文件并滚动定位
       return;
     }
     if (entry.kind === 'html') openDoc(entry.abs);
@@ -602,6 +527,7 @@
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
+    name.title = external ? entry.abs : entry.title; // 截断时悬停显全名（外部标签显完整绝对路径）
     row.append(ico, name);
     if (external) {
       const ext = document.createElement('span');
@@ -620,17 +546,16 @@
       else pinRel(entry);
     };
     row.append(pin);
-    if (zone === 'tabs') {
-      const x = document.createElement('button');
-      x.className = 'sb-tab-close';
-      x.title = '关闭';
-      x.innerHTML = X_SVG;
-      x.onclick = (e) => {
-        e.stopPropagation();
-        closeTabRel(key);
-      };
-      row.append(x);
-    }
+    // × 关闭：两个区都有。标签页区 = 关标签；置顶区 = 直接移出置顶（Wendi 要的，整条删掉、不只取消钉）。
+    const x = document.createElement('button');
+    x.className = 'sb-tab-close';
+    x.title = zone === 'pinned' ? '移出置顶' : '关闭';
+    x.innerHTML = X_SVG;
+    x.onclick = (e) => {
+      e.stopPropagation();
+      (zone === 'pinned' ? removeTabRel : closeTabRel)(key);
+    };
+    row.append(x);
     row.onclick = () => openTabRow(entry);
     row.ondragstart = (e) => {
       dragTabRel = key;
@@ -728,8 +653,7 @@
   }
   if (openFolderBtn) openFolderBtn.onclick = pickFolder;
   if (emptyOpenBtn) emptyOpenBtn.onclick = pickFolder;
-  const newDocBtn = document.getElementById('sb-new-doc'); // 侧栏头「+新建文档」→ 模板台（落在工作区根）
-  if (newDocBtn) newDocBtn.onclick = () => openCreateModal('');
+  // B9（Wendi）：侧栏头部「新建文档」加号已删（跟标签页加号功能重复）。新建入口 = 标签页区加号 + Cmd+T + 右键文件夹。
   const homeOpenFolder = document.getElementById('home-open-folder'); // 首页空态的「打开文件夹」入口（无工作区时侧栏隐藏）
   if (homeOpenFolder) homeOpenFolder.onclick = pickFolder;
 
@@ -859,6 +783,33 @@
     }
   });
 
+  // 侧栏宽度可拖拽（UX5 / Wendi F1）：右边界拖拽柄改 --sb-width（夹 min/max），存 localStorage、重启恢复。
+  const SB_MIN = 180, SB_MAX = 520, SB_KEY = 'ws2-sb-width';
+  (function initSidebarResize() {
+    if (!sidebarEl) return;
+    const saved = parseInt(localStorage.getItem(SB_KEY), 10);
+    if (saved >= SB_MIN && saved <= SB_MAX) sidebarEl.style.setProperty('--sb-width', saved + 'px');
+    const handle = document.getElementById('sb-resize');
+    if (!handle) return;
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const startX = e.clientX, startW = sidebarEl.getBoundingClientRect().width;
+      document.body.style.cursor = 'col-resize';
+      const onMove = (ev) => {
+        const w = Math.max(SB_MIN, Math.min(SB_MAX, startW + (ev.clientX - startX)));
+        sidebarEl.style.setProperty('--sb-width', w + 'px');
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        localStorage.setItem(SB_KEY, String(Math.round(sidebarEl.getBoundingClientRect().width)));
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  })();
+
   function openTabEntry(entry) {
     tabState = window.WS2Tabs.openEntry(tabState, entry);
     persistTabs();
@@ -929,32 +880,43 @@
   }
 
   window.__sbHooks = {
-    onOpen: (abs) => {
+    onOpen: async (abs) => {
+      // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
+      // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc
+      // 已经先载入了，这里只补标签，不影响打开速度。
+      await restoreReady;
       highlightActive(abs);
       const node = abs ? findNodeByAbs(abs) : null;
       if (node) {
         openTabEntry({ rel: node.rel, kind: node.kind || 'other', title: node.name });
       } else if (abs) {
-        openTabFromAbs(abs);
+        await openTabFromAbs(abs);
       }
+      window.__pendingColdOpen = null; // 标签已建，撤销 loadTabs 的「别抢 viewer」抑制
     },
     refresh,
+    newTab: () => openCreateModal(''),                                                // Cmd+T：新建文档（模板台，落工作区根）
+    closeActiveTab: () => { if (tabState.activeRel) closeTabRel(tabState.activeRel); }, // Cmd+W：关当前活跃标签
+    focusFilter: () => { if (sidebarEl) sidebarEl.classList.remove('is-collapsed'); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
   };
   // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
   // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。
   if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
   window.addEventListener('focus', () => { if (current) onTreeChanged(); });
 
-  // 启动恢复上次工作区。
+  // 启动恢复上次工作区。await setWorkspace（含 loadTabs）整条跑完才 resolveRestore，
+  // 让冷启动的 open-file 建标签等在这后面（无工作区 / 出错也要 resolve，否则 onOpen 永久挂起）。
   (async () => {
     try {
       const root = await window.ws2.wsGetRoot();
       if (root) {
         const data = await window.ws2.wsReadTree();
-        if (data) setWorkspace(data);
+        if (data) await setWorkspace(data);
       }
     } catch (e) {
       /* 无工作区 / 已不存在：保持空态 */
+    } finally {
+      resolveRestore();
     }
   })();
 })();

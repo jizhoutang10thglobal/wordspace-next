@@ -203,6 +203,7 @@ function prepFrame(asDirty) {
   closeViewer();
   frame.hidden = false;
   docName.textContent = docInfo.name;
+  docName.title = docInfo.name; // 名字过长被截断时，悬停显示全名
   exportBtn.disabled = false; // 开了文档就能导出（不像保存要脏才亮）
   setDirty(!!asDirty);
 }
@@ -250,33 +251,32 @@ async function showViewer(node) {
     // 工作区内走 rel，工作区外走 abs（「打开」按钮选的）；取不到就退化成外部打开卡片。
     try { url = node.rel ? await window.ws2.wsFileUrl(node.rel) : await window.ws2.fileUrlAbs(node.abs); } catch (e) { /* 退化成卡片 */ }
     if (url) {
+      if (kind === 'pdf') {
+        // PDF.js 渲染（连续滚动 canvas + 自己的一行工具栏）；替代 Chromium 内置 viewer（B7 合并工具栏 / B8 无预览栏）
+        await window.WS2PdfViewer.mount(viewer, url, { fileName: node.name, openExternalEl: openExternalBtn(node, 'fv-open') });
+        return;
+      }
       const bar = document.createElement('div');
       bar.className = 'fv-bar';
       const name = document.createElement('span');
       name.className = 'fv-name';
       name.textContent = node.name;
+      name.title = node.name; // 名字过长被截断时，悬停显示全名
       const tag = document.createElement('span');
       tag.className = 'fv-tag';
-      tag.textContent = (kind === 'pdf' ? 'PDF' : '图片') + ' · 只读';
+      tag.textContent = '图片 · 只读';
       const sp = document.createElement('div');
       sp.className = 'fv-sp';
       bar.append(name, tag, sp, openExternalBtn(node, 'fv-open'));
       viewer.appendChild(bar);
-      if (kind === 'image') {
-        const scroll = document.createElement('div');
-        scroll.className = 'imgv-scroll';
-        const img = document.createElement('img');
-        img.className = 'imgv-img';
-        img.src = url;
-        img.alt = node.name;
-        scroll.appendChild(img);
-        viewer.appendChild(scroll);
-      } else {
-        const f = document.createElement('iframe');
-        f.className = 'pdfv-frame';
-        f.src = url; // Chromium 内置 PDF 查看器（webPreferences.plugins:true）
-        viewer.appendChild(f);
-      }
+      const scroll = document.createElement('div');
+      scroll.className = 'imgv-scroll';
+      const img = document.createElement('img');
+      img.className = 'imgv-img';
+      img.src = url;
+      img.alt = node.name;
+      scroll.appendChild(img);
+      viewer.appendChild(scroll);
       viewer.hidden = false;
       return;
     }
@@ -292,6 +292,7 @@ async function showViewer(node) {
   const name = document.createElement('div');
   name.className = 'efp-name ws-truncate';
   name.textContent = node.name;
+  name.title = node.name; // 名字过长被截断时，悬停显示全名
   const meta = document.createElement('div');
   meta.className = 'efp-meta ws-truncate';
   meta.textContent = (KIND_LABEL[kind] || '文件') + ' · ' + (node.rel || node.name);
@@ -347,14 +348,17 @@ function loadFromHtml(html, opts) {
 }
 
 async function openDoc(p) {
-  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) return;
-  let info; let raw;
+  // 没真打开成 → 撤销 onOpenFile 设的 __pendingColdOpen，否则它会一直抑制后续 loadTabs 的「恢复激活标签」
+  // （如 app 已开 + 当前文档脏，第二实例双击别的文件、用户点「取消」时会走到这）。
+  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
+  let info; let raw; // raw：接住磁盘原始文本做 Feature 3 分流判定（routeDoc）
   try {
     // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；接住返回的原始文本做分流判定（Feature 3，不新增 IPC）；再取 file:// URL 等
     raw = await window.ws2.readDoc(p);
     info = await window.ws2.pathInfo(p);
   } catch (e) {
     alert('无法打开文件：' + p + '\n' + (e.message || e));
+    window.__pendingColdOpen = null;
     return;
   }
   docPath = p;
@@ -363,9 +367,12 @@ async function openDoc(p) {
   zoomFactor = 1; // 新文档从 100% 开始（wireEditor 会按这个重挂缩放）
   loadFromFile();
   window.ws2.watchDoc(p); // 盯外部磁盘改动（Bug2）；换文档时主进程会重指向到新路径
-  await window.ws2.recentsAdd(p);
+  // 先建标签/高亮（onOpen 内会清 __pendingColdOpen）。放在 recents 之前，且 recents 设成尽力而为：
+  // recents 写盘失败（userData 只读/满）不该把建标签和清标记一起拖死——否则冷启动标签丢 + 标记泄漏。
+  if (window.__sbHooks) window.__sbHooks.onOpen(docPath);
+  else window.__pendingColdOpen = null; // 无侧栏（单文件态）：没有 onOpen 来清，自己清，免得泄漏到将来开工作区
+  try { await window.ws2.recentsAdd(p); } catch (e) { /* recents 是尽力而为，失败不影响打开 */ }
   renderRecents();
-  if (window.__sbHooks) window.__sbHooks.onOpen(docPath); // 文件树高亮当前打开文件（侧栏存在才调）
 }
 
 // 给侧栏（sidebar.js）用：当前打开文件被改名/移动后，把 app 内部状态指向新路径（不重载内容，
@@ -374,6 +381,7 @@ function shellRetargetDoc(newAbs, newName) {
   docPath = newAbs;
   docInfo = Object.assign({}, docInfo, { name: newName });
   docName.textContent = newName;
+  docName.title = newName; // 名字过长被截断时，悬停显示全名
   window.ws2.watchDoc(newAbs);
   if (window.__sbHooks) window.__sbHooks.onOpen(docPath);
 }
@@ -460,28 +468,34 @@ window.ws2.onDocChanged((p) => {
   reloadDoc();
 });
 
-window.ws2.onOpenFile((p) => openDoc(p));
+// 主进程发来「打开这个文件」（Finder 双击 / 文件关联 / 第二实例）。冷启动时这跟侧栏「恢复上次工作区」
+// 并发：同步先标记 __pendingColdOpen，让 loadTabs 知道「这个文件该占 viewer，别拿上次激活标签抢」；
+// 标签实际创建在 sidebar onOpen 里等恢复跑完才做（见 sidebar.js restoreReady）。
+window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
 window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
   if (cmd === 'export-pdf') exportPdf(basicEdit ? 'raw' : 'wordspace'); // 基础模式=raw 直印源文件
   if (cmd === 'undo' && undoMgr) { if (undoMgr.undo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
   if (cmd === 'redo' && undoMgr) { if (undoMgr.redo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
+  if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
+  if (cmd === 'close-tab' && window.__sbHooks && window.__sbHooks.closeActiveTab) window.__sbHooks.closeActiveTab(); // Cmd+W
+  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F
 });
 
-// 导出 PDF。两种样式：
-//   'wordspace'（默认）= 烤进编辑器排版，跟 app 里看到的一致（所见即所得）；
-//   'raw'              = 直印源文件、文档原本的渲染效果。
-// 有未保存改动先落盘（印的是磁盘版本）。
+// 导出 PDF。两条内部路径（单按钮、无 UI 菜单）：
+//   'wordspace'（合规文档默认）= 把当前文档 + 编辑器排版烤成静态 HTML 再印，跟 app 里看到的一致；
+//   'raw'（非合规=基础编辑）    = 主进程直印磁盘源文件（忠于野文件原貌，不烤块编辑器排版，缺块标记不会抛错）。
+// 有未保存改动先落盘（印的是磁盘版本）。合并注意：ux-fixes 曾把 raw 当死代码收敛掉，F3 又让它成活路径 → 保 mode 版。
 let exporting = false; // single-flight：连按不并发开多个隐藏窗口/叠多个对话框
 async function exportPdf(mode) {
   if (exporting || !docPath) return;
   exporting = true; // 必须在 await save() 之前置位——否则脏文档连按时第二次调用会在 save 的 await 让出期溜过守卫
   try {
-    mode = mode === 'raw' ? 'raw' : 'wordspace';
     if (dirty) { await save(); if (dirty) return; } // save 失败（仍脏）→ 不导出
-    const html = mode === 'wordspace' ? buildWordspacePrintHtml() : null; // 可能抛错（文档未就绪），下面 catch 兜
-    const res = await window.ws2.exportPdf(docPath, mode, html);
+    mode = mode === 'raw' ? 'raw' : 'wordspace';
+    const html = mode === 'wordspace' ? buildWordspacePrintHtml() : null; // raw 无需烤 HTML（主进程直印源文件）；wordspace 可能抛错，下面 catch 兜
+    const res = await window.ws2.exportPdf(docPath, mode, html);          // 主进程按 mode 分 exportPdfFromHtml / 直印源文件
     if (res && res.error) alert('导出 PDF 失败：' + res.error);
   } catch (e) {
     alert('导出 PDF 失败：' + ((e && e.message) || e));
@@ -517,10 +531,9 @@ function buildWordspacePrintHtml() {
   return doctypeStr + '\n' + root.outerHTML;
 }
 
-// 导出按钮 → 直接导出（Wordspace 样式 = 所见即所得）。不再弹样式小菜单。
-// raw（原 HTML 样式）仍可由 exportPdf('raw') 触发、主进程 pdf-export 也保留，只是未接 UI——
-// 留作「绕开编辑器、导出磁盘原文件」的逃生口/调试用，将来要露出再接回即可。
-// 导出：合规文档走 Wordspace 样式（所见即所得）；非合规（基础编辑）走 raw 直印源文件（忠于野文件原貌）。
+// 导出按钮 → 单按钮、无样式菜单。合规文档走 Wordspace 样式（所见即所得）；非合规（基础编辑）走 raw
+// 直印源文件（忠于野文件原貌、不套块编辑器排版，否则缺块标记会抛错）。Feature 3 让 raw 从「未接 UI 的逃生口」
+// 变回活路径 —— 故此处保 mode 版，不用 ux-fixes 那版收敛掉 raw 的无参 exportPdf()。
 exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(basicEdit ? 'raw' : 'wordspace'); };
 
 renderRecents();

@@ -135,11 +135,11 @@
     return { entries, activeRel };
   }
 
-  // 删除被跟踪文件：销毁 entry + 激活项则回落。只对工作区内（rel）触发；外部 entry 的 rel=undefined，
-  // `e.rel !== rel` 恒真 → 被保留、不误删。
-  function removeEntry(state, rel) {
-    const entries = state.entries.filter((e) => e.rel !== rel);
-    const seed = rel === state.activeRel ? null : state.activeRel;
+  // 销毁一条 entry（按身份键 keyOf）+ 激活项则回落。按 key 删：内部传 rel、外部传 abs 都能删
+  // （置顶区的 × 直接关闭就靠它）。工作区内文件删除/移动仍传 rel，外部 entry 的 key=abs≠rel、不会被误删。
+  function removeEntry(state, key) {
+    const entries = state.entries.filter((e) => keyOf(e) !== key);
+    const seed = key === state.activeRel ? null : state.activeRel;
     return { entries, activeRel: resolveActive(entries, seed) };
   }
 

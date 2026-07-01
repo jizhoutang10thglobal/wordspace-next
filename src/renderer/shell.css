@@ -112,7 +112,8 @@ ul { list-style: none; }
 .sb { display: none; }
 .sb.sb-on {
   flex: none;
-  width: 260px;
+  width: var(--sb-width, 260px);
+  position: relative; /* 给宽度拖拽柄 .sb-resize 定位 */
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -120,6 +121,10 @@ ul { list-style: none; }
   border-right: 1px solid var(--c-border);
   user-select: none;
 }
+/* 侧栏宽度拖拽柄（UX5 / Wendi F1）：贴右边界、col-resize；收起态不显示。 */
+.sb-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 10; }
+.sb-resize:hover { background: var(--c-accent); opacity: 0.35; }
+.sb.is-collapsed .sb-resize, .sb:not(.sb-on) .sb-resize { display: none; }
 .sb-head {
   flex: none;
   display: flex;
@@ -144,27 +149,7 @@ ul { list-style: none; }
 .sb.is-collapsed .sb-body { display: none; }
 .sb.is-collapsed .sb-head { justify-content: center; padding: 0; }
 
-/* 图标轨：默认不显示，仅收起态显示。 */
-.sb-rail { display: none; }
-.sb.is-collapsed .sb-rail { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0 12px; overflow-y: auto; min-height: 0; }
-.sb-rail-ico { flex: none; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--c-text-3); }
-.sb-rail-ico:hover { background: var(--c-hover); color: var(--c-text); }
-.sb-rail-ico.is-dir { color: var(--c-text-2); }
-.sb-rail-ico.is-active { background: var(--c-selected); color: var(--c-accent); }
-.sb-rail-ico.sb-kind-image { color: #8a3ffc; }
-.sb-rail-ico.sb-kind-pdf { color: #d3353c; }
-.sb-rail-ico.sb-kind-word { color: #1a73e8; }
-.sb-rail-ico.sb-kind-sheet { color: #1e8e3e; }
-.sb-rail-ico.sb-kind-slides { color: #b06000; }
-.sb-rail-pin { color: var(--c-accent); }
-.sb-rail-div { flex: none; width: 22px; height: 1px; margin: 4px 0; background: var(--c-divider); }
-/* hover 气泡：名字 + 文件夹内容缩略（CSP 安全：fixed + 单 CSSOM 定位） */
-.sb-rail-pop { position: fixed; z-index: 200; min-width: 150px; max-width: 240px; padding: 8px 11px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); box-shadow: var(--shadow-menu); }
-.sb-rail-pop-title { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-text); }
-.sb-rail-pop-sub { margin-top: 2px; font-size: var(--fs-xs); color: var(--c-text-3); }
-.sb-rail-pop-list { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
-.sb-rail-pop-item { font-size: var(--fs-sm); color: var(--c-text-2); }
-.sb-rail-pop-more { margin-top: 3px; font-size: var(--fs-xs); color: var(--c-text-3); }
+/* 图标轨（收起态竖排图标）已删 — Wendi B2。 */
 
 /* 品牌页脚：wordspace.ai logo + 版本号，钉在左侧栏底部（不在编辑区）。 */
 .sb-foot { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-top: 1px solid var(--c-divider); }
@@ -362,7 +347,16 @@ ul { list-style: none; }
 .imgv-img { max-width: 100%; height: auto; border-radius: var(--r-sm); box-shadow: var(--shadow-sm); background: #fff; }
 
 /* PDF：Chromium 内置查看器（file:// 直载 iframe）。 */
-.pdfv-frame { flex: 1; width: 100%; border: none; background: var(--c-bg-sunken); }
+/* PDF.js viewer（替代 Chromium 内置 iframe，B7 一行工具栏 / B8 无预览栏）：连续滚动 canvas。 */
+.pdfv-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; background: var(--c-bg-sunken); }
+.pdfv-page { box-shadow: 0 1px 6px rgba(0,0,0,.18); background: #fff; max-width: 100%; }
+.pdfv-pageinfo { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; }
+.pdfv-zbtn { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: 15px; }
+.pdfv-zbtn:hover { background: var(--c-hover); }
+.pdfv-zlabel { font-size: var(--fs-xs); color: var(--c-text-2); min-width: 38px; text-align: center; }
+.pdfv-fit { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: var(--fs-xs); }
+.pdfv-fit:hover { background: var(--c-hover); }
+.pdfv-err { margin: 40px; color: var(--c-text-3); }
 
 /* 空态 */
 .ws-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }

@@ -66,11 +66,13 @@ const BUG_REPORT_URL = 'https://humble-blanket-79b.notion.site/11f77f0ceeb647f89
 function buildMenu() {
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { type: 'separator' }, { role: 'quit', label: '退出' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
     {
       label: '文件',
       submenu: [
+        { label: '新建标签页', accelerator: 'CmdOrCtrl+T', click: () => sendMenu('new-tab') },
         { label: '打开…', accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
+        { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
         { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
         { type: 'separator' },
         { label: '导出 PDF…', accelerator: 'CmdOrCtrl+E', click: () => sendMenu('export-pdf') }
@@ -85,7 +87,9 @@ function buildMenu() {
         { role: 'cut', label: '剪切' },
         { role: 'copy', label: '拷贝' },
         { role: 'paste', label: '粘贴' },
-        { role: 'selectAll', label: '全选' }
+        { role: 'selectAll', label: '全选' },
+        { type: 'separator' },
+        { label: '查找文件…', accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-file') }
       ]
     },
     { role: 'windowMenu', label: '窗口' }
@@ -210,6 +214,9 @@ if (!app.requestSingleInstanceLock()) {
       const p = htmlPathFromArgv(process.argv);
       if (p) pendingOpenPath = p;
     }
+    // 测试 seam（仅非打包态，仿 WS2_FOLDER_IN）：挂 pendingOpenPath 忠实复现 macOS 冷启动
+    // 「Finder 双击」那条路（open-file 在 ready 前到、等 did-finish-load 才发），e2e 点不了真 Finder。
+    if (!app.isPackaged && process.env.WS2_OPEN_FILE) pendingOpenPath = process.env.WS2_OPEN_FILE;
   });
   app.on('window-all-closed', () => app.quit());
 }

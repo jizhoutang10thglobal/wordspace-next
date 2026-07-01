@@ -271,6 +271,15 @@ test('removeEntry(内部 rel) 不误删外部 abs entry', () => {
   invariant(s);
 });
 
+test('removeEntry(abs) 能按绝对路径删外部 entry（置顶区 × 关闭外部 pinned）', () => {
+  let s = T.pinEntry(empty(), ext('/tmp/out.html')); // 钉一个外部文件（没开）
+  s = T.openEntry(s, f('a.html')); // 另开一个内部
+  s = T.removeEntry(s, '/tmp/out.html'); // 按 abs 删外部
+  assert.ok(!s.entries.some((e) => e.abs === '/tmp/out.html')); // 外部被删掉
+  assert.ok(s.entries.some((e) => e.rel === 'a.html')); // 内部不受影响
+  invariant(s);
+});
+
 // ===== reconcileTree（外部磁盘变化对账：inode 匹配做改名/移动跟随）=====
 test('reconcileTree：文件原位→保留；ino 匹配新位置→改名/移动跟随；无匹配→删除；外部标签不动', () => {
   let s = T.openEntry(empty(), f('a.html'));
