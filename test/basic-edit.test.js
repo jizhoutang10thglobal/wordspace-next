@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { JSDOM } = require('jsdom');
-const { collectBlocks, nearestInDir } = require('../src/editor/basic-edit.js');
+const { collectBlocks, nearestInDir, serialize } = require('../src/editor/basic-edit.js');
 
 const bodyOf = (html) => new JSDOM('<!doctype html><html><body>' + html + '</body></html>').window.document.body;
 const tags = (arr) => arr.map((e) => e.tagName);
@@ -64,4 +64,45 @@ test('nearestInDir：侧向偏移惩罚（cross*2）→ 正下方优于斜下方
   const straight = { id: 'straight', rect: R(100, 0, 100, 20) };   // 正下
   const diagonal = { id: 'diag', rect: R(80, 150, 100, 20) };      // 稍近但偏很多
   assert.equal(nearestInDir(cur, 'down', [cur, straight, diagonal], rectOf).id, 'straight');
+});
+
+// ---- serialize：剥除契约 + 结构级保真 + 二次保存幂等（U4，KD-c/KD-d）----
+const fullDoc = (html) => new JSDOM(html).window.document;
+// 模拟 attach 往 body 打的编辑态属性
+function markEditing(doc) {
+  doc.body.setAttribute('contenteditable', 'true');
+  doc.body.setAttribute('data-ws2-basic-ce', '');
+  doc.body.setAttribute('spellcheck', 'true');
+  return doc;
+}
+
+test('serialize：剥掉 body 的 contenteditable / 编辑标记 / spellcheck（剥除契约）', () => {
+  const out = serialize(markEditing(fullDoc('<!doctype html><html><body><p>x</p></body></html>')));
+  assert.ok(!/contenteditable/i.test(out), '没剥 contenteditable');
+  assert.ok(!/data-ws2-basic-ce/i.test(out), '没剥编辑标记');
+  assert.ok(!/spellcheck/i.test(out), '没剥 spellcheck');
+});
+
+test('serialize：body 原本无这些属性 → 序列化结果也没有（零编辑不留痕）', () => {
+  const doc = markEditing(fullDoc('<!doctype html><html><body><p>x</p></body></html>'));
+  const bodyTag = serialize(doc).match(/<body[^>]*>/i)[0];
+  assert.equal(bodyTag, '<body>', 'body 上多了编辑态属性: ' + bodyTag);
+});
+
+test('serialize：保原 doctype', () => {
+  assert.ok(/^<!DOCTYPE html>/i.test(serialize(fullDoc('<!doctype html><html><body><p>x</p></body></html>'))));
+});
+
+test('serialize：未触及元素的内联 style/定位/class 逐字保留（结构级保真红线）', () => {
+  const doc = markEditing(fullDoc('<!doctype html><html><body><div style="position:absolute;top:5px;color:red" class="card">x</div></body></html>'));
+  const div = new JSDOM(serialize(doc)).window.document.querySelector('.card');
+  assert.equal(div.getAttribute('style'), 'position:absolute;top:5px;color:red');
+  assert.equal(div.getAttribute('class'), 'card');
+});
+
+test('serialize：二次保存幂等（首存规范化后 save→reparse→save 稳定，不再漂）', () => {
+  // 野生写法（大写标签/无引号/自闭 br）首存会被规范化一次
+  const once = serialize(markEditing(fullDoc('<!doctype html><html><body><DIV class=card>Hi<BR>there</DIV></body></html>')));
+  const twice = serialize(fullDoc(once));
+  assert.equal(twice, once, '二次保存不幂等（还在漂）');
 });
