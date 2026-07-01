@@ -106,7 +106,9 @@ function setZoom(z) {
 // 判失败（理论上不会，validate 是纯函数 + DOMParser 不抛）保守当合规、走现有完整编辑，不改现状行为。
 function routeDoc(rawHtml) {
   try {
-    return !!WS2SchemaValidate.validate(new DOMParser().parseFromString(rawHtml, 'text/html')).conform;
+    // 走 Schema 注册表分类（多 Schema 就绪：classify 遍历已注册 schema、认出属于哪个）。现阶段仍只用 .conform
+    // 二值分流；将来把 docConform 升成 docSchema 后，可按 classify().schemaId 路由到各自编辑器（待 align 的 shell.js 落地后做）。
+    return !!WS2SchemaRegistry.classify(new DOMParser().parseFromString(rawHtml, 'text/html')).conform;
   } catch (e) { return false; } // fail-closed：判不了就走基础编辑器（对任意 HTML 都安全、不套块模型），别 fail-open 把坏文档送进完整编辑器
 }
 
