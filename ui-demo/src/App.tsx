@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import ArcSidebar from './components/ArcSidebar'
 import Canvas from './components/Canvas'
@@ -16,6 +17,8 @@ import PublishDialog from './components/PublishDialog'
 import CreateModal from './components/CreateModal'
 import CreateSpaceModal from './components/CreateSpaceModal'
 import FindPalette from './components/FindPalette'
+import SaveModal from './components/SaveModal'
+import CloseConfirmModal from './components/CloseConfirmModal'
 import { useStore } from './mock/store'
 import { checkSchema } from './lib/schemaCheck'
 import './App.css'
@@ -43,6 +46,18 @@ function MainDocs() {
 }
 
 export default function App() {
+  // 关 Wordspace（关浏览器标签/窗口）时若有未保存的临时文档 → 浏览器原生「离开?」提示。
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (useStore.getState().docs.some((d) => d.unsaved)) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [])
+
   return (
     <div className="ws-app">
       <div className="ws-body">
@@ -63,6 +78,8 @@ export default function App() {
       <CreateModal />
       <CreateSpaceModal />
       <FindPalette />
+      <SaveModal />
+      <CloseConfirmModal />
     </div>
   )
 }

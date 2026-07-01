@@ -8,8 +8,9 @@ import './TopActions.css'
 // - 临时文档（从「标签页 +」新建、未保存）：显示「保存」，点它 / ⌘S 才存进当前空间。
 // - 已保存的云盘文档：显示「分享」发布（连接的本地文件夹没有发布这一说）。
 export default function TopActions() {
-  const { tabs, activeTabId, getDoc, saveActiveDoc } = useStore()
+  const { tabs, activeTabId, getDoc } = useStore()
   const openPublish = useUI((s) => s.openPublish)
+  const openSave = useUI((s) => s.openSave)
   const isFolderSpace = useStore((s) => {
     const sp = s.spaces.find((x) => x.id === s.activeSpaceId)
     return !!sp && !isCloudStorage(sp.storage)
@@ -24,7 +25,7 @@ export default function TopActions() {
   return (
     <div className="top-actions">
       {doc.unsaved && (
-        <button className="top-save" onClick={() => saveActiveDoc()} title="保存到当前空间（⌘S）">
+        <button className="top-save" onClick={() => openSave(doc.id)} title="保存（选文件夹）（⌘S）">
           <Save size={14} />
           保存
         </button>

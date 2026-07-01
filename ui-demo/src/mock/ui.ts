@@ -21,6 +21,18 @@ interface UI {
   openSpaceModal: () => void
   closeSpaceModal: () => void
 
+  // 「保存到哪里」modal：临时文档手动保存时弹出选位置（默认当前文件夹）。
+  saveDocId: string | null
+  // 保存成功后要顺手关闭的标签页（来自「未保存关闭确认」的「保存并关闭」）；null = 只保存
+  saveCloseAfterTab: string | null
+  openSave: (docId: string, closeAfterTab?: string | null) => void
+  closeSave: () => void
+
+  // 未保存关闭确认：关标签页 / 关 Wordspace 时若有未保存文档 → 弹确认（切换标签页不弹）。
+  confirmCloseTab: string | null
+  askCloseTab: (tabId: string) => void
+  cancelCloseTab: () => void
+
   // 查找文件面板（Cmd+P）
   findOpen: boolean
   openFind: () => void
@@ -54,6 +66,15 @@ export const useUI = create<UI>((set) => ({
   spaceModalOpen: false,
   openSpaceModal: () => set({ spaceModalOpen: true }),
   closeSpaceModal: () => set({ spaceModalOpen: false }),
+
+  saveDocId: null,
+  saveCloseAfterTab: null,
+  openSave: (docId, closeAfterTab = null) => set({ saveDocId: docId, saveCloseAfterTab: closeAfterTab }),
+  closeSave: () => set({ saveDocId: null, saveCloseAfterTab: null }),
+
+  confirmCloseTab: null,
+  askCloseTab: (tabId) => set({ confirmCloseTab: tabId }),
+  cancelCloseTab: () => set({ confirmCloseTab: null }),
 
   findOpen: false,
   openFind: () => set({ findOpen: true }),
