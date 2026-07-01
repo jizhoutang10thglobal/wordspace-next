@@ -73,6 +73,11 @@ const BAD_BODY = {
   'block-tag': '<h5>五级</h5>',
   'details-summary': '<details><p>x</p></details>',
   'details-summary-content': '<details><summary>t<p>x</p></summary></details>',
+  // 本轮新增 P0/P1/P2：template 表格走私（原判 conform，最危险）、非 <a> 元素的危险 URL scheme、行内 style 值、顶层裸文本
+  'template': '<table class="ws-table"><template><script>steal()</' + 'script></template><tbody><tr><td>a</td></tr></tbody></table>',
+  'unsafe-src': '<p><img src="file:///etc/passwd"></p>',
+  'style-value': '<p><span style="position:fixed;inset:0;z-index:9">x</span></p>',
+  'top-text': '裸文本在顶层<p>ok</p>',
 };
 const BAD_HEAD = {
   'head-meta-http-equiv': '<meta http-equiv="refresh" content="0;url=https://e">',

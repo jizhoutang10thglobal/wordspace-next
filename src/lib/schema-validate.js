@@ -11,16 +11,26 @@
   const PHRASING = model.PHRASING_TAGS || new Set();
 
   const TOP_BLOCKS = new Set(['P', 'H1', 'H2', 'H3', 'H4', 'UL', 'OL', 'BLOCKQUOTE', 'HR', 'TABLE', 'DETAILS', 'IMG']);
-  const UNSAFE_SCHEME = /^(javascript|data|vbscript|file):/i;
+  const UNSAFE_SCHEME = /^(javascript|data|vbscript|file|blob):/i;   // 链接类一律禁（加 blob，同类遗漏）
+  const HARD_UNSAFE = /^(javascript|vbscript|file|blob):/i;          // 任何 URL 属性都禁（data 另判：媒体可放 data:image）
+  // 行内 style 值里的危险片段：全屏覆盖层点击劫持 / 外链请求 / 老式 CSS 执行向量。块级带 style 另由 block-style 抓。
+  const STYLE_DANGER = /(position\s*:\s*(fixed|sticky)|url\s*\(|expression\s*\(|-moz-binding|behavior\s*:|@import|javascript:)/i;
 
   function isPhrasing(el) { return PHRASING.has(el.tagName); }
   // 命名空间无关地判脚本（修 P0-2：SVG/MathML 里的 <script> 其 tagName 是小写 'script'，===‘SCRIPT’ 漏过）
   function isScript(el) { return !!el.localName && el.localName.toLowerCase() === 'script'; }
+  // 修 P0（本轮）：<template> 在 Schema #1 任何位置都不合法，且其 .content 逃过 querySelectorAll('*') 扫描 → fail-closed 拒
+  function isTemplate(el) { return !!el.localName && el.localName.toLowerCase() === 'template'; }
   function isAnchor(el) { return !!el.localName && el.localName.toLowerCase() === 'a'; }
-  // 修 P0-1：href 里 tab/newline/前导控制字符会被浏览器剥掉再执行，校验前先剥同样的字符
-  function hrefUnsafe(href) {
-    const c = String(href || '').split('').filter((ch) => ch.charCodeAt(0) > 32 && ch.charCodeAt(0) !== 127).join('');
-    return UNSAFE_SCHEME.test(c);
+  // 修 P0-1：href/src 里 tab/newline/控制字符会被浏览器剥掉再执行，校验前先剥同样的字符（≤32、127）
+  function stripCtrl(s) { return String(s || '').split('').filter((ch) => ch.charCodeAt(0) > 32 && ch.charCodeAt(0) !== 127).join(''); }
+  function hrefUnsafe(href) { return UNSAFE_SCHEME.test(stripCtrl(href)); } // 链接：js/data/vbscript/file/blob 全禁
+  // 修 P0（本轮）：媒体资源 src（img/source/xlink:href）——禁 js/vbscript/file/blob；data: 只放 data:image/* 且拒 svg（SVG 能内嵌脚本/外链）
+  function srcUnsafe(val) {
+    const c = stripCtrl(val);
+    if (HARD_UNSAFE.test(c)) return true;
+    if (/^data:/i.test(c)) return !/^data:image\/(?!svg)/i.test(c);
+    return false;
   }
 
   // 容器（blockquote / callout）允许的子：phrasing，或一段 <p>（决策4：多段文字），不许列表/别的块。
@@ -135,13 +145,31 @@
     // 全局安全/铁律（不信 meta，只查内容）
     doc.querySelectorAll('*').forEach((el) => {
       if (isScript(el)) V.push({ rule: 'script', tag: 'SCRIPT', msg: '禁脚本' });
+      // 修 P0（本轮）：<template> 直接拒。表格上下文里的 <template> 不会被 validateTable 检查、其 .content
+      //   （querySelectorAll('*') 不下探）可藏 <script>/onerror → 原本判 conform。fail-closed 从根上封死。
+      if (isTemplate(el)) V.push({ rule: 'template', tag: 'TEMPLATE', msg: '禁 <template>（其内容逃过安全扫描，任何位置都不符合 Schema）' });
       for (const a of el.attributes) {
         if (/^on/i.test(a.name)) V.push({ rule: 'event-attr', tag: el.tagName, msg: '禁内联事件属性 ' + a.name });
       }
-      if (isAnchor(el) && hrefUnsafe(el.getAttribute('href'))) V.push({ rule: 'unsafe-href', tag: 'A', msg: '危险链接 href' });
+      // 修 P0（本轮）：危险 URL scheme 不再只查 <a> href——所有承载 URL 的属性都查（img/source 的 src/srcset、xlink:href）。
+      if (el.hasAttribute('href') && hrefUnsafe(el.getAttribute('href'))) V.push({ rule: 'unsafe-href', tag: el.tagName, msg: '危险链接 href' });
+      if (el.hasAttribute('src') && srcUnsafe(el.getAttribute('src'))) V.push({ rule: 'unsafe-src', tag: el.tagName, msg: '危险 src（js/vbscript/file/blob 或非 image/svg 的 data:）' });
+      if (el.hasAttribute('xlink:href') && srcUnsafe(el.getAttribute('xlink:href'))) V.push({ rule: 'unsafe-src', tag: el.tagName, msg: '危险 xlink:href' });
+      if (el.hasAttribute('srcset')) {
+        for (const cand of el.getAttribute('srcset').split(',')) {
+          const u = cand.trim().split(/\s+/)[0];
+          if (u && srcUnsafe(u)) { V.push({ rule: 'unsafe-src', tag: el.tagName, msg: '危险 srcset' }); break; }
+        }
+      }
+      // 修 P1（本轮）：行内 style 值校验（块级带 style 已被 block-style 抓；这里管值——覆盖层劫持/外链/老式执行向量）
+      if (el.hasAttribute('style') && STYLE_DANGER.test(el.getAttribute('style'))) V.push({ rule: 'style-value', tag: el.tagName, msg: '禁危险 style 值（position:fixed/url()/expression 等）' });
     });
     if (doc.head) validateHead(doc.head, V);
-    if (doc.body) for (const c of doc.body.children) validateBlock(c, V);
+    // 修 P2（本轮）：body 顶层的裸文本节点（非空白）也是违规——顶层必须是块，否则块编辑器无法把它纳入块模型（幽灵内容）。
+    if (doc.body) for (const n of doc.body.childNodes) {
+      if (n.nodeType === 3) { if (n.textContent.trim()) V.push({ rule: 'top-text', tag: '#text', msg: '顶层不允许裸文本，须包在块里' }); }
+      else if (n.nodeType === 1) validateBlock(n, V);
+    }
     return { conform: V.length === 0, violations: V };
   }
 
