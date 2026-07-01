@@ -14,6 +14,7 @@
   border-bottom: 1px solid #f0e2b8;
   flex: 0 0 auto;
 }
+.ws-degrade-notice[hidden] { display: none; } /* 类选择器 display:flex 会盖过 [hidden] 默认的 display:none，须显式复位 */
 .ws-degrade-notice svg { flex: 0 0 auto; color: #c8930a; }
 .ws-degrade-notice strong { font-weight: 600; }
 
