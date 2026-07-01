@@ -8,22 +8,21 @@
 }
 
 /* ---- 轻提示条 ---- */
+/* 中立、精简，放在文档下方（border-top） */
 .nce-notice {
+  flex: none;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 9px 20px;
+  gap: 8px;
+  padding: 8px 20px;
   font-size: var(--fs-sm);
-  color: #7a4a00;
-  background: #fff8ec;
-  border-bottom: 1px solid #f0e2c8;
+  color: var(--c-text-3);
+  background: var(--c-bg-sunken);
+  border-top: 1px solid var(--c-divider);
 }
 .nce-notice svg {
   flex: none;
-  color: var(--c-warning);
-}
-.nce-notice strong {
-  font-weight: var(--fw-semibold);
+  color: var(--c-text-3);
 }
 
 /* ---- 全保真渲染舞台 ---- */

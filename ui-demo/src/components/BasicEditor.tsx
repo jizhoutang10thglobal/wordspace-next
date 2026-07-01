@@ -201,15 +201,14 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
 
   return (
     <div className="nce" ref={hostRef}>
-      <div className="nce-notice">
-        <Info size={15} />
-        <span>
-          这个文件不符合 Wordspace Schema，<strong>仅支持基础编辑</strong>：点文字改字（选中出格式条：粗/斜/下/删 + 文字色/高亮/清除）· 悬停任意块右上角 <strong>🗑 删除</strong> · 按 <strong>Esc</strong> 后用方向键在块间移动、Delete 删除。
-        </span>
-      </div>
-
       <div className="nce-stage">
         <iframe ref={frameRef} className="nce-frame" title={doc.title} sandbox="allow-same-origin" srcDoc={html} />
+      </div>
+
+      {/* 中立、精简的提示，放文档下方 */}
+      <div className="nce-notice">
+        <Info size={15} />
+        <span>该文件不符合 Wordspace Schema，仅支持基础编辑。</span>
       </div>
 
       {/* 悬停某块 → 右上角删除（鼠标路径，不用记 Esc） */}
