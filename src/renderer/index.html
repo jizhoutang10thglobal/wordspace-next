@@ -10,14 +10,12 @@
 
 <!-- 左侧本地文件栏（F06，对齐 ui-demo ArcSidebar 的「连接文件夹」一支）。body 是 flex 行：侧栏定宽，#main flex:1。 -->
 <aside id="sidebar" class="sb">
+  <div class="sb-resize" id="sb-resize" title="拖拽调整侧栏宽度"></div>
   <div class="sb-head">
     <button id="sb-toggle" class="sb-icobtn" title="收起/展开侧栏 (Cmd+\)">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
     </button>
     <span class="sb-title ws-truncate" id="sb-root-name">本地文件</span>
-    <button id="sb-new-doc" class="sb-icobtn" title="新建文档（选模板）">
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-    </button>
     <button id="sb-open-folder" class="sb-icobtn" title="打开文件夹">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
     </button>
@@ -39,8 +37,6 @@
     </div>
     <div class="sb-tree" id="sb-tree" hidden></div>
   </div>
-  <!-- 收起态图标轨（只在 .sb.is-collapsed 显示）：置顶 + 顶层文件夹/文件的迷你图标 + hover 气泡预览。 -->
-  <div class="sb-rail" id="sb-rail" hidden></div>
   <!-- 品牌页脚：wordspace.ai logo + 版本号（左侧栏底部，增强 branding）。 -->
   <div class="sb-foot">
     <img class="sb-foot-logo" src="wordspace-wordmark.png" alt="wordspace.ai">
@@ -102,6 +98,7 @@
 <script src="../editor/undo.js"></script>
 <script src="../editor/format.js"></script>
 <script src="../editor/blockedit.js"></script>
+<script src="pdf-viewer.js"></script>
 <script src="shell.js"></script>
 <script src="../lib/tabs.js"></script>
 <script src="sidebar.js"></script>

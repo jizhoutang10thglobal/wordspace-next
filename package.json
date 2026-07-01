@@ -13,7 +13,8 @@
     "dist": "electron-builder --mac"
   },
   "dependencies": {
-    "electron-updater": "^6.8.3"
+    "electron-updater": "^6.8.3",
+    "pdfjs-dist": "^6.1.200"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",

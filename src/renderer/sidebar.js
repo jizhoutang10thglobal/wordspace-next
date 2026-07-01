@@ -246,6 +246,7 @@
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
+      name.title = node.name; // 名字过长被截断时，悬停显示全名
       const add = document.createElement('button');
       add.className = 'sb-add';
       add.title = '在此文件夹新建文档';
@@ -309,6 +310,7 @@
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
+      name.title = node.name; // 名字过长被截断时，悬停显示全名
       row.append(ico, name);
       row.onclick = () => openNode(node);
       row.ondragstart = (e) => {
@@ -355,106 +357,8 @@
     return String(v).replace(/["\\]/g, '\\$&');
   }
 
-  // ---- 收起态图标轨（#4）：顶层文件夹/文件迷你图标 + hover 气泡（名字 + 文件夹内容缩略）----
-  const railEl = document.getElementById('sb-rail');
-  const KIND_TEXT = { html: 'HTML 文档', image: '图片', pdf: 'PDF', word: 'Word 文档', sheet: '表格', slides: '演示文稿', other: '文件' };
-  let railPopEl = null;
-  function hideRailPop() {
-    if (railPopEl) {
-      railPopEl.remove();
-      railPopEl = null;
-    }
-  }
-  function showRailPop(anchor, node) {
-    hideRailPop();
-    const r = anchor.getBoundingClientRect();
-    const pop = document.createElement('div');
-    pop.className = 'sb-rail-pop';
-    const title = document.createElement('div');
-    title.className = 'sb-rail-pop-title ws-truncate';
-    title.textContent = node.name;
-    pop.appendChild(title);
-    if (node.isDir) {
-      const kids = node.children || [];
-      if (kids.length) {
-        const list = document.createElement('div');
-        list.className = 'sb-rail-pop-list';
-        for (const c of kids.slice(0, 8)) {
-          const it = document.createElement('div');
-          it.className = 'sb-rail-pop-item ws-truncate';
-          it.textContent = c.name;
-          list.appendChild(it);
-        }
-        pop.appendChild(list);
-        if (kids.length > 8) {
-          const more = document.createElement('div');
-          more.className = 'sb-rail-pop-more';
-          more.textContent = '+' + (kids.length - 8) + ' 项';
-          pop.appendChild(more);
-        }
-      } else {
-        const sub = document.createElement('div');
-        sub.className = 'sb-rail-pop-sub';
-        sub.textContent = '空文件夹';
-        pop.appendChild(sub);
-      }
-    } else {
-      const sub = document.createElement('div');
-      sub.className = 'sb-rail-pop-sub';
-      sub.textContent = KIND_TEXT[node.kind] || '文件';
-      pop.appendChild(sub);
-    }
-    document.body.appendChild(pop);
-    pop.style.left = r.right + 8 + 'px'; // 单 CSSOM 属性，CSP 安全
-    pop.style.top = r.top + 'px';
-    railPopEl = pop;
-  }
-  function railIcon(node) {
-    const btn = document.createElement('button');
-    btn.className = 'sb-rail-ico' + (node.isDir ? ' is-dir' : ' sb-kind-' + (node.kind || 'other'));
-    btn.dataset.rel = node.rel;
-    btn.innerHTML = node.isDir ? SVG.folder : SVG.file;
-    if (!node.isDir && openPath() === node.abs) btn.classList.add('is-active');
-    btn.title = node.name;
-    btn.onmouseenter = () => showRailPop(btn, node);
-    btn.onmouseleave = hideRailPop;
-    btn.onclick = () => {
-      hideRailPop();
-      if (node.isDir) {
-        collapsed.delete(node.rel); // 点文件夹：展开侧栏 + 展开这个文件夹
-        if (sidebarEl) sidebarEl.classList.remove('is-collapsed');
-        render();
-      } else {
-        openNode(node);
-      }
-    };
-    return btn;
-  }
-  function renderRail() {
-    if (!railEl || !current) return;
-    hideRailPop();
-    railEl.innerHTML = '';
-    // 置顶 + 开着的标签 的图标（去重：pinned 优先）
-    const tabbed = [
-      ...window.WS2Tabs.pinnedEntries(tabState.entries),
-      ...window.WS2Tabs.tabEntries(tabState.entries),
-    ];
-    let shown = 0;
-    for (const e of tabbed) {
-      const n = findNode(e.rel);
-      if (!n) continue;
-      const btn = railIcon(n);
-      if (e.pinned) btn.classList.add('sb-rail-pin');
-      railEl.appendChild(btn);
-      shown++;
-    }
-    if (shown && current.tree.length) {
-      const div = document.createElement('div');
-      div.className = 'sb-rail-div';
-      railEl.appendChild(div);
-    }
-    for (const n of current.tree) railEl.appendChild(railIcon(n));
-  }
+  // ---- 收起态图标轨已删（Wendi B2：去掉竖排图标）。renderRail 留 no-op 兼容调用点。----
+  function renderRail() {}
 
   // ===== 标签页 + 置顶（双标记模型，纯逻辑在 window.WS2Tabs，按根持久化）=====
   const pinnedEl = document.getElementById('sb-pinned'); // 置顶区
@@ -588,10 +492,20 @@
   // ---- 渲染两区 ----
   // 点标签开它：内部文件走树节点 openNode；外部文件(无 rel)按 kind 分发 abs（跟「打开」按钮一条路，
   // shell.js 的 openDoc/showViewer 已支持纯 abs）。
+  // UX4（Wendi F6-①）：把文件树展开到 rel 指向的文件（逐级删父文件夹 collapsed）并滚动定位。
+  function expandToFile(rel) {
+    const parts = rel.split('/'); parts.pop(); // 去掉文件名，只留父文件夹链
+    let acc = '';
+    let changed = false;
+    for (const p of parts) { acc = acc ? acc + '/' + p : p; if (collapsed.has(acc)) { collapsed.delete(acc); changed = true; } }
+    if (changed) render();
+    const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel);
+    if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
+  }
   function openTabRow(entry) {
     if (entry.rel) {
       const n = findNode(entry.rel);
-      if (n) openNode(n);
+      if (n) { openNode(n); expandToFile(entry.rel); } // 点标签 → 文件树展开到该文件并滚动定位
       return;
     }
     if (entry.kind === 'html') openDoc(entry.abs);
@@ -613,6 +527,7 @@
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
+    name.title = external ? entry.abs : entry.title; // 截断时悬停显全名（外部标签显完整绝对路径）
     row.append(ico, name);
     if (external) {
       const ext = document.createElement('span');
@@ -738,8 +653,7 @@
   }
   if (openFolderBtn) openFolderBtn.onclick = pickFolder;
   if (emptyOpenBtn) emptyOpenBtn.onclick = pickFolder;
-  const newDocBtn = document.getElementById('sb-new-doc'); // 侧栏头「+新建文档」→ 模板台（落在工作区根）
-  if (newDocBtn) newDocBtn.onclick = () => openCreateModal('');
+  // B9（Wendi）：侧栏头部「新建文档」加号已删（跟标签页加号功能重复）。新建入口 = 标签页区加号 + Cmd+T + 右键文件夹。
   const homeOpenFolder = document.getElementById('home-open-folder'); // 首页空态的「打开文件夹」入口（无工作区时侧栏隐藏）
   if (homeOpenFolder) homeOpenFolder.onclick = pickFolder;
 
@@ -869,6 +783,33 @@
     }
   });
 
+  // 侧栏宽度可拖拽（UX5 / Wendi F1）：右边界拖拽柄改 --sb-width（夹 min/max），存 localStorage、重启恢复。
+  const SB_MIN = 180, SB_MAX = 520, SB_KEY = 'ws2-sb-width';
+  (function initSidebarResize() {
+    if (!sidebarEl) return;
+    const saved = parseInt(localStorage.getItem(SB_KEY), 10);
+    if (saved >= SB_MIN && saved <= SB_MAX) sidebarEl.style.setProperty('--sb-width', saved + 'px');
+    const handle = document.getElementById('sb-resize');
+    if (!handle) return;
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const startX = e.clientX, startW = sidebarEl.getBoundingClientRect().width;
+      document.body.style.cursor = 'col-resize';
+      const onMove = (ev) => {
+        const w = Math.max(SB_MIN, Math.min(SB_MAX, startW + (ev.clientX - startX)));
+        sidebarEl.style.setProperty('--sb-width', w + 'px');
+      };
+      const onUp = () => {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        document.body.style.cursor = '';
+        localStorage.setItem(SB_KEY, String(Math.round(sidebarEl.getBoundingClientRect().width)));
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  })();
+
   function openTabEntry(entry) {
     tabState = window.WS2Tabs.openEntry(tabState, entry);
     persistTabs();
@@ -954,6 +895,9 @@
       window.__pendingColdOpen = null; // 标签已建，撤销 loadTabs 的「别抢 viewer」抑制
     },
     refresh,
+    newTab: () => openCreateModal(''),                                                // Cmd+T：新建文档（模板台，落工作区根）
+    closeActiveTab: () => { if (tabState.activeRel) closeTabRel(tabState.activeRel); }, // Cmd+W：关当前活跃标签
+    focusFilter: () => { if (sidebarEl) sidebarEl.classList.remove('is-collapsed'); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
   };
   // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
   // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。
