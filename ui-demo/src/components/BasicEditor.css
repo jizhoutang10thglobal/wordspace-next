@@ -1,5 +1,7 @@
 .nce {
   position: relative;
+  flex: 1; /* 撑满 .ws-main（跟合规的 .ws-main-doc 一样），否则只有内容宽度 */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   height: 100%;

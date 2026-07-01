@@ -92,7 +92,8 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
     // 强制显示出来，让 JS 藏起来的 tab 面板、折叠内容都可见可编辑。编辑器托管的 style 带 data-ws-schema-css。
     const revealAll = (d: Document) => {
       const st = d.createElement('style'); st.setAttribute('data-ws-schema-css', 'reveal')
-      st.textContent = '[hidden],.ws-nce-reveal{display:revert !important;visibility:visible !important;opacity:1 !important;height:auto !important;max-height:none !important;}'
+      // reveal-all + 让窄内容在画布里居中（body 有 max-width 时居中；满宽 body 不受影响）
+      st.textContent = '[hidden],.ws-nce-reveal{display:revert !important;visibility:visible !important;opacity:1 !important;height:auto !important;max-height:none !important;} body{margin-left:auto !important;margin-right:auto !important;}'
       d.head?.appendChild(st)
       const win = d.defaultView; if (!win) return
       const SKIP = new Set(['SCRIPT', 'STYLE', 'HEAD', 'META', 'LINK', 'TITLE', 'TEMPLATE', 'BR', 'NOSCRIPT', 'BASE'])
