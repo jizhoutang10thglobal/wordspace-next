@@ -325,7 +325,7 @@ function BlockRow({
 // ---------------------------------------------------------------------------
 // Header: breadcrumb, meta, and the "…" menu (export / link / rename / delete)
 // ---------------------------------------------------------------------------
-function DocHeader({ doc }: { doc: Doc }) {
+export function DocHeader({ doc }: { doc: Doc }) {
   const folder = useStore((s) => s.folders.find((f) => f.id === doc.folderId))
   const editor = useStore((s) => s.getMember(doc.updatedBy))
   const renameDoc = useStore((s) => s.renameDoc)
