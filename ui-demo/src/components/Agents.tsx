@@ -1,38 +1,53 @@
 import { useState } from 'react'
-import { Copy } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Copy, Check, ClipboardList, TerminalSquare, ShieldCheck, ChevronDown } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { relTime } from '../lib/format'
 import type { AgentEvent } from '../types'
+// AI 创作指南（= docs/schema-1-ai-authoring.md 的分发拷贝，test/skill-guide-sync.test.js 锁一致）
+import SCHEMA_PROMPT from '../lib/schema-prompt.md?raw'
 import './Agents.css'
 
+// 官方技能仓库（GitHub org `wordspace-ai`，与品牌绑定；见 docs/design/2026-07-02-ai-prompt-skill-distribution.md）
+const SKILL_CMD = 'npx skills add wordspace-ai/skills'
+
+// ---- Agent API 占位（Wendi 原稿，保留展示、规划中；暂不进真 app）----
 const ACTION_VERB: Record<AgentEvent['action'], string> = {
   create: '生成',
   read: '读取',
   publish: '发布',
   update: '更新',
 }
-
 const API_BASE = 'https://api.wordspace.app/v1'
 const API_KEY = 'wsk_live_••••••••3f2a'
-
 const CURL = `curl -X POST https://api.wordspace.app/v1/documents \\
   -H "Authorization: Bearer $WS_KEY" \\
   -d '{"title":"周报","blocks":[...],"publish":"internal"}'`
 
+// AI 接入：上半 = 现在就能用的两条路（Tab 切换：复制 Prompt / 安装 Skill），
+// 下半 = Agent API 占位（Wendi 原稿，规划中）。产出不靠 AI 自觉：打开即过确定性校验器，不合规降级兜底。
 export default function Agents() {
   const toast = useStore((s) => s.toast)
   const agentEvents = useStore((s) => s.agentEvents)
   const addAgentEvent = useStore((s) => s.addAgentEvent)
 
+  const [tab, setTab] = useState<'prompt' | 'skill'>('prompt')
+  const [copied, setCopied] = useState<'prompt' | 'cmd' | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [perms, setPerms] = useState({
     create: true,
     read: true,
     publishInternal: false,
   })
 
-  const copy = (text: string) => {
+  const copy = (text: string, msg = '已复制') => {
     void navigator.clipboard?.writeText(text)
-    toast('已复制', 'success')
+    toast(msg, 'success')
+  }
+  const copyMark = (text: string, which: 'prompt' | 'cmd', msg: string) => {
+    copy(text, msg)
+    setCopied(which)
+    window.setTimeout(() => setCopied((c) => (c === which ? null : c)), 1800)
   }
 
   const simulate = () => {
@@ -49,11 +64,114 @@ export default function Agents() {
     <div className="ag-scroll">
       <div className="ag-page">
         <header className="ag-head">
-          <h1 className="ag-title">Agent 接入</h1>
+          <h1 className="ag-title">AI 接入</h1>
           <p className="ag-intro">
-            Agent 既能调用 Wordspace 生成文档,也能读取已发布的文档。人和 Agent 用的是同一份内容。
+            让任何 AI 按 Wordspace Schema 生成、编辑文档。两种接入方式，产出的 .html
+            在 Wordspace 打开时都会经过确定性校验器把关——不合规会自动降级，AI 犯错也弄不坏你的文档。
           </p>
         </header>
+
+        {/* 方式切换 Tab */}
+        <div className="ag-tabs" role="tablist" aria-label="接入方式">
+          <button
+            role="tab"
+            aria-selected={tab === 'prompt'}
+            className={'ag-tab' + (tab === 'prompt' ? ' is-active' : '')}
+            onClick={() => setTab('prompt')}
+          >
+            <ClipboardList size={14} />
+            复制 Prompt
+            <span className="ag-tab-hint">任何对话式 AI</span>
+          </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'skill'}
+            className={'ag-tab' + (tab === 'skill' ? ' is-active' : '')}
+            onClick={() => setTab('skill')}
+          >
+            <TerminalSquare size={14} />
+            安装 Skill
+            <span className="ag-tab-hint">coding agent</span>
+          </button>
+        </div>
+
+        {tab === 'prompt' ? (
+          <section className="ag-panel" role="tabpanel">
+            <div className="ag-card">
+              <div className="ag-way-head">
+                <div className="ag-way-text">
+                  <div className="ag-way-title">粘给任何对话式 AI，零安装</div>
+                  <div className="ag-way-hint">
+                    Claude、ChatGPT、Gemini……Prompt 就是完整的《Schema #1 创作指南》。
+                  </div>
+                </div>
+                <button
+                  className="ag-primary"
+                  onClick={() => copyMark(SCHEMA_PROMPT, 'prompt', '已复制 Prompt，粘给你的 AI 即可')}
+                >
+                  {copied === 'prompt' ? <Check size={14} /> : <Copy size={14} />}
+                  {copied === 'prompt' ? '已复制' : '复制 Prompt'}
+                </button>
+              </div>
+              <div className="ag-divider" />
+              <ol className="ag-steps">
+                <li>点上面的按钮，把 Prompt 复制到剪贴板</li>
+                <li>粘进你的 AI 对话，接着用一句话描述要写 / 要改什么（可以把现有 .html 一起贴给它）</li>
+                <li>把 AI 产出的内容存成 <code>.html</code>，在 Wordspace 打开——合规即获得完整结构化编辑</li>
+              </ol>
+              <div className="ag-divider" />
+              <button className="ag-preview-toggle" onClick={() => setPreviewOpen((v) => !v)}>
+                <ChevronDown size={13} className={previewOpen ? 'is-open' : ''} />
+                预览 Prompt 内容
+                <span className="ag-preview-meta">{SCHEMA_PROMPT.length.toLocaleString()} 字符</span>
+              </button>
+              {previewOpen && <pre className="ag-preview">{SCHEMA_PROMPT}</pre>}
+            </div>
+          </section>
+        ) : (
+          <section className="ag-panel" role="tabpanel">
+            <div className="ag-card">
+              <div className="ag-way-head">
+                <div className="ag-way-text">
+                  <div className="ag-way-title">给 coding agent 装成长期技能</div>
+                  <div className="ag-way-hint">
+                    装一次，Claude Code、Codex、Cursor 等 agent 此后生成 / 编辑 Wordspace 文档时自动遵守 Schema。
+                  </div>
+                </div>
+              </div>
+              <div className="ag-divider" />
+              <div className="ag-cmd-row">
+                <pre className="ag-cmd">{SKILL_CMD}</pre>
+                <button
+                  className="ag-copy"
+                  onClick={() => copyMark(SKILL_CMD, 'cmd', '已复制安装命令')}
+                >
+                  {copied === 'cmd' ? <Check size={13} /> : <Copy size={13} />}
+                  复制
+                </button>
+              </div>
+              <ol className="ag-steps">
+                <li>在你的项目目录里跑上面这条命令（从 Wordspace 官方技能仓库安装）</li>
+                <li>让 agent 写文档时点明「Wordspace 文档」，它会自动按 Schema 产出 <code>.html</code></li>
+                <li>产出文件在 Wordspace 打开即自动校验，无需手动检查</li>
+              </ol>
+            </div>
+          </section>
+        )}
+
+        {/* 为什么不怕 AI 犯错 */}
+        <section className="ag-section">
+          <div className="ag-note">
+            <ShieldCheck size={15} className="ag-note-ico" />
+            <span>
+              AI 不需要完美：每份文档在打开时都会被<b>确定性校验器</b>逐条检查，不合规自动降级为基础编辑，
+              内容永远不会被弄坏。想了解规则本身，见 <Link to="/schema">Schema 页</Link>。
+            </span>
+          </div>
+        </section>
+
+        {/* ==== Agent API 占位（Wendi 原稿，规划中；暂不进真 app）==== */}
+        <div className="ag-planned-label">Agent API · 规划中</div>
 
         {/* API */}
         <section className="ag-section">
@@ -82,7 +200,7 @@ export default function Agents() {
             </div>
             <div className="ag-divider" />
             <div className="ag-code-wrap">
-              <div className="ag-row-key ag-code-label">示例:创建并发布一篇文档</div>
+              <div className="ag-row-key ag-code-label">示例：创建并发布一篇文档</div>
               <pre className="ag-code">{CURL}</pre>
             </div>
           </div>
