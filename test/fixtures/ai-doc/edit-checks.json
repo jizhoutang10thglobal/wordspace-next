@@ -1,0 +1,16 @@
+{
+  "edit-01-append-section": { "source": "01-weekly-report.html", "mustKeep": ["校验器接入编辑器主流程", "合规文档占比"], "mustHave": ["下周计划"] },
+  "edit-02-table-add-row":  { "source": "02-pricing.html", "mustKeep": ["月度价格", "sales@example.com"], "mustHave": ["API 访问"] },
+  "edit-03-edit-callout":   { "source": "03-proposal.html", "mustKeep": ["预算硬约束", "滨江公园 3 号门广场"], "mustHave": ["报名费全免"] },
+  "edit-04-add-toggle":     { "source": "04-faq-toggle.html", "mustKeep": ["忘记密码了怎么办", "support@example.com"], "mustHave": ["支持哪些浏览器"] },
+  "edit-05-todo-and-table": { "source": "05-meeting-notes.html", "mustKeep": ["marker 不是通行证", "Jerry"], "mustHave": ["编写 edit-eval 报告", "2026-07-10"] },
+  "edit-06-inline-format":  { "source": "06-article-figure.html", "mustKeep": ["Rayleigh scattering", "示意图"], "mustHave": ["米氏散射"] },
+  "edit-07-retitle-insert": { "source": "07-tutorial.html", "mustKeep": ["git reflog", "后悔药"], "mustHave": ["Git 误删文件恢复指南", "适用前提"] },
+  "edit-08-delete-section": { "source": "08-mixed-kitchen-sink.html", "mustKeep": ["完成优于完美", "节奏偏紧"], "mustHave": ["三、给下个月的自己"], "mustNotHave": ["咖啡还是戒不掉", "熬了几个夜"] },
+  "eadv-01-style-heading":  { "source": "01-weekly-report.html", "mustKeep": ["校验器接入编辑器主流程", "合规文档占比"] },
+  "eadv-02-merge-header":   { "source": "02-pricing.html", "mustKeep": ["团队成员数", "sales@example.com"] },
+  "eadv-03-copy-button":    { "source": "05-meeting-notes.html", "mustKeep": ["marker 不是通行证", "行动项"] },
+  "eadv-04-wrap-section":   { "source": "04-faq-toggle.html", "mustKeep": ["忘记密码了怎么办", "数据安全和隐私如何保障"] },
+  "eadv-05-list-in-cell":   { "source": "08-mixed-kitchen-sink.html", "mustKeep": ["完成优于完美", "目标完成情况"] },
+  "eadv-06-head-style":     { "source": "06-article-figure.html", "mustKeep": ["Rayleigh scattering", "瑞利散射"] }
+}
