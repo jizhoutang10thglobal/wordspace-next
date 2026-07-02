@@ -301,3 +301,14 @@ test('T2 标签栏：激活态白卡浮起（真 computed style）+ 未保存点
   await page.locator('.sb-modal-confirm .sb-btn-danger').click();
   await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(0);
 });
+
+test('T7 查找入口钮 + 面板 polish：#sb-find 点开命令面板（shadow-modal + pop 动画，真 computed style）', async () => {
+  await openWorkspace();
+  await page.click('#sb-find'); // 界面可见入口（此前只有 Cmd+P 快捷键）
+  await expect(page.locator('.fp')).toBeVisible();
+  const st = await page.locator('.fp').evaluate((el) => { const cs = getComputedStyle(el); return { shadow: cs.boxShadow, anim: cs.animationName }; });
+  expect(st.shadow, '面板阴影没换 shadow-modal').toContain('44px');
+  expect(st.anim, '面板缺 pop 动画').toBe('ws-modal-pop');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.fp')).toHaveCount(0);
+});
