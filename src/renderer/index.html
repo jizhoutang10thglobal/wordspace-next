@@ -39,6 +39,10 @@
     <div class="sb-filter" id="sb-filter" hidden>
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
       <input id="sb-filter-input" type="text" placeholder="筛选文件" spellcheck="false">
+      <!-- 清除钮（T8 对齐 ui-demo arc-filter-clear）：输入非空时显示 -->
+      <button id="sb-filter-clear" class="sb-filter-clear" title="清除" hidden>
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
     </div>
     <div class="sb-tree" id="sb-tree" hidden></div>
   </div>

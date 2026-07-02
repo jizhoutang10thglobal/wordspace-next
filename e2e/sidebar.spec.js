@@ -491,3 +491,20 @@ test('重启 app → 自动恢复上次工作区（读 workspace.json，不靠 s
   await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
   await expect(page.locator('.sb-dir[data-rel="数据"]')).toBeVisible(); // 顶层文件夹恢复（默认收起）
 });
+
+test('T8 文件类型图标形状 + 筛选清除钮', async () => {
+  await openWorkspace();
+  // 类型换形状：image 图标带 <circle>（FileImage），html 图标不带（FileText）——不只靠颜色区分
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  expect(await page.locator('.sb-file[data-rel="数据/c.png"] .sb-ico').innerHTML()).toContain('circle');
+  expect(await page.locator('.sb-file[data-rel="a.html"] .sb-ico').innerHTML()).not.toContain('circle');
+  // 筛选清除钮：输入非空出现，点击清空 + 树回全量
+  await expect(page.locator('#sb-filter-clear')).toBeHidden();
+  await page.fill('#sb-filter-input', 'zzz不存在');
+  await expect(page.locator('#sb-filter-clear')).toBeVisible();
+  await expect(page.locator('.sb-tree-empty', { hasText: '没有匹配的文件' })).toBeVisible();
+  await page.click('#sb-filter-clear');
+  await expect(page.locator('#sb-filter-clear')).toBeHidden();
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
+  expect(await page.locator('#sb-filter-input').inputValue()).toBe('');
+});

@@ -40,6 +40,20 @@
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>',
     file: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
   };
+  // 按类型换图标形状（T8 对齐 ui-demo FileIcon：色值早就分了、形状此前全是同一个 file 轮廓）。
+  // lucide：image=FileImage / sheet=FileSpreadsheet / slides=Presentation / word·pdf·html=FileText / 其余=File。
+  const KIND_PATH = {
+    image: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><circle cx="10" cy="12" r="2"/><path d="m20 17-1.3-1.3a2.4 2.4 0 0 0-3.4 0L9 22"/>',
+    sheet: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
+    slides: '<path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/>',
+    word: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  };
+  KIND_PATH.pdf = KIND_PATH.word; // FileText 同款（ui-demo：word/pdf/html 都是 FileText、靠颜色区分）
+  KIND_PATH.html = KIND_PATH.word;
+  const kindSvg = (kind) =>
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+    (KIND_PATH[kind] || '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>') +
+    '</svg>';
 
   const indentClass = (depth) => 'sb-d' + Math.min(depth, 9);
 
@@ -55,6 +69,8 @@
     collapsed.clear();
     collectDirRels(current.tree, collapsed); // 默认全部收起：一打开只露顶层，要看哪层自己点开
     if (filterInput) filterInput.value = '';
+    const fc = document.getElementById('sb-filter-clear');
+    if (fc) fc.hidden = true; // 换工作区清筛选 → 清除钮跟着藏
     rootNameEl.textContent = data.name;
     rootNameEl.title = data.root;
     emptyEl.hidden = true;
@@ -306,7 +322,7 @@
       row.draggable = true;
       const ico = document.createElement('span');
       ico.className = 'sb-ico';
-      ico.innerHTML = SVG.file;
+      ico.innerHTML = kindSvg(node.kind); // T8：按类型换形状（颜色仍走 .sb-kind-*）
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
@@ -744,7 +760,7 @@
     if (key === tabState.activeRel) row.classList.add('is-active');
     const ico = document.createElement('span');
     ico.className = 'sb-ico';
-    ico.innerHTML = SVG.file;
+    ico.innerHTML = kindSvg(entry.kind); // T8：标签也按类型换形状（跟树一套）
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
@@ -885,13 +901,17 @@
     tabsEl.appendChild(tlist);
   }
 
-  // ---- 筛选输入 ----
+  // ---- 筛选输入（+ 清除钮，T8 对齐 ui-demo arc-filter-clear）----
+  const filterClear = document.getElementById('sb-filter-clear');
+  const syncFilterClear = () => { if (filterClear) filterClear.hidden = !query; };
   if (filterInput) {
     filterInput.addEventListener('input', () => {
       query = filterInput.value;
+      syncFilterClear();
       render();
     });
   }
+  if (filterClear) filterClear.onclick = () => { query = ''; if (filterInput) { filterInput.value = ''; filterInput.focus(); } syncFilterClear(); render(); };
   if (openFolderBtn) openFolderBtn.onclick = pickFolder;
   if (emptyOpenBtn) emptyOpenBtn.onclick = pickFolder;
   const findBtn = document.getElementById('sb-find');
@@ -1062,7 +1082,7 @@
       hits.forEach((n, i) => {
         const row = document.createElement('button');
         row.className = 'fp-row' + (i === sel ? ' is-sel' : '');
-        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = SVG.file;
+        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = kindSvg(n.kind); // T8：命令面板行也按类型换形状
         const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.name;
         const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.rel;
         row.append(ic, nm, sub);
