@@ -388,8 +388,11 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 /* PDF：Chromium 内置查看器（file:// 直载 iframe）。 */
 /* PDF.js viewer（替代 Chromium 内置 iframe，B7 一行工具栏 / B8 无预览栏）：连续滚动 canvas。 */
-.pdfv-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 24px; background: var(--c-bg-sunken); }
-.pdfv-page { box-shadow: 0 1px 6px rgba(0,0,0,.18); background: #fff; max-width: 100%; }
+/* safe center：放大超过舞台宽时靠左起排（纯 center 会两侧溢出、左半滚不到）。
+   .pdfv-page 不设 max-width——fit 模式 scale 已按可用宽算、cap 从不生效；缩放模式反被它
+   封在 100% 不再变大（且 height 不跟着缩、还会把页面拉变形）。 */
+.pdfv-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: safe center; gap: 14px; padding: 24px; background: var(--c-bg-sunken); }
+.pdfv-page { flex: none; box-shadow: 0 1px 6px rgba(0,0,0,.18); background: #fff; }
 .pdfv-pageinfo { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; }
 .pdfv-zbtn { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: 15px; }
 .pdfv-zbtn:hover { background: var(--c-hover); }
