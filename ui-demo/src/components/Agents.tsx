@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Copy, Check, ClipboardList, TerminalSquare, ShieldCheck, ChevronDown } from 'lucide-react'
 import { useStore } from '../mock/store'
+import { relTime } from '../lib/format'
+import type { AgentEvent } from '../types'
 // AI 创作指南（= docs/schema-1-ai-authoring.md 的分发拷贝，test/skill-guide-sync.test.js 锁一致）
 import SCHEMA_PROMPT from '../lib/schema-prompt.md?raw'
 import './Agents.css'
@@ -9,20 +11,53 @@ import './Agents.css'
 // 官方技能仓库（GitHub org `wordspace-ai`，与品牌绑定；见 docs/design/2026-07-02-ai-prompt-skill-distribution.md）
 const SKILL_CMD = 'npx skills add wordspace-ai/skills'
 
-// AI 接入：把「让 AI 按 Schema 写 Wordspace 文档」交到用户手里的两条路（Tab 切换）。
-// 复制 Prompt——零安装，任何对话式 AI 都能用；安装 Skill——装一次，coding agent 长期自动遵守 Schema。
-// 产出不靠 AI 自觉：文件在 Wordspace 打开即过确定性校验器，不合规自动降级兜底。
+// ---- Agent API 占位（Wendi 原稿，保留展示、规划中；暂不进真 app）----
+const ACTION_VERB: Record<AgentEvent['action'], string> = {
+  create: '生成',
+  read: '读取',
+  publish: '发布',
+  update: '更新',
+}
+const API_BASE = 'https://api.wordspace.app/v1'
+const API_KEY = 'wsk_live_••••••••3f2a'
+const CURL = `curl -X POST https://api.wordspace.app/v1/documents \\
+  -H "Authorization: Bearer $WS_KEY" \\
+  -d '{"title":"周报","blocks":[...],"publish":"internal"}'`
+
+// AI 接入：上半 = 现在就能用的两条路（Tab 切换：复制 Prompt / 安装 Skill），
+// 下半 = Agent API 占位（Wendi 原稿，规划中）。产出不靠 AI 自觉：打开即过确定性校验器，不合规降级兜底。
 export default function Agents() {
   const toast = useStore((s) => s.toast)
+  const agentEvents = useStore((s) => s.agentEvents)
+  const addAgentEvent = useStore((s) => s.addAgentEvent)
+
   const [tab, setTab] = useState<'prompt' | 'skill'>('prompt')
   const [copied, setCopied] = useState<'prompt' | 'cmd' | null>(null)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const [perms, setPerms] = useState({
+    create: true,
+    read: true,
+    publishInternal: false,
+  })
 
-  const copy = (text: string, which: 'prompt' | 'cmd', msg: string) => {
+  const copy = (text: string, msg = '已复制') => {
     void navigator.clipboard?.writeText(text)
-    setCopied(which)
     toast(msg, 'success')
+  }
+  const copyMark = (text: string, which: 'prompt' | 'cmd', msg: string) => {
+    copy(text, msg)
+    setCopied(which)
     window.setTimeout(() => setCopied((c) => (c === which ? null : c)), 1800)
+  }
+
+  const simulate = () => {
+    addAgentEvent({
+      agentName: '市场 Agent',
+      agentColor: '#0b8793',
+      action: 'create',
+      docTitle: '自动周报',
+    })
+    toast('市场 Agent 生成了《自动周报》', 'success')
   }
 
   return (
@@ -72,7 +107,7 @@ export default function Agents() {
                 </div>
                 <button
                   className="ag-primary"
-                  onClick={() => copy(SCHEMA_PROMPT, 'prompt', '已复制 Prompt，粘给你的 AI 即可')}
+                  onClick={() => copyMark(SCHEMA_PROMPT, 'prompt', '已复制 Prompt，粘给你的 AI 即可')}
                 >
                   {copied === 'prompt' ? <Check size={14} /> : <Copy size={14} />}
                   {copied === 'prompt' ? '已复制' : '复制 Prompt'}
@@ -109,7 +144,7 @@ export default function Agents() {
                 <pre className="ag-cmd">{SKILL_CMD}</pre>
                 <button
                   className="ag-copy"
-                  onClick={() => copy(SKILL_CMD, 'cmd', '已复制安装命令')}
+                  onClick={() => copyMark(SKILL_CMD, 'cmd', '已复制安装命令')}
                 >
                   {copied === 'cmd' ? <Check size={13} /> : <Copy size={13} />}
                   复制
@@ -134,7 +169,127 @@ export default function Agents() {
             </span>
           </div>
         </section>
+
+        {/* ==== Agent API 占位（Wendi 原稿，规划中；暂不进真 app）==== */}
+        <div className="ag-planned-label">Agent API · 规划中</div>
+
+        {/* API */}
+        <section className="ag-section">
+          <div className="ag-label">API</div>
+          <div className="ag-card">
+            <div className="ag-row">
+              <div className="ag-row-main">
+                <div className="ag-row-key">接入地址</div>
+                <code className="ag-mono">{API_BASE}</code>
+              </div>
+              <button className="ag-copy" onClick={() => copy(API_BASE)}>
+                <Copy size={13} />
+                复制
+              </button>
+            </div>
+            <div className="ag-divider" />
+            <div className="ag-row">
+              <div className="ag-row-main">
+                <div className="ag-row-key">API Key</div>
+                <code className="ag-mono">{API_KEY}</code>
+              </div>
+              <button className="ag-copy" onClick={() => copy(API_KEY)}>
+                <Copy size={13} />
+                复制
+              </button>
+            </div>
+            <div className="ag-divider" />
+            <div className="ag-code-wrap">
+              <div className="ag-row-key ag-code-label">示例：创建并发布一篇文档</div>
+              <pre className="ag-code">{CURL}</pre>
+            </div>
+          </div>
+        </section>
+
+        {/* 权限 */}
+        <section className="ag-section">
+          <div className="ag-label">权限</div>
+          <div className="ag-card">
+            <PermRow
+              label="创建文档"
+              hint="允许 Agent 在你的仓库中新建文档"
+              on={perms.create}
+              onToggle={() => setPerms((p) => ({ ...p, create: !p.create }))}
+            />
+            <div className="ag-divider" />
+            <PermRow
+              label="读取文档"
+              hint="允许 Agent 读取已发布的文档内容"
+              on={perms.read}
+              onToggle={() => setPerms((p) => ({ ...p, read: !p.read }))}
+            />
+            <div className="ag-divider" />
+            <PermRow
+              label="发布到内网"
+              hint="允许 Agent 将文档部署到公司内网"
+              on={perms.publishInternal}
+              onToggle={() =>
+                setPerms((p) => ({ ...p, publishInternal: !p.publishInternal }))
+              }
+            />
+          </div>
+        </section>
+
+        {/* 活动 */}
+        <section className="ag-section">
+          <div className="ag-label">活动</div>
+          <button className="ag-sim" onClick={simulate}>
+            模拟一次 Agent 调用
+          </button>
+          <div className="ag-events">
+            {agentEvents.length === 0 ? (
+              <div className="ag-empty">还没有 Agent 调用记录。</div>
+            ) : (
+              agentEvents.map((e) => (
+                <div key={e.id} className="ag-event">
+                  <span className="ag-chip" style={{ background: e.agentColor }}>
+                    AI
+                  </span>
+                  <span className="ag-event-name">{e.agentName}</span>
+                  <span className="ag-event-verb">{ACTION_VERB[e.action]}</span>
+                  <span className="ag-event-doc">《{e.docTitle}》</span>
+                  <span className="ag-event-time">{relTime(e.at)}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
       </div>
+    </div>
+  )
+}
+
+function PermRow({
+  label,
+  hint,
+  on,
+  onToggle,
+}: {
+  label: string
+  hint: string
+  on: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="ag-perm">
+      <div className="ag-perm-text">
+        <div className="ag-perm-label">{label}</div>
+        <div className="ag-perm-hint">{hint}</div>
+      </div>
+      <button
+        className={`ag-toggle${on ? ' is-on' : ''}`}
+        role="switch"
+        aria-checked={on}
+        aria-label={label}
+        onClick={onToggle}
+      >
+        <span className="ag-toggle-knob" />
+      </button>
     </div>
   )
 }
