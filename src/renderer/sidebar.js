@@ -363,8 +363,8 @@
   // ===== 标签页 + 置顶（双标记模型，纯逻辑在 window.WS2Tabs，按根持久化）=====
   const pinnedEl = document.getElementById('sb-pinned'); // 置顶区
   const tabsEl = document.getElementById('sb-tabs'); // 标签页区
-  const PIN_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
-  const PIN_OFF_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h9"/><path d="M15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H10"/></svg>';
+  const PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+  const PIN_OFF_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h9"/><path d="M15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H10"/></svg>';
   const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
   let dragTabRel = null;
   // 身份键：工作区内用 rel、工作区外用 abs（跟 tabs.js 一致）。外部标签 = 没有 rel。
@@ -757,6 +757,14 @@
       ext.innerHTML = EXT_ICO_SVG;
       row.append(ext);
     }
+    // 未保存点（对齐 ui-demo arc-tab-dot：行尾 7px accent 圆点，hover 让位给按钮）：
+    // 临时文档常显；活跃的脏真文件也显（自动保存的 1.2s 间隙 / 保存失败时有提示）——shell 脏态变化经
+    // __sbHooks.onDirtyChange 同步开关，非活跃真文件切走前必经保存守卫、无脏态。
+    const dot = document.createElement('span');
+    dot.className = 'sb-tab-dot';
+    dot.title = temp ? '未保存（还没存进文件夹）' : '有未保存的修改';
+    if (!temp && !(key === tabState.activeRel && window.__shellIsDirty && window.__shellIsDirty())) dot.hidden = true;
+    row.append(dot);
     if (!temp) { // 临时文档不能置顶（置顶持久化、临时文档重启即弃）
       const pin = document.createElement('button');
       pin.className = 'sb-tab-pin' + (entry.pinned ? ' is-pinned' : '');
@@ -802,20 +810,30 @@
     const list = document.createElement('div');
     list.className = 'sb-zone-list';
     list.dataset.zone = zone;
+    const clearDropMarks = () => list.querySelectorAll('.sb-drop-before, .sb-drop-after').forEach((r) => r.classList.remove('sb-drop-before', 'sb-drop-after'));
     list.ondragover = (e) => {
       if (!dragTabRel) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       list.classList.add('sb-drop');
+      // 精确插入线（对齐 ui-demo drop-before/after）：按光标 Y 对行中点，在目标行上/下缘画 2px accent 线
+      clearDropMarks();
+      const rows = Array.prototype.slice.call(list.querySelectorAll('.sb-tab'));
+      if (rows.length) {
+        const idx = dropIndex(list, e.clientY);
+        if (idx < rows.length) rows[idx].classList.add('sb-drop-before');
+        else rows[rows.length - 1].classList.add('sb-drop-after');
+      }
     };
     list.ondragleave = (e) => {
-      if (!list.contains(e.relatedTarget)) list.classList.remove('sb-drop');
+      if (!list.contains(e.relatedTarget)) { list.classList.remove('sb-drop'); clearDropMarks(); }
     };
     list.ondrop = (e) => {
       if (!dragTabRel) return;
       e.preventDefault();
       e.stopPropagation();
       list.classList.remove('sb-drop');
+      clearDropMarks();
       dropTabRel(dragTabRel, zone === 'pinned', dropIndex(list, e.clientY));
     };
     return list;
@@ -837,9 +855,9 @@
     }
     return head;
   }
-  function zoneHint(text) {
+  function zoneHint(text, cls) {
     const d = document.createElement('div');
-    d.className = 'sb-zone-hint';
+    d.className = 'sb-zone-hint' + (cls ? ' ' + cls : '');
     d.textContent = text;
     return d;
   }
@@ -855,7 +873,7 @@
     pinnedEl.appendChild(zoneHeader('置顶', null));
     const plist = zoneList('pinned');
     if (pinned.length) for (const e of pinned) plist.appendChild(tabRow(e, 'pinned'));
-    else plist.appendChild(zoneHint('把标签拖到这里置顶'));
+    else plist.appendChild(zoneHint('把标签页拖到这里置顶', 'sb-zone-hint-drop')); // 虚线框空态（对齐 ui-demo arc-tabs-empty：看得出是可拖入目标）
     pinnedEl.appendChild(plist);
 
     tabsEl.innerHTML = '';
@@ -1189,6 +1207,10 @@
   }
 
   window.__sbHooks = {
+    // shell 脏态变化 → 同步活跃真文件标签的未保存点（T2 arc-tab-dot；临时文档的点常显、不经这里）
+    onDirtyChange: (d) => {
+      document.querySelectorAll('.sb-tab.is-active:not(.sb-tab-temp) .sb-tab-dot').forEach((el) => { el.hidden = !d; });
+    },
     onOpen: async (abs) => {
       // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc

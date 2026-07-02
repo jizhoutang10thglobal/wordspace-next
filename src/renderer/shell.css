@@ -214,25 +214,38 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-zone-head { display: flex; align-items: center; }
 /* 「文件」段标（独立于 .sb-zone，跟在标签页区之后）：复用段标样式，提供文件区上方留白。 */
 .sb-files-label[hidden] { display: none; }
-.sb-sec-label { flex: 1; padding: 10px 8px 5px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-3); letter-spacing: .04em; }
-.sb-zone-add { flex: none; width: 20px; height: 20px; margin-right: 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--c-text-3); }
+.sb-sec-label { flex: 1; padding: 10px 8px 5px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-3); letter-spacing: .04em; text-transform: uppercase; /* 对齐 ui-demo 段标规则（中文无感，英文标题一致） */ }
+.sb-zone-add { flex: none; width: 24px; height: 24px; margin-right: 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--c-text-3); }
 .sb-zone-add:hover { background: var(--c-hover); color: var(--c-text); }
-.sb-zone-list { display: flex; flex-direction: column; gap: 2px; min-height: 6px; border-radius: var(--r-sm); }
+.sb-zone-list { display: flex; flex-direction: column; gap: 1px; min-height: 6px; border-radius: var(--r-sm); }
 .sb-zone-list.sb-drop { background: var(--c-accent-tint); box-shadow: inset 0 0 0 1px var(--c-accent); }
 .sb-zone-hint { padding: 5px 10px; font-size: var(--fs-xs); color: var(--c-text-3); font-style: italic; }
+/* 置顶空态：虚线框（对齐 ui-demo arc-tabs-empty，看得出是可拖入目标） */
+.sb-zone-hint-drop { border: 1px dashed var(--c-border-strong); border-radius: var(--r-sm); padding: 10px 8px; margin: 0 2px; text-align: center; font-size: var(--fs-sm); font-style: normal; }
 /* 标签行：图标 + 名 + 📌 + ×（× 仅标签页区） */
-.sb-tab { padding-left: 8px; }
+.sb-tab { position: relative; height: 32px; padding-left: 8px; } /* 行高 32（比树行略高）+ 承载插入线伪元素 */
 .sb-tab-pin, .sb-tab-close { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--c-text-3); opacity: 0; }
 .sb-tab:hover .sb-tab-pin, .sb-tab:hover .sb-tab-close { opacity: 1; }
 .sb-tab-pin.is-pinned { opacity: 1; color: var(--c-accent); } /* 已钉的常显（在置顶区） */
 .sb-tab-pin:hover, .sb-tab-close:hover { background: var(--c-active); color: var(--c-text); }
-.sb-tab.is-active { background: var(--c-selected); color: var(--c-accent); }
+/* 激活态 = 白卡浮起（surface + shadow-sm + 图标 accent，对齐 ui-demo arc-tab.is-active），
+   跟文件树的蓝底 selection（.sb-file.is-active 不动）区分开——之前两者混同。 */
+.sb-tab.is-active { background: var(--c-surface); color: var(--c-text); box-shadow: var(--shadow-sm); }
 .sb-tab.is-active .sb-ico { color: var(--c-accent); }
+/* 未保存点（arc-tab-dot）：行尾 7px accent 圆点；hover 出 pin/close 时让位 */
+.sb-tab-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c-accent); }
+.sb-tab-dot[hidden] { display: none; }
+.sb-tab:hover .sb-tab-dot { display: none; }
+/* 拖拽重排的精确插入线：目标行上/下缘 2px accent 横线（left/right 6px，对齐 ui-demo drop-before/after） */
+.sb-tab.sb-drop-before::before, .sb-tab.sb-drop-after::after { content: ''; position: absolute; left: 6px; right: 6px; height: 2px; border-radius: 1px; background: var(--c-accent); pointer-events: none; }
+.sb-tab.sb-drop-before::before { top: -1.5px; }
+.sb-tab.sb-drop-after::after { bottom: -1.5px; }
 /* 外部标签（工作区外文件，无 rel）：淡一档 + 名旁 ↗ 小标记，一眼区别于工作区内标签（它们不在侧栏树里）。 */
 .sb-tab-ext .sb-name { color: var(--c-text-2); }
 .sb-tab-ext .sb-ico { color: var(--c-text-3); }
 .sb-tab-ext-ico { flex: none; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; color: var(--c-text-3); }
-.sb-tab.is-active.sb-tab-ext .sb-name, .sb-tab.is-active.sb-tab-ext .sb-ico, .sb-tab.is-active .sb-tab-ext-ico { color: var(--c-accent); }
+.sb-tab.is-active.sb-tab-ext .sb-name { color: var(--c-text); } /* 白卡激活态：文字回正色（图标才 accent） */
+.sb-tab.is-active.sb-tab-ext .sb-ico, .sb-tab.is-active .sb-tab-ext-ico { color: var(--c-accent); }
 
 /* 缩进档（CSP 安全：不用 inline style）。每级 +14px，从 8px 起。 */
 .sb-d0 { padding-left: 8px; }
@@ -322,7 +335,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-btn-danger { color: var(--c-danger, #d93025); border-color: var(--c-border); }
 .sb-btn-danger:hover { background: var(--c-danger-tint, #fdecec); border-color: var(--c-danger, #d93025); }
 /* 临时（未保存）标签：标题前一个小圆点提示未保存。 */
-.sb-tab-temp .sb-name::before { content: '● '; color: var(--c-warn, #b06000); font-size: 9px; vertical-align: 1px; }
+/* （旧「名字前橙点」已被行尾 .sb-tab-dot 取代——T2 对齐 ui-demo arc-tab-dot） */
 
 /* Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层 + 模糊搜结果列表。 */
 .fp-overlay { align-items: flex-start; padding-top: 88px; } /* 覆盖 .sb-modal-overlay 的居中，改顶部锚定 */

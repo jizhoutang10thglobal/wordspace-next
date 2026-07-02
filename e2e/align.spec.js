@@ -274,3 +274,30 @@ test('T1 统一模态壳：shadow-modal + head 分隔线 + pop 动画 + 关闭X 
   await page.locator('.sb-modal-confirm .sb-btn-danger').click(); // 收尾：丢弃临时文档
   await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(0);
 });
+
+test('T2 标签栏：激活态白卡浮起（真 computed style）+ 未保存点（临时常显 / 真文件脏窗显示、自动保存后消失）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  const tab = page.locator('#sb-tabs .sb-tab[data-rel="a.html"]');
+  await expect(tab).toHaveClass(/is-active/);
+  const st = await tab.evaluate((el) => { const cs = getComputedStyle(el); return { bg: cs.backgroundColor, shadow: cs.boxShadow, h: el.getBoundingClientRect().height }; });
+  expect(st.bg, '激活标签应是白卡（surface），不是蓝底 selection').toBe('rgb(255, 255, 255)');
+  expect(st.shadow, '激活标签缺浮起阴影').not.toBe('none');
+  expect(Math.round(st.h), '标签行高应为 32').toBe(32);
+  await expect(tab.locator('.sb-tab-dot')).toBeHidden(); // 干净真文件无点
+  // 编辑 → 点出现（脏窗口）→ 自动保存落盘 → 点消失
+  await page.frameLocator('#doc-frame').locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('D');
+  await expect(tab.locator('.sb-tab-dot')).toBeVisible();
+  await expect(tab.locator('.sb-tab-dot')).toBeHidden({ timeout: 6000 });
+  // 临时文档：未保存点常显
+  await newTempDoc();
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp .sb-tab-dot')).toBeVisible();
+  // 收尾：丢弃临时文档（hover 时 dot 让位、close 钮出现）
+  const tempTab = page.locator('#sb-tabs .sb-tab.sb-tab-temp');
+  await tempTab.hover();
+  await tempTab.locator('.sb-tab-close').click();
+  await page.locator('.sb-modal-confirm .sb-btn-danger').click();
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(0);
+});

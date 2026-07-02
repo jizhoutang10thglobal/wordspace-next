@@ -46,6 +46,8 @@ function setDirty(v) {
     dirtyDot.className = 'ws-dirty';
     dirtyDot.hidden = true;
   }
+  // 同步侧栏标签的未保存点（T2，对齐 ui-demo arc-tab-dot：脏真文件的标签也要有提示）
+  if (window.__sbHooks && window.__sbHooks.onDirtyChange) window.__sbHooks.onDirtyChange(v);
 }
 // 保存成功的正向反馈：原地（面包屑里脏态那个位置）闪「✓ 已保存」绿字，~1.6s 后淡出。
 // 不是弹窗：保存高频，模态太重；复用用户已经盯着的位置给即时确认，Cmd+S / 点按钮两条路都覆盖。
