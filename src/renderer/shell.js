@@ -318,11 +318,18 @@ async function showViewer(node) {
       viewer.appendChild(bar);
       const scroll = document.createElement('div');
       scroll.className = 'imgv-scroll';
+      // 影院式画框（T3 对齐 ui-demo ImageViewer）：深色底 + figure 圆角画框 + 文件名标题
+      const fig = document.createElement('figure');
+      fig.className = 'imgv-frame';
       const img = document.createElement('img');
       img.className = 'imgv-img';
       img.src = url;
       img.alt = node.name;
-      scroll.appendChild(img);
+      const cap = document.createElement('figcaption');
+      cap.className = 'imgv-cap';
+      cap.textContent = node.name;
+      fig.append(img, cap);
+      scroll.appendChild(fig);
       viewer.appendChild(scroll);
       viewer.hidden = false;
       return;

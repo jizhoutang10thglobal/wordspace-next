@@ -410,24 +410,28 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* 图片/PDF 内置查看器共用顶条（文件名 + 只读标 + 用默认程序打开）。对齐 ui-demo FileViewerBar。
    高度对齐文档头 52px：右上角浮动 .top-actions 的 top:11px 是按 52px 条居中算的（中线 y=26）。查看器顶栏
    若只有 44px，内容中线在 y=22、跟浮层差 ~4px 肉眼可见地不齐。两条横条等高才共享得了同一个浮层。 */
-.fv-bar { flex: none; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 var(--top-actions-reserve) 0 56px; border-bottom: 1px solid var(--c-divider); background: var(--c-bg); }
-.fv-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--c-text); }
-.fv-tag { flex: none; display: inline-flex; align-items: center; height: 18px; padding: 0 8px; border-radius: var(--r-pill); background: var(--c-bg-rail); color: var(--c-text-2); font-size: var(--fs-xs); }
+.fv-bar { flex: none; display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 var(--top-actions-reserve) 0 56px; border-bottom: 1px solid var(--c-border); background: var(--c-surface); }
+.fv-name { min-width: 0; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--c-text); }
+.fv-tag { flex: none; display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--r-pill); background: var(--c-hover); color: var(--c-text-2); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
 .fv-sp { flex: 1; }
-.fv-open { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--r-sm); color: var(--c-text-2); font-size: var(--fs-base); }
+/* 外链按钮 = 描边按钮（对齐 ui-demo outline button，之前无边框像纯文字） */
+.fv-open { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); color: var(--c-text-2); font-size: var(--fs-base); }
 .fv-open:hover { background: var(--c-hover); color: var(--c-text); }
 
-/* 图片：浏览器原生渲染真实文件（file://），只读、居中、可滚动。 */
-.imgv-scroll { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 28px; background: var(--c-bg-sunken); }
-.imgv-img { max-width: 100%; height: auto; border-radius: var(--r-sm); box-shadow: var(--shadow-sm); background: #fff; }
+/* 图片：浏览器原生渲染真实文件（file://），只读。T3 对齐 ui-demo ImageViewer：
+   深色影院背景 + 圆角画框 + 大投影 + 文件名标题。safe center：超大图不把上/左缘滚丢。 */
+.imgv-scroll { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: safe center; padding: 32px; background: #2b2d31; }
+.imgv-frame { margin: 0; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.imgv-img { max-width: min(900px, 100%); height: auto; border-radius: 10px; box-shadow: 0 12px 44px rgba(0,0,0,.45); }
+.imgv-cap { font-size: var(--fs-sm); color: rgba(255,255,255,.7); }
 
 /* PDF：Chromium 内置查看器（file:// 直载 iframe）。 */
 /* PDF.js viewer（替代 Chromium 内置 iframe，B7 一行工具栏 / B8 无预览栏）：连续滚动 canvas。 */
 /* safe center：放大超过舞台宽时靠左起排（纯 center 会两侧溢出、左半滚不到）。
    .pdfv-page 不设 max-width——fit 模式 scale 已按可用宽算、cap 从不生效；缩放模式反被它
    封在 100% 不再变大（且 height 不跟着缩、还会把页面拉变形）。 */
-.pdfv-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: safe center; gap: 14px; padding: 24px; background: var(--c-bg-sunken); }
-.pdfv-page { flex: none; box-shadow: 0 1px 6px rgba(0,0,0,.18); background: #fff; }
+.pdfv-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: safe center; gap: 14px; padding: 24px; background: #e6e7ea; /* 中性灰更衬白纸（T4 对齐 ui-demo） */ }
+.pdfv-page { flex: none; border-radius: 2px; box-shadow: 0 2px 10px rgba(0,0,0,.12); background: #fff; }
 .pdfv-pageinfo { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; }
 .pdfv-zbtn { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: 15px; }
 .pdfv-zbtn:hover { background: var(--c-hover); }
