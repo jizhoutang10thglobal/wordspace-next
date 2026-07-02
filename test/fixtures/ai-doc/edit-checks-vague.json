@@ -1,0 +1,8 @@
+{
+  "vague-01-add-risk":          { "source": "01-weekly-report.html", "mustKeep": ["校验器接入编辑器主流程", "合规文档占比"], "mustHave": ["风险"], "mustDiffer": true },
+  "vague-02-api-discount":      { "source": "02-pricing.html", "mustKeep": ["团队成员数", "sales@example.com"], "mustHave": ["API", "年付"], "mustDiffer": true },
+  "vague-03-shorten":           { "source": "03-proposal.html", "mustKeep": ["预算硬约束"], "mustHave": ["风险"], "mustDiffer": true },
+  "vague-04-refund-faq":        { "source": "04-faq-toggle.html", "mustKeep": ["忘记密码了怎么办", "support@example.com"], "mustHave": ["退款"], "mustDiffer": true },
+  "vague-05-tighten-highlight": { "source": "07-tutorial.html", "mustKeep": ["git reflog"], "mustHave": ["直接覆盖"], "mustDiffer": true },
+  "vague-06-tldr":              { "source": "08-mixed-kitchen-sink.html", "mustKeep": ["完成优于完美", "目标完成情况"], "mustHave": ["一句话总结"], "mustDiffer": true }
+}

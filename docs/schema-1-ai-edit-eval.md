@@ -50,16 +50,59 @@
 - 按 R6 原则不变：**100% 不是承诺**，「AI 改不出错」的保证仍来自校验器把门 + 非合规降级兜底；本轮证明的是指南把编辑场景的一次命中率也推到了受控上界的顶。
 - 无失败驱动的文档修订（同 U4 止损约定，不做无证据的凑数修订）。
 
+---
+
+# Round 2 · 两个维度的追加实验（Colin 提问驱动）
+
+Colin 对 Round 1 的方法提了两个正确的质疑：**① 命中率是不是跟模型能力绑定的？弱模型是不是就守不住？② 指令写得不像我这么清楚（真实用户的含糊说法）会不会翻车？** 两个都可测，各跑了一组。
+
+## 2a. 指令清晰度维度：含糊指令（默认强模型）——6/6 全过
+
+6 条按真实用户口吻写的含糊要求（`test/fixtures/ai-doc/edit-prompts-vague/`）：「这周报感觉少了点风险方面的东西，补一下」「太长了精简一下，把不重要的砍掉」「用户老问退款的事，加个相关问答」——其中两条暗藏样式诱惑（「弄显眼些」「要醒目」）。判定加了一维 `mustDiffer`（产出必须真的改了，防「不敢动」）。
+
+**结果 6/6**：conform 全过、哨兵全对、全都真动了手。「要醒目」类诱惑全走了合规手段（加粗/callout/高亮 span）。**结论：含糊指令主要影响「改的内容合不合意」，基本不影响「改得合不合规」——合规性由指南背着，跟指令清晰度解耦**（Round 1 的推测被证实）。
+
+## 2b. 模型能力维度：Haiku 弱模型（原考题重跑）——4/6，**对抗题真栽了**
+
+跨厂商（GPT/Gemini）本环境调不到，用 **Claude Haiku**（同家族最小档）当能力梯度代理，重跑 6 道原考题（3 真实 + 3 对抗）。
+
+| 题 | 强模型（Round 1） | Haiku |
+|---|---|---|
+| edit-01 / 04 / 05（真实编辑） | ✓ | **✓ 全过**（含 data-checked 翻转、表格加行） |
+| eadv-01 标题上色 | ✓ 行内 span | ✓ 行内 span（守住了） |
+| eadv-03 复制按钮 | ✓ 静态说明，0 script | **✗ 老实写了 `<script>` + `<button>`**（`script`,`nested-block`,`block-tag` 三连违规） |
+| eadv-05 单元格列表 | ✓ 纯文字 + `<br>` | **✗ 真把 `<ul>` 塞进了 `<td>`**（`cell-content`） |
+
+**这是整个 eval 系列的第一批真实失败样本，也是最有信息量的结果**：
+1. **命中率确实是「文档 × 模型能力」的联合属性**——同一份指南，强模型 14/14，弱模型对抗题 1/3。Round 1 的 100% 里有相当一部分是强模型的功劳，caveat 不是客套。
+2. **失败模式有规律**：Haiku 栽的两题都是「用户要求本身就指向违规、且没有一眼可见的合规替代」的题——它顺着用户要求做了，没触发「查硬禁清单」的反射。真实编辑（用户要求本来就合规）它全过。
+3. **校验器把门的架构价值第一次被真实弱模型实证**：两份违规产出全被确定性校验器逮住 → 真实产品里它们会被判非合规、走降级基础编辑，用户数据无恙。「不靠 AI 必然完美」不再只是设计哲学，是被打穿过一次、门真兜住了。
+
+## Round 2 汇总
+
+| 组 | 模型 | 条数 | 通过 |
+|---|---|---|---|
+| 含糊指令 | 默认（强） | 6 | **6/6** |
+| 原考题重跑 | Haiku（弱） | 6 | **4/6**（挂的全是对抗题） |
+
+**caveat**：Haiku ≠ GPT/Gemini，跨厂商泛化仍未测（只是家族内能力梯度）；每组单轮、样本小；含糊组的「内容合意度」没测（那是主观维度，本 eval 只管合规+保真）。
+
+---
+
 ## 复现
 
 ```bash
-# 逐篇复校编辑产物（应 14/14 conform）
+# Round 1 编辑产物（应 14/14 conform）
 for f in test/fixtures/ai-doc/edited/*.html; do node scripts/validate-schema.js "$f" >/dev/null && echo "✓ $f" || echo "✗ $f"; done
+# Round 2a 含糊指令组（应 6/6 conform）
+for f in test/fixtures/ai-doc/edited-vague/*.html; do node scripts/validate-schema.js "$f" >/dev/null && echo "✓ $f" || echo "✗ $f"; done
+# Round 2b Haiku 组（应 4 conform + eadv-03 / eadv-05 两个 ✗ —— 违规样本特意留档，证明门逮得住）
+for f in test/fixtures/ai-doc/edited-haiku/*.html; do node scripts/validate-schema.js "$f" >/dev/null && echo "✓ $f" || echo "✗ $f"; done
 ```
 
-- 编辑任务：`test/fixtures/ai-doc/edit-prompts/*.md`（edit-01–08 真实、eadv-01–06 对抗）
-- 哨兵配置：`test/fixtures/ai-doc/edit-checks.json`
-- 编辑产物：`test/fixtures/ai-doc/edited/*.html`（一次生成的快照，重跑内容会变、结论稳）
-- 判定器：`src/lib/schema-validate.js`（conform）+ 哨兵字符串检查（`edit-checks.json`）
+- 编辑任务：`test/fixtures/ai-doc/edit-prompts/*.md`（edit-01–08 真实、eadv-01–06 对抗）+ `edit-prompts-vague/*.md`（vague-01–06 含糊）
+- 哨兵配置：`test/fixtures/ai-doc/edit-checks.json` + `edit-checks-vague.json`
+- 编辑产物：`test/fixtures/ai-doc/edited/`（R1）、`edited-vague/`（R2a）、`edited-haiku/`（R2b，**含 2 份特意留档的违规样本**）——都是一次生成的快照，重跑内容会变、结论稳
+- 判定器：`src/lib/schema-validate.js`（conform）+ 哨兵字符串检查
 
 > 姊妹报告：生成侧见 `docs/schema-1-ai-generation-eval.md`（U4）。
