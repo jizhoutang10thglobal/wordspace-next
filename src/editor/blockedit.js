@@ -225,7 +225,11 @@
       const r = el.getBoundingClientRect();
       const { sx, sy } = vp();
       grip.style.left = (r.left + sx - 28) + 'px';
-      grip.style.top = (r.top + sy + 2) + 'px';
+      // 手柄对块首行的视觉中线（#86）：按首行行高把 22px 手柄垂直居中——标题行高大时手柄不再顶在块顶。
+      const cs = doc.defaultView.getComputedStyle(el);
+      let lh = parseFloat(cs.lineHeight);
+      if (!lh || Number.isNaN(lh)) lh = (parseFloat(cs.fontSize) || 15) * 1.5;
+      grip.style.top = (r.top + sy + Math.max(0, (Math.min(lh, r.height) - 22) / 2)) + 'px';
       grip.style.display = 'flex';
     }
     function showFmtAt(left, top) {
@@ -335,7 +339,7 @@
       const st = doc.createElement('style');
       st.id = 'ws-todo-style';
       st.setAttribute('data-ws-schema-css', 'todo'); // U5：标 schema baseline 语义 CSS——存盘保留 + 校验器 head 白名单认它合规
-      st.textContent = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-20px;top:.3em;width:15px;height:15px;box-sizing:border-box;border:1.5px solid #b5b9c0;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#8a8f96;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+      st.textContent = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-20px;top:.28em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #d3d6db;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#8a8f96;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
     }
@@ -617,7 +621,7 @@
     function buildFmtbar() {
       fmtbar.innerHTML = '';
       // 转为▾
-      const turn = fmtBtn('转为', '<span class="ws-fmtbar-text">转为 ▾</span>', () => openTurnMenu());
+      const turn = fmtBtn('转为', '<span class="ws-fmtbar-text">转为 <svg style="vertical-align:-2px" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>', () => openTurnMenu());
       turn.className = 'ws-fmtbar-btn ws-fmtbar-text';
       fmtbar.appendChild(turn);
       fmtbar.appendChild(sepEl());
@@ -680,22 +684,35 @@
     function togglePopMenu(menu) { const open = menu.style.display !== 'none'; fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); menu.style.display = open ? 'none' : 'block'; }
 
     // ---- 块操作菜单 ----
+    // 块菜单条目图标（#84 对齐 ui-demo BlockActionMenu：lucide 15px stroke1.8）
+    const MENU_ICON = {
+      text: '<path d="M12 4v16"/><path d="M4 7V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2"/><path d="M9 20h6"/>',
+      heading: '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
+      quote: '<path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>',
+      plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+      copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+      trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
+    };
+    const menuIcon = (k) => '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON[k] + '</svg>';
     function openBlockMenu(el) {
       selectBlock(el);
       blockMenu.innerHTML = '';
-      const add = (label, on, danger) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : ''); it.textContent = label;
+      const add = (label, on, danger, icon) => {
+        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : '');
+        it.innerHTML = (icon ? menuIcon(icon) : '') + '<span></span>';
+        it.lastElementChild.textContent = label; // label 走 textContent（不进 innerHTML 拼接）
         it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         it.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); on(); });
         blockMenu.appendChild(it); return it;
       };
-      const sub = (label, item) => add(label, () => { const nx = turnInto(el, item); closeBlockMenu(); selectBlock(nx); });
-      sub('转为正文', itemByKey('text')); sub('转为标题', itemByKey('h2')); sub('转为引用', itemByKey('quote'));
+      const sub = (label, item, icon) => add(label, () => { const nx = turnInto(el, item); closeBlockMenu(); selectBlock(nx); }, false, icon);
+      sub('转为正文', itemByKey('text'), 'text'); sub('转为标题', itemByKey('h2'), 'heading'); sub('转为引用', itemByKey('quote'), 'quote');
       const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
-      add('在下方插入', () => { const nx = insertAfter(el, SLASH_ITEMS[0]); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); });
-      add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); });
-      add('删除', () => { closeBlockMenu(); removeBlock(el); }, true);
-      // 颜色行
+      add('在下方插入', () => { const nx = insertAfter(el, SLASH_ITEMS[0]); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); }, false, 'plus');
+      add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); }, false, 'copy');
+      add('删除', () => { closeBlockMenu(); removeBlock(el); }, true, 'trash');
+      // 颜色行（#85：前面补分隔线，对齐 ui-demo 删除与色板之间的 sep）
+      const sep2 = doc.createElement('div'); sep2.setAttribute('data-ws2-ui', WS2_OVERLAY); sep2.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep2);
       const colors = doc.createElement('div'); colors.setAttribute('data-ws2-ui', WS2_OVERLAY); colors.className = 'ws-blockmenu-colors';
       TEXT_COLORS.forEach((c) => { const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', WS2_OVERLAY); sw.className = 'ws-blockmenu-swatch'; sw.style.background = c;
         sw.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
@@ -1178,12 +1195,12 @@
      下面只保留「编辑器内」功能渲染（待办勾选框 + 编辑态高亮/占位/空块高度），均不入序列化。 */
   ul.ws-todo, ul.ws-todo ul, ul.ws-todo ol { list-style:none; }
   .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
-  .ws-todo > li::before { content:'';position:absolute;left:-20px;top:0.3em;width:15px;height:15px;box-sizing:border-box;border:1.5px solid #b5b9c0;border-radius:4px;background:#fff;cursor:pointer; }
+  .ws-todo > li::before { content:'';position:absolute;left:-20px;top:0.28em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #d3d6db;border-radius:4px;background:#fff;cursor:pointer; }
   .ws-todo > li[data-checked="true"] { color:#8a8f96;text-decoration:line-through; }
   .ws-todo > li[data-checked="true"]::before { content:'✓';border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center; }
 
   [contenteditable='true']{outline:none;}
-  p[data-ws2-editing]:empty::before{content:'输入正文，或按 / 插入';color:#8a8f96;pointer-events:none;}
+  p[data-ws2-editing]:empty::before{content:'输入正文,或按 / 插入';color:#8a8f96;pointer-events:none;}
   /* 空块也占一行高度——否则非编辑态的空块（没占位符）塌成 0 高，连按 Enter 建的空白行全叠在一处、看着「换不了行」。
      用 em 跟字号缩放（空标题行更高）。纯渲染、不进序列化。 */
   [data-ws2-root] > p:empty, [data-ws2-root] > h1:empty, [data-ws2-root] > h2:empty,
@@ -1194,7 +1211,8 @@
   [data-ws2-drop='top']{box-shadow:0 -2px 0 0 #1a73e8;}
   [data-ws2-drop='bottom']{box-shadow:0 2px 0 0 #1a73e8;}
 
-  .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;}
+  .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
+  @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
   .ws-grip:hover{background:#f0f1f3;color:#5a5f66;}
   .ws-grip:active{cursor:grabbing;}
 
@@ -1214,7 +1232,9 @@
   .ws-fmtbar-swatch{width:20px;height:20px;border-radius:3px;border:1px solid #e4e6e9;cursor:pointer;padding:0;}
 
   .ws-blockmenu{min-width:168px;padding:4px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);z-index:100000;}
-  .ws-blockmenu-item{display:flex;align-items:center;width:100%;height:32px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
+  .ws-blockmenu-item{display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
+  .ws-blockmenu-item svg{color:#8a8f96;flex:none;}
+  .ws-blockmenu-danger svg{color:#d93025;}
   .ws-blockmenu-item:hover{background:#f0f1f3;}
   .ws-blockmenu-danger{color:#d93025;}
   .ws-blockmenu-danger:hover{background:#fce8e6;}

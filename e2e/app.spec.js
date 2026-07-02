@@ -1003,3 +1003,25 @@ test('导出 PDF（Wordspace 样式）：导出前清掉历史残留临时文件
   const leftover = (await fs.readdir(tmpDir)).filter((f) => f.startsWith('.ws-export-'));
   expect(leftover, '历史残留没清 / 本次临时文件没自清').toEqual([]);
 });
+
+// T6（ux-align）：块菜单条目带图标 + 两道分隔线；待办勾选框 16px（编辑器与入盘 CSS 双改）。
+test('T6: 块菜单每项带图标 + 色板前有第二道分隔线', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#p1').click();
+  await page.waitForTimeout(120);
+  await frame.locator('.ws-grip').click().catch(() => {});
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  // 每个条目都有 svg 图标（#84）
+  const items = frame.locator('.ws-blockmenu-item');
+  const n = await items.count();
+  expect(n).toBeGreaterThanOrEqual(6);
+  for (let i = 0; i < n; i++) {
+    expect(await items.nth(i).locator('svg').count(), `第 ${i} 项缺图标`).toBe(1);
+  }
+  // 删除与色板之间有第二道分隔线（#85）：sep 总数 = 2
+  await expect(frame.locator('.ws-blockmenu-sep')).toHaveCount(2);
+  // 危险项图标染红（真 computed style）
+  const dangerSvgColor = await frame.locator('.ws-blockmenu-danger svg').evaluate((el) => getComputedStyle(el).color);
+  expect(dangerSvgColor).toBe('rgb(217, 48, 37)');
+});
