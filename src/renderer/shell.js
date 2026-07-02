@@ -59,7 +59,18 @@ function flashSaved() {
     savedTimer = setTimeout(() => { dirtyDot.hidden = true; dirtyDot.className = 'ws-dirty'; savedTimer = null; }, 320);
   }, 1600);
 }
-const markDirty = () => setDirty(true);
+// 自动保存（Colin 拍板 / 对齐 ui-demo「编辑即保存」）：真文件（有 docPath、非临时）改动后静默
+// 1.2s 自动落盘；临时文档没有落盘目标、仍显式选位置保存（save() 的 tempDoc 分支会弹 SaveModal，
+// 这里必须拦在前面）。每次保存仍走历史归档（安全网）——代价是连续编辑会多出一些历史版本，接受。
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null;
+    if (dirty && docPath && !tempDoc) save();
+  }, 1200);
+}
+const markDirty = () => { setDirty(true); scheduleAutoSave(); };
 
 // AI 占位（斜杠 /ai 或格式气泡 ✦AI 触发）——本地编辑器暂无 AI，仅提示开发中（用父窗口弹窗，
 // 因 iframe sandbox 无 allow-modals）。

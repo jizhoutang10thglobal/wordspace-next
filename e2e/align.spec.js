@@ -224,3 +224,25 @@ test('临时文档 Cmd+Z：打字 → 菜单 undo → 还原到模板基线（sr
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'undo'));
   await expect(frame.locator('h1')).toHaveText('未命名');
 });
+
+test('自动保存：真文件打字后自动落盘（不按 Cmd+S）；临时文档不自动落盘', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('AAA');
+  await frame.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_AS_');
+  // 不按 Cmd+S：1.2s 静默期后 debounce 自动落盘
+  await expect.poll(async () => {
+    try { return (await fs.readFile(path.join(wsDir, 'a.html'), 'utf8')).includes('_AS_'); } catch { return false; }
+  }, { timeout: 6000, message: '真文件没被自动保存' }).toBe(true);
+  // 临时文档：同样编辑 + 等待，绝不能自动落盘（没有落盘目标，得显式选位置）
+  await newTempDoc();
+  await page.frameLocator('#doc-frame').locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_T_');
+  await page.waitForTimeout(2500); // 盖过 debounce 窗口
+  expect(await exists(path.join(wsDir, '未命名.html')), '临时文档被错误地自动落盘了').toBe(false);
+  await expect(page.locator('#dirty-dot')).toContainText('未保存'); // 临时文档仍标未保存
+});
