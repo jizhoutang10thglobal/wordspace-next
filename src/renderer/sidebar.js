@@ -455,7 +455,38 @@
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
   }
-  // 未保存关闭确认（对齐 ui-demo CloseConfirmModal）：保存并关闭 / 不保存直接关闭 / 取消。
+  // —— 统一模态壳部件（T1，对齐 ui-demo ws-modal）：带关闭 X 的 head + 分隔线；调用方再挂 body/foot ——
+  const X_SVG16 = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  const WARN_SVG20 = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+  function modalHead(titleText, subText, onClose) {
+    const head = document.createElement('div');
+    head.className = 'sb-modal-head';
+    const text = document.createElement('div');
+    text.className = 'sb-modal-head-text';
+    const title = document.createElement('div');
+    title.className = 'sb-modal-title';
+    title.textContent = titleText;
+    text.appendChild(title);
+    if (subText) {
+      const sub = document.createElement('div');
+      sub.className = 'sb-modal-where';
+      sub.textContent = subText;
+      sub.title = subText; // 截断时悬停显全文（sub 单行 ellipsis）
+      text.appendChild(sub);
+    }
+    const x = document.createElement('button');
+    x.className = 'sb-modal-x';
+    x.setAttribute('aria-label', '关闭');
+    x.innerHTML = X_SVG16;
+    x.onclick = onClose;
+    head.append(text, x);
+    return head;
+  }
+  function modalBody() { const b = document.createElement('div'); b.className = 'sb-modal-body'; return b; }
+  // 遮罩关闭用 mousedown（对齐 ui-demo）：拖拽选文本拖到遮罩再松手不会误关（click 会）。
+  function wireOverlayClose(overlay, close) { overlay.onmousedown = (e) => { if (e.target === overlay) close(); }; }
+
+  // 未保存关闭确认（对齐 ui-demo CloseConfirmModal）：橙色警告图标 + 保存并关闭 / 不保存直接关闭 / 取消。
   function openCloseConfirm(key, op, entry) {
     const temp = isTempEntry(entry);
     const name = entry ? entry.title : '这个文件';
@@ -465,17 +496,22 @@
     function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
     const modal = document.createElement('div');
     modal.className = 'sb-modal sb-modal-confirm';
-    const head = document.createElement('div');
-    head.className = 'sb-modal-head';
+    const body = document.createElement('div');
+    body.className = 'sb-cc-body';
+    const ico = document.createElement('div');
+    ico.className = 'sb-cc-ico';
+    ico.innerHTML = WARN_SVG20;
+    const textWrap = document.createElement('div');
     const title = document.createElement('div');
-    title.className = 'sb-modal-title';
+    title.className = 'sb-cc-title';
     title.textContent = '「' + name + '」还没保存';
     const desc = document.createElement('div');
     desc.className = 'sb-modal-desc';
     desc.textContent = temp
-      ? '这是一个还没存进文件夹的临时文档，关掉后未保存的内容会丢失。'
+      ? '这是一个还没存进文件夹的临时文档。关掉后未保存的内容会丢失。'
       : '这个文档有未保存的修改，关掉后会丢失。';
-    head.append(title, desc);
+    textWrap.append(title, desc);
+    body.append(ico, textWrap);
     const foot = document.createElement('div');
     foot.className = 'sb-modal-foot';
     const discard = document.createElement('button');
@@ -498,9 +534,9 @@
       if (!window.__shellIsDirty || !window.__shellIsDirty()) finishClose(key, op);
     };
     foot.append(discard, spacer, cancel, save);
-    modal.append(head, foot);
+    modal.append(body, foot);
     overlay.appendChild(modal);
-    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
   }
@@ -517,15 +553,6 @@
     overlay.className = 'sb-modal-overlay';
     const modal = document.createElement('div');
     modal.className = 'sb-modal sb-modal-save';
-    const head = document.createElement('div');
-    head.className = 'sb-modal-head';
-    const title = document.createElement('div');
-    title.className = 'sb-modal-title';
-    title.textContent = '保存到哪里';
-    const where = document.createElement('div');
-    where.className = 'sb-modal-where';
-    where.textContent = '默认存到工作区根目录，也可以选别的文件夹，或「浏览…」存到其他位置';
-    head.append(title, where);
     // 文件名可编辑（Colin：保存时让用户改名，别用模板名）。后缀 .html 固定显示、不进输入框。
     const nameRow = document.createElement('div');
     nameRow.className = 'sb-save-namerow';
@@ -582,9 +609,14 @@
     };
     function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
     foot.append(browse, spacer, cancel, ok);
-    modal.append(head, nameRow, list, foot);
+    const body = modalBody();
+    body.append(nameRow, list);
+    modal.append(
+      modalHead('保存到哪里', '「' + t.base + '」· 默认存到工作区根目录，也可以选别的文件夹或「浏览…」到其他位置', close),
+      body, foot,
+    );
     overlay.appendChild(modal);
-    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
     nameInput.focus();
@@ -924,17 +956,9 @@
     }
     const modal = document.createElement('div');
     modal.className = 'sb-modal';
-    const head = document.createElement('div');
-    head.className = 'sb-modal-head';
-    const title = document.createElement('div');
-    title.className = 'sb-modal-title';
-    title.textContent = '新建文档';
-    const where = document.createElement('div');
-    where.className = 'sb-modal-where';
-    where.textContent = temp
+    const head = modalHead('新建文档', temp
       ? '新建的是临时文档，编辑后保存时再选存到哪个文件夹'
-      : '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : '');
-    head.append(title, where);
+      : '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : ''), close);
     const grid = document.createElement('div');
     grid.className = 'sb-modal-grid';
     for (const t of templates) {
@@ -964,11 +988,11 @@
       };
       grid.appendChild(card);
     }
-    modal.append(head, grid);
+    const body = modalBody();
+    body.appendChild(grid);
+    modal.append(head, body);
     overlay.appendChild(modal);
-    overlay.onclick = (e) => {
-      if (e.target === overlay) close();
-    };
+    wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
   }
