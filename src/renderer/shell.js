@@ -33,7 +33,7 @@ const exportBtn = document.getElementById('export-btn');
 let savedTimer = null; // 「✓ 已保存」淡出定时器（保存成功后闪一下再消失）
 function setDirty(v) {
   dirty = v;
-  saveBtn.disabled = !(tempDoc || (docPath && v)); // 临时文档没 docPath 也能存（走 SaveModal）
+  saveBtn.disabled = !(tempDoc || docPath); // 「另存为」开着文档就可用（不看脏态——自动保存后脏态只是 1.2s 窗口）；查看器态 docPath 已清 → 禁用
   syncAppDirty();
   // 任何脏态变化都终结上一次「✓ 已保存」的余晖——否则它的定时器会跨文档/重载串台（切文档后还挂在新文档
   // 面包屑上、或外部重载后压住清洁态）。save() 是先 setDirty(false) 再 flashSaved()，这里清掉无妨（flash 紧接重置）。
@@ -662,10 +662,41 @@ async function renderRecents() {
   }
 }
 
+// 另存为（Colin 2026-07-02：自动保存后「保存」钮失义；另存为=把当前文档复制存到任意位置）。
+// 临时文档=首次保存（SaveModal 选名字/位置）；真文件=先冲一次原文件（免得切走时弹丢弃守卫/丢
+// 最后 1.2s 的尾巴）→ 原生另存框写副本 → 切到副本（标准另存为语义；工作区外=↗ 外部标签）。
+async function saveAs() {
+  if (saveBtn.disabled) return;
+  if (tempDoc) { if (window.__sbHooks && window.__sbHooks.openSaveModal) window.__sbHooks.openSaveModal(false); return; }
+  if (!docPath) return;
+  if (dirty) await save();
+  const html = basicEdit
+    ? WS2BasicEdit.serialize(frame.contentDocument)
+    : WS2Serialize.serializeDocument(frame.contentDocument);
+  let r;
+  try { r = await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.html?$/i, ''), html); }
+  catch (e) { alert('另存为失败：' + (e.message || e)); return; }
+  if (!r || r.canceled || !r.abs) return;
+  await openDoc(r.abs);
+  flashSaved();
+}
+// ⋯ 菜单开合：点钮切换、点外面/Esc/选完条目收起（disabled 项点了不派发 click、菜单留着）。
+const docMenuBtn = document.getElementById('doc-menu-btn');
+const docMenu = document.getElementById('doc-menu');
+if (docMenuBtn && docMenu) {
+  docMenuBtn.onclick = () => { docMenu.hidden = !docMenu.hidden; };
+  docMenu.addEventListener('click', () => { docMenu.hidden = true; });
+  document.addEventListener('mousedown', (e) => {
+    if (docMenu.hidden) return;
+    if (docMenu.contains(e.target) || docMenuBtn.contains(e.target)) return;
+    docMenu.hidden = true;
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !docMenu.hidden) docMenu.hidden = true; });
+}
 document.getElementById('open-btn').onclick = pickAndOpen;
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
-saveBtn.onclick = save;
+saveBtn.onclick = saveAs; // 菜单里的「另存为…」；Cmd+S / 菜单栏「保存」仍走 save()（真文件即存、临时弹 SaveModal）
 window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); }); // 窗口尺寸变 → 浮层跟上
 window.addEventListener('keydown', handleZoomKey); // 焦点在父层 shell（点过保存按钮/首页）时也能 Cmd± 缩放（iframe 内事件不冒泡到这）
 

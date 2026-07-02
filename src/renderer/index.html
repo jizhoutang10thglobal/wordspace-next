@@ -60,19 +60,29 @@
   <button id="sb-reopen" class="sb-reopen" title="展开侧栏 (Cmd+\)">
     <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
   </button>
-  <!-- 右上角浮动 actions（照 ui-demo TopActions 风格，承载真功能键） -->
+  <!-- 右上角 ⋯ 菜单（Colin 2026-07-02：三颗外露按钮收进一个三点菜单，像 ui-demo 文档头的 … ）。
+       原按钮变菜单项、ID 不变（shell.js 的 disabled 接线与 e2e 选择器沿用）。
+       「保存」→「另存为…」（自动保存后保存钮失义；另存为=把当前文档复制存到任意位置）；「导出」→「导出 PDF」。 -->
   <div class="top-actions">
-    <button id="open-btn" class="ta-ghost">打开</button>
-    <button id="save-btn" class="top-share" disabled>
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7H7v7"/><path d="M7 3v4h8"/></svg>
-      保存
+    <button id="doc-menu-btn" class="ta-more" title="更多操作">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
     </button>
-    <!-- 导出 PDF：单按钮，直接走 Wordspace 样式（所见即所得）。
-         raw（原 HTML 样式）的代码路径仍保留、未接 UI，见 shell.js。 -->
-    <button id="export-btn" class="ta-ghost" disabled title="导出 PDF（所见即所得）">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-      导出
-    </button>
+    <div id="doc-menu" class="ws-docmenu" hidden>
+      <button id="open-btn" class="ws-docmenu-item">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
+        <span>打开…</span>
+      </button>
+      <button id="save-btn" class="ws-docmenu-item" disabled>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7H7v7"/><path d="M7 3v4h8"/></svg>
+        <span>另存为…</span>
+      </button>
+      <div class="ws-docmenu-sep"></div>
+      <!-- 导出 PDF：直接走 Wordspace 样式（所见即所得）。raw 代码路径仍保留、未接 UI，见 shell.js。 -->
+      <button id="export-btn" class="ws-docmenu-item" disabled title="导出 PDF（所见即所得）">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+        <span>导出 PDF</span>
+      </button>
+    </div>
   </div>
 
   <div class="ws-canvas">

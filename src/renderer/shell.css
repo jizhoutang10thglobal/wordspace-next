@@ -68,10 +68,10 @@
 
   --h-titlebar: 40px;
   --maxdoc-w: 820px;
-  /* 右上角浮动 .top-actions（打开/保存/导出，position:absolute）实测占 ~232px（含 right:22px）。
+  /* 右上角浮动 .top-actions（现在只剩一颗 30px ⋯ 菜单钮，含 right:22px 共 ~52px）。
      任何贴在编辑区顶部、内容可能右伸到这块的横条都要 reserve 这么多右 padding，否则会被浮层压住
-     （文档头面包屑、查看器顶栏都用它）。改按钮文案/数量要同步核这个值（有 e2e 防重叠门兜底）。 */
-  --top-actions-reserve: 240px;
+     （文档头面包屑、查看器顶栏都用它）。改按钮数量要同步核这个值（有 e2e 防重叠门兜底）。 */
+  --top-actions-reserve: 72px;
 
   --ease: cubic-bezier(.2, .6, .2, 1);
   --dur-fast: 120ms;
@@ -470,8 +470,19 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 #recent-list li { padding: 9px 12px; border-radius: var(--r-sm); cursor: pointer; color: var(--c-text-2); font-size: var(--fs-base); transition: background var(--dur-fast) var(--ease); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #recent-list li:hover { background: var(--c-hover); color: var(--c-text); }
 
-/* 右上角浮动 actions（照 ui-demo TopActions）。top 居中于 52px 文档头条：(52-30)/2≈11。 */
+/* 右上角浮动 actions（Colin 2026-07-02：收成一个 ⋯ 菜单）。top 居中于 52px 文档头条：(52-30)/2≈11。 */
 .top-actions { position: absolute; top: 11px; right: 22px; z-index: 30; display: flex; align-items: center; gap: 8px; }
+.ta-more { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--c-text-2); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.ta-more:hover { background: var(--c-hover); color: var(--c-text); }
+.ta-more:active { background: var(--c-active); }
+/* ⋯ 下拉：挂在 .top-actions 内右对齐（菜单壳同 .sb-ctx 一族） */
+.ws-docmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 200; min-width: 168px; padding: 4px; background: var(--c-surface); border-radius: var(--r-md); box-shadow: var(--shadow-menu); display: flex; flex-direction: column; gap: 1px; animation: ws-modal-pop var(--dur-fast) var(--ease); }
+.ws-docmenu[hidden] { display: none; }
+.ws-docmenu-item { display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 10px; border-radius: 5px; font-size: var(--fs-base); color: var(--c-text); text-align: left; white-space: nowrap; }
+.ws-docmenu-item svg { color: var(--c-text-3); flex: none; }
+.ws-docmenu-item:hover { background: var(--c-hover); }
+.ws-docmenu-item:disabled { opacity: .45; background: transparent; }
+.ws-docmenu-sep { height: 1px; background: var(--c-divider); margin: 3px 6px; }
 .ta-ghost { height: 30px; padding: 0 12px; border-radius: var(--r-sm); color: var(--c-text-2); font-size: var(--fs-base); display: inline-flex; align-items: center; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
 .ta-ghost:hover { background: var(--c-hover); color: var(--c-text); }
 .ta-ghost:active { background: var(--c-active); }
