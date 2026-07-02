@@ -42,15 +42,26 @@ skills/schema-1-authoring/
 - SKILL.md 内嵌「规则优先于用户要求」和硬底线摘要——即使 agent 偷懒没读 reference，最致命的坑也有提示。
 - 不把校验器打进 skill（jsdom 依赖太重）；验证靠「在 Wordspace 打开」，本机有仓库的注明可跑 CLI。
 
-## 部署到「云端」= 公开 GitHub 仓库本身，零额外基建
+## 部署与品牌绑定（Colin 要求：命令别露个人账号名，尽量跟 wordspace.ai 绑定）
 
-本仓（jizhoutang10thglobal/wordspace-next）本来就是公开的（自动更新的硬前提），
-[vercel-labs/skills](https://github.com/vercel-labs/skills) 的 CLI 直接从 GitHub 仓库装 skill：
-`npx skills add <owner>/<repo> --skill <name>`，支持 Claude Code / Codex / Cursor 等 70+ agent
-（[skills.sh](https://www.skills.sh/agent/claude-code)）。所以**合进 main 的那一刻就是「部署」**：
-无 npm 发包、无 registry、无 CDN。更新 = 改仓库里的 skill，用户 `npx skills update` 拉新。
+**CLI 能力实测（vercel-labs/skills README）**：`npx skills add` 接受 GitHub `owner/repo` 简写、
+GitHub/GitLab 完整 URL（可指到子目录）、任意 git URL、本地路径。**不支持任意 https 自定义域名**——
+除非该域名跑一个可 clone 的 git 服务（Vercel 静态站做不到）。所以「命令里出现 wordspace.ai 域名」
+在 skills 生态标准内不可行，可行的品牌化路径按优先级：
 
-手动兜底（无 node 环境）：把 `skills/schema-1-authoring/` 拷进 `~/.claude/skills/` 亦可。
+1. **✦ 主方案：GitHub org `wordspace-ai`（已查证可注册；`wordspace` 被占）。**
+   Colin 建 org（免费、几分钟）→ 建 `wordspace-ai/skills` 仓库 → 把 `skills/schema-1-authoring/`
+   镜像过去 → 命令即 **`npx skills add wordspace-ai/skills`**。生态标准（70+ agent 通用）、
+   品牌绑定、零基建。主仓 `skills/` 目录保留为开发真相源，org 仓由同步（手动 cp 或 Action）跟随。
+   ui-demo 页面已按此目标态展示命令。**待办：Colin 建 org + 我初始化 skills 仓。**
+2. **备选：官网 curl 安装（域名 100% 露出，立即可做）。**
+   `website/` 就在本仓、部署在 wordspace.ai——把 skill 文件 + install.sh 放进 `website/public/skills/`，
+   命令 = `curl -fsSL https://wordspace.ai/skills/install.sh | sh`（下载进 `~/.claude/skills/`）。
+   缺点：绕开 skills 生态（只装 Claude Code 一家）、curl|sh 观感。可作为官网「AI 接入」页的补充路径。
+3. **不推荐：自发 npm 包**（`npx wordspace-skills`）——要维护自己的安装器、丢生态多 agent 支持。
+
+无论哪条路，**「云端」都是零额外基建**：GitHub 公开仓库 / 既有官网就是分发端。更新 = 改仓库，
+用户 `npx skills update` 拉新。手动兜底：把 skill 目录拷进 `~/.claude/skills/`。
 
 ## 防漂移（关键工程约束）
 

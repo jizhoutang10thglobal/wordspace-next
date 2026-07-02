@@ -38,6 +38,43 @@
   margin-bottom: 10px;
 }
 
+/* 方式切换 Tab */
+.ag-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 26px;
+  padding: 3px;
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-md);
+  width: fit-content;
+}
+.ag-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-text-2);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+}
+.ag-tab:hover { color: var(--c-text); }
+.ag-tab.is-active {
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: var(--shadow-sm);
+}
+.ag-tab-hint {
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  font-weight: var(--fw-regular);
+}
+.ag-tab.is-active .ag-tab-hint { color: var(--c-text-2); }
+.ag-panel { margin-top: 12px; }
+
 /* card */
 .ag-card {
   background: var(--c-surface);
@@ -53,17 +90,6 @@
   align-items: center;
   gap: 12px;
   padding: 16px;
-}
-.ag-way-ico {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--r-sm);
-  background: var(--c-accent-tint);
-  color: var(--c-accent);
 }
 .ag-way-text { flex: 1; min-width: 0; }
 .ag-way-title {
