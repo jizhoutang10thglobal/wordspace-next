@@ -124,19 +124,41 @@ function routeDoc(rawHtml) {
 }
 
 // 换文档 / 关文档：两个编辑内核都拆、降级条收起（统一收口，防堆叠）。
+// undoMgr 一并清空——否则基础模式/空态下按 Cmd+Z 会去 undo 上一个文档的陈旧 manager
+//（改的是已换掉的 detached doc、还把当前文档标脏）。
 function detachEditors() {
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
+  if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
   if (degradeNotice) degradeNotice.hidden = true;
 }
 
+// 撤销/重做统一收口（菜单加速器 + 两个编辑器的 keydown 都走这）：
+// 块编辑器 undo 后 reset() 重建内核；基础编辑器 undo 是整体 innerHTML 重写、旧 refs 全失效 →
+// 重挂 WS2BasicEdit 内核（只重挂内核，shell 加在 doc 上的 keydown/wheel 监听还有效、不能重加）。
+function runUndoRedo(isRedo) {
+  if (!undoMgr) return;
+  const changed = isRedo ? undoMgr.redo() : undoMgr.undo();
+  if (!changed) return;
+  if (blockEdit) blockEdit.reset();
+  if (basicEdit) {
+    basicEdit.detach();
+    basicEdit = WS2BasicEdit.attach(frame.contentDocument, { win: frame.contentWindow, host: mainEl, markDirty });
+  }
+  markDirty();
+}
+
 // 非合规文档：挂基础编辑器 + 亮降级条。与 wireEditor 平级（KD-e：不嵌进 loadFromFile）。
-// 基础模式不挂 undoMgr（Cmd+Z no-op）；快捷键 Cmd+S 存 / Cmd+B·I·U 富文字 / 缩放键 —— 对称 wireEditor。
+// 快捷键 Cmd+S 存 / Cmd+B·I·U 富文字 / Cmd+Z 撤销 / 缩放键 —— 对称 wireEditor。
+// 撤销同样走 WS2Undo 快照（Colin 2026-07-02：基础模式也必须有撤销，推翻 v1「不挂 undoMgr」取舍）。
 function attachBasic() {
   const doc = frame.contentDocument;
   detachEditors();
+  undoMgr = new WS2Undo.UndoManager(doc);
   basicEdit = WS2BasicEdit.attach(doc, { win: frame.contentWindow, host: mainEl, markDirty });
   if (degradeNotice) degradeNotice.hidden = false;
+  // 输入调度 undo checkpoint（连续打字塌成一个 op）；标脏由基础编辑器内部 onInput 做
+  doc.addEventListener('input', () => { if (undoMgr && undoMgr.scheduleCheckpoint) undoMgr.scheduleCheckpoint(); });
   // 导出仍可用：基础模式走 raw（直印源文件、忠于野文件原貌），不走块编辑器的 Wordspace 排版（见导出触发点）
   doc.addEventListener('keydown', (e) => {
     if (handleZoomKey(e)) return;
@@ -147,7 +169,7 @@ function attachBasic() {
     else if (k === 'b') { e.preventDefault(); doc.execCommand('bold'); markDirty(); }
     else if (k === 'i') { e.preventDefault(); doc.execCommand('italic'); markDirty(); }
     else if (k === 'u') { e.preventDefault(); doc.execCommand('underline'); markDirty(); }
-    else if (k === 'z') { e.preventDefault(); } // 基础模式不支持撤销：吞掉、no-op（防浏览器默认 undo 乱来）
+    else if (k === 'z') { e.preventDefault(); runUndoRedo(e.shiftKey); }
   });
   doc.addEventListener('wheel', (e) => {
     if (!e.ctrlKey) return;
@@ -187,7 +209,7 @@ function wireEditor() {
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
     const k = e.key.toLowerCase();
-    if (k === 'z') { e.preventDefault(); const changed = e.shiftKey ? undoMgr.redo() : undoMgr.undo(); if (changed) { if (blockEdit) blockEdit.reset(); markDirty(); } }
+    if (k === 'z') { e.preventDefault(); runUndoRedo(e.shiftKey); }
     else if (k === 's') { e.preventDefault(); save(); }
     else if (k === 'b') { e.preventDefault(); doc.execCommand('bold'); markDirty(); }
     else if (k === 'i') { e.preventDefault(); doc.execCommand('italic'); markDirty(); }
@@ -642,8 +664,8 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
   if (cmd === 'export-pdf') exportPdf(basicEdit ? 'raw' : 'wordspace'); // 基础模式=raw 直印源文件
-  if (cmd === 'undo' && undoMgr) { if (undoMgr.undo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
-  if (cmd === 'redo' && undoMgr) { if (undoMgr.redo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
+  if (cmd === 'undo') runUndoRedo(false); // 菜单加速器（真实用户 Cmd+Z 走这，不走 doc keydown）
+  if (cmd === 'redo') runUndoRedo(true);
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
   if (cmd === 'close-tab' && window.__sbHooks && window.__sbHooks.closeActiveTab) window.__sbHooks.closeActiveTab(); // Cmd+W
   if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F

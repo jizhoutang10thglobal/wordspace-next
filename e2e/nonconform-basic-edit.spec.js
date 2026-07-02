@@ -133,3 +133,26 @@ test('🔒 只读：悬停图片 → 出 🔒（不是可编辑文字）', async
   await page.waitForTimeout(150);
   await expect(page.locator('.nce-lock')).toBeVisible();
 });
+
+test('Cmd+Z 撤销（基础编辑，Colin 2026-07-02）：打字 → 菜单 undo 还原 → redo 恢复 → 重挂后还能编辑', async () => {
+  await launch();
+  await openDoc('wild.html', WILD);
+  await frame.locator('#p1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_插入_');
+  await expect(frame.locator('#p1')).toContainText('_插入_');
+  // 真实用户 Cmd+Z 走菜单加速器（sendMenu('undo')），不走 doc keydown——按真实路径触发
+  const menu = (cmd) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0].webContents.send('menu', c), cmd);
+  await menu('undo');
+  await expect(frame.locator('#p1'), '基础编辑 undo 没还原').not.toContainText('_插入_');
+  await menu('redo');
+  await expect(frame.locator('#p1'), 'redo 没恢复').toContainText('_插入_');
+  // 撤销 = body.innerHTML 整体重写，基础编辑器必须重挂——undo 后再编辑一次证明内核还活着
+  await menu('undo');
+  await frame.locator('#p1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('X2');
+  await expect(frame.locator('#p1'), 'undo 后基础编辑器没重挂、编辑失灵').toContainText('X2');
+  await menu('save'); // 清脏收尾：脏文档会让 afterEach 的 app.close() 被关窗守卫卡死（本套件惯例=存了再关）
+  await page.waitForTimeout(300);
+});

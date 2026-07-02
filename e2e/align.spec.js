@@ -212,3 +212,15 @@ test('浏览…保存到工作区外（WS2_SAVE_AS_OUT seam）→ 区外落盘 +
   await expect(page.locator('#sb-tabs .sb-tab.sb-tab-ext')).toHaveClass(/is-active/);  // 转外部标签（↗）
   await expect(page.locator('.sb-toast')).toContainText('已保存到');
 });
+
+test('临时文档 Cmd+Z：打字 → 菜单 undo → 还原到模板基线（srcdoc 路径撤销）', async () => {
+  await openWorkspace();
+  await newTempDoc();
+  const frame = page.frameLocator('#doc-frame');
+  await frame.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_U_');
+  await expect(frame.locator('h1')).toContainText('_U_');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'undo'));
+  await expect(frame.locator('h1')).toHaveText('未命名');
+});
