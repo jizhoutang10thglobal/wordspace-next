@@ -77,6 +77,9 @@ export interface Doc {
   // 从「标签页 +」新建、还没手动保存的临时文档：只作为标签页存在，不进文件树/库；
   // Cmd+S / 「保存」按钮才把它落进当前空间。标签页在心智里是临时的（Wendi 反馈）。
   unsaved?: boolean
+  // 后端序列化格式（Feature: markdown 文件阅读编辑器）。缺省 = html；'markdown' = 这份文档存成 .md，
+  // 块模型 ↔ Markdown 双向（见 lib/markdown.ts）。前端 UI 与 html 文档完全一致。
+  format?: 'html' | 'markdown'
 }
 
 export interface Folder {
@@ -151,8 +154,9 @@ export function isCloudStorage(s: StorageKind): boolean {
   return s === 'cloud'
 }
 
-/** The OS app a non-HTML file hands off to, shown in the "open externally" panel. */
-export const EXTERNAL_APP: Record<Exclude<FileKind, 'html'>, string> = {
+/** The OS app a non-HTML file hands off to, shown in the "open externally" panel.
+ *  'html' 和 'md' 都在应用内编辑器打开（不外部），故排除。 */
+export const EXTERNAL_APP: Record<Exclude<FileKind, 'html' | 'md'>, string> = {
   word: 'Microsoft Word',
   pdf: '预览',
   image: '预览',
@@ -181,9 +185,9 @@ export interface Tab {
   pinned?: boolean // pinned tabs live in 置顶; the rest are transient 标签页
 }
 
-/** A file living in a connected folder. Wordspace edits HTML; everything else
- *  it hands off to the OS default app. */
-export type FileKind = 'html' | 'word' | 'pdf' | 'image' | 'sheet' | 'slides' | 'other'
+/** A file living in a connected folder. Wordspace edits HTML 与 Markdown（同一个块编辑器，
+ *  只是后端序列化不同）；其它类型交给系统默认程序。 */
+export type FileKind = 'html' | 'md' | 'word' | 'pdf' | 'image' | 'sheet' | 'slides' | 'other'
 
 export interface FileEntry {
   spaceId: string

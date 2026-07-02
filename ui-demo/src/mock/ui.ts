@@ -47,6 +47,11 @@ interface UI {
   // 展开（取消折叠）一批文件夹路径，让某个文件在树里可见（F6：点标签页定位到文件）
   revealFolders: (paths: string[]) => void
 
+  // Markdown 源码面板：markdown-backed 文档可开一条实时源码栏（blocksToMd），证明后端是 .md + round-trip。
+  mdSourceOpen: boolean
+  toggleMdSource: () => void
+  setMdSource: (open: boolean) => void
+
   aiPrompt: string
   setAiPrompt: (v: string) => void
 }
@@ -92,6 +97,10 @@ export const useUI = create<UI>((set) => ({
       for (const p of paths) m['file:' + p] = false
       return { collapsedKeys: m }
     }),
+
+  mdSourceOpen: false,
+  toggleMdSource: () => set((s) => ({ mdSourceOpen: !s.mdSourceOpen })),
+  setMdSource: (open) => set({ mdSourceOpen: open }),
 
   aiPrompt: '',
   setAiPrompt: (v) => set({ aiPrompt: v }),

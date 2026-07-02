@@ -9,6 +9,46 @@ import type {
   Workspace,
 } from '../types'
 import { NON_CONFORM_SAMPLES } from '../lib/nonConformSamples'
+import { mdToBlocks } from '../lib/markdown'
+
+// 示例 Markdown 文件（Feature: markdown 文件阅读编辑器）。后端是 .md，前端用同一个块编辑器渲染。
+// 覆盖「干净映射」（标题/列表/引用/粗斜删码链）+「HTML 岛」（高亮/文字色/下划线/callout）。
+const SAMPLE_MD = `# 用 Markdown 写文档
+
+这份文件的**后端是 Markdown**——但你看到的编辑器、样式、交互，和普通 HTML 文档*完全一样*。因为真正的内核是「块模型」，Markdown 和 HTML 只是它的两种序列化。
+
+## 干净映射的部分
+
+Notion 式的块和 Markdown 本来同源，绝大多数结构一一对应：
+
+- 标题、正文、列表、引用、分隔线
+- 行内的 **粗体**、*斜体*、~~删除线~~、\`行内代码\`、[链接](https://wordspace.ai)
+- 表格（两边都禁合并单元格，正好对齐）
+
+编号列表也照样：
+
+1. 打开一个 \`.md\` 文件
+2. 它被解析成块模型
+3. 用同一个编辑器渲染 + 编辑
+
+待办列表：
+
+- [x] 块模型 ↔ Markdown 双向转换
+- [x] HTML 岛保真表现层
+- [ ] 接进真实 app（下一步）
+
+> Markdown 只做语义结构，主动砍掉表现样式——这正是它的哲学。
+
+---
+
+## Markdown 接不了的部分（HTML 岛）
+
+文字色、高亮、下划线、callout：Markdown 没有原生语法。按方案 b，这些退化成内嵌的一小段 HTML，仍是合法 .md、round-trip 全保真。
+
+比如这里有 <mark>高亮</mark>、<span style="color:#b3261e">红色文字</span>、还有 <u>下划线</u>。
+
+<div class="ws-callout">这是一个 callout 块。Markdown 没有它，所以存成 HTML 岛，来回转换还是 callout。</div>
+`
 
 const now = Date.now()
 const MIN = 60_000
@@ -45,6 +85,22 @@ export const seedFolders: Folder[] = [
 // documents
 // ---------------------------------------------------------------------------
 export const seedDocs: Doc[] = [
+  {
+    // Markdown 后端文档（Feature: markdown 文件阅读编辑器）。blocks 由 mdToBlocks 从 .md 解析而来，
+    // 渲染进和 html 文档完全一样的块编辑器；format:'markdown' 让「源码」面板显示 blocksToMd 的实时 .md。
+    id: 'd-md-guide',
+    title: '用 Markdown 写文档',
+    emoji: '📝',
+    kind: 'doc',
+    folderId: 'sp-local',
+    format: 'markdown',
+    visibility: 'private',
+    localPath: '~/项目/产品说明.md',
+    updatedAt: now - 40 * MIN,
+    updatedBy: ME_ID,
+    collaborators: [ME_ID],
+    blocks: mdToBlocks(SAMPLE_MD),
+  },
   {
     id: 'd-handbook',
     title: '员工手册',
@@ -390,6 +446,7 @@ export const seedFiles: FileEntry[] = [
   { spaceId: 'sp-drive', path: '产品/发布会.pptx', kind: 'slides' },
   // 设计项目 (local)
   { spaceId: 'sp-local', path: '提案.docx', kind: 'word' },
+  { spaceId: 'sp-local', path: '产品说明.md', kind: 'md', docId: 'd-md-guide' },
   { spaceId: 'sp-local', path: '落地页.html', kind: 'html', docId: 'd-recruit' },
   { spaceId: 'sp-local', path: '素材/封面.png', kind: 'image' },
   { spaceId: 'sp-local', path: '数据/转化分析.xlsx', kind: 'sheet' },

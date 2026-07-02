@@ -1,0 +1,75 @@
+/* Markdown 源码实时栏：编辑区右侧固定抽屉。 */
+.mdsrc {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 440px;
+  max-width: 46vw;
+  height: 100vh;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface);
+  border-left: 1px solid var(--c-border);
+  box-shadow: -8px 0 28px rgba(20, 22, 26, 0.08);
+}
+.mdsrc-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--c-divider);
+}
+.mdsrc-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+.mdsrc-live {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--c-success);
+  background: var(--c-success-tint);
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+}
+.mdsrc-close {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--c-text-3);
+}
+.mdsrc-close:hover {
+  background: var(--c-hover);
+  color: var(--c-text);
+}
+.mdsrc-hint {
+  flex: none;
+  padding: 11px 16px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  line-height: 1.55;
+  background: var(--c-bg-sunken);
+  border-bottom: 1px solid var(--c-divider);
+}
+.mdsrc-pre {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--c-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
