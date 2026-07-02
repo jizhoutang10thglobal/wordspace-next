@@ -19,6 +19,7 @@ import CreateSpaceModal from './components/CreateSpaceModal'
 import FindPalette from './components/FindPalette'
 import SaveModal from './components/SaveModal'
 import CloseConfirmModal from './components/CloseConfirmModal'
+import MarkdownSourcePanel from './components/MarkdownSourcePanel'
 import { useStore } from './mock/store'
 import { checkSchema } from './lib/schemaCheck'
 import './App.css'
@@ -80,6 +81,7 @@ export default function App() {
       <FindPalette />
       <SaveModal />
       <CloseConfirmModal />
+      <MarkdownSourcePanel />
     </div>
   )
 }

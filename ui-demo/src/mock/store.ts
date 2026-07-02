@@ -34,7 +34,7 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 15
+const SEED_VERSION = 16
 
 const uid = (p = 'id') =>
   `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -429,12 +429,13 @@ export const useStore = create<State>()(
           return
         }
         const name = file.path.split('/').pop() ?? file.path
-        const html = file.kind === 'html' && !!file.docId
+        // html 和 md 都进块编辑器（同一个前端 UI，只是后端序列化不同）；其余走外部打开。
+        const editable = (file.kind === 'html' || file.kind === 'md') && !!file.docId
         const tab: Tab = {
           id: uid('tab'),
           spaceId: space,
-          kind: html ? 'doc' : 'file',
-          docId: html ? file.docId : undefined,
+          kind: editable ? 'doc' : 'file',
+          docId: editable ? file.docId : undefined,
           title: name,
           url: file.path,
           fileName: name,
