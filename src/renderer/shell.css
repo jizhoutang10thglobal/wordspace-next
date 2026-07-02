@@ -286,6 +286,11 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-modal-save { width: 460px; }
 .sb-modal-confirm { width: 440px; }
 .sb-modal-desc { margin-top: 6px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.55; }
+/* SaveModal 文件名输入行（Colin：保存时可改名，后缀 .html 固定显示） */
+.sb-save-namerow { display: flex; align-items: center; gap: 6px; margin: 12px 0 4px; }
+.sb-save-name { flex: 1; min-width: 0; height: 32px; padding: 0 10px; border: 1px solid var(--c-border-strong); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); font-size: var(--fs-base); }
+.sb-save-name:focus { outline: none; border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-tint, #eef4ff); }
+.sb-save-ext { flex: none; color: var(--c-text-3); font-size: var(--fs-base); }
 .sb-save-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: 4px 0 14px; }
 .sb-save-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; text-align: left; border: 1px solid transparent; border-radius: var(--r-md); background: transparent; color: var(--c-text); font-size: var(--fs-md); }
 .sb-save-row:hover { background: var(--c-hover); }

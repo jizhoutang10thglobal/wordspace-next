@@ -348,12 +348,68 @@ async function reloadDoc() {
   frame.src = 'about:blank';
 }
 
+// srcdoc 文档继承外壳的严格 CSP（style-src 无 unsafe-inline）→ 文档里的 <style> 元素和 style= 属性
+// 全被拦死（实测：临时文档 body max-width:none / style="color:red" 不生效，console 报
+// "Applying inline style violates …style-src"；file:// 载入有自己的 CSP 上下文、不受影响）。
+// 不削弱外壳 CSP（S4 红线），改把文档样式镜像成 CSSOM 再应用——CSSOM 不受 style-src 限制
+// （repo 既有共识：sidebar.js 模板卡 borderTopColor 同注释）：
+//   ① 全部 <style> 的文本合并进一张构造样式表（adoptedStyleSheets；不在 DOM、不进序列化）；
+//   ② style= 属性用 el.style.cssText 重放（只在 CSP 拦掉后 el.style 为空时补，属性文本会被
+//      规范化重写——临时文档没有磁盘基线、无损；历史恢复只变属性书写形态、不改 CSS 语义）；
+//   ③ MutationObserver 盯后续动态加的 <style>（编辑器 ensureSchemaBaseline/ensureTodoStyle
+//      等「入盘样式」在 srcdoc 里 append 时同样被 CSP 拦）与新写的 style= 属性，随写随镜像。
+function mirrorSrcdocStyles(doc) {
+  const win = doc.defaultView;
+  if (!win || typeof win.CSSStyleSheet !== 'function') return;
+  let sheet;
+  try { sheet = new win.CSSStyleSheet(); } catch (e) { return; }
+  const sync = () => {
+    let css = '';
+    for (const s of doc.querySelectorAll('style')) css += s.textContent + '\n';
+    try { sheet.replaceSync(css); } catch (e) { /* 坏 CSS 尽力而为：replaceSync 会跳过坏规则，只有整体解析炸才到这 */ }
+  };
+  const replayAttr = (el) => {
+    // CSP 拦掉的标志：属性有值而 CSSOM 声明表为空。重放后 length>0，观察器再进来会跳过（不自激）。
+    const t = el.getAttribute && el.getAttribute('style');
+    if (t && el.style && el.style.length === 0) { try { el.style.cssText = t; } catch (e) { /* 忽略坏值 */ } }
+  };
+  sync();
+  doc.adoptedStyleSheets = [...(doc.adoptedStyleSheets || []), sheet]; // 编辑器自己的表（EDITOR_CSS/zoom）在 attach 时排它后面，覆盖关系跟 file:// 一致
+  for (const el of doc.querySelectorAll('[style]')) replayAttr(el);
+  const mo = new win.MutationObserver((muts) => {
+    let styleTouched = false;
+    for (const m of muts) {
+      if (m.type === 'attributes') { replayAttr(m.target); continue; }
+      if (m.type === 'characterData') {
+        const p = m.target.parentElement;
+        if (p && p.tagName === 'STYLE') styleTouched = true;
+        continue;
+      }
+      for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.tagName === 'STYLE' || (n.querySelector && n.querySelector('style'))) styleTouched = true;
+        // 带着 style= 新插入的节点只有 childList 记录（attributes 记录只发给「已观察节点的属性变更」）→ 这里补重放
+        replayAttr(n);
+        if (n.querySelectorAll) for (const el of n.querySelectorAll('[style]')) replayAttr(el);
+      }
+      for (const n of m.removedNodes) if (n.nodeType === 1 && n.tagName === 'STYLE') styleTouched = true;
+    }
+    if (styleTouched) sync();
+  });
+  mo.observe(doc.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style'] });
+}
+
 // 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录（用 docInfo.dirUrl）
 function loadFromHtml(html, opts) {
   detachEditors();
   const gen = ++loadGen;
   // 历史恢复走同一文档既有 docConform；临时文档由 openTempDoc 先设好 docConform。injectBase 守 docInfo（临时文档无 docInfo/dirUrl）。
-  frame.onload = () => { if (gen !== loadGen) return; if (docInfo && docInfo.dirUrl) injectBase(frame.contentDocument, docInfo.dirUrl); docConform ? wireEditor() : attachBasic(); };
+  frame.onload = () => {
+    if (gen !== loadGen) return;
+    if (docInfo && docInfo.dirUrl) injectBase(frame.contentDocument, docInfo.dirUrl);
+    mirrorSrcdocStyles(frame.contentDocument); // 只在 srcdoc 路径镜像（file:// 不需要，也别去规范化真文件的 style 属性）
+    docConform ? wireEditor() : attachBasic();
+  };
   frame.removeAttribute('src');
   frame.srcdoc = html;
   prepFrame(opts && opts.asDirty);
@@ -371,7 +427,7 @@ function canLeaveActive() {
 function shellNewTemp(base, html) {
   if (!canLeaveActive()) return null;
   const id = genTempId();
-  tempStore.set(id, { base: base || '无标题文档', html });
+  tempStore.set(id, { base: base || '未命名', html });
   renderTemp(id);
   return id;
 }

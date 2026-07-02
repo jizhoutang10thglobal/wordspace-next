@@ -201,6 +201,28 @@ function registerIpc() {
   ipcMain.handle('ws-new-doc', (_e, dirRel, base, html) =>
     workspace.newDoc(requireRoot(), dirRel, base, html),
   );
+  // 「浏览…」把临时文档存到任意位置（可在工作区外）：主进程自己弹原生保存框、只写对话框返回的
+  // 路径——renderer 不传 abs（信任模型同 pick-file：路径是用户当场在原生对话框亲手选的）。
+  // WS2_SAVE_AS_OUT 是测试 seam：非打包态设了就跳过原生框直接用该路径（原生框 e2e 点不了，
+  // 同 export-pdf 的 WS2_PDF_OUT；打包态忽略，防生产进程静默绕过对话框）。
+  ipcMain.handle('ws-save-doc-as', async (e, base, html) => {
+    const leaf = (String(base || '').replace(/[\\/:*?"<>|]/g, ' ').trim() || '未命名') + '.html';
+    let out = !app.isPackaged ? process.env.WS2_SAVE_AS_OUT : null;
+    if (!out) {
+      let defDir = activeRoot;
+      if (!defDir) { try { defDir = app.getPath('documents'); } catch { defDir = app.getPath('home'); } }
+      const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
+        title: '保存文档',
+        defaultPath: path.join(defDir, leaf),
+        filters: [{ name: 'HTML 文档', extensions: ['html', 'htm'] }],
+      });
+      if (r.canceled || !r.filePath) return { canceled: true };
+      out = r.filePath;
+    }
+    if (!/\.html?$/i.test(out)) out += '.html';
+    await files.writeDocSafe(out, html);
+    return { ok: true, abs: out };
+  });
   ipcMain.handle('ws-make-dir', (_e, dirRel, name) => workspace.makeDir(requireRoot(), dirRel, name));
   ipcMain.handle('ws-rename', (_e, relPath, newLeaf) =>
     workspace.renamePath(requireRoot(), relPath, newLeaf),

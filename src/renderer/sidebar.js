@@ -505,7 +505,8 @@
     document.body.appendChild(overlay);
   }
 
-  // 「保存到哪里」（对齐 ui-demo SaveModal）：列工作区根 + 各子文件夹，选一个 → wsNewDoc 落盘。
+  // 「保存到哪里」（对齐 ui-demo SaveModal）：可编辑文件名 + 列工作区根/各子文件夹 + 「浏览…」原生
+  // 保存框（存工作区外，Colin 拍板方案 A）。Enter 确认、Esc 关。
   function openSaveModal(closeAfter) {
     const t = window.__shellActiveTemp && window.__shellActiveTemp();
     if (!t) return;
@@ -514,8 +515,6 @@
     let selectedDir = '';
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay';
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
-    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
     const modal = document.createElement('div');
     modal.className = 'sb-modal sb-modal-save';
     const head = document.createElement('div');
@@ -525,8 +524,21 @@
     title.textContent = '保存到哪里';
     const where = document.createElement('div');
     where.className = 'sb-modal-where';
-    where.textContent = '「' + t.base + '」存进 ' + (current ? current.name : '工作区');
+    where.textContent = '默认存到工作区根目录，也可以选别的文件夹，或「浏览…」存到其他位置';
     head.append(title, where);
+    // 文件名可编辑（Colin：保存时让用户改名，别用模板名）。后缀 .html 固定显示、不进输入框。
+    const nameRow = document.createElement('div');
+    nameRow.className = 'sb-save-namerow';
+    const nameInput = document.createElement('input');
+    nameInput.className = 'sb-save-name';
+    nameInput.type = 'text';
+    nameInput.value = t.base;
+    nameInput.placeholder = '文件名';
+    nameInput.setAttribute('aria-label', '文件名');
+    const ext = document.createElement('span');
+    ext.className = 'sb-save-ext';
+    ext.textContent = '.html';
+    nameRow.append(nameInput, ext);
     const list = document.createElement('div');
     list.className = 'sb-save-list';
     const rows = [];
@@ -543,20 +555,40 @@
     });
     const foot = document.createElement('div');
     foot.className = 'sb-modal-foot';
+    const pickedName = () => (nameInput.value.trim() || t.base);
+    const browse = document.createElement('button'); browse.className = 'sb-btn'; browse.textContent = '浏览…';
+    browse.title = '用系统保存框选任意位置（可存到工作区外）';
+    browse.onclick = async () => {
+      const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取最新内容
+      if (!cur) { close(); return; }
+      let r;
+      try { r = await window.ws2.wsSaveDocAs(pickedName(), cur.html); }
+      catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
+      if (!r || r.canceled) return; // 原生框取消 → 留在弹窗里
+      close();
+      await adoptSavedTemp(cur.id, r.abs, closeAfter);
+    };
     const cancel = document.createElement('button'); cancel.className = 'sb-btn'; cancel.textContent = '取消'; cancel.onclick = close;
     const spacer = document.createElement('span'); spacer.className = 'sb-modal-spacer';
-    const ok = document.createElement('button'); ok.className = 'sb-btn sb-btn-primary'; ok.textContent = '保存';
+    const ok = document.createElement('button'); ok.className = 'sb-btn sb-btn-primary'; ok.textContent = '保存到这里';
     ok.onclick = async () => {
       close();
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取一次最新内容
-      if (cur) await doSaveTemp(cur.id, cur.base, cur.html, selectedDir, closeAfter);
+      if (cur) await doSaveTemp(cur.id, pickedName(), cur.html, selectedDir, closeAfter);
     };
-    foot.append(cancel, spacer, ok);
-    modal.append(head, list, foot);
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+      else if (e.key === 'Enter') { e.preventDefault(); ok.onclick(); }
+    };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    foot.append(browse, spacer, cancel, ok);
+    modal.append(head, nameRow, list, foot);
     overlay.appendChild(modal);
     overlay.onclick = (e) => { if (e.target === overlay) close(); };
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
+    nameInput.focus();
+    nameInput.select();
   }
 
   // 把临时文档落盘（wsNewDoc）→ 去临时标签、建真 rel 标签、编辑器就地指向真文件（不重载）。closeAfter=存完即关。
@@ -565,13 +597,24 @@
     try { r = await window.ws2.wsNewDoc(dir || '', base, html); }
     catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
     if (!r || !r.abs) { showToast('保存失败'); return; }
-    await refresh(); // 树里出现新文件
-    const node = findNodeByAbs(r.abs);
+    await adoptSavedTemp(tempId, r.abs, closeAfter);
+  }
+  // 落盘后的收编（工作区内/外通用）：去临时标签 → 建真标签（区内 rel 身份 / 区外 abs 外部标签）→
+  // 编辑器就地指向真文件 → 成功 toast（对齐 ui-demo 保存正反馈）。
+  async function adoptSavedTemp(tempId, abs, closeAfter) {
+    await refresh(); // 树里出现新文件（工作区外保存则树不变，无妨）
+    const node = findNodeByAbs(abs);
+    const leaf = abs.split('/').pop();
     applyTabs(window.WS2Tabs.removeEntry(tabState, tempId)); // 去掉临时标签
-    if (node) openTabEntry({ rel: node.rel, kind: node.kind || 'html', title: node.name }); // 建真 rel 标签 + 激活
-    if (window.__shellFinalizeTemp) await window.__shellFinalizeTemp(tempId, r.abs, node ? node.name : base);
-    if (node) { expandToFile(node.rel); highlightActive(r.abs); }
-    if (closeAfter && node) closeTabRel(node.rel); // 「保存并关闭」
+    if (node) openTabEntry({ rel: node.rel, kind: node.kind || 'html', title: node.name }); // 区内：真 rel 标签
+    else openTabEntry({ abs, kind: 'html', title: leaf }); // 区外：abs 身份外部标签（↗），沿用外部文件标签模型
+    if (window.__shellFinalizeTemp) await window.__shellFinalizeTemp(tempId, abs, node ? node.name : leaf);
+    if (node) { expandToFile(node.rel); highlightActive(abs); }
+    const place = node
+      ? (current ? current.name : '工作区') + (node.rel.indexOf('/') >= 0 ? ' / ' + node.rel.split('/').slice(0, -1).join('/') : '')
+      : abs.split('/').slice(0, -1).join('/');
+    showToast('已保存到 ' + place);
+    if (closeAfter) closeTabRel(node ? node.rel : abs); // 「保存并关闭」
   }
 
   function closeTabRel(key) { closeOrRemove(key, window.WS2Tabs.closeEntry); } // 标签页区 ×
@@ -907,14 +950,15 @@
       card.append(name, desc);
       card.onclick = async () => {
         close();
+        // 新建文档一律默认名「未命名」（Colin 拍板：模板给内容不给名字，保存/落盘时用户再改名）。
         if (temp) {
           // 临时文档：不落盘，shell 建内容 + 渲染，侧栏建临时标签（身份 = shell 返回的 'temp:…'）。
           // 返回 null = 用户在「切走脏文件」守卫里取消了，不建标签。
-          const id = window.__shellNewTemp(t.base, t.html);
-          if (id) openTabEntry({ abs: id, kind: 'html', title: t.base });
+          const id = window.__shellNewTemp('未命名', t.html);
+          if (id) openTabEntry({ abs: id, kind: 'html', title: '未命名' });
           return;
         }
-        const r = await window.ws2.wsNewDoc(dirRel || '', t.base, t.html);
+        const r = await window.ws2.wsNewDoc(dirRel || '', '未命名', t.html);
         await refresh();
         if (r && r.abs) openDoc(r.abs);
       };

@@ -9,10 +9,10 @@ const TEMPLATES = [
   {
     id: 'blank',
     name: '空文档',
-    base: '无标题文档',
+    base: '未命名',
     desc: '从一张白纸开始',
     accent: '#1a73e8',
-    html: SHELL('无标题文档', '<h1>无标题文档</h1>\n<p></p>'),
+    html: SHELL('未命名', '<h1>未命名</h1>\n<p></p>'),
   },
   {
     id: 'minutes',
