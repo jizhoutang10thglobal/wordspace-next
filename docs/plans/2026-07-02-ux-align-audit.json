@@ -1,0 +1,1503 @@
+{
+  "summary": "逐 UI 区域对比 ui-demo（React 原型）vs 当前 Wordspace app（main），产出彻底的差异清单 + 修法",
+  "agentCount": 8,
+  "logs": [
+    "审计完成：8/8 区，共 143 条差异"
+  ],
+  "result": {
+    "areas": [
+      {
+        "area": "侧栏 ArcSidebar（ui-demo）vs 本地文件栏 .sb-*（Wordspace app）",
+        "ui_summary": "ui-demo 是一个 Arc 浏览器隐喻的侧栏：顶部红黄绿灯 + 后退/前进/刷新/查找导航排、地址栏 omnibox、空间切换器（多工作区，云盘+连接文件夹）、置顶/标签页两区（每条 tab 有置顶+关闭+未保存圆点、支持网页 tab）、文档筛选+文件树、底部工具栏（模板/Schema/Agent/设置 + 头像），收起=48px 细条留展开钮，切空间有滑入动画和横向滚轮换空间。",
+        "ws_summary": "Wordspace 是单工作区的本地文件浏览器：头部（收起钮+根名+打开文件夹）、置顶/标签页两区（同样的双标记 tab 模型但无未保存圆点/无网页 tab）、文件筛选+树、底部品牌页脚（logo+版本号），收起=整条全隐藏（0 宽），无 omnibox/空间切换器/导航排/红绿灯/工具栏，也无切空间动画。",
+        "differences": [
+          {
+            "what": "顶部导航排（后退/前进/刷新/查找）+ 红黄绿灯",
+            "ui_demo": ".arc-top 高度=标题栏，左边三颗 12px 圆点红#ff5f57/黄#febc2e/绿#28c840（macOS traffic），右侧一排 28px 图标钮：收起侧栏(PanelLeft)、后退(ChevronLeft)、前进(ChevronRight)、刷新(RotateCw)、查找文件⌘P(Search)，钮 gap:1px、hover 背景 rgba(0,0,0,.06)",
+            "wordspace": ".sb-head 只有：收起钮(PanelLeft 同款 svg)、根名标题、打开文件夹钮。没有红绿灯、没有后退/前进/刷新，也没有顶部的「查找⌘P」入口（查找只藏在 Cmd+P 快捷键，界面上无按钮）",
+            "severity": "P1-明显",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "红绿灯/后退/前进/刷新是浏览器隐喻，Wordspace 无网页导航概念 → 保持不做（产品拍板）。但「查找文件」应补一颗可见图标钮进 .sb-head（现在只有快捷键，发现性差），放在 open-folder 旁，点击调 __sbHooks.findPalette。红绿灯若想要 macOS 观感可加纯装饰，但通常 Electron 已有原生窗口按钮，重复反而怪 → 不加。"
+          },
+          {
+            "what": "地址栏 omnibox（搜索/输网址）",
+            "ui_demo": ".arc-omni：32px 高、圆角 md、surface 背景带边框、左侧 lock/globe/folder 图标随可见性变、输入框 placeholder「搜索,或输入网址」、右侧「本地」tag 胶囊(fs-xs)、hover 边框加深；回车走浏览器导航",
+            "wordspace": "完全没有 omnibox。侧栏没有任何地址/搜索的顶部输入框（只有下方文件树的筛选框）",
+            "severity": "P2-细节",
+            "is_product_decision": true,
+            "effort": "L-大",
+            "fix": "omnibox 是浏览器隐喻的核心，Wordspace 是本地文档编辑器、无「开网页」概念 → 整体不 port（产品拍板）。若未来想要全局搜索入口，可复用 omnibox 外观做成「搜文件/命令」，但那是新功能不是对齐。当前建议不做。"
+          },
+          {
+            "what": "空间切换器 SpaceSwitcher（多工作区下拉）",
+            "ui_demo": ".arc-space-bar 里一个 .arc-space-trigger：显示当前空间名(semibold)+存储图标(HardDrive/Cloud)+ChevronDown；点开 .arc-space-menu（248-280px 宽、圆角 md、阴影、max-h 320 滚动），分「连接的文件夹」「Wordspace 云盘」两组，每项有彩色 24px identity 方块(badge 首字母)+名+副标(存储图标+detail)+选中✓，底部「+ 新建空间」；还支持横向滚轮换空间",
+            "wordspace": "没有空间切换器。只有 .sb-head 里一个静态根名 #sb-root-name（纯文本，点不开、不能切），单工作区模型",
+            "severity": "P1-明显",
+            "is_product_decision": true,
+            "effort": "L-大",
+            "fix": "多工作区/云盘/连接文件夹是产品架构决策（Wordspace 目前是单一本地工作区）→ 是否做多空间要 Wendi 拍板，不能盲 port。但即使保持单工作区，根名 #sb-root-name 可以变成可点的「切换/打开文件夹」触发器（现在它旁边有独立 open-folder 钮，语义割裂），对齐 trigger 的可点观感（hover 背景、右侧小存储图标）。"
+          },
+          {
+            "what": "底部工具栏 .arc-foot（模板/Schema/Agent/设置 + 头像）",
+            "ui_demo": ".arc-foot：border-top，一排 30px 图标钮 模板/Schema/Agent/设置（is-active 时 accent-tint 底+accent 色），spacer 撑开，右侧圆形头像 Avatar(24px，hover 出 accent-tint 光圈)",
+            "wordspace": "底部是 .sb-foot 品牌页脚：wordspace.ai logo(15px 高、opacity .82) + 右侧版本号(tabular-nums)。没有任何模板/Schema/Agent/设置入口，也没有头像",
+            "severity": "P1-明显",
+            "is_product_decision": true,
+            "effort": "M-中",
+            "fix": "模板/Schema/Agent/设置/头像 是 ui-demo 的全局导航，Wordspace app 这些页面大多还没有 → 属产品范围决策，不能盲加空壳。品牌页脚是 Wordspace 有意的差异(见 memory 8dac858「品牌页脚移到左侧栏底部」)。建议：保持品牌页脚，但可评估把「设置」做成一颗真入口钮加进页脚（若 app 有设置页）。整体差异标记为产品决策。"
+          },
+          {
+            "what": "收起态：细条 vs 全隐藏",
+            "ui_demo": "collapsed = .arc-sidebar.is-collapsed 宽 48px，保留一条竖 strip，顶部一颗居中的展开钮(PanelLeft)，其余全空（B2 已删竖排图标轨）",
+            "wordspace": "collapsed = .sb.is-collapsed 宽 0、overflow hidden、border 去掉，整条彻底消失；展开靠编辑区左上角悬浮的 .sb-reopen 按钮",
+            "severity": "P2-细节",
+            "is_product_decision": true,
+            "effort": "S-小",
+            "fix": "这是 Colin 明确拍板的差异（shell.css 注释：ui-demo 留 48px 细条，这里按 Colin『收起就是真收起』全隐藏）→ 有意为之，保持不动。标记为产品决策，无需改。"
+          },
+          {
+            "what": "侧栏默认宽度 274 vs 260",
+            "ui_demo": ".arc-sidebar width: 274px；localStorage key 'ws-arc-width' 默认回退 274",
+            "wordspace": ".sb.sb-on width: var(--sb-width, 260px)；localStorage key 'ws2-sb-width'",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "把默认宽度从 260 改到 274（改 shell.css 的 var(--sb-width, 260px) → 274px）。夹取范围两边都是 180-520，一致，无需改。"
+          },
+          {
+            "what": "置顶/标签页两区的「段标题 + 结构节奏」",
+            "ui_demo": "三段：置顶(arc-section-label)→标签页(arc-section-label 带右侧 + 新建钮)→文档(arc-section-label)。段标 uppercase、letter-spacing .04em、fs-xs、semibold、text-3、padding 10/8/4。文档段下面才是筛选框+树",
+            "wordspace": "置顶区(sb-zone-head 内 sb-sec-label『置顶』)→标签页区(sb-sec-label『标签页』+右侧 sb-zone-add)→『文件』段标(sb-files-label，不是『文档』)→筛选→树。段标 sb-sec-label 无 text-transform(不 uppercase)、letter-spacing .04em、fs-xs、semibold、padding 10/8/5",
+            "severity": "P2-细节",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "两处：①段标 ui-demo 是 UPPERCASE（text-transform: uppercase），Wordspace 的 .sb-sec-label 没加 → 加 text-transform: uppercase 对齐（『置顶』『标签页』是中文不受影响，但保持规则一致）。②第三段文案 ui-demo 叫「文档」，Wordspace 叫「文件」——因为 Wordspace 树里含非 HTML 文件所以叫『文件』其实更准，但要跟 ui-demo 齐则改成『文档』；建议保留『文件』（语义更对），标记差异即可。"
+          },
+          {
+            "what": "标签页/置顶行的高度、圆角、内边距、hover/active 态",
+            "ui_demo": ".arc-tab 高 32px、圆角 r-sm、padding 0 8px 0 10px、gap 8px、闲置色 text-2；hover 背景 --c-hover；is-active = surface 背景 + text 色 + shadow-sm(有阴影浮起感) + 图标变 accent 色。tab 之间 gap 1px",
+            "wordspace": ".sb-tab/.sb-row 高 30px(--sb-row 无，.sb-row 默认)、padding-left 8px；.sb-tab.is-active = --c-selected 背景 + accent 色（无 shadow，观感是『选中蓝底』不是『浮起白卡』）。zone-list gap 2px",
+            "severity": "P1-明显",
+            "is_product_decision": false,
+            "effort": "M-中",
+            "fix": "active 态视觉差异明显：ui-demo 活跃 tab 是白 surface 卡 + shadow-sm 浮起 + accent 图标，Wordspace 是 selected 蓝底铺满。要对齐就把 .sb-tab.is-active 改成 background: var(--c-surface); color: var(--c-text); box-shadow: var(--shadow-sm)，图标 accent。另行高对齐到 32、tab 间距对齐 1px。注意：Wordspace 文件树行(.sb-row)也复用同款 selected 高亮，改 tab 别误伤树行。"
+          },
+          {
+            "what": "未保存圆点 arc-tab-dot（临时/脏文档标记）",
+            "ui_demo": ".arc-tab-dot：7px accent 色实心圆点，闲置时显示、hover 出置顶/关闭钮时 display:none 让位；title『未保存（还没存进文件夹）』",
+            "wordspace": "没有圆点。临时文档用 .sb-tab-temp .sb-name::before content:'● '（橙色 --c-warn、9px、只在临时文档名前），且只标『临时文档』不标『已落盘但有未保存改动』的真文件",
+            "severity": "P2-细节",
+            "is_product_decision": false,
+            "effort": "M-中",
+            "fix": "两点不齐：①样式——ui-demo 是行尾独立 7px accent 圆点(hover 让位)，Wordspace 是名字前橙色小点。②语义覆盖——ui-demo 对『任何 unsaved 文档』(含已落盘但脏的真文件)都显点，Wordspace 只对『临时文档』显。建议对齐 ui-demo：脏的真文件也应显未保存标记（现在真文件脏了侧栏 tab 无任何提示）。改法：给脏 tab 加一个行尾 accent 圆点 span、hover 隐藏，颜色/位置对齐 arc-tab-dot。"
+          },
+          {
+            "what": "置顶/关闭/pin 按钮尺寸、显隐、hover",
+            "ui_demo": ".arc-tab-act 18x18、圆角 r-xs、opacity 0 默认、hover tab 时 opacity 1；置顶钮常在(Pin/PinOff 12px)，关闭钮仅未置顶时显示(X 12px)；hover 钮背景 --c-active",
+            "wordspace": ".sb-tab-pin/.sb-tab-close 18x18、opacity 0、hover tab 出现；已钉的 pin 常显(is-pinned accent 色)；置顶区的 × 是『移出置顶』(removeEntry)、标签页区的 × 是『关闭』。pin/close 图标是自绘 svg 13/12px",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "基本对齐。细节差：ui-demo 里『已置顶的 tab 不显示关闭钮』(只留 PinOff)，Wordspace 置顶区仍有 × (语义是移出置顶，Wendi 要的整条删)。这是有意的产品差异(见 sidebar.js 注释)，保留。图标尺寸 12/13 差 1px 可忽略。"
+          },
+          {
+            "what": "标签页图标：网页 tab 用 Globe2 vs 全部 file 图标",
+            "ui_demo": ".arc-tab-ico 依 tab.kind：web→Globe2(13px)，否则 FileText(13px)",
+            "wordspace": "所有 tab 都用 SVG.file(文件图标)，无网页 tab 概念；外部工作区文件额外加 ↗ 标记(.sb-tab-ext-ico)",
+            "severity": "P3-锦上添花",
+            "is_product_decision": true,
+            "effort": "S-小",
+            "fix": "网页 tab 是浏览器隐喻 → 不做。Wordspace 的 ↗ 外部文件标记是它独有的、合理的扩展，保留。无需对齐。"
+          },
+          {
+            "what": "文件树行图标：lucide 类型图标 vs 单一 file 图标",
+            "ui_demo": "FileIcon 按 kind 换不同 lucide 图标：image=FileImage、sheet=FileSpreadsheet、slides=Presentation、word/pdf=FileText、html=FileText、other=File；且带类型色(word #1a73e8/pdf #d3353c/sheet #1e8e3e/slides #b06000/image #8a3ffc)",
+            "wordspace": "所有文件都用同一个 SVG.file 通用图标（不区分类型），但用 .sb-kind-* class 给图标上色(html/image/pdf/word/sheet/slides 同款色值)。即『颜色区分了、形状没区分』",
+            "severity": "P2-细节",
+            "is_product_decision": false,
+            "effort": "M-中",
+            "fix": "颜色已对齐(色值一致)，但图标形状 ui-demo 用了不同的类型图标(表格/幻灯/图片各不同)，Wordspace 全是同一个 file 轮廓。要对齐需按 kind 内联不同的 SVG(sidebar.js 的 SVG.file 换成一组 kindSvg map：image/sheet/slides/word/pdf 各一个 lucide 风格 path)。视觉提升明显，工作量中等(要手抄几个 svg path)。"
+          },
+          {
+            "what": "文件夹展开箭头 caret 尺寸与旋转",
+            "ui_demo": ".arc-caret ChevronRight 12px、is-open 时 rotate(90deg)、transition 140ms",
+            "wordspace": ".sb-caret 内联 chevron svg 12px、is-open rotate(90deg)、transition var(--dur-fast)",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "基本一致。核对 --dur-fast 是否≈140ms 即可，差不多就不用动。"
+          },
+          {
+            "what": "文件树缩进步长 16 vs 14",
+            "ui_demo": "FileBranch paddingLeft = 8 + depth*16（目录）/ 26 + depth*16（文件），每层 +16px",
+            "wordspace": ".sb-d0=8, d1=22, d2=36...每层 +14px（22-8=14）",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "缩进步长 ui-demo 16px、Wordspace 14px。要严格对齐把 .sb-d1..d9 改成每级 +16(d1=24,d2=40...)。差异很小、视觉影响低。另注意 ui-demo 文件比目录多缩进(文件起始 26 vs 目录 8，因为目录有 caret 占位、文件没有)，Wordspace 文件和目录同起点(都 sb-d0=8) → 文件没为缺失的 caret 补缩进，会跟目录名左对齐、层级感略弱。建议给文件行加左缩进补偿 caret 宽度。"
+          },
+          {
+            "what": "文件树行高 30 vs 27ish",
+            "ui_demo": ".arc-doc/.arc-file 高 30px、gap 8px、圆角 r-sm；hover --c-hover；is-active --c-selected + accent 色",
+            "wordspace": ".sb-row（未显式定高，看 padding）hover --c-hover；.sb-file.is-active --c-selected + accent。行高由 padding 决定，需实测",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "active/hover 色一致(都 selected/hover+accent)。若 .sb-row 实测行高与 30px 差得多则补 min-height:30px 对齐；否则忽略。"
+          },
+          {
+            "what": "空间切入动画 arc-space-in",
+            "ui_demo": ".arc-lib 有 @keyframes arc-space-in：切空间时 opacity 0→1 + translateX(10px→0)、240ms，有『空间从右滑入』的过场",
+            "wordspace": "无此动画（单工作区、也不切空间，切工作区是整树重渲染无过场）",
+            "severity": "P3-锦上添花",
+            "is_product_decision": true,
+            "effort": "S-小",
+            "fix": "依附于多空间切换，Wordspace 无切空间概念 → 不适用，不做。"
+          },
+          {
+            "what": "连接文件夹头 .arc-connected（挂载路径条）",
+            "ui_demo": "连接的本地/Drive 文件夹在树顶有一条 .arc-connected：HardDrive/Cloud 图标 + 挂载路径名，sunken 背景、可作『拖到根目录』的 drop 目标，title 提示",
+            "wordspace": "没有这条独立的挂载路径头。根名只在 .sb-head 的 #sb-root-name 显示。拖到根目录的 drop 目标是 .sb-head 整体(headEl.ondrop → doMove '')",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "功能等价(都有『拖到根』)，只是 ui-demo 把它做成树顶一条可见的路径条 + 图标，Wordspace 复用了顶部 head。差异小。若想更接近 ui-demo，可在树顶加一条只读的『HardDrive + 根名』条并当 drop 目标，但当前 head 已承担、非必要。"
+          },
+          {
+            "what": "筛选框 .arc-filter vs .sb-filter",
+            "ui_demo": ".arc-filter 高 28px、圆角 r-sm、margin 0 8px 4px、padding 0 8px、gap 6px、focus-within 边框 border-strong(仅变色，无光圈)；有清除按钮 .arc-filter-clear(query 非空时出 X 16px)；placeholder『筛选当前空间的文件』；Search 图标 13px",
+            "wordspace": ".sb-filter 高 32px、圆角 r-md、margin 0 6px 12px、padding 0 11px、gap 7px、focus-within 边框 accent + 0 0 0 3px accent-tint 光圈；没有清除按钮；placeholder『筛选文件』；Search 图标 13px",
+            "severity": "P2-细节",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "几处不齐：①高度 32 vs 28、圆角 md vs sm、下 margin 12 vs 4 → Wordspace 的筛选框更大更圆更靠下，要对齐则改 height:28 r-sm margin-bottom:4。②focus 态 ui-demo 只变边框色、Wordspace 多一圈 accent-tint 光圈(其实更好看，可保留但属差异)。③缺清除按钮——ui-demo 输入非空时右侧有 X 清除钮，Wordspace 没有，建议补(输入非空时显 .sb-filter 的清除钮，点了清空 query 重渲染)。④placeholder 文案『筛选文件』vs『筛选当前空间的文件』，单工作区下『筛选文件』更贴切，可不改。"
+          },
+          {
+            "what": "空态文案（无文件 / 无匹配 / 空文件夹）",
+            "ui_demo": "无文件『这个文件夹还没有文件』/ 有 query 无匹配『没有匹配的文件』/ 空文件夹『空文件夹』(斜体 text-3)。云空间空态还有『这个空间还没有文档，点上方「标签页」右边的 + 新建。』",
+            "wordspace": "无文件『这个文件夹还没有文件』/ 无匹配『没有匹配的文件』/ 空文件夹『空文件夹』(sb-tree-empty 斜体 text-3)。首屏无工作区空态『打开一个本地文件夹，把这里当工作区』+『打开文件夹』钮",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "文件树的三种空态文案已完全对齐、样式(斜体 text-3)一致。云空间那条空态是多工作区专属、不适用。Wordspace 的首屏空态是它独有且合理。无需改。"
+          },
+          {
+            "what": "右键菜单 ContextMenu 样式",
+            "ui_demo": ".arc-ctx position fixed、min-width 160、padding 4、圆角 md、阴影 0 8px 24px + inset 1px、item padding 6/10 圆角 sm、danger 红 #d3353c + hover 淡红底；文件菜单『打开/重命名/删除』，文件夹『新建文档/新建子文件夹/重命名/删除』",
+            "wordspace": ".sb-ctx min-width 150、padding 4、圆角 md、shadow-menu、item padding 6/10、danger var(--c-danger)+ danger-tint hover；文件菜单『打开/[取消]置顶/重命名/删除』(比 ui-demo 多一条置顶)，文件夹菜单同 ui-demo",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "几乎对齐。差异：①min-width 160 vs 150（差 10px，可对齐到 160）。②Wordspace 文件右键多了『置顶/取消置顶』一项——这是 Wordspace 的置顶功能延伸，合理保留(ui-demo 的置顶入口在 tab 行上，Wordspace 也从树里直接钉，更方便)。danger 色都走 token、观感一致。"
+          },
+          {
+            "what": "内联改名输入 rename",
+            "ui_demo": ".arc-file-rename：fs-base、surface 背景、1px accent 边框、圆角 r-xs、padding 1/4；Enter 提交 Esc 取消(cancelRename ref)；改文件名时 defaultValue 去扩展名(baseName)",
+            "wordspace": ".sb-rename：fs-base、surface 背景、1px accent 边框、圆角 r-xs、padding 1/4；Enter 提交 Esc 取消；文件名同样去扩展名(base)",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "完全对齐，无需改。"
+          },
+          {
+            "what": "拖拽 drop 高亮样式",
+            "ui_demo": ".arc-folder-head.is-drop / .arc-connected.is-drop / .arc-tabs.is-drop：accent-tint 背景 + inset 0 0 0 1px accent；tab 重排有插入线(.drop-before/after ::before/after，2px accent 横线，left/right 6px)",
+            "wordspace": ".sb-drop：accent-tint 背景 !important + inset 1px accent（文件夹/根/zone 通用）；zone-list.sb-drop 同款。但标签重排『没有插入线』——dropIndex 只算落点索引，无视觉插入线指示",
+            "severity": "P2-细节",
+            "is_product_decision": false,
+            "effort": "M-中",
+            "fix": "drop 区高亮已对齐(accent-tint + inset accent)。缺的是『拖标签重排时的插入线』——ui-demo 在目标行上/下画一条 2px accent 横线(.arc-tab.drop-before/after)提示会插到哪，Wordspace 拖 tab 时只有整个 zone 变蓝底、不显示精确插入位置。建议补插入线：dragover 时按 dropIndex 给目标行加 drop-before/after class 画横线，对齐 ui-demo 手感。"
+          },
+          {
+            "what": "『新建文档』模板选择 modal",
+            "ui_demo": "openCreate 走独立组件(未在本文件，但入口一致)：文件夹 hover-+ 和右键『新建文档』打开模板选择台",
+            "wordspace": "openCreateModal：.sb-modal 520px、head(标题『新建文档』+where 落点)、.sb-modal-grid 2 列模板卡(.sb-card blank 卡 accent 顶边，其余 accent 顶边随模板)，卡 min-h 64、hover shadow。临时文档走 temp 分支",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "modal 本身在 ui-demo 里是独立组件、本次对比文件没含它，无法逐像素比。Wordspace 的模板选择 modal 结构合理(卡片网格+落点提示)。除非拿到 ui-demo CreateModal 源码，否则此项按『已实现、观感合理』记，不强改。"
+          },
+          {
+            "what": "折叠文件夹加号 add 按钮（hover 出）",
+            "ui_demo": ".arc-folder-add 18x18、opacity 0、folder-head hover 时 opacity 1、hover 钮 --c-active 底；Plus 13px",
+            "wordspace": ".sb-add 18x18、opacity 0、.sb-row hover 时 opacity 1、hover --c-active；Plus svg 13px",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "完全对齐，无需改。"
+          },
+          {
+            "what": "toast（删除撤销）",
+            "ui_demo": "ui-demo 用全局 store.toast，样式在别处（本文件树的删除走 deleteFileWithUndo，toast 组件未在本文件）",
+            "wordspace": ".sb-toast-host 固定底部居中、.sb-toast 深色 #23262b 白字圆角 md、撤销钮蓝 #8ab4ff；6.5s 自动消失",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "ui-demo 的 toast 组件不在本对比文件里，无法逐点比。Wordspace 的删除撤销 toast 自成一套(深色胶囊+蓝撤销)，观感 OK。如需严格对齐要另找 ui-demo 的 Toast 组件。此项暂记为待补比对。"
+          },
+          {
+            "what": "Cmd+P 查找面板 FindPalette",
+            "ui_demo": "openFind 是全局 UI store（本文件只触发 useUI.openFind，面板组件 FindPalette 在别处）",
+            "wordspace": "openFindPalette 自建：.fp 顶部锚定(padding-top 88)、.fp-bar 搜索图标+输入+『⏎ 打开』hint、.fp-list 模糊搜文件名/路径、↑↓ 选 Enter 开 Esc 关、.fp-row 有名+rel 子路径、空态『没有匹配的文件』",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "Wordspace 自己实现了一个对齐 ui-demo FindPalette 的命令面板(顶部锚定、模糊搜、键盘导航)。ui-demo 的 FindPalette 组件不在本对比文件里，无法逐像素比。功能齐、结构对，暂记为已实现。"
+          },
+          {
+            "what": "顶部头部高度/内边距对齐",
+            "ui_demo": ".arc-top 高 var(--h-titlebar)、padding 0 12px、gap 10px",
+            "wordspace": ".sb-head 高 var(--h-titlebar)、padding 0 8px 0 14px、gap 8px",
+            "severity": "P3-锦上添花",
+            "is_product_decision": false,
+            "effort": "S-小",
+            "fix": "高度都用 --h-titlebar，一致。内边距/gap 略不同(12/10 vs 8-14/8)，但因两边头部内容本就不同(ui-demo 是导航排、Wordspace 是根名)，硬对齐内边距意义不大。忽略。"
+          },
+          {
+            "what": "外部工作区文件 ↗ 标记（Wordspace 独有）",
+            "ui_demo": "无此概念（ui-demo 的『外部』是不同 space，不是工作区外文件）",
+            "wordspace": ".sb-tab-ext .sb-name 变 text-2、加 .sb-tab-ext-ico(↗ 11px)、title 显完整绝对路径；标签页可承载工作区外的文件",
+            "severity": "P3-锦上添花",
+            "is_product_decision": true,
+            "effort": "S-小",
+            "fix": "Wordspace 独有的合理扩展(浏览器式『工作区外文件也能进标签页』，见 memory doc-tabs-feature)。不是差异需要修，是 Wordspace 领先的功能。保留。"
+          }
+        ]
+      },
+      {
+        "area": "标签页 + 新标签起始页（Arc omnibox）",
+        "ui_summary": "ui-demo 是「浏览器隐喻」的完整体：侧栏顶部有红绿灯+前进/后退/刷新/查找导航行 + 可编辑地址栏(omnibox)，下面 置顶/标签页/文件 三段竖排标签，标签区支持 web/file 两种图标、拖拽时画精确插入线、激活态是「白底浮起卡片」；新标签打开一个居中的起始页(NewTab)——大 Wordspace 字标 + pill 形大搜索框 + 7 个彩色磁贴 + 一行书签。",
+        "ws_summary": "Wordspace 是本地 HTML 文件编辑器：没有起始页、没有地址栏、没有导航行；侧栏只有「文件夹头 + 置顶/标签页/文件 三段 + 品牌页脚」，标签只有单一文件图标、激活态是蓝色 selection 底、拖拽只整区高亮不画插入线；无文档时编辑区显示一个朴素的 ws-empty 空态。",
+        "differences": [
+          {
+            "what": "整个新标签起始页 (NewTab) 完全缺失",
+            "ui_demo": "打开新标签时渲染一个居中起始页 .nt：.nt-inner max-width 600px、padding 80px 32px 120px、居中列布局；顶部 26px/700 字重 Wordspace 字标(letter-spacing -0.02em, margin-bottom 28px)；下面一个 pill 形大搜索框；再下 7 个彩色磁贴网格；最后一行书签。",
+            "wordspace": "没有起始页。没打开文档时编辑区显示 ws-empty：一个 title「Wordspace Next」+ 一句 note +「打开文档」「打开文件夹」两个按钮 + recent-list，完全不是 Arc 起始页那套排版。",
+            "severity": "P1-明显",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "起始页里「大搜索框/磁贴/书签」是浏览器隐喻(开网页)，要产品拍板是否做浏览器；但「居中大字标 + 一个主输入/入口 + 干净留白」这套视觉精致感可以对齐到 ws-empty：把 ws-empty 改成 max-width~600 居中列，26px/700 的 Wordspace 字标(letter-spacing -0.02em)，主操作做成 pill 大按钮/大输入，间距按 80/28/44 节奏排。"
+          },
+          {
+            "what": "起始页大搜索框 (omnibox pill) 缺失",
+            "ui_demo": ".nt-omni：height 52px、padding 0 20px、圆角 --r-pill(999px)、border 1px --c-border-strong、背景 --c-surface；左 Search 图标 18px(--c-text-3)；输入 font-size --fs-lg(15px)；focus-within 时 border 变 --c-accent + box-shadow 0 0 0 3px --c-accent-tint；placeholder「搜索,或输入网址」。",
+            "wordspace": "没有。最接近的是侧栏筛选框 .sb-filter(height 32px、圆角 --r-md、fs-sm)，那是筛当前工作区文件用的，不是全局搜索/地址栏，尺寸和存在感差一档。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "是否要「输网址开网页」是产品决策；但若做起始页主入口(如搜文件/新建/命令面板入口)，外观照 .nt-omni：52px 高、pill 圆角、20px 内边距、15px 字、focus 时 accent 描边 + 3px accent-tint 光环。"
+          },
+          {
+            "what": "彩色磁贴 (shortcut tiles) 缺失",
+            "ui_demo": ".nt-tiles：margin-top 44px、7 列网格(窄屏 4 列)、gap 14px；每个 .nt-tile 竖排(chip + 名)、hover 背景 --c-hover；.nt-chip 46×46、圆角 14px、19px/600 白字、背景取每项自定义色(招聘页蓝/官网深蓝/DesignerNews 橙 等 7 个色)；.nt-tile-name fs-sm、--c-text-2、单行省略、max-width 72px。",
+            "wordspace": "没有磁贴/快捷入口概念。",
+            "severity": "P3-锦上添花",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "磁贴内容是网站书签(浏览器隐喻)，产品要拍板；若改造成「最近文档/收藏文件夹磁贴」，样式可直接复用：46×46 圆角14 彩色 chip + 下方 fs-sm 单行省略名，7 列 gap14 网格，hover --c-hover。"
+          },
+          {
+            "what": "书签行 (bookmarks row) 缺失",
+            "ui_demo": ".nt-marks：margin-top 40px、居中 flex-wrap、gap 6px/4px、max-width 520px；左一个 Pin 图标 13px；每项 .nt-mark-link fs-sm、--c-text-2、padding 4px 10px、圆角 pill、hover 背景 --c-hover + 文字转 --c-text；数据来源是当前 space 的 pinned 标签。",
+            "wordspace": "没有。置顶只出现在侧栏「置顶」区，起始页里没有对应呈现。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "若做起始页，可把侧栏「置顶」的文件做成同款一行 pill 链接(fs-sm、pad 4/10、pill、hover --c-hover)，前置 Pin 13px 图标；纯视觉可直接照抄。"
+          },
+          {
+            "what": "侧栏顶部地址栏 (arc-omni) 缺失",
+            "ui_demo": ".arc-omni：margin 2px 12px 8px、height 32px、圆角 --r-md、border 1px --c-border、背景 --c-surface；左侧按可见性/类型显示 Globe/Lock/FolderClosed 图标(13px)；中间是可编辑 url 输入(fs-sm)，回车 submitOmni 导航；右侧 isLocal 时显示「本地」tag(.arc-omni-tag：fs-xs、圆角 pill、背景 --c-active)；hover 时 border 变 --c-border-strong。",
+            "wordspace": "没有地址栏。index.html 注释明说「对齐 ui-demo omnibox 的『本地』tag，复用面包屑、不另起地址栏」——用 doc-header 里的面包屑「本地 / 文件名」代替。",
+            "severity": "P1-明显",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "「可编辑输入网址」是浏览器隐喻要拍板；但「本地」tag 的视觉(fs-xs、pill、--c-active 底、--c-text-2 字)以及类型图标(FolderClosed 13px)可以对齐。若不做地址栏，至少让面包屑区带同款「本地」pill tag，视觉上跟 ui-demo 的 arc-omni-tag 一致。"
+          },
+          {
+            "what": "侧栏顶部导航行 (红绿灯 + 后退/前进/刷新/查找) 缺失",
+            "ui_demo": ".arc-top(高 --h-titlebar 40px)：左侧 .arc-traffic 三个 12px 圆(红#ff5f57/黄#febc2e/绿#28c840，纯装饰)；右侧 .arc-top-nav 一排 28×28 图标按钮：收起侧栏(PanelLeft15)/后退(ChevronLeft16)/前进(ChevronRight16)/刷新(RotateCw13)/查找⌘P(Search14)，hover 背景 rgba(0,0,0,.06)。",
+            "wordspace": ".sb-head 只有：收起按钮 + 根名 + 打开文件夹按钮两个图标。没有红绿灯、没有后退/前进/刷新，也没有把「查找⌘P」做成头部图标(Cmd+P 命令面板存在但没有可见入口按钮)。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "后退/前进/刷新是浏览器隐喻(需产品拍板)；但「查找⌘P」按钮应补进头部(现在功能有、入口藏)——加一个 Search 图标按钮触发 findPalette；红绿灯是纯装饰，做不做看是否要 Arc 那种 chrome 感，非功能。"
+          },
+          {
+            "what": "标签激活态视觉不同（白底浮起卡片 vs 蓝色 selection 底）",
+            "ui_demo": ".arc-tab.is-active { background: var(--c-surface)(白) ; color: --c-text ; box-shadow: var(--shadow-sm) } —— 激活标签是「从灰底浮起的白色卡片」，图标转 --c-accent。这是 Arc/浏览器竖标签的典型观感。",
+            "wordspace": ".sb-tab.is-active { background: var(--c-selected)(#e8f0fe 蓝色 tint) ; color: --c-accent } —— 是「蓝色高亮选中行」，没有 box-shadow、没有白底浮起感，跟文件树 is-active 一个样式。",
+            "severity": "P1-明显",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "把 .sb-tab.is-active 改成 background: var(--c-surface) + box-shadow: var(--shadow-sm) + color: var(--c-text)，图标保持 --c-accent。这样标签激活态是浮起白卡片、跟下面文件树的蓝底 selection 区分开(现在两者混同)。"
+          },
+          {
+            "what": "标签行高度不同（32 vs 30）",
+            "ui_demo": ".arc-tab height 32px。",
+            "wordspace": ".sb-row(标签复用它) height 30px。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "标签行给 .sb-tab 单独设 height 32px(或整体 sb-row 对齐)，跟 ui-demo 一致，标签比文件树行略高一点。"
+          },
+          {
+            "what": "标签图标不区分 web/file",
+            "ui_demo": "TabRow 按 tab.kind：web 用 Globe2(13)、非 web 用 FileText(13)。",
+            "wordspace": "所有标签都用同一个 file SVG(SVG.file)，不区分类型；虽然工作区外文件有 ↗ 标记，但没有 web/document 的图标区分(因为 WS 没有 web 标签)。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "WS 没有网页标签，这条大部分是产品决策；但可对齐的是「按 kind 给标签不同图标」——现在 sb-kind-* 只给文件树上色、标签仍单一 file 图标，可让标签也按 kind(pdf/image/word…) 换图标，跟文件树一致。"
+          },
+          {
+            "what": "未保存指示：dot vs 前置圆点字符",
+            "ui_demo": "任何未保存(unsaved)文档标签显示一个独立的 .arc-tab-dot：7px 圆、--c-accent(蓝)、闲置时显示，hover 时 display:none 让位给 pin/close 按钮。对『已落盘但有改动』和『临时文档』都适用。",
+            "wordspace": "只有临时文档(.sb-tab-temp)才在名字前用 ::before 加一个「● 」字符(9px、橙 #b06000)，且常显不让位；『已落盘的脏文件』标签没有任何未保存提示(仅关闭时弹确认)。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": false,
+            "fix": "改成 ui-demo 的独立 dot 元素：7px 圆、accent 蓝、放名字右侧、hover 时隐藏让位按钮；并且让『脏的真文件』标签也显示这个 dot(现在只有临时文档有提示)，颜色统一用 --c-accent 而不是橙色。"
+          },
+          {
+            "what": "拖拽重排没有精确插入线",
+            "ui_demo": ".arc-tab.drop-before::before / .drop-after::after 在目标行上/下缘画一条 2px --c-accent 插入线(left6 right6、圆角1)，精确指示会插到哪两行之间；插入位置按光标 Y 与行中点算(insertAt)。",
+            "wordspace": "拖拽时只有整个 .sb-zone-list 加 .sb-drop(accent-tint 底 + inset 1px accent 环)，不画行间插入线；落点索引 dropIndex 算了但没可视化，用户看不到会插到哪。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": false,
+            "fix": "给 .sb-tab 加 drop-before/drop-after 伪元素插入线(2px、--c-accent、left/right 6px)，拖拽 dragover 时按光标 Y vs 行中点给目标行加对应 class，跟 ui-demo 一样精确指示落点。"
+          },
+          {
+            "what": "置顶空态：虚线框 vs 纯文字",
+            "ui_demo": "置顶区空时渲染 .arc-tabs-empty：一个虚线边框盒子(border 1px dashed --c-border-strong、圆角、padding 10px 8px、居中、fs-sm、--c-text-3)，文案「把标签页拖到这里置顶」，明确是个 drop 区域。",
+            "wordspace": ".sb-zone-hint：纯 italic 文字(padding 5px 10px、fs-xs、--c-text-3)，文案「把标签拖到这里置顶」，没有虚线框，看不出是可拖入的目标。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "置顶区空态改成虚线框：border 1px dashed --c-border-strong、圆角 --r-sm、padding 10px 8px、text-align center、fs-sm；文案统一成「把标签页拖到这里置顶」(WS 现在少了『页』字)。"
+          },
+          {
+            "what": "标签页区空态提示：WS 多了一条 ui-demo 没有的",
+            "ui_demo": "标签页(未 pinned)那条 TabStrip 不传 emptyHint → 空时不渲染任何提示文字，直接留白。",
+            "wordspace": "标签页区空时渲染 .sb-zone-hint「没有打开的标签」。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "细节取舍：要严格对齐就去掉「没有打开的标签」这条提示(ui-demo 是空白)；但『标签栏区域常在 + 空占位提示』其实是 Wendi 明确要过的(见代码注释)，所以这条建议保留 WS 现状，标记为产品已决策、不必盲改。"
+          },
+          {
+            "what": "标签行间距 gap 不同（1 vs 2）",
+            "ui_demo": ".arc-tabs gap 1px（标签几乎贴着）。",
+            "wordspace": ".sb-zone-list gap 2px。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "把 .sb-zone-list gap 从 2px 改 1px，跟 ui-demo 一致(标签更紧凑)。"
+          },
+          {
+            "what": "段标 text-transform 缺失",
+            "ui_demo": ".arc-section-label 带 text-transform: uppercase（英文标题会大写；中文无感但规则在），fs-xs、600、letter-spacing .04em、--c-text-3。",
+            "wordspace": ".sb-sec-label 有 fs-xs/600/.04em/--c-text-3，但没有 text-transform: uppercase。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "给 .sb-sec-label 加 text-transform: uppercase，跟 ui-demo 段标规则完全一致(中文『置顶/标签页/文件』视觉不变，但规则对齐、将来有英文标题时一致)。"
+          },
+          {
+            "what": "标签页「+」新建按钮尺寸不同",
+            "ui_demo": "标签页段标右侧「+」是 .arc-ico.arc-ico-sm：24×24、圆角 --r-sm、hover rgba(0,0,0,.06)，Plus 图标 14。",
+            "wordspace": ".sb-zone-add：20×20、圆角 --r-xs、margin-right 6px、hover --c-hover，Plus 13。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "把 .sb-zone-add 调成 24×24、圆角 --r-sm、Plus 图标 14，跟 ui-demo 的 arc-ico-sm 对齐(现在偏小)。"
+          },
+          {
+            "what": "pin/close 图标尺寸与 hover 底色细节",
+            "ui_demo": ".arc-tab-act 18×18、圆角 --r-xs、色 --c-text-3、opacity0→hover1、hover 背景 --c-active；Pin/PinOff 图标 size 12、X size 12。",
+            "wordspace": ".sb-tab-pin/.sb-tab-close 18×18、圆角 --r-xs、--c-text-3、opacity0→hover1、hover --c-active（尺寸/hover 基本一致）；但 PIN/PIN_OFF SVG 是 13、X 是 12。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "把 pin 图标从 13 改成 12，跟 ui-demo(Pin/PinOff size12)对齐；其余(容器 18×18、hover --c-active)已一致，无需动。"
+          },
+          {
+            "what": "网页标签内容区 (WebView / MockSites / iframe) 缺失",
+            "ui_demo": "标签 kind='web' 时 WebView 按地址渲染三种：起始页 / 精致 mock 网站 / 真 iframe(带 .webview-strip 提示条「某些网站不允许内嵌预览…」+『打开』外链按钮，height 34px、--c-bg-sunken 底)。",
+            "wordspace": "没有 web 标签，也没有 WebView/iframe/mock 站；标签只承载本地文件(html 进编辑器、其余进查看器/外部打开)。",
+            "severity": "P2-细节",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "纯产品决策：Wordspace 是本地文档编辑器，要不要做『内嵌浏览网页』得 Colin/Wendi 拍板，不能盲目 port。若不做，这块整体不对齐是刻意的；仅当决定做浏览器时才照 WebView 三态 + webview-strip 提示条实现。"
+          },
+          {
+            "what": "标签点击切换 + 树内展开定位的一致性",
+            "ui_demo": "点标签只 setActiveTab；文件树的展开定位由 ArcSidebar 的 F6 effect 统一做(切到文件标签→展开祖先文件夹 + scrollIntoView)。",
+            "wordspace": "点标签 openTabRow→openNode + expandToFile(展开父文件夹链 + scrollIntoView)，行为上等价、都做了树内定位。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "行为已对齐(都会展开定位)，无需改；仅记录为『已一致』项，避免误判为差异。"
+          }
+        ]
+      },
+      {
+        "area": "新建文档弹窗 + 模板（ui-demo CreateModal/Templates vs Wordspace openCreateModal/doc-templates）",
+        "ui_summary": "两栏结构（左「范式」轨 + 右模板面板），带 Arc 式 omnibar 变体、关闭 X、范式卡、模板卡按 accent 描边并显示「类别/kind」小标签、未来范式占位空态；720px 宽、有开合动画。",
+        "ws_summary": "单栏 520px 弹窗，只有标题+where 一行 + 一个纯模板卡网格；没有范式概念、没有关闭 X、没有 omnibar、没有 kind/category 标签、没有动画、卡片更矮，模板 4 个（含空白）写死在本地 doc-templates.js。",
+        "differences": [
+          {
+            "what": "整体缺「范式」左轨（两栏 → 一栏）",
+            "ui_demo": "弹窗是 grid-template-columns: 190px 1fr 的两栏：左边一条「范式」轨（cm-rail），标题「范式」大写字间距 label，下面 3 张范式卡（类 Notion『当前』/ 范式2 / 范式3），底部脚注「未来每个范式有各自的编辑方式与模板」；右边 cm-pane 才是模板。",
+            "wordspace": "没有范式概念，弹窗只有一个单栏模板 grid（sb-modal-grid，1fr 1fr）。",
+            "severity": "P1-明显",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "决定是否引入「范式」这层信息架构。若对齐：把弹窗改成两栏 flex/grid，左轨渲染范式列表（当前只有『类 Notion·当前』一个 active，其余 2 个 is-soon 锁态占位），右侧根据选中范式渲染模板；范式暂时写死。若产品上不做多范式，至少考虑不引入、但要记录这是有意偏离。"
+          },
+          {
+            "what": "缺 omnibar（Arc 式地址栏）变体",
+            "ui_demo": "从「标签页 +」打开时（omni=true）弹窗顶部是一条 cm-omnibar：Globe 图标 + 大号输入框 placeholder「搜索，或输入网址」+ 输入非空时右侧出现『⏎ 打开』kbd 提示 + 关闭 X；回车开网页标签页。弹窗类名加 cm-omni，宽度/焦点都变。",
+            "wordspace": "从「标签页 +」(temp) 打开时没有地址栏，直接就是新建文档弹窗，只是把 where 文案换成『新建的是临时文档…』。",
+            "severity": "P2-细节",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "浏览器隐喻（开网页/地址栏）属产品决策，本地 HTML 编辑器要不要做浏览器 tab 需拍板。若不做浏览器，omnibar 可不 port；但『输入即搜/开』的 omnibox 外观可考虑复用给命令面板。先标记为决策项，别盲目加。"
+          },
+          {
+            "what": "弹窗没有关闭 X 按钮",
+            "ui_demo": "head 右上角有 .ws-modal-x（26x26，hover 变底色 var(--c-hover)、圆角 r-sm、内含 X icon size16），omni 变体里也有 cm-omnibar-x。",
+            "wordspace": "sb-modal-head 只有 title + where，没有任何关闭按钮，只能点遮罩或按 Esc 关。",
+            "severity": "P1-明显",
+            "effort": "S-小",
+            "fix": "在 head 里加一个右上角关闭按钮，套用 ws-modal-x 的尺寸/hover 样式（当前 shell.css 没有 .ws-modal-x，需要新增或复用现有 close 样式），点击调 close()。head 要改成 flex 两端对齐。"
+          },
+          {
+            "what": "head 布局不同（无 flex、无右侧留白）",
+            "ui_demo": "ws-modal-head 是 display:flex; align-items:flex-start; gap:12px; padding:16px 18px 14px; 底部有 1px divider 分隔线；左侧 head-text 占 flex:1，右侧放 X。",
+            "wordspace": "sb-modal-head 只有 margin-bottom:14px，没有 flex、没有 divider 分隔线、没有为 X 预留位置；整个弹窗 padding:18px 一把梭。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "把 sb-modal-head 改成 flex 两端布局并加底部 divider（border-bottom:1px solid var(--c-divider)），padding 对齐 16px 18px 14px；弹窗外层去掉整体 18px padding、改成各区自带 padding（body/pane 16-18px）。"
+          },
+          {
+            "what": "弹窗宽度不同",
+            "ui_demo": "cm-new 宽 720px（max-width: calc(100vw-32px)），容纳两栏。",
+            "wordspace": "sb-modal 宽 520px。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "若采用两栏范式布局则宽度提到 720px；若维持单栏则 520 可保留。跟第一条绑定。"
+          },
+          {
+            "what": "弹窗缺开合动画",
+            "ui_demo": "overlay 有 ws-modal-fade（opacity 0→1，dur-fast），弹窗有 ws-modal-pop（opacity + translateY(6px) scale(0.99) → none，dur）。",
+            "wordspace": "sb-modal-overlay / sb-modal 无任何 animation，直接闪现。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "在 shell.css 加 @keyframes（可复用 ui-demo 的 ws-modal-fade / ws-modal-pop 定义）并挂到 .sb-modal-overlay / .sb-modal 上。"
+          },
+          {
+            "what": "阴影 token 不一致",
+            "ui_demo": "ws-modal 用 box-shadow: var(--shadow-modal)（专门的 modal 阴影）。",
+            "wordspace": "sb-modal 用 var(--shadow-menu)（菜单阴影，通常更浅）。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "确认项目 CSS 变量里有无 --shadow-modal；有就换上，没有就参照 ui-demo 定义一个更强的 modal 阴影。"
+          },
+          {
+            "what": "弹窗无 max-height / 无内部滚动",
+            "ui_demo": "ws-modal max-height: calc(100vh-48px) + overflow hidden；cm-split 有 min-height:348px 和 max-height: calc(100vh-150px)，cm-pane 自己 overflow-y:auto。模板多时右面板内部滚动，头部/范式轨不动。",
+            "wordspace": "sb-modal 没有 max-height、grid 没有滚动容器，模板一多会把整个弹窗撑高甚至溢出视口。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "fix": "给 sb-modal 加 max-height + overflow hidden，模板 grid 外套一个 overflow-y:auto 的滚动区，头部固定。当前只有 4 个模板还不明显，但一旦模板变多就露。"
+          },
+          {
+            "what": "模板卡缺「文档/网页/演示」kind 小标签",
+            "ui_demo": "每张模板卡顶部有一行 cm-card-kind：用 t.accent 上色，显示 kindLabel（doc→文档 / page→网页 / slides→演示），字号 fs-xs、semibold。",
+            "wordspace": "sb-card 只有 name + desc，没有 kind 标签；doc-templates.js 的模板数据里也没有 kind 字段。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "fix": "给 doc-templates.js 每个模板加 kind 字段（本地基本都是 doc），卡片顶部渲染一行 accent 色 kind 标签。若本地全是 doc 意义不大，可低优或跳过，但要知道这是 ui-demo 的一个视觉元素。"
+          },
+          {
+            "what": "模板卡最小高度不同、观感更矮",
+            "ui_demo": "cm-card min-height:92px，padding 12px 13px，含 kind + name + desc 三行，视觉更饱满。",
+            "wordspace": "sb-card min-height:64px（矮 28px），只有 name + desc 两行。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "把 sb-card min-height 提到 92px（配合加 kind 标签后自然撑满），或至少调高以贴近 ui-demo 观感。"
+          },
+          {
+            "what": "空白卡（blank）hover/描边逻辑不同",
+            "ui_demo": "cm-card-blank 有独立视觉：默认 border-top-color 是 --c-border-strong（不是 accent），hover 时整卡 border-color 和 border-top-color 都变 --c-accent；且它有 cm-card-ico 图标块（30x30，FileText 图标，accent-tint 底 accent 色）。名称『空白文档』desc『从一张白纸开始』。",
+            "wordspace": "sb-card-blank 默认 border-top-color 直接是 --c-accent（常态就高亮），无 hover 变色逻辑，也没有图标块。名称『空文档』（少一个字）。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "fix": "对齐：blank 卡默认顶边用 border-strong、hover 才变 accent；给 blank 卡加一个 FileText 图标块（accent-tint 底）。文案『空文档』→『空白文档』对齐（或反向统一，但 ui-demo 是权威）。"
+          },
+          {
+            "what": "普通模板卡缺图标/预览区（Templates 页有，弹窗内 ui-demo 也无但差异体现在整体精致度）",
+            "ui_demo": "CreateModal 内模板卡本身无大预览（只有 kind+name+desc），但独立的 Templates 页每张卡有 120px 预览区（accent 顶条 strip + 文档线条占位 tpl-lines 或纸张比例 tpl-paper + 右下 mono 字体 kind 胶囊带彩点）。",
+            "wordspace": "没有独立模板浏览页，只有新建弹窗里的裸卡；完全没有预览缩略、没有 tpl-lines 线条占位、没有 accent 顶条 strip 以外的视觉。",
+            "severity": "P2-细节",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "是否做一个独立「模板」页（对齐 Templates.tsx：公司模板/公开池分段控件 + 带预览缩略的卡网格）是产品决策。若做，照抄 tpl-preview（线条占位/纸张比例）+ tpl-kind mono 胶囊 + 分段 tab + 空态文案。若不做，弹窗内卡可考虑加轻量线条预览提升精致感。"
+          },
+          {
+            "what": "缺「公司模板 / 公开池」分段控件与分池概念",
+            "ui_demo": "Templates 页有 tpl-seg 分段控件（公司模板 private / 公开池 public 两个 tab，is-active 态白底+shadow-sm），CreateModal 里只取 pool==='private' 的公司模板。公开池模板（博客文章/产品说明）是联网内容。",
+            "wordspace": "没有 pool 概念，doc-templates.js 全是本地模板，没有分段、没有公开池。",
+            "severity": "P3-锦上添花",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "公开池=联网内容，本地 HTML 编辑器要不要有『公开模板池』是产品决策，先标记。CreateModal 只用 private，所以弹窗层面影响小；分段控件主要属独立模板页。"
+          },
+          {
+            "what": "缺范式未上线的占位空态（cm-soon）",
+            "ui_demo": "选中 is-soon 的范式时，右面板显示居中占位：48px 圆形锁图标（Lock）+ 标题『范式X · 还在路上』+ 一段说明文案（每个范式是一套独立的编辑内核…上线后列出模板）。",
+            "wordspace": "没有范式，自然也没有这个空态。",
+            "severity": "P3-锦上添花",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "跟第一条『范式左轨』绑定；若引入范式就要一起做 cm-soon 空态。否则不适用。"
+          },
+          {
+            "what": "「模板」小标题 label 缺失",
+            "ui_demo": "右面板顶部有 cm-pane-label『{范式名} 模板』（如『类 Notion 模板』），fs-sm semibold text-2 色，与下面 grid 有 10px 间距。",
+            "wordspace": "模板 grid 上方没有任何小标题，head 之后直接是卡片。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "在 grid 上方加一行小标题（如『模板』或『类 Notion 模板』），套 fs-sm semibold text-2。"
+          },
+          {
+            "what": "where 文案与呈现不同",
+            "ui_demo": "非 omni 时 head 内有 cm-where『在 {空间名 / 目录}』（如『在 Tenth Global / 项目』），fs-sm text-3，紧贴标题下方；omni 时不显示 where（改地址栏）。",
+            "wordspace": "sb-modal-where 显示『在 {当前空间名}{ / dirRel}』，temp 时替换成一整句『新建的是临时文档，编辑后保存时再选存到哪个文件夹』。措辞和结构都和 ui-demo 不同（ui-demo omni 根本不显示 where）。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "非临时场景 where 文案对齐『在 空间 / 目录』格式即可。temp 那句长文案是 Wordspace 特有（本地保存语义），属合理偏离，可保留但措辞可精简。"
+          },
+          {
+            "what": "遮罩关闭用 onMouseDown（防误关）差异",
+            "ui_demo": "overlay onMouseDown 关闭 + 弹窗 onMouseDown stopPropagation，即『按下就判定』并阻止冒泡；点弹窗内部按下不会误关。",
+            "wordspace": "overlay.onclick 判定 e.target===overlay 才关（click 完整判定）。行为大体一致，但在『弹窗内按下、拖到遮罩松开』时 ui-demo 用 mousedown 更稳（Wordspace 用 click 若起点在弹窗内不会误关，实际也 OK）。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "可选：统一改成 onMouseDown + stopPropagation 模式，跟 ui-demo 一致，避免文本选择拖拽到遮罩时的边缘误关。差异很小。"
+          },
+          {
+            "what": "模板集合规模不同",
+            "ui_demo": "seedTemplates 公司池 3 个（会议纪要/项目方案/周计划）+ 公开池 2 个（博客文章/产品说明）；CreateModal 展示 blank + 3 个公司模板 = 4 张卡。",
+            "wordspace": "doc-templates.js 4 个（空文档 + 会议纪要 + 项目方案 + 周计划）= 4 张卡，与 ui-demo 弹窗展示数量恰好一致，内容也对齐（accent 色 #1a73e8/#e8710a/#d4356b 一致）。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "基本已对齐，无需改。周计划模板 Wordspace 版内容比 ui-demo 少了『例会节奏』两段+末尾 callout（wp14-wp17），若要完全对齐可补上，但属内容非视觉。"
+          },
+          {
+            "what": "grid 间距/卡片圆角等细节 token 基本一致但需核对",
+            "ui_demo": "cm-grid gap:10px，两列 1fr 1fr；卡片 border-radius: var(--r-md)。",
+            "wordspace": "sb-modal-grid gap:10px、1fr 1fr、border-radius var(--r-md)——这几项已对齐。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "无需改，记录为已对齐项。"
+          }
+        ]
+      },
+      {
+        "area": "保存流程 + 未保存关闭确认（SaveModal + CloseConfirmModal）",
+        "ui_summary": "ui-demo 用统一 .ws-modal 壳（圆角/modal 阴影/pop+fade 入场动画/带分隔线的 header + 关闭 X），SaveModal 是「选文件夹」列表（根目录用 FolderRoot 图标、选中项右侧打 Check、accent-tint 高亮无边框），保存后弹 success toast；CloseConfirmModal 有橙色圆形警告图标 + 标题 + 说明，底部「不保存(危险红)—spacer—取消—保存并关闭」，Esc 关闭。",
+        "ws_summary": "Wordspace 用另一套 .sb-modal 壳（menu 阴影、无入场动画、header 无分隔线、无关闭 X），SaveModal 列表所有行同一个 folder 图标、选中项无 Check、accent-tint+加 accent 边框，保存后不弹 toast（临时文档保存无正反馈）；关闭确认 modal 无警告图标、按钮文案/危险态色值与 ui-demo 有出入，缺 Enter 键、overlay 用 click 非 mousedown。",
+        "differences": [
+          {
+            "what": "整套 modal 外壳不是同一套（阴影/动画/圆角/结构都不同）",
+            "ui_demo": ".ws-modal：border-radius var(--r-lg)=10px，box-shadow var(--shadow-modal)（0 14px 44px 的强投影），有 ws-modal-fade（overlay 淡入）+ ws-modal-pop（modal 从 translateY(6px) scale(.99) 弹入，200ms cubic-bezier(.2,.6,.2,1)）两段入场动画，flex column + max-height calc(100vh-48px) + overflow hidden，padding 由内部 head/body/foot 各自控制",
+            "wordspace": ".sb-modal：border-radius r-lg 一致，但 box-shadow 用的是 var(--shadow-menu)（更弱的菜单阴影，不是 modal 阴影），完全没有入场动画（overlay/modal 都是瞬间出现），外壳直接 padding:18px 包住全部内容、没有 head/body/foot 分区 padding",
+            "severity": "P1-明显",
+            "effort": "M-中",
+            "is_product_decision": false,
+            "fix": "把 .sb-modal 的 box-shadow 改成 var(--shadow-modal)；加 @keyframes ws-modal-fade / ws-modal-pop 并在 .sb-modal-overlay 上 animation:ws-modal-fade var(--dur-fast) var(--ease)、.sb-modal 上 animation:ws-modal-pop var(--dur) var(--ease)；把 padding:18px 从 .sb-modal 移除，改由 head/list/foot 各自 padding（head 16px 18px 14px、foot 12px 18px）"
+          },
+          {
+            "what": "modal header 缺分隔线，且没有关闭 X 按钮",
+            "ui_demo": ".ws-modal-head 有 border-bottom:1px solid var(--c-divider)，display flex align-items flex-start，右侧有一个 .ws-modal-x 关闭按钮（26x26、圆角 r-sm、X size16、hover 时 bg c-hover + color 变深）；SaveModal 里点它 = closeSave",
+            "wordspace": ".sb-modal-head 只有 margin-bottom:14px、没有底部分隔线；整个 SaveModal 和 CloseConfirm 都没有右上角关闭 X，只能靠点遮罩/Esc/取消关",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": false,
+            "fix": "给 .sb-modal-head 加 border-bottom:1px solid var(--c-divider) + padding 对齐；在 head 里加一个 .sb-modal-x 关闭按钮（复用 ui-demo 的 26x26 尺寸 + X_SVG + hover 态），onclick=close。SaveModal 和 CloseConfirm 都补"
+          },
+          {
+            "what": "SaveModal 副标题文案不同、且没做单行 ellipsis 截断",
+            "ui_demo": "sub 文案：「{doc.title}」· 默认存到当前空间根目录，也可以选别的文件夹；.ws-modal-sub 有 overflow hidden + text-overflow ellipsis + white-space nowrap（超长单行省略）",
+            "wordspace": ".sb-modal-where 文案：「{base}」存进 {工作区名}（信息量更少，没解释「默认根目录、也可选别的文件夹」）；样式只有 margin-top:2px + fs-sm + text-3，没有 ellipsis 截断，长标题会换行撑高",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "where 文案改成对齐 ui-demo：「{base}」· 默认存到当前空间根目录，也可以选别的文件夹；.sb-modal-where 加 overflow hidden;text-overflow ellipsis;white-space nowrap",
+            "is_product_decision": false
+          },
+          {
+            "what": "根目录行没用专属图标（FolderRoot vs FolderClosed）",
+            "ui_demo": "根目录那行用 FolderRoot 图标，子文件夹行用 FolderClosed 图标——根和子目录视觉上区分开",
+            "wordspace": "所有行（根 + 子文件夹）都用同一个 SVG.folder 图标，根目录不特殊",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "在 sidebar.js 的 SVG 里加一个 folderRoot 图标（lucide FolderRoot 的 path），openSaveModal 里 d==='' 的行用 folderRoot、其余用 folder",
+            "is_product_decision": false
+          },
+          {
+            "what": "选中行没有右侧 Check 勾，且高亮样式不同",
+            "ui_demo": ".sm-row.is-on：background var(--c-accent-tint)、无边框；选中时图标 .sm-ico 变 accent 色；行尾渲染一个 Check(size15, accent 色) 图标明确标出当前选中",
+            "wordspace": ".sb-save-row.is-on：background accent-tint + 额外加 border-color:var(--c-accent)（多了一圈蓝边，ui-demo 没有）；选中时图标不变色；行尾没有 Check 勾",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "去掉 .sb-save-row.is-on 的 border-color:accent，只留背景；加 .sb-save-row.is-on .sb-ico{color:var(--c-accent)}；在选中行 append 一个 check SVG（accent 色，放行尾 flex:none）；label 用 flex:1 把 check 挤到右边",
+            "is_product_decision": false
+          },
+          {
+            "what": "SaveModal 列表行的内边距/间距/图标间距与标准不一致",
+            "ui_demo": ".sm-list padding 8px 12px 4px、gap 2px、max-height 320px；.sm-row padding 9px 12px、gap 10px、font-size var(--fs-base)=13px、transition background；label 用 fs-base",
+            "wordspace": ".sb-save-list gap 2px、max-height 320px 但 margin:4px 0 14px 且无左右 padding（列表贴边）；.sb-save-row padding 8px 10px、gap 8px、font-size var(--fs-md)=14px、无 transition",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "对齐数值：list padding 8px 12px 4px；row padding 9px 12px、gap 10px、font-size fs-base、加 transition:background var(--dur-fast) var(--ease)",
+            "is_product_decision": false
+          },
+          {
+            "what": "主按钮文案不同（保存 vs 保存到这里）",
+            "ui_demo": "SaveModal 主按钮文案是「保存到这里」（强调存到选中的那个文件夹）",
+            "wordspace": "主按钮文案是「保存」",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "把 ok.textContent 从 '保存' 改成 '保存到这里'",
+            "is_product_decision": false
+          },
+          {
+            "what": "SaveModal footer 按钮布局方向相反",
+            "ui_demo": ".ws-modal-foot：justify-content flex-end，只有「取消」+「保存到这里」两个按钮靠右排（gap 8px、border-top 分隔线、padding 12px 18px）",
+            "wordspace": ".sb-modal-foot 用了 spacer（flex:1）把「取消」推到最左、「保存」推到最右两端分开，且 footer 无 border-top、无独立 padding（靠外层 sb-modal 的 18px）",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "SaveModal 去掉 spacer，让 foot justify-content:flex-end 两个按钮都靠右（取消在左、主按钮在右）；给 .sb-modal-foot 加 border-top + padding 对齐 ui-demo（注意 CloseConfirm 的 foot 仍需 spacer，见下条，两者别共用同一 justify）",
+            "is_product_decision": false
+          },
+          {
+            "what": "保存成功后临时文档没有 toast 正反馈",
+            "ui_demo": "saveDocTo 结束会 st.toast(`已保存到 {空间名} / {文件夹}`, 'success') 弹一条成功 toast，明确告诉用户存到哪了",
+            "wordspace": "临时文档走 doSaveTemp → wsNewDoc 成功后没有任何成功提示（只有失败才 showToast）；只有已落盘真文件的 save() 会在面包屑闪「✓ 已保存」。临时文档保存这条路径完全静默",
+            "severity": "P1-明显",
+            "effort": "S-小",
+            "fix": "doSaveTemp 成功后加 showToast('已保存到 '+(dir?current.name+' / '+dir:current.name),'success')（若 showToast 支持类型）对齐 ui-demo 的成功反馈",
+            "is_product_decision": false
+          },
+          {
+            "what": "SaveModal 缺 Enter 快捷键确认",
+            "ui_demo": "onKey 里 Escape=closeSave，Enter=doSave（回车直接保存到当前选中文件夹）",
+            "wordspace": "openSaveModal 的 onKey 只处理 Escape=close，没有 Enter 触发保存",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "在 openSaveModal 的 onKey 里加 if(e.key==='Enter') ok.onclick()（或直接调保存逻辑）",
+            "is_product_decision": false
+          },
+          {
+            "what": "overlay 关闭用 click 而非 mousedown（拖拽选文本到遮罩会误关）",
+            "ui_demo": "overlay 用 onMouseDown={close}，modal 用 onMouseDown stopPropagation——用 mousedown 判定，避免在 modal 内按下、松开在遮罩外时误触发关闭",
+            "wordspace": "overlay.onclick=(e)=>{if(e.target===overlay)close()}，用的是 click；在列表里按下鼠标拖到遮罩再松开可能误关，且判定语义与 ui-demo 不同",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "两个 modal 都把 overlay 的 onclick 改成 onmousedown，modal 元素加 onmousedown stopPropagation，对齐 ui-demo 的 mousedown 语义",
+            "is_product_decision": false
+          },
+          {
+            "what": "关闭确认 modal 缺橙色圆形警告图标",
+            "ui_demo": "CloseConfirmModal 的 .cc-body 是横向 flex：左边一个 .cc-ico（36x36 圆形、background #fff4e5 暖橙底、color #b26a00、内含 AlertTriangle size20），右边才是标题+说明。视觉上有明确的「警告」符号",
+            "wordspace": "openCloseConfirm 的 head 只有标题 + 说明文字，完全没有警告图标，也没有横向 icon+text 布局",
+            "severity": "P1-明显",
+            "effort": "M-中",
+            "fix": "在 confirm modal 里加 .sb-modal-confirm 的 body：横向 flex gap12，左侧 36x36 圆形警告图标（背景 #fff4e5、色 #b26a00、内嵌一个 AlertTriangle SVG），右侧放 title+desc。补对应 CSS",
+            "is_product_decision": false
+          },
+          {
+            "what": "关闭确认 modal 标题/说明文案与 ui-demo 有出入",
+            "ui_demo": "标题「{title}」还没保存；说明「这是一个还没存进文件夹的临时文档。关掉后未保存的内容会丢失。」（ui-demo 只有临时文档这一种文案）",
+            "wordspace": "标题一致「{name}」还没保存；但说明分两种：临时「这是一个还没存进文件夹的临时文档，关掉后未保存的内容会丢失。」（逗号 vs ui-demo 句号断句）、已落盘脏文件「这个文档有未保存的修改，关掉后会丢失。」（ui-demo 没有这条分支）",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "临时文档说明的标点对齐 ui-demo（用句号分两句）。已落盘脏文件那条是 Wordspace 多出的合理分支（ui-demo 没这场景），可保留但措辞风格对齐 ui-demo",
+            "is_product_decision": true
+          },
+          {
+            "what": "关闭确认「不保存」按钮的危险态色值走了 fallback 而非 token",
+            "ui_demo": ".cc-discard：color var(--c-danger)（token=#d93025）、border-color var(--c-border)；hover 时 background var(--c-danger-tint,#fdecec)（token 实际 #fce8e6）+ border-color var(--c-danger)",
+            "wordspace": ".sb-btn-danger：color var(--c-danger,#b3261e)——用了 #b3261e 这个 fallback（跟 ui-demo token #d93025 不是一个红）；hover background var(--c-danger-tint,#fdecec)、border var(--c-danger,#b3261e)。若 Wordspace 的 tokens 没定义 --c-danger/--c-danger-tint 就会落到这些和 ui-demo 不一致的 fallback 值",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "确认 Wordspace tokens.css 里定义 --c-danger:#d93025 和 --c-danger-tint:#fce8e6（对齐 ui-demo token）；把 sb-btn-danger 的 fallback 从 #b3261e 改成 #d93025，让有无 token 都一致",
+            "is_product_decision": false
+          },
+          {
+            "what": "关闭确认按钮文案「不保存，直接关闭」逗号 vs ui-demo",
+            "ui_demo": "危险按钮文案「不保存，直接关闭」（与 wordspace 一致），主按钮「保存并关闭」，取消「取消」——顺序：不保存 — spacer — 取消 — 保存并关闭",
+            "wordspace": "文案与顺序基本一致（discard/spacer/cancel/save），这块对齐良好",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "此项基本一致，无需改；仅确认 discard 按钮的 border-color 用 var(--c-border)（ui-demo cc-discard 明确设了 border-color:var(--c-border)，Wordspace sb-btn-danger 没设 border-color、继承 sb-btn 的 var(--c-border) 恰好一致）",
+            "is_product_decision": false
+          },
+          {
+            "what": "通用按钮 .sb-btn 与 .ws-btn 尺寸/字号/边框色不一致",
+            "ui_demo": ".ws-btn：height 32px 固定、padding 0 14px、border-radius var(--r-sm)=5px、font-size var(--fs-base)=13px、fw-medium、border 1px var(--c-border-strong)（更深的边）、有 :active 态 background c-active、transition background；primary hover=c-accent-hover、active=c-accent-press（用 token 精确色，不是 filter）",
+            "wordspace": ".sb-btn：padding 7px 14px（高度不固定、靠 padding 撑）、border-radius var(--r-md)=7px（比 ui-demo 大）、font-size var(--fs-sm)=12px（比 ui-demo 小 1px）、border 1px var(--c-border)（比 ui-demo 浅）、无 :active 态；primary hover 用 filter:brightness(1.05)（不是 token 的 accent-hover 精确色）、无 active 态",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "fix": "对齐 .ws-btn：height:32px、border-radius var(--r-sm)、font-size var(--fs-base)、border-color var(--c-border-strong)、加 .sb-btn:active{background:var(--c-active)}；primary 的 hover 改 background:var(--c-accent-hover)、加 active:var(--c-accent-press)，去掉 filter:brightness",
+            "is_product_decision": false
+          },
+          {
+            "what": "overlay 遮罩 z-index / 背景一致但层级数不同（非视觉，记录）",
+            "ui_demo": ".ws-modal-overlay z-index:1000、background rgba(20,22,26,0.32)、padding 24px",
+            "wordspace": ".sb-modal-overlay z-index:400、background rgba(20,22,26,.32)（一致）、padding 24px（一致）",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "背景和 padding 已一致，z-index 数值不同不影响视觉（只要盖住其它层即可），可不改；若要严格对齐可统一到 1000",
+            "is_product_decision": false
+          }
+        ]
+      },
+      {
+        "area": "编辑器画布 Canvas + 块编辑 chrome（格式气泡 / 斜杠菜单 / 块菜单 / ⋮⋮ 手柄 / 选中态 / 页边距 / 空态）",
+        "ui_summary": "ui-demo 是一个受控 React 分块编辑器：块贴文档流、hover 左侧浮 GripVertical 手柄、选中=淡灰单线环+内缩、气泡工具栏/斜杠菜单/块菜单全带 lucide 图标与精调的首行对齐，文档本身有 max-width 820 居中 + 页边距 + 文档头/页脚 + 纸张 pageFormat 版式。",
+        "ws_summary": "Wordspace 把同一套块编辑逻辑移植进 iframe 内、直接操作真实 DOM（DOM 即模型），交互流程几乎 1:1 对齐，但因 §0「编辑器不套装饰排版」+ 覆盖层用手写 SVG/文本而非 lucide，导致选中态、手柄首行对齐、菜单图标、占位符、文档头/页脚/纸张版式等一批视觉细节缺失或不一致。",
+        "differences": [
+          {
+            "what": "块菜单每一项缺图标",
+            "ui_demo": "BlockActionMenu 每项左侧有 15px lucide 图标（Type/Heading/Quote/Plus/Copy/Trash2），icon 与文字 gap:10px，图标色 var(--c-text-3)=#8a8f96，danger 项图标也染红",
+            "wordspace": "openBlockMenu 里全是纯文字按钮（'转为正文''转为标题''转为引用''在下方插入''复制''删除'），完全没有图标，.ws-blockmenu-item 也没设 gap/svg 样式",
+            "severity": "P1-明显",
+            "effort": "M-中",
+            "is_product_decision": false,
+            "fix": "在 openBlockMenu 的 add()/sub() 里给每个按钮 innerHTML 前置一段 inline SVG（对应 Type/Heading/Quote/Plus/Copy/Trash2 的 lucide 路径，size15 stroke1.8），并在 EDITOR_CSS 的 .ws-blockmenu-item 加 gap:10px、给 svg 加 color:#8a8f96;flex:none，danger 项 svg 染 #d93025"
+          },
+          {
+            "what": "块菜单颜色行前缺分隔线",
+            "ui_demo": "ws-blockmenu 结构：3 个转换项 → sep → 插入/复制/删除 → sep → 颜色行（颜色行前有第二条 ws-blockmenu-sep）",
+            "wordspace": "转换 3 项 → sep → 插入/复制/删除 → 直接接颜色行，颜色行前没有第二条 sep",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "在 openBlockMenu 里 add('删除') 之后、append colors 之前，再插一个 ws-blockmenu-sep"
+          },
+          {
+            "what": "⋮⋮ 手柄未按块类型做首行对齐",
+            "ui_demo": "ws-block-controls 默认 top:10px（对齐正文/列表首行），并为每种块类型微调：h1=18/h2=30/h3=24/quote=14/callout=30/divider=22/image=18，手柄竖直居中对准该块首行文字",
+            "wordspace": "positionGrip 对所有块统一 top = 块 getBoundingClientRect().top + 2，标题/引用/callout 这些上外边距大或字大的块，手柄会偏上、对不齐首行文字",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": false,
+            "fix": "positionGrip 里按 classify(el)/tagName 给一个 per-type 的垂直偏移表（h1/h2/h3/quote/callout/hr/img 各自的 top 增量），把手柄压到该块首行文字的视觉中线；或按块首行 line box 的实际 top 计算"
+          },
+          {
+            "what": "块选中态的视觉环样式不同",
+            "ui_demo": "选中（非编辑）= 单线细环 box-shadow:0 0 0 1.5px rgba(0,0,0,.18) + bg rgba(0,0,0,.025) + 左右各 padding 8px 配 margin -8px（块内容轻微内缩、环包住内容留白）",
+            "wordspace": "= 双环 box-shadow:0 0 0 2px rgba(0,0,0,.16),0 0 0 6px rgba(0,0,0,.05) + bg rgba(0,0,0,.03)，且明确不加 padding/margin（避免推文字），所以环紧贴文字、无内缩留白，且是更重的双层环",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "产品取舍：ui-demo 的 -8px margin 内缩在 iframe 真实文档里可能顶破居中容器/造成横向抖动，这是 Wordspace 刻意不做的（注释已说明）。若要更接近观感，可把双环改成 ui-demo 的单线 1.5px + bg .025，内缩可用 outline-offset 或不动布局的方式近似，别盲抄 margin 方案"
+          },
+          {
+            "what": "正文占位符：文案标点 + 显示时机不同",
+            "ui_demo": "ws-p 空段占位符 data-placeholder='输入正文,或按 / 插入'（ASCII 逗号），且对所有空 .ws-p 常显（:empty::before，无论是否在编辑）",
+            "wordspace": "占位符文案 '输入正文，或按 / 插入'（全角逗号），且只在 p[data-ws2-editing]:empty 时显示——非编辑态的空段不显示占位符",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "统一标点（ui-demo 用的是半角逗号，二选一对齐，建议以 ui-demo 为准改成半角）；若要常显占位符，把选择器从 p[data-ws2-editing]:empty 放宽到 [data-ws2-root]>p:empty（但注意多空段会全部显示占位符，ui-demo 就是这行为）"
+          },
+          {
+            "what": "斜杠/转换菜单条目集合不一致",
+            "ui_demo": "SLASH_ITEMS 无『标题 4』，有『提示(callout)』；标题只到 h3；顺序 正文/h1/h2/h3/无序/编号/待办/引用/提示/分隔线/AI",
+            "wordspace": "多了『标题 4』(h4，U7 Schema 封顶)；顺序把 编号/待办 放到 引用 之后（正文/h1/h2/h3/h4/无序/引用/编号/待办/提示/分隔线/AI）",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "h4 是 Schema 决策（U7 有意保留），顺序差异是刻意的（注释说明块菜单按 key 取、不靠下标）。若纯为对齐 ui-demo 的斜杠列表顺序，可把 numbered/todo 移回 quote 之前；但 h4 保留与否要产品拍板，别为对齐而删"
+          },
+          {
+            "what": "格式气泡『转为▾』的箭头用文本而非图标",
+            "ui_demo": "『转为』后跟 lucide ChevronDown（size12 strokeWidth2），矢量小箭头",
+            "wordspace": "『转为 ▾』用 Unicode 字符 ▾（字形/字重随字体，和 lucide 箭头粗细观感不同）",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "把 '转为 ▾' 的 ▾ 换成 inline SVG 的 chevron-down（viewBox 0 0 24 24, 12x12, stroke-width2, path 'M6 9l6 6 6-6'）"
+          },
+          {
+            "what": "格式气泡高亮按钮图标不同",
+            "ui_demo": "背景高亮按钮用 emoji 🖍（马克笔），彩色 emoji",
+            "wordspace": "用单色 lucide 风 SVG 马克笔（stroke currentColor）",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "观感取舍：Wordspace 的单色 SVG 其实比彩色 emoji 更统一，通常不建议倒退成 emoji。若严格对齐 ui-demo 就换回 🖍，但更推荐反过来在 ui-demo 侧统一成 SVG。标注为对齐项即可"
+          },
+          {
+            "what": "格式气泡文字色/高亮色板取值不同",
+            "ui_demo": "TEXT_COLORS=['#1a1a1a','#b3261e','#b06000','#188038','#1a73e8','#7b1fa2']，HILITE=['#fff59d','#ffd6d6','#d7f0db','#dbe9ff','#f3e3ff']（5 个高亮）",
+            "wordspace": "TEXT_COLORS=['#1c1d1f','#d93025','#b06000','#1e8e3e','#1a73e8','#8430ce']，HILITE=['#fff3bf','#ffd8d8','#d7f0db','#d6e4ff','#eadcff','#eceef0']（6 个高亮，多一个灰）",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "对齐色值：把 TEXT_COLORS 与 HILITE_COLORS 数组改成 ui-demo 的取值（含高亮只留 5 个、去掉多出来的 #eceef0 灰）。注意 Wordspace 的 ws-color class 名基于 hex，改色值要同步 ensureColorStyle 生成的 class（自洽即可）"
+          },
+          {
+            "what": "待办勾选框尺寸/边框色/垂直位微差",
+            "ui_demo": "todo li::before 16x16、border 1.5px var(--c-border-strong)=#d3d6db、top:0.28em；勾选背景 #1a73e8",
+            "wordspace": "15x15、border 1.5px #b5b9c0（偏深灰）、top:0.3em；勾选背景 #1a73e8（同）",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "把 EDITOR_CSS 与入盘 ensureTodoStyle 的 todo::before 尺寸改 16px、border 色改 #d3d6db、top 改 0.28em，两处（编辑器 CSS + 入盘 style）都要改保持一致"
+          },
+          {
+            "what": "文档缺 max-width 居中 + 页边距的『纸面』观感（页边距标准）",
+            "ui_demo": "ws-doc max-width var(--maxdoc-w) 居中，padding 30px 56px 140px；且支持 pageFormat（A4/A3/A5/Letter）时切成白纸+边框+双层阴影+对应纸宽的实际版式（.ws-doc.ws-fmt）",
+            "wordspace": "§0 决策『编辑器不套装饰排版』，仅通过入盘 baseline :where(body){max-width:820px;margin:0 auto;padding:48px 60px} 给一个可读宽度+留白；没有 pageFormat 纸张版式（A4/白纸/阴影边框那套），padding 值也和 ui-demo 不同（48/60 vs 30/56/140）",
+            "severity": "P1-明显",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "pageFormat 纸张版式（A4/Letter 白纸+阴影）是 ui-demo 的产品能力，Wordspace 是否要做属产品决策（涉及导出/打印版式）。可对齐的部分：baseline padding-bottom 太小（60→给文末更多续写留白，对齐 ui-demo 的 140 底部），让文末点击区更舒展。纸张版式建议单独立项，别在对齐里盲加"
+          },
+          {
+            "what": "缺文档头（面包屑/编辑者/可见性/… 菜单）与文末页脚",
+            "ui_demo": "DocHeader：面包屑（团队空间/我的草稿 · 文件夹 或 挂载路径）、编辑者头像+『编辑于 X』、可见性圆点+标签、右上『…』菜单（导出 PDF/Word/PPTX、复制链接、重命名、删除）、重命名 inline input；文末 ws-doc-end『这是一个本地 HTML 文件 · 路径』或未保存提示",
+            "wordspace": "blockedit 内不含文档头/页脚（这些在 Electron shell 里另做）；canvas 区本体只有块流，没有 ui-demo 那套面包屑/编辑者/可见性/文末路径提示的排版",
+            "severity": "P1-明显",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "文档头/页脚很多是浏览器/云协作隐喻（面包屑挂载路径、可见性、协作者、复制链接），要产品拍哪些进本地 HTML 编辑器。可低成本对齐的：文末加一行 ws-doc-end 风格的『本地 HTML 文件 · 完整路径』灰字（Wordspace 有真实文件路径，天然适配），给文档一个明确结尾感"
+          },
+          {
+            "what": "块级 hover 时右侧缺『删除』快捷区（ui-demo 保留了 .ws-block-del 样式位）",
+            "ui_demo": "Canvas.css 定义了 .ws-block-del（右 -34px 的 × 按钮，hover 出现、hover 变红底 danger），是块右侧的删除抓手样式（虽 tsx 当前主走 ⋮⋮ 菜单）",
+            "wordspace": "无右侧删除抓手，删块只走 ⋮⋮ 块菜单里的『删除』或选中后 Delete/Backspace",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "ui-demo 的 tsx 实际也没渲染 ws-block-del（只留了 CSS），两边行为其实一致（都走 ⋮⋮ 菜单+键盘删）。可不改；若产品想要更快的删块抓手再单独加"
+          },
+          {
+            "what": "手柄 hover 出现的触发范围/常驻策略细节",
+            "ui_demo": "ws-block-controls 默认 opacity:0，块 hover 才 opacity:1（120ms 过渡淡入）；块灰选中时手柄常驻 opacity:1",
+            "wordspace": "手柄是单个浮动节点跟随 hoverEl 定位，直接 display none/flex 切换（无淡入过渡）；编辑态也常驻指向当前块",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "给 .ws-grip 加 opacity + transition:opacity 120ms 的淡入淡出（而非 display 硬切），positionGrip 里改成切 opacity/visibility，观感更接近 ui-demo 的柔和淡入"
+          },
+          {
+            "what": "拖拽插入指示线粗细/位置略有出入",
+            "ui_demo": "drop 指示线 height:2px、色 var(--c-accent)=#1a73e8、圆角 2px，位于块 top:-1px 或 bottom:-1px（::before/::after 横贯 left0 right0）",
+            "wordspace": "用 box-shadow:0 -2px 0 0 #1a73e8 / 0 2px 0 0 #1a73e8 画线，2px、同色，但无圆角、且是投影线不是独立元素（视觉基本一致，端点无圆角）",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "基本等效，可不改。若追求端点圆角，可改用 ::before/::after 伪元素画 2px 圆角线替代 box-shadow"
+          },
+          {
+            "what": "格式气泡 viewport 顶部保护（clamp）是 Wordspace 独有的修正，非差异但值得记录方向一致性",
+            "ui_demo": "showFmtAt 恒 top - 46（无 clamp，因 ws-doc 有 padding-top 30px 把首块推下、气泡不至于出屏）",
+            "wordspace": "§0 删 canvas 后块贴顶，showFmtAt 加了 Math.max(top-46, sy+6) 视口顶保护，避免首块气泡被推出屏",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "这是 Wordspace 因去掉 padding-top 而必须加的正确修正，不要为对齐 ui-demo 而删。若给文档加回顶部留白（见页边距项），此 clamp 可保留兜底"
+          }
+        ]
+      },
+      {
+        "area": "基础编辑器（非合规 HTML）· BasicEditor",
+        "ui_summary": "顶栏保留合规文档的面包屑/…菜单/编辑于，右侧放「编辑/预览」双态切换；编辑态展开被 JS 藏起来的全部内容（reveal-all）并可编辑，预览态跑文档 JS 只读看原貌；提示条放在文档下方（浅黄 border-top）；三能力=富就地文字/悬停删块/Esc 空间切块；焦点框与删除强调色是蓝（--c-accent #1a73e8），格式条复用画布同款 .ws-fmtbar（无边框、shadow-menu）。",
+        "ws_summary": "同样三能力都在，宿主浮层 position:fixed 移植过来；但没有编辑/预览切换、没有 reveal-all；提示条改到 iframe 上方（浅黄 border-bottom）文案不同更啰嗦；强调色硬编码成珊瑚橙 #e8654f；格式条是自绘独立样式（带边框、尺寸/圆角/色板略有出入）；额外多了一个只读块的 🔒 角标（ui-demo 没有）。",
+        "differences": [
+          {
+            "what": "编辑/预览双态切换整块缺失",
+            "ui_demo": "顶栏右侧有一个 .nce-modes 分段控件（sunken 底 #f7f8fa、圆角 9px、padding 3px、内含两个 button「编辑」「预览」，选中态 .on = 白底+蓝字 var(--c-accent)+shadow-sm）。预览态时 iframe 换成 sandbox=allow-scripts 真跑文档 JS、只读看交互原貌；编辑态 sandbox=allow-same-origin。",
+            "wordspace": "完全没有这个切换控件，也没有预览态。iframe 恒为 sandbox=allow-same-origin，只有编辑一种模式。",
+            "severity": "P1-明显",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "产品先拍板要不要「预览态真跑文档 JS」。若要：顶栏右侧加分段控件（照抄 .nce-modes 样式），preview 时把 doc-frame 的 sandbox 切成 allow-scripts、卸掉编辑 chrome、body.contentEditable=false；edit 时恢复。若产品决定不做预览，也应显式记录，不要只是漏掉。"
+          },
+          {
+            "what": "reveal-all（展开被 JS 隐藏的内容）缺失",
+            "ui_demo": "编辑态 wire 时先调 revealAll(d)：注入一段带 data-ws-schema-css 的 style，把 [hidden]/display:none/visibility:hidden 的元素强制 display:revert/visible/opacity:1/height:auto，并给这些元素加 .ws-nce-reveal 类，然后再 collectBlocks。结果是 JS 藏起来的 tab 面板、折叠区在编辑态全部可见可编辑。还顺带把有 max-width 的窄 body 居中（margin auto）。",
+            "wordspace": "attach 里没有任何 reveal-all。直接对当前 DOM collectBlocks，凡是被文档自身 CSS/属性隐藏的块都收集不到、编辑不到；窄 body 也不居中。",
+            "severity": "P1-明显",
+            "effort": "M-中",
+            "is_product_decision": false,
+            "fix": "在 attach 里、collectBlocks 之前，照抄 revealAll：注入 style 强制显示 [hidden]/display:none/visibility:hidden 元素并加类，body 加 margin auto 居中。注意 app 是 adoptedStyleSheets 路线，可用同样机制注这段 reveal CSS，避免写进序列化。"
+          },
+          {
+            "what": "提示条位置相反（上 vs 下）",
+            "ui_demo": ".nce-notice 放在文档「下方」，用 border-top: 1px solid #f0e4b0 与文档分隔（视觉上文档在上、提示压在底边）。",
+            "wordspace": ".ws-degrade-notice 放在 doc-header 与 iframe「之间」（文档上方），用 border-bottom: 1px solid #f0e2b8。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "若要对齐 ui-demo，把 #ws-degrade-notice 移到 #doc-frame 之后、改成 border-top。但这涉及信息架构（提示放顶还是放底哪个更该被看到），建议跟 Colin/Wendi 确认一句再动。"
+          },
+          {
+            "what": "提示条文案不一致",
+            "ui_demo": "极简中立一句：「该文件不符合 Wordspace Schema，仅支持基础编辑。」配一个 lucide Info 图标（size15）。",
+            "wordspace": "长文案，把所有操作说明塞进去：「此文件不符合 Wordspace Schema，仅支持基础编辑：点文字改字（选中出格式条：粗/斜/下/删 + 文字色/高亮/清除）· 悬停任意块右上角 🗑 删除 · 按 Esc 后用方向键在块间移动、Delete 删除。」用自绘 circle+感叹号 SVG。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "对齐成 ui-demo 的一句话中立文案；操作说明如需保留另找地方（如首次 onboarding tip）。文案是产品/文档口径，改前确认。"
+          },
+          {
+            "what": "提示条配色/字号不同",
+            "ui_demo": "文字色 #8a6d1a，底色 #fdf6d8，图标色 #b7943a，字号 var(--fs-sm)=12px，padding 8px 20px，gap 8px。",
+            "wordspace": "文字色 #8a5a00，底色 #fff8e6，图标色 #c8930a，字号 12.5px，line-height 1.5，padding 8px 16px。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "把颜色改成 #8a6d1a/#fdf6d8/#b7943a，字号 12px，padding 改 8px 20px，去掉 line-height 覆写（或保留但对齐）。"
+          },
+          {
+            "what": "焦点框/悬停删除的强调色：蓝 vs 珊瑚橙",
+            "ui_demo": ".nce-focus 边框 = var(--c-accent) = #1a73e8（蓝）；.nce-hover-del 按钮底 = var(--c-accent) 蓝、hover = var(--c-accent-hover) #1765cc。（注：ui-demo 自身有点不一致——focus/hover 的外扩阴影 rgba(232,101,79) 是珊瑚，但主色是蓝。）",
+            "wordspace": "全部硬编码珊瑚橙：.nce-focus 边框 #e8654f、.nce-hover-del 底 #e8654f、hover #d64f38。焦点框主色和阴影都是珊瑚。",
+            "severity": "P1-明显",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "按 ui-demo：焦点框边框、悬停删除按钮底色改成 app 的 accent（app accent 是蓝 #1a73e8，见 tokens），hover 用 #1765cc。注意 app 和 ui-demo 的 accent 恰好都是 #1a73e8，所以对齐后是蓝。虚线 hover 框的 rgba(232,101,79,0.55) 两边一致可留。若产品明确要珊瑚强调则反过来统一，但 ui-demo 权威=蓝。"
+          },
+          {
+            "what": "多了 ui-demo 没有的只读 🔒 角标",
+            "ui_demo": "没有任何锁标记。悬停原子块（img/hr/iframe 等）也只显示右上角 🗑 删除按钮。",
+            "wordspace": "hoverBox 里额外加了 .nce-lock（🔒，左上角 top/left -11px，drop-shadow），当块是 READONLY_TAGS（IMG/HR/IFRAME/SVG/VIDEO/AUDIO/EMBED/OBJECT/CANVAS）时显示，表示「只读，不是可编辑文字」。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "这是 app 主动加的功能性提示，比 ui-demo 多。要不要对齐取决于产品：若追求跟 ui-demo 一模一样就删掉 🔒；但它其实是个合理增强（告诉用户这块不能改字只能删），建议保留并反向提给设计。"
+          },
+          {
+            "what": "格式条：自绘独立样式 vs 复用画布同款 .ws-fmtbar",
+            "ui_demo": ".ws-fmtbar 是全局画布同款（Canvas.css）：无边框、box-shadow var(--shadow-menu)（含 0 0 0 1px 描边替代 border）、height 固定 32px、圆角 var(--r-md)=7px、position:absolute+translateX(-50%)、z-index 50。",
+            "wordspace": ".ws-fmtbar 是本文件自绘：有实体 border 1px solid #e2e4e8、box-shadow 0 4px 16px rgba(0,0,0,.14)、无固定 height（靠 padding 3px 4px）、圆角 9px、position:fixed。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": false,
+            "fix": "把 .ws-fmtbar 对齐画布同款：去掉实体 border 改用 shadow-menu 的 0 0 0 1px 描边、圆角 7px、height 32px。app 用 fixed 定位是移植需要可保留，但视觉参数（圆角/阴影/边框/高度）应对齐。"
+          },
+          {
+            "what": "格式条按钮尺寸/色差",
+            "ui_demo": "bubble 里 .nce-bubble .ws-fmtbar-btn 覆写成 min-width 28px、height 26px；基色 .ws-fmtbar-btn = color var(--c-text-2) #5a5f66、hover 背景 var(--c-hover) #f0f1f3 且文字变 var(--c-text)。",
+            "wordspace": ".ws-fmtbar-btn min-width 28px、height 26px（这条一致），但基色写死 #2b2d31、hover 背景 #f0f1f3（无 hover 变文字色）。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "按钮基色改 #5a5f66（--c-text-2），hover 时文字色补成 #1c1d1f（--c-text）。尺寸已对，不用动。"
+          },
+          {
+            "what": "色板 swatch 尺寸不同",
+            "ui_demo": "弹层里 .ws-fmtbar-swatches .ws-fmtbar-swatch = 20px×20px、圆角 var(--r-xs)=3px、border 1px solid var(--c-border) #e4e6e9；弹层 top calc(100%+6px)、padding 7px、gap 4px、圆角 7px、shadow-menu。",
+            "wordspace": ".ws-fmtbar-swatch = 18px×18px、圆角 5px、border 1px solid rgba(0,0,0,.12)；弹层 top 32px、padding 6px、gap 4px、圆角 8px、box-shadow 0 4px 16px rgba(0,0,0,.14) 且带实体 border。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "swatch 改 20×20、圆角 3px、border 用 #e4e6e9；弹层 padding 7px、圆角 7px、去实体 border 换 shadow-menu、top 用 calc(100%+6px) 而非固定 32px。"
+          },
+          {
+            "what": "文字色按钮 A 的下划线装饰缺失",
+            "ui_demo": ".ws-fmtbar-aglyph 在画布样式里 = font-weight 700 + text-decoration underline，下划线颜色 var(--c-accent)（蓝）、text-underline-offset 2px —— 即那个「A」下面有条蓝线暗示是文字颜色。",
+            "wordspace": ".ws-fmtbar-aglyph 只有 font-weight 700 + font-size 14px，没有下划线。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "给 .ws-fmtbar-aglyph 加 text-decoration: underline; text-decoration-color: #1a73e8; text-underline-offset: 2px。"
+          },
+          {
+            "what": "hover 虚线框主色 token vs 硬编码（等价但不可主题化）",
+            "ui_demo": ".nce-hover-del hover 用 var(--c-accent-hover)，focus/hover 主色走 CSS 变量，随主题走。",
+            "wordspace": "全部硬编码十六进制（#e8654f/#d64f38 等），换主题/暗色不跟随。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "改用 app 已有的 var(--c-accent)/var(--c-accent-hover) 等 token，而不是写死颜色，保证跟主题系统一致。"
+          },
+          {
+            "what": "格式条定位/层级细节",
+            "ui_demo": "position:absolute 相对 .nce 宿主 + translateX(-50%)，z-index 60（.nce-bubble 覆写），气泡顶到选区上方 46px（JS：r.top - 46，最少距顶 6px）。",
+            "wordspace": "position:fixed 相对视口，z-index 60，气泡定位 JS 算 h.top - offsetHeight - 8（贴选区上 8px），left 夹 min 6px。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": false,
+            "fix": "定位机制因 app 用 fixed 视口坐标不必强改；但两边气泡与选区的间距（ui-demo 约 46px 常量 vs app offsetHeight+8 动态）观感可能不同，建议目视对齐一下上边距。属可接受差异，低优先。"
+          }
+        ]
+      },
+      {
+        "area": "查看器（PDF / 图片 / 文件条 FileViewerBar / Markdown 源码栏）",
+        "ui_summary": "ui-demo 的查看器是「浏览器内嵌只读预览」隐喻：统一的 FileViewerBar（文件名 + 药丸 tag + 右侧「用 X 打开」带 lucide 外链图标的描边按钮），PDF/图片都是精心排版的 mock 内容（PDF 是白纸阴影页 + 图表；图片是深色影院背景 + 圆角画框 + 白字标题），另有一个 Markdown 源码实时抽屉证明「块模型↔.md 可逆」。",
+        "ws_summary": "当前 app 是「真文件预览」：PDF 用 PDF.js 渲染真页 + 自绘缩放工具栏，图片直接 <img> 真图，文件条复用 fv-bar 但样式/文案/图标都跟 ui-demo 有出入，背景色偏浅，图片没有画框/标题，完全没有 Markdown 源码栏。",
+        "differences": [
+          {
+            "what": "文件条右侧按钮文案：ui-demo 带具体 app 名，app 是通用文案",
+            "ui_demo": "「用 预览 打开」——FileViewerBar 接收 app prop（PDF/图片都传「预览」），文案动态拼成「用 {app} 打开」，点击 toast「正在用 预览 打开「文件名」」。",
+            "wordspace": "「用默认程序打开」——固定死文案，不带 app 名，openExternalBtn 里 innerHTML 写死。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "若要对齐视觉可把文案改成「用 预览 打开」；但真 app 里能否拿到「会用哪个默认程序」的名字是产品/技术问题（Electron shell.openPath 不返回 app 名），可能只能保留通用文案。视觉上至少统一措辞风格。标记 product_decision 因为涉及要不要探测默认程序名。"
+          },
+          {
+            "what": "文件条外链按钮的图标：ui-demo 用 lucide ExternalLink，app 用自绘 SVG",
+            "ui_demo": "<ExternalLink size={14} />（lucide-react 标准外链图标，14px，跟工具栏文字 gap 6px）。",
+            "wordspace": "自己手写的 EXT_SVG（24 viewBox 缩到 14px 的箭头出框路径），形状接近但不是同一套线条/端点。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "把 EXT_SVG 换成 lucide ExternalLink 的实际 path（stroke-width 2、round cap），保证跟 ui-demo 全站图标一致。"
+          },
+          {
+            "what": "文件条外链按钮：ui-demo 有描边（outline button），app 无边框",
+            "ui_demo": ".fv-open 有 `border: 1px solid var(--c-border)`、padding 6px 12px、r-sm 圆角，默认态就是一个可见的描边胶囊按钮；hover 时 background 变 c-hover、文字变 c-text。",
+            "wordspace": ".fv-open 无 border，只有 height:30px + padding 0 12px，默认态是纯文字按钮，只有 hover 才出 c-hover 底色。视觉分量比 ui-demo 弱很多。",
+            "severity": "P1-明显",
+            "effort": "S-小",
+            "fix": "给 app 的 .fv-open 加 `border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 6px 12px;` 让它默认就是描边按钮，跟 ui-demo 一致。"
+          },
+          {
+            "what": "文件条整体高度与左右内距差异巨大",
+            "ui_demo": ".fv-bar `padding: 8px 16px`，高度由内容撑（约 40px），左右对称 16px。",
+            "wordspace": ".fv-bar `min-height: 52px; padding: 0 240px(--top-actions-reserve) 0 56px`——左内距 56px（给红绿灯/窗口按钮让位）、右内距 240px（给顶部操作区让位），条子明显更高更偏。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "fix": "这是真窗口约束（macOS 交通灯 + 顶栏操作区），不能盲改成 8px 16px。但可以复核 52px 高度和 240px 右保留是否过大、能否收窄到接近 ui-demo 的紧凑感。标记留意但保留窗口让位逻辑。"
+          },
+          {
+            "what": "文件条底边框颜色：ui-demo 用 c-border，app 用更浅的 c-divider",
+            "ui_demo": ".fv-bar `border-bottom: 1px solid var(--c-border)`（#e4e6e9）。",
+            "wordspace": ".fv-bar `border-bottom: 1px solid var(--c-divider)`（#eceef0，更浅）。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "把 app 的 fv-bar border-bottom 改成 var(--c-border) 对齐。"
+          },
+          {
+            "what": "文件条背景 token 不同（视觉同色但语义不同）",
+            "ui_demo": ".fv-bar `background: var(--c-surface)`（#fff）。",
+            "wordspace": ".fv-bar `background: var(--c-bg)`（当前也是 #fff，视觉无差）。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "统一用 var(--c-surface)，避免将来两 token 分叉时查看器条跟着变。纯一致性，视觉当前无差。"
+          },
+          {
+            "what": "tag 药丸的实现：ui-demo 靠 padding 自适应高度，app 写死高度",
+            "ui_demo": ".fv-bar-tag `padding: 2px 8px; border-radius: r-pill; background: c-hover; color: c-text-2; font-size:11px; font-weight:medium`，高度由内容+padding 撑。",
+            "wordspace": ".fv-tag 写死 `height:18px`，background 用 `c-bg-rail`（#ececef，比 ui-demo 的 c-hover #f0f1f3 略深），无 font-weight:medium。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "app 的 .fv-tag 改成 `padding: 2px 8px`（去掉 height:18px）、background 改 var(--c-hover)、加 `font-weight: var(--fw-medium)`，对齐 ui-demo 药丸质感。"
+          },
+          {
+            "what": "PDF/图片 tag 文案分隔符与措辞",
+            "ui_demo": "PDF 传 tag=「PDF · 只读」，图片传「图片 · 只读」（中点分隔，统一「· 只读」后缀）。",
+            "wordspace": "图片查看器 tag 写死「图片 · 只读」（一致）；但 PDF 走 PDF.js mount 后，工具栏里根本没有「PDF · 只读」这个 tag——只有文件名 + 页码 + 缩放控件，只读标签缺失。",
+            "severity": "P1-明显",
+            "effort": "S-小",
+            "fix": "在 pdf-viewer.js 的 bar 里，文件名后补一个 `.fv-tag`「PDF · 只读」，跟图片查看器和 ui-demo 对齐（现在 PDF 条少了只读语义标记）。"
+          },
+          {
+            "what": "文件名最大宽度约束",
+            "ui_demo": ".fv-bar-name `max-width: 340px` + ws-truncate（超长省略号），名字不会把 tag 挤走。",
+            "wordspace": ".fv-name 只有 `min-width:0 + overflow ellipsis`，无 max-width，靠 flex 收缩截断，长名字行为跟 ui-demo 的固定 340px 上限不完全一致。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "给 .fv-name 加 `max-width: 340px` 对齐（可选，flex 截断已基本可用）。"
+          },
+          {
+            "what": "PDF 内容：ui-demo 是排版精致的 mock 纸页，app 是 PDF.js 渲染真页",
+            "ui_demo": "两张白色纸页（720px 宽、box-shadow、圆角 2px、内距 56/60px），含 eyebrow 小标(letter-spacing .16em 大写灰)、28px/800 大标题、meta、正文 line-height 1.8、CSS 柱状图(5 根渐变蓝柱 #4f8cf0→#1a73e8)、图注居中，滚动区背景 #e6e7ea 灰。",
+            "wordspace": "真 PDF.js canvas 连续滚动 + 自绘一行缩放工具栏（− %  ＋ 适应宽度 + 页码），滚动区背景 c-bg-sunken(#f7f8fa)，纸页 box-shadow 更淡(0 1px 6px .18)。完全是真文件，不存在 mock 排版元素。",
+            "severity": "P2-细节",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "这块是「真文件 vs mock 示意」的本质分歧，app 渲染真 PDF 是对的、不该 port mock 内容。但可对齐的视觉：①滚动区背景从 #f7f8fa 调到 ui-demo 的 #e6e7ea（更中性的灰更衬托白纸）②纸页阴影加强到 `0 2px 10px rgba(0,0,0,.12)` ③纸页圆角 2px。product_decision=不做 mock 内容。"
+          },
+          {
+            "what": "PDF 工具栏：ui-demo 没有缩放控件，app 自绘了一整套",
+            "ui_demo": "PDF 只有共享 FileViewerBar（文件名+tag+外链按钮），没有任何缩放/页码控件——纯滚动阅读 mock 页。",
+            "wordspace": "PDF 工具栏额外有：页码「x / n」、缩小−、百分比 label、放大＋、「适应宽度」按钮 + Cmd/Ctrl 滚轮缩放。是 app 独有的真实功能（B7/B8 教训催生）。",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "app 的缩放/页码是真 PDF 阅读必要功能，ui-demo 因为是 mock 才没有——不该删。但这些控件的样式（.pdfv-zbtn 26x26 描边、.pdfv-fit）ui-demo 里没有对应参考，建议让它们的圆角/描边/hover 沿用 ui-demo 通用按钮 token（现在已用 c-border/r-sm，基本 OK）。product_decision=保留缩放功能。"
+          },
+          {
+            "what": "图片查看器背景：ui-demo 深色影院背景，app 浅灰背景",
+            "ui_demo": ".imgv-scroll `background: #2b2d31`（深炭色），`display:grid; place-items:center`（图片正中垂直水平居中），padding 32px。深底衬托图片是相册/预览 app 的经典手法。",
+            "wordspace": ".imgv-scroll `background: var(--c-bg-sunken)`（#f7f8fa 浅灰），`align-items:flex-start`（顶对齐不是居中），padding 28px。",
+            "severity": "P1-明显",
+            "effort": "S-小",
+            "fix": "把 app .imgv-scroll 背景改 #2b2d31、`align-items/justify-content:center`（或 place-items:center）对齐 ui-demo 的深色居中预览；padding 32px。这是很明显的观感差。"
+          },
+          {
+            "what": "图片画框与标题：ui-demo 有圆角框+投影+文件名标题，app 裸图无标题",
+            "ui_demo": "图片包在 <figure> 里：圆角 10px、`box-shadow: 0 12px 44px rgba(0,0,0,.45)`（深底上的强投影），下方 figcaption 显示文件名（白字 70% 透明 fs-sm，gap 12px）。",
+            "wordspace": "只有一个 <img>，圆角 r-sm(6px)、box-shadow 很淡(shadow-sm)、白色底 `background:#fff`、无 figcaption 文件名标题。",
+            "severity": "P1-明显",
+            "effort": "M-中",
+            "fix": "给 app 图片外包 figure：圆角 10px、box-shadow 0 12px 44px rgba(0,0,0,.45)、下方加 figcaption 显示 node.name（白字 rgba(255,255,255,.7) fs-sm）。去掉 img 的白底（深背景下白底会出边）。"
+          },
+          {
+            "what": "图片尺寸约束不同",
+            "ui_demo": ".imgv-art `width: min(560px, 70vw); aspect-ratio 16/10`（mock 是固定比例画布）。",
+            "wordspace": ".imgv-img `max-width:100%; height:auto`（真图按原始比例，最大占满宽度）。",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "app 是真图、按原比例 max-width:100% 是对的，不能像 mock 那样锁 16/10。但可给个 `max-width: min(900px, 90%)` 上限避免超大图铺满不好看。product_decision=真图尺寸策略。"
+          },
+          {
+            "what": "Markdown 源码实时栏：ui-demo 有完整抽屉，app 完全没有",
+            "ui_demo": "MarkdownSourcePanel：右侧 fixed 抽屉（width 440px / max 46vw / 满高、z-index 60、左边框+左投影 -8px 0 28px），头部标题「Markdown 源码」+ 绿色「实时」药丸(c-success on c-success-tint) + X 关闭按钮(26x26 hover)，hint 说明条(c-bg-sunken 底)，下面 <pre> 等宽字体(12.5px/1.7)实时显示 blocksToMd 序列化结果，编辑左边块这里实时更新。",
+            "wordspace": "app 里完全没有 Markdown 源码栏，grep 全仓 mdsrc/blocksToMd/源码 零命中。",
+            "severity": "P0-核心体验",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "这是 ui-demo 用来演示「后端是 Markdown、块模型↔.md 双向可逆」的核心叙事组件，依赖 ui-demo 的块模型 store(docs/blocks/blocksToMd)。真 app 目前没有块模型 Markdown 后端，所以不是「补个 CSS」能对齐的——要产品先拍板 app 到底走不走 Markdown 后端范式。product_decision=是否引入 Markdown 后端 + 源码实时栏。若走，需实现 blocks→md 序列化 + 抽屉 UI；若不走，明确它是 ui-demo 专属演示件。"
+          },
+          {
+            "what": "非可预览文件的「外部打开」呈现：ui-demo 无此空态，app 有专门卡片",
+            "ui_demo": "ui-demo 只有 PDF/图片两种查看器，Word/表格/演示等没有对应的『不能预览』空态卡片（浏览器隐喻下这些类型不在 demo 范围）。",
+            "wordspace": "app 有 .efp 空态卡片：大文件图标(56x56 accent-tint 底)、文件名(fs-xl)、类型·路径 meta、说明文案「这不是 HTML 文档，Wordspace 不能直接编辑它…」、accent 实心「用默认程序打开」按钮。这是 app 独有的、合理的。",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "is_product_decision": true,
+            "fix": "app 这个空态卡片没有 ui-demo 参照，属于产品自己补的合理空态，无需删除。仅需保证卡片内按钮/图标/圆角沿用统一 token（现在已用 accent/r-lg/shadow-sm，基本一致）。注意此卡片里「用默认程序打开」是 accent 实心按钮，而文件条里同名按钮是描边/文字按钮——两处样式不统一，建议统一按钮语义（主操作实心、次操作描边）。product_decision=空态存在合理。"
+          }
+        ]
+      },
+      {
+        "area": "命令面板（Cmd+P / FindPalette）+ 设置 / AI Agent 接入 / 分享发布 / Schema 展示页",
+        "ui_summary": "ui-demo 这块是一整套「产品外壳页面」：VS-Code/Arc 风格的 Cmd+P 查找面板（带回车 chip 提示、pop 动画、accent 选中态图标染色、名右子灰左对齐），加上四个成型页面——设置（存储归属/成员/工作区，带同步绿点、Agent chip、mono 路径）、Agent 接入（API/Key/curl 代码块 + 权限开关 toggle + 活动流 + 模拟按钮）、分享发布对话框（4 级可见性单选 + 邀请/URL/部署态）、Schema 展示页（左内嵌真编辑器 + 右要点卡 + 底部「不允许」卡片网格）。",
+        "ws_summary": "当前 app 只把 FindPalette 落成一个 Cmd+P 「快速打开」面板（vanilla JS 重建，视觉八成对齐但差几处细节：宽度/圆角/阴影/间距/hint/选中态图标色/子文本对齐/无 pop 动画/无 scrollIntoView 平滑等），设置/Agent/发布/Schema 四个页面在 app 里完全不存在。",
+        "differences": [
+          {
+            "what": "设置页整个不存在",
+            "ui_demo": "完整 Settings 页：st-page 居中 760px，30/40px padding；标题「设置」fs-2xl(22px)/600；三个 section（存储与归属/成员/工作区），每 section 有 uppercase 灰色小标签(fs-xs/600/letter-spacing .05em)；行 min-height 52px + 下分隔线；本地仓库路径用 mono 字体、部署目标、同步行带 7px 绿色圆点 + relTime；成员行有 Avatar(28)+名+chip(成员/Agent，Agent chip 是 accent 底色)+mono 邮箱右对齐；工作区名称/套餐行",
+            "wordspace": "没有。app 无任何设置页面，main.js 菜单里也没有「设置/偏好」入口（只有关于/检查更新/反馈）",
+            "severity": "P1-明显",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "新建设置页（可做成标签页或模态）。存储归属这块能落地到真实数据（工作区根路径=真实 root、本地仓库=真路径 mono 展示）；成员/套餐/部署目标/同步是云隐喻，要产品拍板要不要保留或改成本地语义（比如「同步」对本地编辑器没意义）。视觉严格照 Settings.css：760px 居中、section 灰标签、52px 行高、分隔线、mono 路径、绿点同步。"
+          },
+          {
+            "what": "AI Agent 接入页整个不存在",
+            "ui_demo": "Agents 页 860px 居中：标题「Agent 接入」+ 副标(fs-md/text-2/max620px)；API 卡片（接入地址 + API Key 两行，各带右侧「复制」按钮 ag-copy 28px 高、hover 变底色 + curl 代码块 ag-code 深底/mono/12px/line-height1.65）；权限 section 三行 toggle 开关（36×20 药丸、is-on 变 accent、16px knob 带阴影平移动画）；活动 section「模拟一次 Agent 调用」accent 实心按钮 + 事件流（彩色 AI chip + agent名 + 动词 + 《文档名》+ relTime，空态「还没有 Agent 调用记录」）",
+            "wordspace": "没有。app 完全没有 Agent/API 相关任何界面",
+            "severity": "P2-细节",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "是否做 Agent 接入是纯产品决策（当前 app 是纯本地编辑器，没有 API server）。若要对齐视觉先做静态展示页：照 Agents.css 的卡片/divider/mono 代码块/toggle 开关(ag-toggle)/事件流样式。toggle 开关这个组件本身在 app 里也缺，值得单独抽出复用。"
+          },
+          {
+            "what": "分享与发布对话框整个不存在",
+            "ui_demo": "PublishDialog 模态 max460px：标题「分享与发布」+ 文档名副标 + 右上关闭 X(26px hover 底色)；4 个可见性层级按钮竖排(private/invited/internal/public)，每个左侧 28px 彩色图标框(按 meta.color 染色)+标题+描述，选中态 accent-tint 底 + accent 边 + 右侧 Check；invited 展开邮箱邀请输入+协作者头像列表；internal/public 展开 URL 行(mono/accent 色/sunken 底)+发布/重新部署按钮(带 Spinner 部署中态)+部署说明；底部「完成」primary 按钮",
+            "wordspace": "没有。app 里文档只有「本地」状态标（index.html 面包屑旁的 tag），没有任何发布/分享/可见性 UI",
+            "severity": "P1-明显",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "发布=把本地 HTML 部署到内网/公网，这是核心产品能力但当前 app 没后端，纯产品决策。视觉上若做：照 PublishDialog.css 复用 ws-modal 壳、pub-level 层级选择器(彩色图标框+选中 accent 态+Check)、pub-url 行、Spinner 部署态。注意 app 现有 sb-modal 壳跟 ui-demo 的 ws-modal 壳样式不完全一致（见下条），做发布模态前先统一模态壳。"
+          },
+          {
+            "what": "Schema 展示页整个不存在",
+            "ui_demo": "SchemaPage：sunken 底；头部 eyebrow「Wordspace Schema #1」(accent/uppercase/letter-spacing .14em)+30px/800 标题「我们的 .html 长这样」+lede；两栏 grid(左内嵌真 Canvas 编辑器白纸卡 14px 圆角+双层阴影 / 右 sticky 要点卡列表，每卡 accent 圆形序号+标题+说明)；底部「这些写法不允许」6 张卡片网格(白底+左侧 3px danger 红边+标题+通俗说明)，960px 以下塌成单列",
+            "wordspace": "没有。app 有 Schema 校验逻辑（schema-validate.js / schema-registry.js）但零展示页面，Wendi 没法在 app 里看到「Schema #1 长啥样」",
+            "severity": "P2-细节",
+            "effort": "L-大",
+            "is_product_decision": true,
+            "fix": "这是给 Wendi 演示 Schema 的说明页，产品上要不要放进正式 app 待定（也可能只活在 ui-demo）。若做：右侧要点卡 + 底部「不允许」卡片是纯静态、照 SchemaPage.css 直接搬即可；左侧内嵌真编辑器依赖 Canvas 组件，app 侧要用自己的编辑器内嵌，成本高。"
+          },
+          {
+            "what": "命令面板阴影用了 shadow-menu 而非 shadow-modal，浮层偏轻",
+            "ui_demo": "FindPalette.css `.fp` 用 `box-shadow: var(--shadow-modal)`（0 14px 44px rgba(0,0,0,.20) + 1px 描边），是重投影、像真正浮起的模态",
+            "wordspace": "shell.css:307 `.fp` 用 `box-shadow: var(--shadow-menu)`（0 4px 14px rgba(0,0,0,.12)），投影明显更轻更平，且 app 的 tokens 里根本没定义 --shadow-modal",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "在 shell.css :root 加 `--shadow-modal: 0 14px 44px rgba(0,0,0,.20), 0 0 0 1px rgba(0,0,0,.06);`，把 `.fp` 的 box-shadow 改成 var(--shadow-modal)。"
+          },
+          {
+            "what": "命令面板缺 pop 弹出动画",
+            "ui_demo": "`.fp` 有 `animation: ws-modal-pop var(--dur) var(--ease)`——打开时 opacity 0→1 + translateY(6px) scale(.99)→none，200ms 缓入，有轻微弹起感",
+            "wordspace": "`.fp` 无任何 animation，面板直接硬闪出现，无过渡",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "在 shell.css 加 @keyframes ws-modal-pop（from opacity:0 transform:translateY(6px) scale(.99); to opacity:1 transform:none）+ overlay 的 fade，给 `.fp` 加 `animation: ws-modal-pop var(--dur) var(--ease)`。"
+          },
+          {
+            "what": "回车提示 hint 样式不同：ui-demo 是带底色的 kbd 药丸 + 图标，app 是裸文字",
+            "ui_demo": "`.fp-hint` 有 `padding:2px 7px; border-radius:var(--r-sm); background:var(--c-bg-sunken)`，内含 CornerDownLeft lucide 图标 + 「打开」文字，像个 keycap chip",
+            "wordspace": "shell.css:312 `.fp-hint` 只有 `font-size/color`，无背景无内边距无圆角；文案是纯文本 `⏎ 打开`（用 unicode ⏎ 字符代替 lucide 图标）",
+            "severity": "P2-细节",
+            "effort": "S-小",
+            "fix": "给 `.fp-hint` 加 `padding:2px 7px; border-radius:var(--r-sm); background:var(--c-bg-sunken); display:inline-flex; align-items:center; gap:4px;`。可保留 ⏎ 字符或换成 SVG 角箭头图标以更贴近。"
+          },
+          {
+            "what": "选中行图标不染 accent 色",
+            "ui_demo": "`.fp-row.is-sel .fp-row-ico { color: var(--c-accent) }`——选中那行的文件图标从灰变蓝，强化当前项",
+            "wordspace": "shell.css 无此规则，选中行图标始终是 --c-text-3 灰色，不变",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "加 `.fp-row.is-sel .fp-row-ico { color: var(--c-accent); }`。"
+          },
+          {
+            "what": "子文本(路径)对齐方向不同",
+            "ui_demo": "`.fp-sub { text-align: right }`——路径/子信息靠右对齐，跟左侧文件名拉开、右贴边，视觉更清爽像 Arc/VSCode",
+            "wordspace": "shell.css:319 `.fp-sub` 无 text-align，默认左对齐，紧跟在文件名后面",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "给 `.fp-sub` 加 `text-align: right;`。"
+          },
+          {
+            "what": "文件名 max-width 阈值差 3%",
+            "ui_demo": "`.fp-name { max-width: 55% }`",
+            "wordspace": "shell.css:318 `.fp-name { max-width: 58% }`",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "改成 55% 与 ui-demo 一致（细节，肉眼几乎无感，可选）。"
+          },
+          {
+            "what": "面板内边距/圆角细节：bar padding、gap、list padding、圆角尺寸略有出入",
+            "ui_demo": ".fp-bar padding 13px 14px / gap 10px；.fp-list max-height 340px、padding 6px；.fp-row gap 10px、border-radius var(--r-sm)(6px)；.fp-empty padding 22px 12px",
+            "wordspace": ".fp-bar padding 12px 14px / gap 9px；.fp-list max-height 320px；.fp-row gap 9px、border-radius var(--r-md)(8px)；.fp-empty padding 18px。行圆角 app 用 8px 比 ui-demo 6px 更圆",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "逐值对齐：bar padding 13px/gap 10px、list max-height 340px、row gap 10px + border-radius var(--r-sm)、empty padding 22px 12px。差异极小，批量微调即可。"
+          },
+          {
+            "what": "选中项滚动跟随行为不同（更细的交互差异）",
+            "ui_demo": "React 版靠 is-sel 类 + 列表重渲染，↑↓ 时选中项不显式 scrollIntoView（依赖短列表 12 项一般不溢出）",
+            "wordspace": "app 版实现了 scrollSel() 用 scrollIntoView({block:'nearest'})，↑↓ 时主动把选中项滚进视野——这其实比 ui-demo 更好，属于 app 领先",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "无需改（app 这里体验更好，保留）。仅记录：两边交互不完全一致但 app 方向更优。"
+          },
+          {
+            "what": "面板无「打开后跳转/树内定位高亮」的差异",
+            "ui_demo": "choose 后 open() + navigate('/docs') + 配合 F6 在左侧树高亮定位",
+            "wordspace": "choose 后 openNode(node) + expandToFile(node.rel) 在树里展开定位——行为对齐良好",
+            "severity": "P3-锦上添花",
+            "effort": "S-小",
+            "fix": "无需改，行为已对齐。"
+          },
+          {
+            "what": "没有可点击的入口按钮（放大镜/omnibox），只能 Cmd+P 或菜单",
+            "ui_demo": "ui-demo 里查找面板由顶栏放大镜按钮 / Arc omnibox 触发，有可见的点击入口",
+            "wordspace": "app 只能靠 Cmd+P 快捷键或「文件>快速打开」菜单打开，UI 上没有放大镜/搜索按钮可点，发现性差",
+            "severity": "P2-细节",
+            "effort": "M-中",
+            "is_product_decision": true,
+            "fix": "在侧栏顶部或文档头加一个放大镜图标按钮触发 openFindPalette()。放哪、要不要做成 Arc 式 omnibox 是产品/布局决策（app 用面包屑+本地 tag 代替了 omnibox）。"
+          },
+          {
+            "what": "模态壳(overlay/modal)两套体系不统一，做后续页面会各写各的",
+            "ui_demo": "统一 ws-modal-overlay(z1000, rgba(20,22,26,.32), fade 动画) + ws-modal(圆角 r-lg、shadow-modal、pop 动画、max-height calc(100vh-48px)) + 标准 ws-modal-head/body/foot + ws-btn/ws-btn-primary/ws-input 一套原子",
+            "wordspace": "app 有自己的 sb-modal-overlay(z400) + sb-modal(shadow-menu、无动画、固定 520px) + sb-btn，跟 ui-demo 的 ws-* 体系命名和数值都不同（阴影更轻、无 pop/fade 动画、z-index 更低）",
+            "severity": "P1-明显",
+            "effort": "M-中",
+            "fix": "统一一套模态壳 tokens/类：把 sb-modal 对齐 ws-modal（补 shadow-modal、fade+pop 动画、max-height），后续设置/发布/Agent 页都复用。现在不统一，之后每个新页面都会重复偏差。"
+          }
+        ]
+      }
+    ],
+    "totalDiffs": 143
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Audit"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Synthesize"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "audit:侧栏 ArcSidebar",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "a87ed3c3ea35eb38f",
+      "model": "claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782976960574,
+      "queuedAt": 1782976960547,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "侧栏 ArcSidebar（ui-demo）vs 本地文件栏 .sb-*（Wordspace ap…",
+      "promptPreview": "你在做 UI/UX 对齐审计：把 **ui-demo（React 设计原型，权威标准）** 跟 **当前 Wordspace app（Electron，vanilla JS）** 在「侧栏 ArcSidebar」这一块**逐细节**对比，列出所有不一致的地方。用户明确要求「literally 每一个细节」、别偷懒。\n\n**ui-demo 这块的文件**（这是设计标准，要对齐到它）：/Users/ctlandu/Documents/GitHub/wordspace-next-ui-demo/ui-demo/src/components/ArcSidebar.tsx + ArcSidebar.css + ExternalFilePanel.tsx\n**当前 Wordspace 这块的实现**：/Users/ctlandu/Documents/GitHub/wordspace-next-alig…",
+      "lastProgressAt": 1782977172545,
+      "tokens": 91720,
+      "toolCalls": 9,
+      "durationMs": 211965,
+      "resultPreview": "{\"area\":\"侧栏 ArcSidebar（ui-demo）vs 本地文件栏 .sb-*（Wordspace app）\",\"ui_summary\":\"ui-demo 是一个 Arc 浏览器隐喻的侧栏：顶部红黄绿灯 + 后退/前进/刷新/查找导航排、地址栏 omnibox、空间切换器（多工作区，云盘+连接文件夹）、置顶/标签页两区（每条 tab 有置顶+关闭+未保存圆点、支持网页 tab）、文档筛选+文件树、底部工具栏（模板/Schema/Agent/设置 + 头像），收起=48px 细条留展开钮，切空间有滑入动画和横向滚轮换空间。\",\"ws_summary\":\"Wordspace 是单工作区的本地文件浏览器：头部（收起钮+根名+打开文件夹）、置顶/标签页两区（同样的双标记 tab 模型但无未保存圆点/无网页 tab）、文件筛选+树、底部品牌页脚（logo+版本号），收起=整条全隐藏（0 …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "audit:标签页 + 新标签起始页(Arc omnibox)",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "ab0cfd71dbd4108ff",
+      "model": "claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782976960584,
+      "queuedAt": 1782976960547,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "标签页 + 新标签起始页（Arc omnibox）",
+      "promptPreview": "你在做 UI/UX 对齐审计：把 **ui-demo（React 设计原型，权威标准）** 跟 **当前 Wordspace app（Electron，vanilla JS）** 在「标签页 + 新标签起始页(Arc omnibox)」这一块**逐细节**对比，列出所有不一致的地方。用户明确要求「literally 每一个细节」、别偷懒。\n\n**ui-demo 这块的文件**（这是设计标准，要对齐到它）：/Users/ctlandu/Documents/GitHub/wordspace-next-ui-demo/ui-demo/src/components/NewTab.tsx + NewTab.css + WebView.tsx（浏览器起始页/网页标签）\n**当前 Wordspace 这块的实现**：/Users/ctlandu/Documents/GitHub/wordspace-ne…",
+      "lastProgressAt": 1782977162096,
+      "tokens": 100295,
+      "toolCalls": 17,
+      "durationMs": 201512,
+      "resultPreview": "{\"area\":\"标签页 + 新标签起始页（Arc omnibox）\",\"ui_summary\":\"ui-demo 是「浏览器隐喻」的完整体：侧栏顶部有红绿灯+前进/后退/刷新/查找导航行 + 可编辑地址栏(omnibox)，下面 置顶/标签页/文件 三段竖排标签，标签区支持 web/file 两种图标、拖拽时画精确插入线、激活态是「白底浮起卡片」；新标签打开一个居中的起始页(NewTab)——大 Wordspace 字标 + pill 形大搜索框 + 7 个彩色磁贴 + 一行书签。\",\"ws_summary\":\"Wordspace 是本地 HTML 文件编辑器：没有起始页、没有地址栏、没有导航行；侧栏只有「文件夹头 + 置顶/标签页/文件 三段 + 品牌页脚」，标签只有单一文件图标、激活态是蓝色 selection 底、拖拽只整区高亮不画插入线；无文档时编辑区显示一个朴素的 ws-emp…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "audit:新建文档弹窗 + 模板",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "a72dc5a9f68483d91",
+      "model": "claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782976960585,
+      "queuedAt": 1782976960547,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "新建文档弹窗 + 模板（ui-demo CreateModal/Templates vs Words…",
+      "promptPreview": "你在做 UI/UX 对齐审计：把 **ui-demo（React 设计原型，权威标准）** 跟 **当前 Wordspace app（Electron，vanilla JS）** 在「新建文档弹窗 + 模板」这一块**逐细节**对比，列出所有不一致的地方。用户明确要求「literally 每一个细节」、别偷懒。\n\n**ui-demo 这块的文件**（这是设计标准，要对齐到它）：/Users/ctlandu/Documents/GitHub/wordspace-next-ui-demo/ui-demo/src/components/CreateModal.tsx + CreateModal.css + Templates.tsx + Templates.css + CreateSpaceModal.tsx\n**当前 Wordspace 这块的实现**：/Users/ctlandu/Docum…",
+      "lastProgressAt": 1782977102726,
+      "tokens": 56124,
+      "toolCalls": 13,
+      "durationMs": 142141,
+      "resultPreview": "{\"area\":\"新建文档弹窗 + 模板（ui-demo CreateModal/Templates vs Wordspace openCreateModal/doc-templates）\",\"ui_summary\":\"两栏结构（左「范式」轨 + 右模板面板），带 Arc 式 omnibar 变体、关闭 X、范式卡、模板卡按 accent 描边并显示「类别/kind」小标签、未来范式占位空态；720px 宽、有开合动画。\",\"ws_summary\":\"单栏 520px 弹窗，只有标题+where 一行 + 一个纯模板卡网格；没有范式概念、没有关闭 X、没有 omnibar、没有 kind/category 标签、没有动画、卡片更矮，模板 4 个（含空白）写死在本地 doc-templates.js。\",\"differences\":[{\"what\":\"整体缺「范式」左轨（两栏 → 一栏）\",…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "audit:保存流程 + 关闭确认",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "af7418f77831be7e9",
+      "model": "claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782976960585,
+      "queuedAt": 1782976960547,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "保存流程 + 未保存关闭确认（SaveModal + CloseConfirmModal）",
+      "promptPreview": "你在做 UI/UX 对齐审计：把 **ui-demo（React 设计原型，权威标准）** 跟 **当前 Wordspace app（Electron，vanilla JS）** 在「保存流程 + 关闭确认」这一块**逐细节**对比，列出所有不一致的地方。用户明确要求「literally 每一个细节」、别偷懒。\n\n**ui-demo 这块的文件**（这是设计标准，要对齐到它）：/Users/ctlandu/Documents/GitHub/wordspace-next-ui-demo/ui-demo/src/components/SaveModal.tsx + SaveModal.css + CloseConfirmModal.tsx + CloseConfirmModal.css\n**当前 Wordspace 这块的实现**：/Users/ctlandu/Documents/GitHub…",
+      "lastProgressAt": 1782977130767,
+      "tokens": 61059,
+      "toolCalls": 20,
+      "durationMs": 170182,
+      "resultPreview": "{\"area\":\"保存流程 + 未保存关闭确认（SaveModal + CloseConfirmModal）\",\"ui_summary\":\"ui-demo 用统一 .ws-modal 壳（圆角/modal 阴影/pop+fade 入场动画/带分隔线的 header + 关闭 X），SaveModal 是「选文件夹」列表（根目录用 FolderRoot 图标、选中项右侧打 Check、accent-tint 高亮无边框），保存后弹 success toast；CloseConfirmModal 有橙色圆形警告图标 + 标题 + 说明，底部「不保存(危险红)—spacer—取消—保存并关闭」，Esc 关闭。\",\"ws_summary\":\"Wordspace 用另一套 .sb-modal 壳（menu 阴影、无入场动画、header 无分隔线、无关闭 X），SaveModal 列表所有行同一个 …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "audit:编辑器画布 Canvas + 块编辑 chrome",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "afd2115ed7be97ede",
+      "model": "claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782976960585,
+      "queuedAt": 1782976960548,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "编辑器画布 Canvas + 块编辑 chrome（格式气泡 / 斜杠菜单 / 块…",
+      "promptPreview": "你在做 UI/UX 对齐审计：把 **ui-demo（React 设计原型，权威标准）** 跟 **当前 Wordspace app（Electron，vanilla JS）** 在「编辑器画布 Canvas + 块编辑 chrome」这一块**逐细节**对比，列出所有不一致的地方。用户明确要求「literally 每一个细节」、别偷懒。\n\n**ui-demo 这块的文件**（这是设计标准，要对齐到它）：/Users/ctlandu/Documents/GitHub/wordspace-next-ui-demo/ui-demo/src/components/Canvas.tsx + Canvas.css + canvas/ 目录（格式条/斜杠菜单/块菜单/页边距）\n**当前 Wordspace 这块的实现**：/Users/ctlandu/Documents/GitHub/wordspac…",
+      "lastProgressAt": 1782977121531,
+      "tokens": 113947,
+      "toolCalls": 12,
+      "durationMs": 160946,
+      "resultPreview": "{\"area\":\"编辑器画布 Canvas + 块编辑 chrome（格式气泡 / 斜杠菜单 / 块菜单 / ⋮⋮ 手柄 / 选中态 / 页边距 / 空态）\",\"ui_summary\":\"ui-demo 是一个受控 React 分块编辑器：块贴文档流、hover 左侧浮 GripVertical 手柄、选中=淡灰单线环+内缩、气泡工具栏/斜杠菜单/块菜单全带 lucide 图标与精调的首行对齐，文档本身有 max-width 820 居中 + 页边距 + 文档头/页脚 + 纸张 pageFormat 版式。\",\"ws_summary\":\"Wordspace 把同一套块编辑逻辑移植进 iframe 内、直接操作真实 DOM（DOM 即模型），交互流程几乎 1:1 对齐，但因 §0「编辑器不套装饰排版」+ 覆盖层用手写 SVG/文本而非 lucide，导致选中态、手柄首行对齐、菜单图标、占位符…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "audit:基础编辑器（非合规）",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "a74b0624139ab7f7f",
+      "model": "claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782976960586,
+      "queuedAt": 1782976960548,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "基础编辑器（非合规 HTML）· BasicEditor",
+      "promptPreview": "你在做 UI/UX 对齐审计：把 **ui-demo（React 设计原型，权威标准）** 跟 **当前 Wordspace app（Electron，vanilla JS）** 在「基础编辑器（非合规）」这一块**逐细节**对比，列出所有不一致的地方。用户明确要求「literally 每一个细节」、别偷懒。\n\n**ui-demo 这块的文件**（这是设计标准，要对齐到它）：/Users/ctlandu/Documents/GitHub/wordspace-next-ui-demo/ui-demo/src/components/BasicEditor.tsx + BasicEditor.css\n**当前 Wordspace 这块的实现**：/Users/ctlandu/Documents/GitHub/wordspace-next-align/src/editor/basic-edit.j…",
+      "lastProgressAt": 1782977127216,
+      "tokens": 58896,
+      "toolCalls": 16,
+      "durationMs": 166630,
+      "resultPreview": "{\"area\":\"基础编辑器（非合规 HTML）· BasicEditor\",\"ui_summary\":\"顶栏保留合规文档的面包屑/…菜单/编辑于，右侧放「编辑/预览」双态切换；编辑态展开被 JS 藏起来的全部内容（reveal-all）并可编辑，预览态跑文档 JS 只读看原貌；提示条放在文档下方（浅黄 border-top）；三能力=富就地文字/悬停删块/Esc 空间切块；焦点框与删除强调色是蓝（--c-accent #1a73e8），格式条复用画布同款 .ws-fmtbar（无边框、shadow-menu）。\",\"ws_summary\":\"同样三能力都在，宿主浮层 position:fixed 移植过来；但没有编辑/预览切换、没有 reveal-all；提示条改到 iframe 上方（浅黄 border-bottom）文案不同更啰嗦；强调色硬编码成珊瑚橙 #e8654f；格式条是自绘独…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 7,
+      "label": "audit:查看器(PDF/图片/文件条/Markdown源)",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "a89986e722512d32d",
+      "model": "claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782976960587,
+      "queuedAt": 1782976960548,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "查看器（PDF / 图片 / 文件条 FileViewerBar / Markdown 源码栏…",
+      "promptPreview": "你在做 UI/UX 对齐审计：把 **ui-demo（React 设计原型，权威标准）** 跟 **当前 Wordspace app（Electron，vanilla JS）** 在「查看器(PDF/图片/文件条/Markdown源)」这一块**逐细节**对比，列出所有不一致的地方。用户明确要求「literally 每一个细节」、别偷懒。\n\n**ui-demo 这块的文件**（这是设计标准，要对齐到它）：/Users/ctlandu/Documents/GitHub/wordspace-next-ui-demo/ui-demo/src/components/PdfViewer.tsx + ImageViewer.tsx + FileViewerBar.tsx + MarkdownSourcePanel.tsx (+ 各自 .css)\n**当前 Wordspace 这块的实现**：/User…",
+      "lastProgressAt": 1782977129014,
+      "tokens": 49907,
+      "toolCalls": 19,
+      "durationMs": 168427,
+      "resultPreview": "{\"area\":\"查看器（PDF / 图片 / 文件条 FileViewerBar / Markdown 源码栏）\",\"ui_summary\":\"ui-demo 的查看器是「浏览器内嵌只读预览」隐喻：统一的 FileViewerBar（文件名 + 药丸 tag + 右侧「用 X 打开」带 lucide 外链图标的描边按钮），PDF/图片都是精心排版的 mock 内容（PDF 是白纸阴影页 + 图表；图片是深色影院背景 + 圆角画框 + 白字标题），另有一个 Markdown 源码实时抽屉证明「块模型↔.md 可逆」。\",\"ws_summary\":\"当前 app 是「真文件预览」：PDF 用 PDF.js 渲染真页 + 自绘缩放工具栏，图片直接 <img> 真图，文件条复用 fv-bar 但样式/文案/图标都跟 ui-demo 有出入，背景色偏浅，图片没有画框/标题，完全没有 Markdow…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 8,
+      "label": "audit:命令面板 + 设置/AI/发布/Schema页",
+      "phaseIndex": 1,
+      "phaseTitle": "Audit",
+      "agentId": "aaab0712d00e2bb15",
+      "model": "claude-opus-4-8[1m]",
+      "state": "done",
+      "startedAt": 1782976960587,
+      "queuedAt": 1782976960548,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "命令面板（Cmd+P / FindPalette）+ 设置 / AI Agent 接入 / 分…",
+      "promptPreview": "你在做 UI/UX 对齐审计：把 **ui-demo（React 设计原型，权威标准）** 跟 **当前 Wordspace app（Electron，vanilla JS）** 在「命令面板 + 设置/AI/发布/Schema页」这一块**逐细节**对比，列出所有不一致的地方。用户明确要求「literally 每一个细节」、别偷懒。\n\n**ui-demo 这块的文件**（这是设计标准，要对齐到它）：/Users/ctlandu/Documents/GitHub/wordspace-next-ui-demo/ui-demo/src/components/FindPalette.tsx + Settings.tsx + Agents.tsx + PublishDialog.tsx + SchemaPage.tsx (+ 各 .css)\n**当前 Wordspace 这块的实现**：/User…",
+      "lastProgressAt": 1782977155993,
+      "tokens": 76203,
+      "toolCalls": 31,
+      "durationMs": 195406,
+      "resultPreview": "{\"area\":\"命令面板（Cmd+P / FindPalette）+ 设置 / AI Agent 接入 / 分享发布 / Schema 展示页\",\"ui_summary\":\"ui-demo 这块是一整套「产品外壳页面」：VS-Code/Arc 风格的 Cmd+P 查找面板（带回车 chip 提示、pop 动画、accent 选中态图标染色、名右子灰左对齐），加上四个成型页面——设置（存储归属/成员/工作区，带同步绿点、Agent chip、mono 路径）、Agent 接入（API/Key/curl 代码块 + 权限开关 toggle + 活动流 + 模拟按钮）、分享发布对话框（4 级可见性单选 + 邀请/URL/部署态）、Schema 展示页（左内嵌真编辑器 + 右要点卡 + 底部「不允许」卡片网格）。\",\"ws_summary\":\"当前 app 只把 FindPalette 落成一个…"
+    }
+  ],
+  "totalTokens": 608151,
+  "totalToolCalls": 137
+}

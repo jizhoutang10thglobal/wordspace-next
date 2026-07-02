@@ -27,6 +27,9 @@
     name.className = 'fv-name';
     name.textContent = opts.fileName || 'PDF';
     name.title = opts.fileName || 'PDF'; // 名字过长被截断时，悬停显示全名
+    const tag = document.createElement('span');
+    tag.className = 'fv-tag';
+    tag.textContent = 'PDF · 只读'; // 对齐图片查看器/ui-demo（T4 审计 #120：补只读语义标）
     const pageInfo = document.createElement('span');
     pageInfo.className = 'pdfv-pageinfo';
     pageInfo.textContent = '… / …';
@@ -37,7 +40,7 @@
     zoomLabel.className = 'pdfv-zlabel';
     const zoomIn = iconBtn('pdfv-zbtn', '＋', '放大');
     const fitBtn = iconBtn('pdfv-fit', '适应宽度', '适应宽度');
-    bar.append(name, pageInfo, sp, zoomOut, zoomLabel, zoomIn, fitBtn);
+    bar.append(name, tag, pageInfo, sp, zoomOut, zoomLabel, zoomIn, fitBtn);
     if (opts.openExternalEl) bar.appendChild(opts.openExternalEl);
     viewer.appendChild(bar);
 

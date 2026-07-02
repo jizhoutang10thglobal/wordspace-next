@@ -40,6 +40,20 @@
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>',
     file: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>',
   };
+  // 按类型换图标形状（T8 对齐 ui-demo FileIcon：色值早就分了、形状此前全是同一个 file 轮廓）。
+  // lucide：image=FileImage / sheet=FileSpreadsheet / slides=Presentation / word·pdf·html=FileText / 其余=File。
+  const KIND_PATH = {
+    image: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><circle cx="10" cy="12" r="2"/><path d="m20 17-1.3-1.3a2.4 2.4 0 0 0-3.4 0L9 22"/>',
+    sheet: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
+    slides: '<path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/>',
+    word: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  };
+  KIND_PATH.pdf = KIND_PATH.word; // FileText 同款（ui-demo：word/pdf/html 都是 FileText、靠颜色区分）
+  KIND_PATH.html = KIND_PATH.word;
+  const kindSvg = (kind) =>
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+    (KIND_PATH[kind] || '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>') +
+    '</svg>';
 
   const indentClass = (depth) => 'sb-d' + Math.min(depth, 9);
 
@@ -55,6 +69,8 @@
     collapsed.clear();
     collectDirRels(current.tree, collapsed); // 默认全部收起：一打开只露顶层，要看哪层自己点开
     if (filterInput) filterInput.value = '';
+    const fc = document.getElementById('sb-filter-clear');
+    if (fc) fc.hidden = true; // 换工作区清筛选 → 清除钮跟着藏
     rootNameEl.textContent = data.name;
     rootNameEl.title = data.root;
     emptyEl.hidden = true;
@@ -306,7 +322,7 @@
       row.draggable = true;
       const ico = document.createElement('span');
       ico.className = 'sb-ico';
-      ico.innerHTML = SVG.file;
+      ico.innerHTML = kindSvg(node.kind); // T8：按类型换形状（颜色仍走 .sb-kind-*）
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
       name.textContent = node.name;
@@ -363,8 +379,8 @@
   // ===== 标签页 + 置顶（双标记模型，纯逻辑在 window.WS2Tabs，按根持久化）=====
   const pinnedEl = document.getElementById('sb-pinned'); // 置顶区
   const tabsEl = document.getElementById('sb-tabs'); // 标签页区
-  const PIN_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
-  const PIN_OFF_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h9"/><path d="M15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H10"/></svg>';
+  const PIN_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+  const PIN_OFF_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h9"/><path d="M15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H10"/></svg>';
   const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
   let dragTabRel = null;
   // 身份键：工作区内用 rel、工作区外用 abs（跟 tabs.js 一致）。外部标签 = 没有 rel。
@@ -455,7 +471,38 @@
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
   }
-  // 未保存关闭确认（对齐 ui-demo CloseConfirmModal）：保存并关闭 / 不保存直接关闭 / 取消。
+  // —— 统一模态壳部件（T1，对齐 ui-demo ws-modal）：带关闭 X 的 head + 分隔线；调用方再挂 body/foot ——
+  const X_SVG16 = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  const WARN_SVG20 = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 20h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+  function modalHead(titleText, subText, onClose) {
+    const head = document.createElement('div');
+    head.className = 'sb-modal-head';
+    const text = document.createElement('div');
+    text.className = 'sb-modal-head-text';
+    const title = document.createElement('div');
+    title.className = 'sb-modal-title';
+    title.textContent = titleText;
+    text.appendChild(title);
+    if (subText) {
+      const sub = document.createElement('div');
+      sub.className = 'sb-modal-where';
+      sub.textContent = subText;
+      sub.title = subText; // 截断时悬停显全文（sub 单行 ellipsis）
+      text.appendChild(sub);
+    }
+    const x = document.createElement('button');
+    x.className = 'sb-modal-x';
+    x.setAttribute('aria-label', '关闭');
+    x.innerHTML = X_SVG16;
+    x.onclick = onClose;
+    head.append(text, x);
+    return head;
+  }
+  function modalBody() { const b = document.createElement('div'); b.className = 'sb-modal-body'; return b; }
+  // 遮罩关闭用 mousedown（对齐 ui-demo）：拖拽选文本拖到遮罩再松手不会误关（click 会）。
+  function wireOverlayClose(overlay, close) { overlay.onmousedown = (e) => { if (e.target === overlay) close(); }; }
+
+  // 未保存关闭确认（对齐 ui-demo CloseConfirmModal）：橙色警告图标 + 保存并关闭 / 不保存直接关闭 / 取消。
   function openCloseConfirm(key, op, entry) {
     const temp = isTempEntry(entry);
     const name = entry ? entry.title : '这个文件';
@@ -465,17 +512,22 @@
     function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
     const modal = document.createElement('div');
     modal.className = 'sb-modal sb-modal-confirm';
-    const head = document.createElement('div');
-    head.className = 'sb-modal-head';
+    const body = document.createElement('div');
+    body.className = 'sb-cc-body';
+    const ico = document.createElement('div');
+    ico.className = 'sb-cc-ico';
+    ico.innerHTML = WARN_SVG20;
+    const textWrap = document.createElement('div');
     const title = document.createElement('div');
-    title.className = 'sb-modal-title';
+    title.className = 'sb-cc-title';
     title.textContent = '「' + name + '」还没保存';
     const desc = document.createElement('div');
     desc.className = 'sb-modal-desc';
     desc.textContent = temp
-      ? '这是一个还没存进文件夹的临时文档，关掉后未保存的内容会丢失。'
+      ? '这是一个还没存进文件夹的临时文档。关掉后未保存的内容会丢失。'
       : '这个文档有未保存的修改，关掉后会丢失。';
-    head.append(title, desc);
+    textWrap.append(title, desc);
+    body.append(ico, textWrap);
     const foot = document.createElement('div');
     foot.className = 'sb-modal-foot';
     const discard = document.createElement('button');
@@ -498,14 +550,15 @@
       if (!window.__shellIsDirty || !window.__shellIsDirty()) finishClose(key, op);
     };
     foot.append(discard, spacer, cancel, save);
-    modal.append(head, foot);
+    modal.append(body, foot);
     overlay.appendChild(modal);
-    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
   }
 
-  // 「保存到哪里」（对齐 ui-demo SaveModal）：列工作区根 + 各子文件夹，选一个 → wsNewDoc 落盘。
+  // 「保存到哪里」（对齐 ui-demo SaveModal）：可编辑文件名 + 列工作区根/各子文件夹 + 「浏览…」原生
+  // 保存框（存工作区外，Colin 拍板方案 A）。Enter 确认、Esc 关。
   function openSaveModal(closeAfter) {
     const t = window.__shellActiveTemp && window.__shellActiveTemp();
     if (!t) return;
@@ -514,19 +567,21 @@
     let selectedDir = '';
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay';
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
-    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
     const modal = document.createElement('div');
     modal.className = 'sb-modal sb-modal-save';
-    const head = document.createElement('div');
-    head.className = 'sb-modal-head';
-    const title = document.createElement('div');
-    title.className = 'sb-modal-title';
-    title.textContent = '保存到哪里';
-    const where = document.createElement('div');
-    where.className = 'sb-modal-where';
-    where.textContent = '「' + t.base + '」存进 ' + (current ? current.name : '工作区');
-    head.append(title, where);
+    // 文件名可编辑（Colin：保存时让用户改名，别用模板名）。后缀 .html 固定显示、不进输入框。
+    const nameRow = document.createElement('div');
+    nameRow.className = 'sb-save-namerow';
+    const nameInput = document.createElement('input');
+    nameInput.className = 'sb-save-name';
+    nameInput.type = 'text';
+    nameInput.value = t.base;
+    nameInput.placeholder = '文件名';
+    nameInput.setAttribute('aria-label', '文件名');
+    const ext = document.createElement('span');
+    ext.className = 'sb-save-ext';
+    ext.textContent = '.html';
+    nameRow.append(nameInput, ext);
     const list = document.createElement('div');
     list.className = 'sb-save-list';
     const rows = [];
@@ -543,20 +598,45 @@
     });
     const foot = document.createElement('div');
     foot.className = 'sb-modal-foot';
+    const pickedName = () => (nameInput.value.trim() || t.base);
+    const browse = document.createElement('button'); browse.className = 'sb-btn'; browse.textContent = '浏览…';
+    browse.title = '用系统保存框选任意位置（可存到工作区外）';
+    browse.onclick = async () => {
+      const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取最新内容
+      if (!cur) { close(); return; }
+      let r;
+      try { r = await window.ws2.wsSaveDocAs(pickedName(), cur.html); }
+      catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
+      if (!r || r.canceled) return; // 原生框取消 → 留在弹窗里
+      close();
+      await adoptSavedTemp(cur.id, r.abs, closeAfter);
+    };
     const cancel = document.createElement('button'); cancel.className = 'sb-btn'; cancel.textContent = '取消'; cancel.onclick = close;
     const spacer = document.createElement('span'); spacer.className = 'sb-modal-spacer';
-    const ok = document.createElement('button'); ok.className = 'sb-btn sb-btn-primary'; ok.textContent = '保存';
+    const ok = document.createElement('button'); ok.className = 'sb-btn sb-btn-primary'; ok.textContent = '保存到这里';
     ok.onclick = async () => {
       close();
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取一次最新内容
-      if (cur) await doSaveTemp(cur.id, cur.base, cur.html, selectedDir, closeAfter);
+      if (cur) await doSaveTemp(cur.id, pickedName(), cur.html, selectedDir, closeAfter);
     };
-    foot.append(cancel, spacer, ok);
-    modal.append(head, list, foot);
+    const onKey = (e) => {
+      if (e.key === 'Escape') close();
+      else if (e.key === 'Enter') { e.preventDefault(); ok.onclick(); }
+    };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    foot.append(browse, spacer, cancel, ok);
+    const body = modalBody();
+    body.append(nameRow, list);
+    modal.append(
+      modalHead('保存到哪里', '「' + t.base + '」· 默认存到工作区根目录，也可以选别的文件夹或「浏览…」到其他位置', close),
+      body, foot,
+    );
     overlay.appendChild(modal);
-    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
+    nameInput.focus();
+    nameInput.select();
   }
 
   // 把临时文档落盘（wsNewDoc）→ 去临时标签、建真 rel 标签、编辑器就地指向真文件（不重载）。closeAfter=存完即关。
@@ -565,13 +645,24 @@
     try { r = await window.ws2.wsNewDoc(dir || '', base, html); }
     catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
     if (!r || !r.abs) { showToast('保存失败'); return; }
-    await refresh(); // 树里出现新文件
-    const node = findNodeByAbs(r.abs);
+    await adoptSavedTemp(tempId, r.abs, closeAfter);
+  }
+  // 落盘后的收编（工作区内/外通用）：去临时标签 → 建真标签（区内 rel 身份 / 区外 abs 外部标签）→
+  // 编辑器就地指向真文件 → 成功 toast（对齐 ui-demo 保存正反馈）。
+  async function adoptSavedTemp(tempId, abs, closeAfter) {
+    await refresh(); // 树里出现新文件（工作区外保存则树不变，无妨）
+    const node = findNodeByAbs(abs);
+    const leaf = abs.split('/').pop();
     applyTabs(window.WS2Tabs.removeEntry(tabState, tempId)); // 去掉临时标签
-    if (node) openTabEntry({ rel: node.rel, kind: node.kind || 'html', title: node.name }); // 建真 rel 标签 + 激活
-    if (window.__shellFinalizeTemp) await window.__shellFinalizeTemp(tempId, r.abs, node ? node.name : base);
-    if (node) { expandToFile(node.rel); highlightActive(r.abs); }
-    if (closeAfter && node) closeTabRel(node.rel); // 「保存并关闭」
+    if (node) openTabEntry({ rel: node.rel, kind: node.kind || 'html', title: node.name }); // 区内：真 rel 标签
+    else openTabEntry({ abs, kind: 'html', title: leaf }); // 区外：abs 身份外部标签（↗），沿用外部文件标签模型
+    if (window.__shellFinalizeTemp) await window.__shellFinalizeTemp(tempId, abs, node ? node.name : leaf);
+    if (node) { expandToFile(node.rel); highlightActive(abs); }
+    const place = node
+      ? (current ? current.name : '工作区') + (node.rel.indexOf('/') >= 0 ? ' / ' + node.rel.split('/').slice(0, -1).join('/') : '')
+      : abs.split('/').slice(0, -1).join('/');
+    showToast('已保存到 ' + place);
+    if (closeAfter) closeTabRel(node ? node.rel : abs); // 「保存并关闭」
   }
 
   function closeTabRel(key) { closeOrRemove(key, window.WS2Tabs.closeEntry); } // 标签页区 ×
@@ -669,7 +760,7 @@
     if (key === tabState.activeRel) row.classList.add('is-active');
     const ico = document.createElement('span');
     ico.className = 'sb-ico';
-    ico.innerHTML = SVG.file;
+    ico.innerHTML = kindSvg(entry.kind); // T8：标签也按类型换形状（跟树一套）
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
@@ -682,6 +773,14 @@
       ext.innerHTML = EXT_ICO_SVG;
       row.append(ext);
     }
+    // 未保存点（对齐 ui-demo arc-tab-dot：行尾 7px accent 圆点，hover 让位给按钮）：
+    // 临时文档常显；活跃的脏真文件也显（自动保存的 1.2s 间隙 / 保存失败时有提示）——shell 脏态变化经
+    // __sbHooks.onDirtyChange 同步开关，非活跃真文件切走前必经保存守卫、无脏态。
+    const dot = document.createElement('span');
+    dot.className = 'sb-tab-dot';
+    dot.title = temp ? '未保存（还没存进文件夹）' : '有未保存的修改';
+    if (!temp && !(key === tabState.activeRel && window.__shellIsDirty && window.__shellIsDirty())) dot.hidden = true;
+    row.append(dot);
     if (!temp) { // 临时文档不能置顶（置顶持久化、临时文档重启即弃）
       const pin = document.createElement('button');
       pin.className = 'sb-tab-pin' + (entry.pinned ? ' is-pinned' : '');
@@ -727,20 +826,30 @@
     const list = document.createElement('div');
     list.className = 'sb-zone-list';
     list.dataset.zone = zone;
+    const clearDropMarks = () => list.querySelectorAll('.sb-drop-before, .sb-drop-after').forEach((r) => r.classList.remove('sb-drop-before', 'sb-drop-after'));
     list.ondragover = (e) => {
       if (!dragTabRel) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       list.classList.add('sb-drop');
+      // 精确插入线（对齐 ui-demo drop-before/after）：按光标 Y 对行中点，在目标行上/下缘画 2px accent 线
+      clearDropMarks();
+      const rows = Array.prototype.slice.call(list.querySelectorAll('.sb-tab'));
+      if (rows.length) {
+        const idx = dropIndex(list, e.clientY);
+        if (idx < rows.length) rows[idx].classList.add('sb-drop-before');
+        else rows[rows.length - 1].classList.add('sb-drop-after');
+      }
     };
     list.ondragleave = (e) => {
-      if (!list.contains(e.relatedTarget)) list.classList.remove('sb-drop');
+      if (!list.contains(e.relatedTarget)) { list.classList.remove('sb-drop'); clearDropMarks(); }
     };
     list.ondrop = (e) => {
       if (!dragTabRel) return;
       e.preventDefault();
       e.stopPropagation();
       list.classList.remove('sb-drop');
+      clearDropMarks();
       dropTabRel(dragTabRel, zone === 'pinned', dropIndex(list, e.clientY));
     };
     return list;
@@ -762,9 +871,9 @@
     }
     return head;
   }
-  function zoneHint(text) {
+  function zoneHint(text, cls) {
     const d = document.createElement('div');
-    d.className = 'sb-zone-hint';
+    d.className = 'sb-zone-hint' + (cls ? ' ' + cls : '');
     d.textContent = text;
     return d;
   }
@@ -780,7 +889,7 @@
     pinnedEl.appendChild(zoneHeader('置顶', null));
     const plist = zoneList('pinned');
     if (pinned.length) for (const e of pinned) plist.appendChild(tabRow(e, 'pinned'));
-    else plist.appendChild(zoneHint('把标签拖到这里置顶'));
+    else plist.appendChild(zoneHint('把标签页拖到这里置顶', 'sb-zone-hint-drop')); // 虚线框空态（对齐 ui-demo arc-tabs-empty：看得出是可拖入目标）
     pinnedEl.appendChild(plist);
 
     tabsEl.innerHTML = '';
@@ -792,15 +901,21 @@
     tabsEl.appendChild(tlist);
   }
 
-  // ---- 筛选输入 ----
+  // ---- 筛选输入（+ 清除钮，T8 对齐 ui-demo arc-filter-clear）----
+  const filterClear = document.getElementById('sb-filter-clear');
+  const syncFilterClear = () => { if (filterClear) filterClear.hidden = !query; };
   if (filterInput) {
     filterInput.addEventListener('input', () => {
       query = filterInput.value;
+      syncFilterClear();
       render();
     });
   }
+  if (filterClear) filterClear.onclick = () => { query = ''; if (filterInput) { filterInput.value = ''; filterInput.focus(); } syncFilterClear(); render(); };
   if (openFolderBtn) openFolderBtn.onclick = pickFolder;
   if (emptyOpenBtn) emptyOpenBtn.onclick = pickFolder;
+  const findBtn = document.getElementById('sb-find');
+  if (findBtn) findBtn.onclick = () => openFindPalette(); // T7：查找的可见入口（openFindPalette 自守「无工作区不开」）
   // B9（Wendi）：侧栏头部「新建文档」加号已删（跟标签页加号功能重复）。新建入口 = 标签页区加号 + Cmd+T + 右键文件夹。
   const homeOpenFolder = document.getElementById('home-open-folder'); // 首页空态的「打开文件夹」入口（无工作区时侧栏隐藏）
   if (homeOpenFolder) homeOpenFolder.onclick = pickFolder;
@@ -881,17 +996,9 @@
     }
     const modal = document.createElement('div');
     modal.className = 'sb-modal';
-    const head = document.createElement('div');
-    head.className = 'sb-modal-head';
-    const title = document.createElement('div');
-    title.className = 'sb-modal-title';
-    title.textContent = '新建文档';
-    const where = document.createElement('div');
-    where.className = 'sb-modal-where';
-    where.textContent = temp
+    const head = modalHead('新建文档', temp
       ? '新建的是临时文档，编辑后保存时再选存到哪个文件夹'
-      : '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : '');
-    head.append(title, where);
+      : '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : ''), close);
     const grid = document.createElement('div');
     grid.className = 'sb-modal-grid';
     for (const t of templates) {
@@ -907,24 +1014,25 @@
       card.append(name, desc);
       card.onclick = async () => {
         close();
+        // 新建文档一律默认名「未命名」（Colin 拍板：模板给内容不给名字，保存/落盘时用户再改名）。
         if (temp) {
           // 临时文档：不落盘，shell 建内容 + 渲染，侧栏建临时标签（身份 = shell 返回的 'temp:…'）。
           // 返回 null = 用户在「切走脏文件」守卫里取消了，不建标签。
-          const id = window.__shellNewTemp(t.base, t.html);
-          if (id) openTabEntry({ abs: id, kind: 'html', title: t.base });
+          const id = window.__shellNewTemp('未命名', t.html);
+          if (id) openTabEntry({ abs: id, kind: 'html', title: '未命名' });
           return;
         }
-        const r = await window.ws2.wsNewDoc(dirRel || '', t.base, t.html);
+        const r = await window.ws2.wsNewDoc(dirRel || '', '未命名', t.html);
         await refresh();
         if (r && r.abs) openDoc(r.abs);
       };
       grid.appendChild(card);
     }
-    modal.append(head, grid);
+    const body = modalBody();
+    body.appendChild(grid);
+    modal.append(head, body);
     overlay.appendChild(modal);
-    overlay.onclick = (e) => {
-      if (e.target === overlay) close();
-    };
+    wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);
     document.body.appendChild(overlay);
   }
@@ -974,7 +1082,7 @@
       hits.forEach((n, i) => {
         const row = document.createElement('button');
         row.className = 'fp-row' + (i === sel ? ' is-sel' : '');
-        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = SVG.file;
+        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = kindSvg(n.kind); // T8：命令面板行也按类型换形状
         const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.name;
         const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.rel;
         row.append(ic, nm, sub);
@@ -1121,6 +1229,10 @@
   }
 
   window.__sbHooks = {
+    // shell 脏态变化 → 同步活跃真文件标签的未保存点（T2 arc-tab-dot；临时文档的点常显、不经这里）
+    onDirtyChange: (d) => {
+      document.querySelectorAll('.sb-tab.is-active:not(.sb-tab-temp) .sb-tab-dot').forEach((el) => { el.hidden = !d; });
+    },
     onOpen: async (abs) => {
       // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc

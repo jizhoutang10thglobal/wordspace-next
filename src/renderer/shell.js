@@ -33,7 +33,7 @@ const exportBtn = document.getElementById('export-btn');
 let savedTimer = null; // 「✓ 已保存」淡出定时器（保存成功后闪一下再消失）
 function setDirty(v) {
   dirty = v;
-  saveBtn.disabled = !(tempDoc || (docPath && v)); // 临时文档没 docPath 也能存（走 SaveModal）
+  saveBtn.disabled = !(tempDoc || docPath); // 「另存为」开着文档就可用（不看脏态——自动保存后脏态只是 1.2s 窗口）；查看器态 docPath 已清 → 禁用
   syncAppDirty();
   // 任何脏态变化都终结上一次「✓ 已保存」的余晖——否则它的定时器会跨文档/重载串台（切文档后还挂在新文档
   // 面包屑上、或外部重载后压住清洁态）。save() 是先 setDirty(false) 再 flashSaved()，这里清掉无妨（flash 紧接重置）。
@@ -46,6 +46,8 @@ function setDirty(v) {
     dirtyDot.className = 'ws-dirty';
     dirtyDot.hidden = true;
   }
+  // 同步侧栏标签的未保存点（T2，对齐 ui-demo arc-tab-dot：脏真文件的标签也要有提示）
+  if (window.__sbHooks && window.__sbHooks.onDirtyChange) window.__sbHooks.onDirtyChange(v);
 }
 // 保存成功的正向反馈：原地（面包屑里脏态那个位置）闪「✓ 已保存」绿字，~1.6s 后淡出。
 // 不是弹窗：保存高频，模态太重；复用用户已经盯着的位置给即时确认，Cmd+S / 点按钮两条路都覆盖。
@@ -59,7 +61,18 @@ function flashSaved() {
     savedTimer = setTimeout(() => { dirtyDot.hidden = true; dirtyDot.className = 'ws-dirty'; savedTimer = null; }, 320);
   }, 1600);
 }
-const markDirty = () => setDirty(true);
+// 自动保存（Colin 拍板 / 对齐 ui-demo「编辑即保存」）：真文件（有 docPath、非临时）改动后静默
+// 1.2s 自动落盘；临时文档没有落盘目标、仍显式选位置保存（save() 的 tempDoc 分支会弹 SaveModal，
+// 这里必须拦在前面）。每次保存仍走历史归档（安全网）——代价是连续编辑会多出一些历史版本，接受。
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(() => {
+    autoSaveTimer = null;
+    if (dirty && docPath && !tempDoc) save();
+  }, 1200);
+}
+const markDirty = () => { setDirty(true); scheduleAutoSave(); };
 
 // AI 占位（斜杠 /ai 或格式气泡 ✦AI 触发）——本地编辑器暂无 AI，仅提示开发中（用父窗口弹窗，
 // 因 iframe sandbox 无 allow-modals）。
@@ -124,19 +137,41 @@ function routeDoc(rawHtml) {
 }
 
 // 换文档 / 关文档：两个编辑内核都拆、降级条收起（统一收口，防堆叠）。
+// undoMgr 一并清空——否则基础模式/空态下按 Cmd+Z 会去 undo 上一个文档的陈旧 manager
+//（改的是已换掉的 detached doc、还把当前文档标脏）。
 function detachEditors() {
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
+  if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
   if (degradeNotice) degradeNotice.hidden = true;
 }
 
+// 撤销/重做统一收口（菜单加速器 + 两个编辑器的 keydown 都走这）：
+// 块编辑器 undo 后 reset() 重建内核；基础编辑器 undo 是整体 innerHTML 重写、旧 refs 全失效 →
+// 重挂 WS2BasicEdit 内核（只重挂内核，shell 加在 doc 上的 keydown/wheel 监听还有效、不能重加）。
+function runUndoRedo(isRedo) {
+  if (!undoMgr) return;
+  const changed = isRedo ? undoMgr.redo() : undoMgr.undo();
+  if (!changed) return;
+  if (blockEdit) blockEdit.reset();
+  if (basicEdit) {
+    basicEdit.detach();
+    basicEdit = WS2BasicEdit.attach(frame.contentDocument, { win: frame.contentWindow, host: mainEl, markDirty });
+  }
+  markDirty();
+}
+
 // 非合规文档：挂基础编辑器 + 亮降级条。与 wireEditor 平级（KD-e：不嵌进 loadFromFile）。
-// 基础模式不挂 undoMgr（Cmd+Z no-op）；快捷键 Cmd+S 存 / Cmd+B·I·U 富文字 / 缩放键 —— 对称 wireEditor。
+// 快捷键 Cmd+S 存 / Cmd+B·I·U 富文字 / Cmd+Z 撤销 / 缩放键 —— 对称 wireEditor。
+// 撤销同样走 WS2Undo 快照（Colin 2026-07-02：基础模式也必须有撤销，推翻 v1「不挂 undoMgr」取舍）。
 function attachBasic() {
   const doc = frame.contentDocument;
   detachEditors();
+  undoMgr = new WS2Undo.UndoManager(doc);
   basicEdit = WS2BasicEdit.attach(doc, { win: frame.contentWindow, host: mainEl, markDirty });
   if (degradeNotice) degradeNotice.hidden = false;
+  // 输入调度 undo checkpoint（连续打字塌成一个 op）；标脏由基础编辑器内部 onInput 做
+  doc.addEventListener('input', () => { if (undoMgr && undoMgr.scheduleCheckpoint) undoMgr.scheduleCheckpoint(); });
   // 导出仍可用：基础模式走 raw（直印源文件、忠于野文件原貌），不走块编辑器的 Wordspace 排版（见导出触发点）
   doc.addEventListener('keydown', (e) => {
     if (handleZoomKey(e)) return;
@@ -147,7 +182,7 @@ function attachBasic() {
     else if (k === 'b') { e.preventDefault(); doc.execCommand('bold'); markDirty(); }
     else if (k === 'i') { e.preventDefault(); doc.execCommand('italic'); markDirty(); }
     else if (k === 'u') { e.preventDefault(); doc.execCommand('underline'); markDirty(); }
-    else if (k === 'z') { e.preventDefault(); } // 基础模式不支持撤销：吞掉、no-op（防浏览器默认 undo 乱来）
+    else if (k === 'z') { e.preventDefault(); runUndoRedo(e.shiftKey); }
   });
   doc.addEventListener('wheel', (e) => {
     if (!e.ctrlKey) return;
@@ -187,7 +222,7 @@ function wireEditor() {
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
     const k = e.key.toLowerCase();
-    if (k === 'z') { e.preventDefault(); const changed = e.shiftKey ? undoMgr.redo() : undoMgr.undo(); if (changed) { if (blockEdit) blockEdit.reset(); markDirty(); } }
+    if (k === 'z') { e.preventDefault(); runUndoRedo(e.shiftKey); }
     else if (k === 's') { e.preventDefault(); save(); }
     else if (k === 'b') { e.preventDefault(); doc.execCommand('bold'); markDirty(); }
     else if (k === 'i') { e.preventDefault(); doc.execCommand('italic'); markDirty(); }
@@ -283,11 +318,18 @@ async function showViewer(node) {
       viewer.appendChild(bar);
       const scroll = document.createElement('div');
       scroll.className = 'imgv-scroll';
+      // 影院式画框（T3 对齐 ui-demo ImageViewer）：深色底 + figure 圆角画框 + 文件名标题
+      const fig = document.createElement('figure');
+      fig.className = 'imgv-frame';
       const img = document.createElement('img');
       img.className = 'imgv-img';
       img.src = url;
       img.alt = node.name;
-      scroll.appendChild(img);
+      const cap = document.createElement('figcaption');
+      cap.className = 'imgv-cap';
+      cap.textContent = node.name;
+      fig.append(img, cap);
+      scroll.appendChild(fig);
       viewer.appendChild(scroll);
       viewer.hidden = false;
       return;
@@ -348,12 +390,68 @@ async function reloadDoc() {
   frame.src = 'about:blank';
 }
 
+// srcdoc 文档继承外壳的严格 CSP（style-src 无 unsafe-inline）→ 文档里的 <style> 元素和 style= 属性
+// 全被拦死（实测：临时文档 body max-width:none / style="color:red" 不生效，console 报
+// "Applying inline style violates …style-src"；file:// 载入有自己的 CSP 上下文、不受影响）。
+// 不削弱外壳 CSP（S4 红线），改把文档样式镜像成 CSSOM 再应用——CSSOM 不受 style-src 限制
+// （repo 既有共识：sidebar.js 模板卡 borderTopColor 同注释）：
+//   ① 全部 <style> 的文本合并进一张构造样式表（adoptedStyleSheets；不在 DOM、不进序列化）；
+//   ② style= 属性用 el.style.cssText 重放（只在 CSP 拦掉后 el.style 为空时补，属性文本会被
+//      规范化重写——临时文档没有磁盘基线、无损；历史恢复只变属性书写形态、不改 CSS 语义）；
+//   ③ MutationObserver 盯后续动态加的 <style>（编辑器 ensureSchemaBaseline/ensureTodoStyle
+//      等「入盘样式」在 srcdoc 里 append 时同样被 CSP 拦）与新写的 style= 属性，随写随镜像。
+function mirrorSrcdocStyles(doc) {
+  const win = doc.defaultView;
+  if (!win || typeof win.CSSStyleSheet !== 'function') return;
+  let sheet;
+  try { sheet = new win.CSSStyleSheet(); } catch (e) { return; }
+  const sync = () => {
+    let css = '';
+    for (const s of doc.querySelectorAll('style')) css += s.textContent + '\n';
+    try { sheet.replaceSync(css); } catch (e) { /* 坏 CSS 尽力而为：replaceSync 会跳过坏规则，只有整体解析炸才到这 */ }
+  };
+  const replayAttr = (el) => {
+    // CSP 拦掉的标志：属性有值而 CSSOM 声明表为空。重放后 length>0，观察器再进来会跳过（不自激）。
+    const t = el.getAttribute && el.getAttribute('style');
+    if (t && el.style && el.style.length === 0) { try { el.style.cssText = t; } catch (e) { /* 忽略坏值 */ } }
+  };
+  sync();
+  doc.adoptedStyleSheets = [...(doc.adoptedStyleSheets || []), sheet]; // 编辑器自己的表（EDITOR_CSS/zoom）在 attach 时排它后面，覆盖关系跟 file:// 一致
+  for (const el of doc.querySelectorAll('[style]')) replayAttr(el);
+  const mo = new win.MutationObserver((muts) => {
+    let styleTouched = false;
+    for (const m of muts) {
+      if (m.type === 'attributes') { replayAttr(m.target); continue; }
+      if (m.type === 'characterData') {
+        const p = m.target.parentElement;
+        if (p && p.tagName === 'STYLE') styleTouched = true;
+        continue;
+      }
+      for (const n of m.addedNodes) {
+        if (n.nodeType !== 1) continue;
+        if (n.tagName === 'STYLE' || (n.querySelector && n.querySelector('style'))) styleTouched = true;
+        // 带着 style= 新插入的节点只有 childList 记录（attributes 记录只发给「已观察节点的属性变更」）→ 这里补重放
+        replayAttr(n);
+        if (n.querySelectorAll) for (const el of n.querySelectorAll('[style]')) replayAttr(el);
+      }
+      for (const n of m.removedNodes) if (n.nodeType === 1 && n.tagName === 'STYLE') styleTouched = true;
+    }
+    if (styleTouched) sync();
+  });
+  mo.observe(doc.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['style'] });
+}
+
 // 载入一段 HTML 内容（历史恢复）：srcdoc + 注入 <base> 让相对资源指向原文件目录（用 docInfo.dirUrl）
 function loadFromHtml(html, opts) {
   detachEditors();
   const gen = ++loadGen;
   // 历史恢复走同一文档既有 docConform；临时文档由 openTempDoc 先设好 docConform。injectBase 守 docInfo（临时文档无 docInfo/dirUrl）。
-  frame.onload = () => { if (gen !== loadGen) return; if (docInfo && docInfo.dirUrl) injectBase(frame.contentDocument, docInfo.dirUrl); docConform ? wireEditor() : attachBasic(); };
+  frame.onload = () => {
+    if (gen !== loadGen) return;
+    if (docInfo && docInfo.dirUrl) injectBase(frame.contentDocument, docInfo.dirUrl);
+    mirrorSrcdocStyles(frame.contentDocument); // 只在 srcdoc 路径镜像（file:// 不需要，也别去规范化真文件的 style 属性）
+    docConform ? wireEditor() : attachBasic();
+  };
   frame.removeAttribute('src');
   frame.srcdoc = html;
   prepFrame(opts && opts.asDirty);
@@ -371,7 +469,7 @@ function canLeaveActive() {
 function shellNewTemp(base, html) {
   if (!canLeaveActive()) return null;
   const id = genTempId();
-  tempStore.set(id, { base: base || '无标题文档', html });
+  tempStore.set(id, { base: base || '未命名', html });
   renderTemp(id);
   return id;
 }
@@ -564,10 +662,41 @@ async function renderRecents() {
   }
 }
 
+// 另存为（Colin 2026-07-02：自动保存后「保存」钮失义；另存为=把当前文档复制存到任意位置）。
+// 临时文档=首次保存（SaveModal 选名字/位置）；真文件=先冲一次原文件（免得切走时弹丢弃守卫/丢
+// 最后 1.2s 的尾巴）→ 原生另存框写副本 → 切到副本（标准另存为语义；工作区外=↗ 外部标签）。
+async function saveAs() {
+  if (saveBtn.disabled) return;
+  if (tempDoc) { if (window.__sbHooks && window.__sbHooks.openSaveModal) window.__sbHooks.openSaveModal(false); return; }
+  if (!docPath) return;
+  if (dirty) await save();
+  const html = basicEdit
+    ? WS2BasicEdit.serialize(frame.contentDocument)
+    : WS2Serialize.serializeDocument(frame.contentDocument);
+  let r;
+  try { r = await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.html?$/i, ''), html); }
+  catch (e) { alert('另存为失败：' + (e.message || e)); return; }
+  if (!r || r.canceled || !r.abs) return;
+  await openDoc(r.abs);
+  flashSaved();
+}
+// ⋯ 菜单开合：点钮切换、点外面/Esc/选完条目收起（disabled 项点了不派发 click、菜单留着）。
+const docMenuBtn = document.getElementById('doc-menu-btn');
+const docMenu = document.getElementById('doc-menu');
+if (docMenuBtn && docMenu) {
+  docMenuBtn.onclick = () => { docMenu.hidden = !docMenu.hidden; };
+  docMenu.addEventListener('click', () => { docMenu.hidden = true; });
+  document.addEventListener('mousedown', (e) => {
+    if (docMenu.hidden) return;
+    if (docMenu.contains(e.target) || docMenuBtn.contains(e.target)) return;
+    docMenu.hidden = true;
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !docMenu.hidden) docMenu.hidden = true; });
+}
 document.getElementById('open-btn').onclick = pickAndOpen;
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
-saveBtn.onclick = save;
+saveBtn.onclick = saveAs; // 菜单里的「另存为…」；Cmd+S / 菜单栏「保存」仍走 save()（真文件即存、临时弹 SaveModal）
 window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); }); // 窗口尺寸变 → 浮层跟上
 window.addEventListener('keydown', handleZoomKey); // 焦点在父层 shell（点过保存按钮/首页）时也能 Cmd± 缩放（iframe 内事件不冒泡到这）
 
@@ -586,8 +715,8 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
   if (cmd === 'export-pdf') exportPdf(basicEdit ? 'raw' : 'wordspace'); // 基础模式=raw 直印源文件
-  if (cmd === 'undo' && undoMgr) { if (undoMgr.undo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
-  if (cmd === 'redo' && undoMgr) { if (undoMgr.redo()) { if (blockEdit) blockEdit.reset(); markDirty(); } }
+  if (cmd === 'undo') runUndoRedo(false); // 菜单加速器（真实用户 Cmd+Z 走这，不走 doc keydown）
+  if (cmd === 'redo') runUndoRedo(true);
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
   if (cmd === 'close-tab' && window.__sbHooks && window.__sbHooks.closeActiveTab) window.__sbHooks.closeActiveTab(); // Cmd+W
   if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F

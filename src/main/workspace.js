@@ -100,7 +100,7 @@ async function readTree(root) {
 async function newDoc(root, dirRel, baseName, html) {
   const r = path.resolve(root);
   const destDir = assertInsideWorkspace(r, dirRel || '.');
-  const base = cleanLeafName(baseName) || '无标题文档';
+  const base = cleanLeafName(baseName) || '未命名';
   await fs.mkdir(destDir, { recursive: true });
   const leaf = uniqueLeaf(new Set(await listNames(destDir)), base, '.html');
   const abs = assertInsideWorkspace(r, path.join(destDir, leaf));

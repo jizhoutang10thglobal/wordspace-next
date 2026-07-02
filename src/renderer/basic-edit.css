@@ -6,69 +6,69 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
-  font-size: 12.5px;
+  padding: 8px 20px;
+  font-size: var(--fs-sm); /* T5 对齐 ui-demo nce-notice（12px；位置留顶部=#102 待拍板，只对齐观感） */
   line-height: 1.5;
-  color: #8a5a00;
-  background: #fff8e6;
-  border-bottom: 1px solid #f0e2b8;
+  color: #8a6d1a;
+  background: #fdf6d8;
+  border-bottom: 1px solid #f0e4b0;
   flex: 0 0 auto;
 }
 .ws-degrade-notice[hidden] { display: none; } /* 类选择器 display:flex 会盖过 [hidden] 默认的 display:none，须显式复位 */
-.ws-degrade-notice svg { flex: 0 0 auto; color: #c8930a; }
+.ws-degrade-notice svg { flex: 0 0 auto; color: #b7943a; }
 .ws-degrade-notice strong { font-weight: 600; }
 
 /* ---- 富文字格式条（U2）：宿主浮层，append 到 document.body、position:fixed、JS 给坐标 ---- */
 .ws-fmtbar {
-  position: fixed;
+  position: fixed; /* 宿主浮层移植需要（ui-demo 是 absolute），视觉参数对齐画布同款 */
   z-index: 60;
   display: inline-flex;
   align-items: center;
   gap: 1px;
-  padding: 3px 4px;
-  background: #fff;
-  border: 1px solid #e2e4e8;
-  border-radius: 9px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
-  font-size: 13px;
-  color: #2b2d31;
+  height: 32px;
+  padding: 0 4px;
+  background: var(--c-surface);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
 }
 .ws-fmtbar[hidden] { display: none; }
 .ws-fmtbar-btn {
-  min-width: 28px;
-  height: 26px;
+  min-width: 26px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: 0;
   background: none;
-  border-radius: 6px;
-  color: #2b2d31;
+  border-radius: var(--r-xs);
+  color: var(--c-text-2);
+  font-weight: var(--fw-medium);
   cursor: pointer;
-  padding: 0 6px;
+  padding: 0 5px;
 }
-.ws-fmtbar-btn:hover { background: #f0f1f3; }
-.ws-fmtbar-aglyph { font-weight: 700; font-size: 14px; }
-.ws-fmtbar-sep { width: 1px; height: 18px; background: #e2e4e8; margin: 0 3px; align-self: center; }
+.ws-fmtbar-btn:hover { background: var(--c-hover); color: var(--c-text); }
+.ws-fmtbar-aglyph { font-weight: 700; font-size: 14px; text-decoration: underline; text-decoration-color: var(--c-accent); text-underline-offset: 2px; }
+.ws-fmtbar-sep { width: 1px; height: 16px; background: var(--c-divider); margin: 0 3px; align-self: center; }
 .ws-fmtbar-holder { position: relative; display: inline-flex; }
 .ws-fmtbar-swatches {
   position: absolute;
-  top: 32px;
+  top: calc(100% + 6px);
   left: 0;
   display: flex;
   gap: 4px;
-  padding: 6px;
-  background: #fff;
-  border: 1px solid #e2e4e8;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  padding: 7px;
+  background: var(--c-surface);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
 }
 .ws-fmtbar-swatches[hidden] { display: none; }
 .ws-fmtbar-swatch {
-  width: 18px;
-  height: 18px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 5px;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-xs);
   cursor: pointer;
   padding: 0;
 }
@@ -79,7 +79,7 @@
   position: fixed;
   z-index: 55;
   pointer-events: none;
-  border: 2px solid #e8654f;
+  border: 2px solid var(--c-accent); /* T5：ui-demo nce-focus 用 accent（珊瑚只留虚线 hover 框与光晕） */
   border-radius: 6px;
   box-shadow: 0 0 0 3px rgba(232, 101, 79, 0.15);
 }
@@ -123,14 +123,14 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  background: #e8654f;
+  background: var(--c-accent);
   color: #fff;
   border: 0;
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 3px 10px rgba(232, 101, 79, 0.45);
 }
-.nce-hover-del:hover { background: #d64f38; }
+.nce-hover-del:hover { background: var(--c-accent-hover); }
 .nce-lock {
   position: absolute;
   top: -11px;
