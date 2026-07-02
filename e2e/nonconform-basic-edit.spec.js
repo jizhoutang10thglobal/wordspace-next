@@ -156,3 +156,24 @@ test('Cmd+Z 撤销（基础编辑，Colin 2026-07-02）：打字 → 菜单 undo
   await menu('save'); // 清脏收尾：脏文档会让 afterEach 的 app.close() 被关窗守卫卡死（本套件惯例=存了再关）
   await page.waitForTimeout(300);
 });
+
+test('T5 视觉对齐：焦点框 accent 蓝（非珊瑚橙）+ 格式条画布同款壳（真 computed style）', async () => {
+  await launch();
+  await openDoc('wild.html', WILD);
+  await frame.locator('#p1').click();
+  await page.keyboard.press('Escape'); // → 块模式出焦点框
+  await expect(page.locator('.nce-focus')).toBeVisible();
+  const st = await page.locator('.nce-focus').evaluate((el) => getComputedStyle(el).borderTopColor);
+  expect(st, '焦点框应是 accent 蓝（ui-demo nce-focus）').toBe('rgb(26, 115, 232)'); // #1a73e8
+  // 格式条壳：选中文字出条 → surface 底、无实体边框（shadow-menu 描边）、32 高
+  await frame.locator('#p1').click();
+  await frame.locator('#p1').selectText();
+  await expect(page.locator('.ws-fmtbar')).toBeVisible();
+  const bar = await page.locator('.ws-fmtbar').evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { h: el.getBoundingClientRect().height, border: cs.borderTopWidth, bg: cs.backgroundColor };
+  });
+  expect(Math.round(bar.h), '格式条高度应 32（画布同款）').toBe(32);
+  expect(bar.border, '格式条不应再有实体边框').toBe('0px');
+  expect(bar.bg).toBe('rgb(255, 255, 255)');
+});
