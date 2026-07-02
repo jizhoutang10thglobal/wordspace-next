@@ -72,6 +72,7 @@ function buildMenu() {
       submenu: [
         { label: '新建标签页', accelerator: 'CmdOrCtrl+T', click: () => sendMenu('new-tab') },
         { label: '打开…', accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
+        { label: '快速打开…', accelerator: 'CmdOrCtrl+P', click: () => sendMenu('find-palette') },
         { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
         { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
         { type: 'separator' },

@@ -140,16 +140,20 @@ ul { list-style: none; }
 }
 .sb-icobtn:hover { background: var(--c-hover); color: var(--c-text); }
 
-/* 收起态：48px 图标轨（置顶 + 顶层文件夹/文件迷你图标 + hover 气泡），对齐 ui-demo CollapsedRail。 */
-.sb.is-collapsed { width: 48px; }
-.sb.is-collapsed .sb-title,
-.sb.is-collapsed #sb-open-folder,
-.sb.is-collapsed #sb-new-doc,
-.sb.is-collapsed .sb-filter,
-.sb.is-collapsed .sb-body { display: none; }
-.sb.is-collapsed .sb-head { justify-content: center; padding: 0; }
+/* 收起态：真收起（全隐藏，不留细条；图标轨 + hover 气泡早已删）。侧栏整个滑没，编辑区靠悬浮
+   .sb-reopen / Cmd+\ 重开。（ui-demo 留 48px 细条放展开钮；这里按 Colin「收起就是真收起」全隐藏。）*/
+.sb.is-collapsed { width: 0; min-width: 0; overflow: hidden; border-right: none; }
 
-/* 图标轨（收起态竖排图标）已删 — Wendi B2。 */
+/* 编辑区左上角悬浮「展开侧栏」入口：仅全收起时显示（顶栏左内边距 56px 给它让位，不压面包屑）。 */
+.sb-reopen {
+  position: absolute; top: 11px; left: 14px; z-index: 40;
+  width: 30px; height: 30px; display: none;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--c-border); border-radius: var(--r-md);
+  background: var(--c-surface); color: var(--c-text-2); box-shadow: var(--shadow-sm);
+}
+.sb-reopen:hover { background: var(--c-hover); color: var(--c-text); }
+body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 /* 品牌页脚：wordspace.ai logo + 版本号，钉在左侧栏底部（不在编辑区）。 */
 .sb-foot { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-top: 1px solid var(--c-divider); }
@@ -277,6 +281,42 @@ ul { list-style: none; }
 .sb-card-blank { border-top-color: var(--c-accent); }
 .sb-card-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
 .sb-card-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.45; }
+
+/* SaveModal「保存到哪里」+ CloseConfirmModal（未保存关闭确认）。复用 .sb-modal 壳（对齐 ui-demo）。 */
+.sb-modal-save { width: 460px; }
+.sb-modal-confirm { width: 440px; }
+.sb-modal-desc { margin-top: 6px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.55; }
+.sb-save-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: 4px 0 14px; }
+.sb-save-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; text-align: left; border: 1px solid transparent; border-radius: var(--r-md); background: transparent; color: var(--c-text); font-size: var(--fs-md); }
+.sb-save-row:hover { background: var(--c-hover); }
+.sb-save-row.is-on { background: var(--c-accent-tint, #eef4ff); border-color: var(--c-accent); }
+.sb-save-row .sb-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.sb-modal-foot { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.sb-modal-spacer { flex: 1; }
+.sb-btn { padding: 7px 14px; border: 1px solid var(--c-border); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-text); font-size: var(--fs-sm); font-weight: 500; }
+.sb-btn:hover { background: var(--c-hover); }
+.sb-btn-primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
+.sb-btn-primary:hover { filter: brightness(1.05); }
+.sb-btn-danger { color: var(--c-danger, #b3261e); }
+.sb-btn-danger:hover { background: var(--c-danger-tint, #fdecec); border-color: var(--c-danger, #b3261e); }
+/* 临时（未保存）标签：标题前一个小圆点提示未保存。 */
+.sb-tab-temp .sb-name::before { content: '● '; color: var(--c-warn, #b06000); font-size: 9px; vertical-align: 1px; }
+
+/* Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层 + 模糊搜结果列表。 */
+.fp-overlay { align-items: flex-start; padding-top: 88px; } /* 覆盖 .sb-modal-overlay 的居中，改顶部锚定 */
+.fp { width: 560px; max-width: calc(100vw - 32px); background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-menu); overflow: hidden; }
+.fp-bar { display: flex; align-items: center; gap: 9px; padding: 12px 14px; border-bottom: 1px solid var(--c-divider); }
+.fp-bar-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.fp-input { flex: 1; min-width: 0; border: none; background: none; outline: none; font-size: var(--fs-md); color: var(--c-text); }
+.fp-input::placeholder { color: var(--c-text-3); }
+.fp-hint { flex: none; font-size: var(--fs-xs); color: var(--c-text-3); }
+.fp-list { max-height: 320px; overflow: auto; padding: 6px; }
+.fp-empty { padding: 18px; text-align: center; color: var(--c-text-3); font-size: var(--fs-sm); }
+.fp-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 10px; text-align: left; border: none; border-radius: var(--r-md); background: transparent; color: var(--c-text); }
+.fp-row.is-sel { background: var(--c-accent-tint, #eef4ff); }
+.fp-row-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.fp-name { flex: none; max-width: 58%; font-size: var(--fs-md); }
+.fp-sub { flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--c-text-3); }
 
 /* ============================================================ 编辑区（照搬 Canvas chrome） */
 #main {

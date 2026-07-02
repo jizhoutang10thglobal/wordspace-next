@@ -7,6 +7,17 @@ let basicEdit = null; // 非合规文档的基础编辑内核（WS2BasicEdit.att
 let docConform = true; // openDoc 判定：文件合规→完整块编辑；不合规→基础编辑（分流 seam，KD-e）
 let loadGen = 0;       // 每次载入/重载自增；旧的 frame.onload 闭包据此作废，防并发载入（如外部连改 + 重载）交叉 wireEditor
 
+// ---- 临时文档（从「标签页 +」/ Cmd+T 新建，未落盘；对齐 ui-demo 的临时未保存文档）----
+// app 的文档 = 磁盘文件，本没有「内存里未落盘」的位置。这里补一个：临时文档 docPath=null，内容只活在
+// iframe / tempStore 里，手动保存（走 SaveModal → wsNewDoc）才落盘变成真文件。tempStore 让临时文档切标签
+// 不丢——单编辑器一次只 live 一个，切走前 stash 序列化回 store、切回按 store 重渲染。
+let tempDoc = null;          // 当前活跃临时文档 { id, base }（base = 默认文件名 / 面包屑名）
+const tempStore = new Map(); // id('temp:…') → { base, html }：所有临时文档内容
+let tempSeq = 0;
+function genTempId() { return 'temp:' + (++tempSeq) + ':' + Date.now().toString(36); }
+// 主进程只认「有没有未保存」这个布尔（关窗提示用）：活跃脏 || 存在任何临时文档 = 未保存。
+function syncAppDirty() { window.ws2.setDirty(dirty || !!tempDoc || tempStore.size > 0); }
+
 const frame = document.getElementById('doc-frame');
 const mainEl = document.getElementById('main');
 const degradeNotice = document.getElementById('ws-degrade-notice'); // 非合规降级提示条（Feature 3）
@@ -22,8 +33,8 @@ const exportBtn = document.getElementById('export-btn');
 let savedTimer = null; // 「✓ 已保存」淡出定时器（保存成功后闪一下再消失）
 function setDirty(v) {
   dirty = v;
-  saveBtn.disabled = !v || !docPath;
-  window.ws2.setDirty(v);
+  saveBtn.disabled = !(tempDoc || (docPath && v)); // 临时文档没 docPath 也能存（走 SaveModal）
+  syncAppDirty();
   // 任何脏态变化都终结上一次「✓ 已保存」的余晖——否则它的定时器会跨文档/重载串台（切文档后还挂在新文档
   // 面包屑上、或外部重载后压住清洁态）。save() 是先 setDirty(false) 再 flashSaved()，这里清掉无妨（flash 紧接重置）。
   if (savedTimer) { clearTimeout(savedTimer); savedTimer = null; }
@@ -229,8 +240,9 @@ function openExternalBtn(node, cls) {
 }
 // node = { name, rel, abs, kind } —— rel 来自侧栏文件树；「打开」按钮选的工作区外文件 rel 为 null、走 abs
 async function showViewer(node) {
-  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
-  // 退出编辑器态：停 watch、拆编辑内核、清 docPath（非可编辑文件没有保存目标）
+  if (tempDoc) { stashActiveTemp(); tempDoc = null; }
+  else if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
+  // 退出编辑器态：停 watch、拆编辑内核（块+基础都拆）、清 docPath（非可编辑文件没有保存目标）
   window.ws2.unwatchDoc();
   detachEditors();
   docPath = null;
@@ -340,17 +352,98 @@ async function reloadDoc() {
 function loadFromHtml(html, opts) {
   detachEditors();
   const gen = ++loadGen;
-  // 历史恢复走当前文档的既有分流判定（docConform 不变——恢复的是同一文档的旧内容）
-  frame.onload = () => { if (gen !== loadGen) return; injectBase(frame.contentDocument, docInfo.dirUrl); docConform ? wireEditor() : attachBasic(); };
+  // 历史恢复走同一文档既有 docConform；临时文档由 openTempDoc 先设好 docConform。injectBase 守 docInfo（临时文档无 docInfo/dirUrl）。
+  frame.onload = () => { if (gen !== loadGen) return; if (docInfo && docInfo.dirUrl) injectBase(frame.contentDocument, docInfo.dirUrl); docConform ? wireEditor() : attachBasic(); };
   frame.removeAttribute('src');
   frame.srcdoc = html;
   prepFrame(opts && opts.asDirty);
 }
 
+// ===== 临时文档引擎 =====
+// 切走当前活跃文档前的守卫：活跃是临时文档 → 序列化存回（随便走、不丢）；活跃是脏的真文件 → 问一下
+// （单编辑器切走 = 丢编辑，跟 openDoc 的脏守卫一致）。返回 false = 用户取消、别切。
+function canLeaveActive() {
+  if (tempDoc) { stashActiveTemp(); return true; }
+  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并切换？')) return false;
+  return true;
+}
+// 新建一个临时文档并渲染：生成 id、存进 tempStore、渲染。返回 id 给侧栏建标签（取消切换则返回 null）。
+function shellNewTemp(base, html) {
+  if (!canLeaveActive()) return null;
+  const id = genTempId();
+  tempStore.set(id, { base: base || '无标题文档', html });
+  renderTemp(id);
+  return id;
+}
+// 切回一个已存在的临时文档（点它的标签）。
+function shellReopenTemp(id) {
+  if (!tempStore.has(id)) return;
+  if (!canLeaveActive()) return;
+  renderTemp(id);
+}
+// 渲染某临时文档进编辑器（切走守卫由 canLeaveActive 处理过）。
+function renderTemp(id) {
+  const rec = tempStore.get(id);
+  if (!rec) return;
+  window.ws2.unwatchDoc(); // 临时文档没有磁盘监听目标
+  docPath = null;
+  docInfo = { name: rec.base };
+  tempDoc = { id, base: rec.base };
+  zoomFactor = 1;
+  // ⚠ schema-1 rebase 钩子（handoff-schema1-integration.md §2）：schema-1 的 iframe onload 按模块变量
+  // docConform 决定挂块编辑器还是基础编辑器，而 loadFromHtml 故意不改 docConform（历史恢复复用既有判定）。
+  // 临时文档是新文档、必须显式设，否则读到上一个文档的陈旧 docConform、编辑器错挂。
+  docConform = routeDoc(rec.html); // handoff §2：临时文档显式设分流判定（模板产物合规→块编辑；万一非合规也正确降级）——否则读到上个文档陈旧 docConform、编辑器错挂
+  loadFromHtml(rec.html, { asDirty: true }); // srcdoc 渲染；临时 = 未保存 = 脏（面包屑显「● 未保存」）
+  docName.textContent = rec.base;
+  docName.title = rec.base;
+  exportBtn.disabled = true; // 临时文档没落盘、不能导出（保存后才亮）
+}
+// 把当前活跃临时文档的编辑内容序列化存回 tempStore（切走 / 保存前调，防单编辑器切标签丢内容）。
+function stashActiveTemp() {
+  if (!tempDoc) return;
+  try {
+    const html = WS2Serialize.serializeDocument(frame.contentDocument);
+    const rec = tempStore.get(tempDoc.id) || { base: tempDoc.base };
+    tempStore.set(tempDoc.id, { base: rec.base, html });
+  } catch (e) { /* 序列化失败：留上一次 stash */ }
+}
+// 保存对话框要用的当前活跃临时文档快照（id/base/最新 html）。侧栏 SaveModal 读它。
+function shellActiveTemp() {
+  if (!tempDoc) return null;
+  let html;
+  try { html = WS2Serialize.serializeDocument(frame.contentDocument); }
+  catch (e) { html = (tempStore.get(tempDoc.id) || {}).html || ''; }
+  return { id: tempDoc.id, base: tempDoc.base, html };
+}
+// 临时文档已落盘（SaveModal 存完）→ 就地把编辑器指向真文件（不重载，内容与刚序列化的一致）。
+async function shellFinalizeTemp(id, abs, name) {
+  tempStore.delete(id);
+  if (!tempDoc || tempDoc.id !== id) return; // 保存的不是当前活跃项（当前流程不会发生）：只清 store
+  let info;
+  try { info = await window.ws2.pathInfo(abs); } catch (e) { info = { name }; }
+  tempDoc = null;
+  docPath = abs;
+  docInfo = info;
+  docName.textContent = name;
+  docName.title = name;
+  window.ws2.watchDoc(abs);
+  exportBtn.disabled = false;
+  setDirty(false);
+  flashSaved();
+}
+// 丢弃一个临时文档（未保存关闭选「不保存」）。是活跃项则清编辑器脏态，免得回落时误弹脏守卫。
+function shellDiscardTemp(id) {
+  tempStore.delete(id);
+  if (tempDoc && tempDoc.id === id) { tempDoc = null; setDirty(false); }
+}
+
 async function openDoc(p) {
   // 没真打开成 → 撤销 onOpenFile 设的 __pendingColdOpen，否则它会一直抑制后续 loadTabs 的「恢复激活标签」
   // （如 app 已开 + 当前文档脏，第二实例双击别的文件、用户点「取消」时会走到这）。
-  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
+  // 离开活跃临时文档：序列化存回 tempStore（不弹脏守卫，切回它还在）；真文件仍走原脏守卫。
+  if (tempDoc) { stashActiveTemp(); tempDoc = null; }
+  else if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
   let info; let raw; // raw：接住磁盘原始文本做 Feature 3 分流判定（routeDoc）
   try {
     // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；接住返回的原始文本做分流判定（Feature 3，不新增 IPC）；再取 file:// URL 等
@@ -390,6 +483,7 @@ function shellCloseDoc() {
   detachEditors();
   docPath = null;
   docInfo = null;
+  tempDoc = null;
   setDirty(false);
   frame.hidden = true;
   frame.removeAttribute('src');
@@ -404,6 +498,18 @@ window.__shellCloseDoc = shellCloseDoc;
 window.__shellDocPath = () => docPath;
 window.__shellIsDirty = () => dirty; // 给侧栏关标签时的脏检查
 window.__shellDiscard = () => setDirty(false); // 已确认丢弃 → 清脏，切下一个时不再追问
+// 临时文档桥（侧栏 sidebar.js 用）：建/切/取快照/落盘就位/丢弃。
+window.__shellNewTemp = shellNewTemp;
+window.__shellReopenTemp = shellReopenTemp;
+window.__shellActiveTemp = shellActiveTemp;
+window.__shellFinalizeTemp = shellFinalizeTemp;
+window.__shellDiscardTemp = shellDiscardTemp;
+window.__shellIsTemp = () => !!tempDoc; // 当前活跃的是不是临时文档
+window.__shellSaveActive = () => save(); // 「保存并关闭」里保存已落盘的脏文档用（返回 promise）
+// 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
+// position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
+// handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -422,6 +528,10 @@ async function pickAndOpen() {
 }
 
 async function save() {
+  // 临时文档：没有落盘目标 → 弹「保存到哪里」（侧栏 SaveModal，它有文件树 + wsNewDoc）。early-return 在
+  // 序列化行之前，所以跟 schema-1 的 `basicEdit ? WS2BasicEdit.serialize : WS2Serialize` 三元不打架。
+  // ⚠ schema-1 rebase（handoff §1）：下面这行取 schema-1 的三元版，别覆盖成单一 WS2Serialize。
+  if (tempDoc) { if (window.__sbHooks && window.__sbHooks.openSaveModal) window.__sbHooks.openSaveModal(false); return; }
   if (!docPath || !dirty) return;
   // 基础编辑（非合规）走结构保真序列化（剥编辑态、不 Schema 规整）；完整编辑走 block serialize。
   const html = basicEdit
@@ -481,6 +591,7 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
   if (cmd === 'close-tab' && window.__sbHooks && window.__sbHooks.closeActiveTab) window.__sbHooks.closeActiveTab(); // Cmd+W
   if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F
+  if (cmd === 'find-palette' && window.__sbHooks && window.__sbHooks.findPalette) window.__sbHooks.findPalette();     // Cmd+P
 });
 
 // 导出 PDF。两条内部路径（单按钮、无 UI 菜单）：

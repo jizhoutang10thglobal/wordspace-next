@@ -370,6 +370,11 @@
   // 身份键：工作区内用 rel、工作区外用 abs（跟 tabs.js 一致）。外部标签 = 没有 rel。
   const keyOf = (e) => e.rel || e.abs;
   const isExternal = (e) => !e.rel;
+  // 临时文档标签（从「标签页 +」/ Cmd+T 新建、未落盘）：身份键用 shell 生成的 'temp:…'（rel/abs 都没有 →
+  // 塞进 abs 当身份，靠前缀识别，不用改 tabs.js）。不持久化、不进树，手动保存才落盘变真文件。
+  const TEMP_PREFIX = 'temp:';
+  const isTempKey = (k) => typeof k === 'string' && k.indexOf(TEMP_PREFIX) === 0;
+  const isTempEntry = (e) => isTempKey(keyOf(e));
   const baseName = (p) => String(p).split(/[\\/]/).pop();
   // 外部标签的「↗」轻标记图标（shell.js 的 EXT_SVG 是 script 作用域 const、跨不到这里，单独定义）。
   const EXT_ICO_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>';
@@ -401,7 +406,13 @@
   }
   function persistTabs() {
     // 带上当前 root：主进程校验 === activeRoot，防 fire-and-forget 的写在切工作区后到达、把标签写错桶。
-    if (window.ws2.wsSetTabs) window.ws2.wsSetTabs(tabState, current && current.root).catch(() => {});
+    // 临时文档不落盘、重启无从恢复 → 从持久化副本里剔掉（内存里的 tabState 仍保留它们，只是不写盘）。
+    if (!window.ws2.wsSetTabs) return;
+    const clean = {
+      entries: tabState.entries.filter((e) => !isTempEntry(e)),
+      activeRel: isTempKey(tabState.activeRel) ? null : tabState.activeRel,
+    };
+    window.ws2.wsSetTabs(clean, current && current.root).catch(() => {});
   }
   function applyTabs(next) {
     tabState = next;
@@ -419,20 +430,150 @@
   function unpinRel(key) {
     applyTabs(window.WS2Tabs.unpinEntry(tabState, key));
   }
-  // 关/删一条标签：脏检查（关激活项前问一下）→ 应用 op → 关的是激活项就回落到下一个/空态。
-  // op = closeEntry（标签页区的 ×：open=false，pinned 项留在置顶）/ removeEntry（置顶区的 ×：整条删掉）。
+  // 关/删一条标签：关激活的「临时文档 / 有未保存改动的真文件」→ 弹未保存确认 modal（对齐 ui-demo）；
+  // 否则直接关 + 回落。op = closeEntry（标签页区的 ×）/ removeEntry（置顶区的 ×）。
   function closeOrRemove(key, op) {
     const wasActive = tabState.activeRel === key;
-    if (wasActive && window.__shellIsDirty && window.__shellIsDirty() &&
-        !confirm('这个文档有未保存的修改，关闭标签会丢弃，确定吗？')) return;
-    if (wasActive && window.__shellDiscard) window.__shellDiscard(); // 已确认丢弃 → 切下一个时不再追问
+    const entry = tabState.entries.find((e) => keyOf(e) === key);
+    const dirtyActive = wasActive && window.__shellIsDirty && window.__shellIsDirty();
+    if (wasActive && (isTempEntry(entry) || dirtyActive)) {
+      openCloseConfirm(key, op, entry);
+      return;
+    }
+    finishClose(key, op);
+  }
+  // 真正执行关/移出 + 回落（未保存确认已在上游处理）。临时文档丢弃其内容 + 清脏；真文件确认丢弃后清脏。
+  function finishClose(key, op) {
+    const wasActive = tabState.activeRel === key;
+    const entry = tabState.entries.find((e) => keyOf(e) === key);
+    if (entry && isTempEntry(entry)) { if (window.__shellDiscardTemp) window.__shellDiscardTemp(key); }
+    else if (wasActive && window.__shellDiscard) window.__shellDiscard();
     applyTabs(op(tabState, key));
     if (wasActive) {
       const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
-      if (e) openTabRow(e); // 回落项可能是外部标签 → 走 abs 分发，不只 findNode
+      if (e) openTabRow(e); // 回落项可能是外部/临时标签 → 走统一分发
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
   }
+  // 未保存关闭确认（对齐 ui-demo CloseConfirmModal）：保存并关闭 / 不保存直接关闭 / 取消。
+  function openCloseConfirm(key, op, entry) {
+    const temp = isTempEntry(entry);
+    const name = entry ? entry.title : '这个文件';
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay';
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    const modal = document.createElement('div');
+    modal.className = 'sb-modal sb-modal-confirm';
+    const head = document.createElement('div');
+    head.className = 'sb-modal-head';
+    const title = document.createElement('div');
+    title.className = 'sb-modal-title';
+    title.textContent = '「' + name + '」还没保存';
+    const desc = document.createElement('div');
+    desc.className = 'sb-modal-desc';
+    desc.textContent = temp
+      ? '这是一个还没存进文件夹的临时文档，关掉后未保存的内容会丢失。'
+      : '这个文档有未保存的修改，关掉后会丢失。';
+    head.append(title, desc);
+    const foot = document.createElement('div');
+    foot.className = 'sb-modal-foot';
+    const discard = document.createElement('button');
+    discard.className = 'sb-btn sb-btn-danger';
+    discard.textContent = '不保存，直接关闭';
+    discard.onclick = () => { close(); finishClose(key, op); };
+    const spacer = document.createElement('span');
+    spacer.className = 'sb-modal-spacer';
+    const cancel = document.createElement('button');
+    cancel.className = 'sb-btn';
+    cancel.textContent = '取消';
+    cancel.onclick = close;
+    const save = document.createElement('button');
+    save.className = 'sb-btn sb-btn-primary';
+    save.textContent = '保存并关闭';
+    save.onclick = async () => {
+      close();
+      if (temp) { openSaveModal(true); return; } // 临时 → 选文件夹存，存完自动关
+      if (window.__shellSaveActive) await window.__shellSaveActive(); // 已落盘的脏文档：存原路径
+      if (!window.__shellIsDirty || !window.__shellIsDirty()) finishClose(key, op);
+    };
+    foot.append(discard, spacer, cancel, save);
+    modal.append(head, foot);
+    overlay.appendChild(modal);
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  }
+
+  // 「保存到哪里」（对齐 ui-demo SaveModal）：列工作区根 + 各子文件夹，选一个 → wsNewDoc 落盘。
+  function openSaveModal(closeAfter) {
+    const t = window.__shellActiveTemp && window.__shellActiveTemp();
+    if (!t) return;
+    const dirs = ['']; // '' = 工作区根
+    (function walk(nodes) { for (const n of nodes) { if (n.isDir) { dirs.push(n.rel); walk(n.children || []); } } })(current ? current.tree : []);
+    let selectedDir = '';
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay';
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    const modal = document.createElement('div');
+    modal.className = 'sb-modal sb-modal-save';
+    const head = document.createElement('div');
+    head.className = 'sb-modal-head';
+    const title = document.createElement('div');
+    title.className = 'sb-modal-title';
+    title.textContent = '保存到哪里';
+    const where = document.createElement('div');
+    where.className = 'sb-modal-where';
+    where.textContent = '「' + t.base + '」存进 ' + (current ? current.name : '工作区');
+    head.append(title, where);
+    const list = document.createElement('div');
+    list.className = 'sb-save-list';
+    const rows = [];
+    dirs.forEach((d) => {
+      const row = document.createElement('button');
+      row.className = 'sb-save-row' + (d === selectedDir ? ' is-on' : '');
+      const ico = document.createElement('span'); ico.className = 'sb-ico'; ico.innerHTML = SVG.folder;
+      const label = document.createElement('span'); label.className = 'sb-name ws-truncate';
+      label.textContent = d || ((current ? current.name : '工作区') + '（根目录）');
+      row.append(ico, label);
+      row.onclick = () => { selectedDir = d; rows.forEach((r, i) => r.classList.toggle('is-on', dirs[i] === selectedDir)); };
+      rows.push(row);
+      list.appendChild(row);
+    });
+    const foot = document.createElement('div');
+    foot.className = 'sb-modal-foot';
+    const cancel = document.createElement('button'); cancel.className = 'sb-btn'; cancel.textContent = '取消'; cancel.onclick = close;
+    const spacer = document.createElement('span'); spacer.className = 'sb-modal-spacer';
+    const ok = document.createElement('button'); ok.className = 'sb-btn sb-btn-primary'; ok.textContent = '保存';
+    ok.onclick = async () => {
+      close();
+      const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取一次最新内容
+      if (cur) await doSaveTemp(cur.id, cur.base, cur.html, selectedDir, closeAfter);
+    };
+    foot.append(cancel, spacer, ok);
+    modal.append(head, list, foot);
+    overlay.appendChild(modal);
+    overlay.onclick = (e) => { if (e.target === overlay) close(); };
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  }
+
+  // 把临时文档落盘（wsNewDoc）→ 去临时标签、建真 rel 标签、编辑器就地指向真文件（不重载）。closeAfter=存完即关。
+  async function doSaveTemp(tempId, base, html, dir, closeAfter) {
+    let r;
+    try { r = await window.ws2.wsNewDoc(dir || '', base, html); }
+    catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
+    if (!r || !r.abs) { showToast('保存失败'); return; }
+    await refresh(); // 树里出现新文件
+    const node = findNodeByAbs(r.abs);
+    applyTabs(window.WS2Tabs.removeEntry(tabState, tempId)); // 去掉临时标签
+    if (node) openTabEntry({ rel: node.rel, kind: node.kind || 'html', title: node.name }); // 建真 rel 标签 + 激活
+    if (window.__shellFinalizeTemp) await window.__shellFinalizeTemp(tempId, r.abs, node ? node.name : base);
+    if (node) { expandToFile(node.rel); highlightActive(r.abs); }
+    if (closeAfter && node) closeTabRel(node.rel); // 「保存并关闭」
+  }
+
   function closeTabRel(key) { closeOrRemove(key, window.WS2Tabs.closeEntry); } // 标签页区 ×
   function removeTabRel(key) { closeOrRemove(key, window.WS2Tabs.removeEntry); } // 置顶区 ×：整条移出置顶
   function dropTabRel(key, toPinned, toIndex) {
@@ -503,6 +644,10 @@
     if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   }
   function openTabRow(entry) {
+    if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
+      if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry));
+      return;
+    }
     if (entry.rel) {
       const n = findNode(entry.rel);
       if (n) { openNode(n); expandToFile(entry.rel); } // 点标签 → 文件树展开到该文件并滚动定位
@@ -513,9 +658,10 @@
   }
   function tabRow(entry, zone) {
     const key = keyOf(entry);
-    const external = isExternal(entry);
+    const temp = isTempEntry(entry);
+    const external = isExternal(entry) && !temp; // 临时文档不算「工作区外」，不显示 ↗ 标记
     const row = document.createElement('div');
-    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '');
+    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '') + (temp ? ' sb-tab-temp' : '');
     row.dataset.rel = key; // 属性名沿用 data-rel（e2e 选择器靠它）；值=keyOf（内部=rel、外部=abs）
     row.setAttribute('role', 'button');
     row.draggable = true;
@@ -536,16 +682,18 @@
       ext.innerHTML = EXT_ICO_SVG;
       row.append(ext);
     }
-    const pin = document.createElement('button');
-    pin.className = 'sb-tab-pin' + (entry.pinned ? ' is-pinned' : '');
-    pin.title = entry.pinned ? '取消置顶' : '置顶';
-    pin.innerHTML = entry.pinned ? PIN_OFF_SVG : PIN_SVG;
-    pin.onclick = (e) => {
-      e.stopPropagation();
-      if (entry.pinned) unpinRel(key);
-      else pinRel(entry);
-    };
-    row.append(pin);
+    if (!temp) { // 临时文档不能置顶（置顶持久化、临时文档重启即弃）
+      const pin = document.createElement('button');
+      pin.className = 'sb-tab-pin' + (entry.pinned ? ' is-pinned' : '');
+      pin.title = entry.pinned ? '取消置顶' : '置顶';
+      pin.innerHTML = entry.pinned ? PIN_OFF_SVG : PIN_SVG;
+      pin.onclick = (e) => {
+        e.stopPropagation();
+        if (entry.pinned) unpinRel(key);
+        else pinRel(entry);
+      };
+      row.append(pin);
+    }
     // × 关闭：两个区都有。标签页区 = 关标签；置顶区 = 直接移出置顶（Wendi 要的，整条删掉、不只取消钉）。
     const x = document.createElement('button');
     x.className = 'sb-tab-close';
@@ -637,7 +785,7 @@
 
     tabsEl.innerHTML = '';
     tabsEl.hidden = false;
-    tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal('')));
+    tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal('', { temp: true })));
     const tlist = zoneList('tabs');
     if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
     else tlist.appendChild(zoneHint('没有打开的标签'));
@@ -711,8 +859,11 @@
     }, 6500);
   }
 
-  // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。落点 dirRel。----
-  async function openCreateModal(dirRel) {
+  // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。----
+  // opts.temp：从「标签页 +」/ Cmd+T 来 → 建临时文档（不落盘，手动保存才进文件夹）；
+  // 否则（文件夹 hover-+ / 右键新建）落点 dirRel、直接落盘。
+  async function openCreateModal(dirRel, opts) {
+    const temp = !!(opts && opts.temp);
     let templates = [];
     try {
       templates = await window.ws2.wsTemplates();
@@ -737,7 +888,9 @@
     title.textContent = '新建文档';
     const where = document.createElement('div');
     where.className = 'sb-modal-where';
-    where.textContent = '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : '');
+    where.textContent = temp
+      ? '新建的是临时文档，编辑后保存时再选存到哪个文件夹'
+      : '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : '');
     head.append(title, where);
     const grid = document.createElement('div');
     grid.className = 'sb-modal-grid';
@@ -754,6 +907,13 @@
       card.append(name, desc);
       card.onclick = async () => {
         close();
+        if (temp) {
+          // 临时文档：不落盘，shell 建内容 + 渲染，侧栏建临时标签（身份 = shell 返回的 'temp:…'）。
+          // 返回 null = 用户在「切走脏文件」守卫里取消了，不建标签。
+          const id = window.__shellNewTemp(t.base, t.html);
+          if (id) openTabEntry({ abs: id, kind: 'html', title: t.base });
+          return;
+        }
         const r = await window.ws2.wsNewDoc(dirRel || '', t.base, t.html);
         await refresh();
         if (r && r.abs) openDoc(r.abs);
@@ -769,13 +929,94 @@
     document.body.appendChild(overlay);
   }
 
-  // ---- 收起/展开侧栏（最简版：收成细条；Cmd+\ 或头部按钮）----
+  // ---- Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层，模糊搜文件名/路径，↑↓ 选、Enter 开、Esc 关。----
+  const SEARCH_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>';
+  function openFindPalette() {
+    if (!current) return; // 没工作区没得搜
+    if (document.getElementById('fp-overlay')) return; // 已开着，别叠一层
+    const allFiles = [];
+    (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(current.tree);
+    let q = '', sel = 0, hits = [];
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay fp-overlay';
+    overlay.id = 'fp-overlay';
+    const onKeyGlobal = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKeyGlobal); }
+    const panel = document.createElement('div');
+    panel.className = 'fp';
+    const bar = document.createElement('div');
+    bar.className = 'fp-bar';
+    const ico = document.createElement('span'); ico.className = 'fp-bar-ico'; ico.innerHTML = SEARCH_SVG;
+    const input = document.createElement('input');
+    input.className = 'fp-input'; input.type = 'text'; input.placeholder = '按文件名查找…'; input.spellcheck = false;
+    const hint = document.createElement('span'); hint.className = 'fp-hint'; hint.textContent = '⏎ 打开';
+    bar.append(ico, input, hint);
+    const list = document.createElement('div');
+    list.className = 'fp-list';
+    panel.append(bar, list);
+    overlay.appendChild(panel);
+    overlay.onmousedown = (e) => { if (e.target === overlay) close(); };
+    function computeHits() {
+      const term = q.trim().toLowerCase();
+      const matched = term ? allFiles.filter((n) => n.name.toLowerCase().includes(term) || n.rel.toLowerCase().includes(term)) : allFiles;
+      hits = matched.slice(0, 12);
+      if (sel >= hits.length) sel = Math.max(0, hits.length - 1);
+    }
+    function highlight() { [...list.querySelectorAll('.fp-row')].forEach((r, i) => r.classList.toggle('is-sel', i === sel)); }
+    function scrollSel() { const r = list.querySelectorAll('.fp-row')[sel]; if (r && r.scrollIntoView) r.scrollIntoView({ block: 'nearest' }); }
+    function renderList() {
+      list.innerHTML = '';
+      if (!hits.length) {
+        const empty = document.createElement('div'); empty.className = 'fp-empty'; empty.textContent = '没有匹配的文件';
+        list.appendChild(empty);
+        return;
+      }
+      hits.forEach((n, i) => {
+        const row = document.createElement('button');
+        row.className = 'fp-row' + (i === sel ? ' is-sel' : '');
+        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = SVG.file;
+        const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.name;
+        const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.rel;
+        row.append(ic, nm, sub);
+        row.onmouseenter = () => { sel = i; highlight(); };
+        row.onclick = () => choose(n);
+        list.appendChild(row);
+      });
+    }
+    function choose(node) {
+      if (!node) return;
+      close();
+      openNode(node);           // .html 进编辑器 / 其余进查看器（同点树节点）
+      expandToFile(node.rel);   // 顺带在树里展开定位（F6）
+    }
+    input.addEventListener('input', () => { q = input.value; sel = 0; computeHits(); renderList(); });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); if (sel < hits.length - 1) { sel++; highlight(); scrollSel(); } }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); if (sel > 0) { sel--; highlight(); scrollSel(); } }
+      else if (e.key === 'Enter') { e.preventDefault(); choose(hits[sel]); }
+    });
+    document.addEventListener('keydown', onKeyGlobal);
+    document.body.appendChild(overlay);
+    computeHits(); renderList();
+    input.focus();
+  }
+
+  // ---- 收起/展开侧栏（真收起 = 全隐藏；Cmd+\ / 头部按钮收，编辑区悬浮按钮 / Cmd+\ 展开）----
   const sidebarEl = document.getElementById('sidebar');
   const toggleBtn = document.getElementById('sb-toggle');
-  function toggleCollapsed() {
-    if (sidebarEl) sidebarEl.classList.toggle('is-collapsed');
+  const reopenBtn = document.getElementById('sb-reopen');
+  // body.is-sb-collapsed 让编辑区那颗悬浮「展开」按钮现身（侧栏全隐后自己的 toggle 也没了）。
+  function setSidebarCollapsed(v) {
+    if (!sidebarEl) return;
+    sidebarEl.classList.toggle('is-collapsed', v);
+    document.body.classList.toggle('is-sb-collapsed', v);
+    // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
+    if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
   }
+  function toggleCollapsed() { if (sidebarEl) setSidebarCollapsed(!sidebarEl.classList.contains('is-collapsed')); }
   if (toggleBtn) toggleBtn.onclick = toggleCollapsed;
+  if (reopenBtn) reopenBtn.onclick = () => setSidebarCollapsed(false);
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
       e.preventDefault();
@@ -895,9 +1136,11 @@
       window.__pendingColdOpen = null; // 标签已建，撤销 loadTabs 的「别抢 viewer」抑制
     },
     refresh,
-    newTab: () => openCreateModal(''),                                                // Cmd+T：新建文档（模板台，落工作区根）
+    newTab: () => { if (current) openCreateModal('', { temp: true }); },              // Cmd+T：新建临时文档（无工作区时不建，没地方保存）
     closeActiveTab: () => { if (tabState.activeRel) closeTabRel(tabState.activeRel); }, // Cmd+W：关当前活跃标签
-    focusFilter: () => { if (sidebarEl) sidebarEl.classList.remove('is-collapsed'); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
+    focusFilter: () => { setSidebarCollapsed(false); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
+    findPalette: () => openFindPalette(),                                              // Cmd+P：命令面板（模糊搜文件跳转）
+    openSaveModal: (closeAfter) => openSaveModal(closeAfter),                          // shell.save() 遇临时文档 → 弹「保存到哪里」
   };
   // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
   // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。

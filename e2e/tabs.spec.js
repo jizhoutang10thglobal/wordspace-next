@@ -68,6 +68,8 @@ test.beforeEach(async () => {
   ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata'), WS2_FOLDER_IN: wsDir }));
 });
 test.afterEach(async () => {
+  // 有未保存的临时文档时主进程关窗守卫会让 app.close() 卡住 → 先 destroy 强制关（纯测试收尾）。
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
   await app.close().catch(() => {});
   await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
 });
@@ -296,14 +298,19 @@ test('同区拖拽重排标签→顺序变', async () => {
   expect(await order()).toEqual(['数据/d.html', 'a.html', '数据/b.html']);
 });
 
-test('标签页区「+」→ 模板台 → 新文档成为激活标签', async () => {
+test('标签页区「+」→ 模板台 → 新建临时文档（激活、标为未保存、不进树）', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]'); // 先有标签，标签页区头部出现 +
   await page.locator('#sb-tabs .sb-zone-add').click();
   await expect(page.locator('.sb-modal')).toBeVisible();
   await page.locator('.sb-card', { hasText: '空文档' }).click();
   await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('无标题文档');
-  await expect(tabRow('无标题文档.html')).toHaveClass(/is-active/);
+  // 临时文档：标签是 temp（未保存），不是落盘的 rel 标签，也没进文件树
+  const tempTab = page.locator('#sb-tabs .sb-tab.sb-tab-temp');
+  await expect(tempTab).toHaveCount(1);
+  await expect(tempTab).toHaveClass(/is-active/);
+  await expect(tempTab).toContainText('无标题文档');
+  await expect(page.locator('.sb-file[data-rel="无标题文档.html"]')).toHaveCount(0); // 没进树
 });
 
 // 选到「打开」对话框的文件：原生对话框 e2e 点不了，stub 主进程 dialog.showOpenDialog 返回固定路径。
