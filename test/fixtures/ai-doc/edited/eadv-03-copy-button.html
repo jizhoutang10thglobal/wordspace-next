@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="wordspace-schema" content="1">
+<title>产品迭代周会纪要</title>
+</head>
+<body>
+<h1>产品迭代周会纪要</h1>
+<p>本次会议聚焦 Schema #1 编辑器的收尾工作与下一阶段排期。以下为会议信息、参会人、决议事项与行动项。</p>
+
+<h2>会议信息</h2>
+<ul>
+  <li><b>会议主题</b>：Schema #1 编辑器收尾 &amp; 下阶段排期</li>
+  <li><b>日期</b>：2026-07-01（周三）</li>
+  <li><b>时间</b>：14:00 – 15:00</li>
+  <li><b>地点</b>：线上会议室（Zoom）</li>
+  <li><b>记录人</b>：Colin</li>
+</ul>
+
+<h2>参会人</h2>
+<ul>
+  <li>Wendi（产品负责人）</li>
+  <li>Colin（工程 / 架构）</li>
+  <li>Jerry（前端）</li>
+  <li>Mia（测试 / QA）</li>
+</ul>
+
+<h2>决议事项</h2>
+<p>本次会议达成以下共识，勾选状态代表当前落地进度：</p>
+<ul class="ws-todo">
+  <li data-checked="true">确认 Schema #1 校验器为唯一合规判定标准，AI 产出必须过校验器</li>
+  <li data-checked="true">冻结顶层块清单，标题封顶 <code>h4</code>，不引入 <code>section</code> 与裸 <code>div</code></li>
+  <li data-checked="false">补齐 toggle 内部嵌套块的边界用例</li>
+  <li data-checked="false">下周评审前完成 AI 创作指南的对外版本</li>
+</ul>
+
+<blockquote><p>「合不合规，只由实际结构决定，marker 不是通行证。」<br>——本次会议共识</p></blockquote>
+
+<div class="ws-callout"><p>提示：行动项负责人请在截止日前更新进度，并同步到项目群。</p></div>
+
+<h2>行动项</h2>
+<table class="ws-table">
+  <thead><tr><th>事项</th><th>负责人</th><th class="ws-al-right">截止日</th></tr></thead>
+  <tbody>
+    <tr><td>补齐 toggle 嵌套块校验用例</td><td>Colin</td><td class="ws-al-right">2026-07-04</td></tr>
+    <tr><td>前端接入语义 CSS 并联调</td><td>Jerry</td><td class="ws-al-right">2026-07-07</td></tr>
+    <tr><td>跑一轮合规 / 非合规回归测试</td><td>Mia</td><td class="ws-al-right">2026-07-08</td></tr>
+    <tr><td>整理 AI 创作指南对外稿</td><td>Wendi</td><td class="ws-al-right">2026-07-08</td></tr>
+  </tbody>
+</table>
+
+<details open>
+  <summary>附：本次遗留的<b>待讨论</b>问题</summary>
+  <p>以下问题本次未定，留到下周会议：</p>
+  <ol>
+    <li>非合规文档的降级编辑体验边界如何定？</li>
+    <li>图片资源是内联 <code>base64</code> 还是走相对路径？</li>
+  </ol>
+  <details>
+    <summary>相关背景链接</summary>
+    <p>参考产品愿景与 Schema 方向文档，详见 <a href="https://example.com/schema-1">Schema #1 说明</a>。</p>
+  </details>
+</details>
+
+<hr>
+
+<div class="ws-callout"><p><b>转发本纪要</b>：Wordspace Schema #1 文档不允许脚本与交互按钮（文档内 JS 不会运行），因此无法内嵌「一键复制」按钮。如需转发全文，请在文档内全选（Cmd/Ctrl + A）后复制（Cmd/Ctrl + C），粘贴到聊天工具即可。</p></div>
+</body>
+</html>
