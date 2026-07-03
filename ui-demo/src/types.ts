@@ -145,6 +145,21 @@ export interface MountRoot {
 }
 
 /**
+ * 一个 .wsworkspace 工作区文件（Feature: 多文件夹空间）。「打包成工作区」的载体：
+ * 记录一组文件夹，落成磁盘上的一个小文件（demo 里 mock）——可以双击打开、可以拷给
+ * 同事、可以进版本库（VS Code .code-workspace 同款心智）。
+ * 保存工作区 = 写这个文件；打开工作区 = 读它、把整组文件夹一次性挂载成一个空间。
+ */
+export interface WorkspaceFile {
+  id: string
+  name: string
+  path: string // 文件本体位置，如 ~/Documents/品牌项目.wsworkspace
+  folders: { name: string; path: string }[] // 打包的文件夹组（真实现里路径相对文件位置存）
+  savedAt: number
+  spaceId?: string // 当前已作为空间打开时指向它（再次打开=切过去，不重复建）
+}
+
+/**
  * An Arc-style Space: a switchable context shown in the left sidebar.
  * A space is a work scenario (a company, a person, a project). `storage` is the
  * separate dimension of where that space's files actually live.

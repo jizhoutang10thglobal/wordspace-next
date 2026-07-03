@@ -19,6 +19,7 @@ import type {
   Toast,
   Visibility,
   Workspace,
+  WorkspaceFile,
 } from '../types'
 import { STORAGE_META, isCloudStorage } from '../types'
 import { useUI } from './ui'
@@ -32,10 +33,11 @@ import {
   seedSpaces,
   seedTemplates,
   seedWorkspace,
+  seedWorkspaceFiles,
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 17
+const SEED_VERSION = 18
 
 // A directory entry in a connected space. Multi-root: identity = (spaceId, rootId, path).
 type DirEntry = { spaceId: string; rootId: string; path: string }
@@ -127,6 +129,7 @@ interface State {
   spaces: Space[]
   files: FileEntry[] // contents of connected-folder spaces
   dirs: DirEntry[] // known directories (incl. empty ones), per (spaceId, rootId)
+  workspaceFiles: WorkspaceFile[] // 磁盘上的 .wsworkspace 文件（demo mock）
 
   // transient ui (not persisted)
   meId: string
@@ -164,9 +167,11 @@ interface State {
   // 多文件夹工作区（Feature: 多文件夹空间同时打开）
   addRootToSpace: (spaceId: string, path: string) => void // 「添加文件夹」：往连接空间再挂一个根
   removeRootFromSpace: (spaceId: string, rootId: string) => void // 从工作区移除（磁盘不动），可撤销
-  saveWorkspaceAs: (spaceId: string, name: string) => void // 把当前多根组合命名保存为工作区
+  saveWorkspaceAs: (spaceId: string, name: string) => void // 把当前多根组合命名保存为工作区（落 .wsworkspace 文件）
   // 拖拽调整根的上下顺序（顺序 = roots 数组序，随 spaces 持久化）
   reorderRoots: (spaceId: string, fromRootId: string, toIndex: number) => void
+  // 打开一个 .wsworkspace 工作区文件：已作为空间打开过 → 切过去；没有 → 整组文件夹一次性挂载成新空间
+  openWorkspaceFile: (fileId: string) => void
 
   // editing
   updateBlockHtml: (docId: string, blockId: string, html: string) => void
@@ -267,6 +272,7 @@ function freshData() {
     spaces: seedSpaces.map((s) => ({ ...s })),
     files: seedFiles.map((f) => ({ ...f })),
     dirs: dirsFromFiles(seedFiles),
+    workspaceFiles: seedWorkspaceFiles.map((w) => ({ ...w, folders: w.folders.map((f) => ({ ...f })) })),
   }
 }
 
@@ -330,6 +336,19 @@ function sampleConnectedFolder(
 const rootNameOf = (path: string): string => {
   const segs = path.split('/').filter(Boolean)
   return segs[segs.length - 1] ?? path
+}
+
+// 已保存工作区的根变了（添加/移除/重排）→ 同步写回它的 .wsworkspace 文件
+// （VS Code 同款：workspace 文件跟着当前状态走，不会悄悄过期）。
+function syncWorkspaceFile(
+  workspaceFiles: WorkspaceFile[],
+  space: Space | undefined,
+): WorkspaceFile[] {
+  if (!space?.workspaceSaved) return workspaceFiles
+  const folders = (space.roots ?? []).map((r) => ({ name: r.name, path: r.path }))
+  return workspaceFiles.map((w) =>
+    w.spaceId === space.id ? { ...w, folders, savedAt: Date.now() } : w,
+  )
 }
 
 // 段落内联 html ↔ 列表 html 的形态转换（转块时保内容）：转成列表把内容包成单个 <li>；
@@ -780,14 +799,18 @@ export const useStore = create<State>()(
         if (!space || isCloudStorage(space.storage)) return
         const root: MountRoot = { id: uid('r'), name: rootNameOf(path), path }
         const sample = sampleConnectedFolder(spaceId, root.id, path)
-        set((s) => ({
-          spaces: s.spaces.map((sp) =>
+        set((s) => {
+          const spaces = s.spaces.map((sp) =>
             sp.id === spaceId ? { ...sp, roots: [...(sp.roots ?? []), root] } : sp,
-          ),
-          docs: [...sample.docs, ...s.docs],
-          files: [...s.files, ...sample.files],
-          dirs: [...s.dirs, ...sample.dirs],
-        }))
+          )
+          return {
+            spaces,
+            docs: [...sample.docs, ...s.docs],
+            files: [...s.files, ...sample.files],
+            dirs: [...s.dirs, ...sample.dirs],
+            workspaceFiles: syncWorkspaceFile(s.workspaceFiles, spaces.find((sp) => sp.id === spaceId)),
+          }
+        })
         get().toast(`已把「${root.name}」添加进当前空间`, 'success')
       },
 
@@ -827,18 +850,20 @@ export const useStore = create<State>()(
             activeTabBySpace[spaceId] = next
             if (st.activeSpaceId === spaceId) activeTabId = next
           }
+          const spaces = st.spaces.map((sp) =>
+            sp.id === spaceId
+              ? { ...sp, roots: (sp.roots ?? []).filter((r) => r.id !== rootId) }
+              : sp,
+          )
           return {
-            spaces: st.spaces.map((sp) =>
-              sp.id === spaceId
-                ? { ...sp, roots: (sp.roots ?? []).filter((r) => r.id !== rootId) }
-                : sp,
-            ),
+            spaces,
             files: st.files.filter((f) => !(f.spaceId === spaceId && f.rootId === rootId)),
             dirs: st.dirs.filter((d) => !(d.spaceId === spaceId && d.rootId === rootId)),
             docs: st.docs.filter((d) => !removedDocIds.has(d.id)),
             tabs,
             activeTabId,
             activeTabBySpace,
+            workspaceFiles: syncWorkspaceFile(st.workspaceFiles, spaces.find((sp) => sp.id === spaceId)),
           }
         })
         get().toast(`已从工作区移除「${root.name}」（磁盘文件不受影响）`, 'neutral', {
@@ -860,35 +885,100 @@ export const useStore = create<State>()(
 
       // 拖拽重排根：把 fromRootId 挪到 toIndex（以「移除它之后的数组」为基准的插入位）。
       reorderRoots: (spaceId, fromRootId, toIndex) =>
-        set((s) => ({
-          spaces: s.spaces.map((sp) => {
+        set((s) => {
+          const spaces = s.spaces.map((sp) => {
             if (sp.id !== spaceId || !sp.roots) return sp
             const moving = sp.roots.find((r) => r.id === fromRootId)
             if (!moving) return sp
             const rest = sp.roots.filter((r) => r.id !== fromRootId)
             rest.splice(Math.max(0, Math.min(toIndex, rest.length)), 0, moving)
             return { ...sp, roots: rest }
-          }),
-        })),
+          })
+          return {
+            spaces,
+            workspaceFiles: syncWorkspaceFile(s.workspaceFiles, spaces.find((sp) => sp.id === spaceId)),
+          }
+        }),
 
       // 把当前打开的一组文件夹命名保存为工作区（VS Code "Save Workspace As" 语义）。
-      // demo 里工作区就是空间本身：命名 + 打上已保存标记，切换器里带「工作区」徽标。
+      // 空间打上已保存标记 + **落一个 .wsworkspace 文件**（demo mock 到 ~/Documents/）——
+      // 文件是「打包」的载体：之后从「打开工作区…」一键整组打开，也可以拷给别人。
       saveWorkspaceAs: (spaceId, name) => {
         const trimmed = name.trim()
         if (!trimmed) return
+        const space = get().spaces.find((sp) => sp.id === spaceId)
+        if (!space) return
+        const folders = (space.roots ?? []).map((r) => ({ name: r.name, path: r.path }))
+        const filePath = `~/Documents/${trimmed}.wsworkspace`
+        set((s) => {
+          const existing = s.workspaceFiles.find((w) => w.spaceId === spaceId)
+          const workspaceFiles = existing
+            ? s.workspaceFiles.map((w) =>
+                w.spaceId === spaceId
+                  ? { ...w, name: trimmed, path: filePath, folders, savedAt: Date.now() }
+                  : w,
+              )
+            : [
+                ...s.workspaceFiles,
+                { id: uid('wf'), name: trimmed, path: filePath, folders, savedAt: Date.now(), spaceId },
+              ]
+          return {
+            workspaceFiles,
+            spaces: s.spaces.map((sp) =>
+              sp.id === spaceId
+                ? {
+                    ...sp,
+                    name: trimmed,
+                    badge: trimmed.slice(0, 1).toUpperCase(),
+                    workspaceSaved: true,
+                  }
+                : sp,
+            ),
+          }
+        })
+        get().toast(`已保存工作区「${trimmed}」（${filePath}）`, 'success')
+      },
+
+      // 打开 .wsworkspace 工作区文件：已作为空间打开过 → 直接切过去（VS Code 聚焦已开窗口
+      // 的语义）；还没有 → 把文件里的整组文件夹一次性挂载成一个新空间并切换。
+      openWorkspaceFile: (fileId) => {
+        const wf = get().workspaceFiles.find((w) => w.id === fileId)
+        if (!wf) return
+        // 已经开着 → 切过去
+        if (wf.spaceId && get().spaces.some((sp) => sp.id === wf.spaceId)) {
+          get().setActiveSpace(wf.spaceId)
+          get().toast(`已切到工作区「${wf.name}」`, 'neutral')
+          return
+        }
+        // 整组挂载成新空间（demo 无真实文件系统 → 每个根载入示例树）
+        const id = uid('sp')
+        const palette = ['#1a73e8', '#1e8e3e', '#b8541d', '#8a3ffc', '#0b8793', '#d4356b']
+        const roots: MountRoot[] = wf.folders.map((f) => ({ id: uid('r'), name: f.name, path: f.path }))
+        const space: Space = {
+          id,
+          name: wf.name,
+          kind: 'project',
+          storage: 'local',
+          badge: wf.name.slice(0, 1).toUpperCase(),
+          color: palette[get().spaces.length % palette.length],
+          subtitle: `${roots.length} 个文件夹`,
+          roots,
+          workspaceSaved: true,
+        }
+        const samples = roots.map((r) => sampleConnectedFolder(id, r.id, r.path))
+        const tab: Tab = { id: uid('tab'), spaceId: id, kind: 'web', title: '新标签页', url: '' }
         set((s) => ({
-          spaces: s.spaces.map((sp) =>
-            sp.id === spaceId
-              ? {
-                  ...sp,
-                  name: trimmed,
-                  badge: trimmed.slice(0, 1).toUpperCase(),
-                  workspaceSaved: true,
-                }
-              : sp,
-          ),
+          spaces: [...s.spaces, space],
+          docs: [...samples.flatMap((x) => x.docs), ...s.docs],
+          files: [...s.files, ...samples.flatMap((x) => x.files)],
+          dirs: [...s.dirs, ...samples.flatMap((x) => x.dirs)],
+          tabs: [...s.tabs, tab],
+          activeSpaceId: id,
+          activeTabId: tab.id,
+          activeTabBySpace: { ...s.activeTabBySpace, [id]: tab.id },
+          workspaceFiles: s.workspaceFiles.map((w) => (w.id === fileId ? { ...w, spaceId: id } : w)),
         }))
-        get().toast(`已保存工作区「${trimmed}」`, 'success')
+        get().toast(`已打开工作区「${wf.name}」（${roots.length} 个文件夹）`, 'success')
       },
 
       closeTab: (tabId) =>
@@ -1405,6 +1495,7 @@ export const useStore = create<State>()(
         spaces: s.spaces,
         files: s.files,
         dirs: s.dirs,
+        workspaceFiles: s.workspaceFiles,
       }),
       migrate: () => ({ ...freshData() }) as never,
     },

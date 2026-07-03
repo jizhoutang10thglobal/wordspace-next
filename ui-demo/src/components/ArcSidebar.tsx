@@ -26,6 +26,7 @@ import {
   File,
   FolderPlus,
   Keyboard,
+  Layers,
   Pin,
   PinOff,
   Search,
@@ -838,6 +839,7 @@ function SpaceLibrary({ space, query }: { space: Space; query: string }) {
 function SpaceSwitcher() {
   const { spaces, activeSpaceId, setActiveSpace } = useStore()
   const openSpaceModal = useUI((s) => s.openSpaceModal)
+  const openOpenWorkspace = useUI((s) => s.openOpenWorkspace)
   const active = spaces.find((s) => s.id === activeSpaceId)
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -906,6 +908,17 @@ function SpaceSwitcher() {
           {connected.map(item)}
           {cloud.length > 0 && <div className="arc-space-group">Wordspace 云盘</div>}
           {cloud.map(item)}
+          {/* 打开 .wsworkspace 工作区文件——「打包成工作区」的另一半 */}
+          <button
+            className="arc-space-new"
+            onClick={() => {
+              setOpen(false)
+              openOpenWorkspace()
+            }}
+          >
+            <Layers size={14} />
+            <span>打开工作区…</span>
+          </button>
           <button
             className="arc-space-new"
             onClick={() => {

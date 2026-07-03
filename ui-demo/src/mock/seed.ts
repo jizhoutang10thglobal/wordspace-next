@@ -7,6 +7,7 @@ import type {
   Space,
   Template,
   Workspace,
+  WorkspaceFile,
 } from '../types'
 import { NON_CONFORM_SAMPLES } from '../lib/nonConformSamples'
 import { mdToBlocks } from '../lib/markdown'
@@ -474,6 +475,21 @@ export const seedSpaces: Space[] = [
       { id: 'r-docs', name: '产品资料', path: '~/Documents/产品资料' },
     ],
     workspaceSaved: false,
+  },
+]
+
+// 磁盘上已有的 .wsworkspace 工作区文件（demo mock）。这个「客户交付」还没作为空间
+// 打开过——用来演示「打开工作区 = 整组文件夹一次性挂载」：空间切换器 → 打开工作区…
+export const seedWorkspaceFiles: WorkspaceFile[] = [
+  {
+    id: 'wf-client',
+    name: '客户交付',
+    path: '~/Documents/客户交付.wsworkspace',
+    savedAt: now - 2 * 24 * HR,
+    folders: [
+      { name: '客户资料', path: '~/Work/客户资料' },
+      { name: '交付物', path: '~/Desktop/交付物' },
+    ],
   },
 ]
 
