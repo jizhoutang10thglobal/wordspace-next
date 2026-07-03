@@ -505,6 +505,7 @@
 
   // 未保存关闭确认（对齐 ui-demo CloseConfirmModal）：橙色警告图标 + 保存并关闭 / 不保存直接关闭 / 取消。
   function openCloseConfirm(key, op, entry) {
+    if (document.querySelector('.sb-modal-overlay')) return; // 单例守卫（同 aiax/fp 弹层惯例）：连按不叠层、Esc 不一键全关、finishClose 不双跑
     const temp = isTempEntry(entry);
     const name = entry ? entry.title : '这个文件';
     const overlay = document.createElement('div');
@@ -561,6 +562,7 @@
   // 「保存到哪里」（对齐 ui-demo SaveModal）：可编辑文件名 + 列工作区根/各子文件夹 + 「浏览…」原生
   // 保存框（存工作区外，Colin 拍板方案 A）。Enter 确认、Esc 关。
   function openSaveModal(closeAfter) {
+    if (document.querySelector('.sb-modal-overlay')) return; // 单例守卫：别与关闭确认/另一个保存框叠层互踩
     const t = window.__shellActiveTemp && window.__shellActiveTemp();
     if (!t) return;
     const dirs = ['']; // '' = 工作区根
@@ -1246,7 +1248,18 @@
       // Wendi 2026-07-03：外部（Finder 双击等）打开工作区内文件 → 树展开到所在文件夹并滚动定位。
       // 树默认全收起，不展开的话文件在树里根本不可见、也高亮不上（is-active 行没渲染出来）。
       // 先展开（内部会 render 重建行）再高亮，顺序不能反。命令面板/「打开」按钮同走此路，行为一致。
-      if (node) expandToFile(node.rel);
+      if (node) {
+        // 筛选词挡住目标文件时先清筛选（外部打开是显式意图，优先于残留筛选词）——否则过滤树里
+        // 该行根本不渲染，展开/滚动/高亮三个动作全部静默落空（审计发现）
+        if (query && !treeEl.querySelector('.sb-file[data-rel="' + cssAttr(node.rel) + '"]')) {
+          query = '';
+          if (filterInput) filterInput.value = '';
+          const fc = document.getElementById('sb-filter-clear');
+          if (fc) fc.hidden = true;
+          render();
+        }
+        expandToFile(node.rel);
+      }
       highlightActive(abs);
       if (node) {
         openTabEntry({ rel: node.rel, kind: node.kind || 'other', title: node.name });
@@ -1260,10 +1273,23 @@
     // Cmd+W：有活跃标签关标签；无标签但还有内容（工作区外查看器 / 单文件模式的文档）先关内容回空态；
     // 真·空态 → 关窗口（Wendi 2026-07-03：macOS=隐藏驻留、后台开着；Windows/Linux 按平台惯例退出）。
     closeActiveTab: () => {
+      // 弹层开着（保存到哪里/关闭确认）时 Cmd+W 不做分层动作：菜单加速器不被 DOM 弹层拦，
+      // 不守这行会叠出第二层确认框、两边对同一文档双执行（审计发现）
+      if (document.querySelector('.sb-modal-overlay')) return;
       if (tabState.activeRel) { closeTabRel(tabState.activeRel); return; }
       const v = document.getElementById('viewer');
       const hasDoc = window.__shellDocPath && window.__shellDocPath();
-      if ((v && !v.hidden) || hasDoc) { if (window.__shellCloseDoc) window.__shellCloseDoc(); return; }
+      if ((v && !v.hidden) || hasDoc) {
+        // 无标签的文档（单文件模式）：关之前先冲一次保存（对齐自动保存语义与有标签路径的脏守卫），
+        // 别让 1.2s 防抖窗内的编辑无确认静默丢；保存失败（alert 已弹、仍脏）则不关、文档留在原地。
+        const dirtyDoc = hasDoc && window.__shellIsDirty && window.__shellIsDirty();
+        const flush = dirtyDoc && window.__shellSaveActive ? window.__shellSaveActive() : null;
+        Promise.resolve(flush).then(() => {
+          if (window.__shellIsDirty && window.__shellIsDirty()) return;
+          if (window.__shellCloseDoc) window.__shellCloseDoc();
+        });
+        return;
+      }
       window.ws2.winClose();
     },
     focusFilter: () => { setSidebarCollapsed(false); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
