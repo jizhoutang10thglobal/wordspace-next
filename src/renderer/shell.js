@@ -734,7 +734,80 @@ window.ws2.onDocChanged((p) => {
 // 并发：同步先标记 __pendingColdOpen，让 loadTabs 知道「这个文件该占 viewer，别拿上次激活标签抢」；
 // 标签实际创建在 sidebar onOpen 里等恢复跑完才做（见 sidebar.js restoreReady）。
 window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
+// 「AI 接入」弹窗（菜单「AI 接入…」触发；对齐 ui-demo /agents 页两卡结构，复用统一模态壳 T1）。
+// Prompt 文本经 IPC 读打包资源 src/renderer/ai-guide.md（与 docs/ 正本被防漂移测试锁逐字节一致）。
+const AI_SKILL_CMD = 'npx skills add wordspace-ai/skills';
+function openAiAccessModal() {
+  if (document.querySelector('.aiax-overlay')) return; // 已开着别叠层
+  const overlay = document.createElement('div');
+  overlay.className = 'sb-modal-overlay aiax-overlay';
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+  const modal = document.createElement('div');
+  modal.className = 'sb-modal aiax-modal';
+  // head（结构同 sidebar 的 modalHead，shell.js 侧自建）
+  const head = document.createElement('div');
+  head.className = 'sb-modal-head';
+  const ht = document.createElement('div');
+  ht.className = 'sb-modal-head-text';
+  ht.innerHTML = '<div class="sb-modal-title">AI 接入</div><div class="sb-modal-where">让你的 AI 会写、会改 Wordspace 文档——写歪了也不怕，打开时校验器把关</div>';
+  const x = document.createElement('button');
+  x.className = 'sb-modal-x';
+  x.setAttribute('aria-label', '关闭');
+  x.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  x.onclick = close;
+  head.append(ht, x);
+  const body = document.createElement('div');
+  body.className = 'sb-modal-body';
+  // 复制反馈：按钮文字闪「✓ 已复制」
+  const flashBtn = (btn, ok) => { const t = btn.textContent; btn.textContent = ok; btn.disabled = true; setTimeout(() => { btn.textContent = t; btn.disabled = false; }, 1400); };
+  // 方式一：复制 Prompt
+  const way1 = document.createElement('div');
+  way1.className = 'aiax-way';
+  way1.innerHTML = '<div class="aiax-way-title">方式一 · 复制 Prompt</div>'
+    + '<div class="aiax-way-desc">粘给任何对话式 AI，零安装。粘完直接说「帮我写一份 ×× 的 Wordspace 文档」。</div>';
+  const btn1 = document.createElement('button');
+  btn1.className = 'sb-btn sb-btn-primary aiax-copy-prompt';
+  btn1.textContent = '复制 Prompt';
+  btn1.onclick = async () => {
+    try {
+      const text = await window.ws2.aiGuide();
+      await navigator.clipboard.writeText(text);
+      flashBtn(btn1, '✓ 已复制');
+    } catch (e) { alert('复制失败：' + (e.message || e)); }
+  };
+  way1.appendChild(btn1);
+  // 方式二：安装 Skill
+  const way2 = document.createElement('div');
+  way2.className = 'aiax-way';
+  way2.innerHTML = '<div class="aiax-way-title">方式二 · 安装 Skill（推荐）</div>'
+    + '<div class="aiax-way-desc">一次安装，Claude Code / Cursor 等 30+ 工具通用；以后我们更新规范，跑 <code>npx skills update</code> 即可。</div>';
+  const cmdRow = document.createElement('div');
+  cmdRow.className = 'aiax-cmd';
+  const cmdText = document.createElement('code');
+  cmdText.textContent = AI_SKILL_CMD;
+  const btn2 = document.createElement('button');
+  btn2.className = 'sb-btn aiax-copy-cmd';
+  btn2.textContent = '复制命令';
+  btn2.onclick = async () => {
+    try { await navigator.clipboard.writeText(AI_SKILL_CMD); flashBtn(btn2, '✓ 已复制'); }
+    catch (e) { alert('复制失败：' + (e.message || e)); }
+  };
+  cmdRow.append(cmdText, btn2);
+  way2.appendChild(cmdRow);
+  const foot = document.createElement('div');
+  foot.className = 'aiax-note';
+  foot.textContent = '不合规的文件不会坏：Wordspace 打开时自动校验，通过 = 完整块编辑，不通过 = 基础编辑兜底。';
+  body.append(way1, way2, foot);
+  modal.append(head, body);
+  overlay.appendChild(modal);
+  overlay.onmousedown = (e) => { if (e.target === overlay) close(); };
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+}
+
 window.ws2.onMenu((cmd) => {
+  if (cmd === 'ai-access') openAiAccessModal();
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
   if (cmd === 'export-pdf') exportPdf(pdfExportMode()); // 基础模式=raw 直印源文件；md 一律 wordspace（KD-5）
