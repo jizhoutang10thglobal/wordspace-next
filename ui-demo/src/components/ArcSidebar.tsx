@@ -25,15 +25,17 @@ import {
   Presentation,
   File,
   FolderPlus,
+  Keyboard,
   Pin,
   PinOff,
   Search,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
-import { useUI } from '../mock/ui'
+import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, type FileNode } from '../lib/tree'
+import { IS_MAC } from '../lib/platform'
 import { isCloudStorage } from '../types'
 import type { Doc, FileEntry, FileKind, Folder, MountRoot, Space, Tab } from '../types'
 import './ArcSidebar.css'
@@ -988,29 +990,94 @@ export default function ArcSidebar() {
     setQuery('')
   }, [activeSpaceId])
 
-  // 全局快捷键：Cmd/Ctrl+\ 收起/展开侧栏；Cmd+T 新建（开 Arc modal）；Cmd+S 假装保存；Cmd+P 查找文件。
-  // 注意：浏览器会抢 Cmd+T/Cmd+W，所以 Cmd+T 这条主要在真 Electron app 里生效，网页 demo 里多半被浏览器吞掉。
+  // 全局壳快捷键（作用域模型的最外层，见 public/shortcuts.html §1/§3.1）。
+  // 原则：弹层开着时不穿透（anyOverlayOpen 守卫）；未命中必须放行（不 preventDefault）。
+  // 注意：浏览器保留 Cmd+T/Cmd+W/Cmd+1-9（菜单级），这些在网页 demo 里可能被浏览器吞掉，
+  // 真 Electron app 里正常；Ctrl+Tab 浏览器不保留，demo 里就能用。
   useEffect(() => {
+    // 当前空间标签页的「显示顺序」：置顶组在前、普通组在后（与 TabStrip 渲染一致）
+    const spaceTabsInOrder = () => {
+      const st = useStore.getState()
+      const mine = st.tabs.filter((t) => t.spaceId === st.activeSpaceId)
+      return [...mine.filter((t) => t.pinned), ...mine.filter((t) => !t.pinned)]
+    }
     const onKey = (e: KeyboardEvent) => {
+      const ui = useUI.getState()
+      // Ctrl+Tab / Ctrl+Shift+Tab 循环标签页（按条顺序，不做 MRU）——不带 meta
+      if (e.ctrlKey && !e.metaKey && e.key === 'Tab') {
+        if (anyOverlayOpen(ui)) return
+        e.preventDefault()
+        const seq = spaceTabsInOrder()
+        if (seq.length < 2) return
+        const st = useStore.getState()
+        const idx = seq.findIndex((t) => t.id === st.activeTabId)
+        const next = seq[(idx + (e.shiftKey ? -1 : 1) + seq.length) % seq.length]
+        st.setActiveTab(next.id)
+        return
+      }
       const mod = e.metaKey || e.ctrlKey
-      if (!mod) return
+      if (!mod || e.altKey) return // Cmd+Option 组合归编辑器（转块），这里不碰
+      // Cmd+/ = 快捷键面板开关（toggle）。放在弹层守卫之前：面板开着时再按一次要能关掉。
+      // 注意 toggle 必须收在这一个 handler 里——若面板自己再监听 Cmd+/，trusted 事件会
+      // 同步 flush effects，同一个还在冒泡的事件被新挂的监听器再吃一次、开了秒关。
+      if (e.key === '/') {
+        e.preventDefault()
+        if (ui.shortcutsOpen) ui.closeShortcuts()
+        else if (!anyOverlayOpen(ui)) ui.openShortcuts()
+        return
+      }
+      // 弹层最优先：modal/面板开着时全局键不执行（Esc/Enter 归弹层自己）
+      if (anyOverlayOpen(ui)) return
       if (e.key === '\\') {
         e.preventDefault()
         toggleSidebar()
-      } else if (e.key === 't' || e.key === 'T') {
+      } else if (e.key === ',') {
+        e.preventDefault()
+        navigate('/settings')
+      } else if (!e.shiftKey && (e.key === 't' || e.key === 'T')) {
         e.preventDefault()
         openNewTab()
-      } else if ((e.key === 's' || e.key === 'S') && !e.shiftKey) {
+      } else if (e.shiftKey && (e.key === 's' || e.key === 'S')) {
+        // 另存为…（裁决 4：Cmd+Shift+S 回归 HIG 语义；删除线已迁 Cmd+Shift+X）
+        e.preventDefault()
+        const st = useStore.getState()
+        const tab = st.tabs.find((t) => t.id === st.activeTabId)
+        const doc = tab?.docId ? st.getDoc(tab.docId) : undefined
+        if (doc) ui.openSave(doc.id)
+      } else if (!e.shiftKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault()
         saveActiveDoc()
-      } else if (e.key === 'p' || e.key === 'P') {
+      } else if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        // 聚焦文件筛选框（裁决 3：Cmd+F 的名分留给将来的文档内查找）
+        e.preventDefault()
+        if (useUI.getState().sidebarCollapsed) toggleSidebar()
+        window.setTimeout(() => {
+          document.querySelector<HTMLInputElement>('.arc-filter-input')?.focus()
+        }, 0)
+      } else if (!e.shiftKey && (e.key === 'p' || e.key === 'P')) {
         e.preventDefault()
         openFind()
+      } else if (!e.shiftKey && (e.key === 'w' || e.key === 'W')) {
+        // 关闭当前标签页（置顶标签不关，同浏览器惯例；未保存先弹确认）
+        e.preventDefault()
+        const st = useStore.getState()
+        const tab = st.tabs.find((t) => t.id === st.activeTabId)
+        if (!tab || tab.pinned) return
+        const doc = tab.docId ? st.getDoc(tab.docId) : undefined
+        if (doc?.unsaved) ui.askCloseTab(tab.id)
+        else st.closeTab(tab.id)
+      } else if (!e.shiftKey && /^[1-9]$/.test(e.key)) {
+        // 直达第 N 个标签页；9 = 最后一个（浏览器语义）
+        e.preventDefault()
+        const seq = spaceTabsInOrder()
+        if (!seq.length) return
+        const target = e.key === '9' ? seq[seq.length - 1] : seq[Number(e.key) - 1]
+        if (target) useStore.getState().setActiveTab(target.id)
       }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [toggleSidebar, openNewTab, saveActiveDoc, openFind])
+  }, [toggleSidebar, openNewTab, saveActiveDoc, openFind, navigate])
 
   // F6：切到某个文件标签页时，在左侧树展开它所在根 + 祖先文件夹并滚动定位（高亮由 is-active 负责）。
   useEffect(() => {
@@ -1095,7 +1162,7 @@ export default function ArcSidebar() {
           <button className="arc-ico" title="后退" onClick={goBack}><ChevronLeft size={16} /></button>
           <button className="arc-ico" title="前进" onClick={goForward}><ChevronRight size={16} /></button>
           <button className="arc-ico" title="刷新" onClick={reload}><RotateCw size={13} /></button>
-          <button className="arc-ico" title="查找文件 ⌘P" onClick={openFind}><Search size={14} /></button>
+          <button className="arc-ico" title={IS_MAC ? '查找文件 ⌘P' : '查找文件 Ctrl+P'} onClick={openFind}><Search size={14} /></button>
         </div>
       </div>
 
@@ -1170,6 +1237,14 @@ export default function ArcSidebar() {
               <Icon size={16} />
             </button>
           ))}
+          {/* 快捷键速查（⌘/ 或 Ctrl+/）+ 完整键位文档入口（Wendi review 用） */}
+          <button
+            className="arc-util-btn"
+            title={IS_MAC ? '快捷键 ⌘/' : '快捷键 Ctrl+/'}
+            onClick={() => useUI.getState().openShortcuts()}
+          >
+            <Keyboard size={16} />
+          </button>
           <div className="arc-util-spacer" />
           {me && (
             <button className="arc-util-me" title={`${me.name} · 账户设置`} onClick={() => navigate('/settings')}>

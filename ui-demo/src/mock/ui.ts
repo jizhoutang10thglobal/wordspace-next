@@ -48,6 +48,11 @@ interface UI {
   openFind: () => void
   closeFind: () => void
 
+  // 快捷键速查面板（Cmd+/ 或左下角 ⌨）
+  shortcutsOpen: boolean
+  openShortcuts: () => void
+  closeShortcuts: () => void
+
   sidebarCollapsed: boolean
   toggleSidebar: () => void
 
@@ -103,6 +108,10 @@ export const useUI = create<UI>((set) => ({
   openFind: () => set({ findOpen: true }),
   closeFind: () => set({ findOpen: false }),
 
+  shortcutsOpen: false,
+  openShortcuts: () => set({ shortcutsOpen: true }),
+  closeShortcuts: () => set({ shortcutsOpen: false }),
+
   sidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
 
@@ -124,3 +133,22 @@ export const useUI = create<UI>((set) => ({
   aiPrompt: '',
   setAiPrompt: (v) => set({ aiPrompt: v }),
 }))
+
+/**
+ * 有任何弹层（modal / 面板 / 确认框）开着吗？——快捷键派发的「弹层最优先」原则：
+ * 弹层开着时，全局壳快捷键与编辑器快捷键都不得穿透执行（Esc/Enter/↑↓ 归弹层自己）。
+ * mdSourceOpen 是常驻侧面板不是弹层，不算。
+ */
+export function anyOverlayOpen(s: UI): boolean {
+  return !!(
+    s.createOpen ||
+    s.spaceModalOpen ||
+    s.addFolderOpen ||
+    s.saveWorkspaceOpen ||
+    s.saveDocId ||
+    s.confirmCloseTab ||
+    s.findOpen ||
+    s.shortcutsOpen ||
+    s.publishDocId
+  )
+}
