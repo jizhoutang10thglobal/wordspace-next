@@ -10,6 +10,9 @@
 // 打包态可用性由 e2e/markdown.spec.js 在真 Electron 里兜底）。
 'use strict';
 
+// 行内标签集合复用校验器同源（schema-model 是纯 CJS 模块）：判「单元格里是不是块级内容」与校验器口径一致
+const { PHRASING_TAGS: PHRASING } = require('../lib/schema-model.js');
+
 let enginePromise = null;
 
 function loadEngine() {
@@ -108,22 +111,35 @@ function loadEngine() {
         if (body) tree.children = body.children;
       };
     }
-    // app canonical 的 todo（li[data-checked]）→ 还原成 GFM checkbox 形态，让 to-mdast 认出任务列表。
+    // app canonical 的 todo（ul.ws-todo > li[data-checked]）→ 还原成 GFM checkbox 形态，让 to-mdast 认出任务列表。
+    // 只认 ws-todo 父级（对抗审计：普通列表里第三方的 data-checked 不能被误改造成待办）；顺手剥掉 ws-todo
+    // class——它往返经 GFM contains-task-list 规范化重生，留着会触发下面的属性保真升级、把整个 todo 列表岛化。
     function rehypeFromWsTodo() {
       return (tree) => {
         walk(tree, (node) => {
-          if (!isEl(node, 'li') || !node.properties || node.properties.dataChecked == null) return;
-          const checked = String(node.properties.dataChecked) === 'true';
-          delete node.properties.dataChecked;
-          node.children.unshift(
-            { type: 'element', tagName: 'input', properties: { type: 'checkbox', checked }, children: [] },
-            { type: 'text', value: ' ' },
-          );
+          if (!isEl(node, 'ul') || !hasClass(node, 'ws-todo')) return;
+          delete node.properties.className;
+          for (const li of node.children) {
+            if (!isEl(li, 'li') || !li.properties || li.properties.dataChecked == null) continue;
+            const checked = String(li.properties.dataChecked) === 'true';
+            delete li.properties.dataChecked;
+            li.children.unshift(
+              { type: 'element', tagName: 'input', properties: { type: 'checkbox', checked }, children: [] },
+              { type: 'text', value: ' ' },
+            );
+          }
         });
       };
     }
     // HTML 岛序列化侧：md 没有语法的标签原样吐 outerHTML（to-mdast 默认会把认不得的标签拆壳丢标记）。
-    const rawIsland = (_state, node) => ({ type: 'html', value: toHtml(node) });
+    // 岛内含空行会让 CommonMark 的 HTML 块在空行处断裂（对抗审计实证：callout 里带空行的 <pre> 一轮
+    // 往返就被劈成两半、<p> 钻进 <pre>）——含空行的岛把所有换行写成 &#10; 实体压成单行：解析回来是
+    // 同一个换行字符，语义不变、且幂等（第二轮输出与第一轮相同）。
+    const rawIsland = (_state, node) => {
+      let v = toHtml(node);
+      if (/\n[ \t]*\n/.test(v)) v = v.replace(/\n/g, '&#10;');
+      return { type: 'html', value: v };
+    };
     const ISLAND_TAGS = [
       // 行内表现层：下划线/高亮/文字色/上下标等
       'u', 'mark', 'span', 'sub', 'sup', 'small', 'big', 'font', 'ins', 'kbd', 'samp', 'var', 'abbr', 'time', 'cite', 'q', 'label',
@@ -132,16 +148,55 @@ function loadEngine() {
       'div', 'details', 'figure', 'script', 'style', 'iframe', 'video', 'audio', 'canvas', 'svg', 'object', 'embed',
       'form', 'section', 'article', 'aside', 'nav', 'header', 'footer', 'main', 'button', 'select', 'textarea',
     ];
+    const ISLAND_SET = new Set(ISLAND_TAGS);
     const islandHandlers = {};
     for (const t of ISLAND_TAGS) islandHandlers[t] = rawIsland;
-    // 表格：合规表（矩形、无合并格）走 GFM 管道表；带 colspan/rowspan 的野表 GFM 表达不了 → 整表 HTML 岛保真。
+    // 硬换行统一序列化成字面 <br>（GFM 合法、往返无损）：默认的 break→「反斜杠+换行」在 GFM 管道表
+    // 单元格里会被压成空格（对抗审计实证 | 行1<br>行2 | 丢换行）；段落里字面 <br> 同样合法。
+    islandHandlers.br = () => ({ type: 'html', value: '<br>' });
+    // 属性保真（对抗审计 P1）：标准标签走 md 语法会把属性剥光（<h1 style> 存一次颜色就没了——而带属性的
+    // 块正是被校验器判非合规、送进「保真」基础编辑的那批）。md 语法能表达的属性白名单之外还有任何属性
+    // → 该块整体升级 HTML 岛。子树里已注册为岛的标签（span/mark/div…）自己保真，不牵连父块升级。
+    const REPRESENTABLE = {
+      a: new Set(['href', 'title']),
+      img: new Set(['src', 'alt', 'title']),
+      td: new Set(['align']), th: new Set(['align']), // GFM 表格对齐（remark 产物）
+      ol: new Set(['start']),
+      code: new Set(['class']), // 围栏语言标 language-*
+      input: new Set(['type', 'checked', 'disabled']), // rehypeFromWsTodo 造的 GFM checkbox
+    };
+    const EMPTY_SET = new Set();
+    function hasUnrepresentableAttrs(node, isRoot) {
+      if (isEl(node) && !isRoot && ISLAND_SET.has(node.tagName)) return false;
+      if (isEl(node) && node.properties) {
+        const allow = REPRESENTABLE[node.tagName] || EMPTY_SET;
+        for (const key of Object.keys(node.properties)) {
+          const val = node.properties[key];
+          if (val == null || val === false || (Array.isArray(val) && val.length === 0)) continue;
+          const attr = key === 'className' ? 'class' : key.toLowerCase();
+          if (!allow.has(attr)) return true;
+        }
+      }
+      if (node.children) for (const c of node.children) if (hasUnrepresentableAttrs(c, false)) return true;
+      return false;
+    }
+    for (const t of ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'ul', 'ol', 'pre', 'hr', 'a', 'img']) {
+      const dflt = defaultHandlers[t];
+      if (!dflt) continue;
+      islandHandlers[t] = (state, node) => (hasUnrepresentableAttrs(node, true) ? rawIsland(state, node) : dflt(state, node));
+    }
+    // 表格升级 HTML 岛的三种情况（否则走 GFM 管道表）：①合并格（管道表表达不了）；②单元格含块级子元素
+    // （ul/pre/div…——序列化出带真实换行的非法管道表，重开时整表碎裂，对抗审计实证）；③带不可表达属性。
     islandHandlers.table = (state, node) => {
-      let merged = false;
+      let wild = hasUnrepresentableAttrs(node, true);
       walk(node, (n) => {
-        if (isEl(n) && (n.tagName === 'td' || n.tagName === 'th') && n.properties
-          && (n.properties.colSpan != null || n.properties.rowSpan != null)) merged = true;
+        if (wild || !isEl(n) || (n.tagName !== 'td' && n.tagName !== 'th')) return;
+        if (n.properties && (n.properties.colSpan != null || n.properties.rowSpan != null)) { wild = true; return; }
+        for (const c of n.children || []) {
+          if (isEl(c) && !PHRASING.has(c.tagName.toUpperCase())) { wild = true; return; }
+        }
       });
-      return merged ? rawIsland(state, node) : defaultHandlers.table(state, node);
+      return wild ? rawIsland(state, node) : defaultHandlers.table(state, node);
     };
 
     const md2html = unified()
