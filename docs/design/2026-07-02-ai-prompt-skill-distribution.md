@@ -32,10 +32,13 @@ c（官网公开页）暂不做。
 
 ## Skill 怎么写（结构）
 
+> ⚠ 2026-07-03 更新：布局已按多 Schema 框架重构成 `skills/wordspace/`（单入口 skill + 按 schema
+> 分层的 references），本节的旧布局仅存档。现行设计见 `docs/design/2026-07-03-skills-framework.md`。
+
 ```
-skills/schema-1-authoring/
-├── SKILL.md                          # 薄壳：触发条件 + 操作流程 + 硬底线摘要 + 指路 references
-└── references/schema-1-authoring.md  # 指南全文（渐进式披露：SKILL.md 短、重料放 reference）
+skills/wordspace/
+├── SKILL.md                  # 路由薄壳：任务类型 → Schema 识别 → 指到 reference + 硬底线摘要
+└── references/schema-1.md    # Schema #1 指南全文（渐进式披露：SKILL.md 短、重料放 reference）
 ```
 
 - frontmatter `description` 写清触发词（Wordspace 文档 / Schema / 合规 HTML），让 agent 会话里自动命中。

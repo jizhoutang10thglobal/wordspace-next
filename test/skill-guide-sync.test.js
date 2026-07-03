@@ -1,7 +1,9 @@
 // AI 创作指南的分发拷贝防漂移门：docs/ 正本改了、分发拷贝忘同步 → 这里红。
 // 三份必须逐字节一致：
 //   正本   docs/schema-1-ai-authoring.md（校验器绑定的教学文档，U3 conformance 测它）
-//   Skill  skills/schema-1-authoring/references/schema-1-authoring.md（npx skills 装走的那份）
+//   Skill  skills/wordspace/references/schema-1.md（npx skills 装走的那份；skill=单入口多 schema
+//          框架，见 docs/design/2026-07-03-skills-framework.md——将来每个 schema 一份 reference，
+//          正本↔拷贝的锁在这里逐对加行）
 //   Prompt ui-demo/src/lib/schema-prompt.md（ui-demo「AI 接入」页复制按钮吐的那份）
 // 同步方式 = 复制正本覆盖两份拷贝（cp docs/schema-1-ai-authoring.md <target>），不做内容变体。
 const test = require('node:test');
@@ -12,7 +14,7 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const canonical = path.join(ROOT, 'docs', 'schema-1-ai-authoring.md');
 const copies = [
-  path.join(ROOT, 'skills', 'schema-1-authoring', 'references', 'schema-1-authoring.md'),
+  path.join(ROOT, 'skills', 'wordspace', 'references', 'schema-1.md'),
   path.join(ROOT, 'ui-demo', 'src', 'lib', 'schema-prompt.md'),
 ];
 
