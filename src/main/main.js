@@ -49,7 +49,11 @@ function createWindow() {
     if (!isDirty) return;
     e.preventDefault();
     quitting = false; // 这次退出被守卫拦下了：复位，用户取消后下次红叉仍是隐藏驻留、不是误销毁
-    if (process.env.WS2_NO_CLOSE_DIALOG) return;
+    // seam 加 isPackaged 闸（对齐 WS2_PDF_OUT 等全部 seam 惯例）：生产进程继承到该变量不能静默跳过脏守卫
+    if (!app.isPackaged && process.env.WS2_NO_CLOSE_DIALOG) return;
+    // 审计 P1：隐藏驻留中 Cmd+Q——守卫对话框是挂在窗口上的 sheet，窗口 hidden 则 sheet 隐形、
+    // 退出「按了没反应」且怎么都退不掉。弹框前先把窗口带回来。
+    if (!win.isVisible()) win.show();
     dialog.showMessageBox(win, {
       type: 'warning',
       buttons: ['取消', '放弃修改并关闭'],

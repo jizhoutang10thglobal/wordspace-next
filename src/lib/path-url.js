@@ -22,12 +22,13 @@ function pathInfo(p) {
   };
 }
 
-// 从进程 argv 选出第一个 .html/.htm 文件参数，解析为绝对路径（Windows/Linux 双击文件经 argv 传入，
-// macOS 走 open-file 事件不经此）。cwd 显式传入：second-instance 时要用「第二次启动」的工作目录
-// （Electron second-instance 事件的 workingDirectory），而非当前已运行实例的 process.cwd()。
-// 纯函数（仅 path）→ 可单测，给「无 Windows 机器」补一层自动化覆盖。
+// 从进程 argv 选出第一个可编辑文档参数（.html/.htm/.md，与 ipc.js 的 assertDocPath 口径一致），解析为
+// 绝对路径（Windows/Linux 双击文件经 argv 传入，macOS 走 open-file 事件不经此）。cwd 显式传入：
+// second-instance 时要用「第二次启动」的工作目录（Electron second-instance 事件的 workingDirectory），
+// 而非当前已运行实例的 process.cwd()。纯函数（仅 path）→ 可单测，给「无 Windows 机器」补一层自动化覆盖。
+// 审计整改：原来只认 .html——Win/Linux 双击 .md 时 app 聚焦但文件被静默吞掉，与 mac 行为不一致。
 function htmlPathFromArgv(argv, cwd) {
-  const a = (argv || []).slice(1).find((x) => /\.html?$/i.test(x));
+  const a = (argv || []).slice(1).find((x) => /\.(html?|md)$/i.test(x));
   return a ? path.resolve(cwd || process.cwd(), a) : null;
 }
 

@@ -101,6 +101,14 @@ function registerIpc() {
   });
   ipcMain.handle('save-doc', async (_e, p, content) => {
     assertDocPath(p);
+    // markdown 后端：先转换、再归档、再写盘——转换失败不产生任何副作用（审计整改：原顺序下反复失败的
+    // 自动保存会把相同磁盘快照重复灌进历史、挤掉真历史版本）。转换产物为空（用户清空文档）写 '\n'：
+    // writeDocSafe 拒空串（防误清空），一个换行 = 合法的空 md，否则清空后的 md 永远保存失败。
+    let out = content;
+    if (mdAdapter.isMdPath(p)) {
+      out = await mdAdapter.htmlToMd(content);
+      if (!out.trim()) out = '\n';
+    }
     // 归档读原始字节，与文件编码无关
     const prev = await files.readDocBuffer(p).catch(() => null);
     let archiveWarning = null;
@@ -111,8 +119,6 @@ function registerIpc() {
         console.error('history archive failed:', err);
       });
     }
-    // markdown 后端：写盘处 html→md（归档在上面读的是改动前磁盘 md 原始字节，顺序不受影响）
-    const out = mdAdapter.isMdPath(p) ? await mdAdapter.htmlToMd(content) : content;
     await files.writeDocSafe(p, out);
     docWatcher.noteSelfWrite(); // 写完才打戳：抑制窗口覆盖「写完→watcher 触发」的延迟，不被写入耗时吃掉（慢盘也不会自存盘误触发重载）
     return { ok: true, archiveWarning };
@@ -168,6 +174,8 @@ function registerIpc() {
   ipcMain.handle('recents-list', () => recents.load(recentsFile()));
   ipcMain.handle('recents-add', (_e, p) => recents.add(recentsFile(), p));
   ipcMain.handle('history-list', (_e, p) => history.list(historyRoot(), p));
+  // ⚠ .md 文档的归档是 md 原始字节（KD-7）：将来重接历史 UI 时，恢复进编辑器（loadFromHtml）前
+  // 必须先过 mdAdapter.mdToHtml，否则会把裸 markdown 当 HTML 渲染、保存还会二次转义损坏内容。
   ipcMain.handle('history-read', (_e, p, id) => history.read(historyRoot(), p, id));
 
   // ---- 本地文件夹工作区 (F06) ----
@@ -233,7 +241,12 @@ function registerIpc() {
     }
     if (isMd) { if (!/\.md$/i.test(out)) out += '.md'; }
     else if (!/\.html?$/i.test(out)) out += '.html';
-    await files.writeDocSafe(out, isMd ? await mdAdapter.htmlToMd(html) : html);
+    let content = html;
+    if (isMd) {
+      content = await mdAdapter.htmlToMd(html);
+      if (!content.trim()) content = '\n'; // 同 save-doc：空产物写一个换行，不撞 writeDocSafe 的拒空守卫
+    }
+    await files.writeDocSafe(out, content);
     // 导出语义的调用方要 Finder 高亮产物（确认成功+落在哪，对齐 export-pdf）；测试 seam 路径不弹
     if (opts && opts.reveal && !seamUsed) shell.showItemInFolder(out);
     return { ok: true, abs: out };
