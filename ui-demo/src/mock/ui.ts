@@ -31,6 +31,11 @@ interface UI {
   openSaveWorkspace: () => void
   closeSaveWorkspace: () => void
 
+  // 「打开工作区」modal（列磁盘上的 .wsworkspace 文件,选一个整组打开）
+  openWorkspaceOpen: boolean
+  openOpenWorkspace: () => void
+  closeOpenWorkspace: () => void
+
   // 「保存到哪里」modal：临时文档手动保存时弹出选位置（默认当前文件夹）。
   saveDocId: string | null
   // 保存成功后要顺手关闭的标签页（来自「未保存关闭确认」的「保存并关闭」）；null = 只保存
@@ -95,6 +100,10 @@ export const useUI = create<UI>((set) => ({
   openSaveWorkspace: () => set({ saveWorkspaceOpen: true }),
   closeSaveWorkspace: () => set({ saveWorkspaceOpen: false }),
 
+  openWorkspaceOpen: false,
+  openOpenWorkspace: () => set({ openWorkspaceOpen: true }),
+  closeOpenWorkspace: () => set({ openWorkspaceOpen: false }),
+
   saveDocId: null,
   saveCloseAfterTab: null,
   openSave: (docId, closeAfterTab = null) => set({ saveDocId: docId, saveCloseAfterTab: closeAfterTab }),
@@ -145,6 +154,7 @@ export function anyOverlayOpen(s: UI): boolean {
     s.spaceModalOpen ||
     s.addFolderOpen ||
     s.saveWorkspaceOpen ||
+    s.openWorkspaceOpen ||
     s.saveDocId ||
     s.confirmCloseTab ||
     s.findOpen ||

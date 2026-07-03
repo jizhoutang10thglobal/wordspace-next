@@ -72,6 +72,11 @@ export default function SaveWorkspaceModal() {
                 if (e.key === 'Enter') submit()
               }}
             />
+            {name.trim() && (
+              <span className="swm-filepath">
+                将保存为 ~/Documents/{name.trim()}.wsworkspace——之后从「打开工作区…」一键整组打开，也可以把文件发给别人
+              </span>
+            )}
           </label>
           <div className="swm-roots">
             <div className="swm-roots-label">

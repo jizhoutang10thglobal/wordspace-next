@@ -1242,8 +1242,12 @@
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc
       // 已经先载入了，这里只补标签，不影响打开速度。
       await restoreReady;
-      highlightActive(abs);
       const node = abs ? findNodeByAbs(abs) : null;
+      // Wendi 2026-07-03：外部（Finder 双击等）打开工作区内文件 → 树展开到所在文件夹并滚动定位。
+      // 树默认全收起，不展开的话文件在树里根本不可见、也高亮不上（is-active 行没渲染出来）。
+      // 先展开（内部会 render 重建行）再高亮，顺序不能反。命令面板/「打开」按钮同走此路，行为一致。
+      if (node) expandToFile(node.rel);
+      highlightActive(abs);
       if (node) {
         openTabEntry({ rel: node.rel, kind: node.kind || 'other', title: node.name });
       } else if (abs) {
@@ -1253,7 +1257,15 @@
     },
     refresh,
     newTab: () => { if (current) openCreateModal('', { temp: true }); },              // Cmd+T：新建临时文档（无工作区时不建，没地方保存）
-    closeActiveTab: () => { if (tabState.activeRel) closeTabRel(tabState.activeRel); }, // Cmd+W：关当前活跃标签
+    // Cmd+W：有活跃标签关标签；无标签但还有内容（工作区外查看器 / 单文件模式的文档）先关内容回空态；
+    // 真·空态 → 关窗口（Wendi 2026-07-03：macOS=隐藏驻留、后台开着；Windows/Linux 按平台惯例退出）。
+    closeActiveTab: () => {
+      if (tabState.activeRel) { closeTabRel(tabState.activeRel); return; }
+      const v = document.getElementById('viewer');
+      const hasDoc = window.__shellDocPath && window.__shellDocPath();
+      if ((v && !v.hidden) || hasDoc) { if (window.__shellCloseDoc) window.__shellCloseDoc(); return; }
+      window.ws2.winClose();
+    },
     focusFilter: () => { setSidebarCollapsed(false); if (filterInput) { filterInput.focus(); filterInput.select(); } }, // Cmd+F：展开侧栏 + 聚焦筛选框
     findPalette: () => openFindPalette(),                                              // Cmd+P：命令面板（模糊搜文件跳转）
     openSaveModal: (closeAfter) => openSaveModal(closeAfter),                          // shell.save() 遇临时文档 → 弹「保存到哪里」

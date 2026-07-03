@@ -11,6 +11,7 @@ let win = null;
 let pendingOpenPath = null;
 let isDirty = false;
 let forceClose = false;
+let quitting = false; // 真退出（Cmd+Q / 自动更新重启）标志：区分「关窗=隐藏驻留」与「退出=真销毁」
 
 function createWindow() {
   win = new BrowserWindow({
@@ -35,8 +36,19 @@ function createWindow() {
   });
   // 渲染层 beforeunload 在 Electron 里是静默拦截，提示必须由主进程弹
   win.on('close', (e) => {
-    if (!isDirty || forceClose) return;
+    if (forceClose) return;
+    // macOS 关窗=隐藏驻留（Wendi 2026-07-03「关掉前台、后台开着」）：红叉 / Cmd+W 空态都走这——
+    // 窗口藏起来、进程留在 Dock，点 Dock / 双击文件秒恢复（标签/未保存临时文档/滚动位置全保留）。
+    // 只有真退出（Cmd+Q → before-quit 先行、自动更新 quitAndInstall 同）才继续往下销毁 + 未保存守卫。
+    // Windows/Linux 不驻留：按平台惯例关窗即退（走下面守卫 → window-all-closed → quit）。
+    if (process.platform === 'darwin' && !quitting) {
+      e.preventDefault();
+      win.hide();
+      return;
+    }
+    if (!isDirty) return;
     e.preventDefault();
+    quitting = false; // 这次退出被守卫拦下了：复位，用户取消后下次红叉仍是隐藏驻留、不是误销毁
     if (process.env.WS2_NO_CLOSE_DIALOG) return;
     dialog.showMessageBox(win, {
       type: 'warning',
@@ -169,9 +181,8 @@ function manualCheckForUpdates() {
 // 把外部请求打开的文件路径送进窗口：已就绪则发并聚焦，未就绪则挂起等 did-finish-load。
 function openExternalPath(p) {
   if (!p) return;
-  if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
+  if (win && !win.isDestroyed()) {
+    focusWindow();
     win.webContents.send('open-file', p);
   } else {
     pendingOpenPath = p;
@@ -179,8 +190,10 @@ function openExternalPath(p) {
 }
 
 // 把已运行实例的窗口带到前台（second-instance 无论带不带文件都该聚焦，这是单实例 app 的标准行为）。
+// 隐藏驻留中（macOS 关窗后）被唤起也走这：先 show 再 focus——hidden 窗口只 focus 不会显形。
 function focusWindow() {
-  if (!win) return;
+  if (!win || win.isDestroyed()) return;
+  if (!win.isVisible()) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();
 }
@@ -192,6 +205,9 @@ app.on('open-file', (e, p) => {
 });
 
 ipcMain.on('set-dirty', (_e, v) => { isDirty = !!v; });
+// renderer 的 Cmd+W 空态「关窗口」入口：统一走 win.close()，由上面 close 守卫按平台分流
+// （macOS=隐藏驻留 / 其他平台=真关 → 退出），别在 renderer 里自己 hide 绕开语义收口。
+ipcMain.on('win-close', () => { if (win && !win.isDestroyed()) win.close(); });
 
 // 单实例：第二次启动（如再双击一个文件）不另起进程，而是把 argv 里的路径交给已运行实例并聚焦窗口。
 // 这也是 Windows 文件关联能用的关键——否则双击只会无脑再开一个空窗口。
@@ -220,5 +236,10 @@ if (!app.requestSingleInstanceLock()) {
     // 「Finder 双击」那条路（open-file 在 ready 前到、等 did-finish-load 才发），e2e 点不了真 Finder。
     if (!app.isPackaged && process.env.WS2_OPEN_FILE) pendingOpenPath = process.env.WS2_OPEN_FILE;
   });
+  // 真退出的第一信号（Cmd+Q / autoUpdater.quitAndInstall 内部 quit 都会先发 before-quit）：
+  // 打上标志，close 守卫据此放行销毁而不是隐藏。
+  app.on('before-quit', () => { quitting = true; });
+  // macOS：隐藏驻留中点 Dock 图标 → 把窗口带回来（标准 mac 行为）。
+  app.on('activate', () => focusWindow());
   app.on('window-all-closed', () => app.quit());
 }
