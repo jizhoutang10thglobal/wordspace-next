@@ -165,6 +165,8 @@ interface State {
   addRootToSpace: (spaceId: string, path: string) => void // 「添加文件夹」：往连接空间再挂一个根
   removeRootFromSpace: (spaceId: string, rootId: string) => void // 从工作区移除（磁盘不动），可撤销
   saveWorkspaceAs: (spaceId: string, name: string) => void // 把当前多根组合命名保存为工作区
+  // 拖拽调整根的上下顺序（顺序 = roots 数组序，随 spaces 持久化）
+  reorderRoots: (spaceId: string, fromRootId: string, toIndex: number) => void
 
   // editing
   updateBlockHtml: (docId: string, blockId: string, html: string) => void
@@ -855,6 +857,19 @@ export const useStore = create<State>()(
             })),
         })
       },
+
+      // 拖拽重排根：把 fromRootId 挪到 toIndex（以「移除它之后的数组」为基准的插入位）。
+      reorderRoots: (spaceId, fromRootId, toIndex) =>
+        set((s) => ({
+          spaces: s.spaces.map((sp) => {
+            if (sp.id !== spaceId || !sp.roots) return sp
+            const moving = sp.roots.find((r) => r.id === fromRootId)
+            if (!moving) return sp
+            const rest = sp.roots.filter((r) => r.id !== fromRootId)
+            rest.splice(Math.max(0, Math.min(toIndex, rest.length)), 0, moving)
+            return { ...sp, roots: rest }
+          }),
+        })),
 
       // 把当前打开的一组文件夹命名保存为工作区（VS Code "Save Workspace As" 语义）。
       // demo 里工作区就是空间本身：命名 + 打上已保存标记，切换器里带「工作区」徽标。

@@ -50,6 +50,8 @@ let dragTabId: string | null = null
 // (preserving docId/kind). Same-space moves only. getData() is blocked during
 // dragover, so we stash it module-side, mirroring dragTabId.
 let dragFile: FileEntry | null = null
+// A root header being dragged to reorder the roots（多文件夹：根的上下顺序自由调整）。
+let dragRootId: string | null = null
 // The most-recently-hovered drop target's highlight-clear fn, so a cancelled
 // drag (Esc) can reset a stuck highlight the dragleave never cleared.
 let clearDrop: (() => void) | null = null
@@ -577,16 +579,20 @@ function spaceDetail(space: Space): string {
 }
 
 // One mount root's section in the library: a collapsible root header (folder
-// name; hover shows the full path; right-click to manage) + its own file tree.
-// The header doubles as the "drop here to move to this root's top level" target.
+// name; hover shows the full path; right-click to manage) + its own file tree,
+// indented inside a rail so「根包含下面这些」的层级一眼可读。
+// The header is (a) the "drop file here to move to this root's top level"
+// target and (b) draggable itself, to reorder roots（顺序随 spaces 持久化）。
 function RootSection({
   space,
   root,
+  index,
   query,
   removable,
 }: {
   space: Space
   root: MountRoot
+  index: number
   query: string
   removable: boolean
 }) {
@@ -594,6 +600,7 @@ function RootSection({
   const dirs = useStore((s) => s.dirs)
   const moveFile = useStore((s) => s.moveFile)
   const removeRootFromSpace = useStore((s) => s.removeRootFromSpace)
+  const reorderRoots = useStore((s) => s.reorderRoots)
   const openCreate = useUI((s) => s.openCreate)
   const key = 'root:' + root.id
   const openState = useUI((s) => !s.collapsedKeys[key])
@@ -601,6 +608,7 @@ function RootSection({
   const q = query.trim().toLowerCase()
   const open = q ? true : openState
   const [rootDrop, setRootDrop] = useState(false)
+  const [insert, setInsert] = useState<InsertPos | null>(null) // 根重排的插入线位置
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
 
   const mine = files.filter((f) => f.spaceId === space.id && f.rootId === root.id)
@@ -614,10 +622,24 @@ function RootSection({
   return (
     <div className="arc-root">
       <div
-        className={`arc-connected arc-root-head ${rootDrop ? 'is-drop' : ''}`}
+        className={
+          `arc-root-head ${rootDrop ? 'is-drop' : ''}` +
+          (insert ? ` is-insert-${insert}` : '')
+        }
         role="button"
         tabIndex={0}
-        title={`${root.path} · 拖文件到这里可移到该文件夹顶层`}
+        title={`${root.path} · 拖动可调整文件夹顺序`}
+        draggable
+        onDragStart={(e) => {
+          dragRootId = root.id
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', root.name)
+        }}
+        onDragEnd={() => {
+          dragRootId = null
+          clearDrop?.()
+          clearDrop = null
+        }}
         onClick={() => toggle(key)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -630,7 +652,15 @@ function RootSection({
           setMenu({ x: e.clientX, y: e.clientY })
         }}
         onDragOver={(e) => {
-          // skip if no file dragged, cross-space/cross-root, or already at this root's top
+          // 根重排：另一个根的标题拖过来 → 显示上/下沿插入线
+          if (dragRootId && dragRootId !== root.id) {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            clearDrop = () => setInsert(null)
+            setInsert(insertAt(e))
+            return
+          }
+          // 文件挪到根顶层：skip if no file dragged, cross-space/cross-root, or already at top
           if (
             !dragFile ||
             dragFile.spaceId !== space.id ||
@@ -644,9 +674,22 @@ function RootSection({
           setRootDrop(true)
         }}
         onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setRootDrop(false)
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setRootDrop(false)
+            setInsert(null)
+          }
         }}
         onDrop={(e) => {
+          if (dragRootId && dragRootId !== root.id) {
+            e.preventDefault()
+            const pos = insert ?? insertAt(e)
+            setInsert(null)
+            clearDrop = null
+            const ids = (space.roots ?? []).map((r) => r.id)
+            reorderRoots(space.id, dragRootId, targetIndex(ids, dragRootId, root.id, pos))
+            dragRootId = null
+            return
+          }
           if (!dragFile || dragFile.spaceId !== space.id || dragFile.rootId !== root.id) return
           e.preventDefault()
           setRootDrop(false)
@@ -655,7 +698,7 @@ function RootSection({
         }}
       >
         <ChevronRight size={12} className={`arc-caret ${open ? 'is-open' : ''}`} />
-        {drive ? <Cloud size={12} /> : <HardDrive size={12} />}
+        <span className="arc-root-ico">{drive ? <Cloud size={12} /> : <HardDrive size={12} />}</span>
         <span className="ws-truncate arc-root-name">{root.name}</span>
         <span className="arc-root-path ws-truncate">{root.path}</span>
       </div>
@@ -666,6 +709,9 @@ function RootSection({
           onClose={() => setMenu(null)}
           items={[
             { label: '新建文档', onClick: () => openCreate({ rootId: root.id, dir: '' }) },
+            ...(index > 0
+              ? [{ label: '移到最上面', onClick: () => reorderRoots(space.id, root.id, 0) }]
+              : []),
             ...(removable
               ? [
                   {
@@ -678,22 +724,25 @@ function RootSection({
           ]}
         />
       )}
-      {open &&
-        (tree.length ? (
-          tree.map((n, i) => (
-            <FileBranch
-              key={i}
-              node={n}
-              depth={0}
-              path={n.name}
-              spaceId={space.id}
-              rootId={root.id}
-              forceOpen={!!q}
-            />
-          ))
-        ) : (
-          <div className="arc-lib-empty">{q ? '没有匹配的文件' : '这个文件夹还没有文件'}</div>
-        ))}
+      {open && (
+        <div className="arc-root-kids">
+          {tree.length ? (
+            tree.map((n, i) => (
+              <FileBranch
+                key={i}
+                node={n}
+                depth={0}
+                path={n.name}
+                spaceId={space.id}
+                rootId={root.id}
+                forceOpen={!!q}
+              />
+            ))
+          ) : (
+            <div className="arc-lib-empty">{q ? '没有匹配的文件' : '这个文件夹还没有文件'}</div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -723,11 +772,12 @@ function SpaceLibrary({ space, query }: { space: Space; query: string }) {
             </button>
           </div>
         )}
-        {roots.map((r) => (
+        {roots.map((r, i) => (
           <RootSection
             key={r.id}
             space={space}
             root={r}
+            index={i}
             query={query}
             removable={roots.length > 1}
           />

@@ -286,14 +286,36 @@
 .arc-connected svg { flex: none; color: var(--c-text-3); }
 
 /* ---- 多文件夹空间：每个根一节（RootSection） ---- */
-.arc-root { margin-bottom: 2px; }
-.arc-root-head { cursor: pointer; user-select: none; }
+.arc-root { margin-bottom: 6px; }
+/* 根标题：比普通文件夹行「重」一档——实底色块 + 粗字 + 图标着色，一眼读出「这是根」 */
+.arc-root-head {
+  display: flex; align-items: center; gap: 6px;
+  margin: 2px 0 2px; padding: 6px 8px; border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  color: var(--c-text);
+  font-size: var(--fs-sm); font-weight: var(--fw-semibold);
+  cursor: pointer; user-select: none;
+}
 .arc-root-head:hover { background: var(--c-hover); }
+.arc-root-head svg { flex: none; }
+.arc-root-ico { display: inline-flex; color: var(--c-accent); }
+.arc-root-head .arc-caret { color: var(--c-text-3); }
 .arc-root-name { flex: none; max-width: 46%; }
 .arc-root-path {
   min-width: 0; margin-left: auto;
   font-size: 11px; font-weight: var(--fw-regular);
   color: var(--c-text-3);
+}
+.arc-root-head.is-drop { background: var(--c-accent-tint-2, #e8f0fe); border-color: var(--c-accent); }
+/* 根重排：拖另一个根经过时的上/下沿插入线 */
+.arc-root-head.is-insert-before { box-shadow: 0 -2px 0 0 var(--c-accent); }
+.arc-root-head.is-insert-after { box-shadow: 0 2px 0 0 var(--c-accent); }
+/* 根的子树：整体缩进 + 左侧导轨线,视觉上「装在根里面」 */
+.arc-root-kids {
+  margin-left: 13px;
+  padding-left: 4px;
+  border-left: 1px solid var(--c-border);
 }
 /* 「N 个文件夹 · 未保存为工作区」提示条（untitled workspace 语义） */
 .arc-ws-hint {
