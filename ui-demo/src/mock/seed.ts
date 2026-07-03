@@ -310,6 +310,39 @@ export const seedDocs: Doc[] = [
       { id: 'ss10', type: 'text', html: '试试看：把光标放进任意一段就能改；左侧 ⋮⋮ 拖动重排，行首打 <code>/</code> 调出块菜单，选中文字弹出格式条。' },
     ],
   },
+  // 「产品资料」根（多文件夹空间的第二个根）里的两篇本地文档。
+  {
+    id: 'd-r2-manual',
+    title: '产品手册',
+    kind: 'doc',
+    folderId: 'sp-local',
+    visibility: 'private',
+    localPath: '~/Documents/产品资料/产品手册.html',
+    updatedAt: now - 5 * HR,
+    updatedBy: ME_ID,
+    collaborators: [ME_ID],
+    blocks: [
+      { id: 'r2m1', type: 'heading', level: 1, html: '产品手册' },
+      { id: 'r2m2', type: 'text', html: '这份文档来自工作区里的<b>第二个根文件夹</b>「产品资料」——左侧栏现在可以同时打开多个文件夹，每个文件夹是一棵独立的树。' },
+      { id: 'r2m3', type: 'list', listStyle: 'bulleted', html: '<li>侧栏底部「＋ 添加文件夹」可以再挂新的文件夹进来</li><li>根标题右键可以把它从工作区移除（磁盘文件不动）</li><li>多个文件夹可以打包保存成一个工作区，下次一键整组打开</li>' },
+    ],
+  },
+  {
+    id: 'd-r2-interview',
+    title: '访谈纪要',
+    kind: 'doc',
+    folderId: 'sp-local',
+    visibility: 'private',
+    localPath: '~/Documents/产品资料/用户调研/访谈纪要.html',
+    updatedAt: now - 26 * HR,
+    updatedBy: ME_ID,
+    collaborators: [ME_ID],
+    blocks: [
+      { id: 'r2i1', type: 'heading', level: 1, html: '用户访谈纪要' },
+      { id: 'r2i2', type: 'callout', html: '受访者：______ · 日期：2026-00-00 · 记录：______' },
+      { id: 'r2i3', type: 'list', listStyle: 'todo', html: '<li data-checked="true">整理录音</li><li data-checked="false">提炼关键引语</li><li data-checked="false">同步给产品组</li>' },
+    ],
+  },
   // 非合规样例（野生 HTML）：blocks 留空、带 rawHtml；打开后由校验器判定不符合 → BasicEditor 基础编辑。
   ...NON_CONFORM_SAMPLES.map(
     (s): Doc => ({
@@ -428,32 +461,50 @@ export const seedWorkspace: Workspace = {
 // local disk or Google Drive, the same kind of thing).
 export const seedSpaces: Space[] = [
   { id: 'sp-tg', name: 'Tenth Global', kind: 'team', storage: 'cloud', badge: 'TG', color: '#1a73e8', subtitle: '团队工作区' },
-  { id: 'sp-drive', name: '公司网盘', kind: 'project', storage: 'gdrive', badge: 'G', color: '#1e8e3e', subtitle: 'Google Drive', mountPath: 'Google Drive/Tenth Global' },
-  { id: 'sp-local', name: '设计项目', kind: 'project', storage: 'local', badge: '设', color: '#b8541d', subtitle: '本地项目', mountPath: '~/Projects/品牌升级' },
+  {
+    id: 'sp-drive', name: '公司网盘', kind: 'project', storage: 'gdrive', badge: 'G', color: '#1e8e3e', subtitle: 'Google Drive',
+    roots: [{ id: 'r-drive', name: 'Tenth Global', path: 'Google Drive/Tenth Global' }],
+  },
+  // 多文件夹空间：本地空间开局就同时挂两个根文件夹（= 未保存的工作区），
+  // 让「多根侧栏 + 保存为工作区」两个半边一进 demo 就看得见。
+  {
+    id: 'sp-local', name: '设计项目', kind: 'project', storage: 'local', badge: '设', color: '#b8541d', subtitle: '本地项目',
+    roots: [
+      { id: 'r-brand', name: '品牌升级', path: '~/Projects/品牌升级' },
+      { id: 'r-docs', name: '产品资料', path: '~/Documents/产品资料' },
+    ],
+    workspaceSaved: false,
+  },
 ]
 
 // Connected folders show every file, not just Wordspace docs. HTML opens in the
 // editor (docId set); the rest hand off to the OS default app.
 export const seedFiles: FileEntry[] = [
   // 公司网盘 (Google Drive)
-  { spaceId: 'sp-drive', path: '人事/员工手册.html', kind: 'html', docId: 'd-handbook' },
-  { spaceId: 'sp-drive', path: '人事/入职流程.docx', kind: 'word' },
-  { spaceId: 'sp-drive', path: '战略/2026 战略规划.docx', kind: 'word' },
-  { spaceId: 'sp-drive', path: '战略/市场分析.pdf', kind: 'pdf' },
-  { spaceId: 'sp-drive', path: '品牌/官网首页.html', kind: 'html', docId: 'd-recruit' },
-  { spaceId: 'sp-drive', path: '品牌/Logo.png', kind: 'image' },
-  { spaceId: 'sp-drive', path: '财务/Q2 预算.xlsx', kind: 'sheet' },
-  { spaceId: 'sp-drive', path: '产品/发布会.pptx', kind: 'slides' },
-  // 设计项目 (local)
-  { spaceId: 'sp-local', path: '提案.docx', kind: 'word' },
-  { spaceId: 'sp-local', path: '产品说明.md', kind: 'md', docId: 'd-md-guide' },
-  { spaceId: 'sp-local', path: '落地页.html', kind: 'html', docId: 'd-recruit' },
-  { spaceId: 'sp-local', path: '素材/封面.png', kind: 'image' },
-  { spaceId: 'sp-local', path: '数据/转化分析.xlsx', kind: 'sheet' },
-  { spaceId: 'sp-local', path: '说明.html', kind: 'html', docId: 'd-handbook' },
+  { spaceId: 'sp-drive', rootId: 'r-drive', path: '人事/员工手册.html', kind: 'html', docId: 'd-handbook' },
+  { spaceId: 'sp-drive', rootId: 'r-drive', path: '人事/入职流程.docx', kind: 'word' },
+  { spaceId: 'sp-drive', rootId: 'r-drive', path: '战略/2026 战略规划.docx', kind: 'word' },
+  { spaceId: 'sp-drive', rootId: 'r-drive', path: '战略/市场分析.pdf', kind: 'pdf' },
+  { spaceId: 'sp-drive', rootId: 'r-drive', path: '品牌/官网首页.html', kind: 'html', docId: 'd-recruit' },
+  { spaceId: 'sp-drive', rootId: 'r-drive', path: '品牌/Logo.png', kind: 'image' },
+  { spaceId: 'sp-drive', rootId: 'r-drive', path: '财务/Q2 预算.xlsx', kind: 'sheet' },
+  { spaceId: 'sp-drive', rootId: 'r-drive', path: '产品/发布会.pptx', kind: 'slides' },
+  // 设计项目 · 根 1「品牌升级」
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '提案.docx', kind: 'word' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '产品说明.md', kind: 'md', docId: 'd-md-guide' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '落地页.html', kind: 'html', docId: 'd-recruit' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '素材/封面.png', kind: 'image' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '数据/转化分析.xlsx', kind: 'sheet' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '说明.html', kind: 'html', docId: 'd-handbook' },
   // 非合规样例（野生 HTML）：HTML 文件 + docId 指向带 rawHtml 的样例文档 → 打开走 BasicEditor 降级编辑
-  { spaceId: 'sp-local', path: '外部导入/新品落地页.html', kind: 'html', docId: 'd-nc-landing' },
-  { spaceId: 'sp-local', path: '外部导入/季度数据表.html', kind: 'html', docId: 'd-nc-table' },
-  { spaceId: 'sp-local', path: '外部导入/活动报名页.html', kind: 'html', docId: 'd-nc-signup' },
-  { spaceId: 'sp-local', path: '外部导入/产品页.html', kind: 'html', docId: 'd-nc-interactive' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '外部导入/新品落地页.html', kind: 'html', docId: 'd-nc-landing' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '外部导入/季度数据表.html', kind: 'html', docId: 'd-nc-table' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '外部导入/活动报名页.html', kind: 'html', docId: 'd-nc-signup' },
+  { spaceId: 'sp-local', rootId: 'r-brand', path: '外部导入/产品页.html', kind: 'html', docId: 'd-nc-interactive' },
+  // 设计项目 · 根 2「产品资料」——注意「素材/」在两个根里都有：多根身份 (rootId, path) 保证互不相撞
+  { spaceId: 'sp-local', rootId: 'r-docs', path: '产品手册.html', kind: 'html', docId: 'd-r2-manual' },
+  { spaceId: 'sp-local', rootId: 'r-docs', path: '用户调研/访谈纪要.html', kind: 'html', docId: 'd-r2-interview' },
+  { spaceId: 'sp-local', rootId: 'r-docs', path: '用户调研/问卷数据.xlsx', kind: 'sheet' },
+  { spaceId: 'sp-local', rootId: 'r-docs', path: '路线图.pdf', kind: 'pdf' },
+  { spaceId: 'sp-local', rootId: 'r-docs', path: '素材/产品截图.png', kind: 'image' },
 ]

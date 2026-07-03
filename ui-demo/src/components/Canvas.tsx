@@ -335,7 +335,9 @@ export function DocHeader({ doc }: { doc: Doc }) {
     const sp = s.spaces.find((x) => x.id === s.activeSpaceId)
     if (!sp || isCloudStorage(sp.storage)) return null
     const t = s.tabs.find((x) => x.id === s.activeTabId)
-    const mount = sp.mountPath ?? (sp.storage === 'gdrive' ? 'Google Drive' : '本地文件夹')
+    // 多根：面包屑锚在文件所属的根上（根名即文件夹名）；没有根信息就退回空间名
+    const root = sp.roots?.find((r) => r.id === t?.rootId) ?? sp.roots?.[0]
+    const mount = root?.name ?? sp.name
     return t?.url ? `${mount} / ${t.url}` : mount
   })
   const isFolderSpace = folderCrumb !== null

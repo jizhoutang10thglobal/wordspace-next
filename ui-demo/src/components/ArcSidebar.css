@@ -285,6 +285,47 @@
 }
 .arc-connected svg { flex: none; color: var(--c-text-3); }
 
+/* ---- 多文件夹空间：每个根一节（RootSection） ---- */
+.arc-root { margin-bottom: 2px; }
+.arc-root-head { cursor: pointer; user-select: none; }
+.arc-root-head:hover { background: var(--c-hover); }
+.arc-root-name { flex: none; max-width: 46%; }
+.arc-root-path {
+  min-width: 0; margin-left: auto;
+  font-size: 11px; font-weight: var(--fw-regular);
+  color: var(--c-text-3);
+}
+/* 「N 个文件夹 · 未保存为工作区」提示条（untitled workspace 语义） */
+.arc-ws-hint {
+  display: flex; align-items: center; gap: 8px;
+  margin: 2px 0 6px; padding: 4px 8px 4px 10px;
+  border: 1px dashed var(--c-border);
+  border-radius: var(--r-sm);
+  font-size: 11.5px; color: var(--c-text-3);
+}
+.arc-ws-hint .ws-truncate { flex: 1; min-width: 0; }
+.arc-ws-save {
+  flex: none; border: none; background: none; cursor: pointer;
+  font-size: 11.5px; color: var(--c-accent); padding: 2px 5px; border-radius: 4px;
+}
+.arc-ws-save:hover { background: var(--c-hover); }
+/* 「添加文件夹…」行 */
+.arc-add-root {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; margin-top: 4px; padding: 5px 8px;
+  border: none; background: none; cursor: pointer; text-align: left;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm); color: var(--c-text-3);
+}
+.arc-add-root:hover { background: var(--c-hover); color: var(--c-text-2); }
+.arc-add-root svg { flex: none; }
+/* 空间切换器里的「工作区」徽标 */
+.arc-space-ws-badge {
+  display: inline-block; margin-left: 6px; padding: 0 5px;
+  border: 1px solid var(--c-border); border-radius: 99px;
+  font-size: 10px; line-height: 15px; color: var(--c-text-3); vertical-align: 1px;
+}
+
 /* non-HTML files are browsable but not editable here — file-type icon colors */
 .arc-file.is-foreign { color: var(--c-text-2); }
 .arc-file-ico.is-word { color: #1a73e8; }
