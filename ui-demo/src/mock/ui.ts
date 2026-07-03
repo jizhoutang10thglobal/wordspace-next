@@ -8,18 +8,28 @@ interface UI {
   closePublish: () => void
 
   createOpen: boolean
-  // which connected-folder subfolder the new doc should land in; null = space default (root / 我的草稿)
-  createTargetDir: string | null
+  // which (root, subfolder) the new doc should land in; null = space default (第一个根的根目录 / 我的草稿)
+  createTarget: { rootId: string; dir: string } | null
   // omni = 从「标签页 +」打开：modal 顶部带一条地址栏（输网址→开网页标签页），下面接新建文档。
-  // false = 从文件夹「+」/右键打开：只有新建文档选择器，建到 createTargetDir。
+  // false = 从文件夹「+」/右键打开：只有新建文档选择器，建到 createTarget。
   createOmni: boolean
-  openCreate: (targetDir?: string | null) => void
+  openCreate: (target?: { rootId: string; dir: string } | null) => void
   openNewTab: () => void
   closeCreate: () => void
 
   spaceModalOpen: boolean
   openSpaceModal: () => void
   closeSpaceModal: () => void
+
+  // 「添加文件夹」modal（多文件夹空间：往当前连接空间再挂一个根）
+  addFolderOpen: boolean
+  openAddFolder: () => void
+  closeAddFolder: () => void
+
+  // 「保存工作区」modal（把当前打开的一组文件夹命名保存）
+  saveWorkspaceOpen: boolean
+  openSaveWorkspace: () => void
+  closeSaveWorkspace: () => void
 
   // 「保存到哪里」modal：临时文档手动保存时弹出选位置（默认当前文件夹）。
   saveDocId: string | null
@@ -41,11 +51,11 @@ interface UI {
   sidebarCollapsed: boolean
   toggleSidebar: () => void
 
-  // collapsed sidebar folders, keyed by 'folder:<id>' or 'tree:<path>'.
+  // collapsed sidebar folders, keyed by 'folder:<id>' / 'file:<rootId>:<path>' / 'root:<rootId>'.
   collapsedKeys: Record<string, boolean>
   toggleCollapsed: (key: string) => void
-  // 展开（取消折叠）一批文件夹路径，让某个文件在树里可见（F6：点标签页定位到文件）
-  revealFolders: (paths: string[]) => void
+  // 展开（取消折叠）某个根下的一批文件夹路径，让某个文件在树里可见（F6：点标签页定位到文件）
+  revealFolders: (rootId: string, paths: string[]) => void
 
   // Markdown 源码面板：markdown-backed 文档可开一条实时源码栏（blocksToMd），证明后端是 .md + round-trip。
   mdSourceOpen: boolean
@@ -62,15 +72,23 @@ export const useUI = create<UI>((set) => ({
   closePublish: () => set({ publishDocId: null }),
 
   createOpen: false,
-  createTargetDir: null,
+  createTarget: null,
   createOmni: false,
-  openCreate: (targetDir = null) => set({ createOpen: true, createTargetDir: targetDir, createOmni: false }),
-  openNewTab: () => set({ createOpen: true, createTargetDir: null, createOmni: true }),
+  openCreate: (target = null) => set({ createOpen: true, createTarget: target, createOmni: false }),
+  openNewTab: () => set({ createOpen: true, createTarget: null, createOmni: true }),
   closeCreate: () => set({ createOpen: false }),
 
   spaceModalOpen: false,
   openSpaceModal: () => set({ spaceModalOpen: true }),
   closeSpaceModal: () => set({ spaceModalOpen: false }),
+
+  addFolderOpen: false,
+  openAddFolder: () => set({ addFolderOpen: true }),
+  closeAddFolder: () => set({ addFolderOpen: false }),
+
+  saveWorkspaceOpen: false,
+  openSaveWorkspace: () => set({ saveWorkspaceOpen: true }),
+  closeSaveWorkspace: () => set({ saveWorkspaceOpen: false }),
 
   saveDocId: null,
   saveCloseAfterTab: null,
@@ -91,10 +109,11 @@ export const useUI = create<UI>((set) => ({
   collapsedKeys: {},
   toggleCollapsed: (key) =>
     set((s) => ({ collapsedKeys: { ...s.collapsedKeys, [key]: !s.collapsedKeys[key] } })),
-  revealFolders: (paths) =>
+  revealFolders: (rootId, paths) =>
     set((s) => {
       const m = { ...s.collapsedKeys }
-      for (const p of paths) m['file:' + p] = false
+      m['root:' + rootId] = false // 根自己也要是展开的
+      for (const p of paths) m[`file:${rootId}:${p}`] = false
       return { collapsedKeys: m }
     }),
 

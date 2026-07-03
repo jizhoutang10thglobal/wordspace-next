@@ -24,6 +24,7 @@ import {
   FileSpreadsheet,
   Presentation,
   File,
+  FolderPlus,
   Pin,
   PinOff,
   Search,
@@ -34,7 +35,7 @@ import { useBrowser } from '../mock/browser'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, type FileNode } from '../lib/tree'
 import { isCloudStorage } from '../types'
-import type { Doc, FileEntry, FileKind, Folder, Space, Tab } from '../types'
+import type { Doc, FileEntry, FileKind, Folder, MountRoot, Space, Tab } from '../types'
 import './ArcSidebar.css'
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,8 @@ let dragTabId: string | null = null
 // (preserving docId/kind). Same-space moves only. getData() is blocked during
 // dragover, so we stash it module-side, mirroring dragTabId.
 let dragFile: FileEntry | null = null
+// A root header being dragged to reorder the roots（多文件夹：根的上下顺序自由调整）。
+let dragRootId: string | null = null
 // The most-recently-hovered drop target's highlight-clear fn, so a cancelled
 // drag (Esc) can reset a stuck highlight the dragleave never cleared.
 let clearDrop: (() => void) | null = null
@@ -327,12 +330,14 @@ function FileBranch({
   depth,
   path,
   spaceId,
+  rootId,
   forceOpen,
 }: {
   node: FileNode
   depth: number
   path: string
   spaceId: string
+  rootId: string
   forceOpen?: boolean
 }) {
   const navigate = useNavigate()
@@ -345,7 +350,7 @@ function FileBranch({
   const deleteDirWithUndo = useStore((s) => s.deleteDirWithUndo)
   const tabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
-  const openState = useUI((s) => !s.collapsedKeys['file:' + path])
+  const openState = useUI((s) => !s.collapsedKeys[`file:${rootId}:${path}`])
   const open = forceOpen || openState
   const toggle = useUI((s) => s.toggleCollapsed)
   const openCreate = useUI((s) => s.openCreate)
@@ -358,7 +363,7 @@ function FileBranch({
   if (node.file) {
     const f = node.file
     const activeTab = tabs.find((t) => t.id === activeTabId)
-    const isActive = !!activeTab?.fileName && activeTab.url === f.path
+    const isActive = !!activeTab?.fileName && activeTab.rootId === f.rootId && activeTab.url === f.path
     const foreign = f.kind !== 'html'
     const dot = node.name.lastIndexOf('.')
     const baseName = dot > 0 ? node.name.slice(0, dot) : node.name
@@ -444,7 +449,7 @@ function FileBranch({
           defaultValue={node.name}
           onFocus={(e) => e.currentTarget.select()}
           onBlur={(e) => {
-            if (!cancelRename.current) renameDir(path, e.currentTarget.value)
+            if (!cancelRename.current) renameDir(rootId, path, e.currentTarget.value)
             cancelRename.current = false
             setRenaming(false)
           }}
@@ -460,7 +465,7 @@ function FileBranch({
     )
   }
   // open the create modal (template picker) targeting this folder
-  const newDocHere = () => openCreate(path)
+  const newDocHere = () => openCreate({ rootId, dir: path })
   return (
     <div className="arc-tree-dir">
       <div
@@ -468,11 +473,11 @@ function FileBranch({
         role="button"
         tabIndex={0}
         style={{ paddingLeft: 8 + depth * 16 }}
-        onClick={() => toggle('file:' + path)}
+        onClick={() => toggle(`file:${rootId}:${path}`)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
-            toggle('file:' + path)
+            toggle(`file:${rootId}:${path}`)
           }
         }}
         onContextMenu={(e) => {
@@ -480,8 +485,14 @@ function FileBranch({
           setMenu({ x: e.clientX, y: e.clientY })
         }}
         onDragOver={(e) => {
-          // skip if no file dragged, cross-space, or already in this folder
-          if (!dragFile || dragFile.spaceId !== spaceId || parentDir(dragFile.path) === path) return
+          // skip if no file dragged, cross-space/cross-root, or already in this folder
+          if (
+            !dragFile ||
+            dragFile.spaceId !== spaceId ||
+            dragFile.rootId !== rootId ||
+            parentDir(dragFile.path) === path
+          )
+            return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
           clearDrop = () => setDropOver(false)
@@ -491,7 +502,7 @@ function FileBranch({
           if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOver(false)
         }}
         onDrop={(e) => {
-          if (!dragFile || dragFile.spaceId !== spaceId) return
+          if (!dragFile || dragFile.spaceId !== spaceId || dragFile.rootId !== rootId) return
           e.preventDefault()
           e.stopPropagation()
           setDropOver(false)
@@ -520,9 +531,9 @@ function FileBranch({
           onClose={() => setMenu(null)}
           items={[
             { label: '新建文档', onClick: newDocHere },
-            { label: '新建子文件夹', onClick: () => createSubfolder(path) },
+            { label: '新建子文件夹', onClick: () => createSubfolder(rootId, path) },
             { label: '重命名', onClick: () => setRenaming(true) },
-            { label: '删除', danger: true, onClick: () => deleteDirWithUndo(path) },
+            { label: '删除', danger: true, onClick: () => deleteDirWithUndo(rootId, path) },
           ]}
         />
       )}
@@ -535,6 +546,7 @@ function FileBranch({
               depth={depth + 1}
               path={`${path}/${c.name}`}
               spaceId={spaceId}
+              rootId={rootId}
               forceOpen={forceOpen}
             />
           ))
@@ -557,64 +569,230 @@ function SpaceIcon({ space }: { space: Space }) {
 }
 
 // A space's one-line detail under its name. Category is already carried by the
-// group header, so this shows the useful bit: capability for cloud, path for a
-// connected folder.
+// group header, so this shows the useful bit: capability for cloud, the folder
+// path (or folder count) for a connected space.
 function spaceDetail(space: Space): string {
   if (isCloudStorage(space.storage)) return '实时协作、Agent'
-  return space.mountPath ?? space.subtitle
+  const roots = space.roots ?? []
+  if (roots.length > 1) return `${roots.length} 个文件夹`
+  return roots[0]?.path ?? space.subtitle
+}
+
+// One mount root's section in the library: a collapsible root header (folder
+// name; hover shows the full path; right-click to manage) + its own file tree,
+// indented inside a rail so「根包含下面这些」的层级一眼可读。
+// The header is (a) the "drop file here to move to this root's top level"
+// target and (b) draggable itself, to reorder roots（顺序随 spaces 持久化）。
+function RootSection({
+  space,
+  root,
+  index,
+  query,
+  removable,
+}: {
+  space: Space
+  root: MountRoot
+  index: number
+  query: string
+  removable: boolean
+}) {
+  const files = useStore((s) => s.files)
+  const dirs = useStore((s) => s.dirs)
+  const moveFile = useStore((s) => s.moveFile)
+  const removeRootFromSpace = useStore((s) => s.removeRootFromSpace)
+  const reorderRoots = useStore((s) => s.reorderRoots)
+  const openCreate = useUI((s) => s.openCreate)
+  const key = 'root:' + root.id
+  const openState = useUI((s) => !s.collapsedKeys[key])
+  const toggle = useUI((s) => s.toggleCollapsed)
+  const q = query.trim().toLowerCase()
+  const open = q ? true : openState
+  const [rootDrop, setRootDrop] = useState(false)
+  const [insert, setInsert] = useState<InsertPos | null>(null) // 根重排的插入线位置
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+
+  const mine = files.filter((f) => f.spaceId === space.id && f.rootId === root.id)
+  const shown = q ? mine.filter((f) => f.path.toLowerCase().includes(q)) : mine
+  const rootDirs = q
+    ? []
+    : dirs.filter((d) => d.spaceId === space.id && d.rootId === root.id).map((d) => d.path)
+  const tree = buildFileTree(shown, rootDirs)
+  if (q && !shown.length) return null // while filtering, drop roots with no matches
+  const drive = space.storage === 'gdrive'
+  return (
+    <div className="arc-root">
+      <div
+        className={
+          `arc-root-head ${rootDrop ? 'is-drop' : ''}` +
+          (insert ? ` is-insert-${insert}` : '')
+        }
+        role="button"
+        tabIndex={0}
+        title={`${root.path} · 拖动可调整文件夹顺序`}
+        draggable
+        onDragStart={(e) => {
+          dragRootId = root.id
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', root.name)
+        }}
+        onDragEnd={() => {
+          dragRootId = null
+          clearDrop?.()
+          clearDrop = null
+        }}
+        onClick={() => toggle(key)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            toggle(key)
+          }
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          setMenu({ x: e.clientX, y: e.clientY })
+        }}
+        onDragOver={(e) => {
+          // 根重排：另一个根的标题拖过来 → 显示上/下沿插入线
+          if (dragRootId && dragRootId !== root.id) {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            clearDrop = () => setInsert(null)
+            setInsert(insertAt(e))
+            return
+          }
+          // 文件挪到根顶层：skip if no file dragged, cross-space/cross-root, or already at top
+          if (
+            !dragFile ||
+            dragFile.spaceId !== space.id ||
+            dragFile.rootId !== root.id ||
+            parentDir(dragFile.path) === ''
+          )
+            return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          clearDrop = () => setRootDrop(false)
+          setRootDrop(true)
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setRootDrop(false)
+            setInsert(null)
+          }
+        }}
+        onDrop={(e) => {
+          if (dragRootId && dragRootId !== root.id) {
+            e.preventDefault()
+            const pos = insert ?? insertAt(e)
+            setInsert(null)
+            clearDrop = null
+            const ids = (space.roots ?? []).map((r) => r.id)
+            reorderRoots(space.id, dragRootId, targetIndex(ids, dragRootId, root.id, pos))
+            dragRootId = null
+            return
+          }
+          if (!dragFile || dragFile.spaceId !== space.id || dragFile.rootId !== root.id) return
+          e.preventDefault()
+          setRootDrop(false)
+          clearDrop = null
+          moveFile(dragFile, '')
+        }}
+      >
+        <ChevronRight size={12} className={`arc-caret ${open ? 'is-open' : ''}`} />
+        <span className="arc-root-ico">{drive ? <Cloud size={12} /> : <HardDrive size={12} />}</span>
+        <span className="ws-truncate arc-root-name">{root.name}</span>
+        <span className="arc-root-path ws-truncate">{root.path}</span>
+      </div>
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: '新建文档', onClick: () => openCreate({ rootId: root.id, dir: '' }) },
+            ...(index > 0
+              ? [{ label: '移到最上面', onClick: () => reorderRoots(space.id, root.id, 0) }]
+              : []),
+            ...(removable
+              ? [
+                  {
+                    label: '从工作区移除（磁盘文件不动）',
+                    danger: true,
+                    onClick: () => removeRootFromSpace(space.id, root.id),
+                  },
+                ]
+              : []),
+          ]}
+        />
+      )}
+      {open && (
+        <div className="arc-root-kids">
+          {tree.length ? (
+            tree.map((n, i) => (
+              <FileBranch
+                key={i}
+                node={n}
+                depth={0}
+                path={n.name}
+                spaceId={space.id}
+                rootId={root.id}
+                forceOpen={!!q}
+              />
+            ))
+          ) : (
+            <div className="arc-lib-empty">{q ? '没有匹配的文件' : '这个文件夹还没有文件'}</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function SpaceLibrary({ space, query }: { space: Space; query: string }) {
   const folders = useStore((s) => s.folders)
   const files = useStore((s) => s.files)
   const docs = useStore((s) => s.docs)
-  const dirs = useStore((s) => s.dirs)
-  const moveFile = useStore((s) => s.moveFile)
+  const openAddFolder = useUI((s) => s.openAddFolder)
+  const openSaveWorkspace = useUI((s) => s.openSaveWorkspace)
   const q = query.trim().toLowerCase()
-  const [rootDrop, setRootDrop] = useState(false)
 
-  // A connected folder: browse the whole mount, every file type, not just docs.
+  // A connected space: N mount roots side by side, each its own tree — the
+  // multi-folder workspace. 单文件夹只是 roots.length === 1 的特例，没有第二种模式。
   if (!isCloudStorage(space.storage)) {
-    const mine = files.filter((f) => f.spaceId === space.id)
-    const shown = q ? mine.filter((f) => f.path.toLowerCase().includes(q)) : mine
-    const spaceDirs = q ? [] : dirs.filter((d) => d.spaceId === space.id).map((d) => d.path)
-    const tree = buildFileTree(shown, spaceDirs)
-    const drive = space.storage === 'gdrive'
+    const roots = space.roots ?? []
+    const matches = q
+      ? files.some((f) => f.spaceId === space.id && f.path.toLowerCase().includes(q))
+      : true
     return (
       <div className="arc-lib" key={space.id}>
-        <div
-          className={`arc-connected ${rootDrop ? 'is-drop' : ''}`}
-          title="连接进来的外部文件夹 · 拖文件到这里可移到根目录"
-          onDragOver={(e) => {
-            // skip if no file dragged, cross-space, or already at the root
-            if (!dragFile || dragFile.spaceId !== space.id || parentDir(dragFile.path) === '') return
-            e.preventDefault()
-            e.dataTransfer.dropEffect = 'move'
-            clearDrop = () => setRootDrop(false)
-            setRootDrop(true)
-          }}
-          onDragLeave={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node)) setRootDrop(false)
-          }}
-          onDrop={(e) => {
-            if (!dragFile || dragFile.spaceId !== space.id) return
-            e.preventDefault()
-            setRootDrop(false)
-            clearDrop = null
-            moveFile(dragFile, '')
-          }}
-        >
-          {drive ? <Cloud size={12} /> : <HardDrive size={12} />}
-          <span className="ws-truncate">
-            {space.mountPath ?? (drive ? 'Google Drive' : '本地文件夹')}
-          </span>
-        </div>
-        {tree.length ? (
-          tree.map((n, i) => (
-            <FileBranch key={i} node={n} depth={0} path={n.name} spaceId={space.id} forceOpen={!!q} />
-          ))
-        ) : (
-          <div className="arc-lib-empty">{q ? '没有匹配的文件' : '这个文件夹还没有文件'}</div>
+        {roots.length > 1 && !space.workspaceSaved && !q && (
+          <div className="arc-ws-hint">
+            <span className="ws-truncate">{roots.length} 个文件夹 · 未保存为工作区</span>
+            <button className="arc-ws-save" onClick={openSaveWorkspace}>
+              保存…
+            </button>
+          </div>
+        )}
+        {roots.map((r, i) => (
+          <RootSection
+            key={r.id}
+            space={space}
+            root={r}
+            index={i}
+            query={query}
+            removable={roots.length > 1}
+          />
+        ))}
+        {q && !matches && <div className="arc-lib-empty">没有匹配的文件</div>}
+        {!roots.length && (
+          <div className="arc-lib-empty">
+            这个空间还没有打开任何文件夹。
+          </div>
+        )}
+        {!q && (
+          <button className="arc-add-root" onClick={openAddFolder} title="把另一个文件夹添加进当前空间，和现有文件夹并排打开">
+            <FolderPlus size={13} />
+            <span>添加文件夹…</span>
+          </button>
         )}
       </div>
     )
@@ -692,7 +870,13 @@ function SpaceSwitcher() {
       >
         <SpaceIcon space={s} />
         <span className="arc-space-item-text">
-          <span className="arc-space-item-name ws-truncate">{s.name}</span>
+          <span className="arc-space-item-name ws-truncate">
+            {s.name}
+            {/* 已保存的多文件夹组合带「工作区」徽标（消歧用，仿 VS Code Open Recent 的 "(Workspace)"） */}
+            {s.workspaceSaved && (s.roots?.length ?? 0) > 1 && (
+              <span className="arc-space-ws-badge">工作区</span>
+            )}
+          </span>
           <span className="arc-space-item-sub ws-truncate">
             <Icon size={11} />
             {spaceDetail(s)}
@@ -828,18 +1012,19 @@ export default function ArcSidebar() {
     return () => document.removeEventListener('keydown', onKey)
   }, [toggleSidebar, openNewTab, saveActiveDoc, openFind])
 
-  // F6：切到某个文件标签页时，在左侧树展开它的祖先文件夹并滚动定位（高亮由 is-active 负责）。
+  // F6：切到某个文件标签页时，在左侧树展开它所在根 + 祖先文件夹并滚动定位（高亮由 is-active 负责）。
   useEffect(() => {
     const path = activeTab?.fileName ? activeTab.url : ''
-    if (!path) return
+    const rootId = activeTab?.rootId
+    if (!path || !rootId) return
     const parts = path.split('/').filter(Boolean)
     const dirs = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'))
-    if (dirs.length) revealFolders(dirs)
+    revealFolders(rootId, dirs)
     const id = window.setTimeout(() => {
       scrollRef.current?.querySelector('.arc-file.is-active')?.scrollIntoView({ block: 'nearest' })
     }, 40)
     return () => window.clearTimeout(id)
-  }, [activeTabId, activeTab?.url, activeTab?.fileName, revealFolders])
+  }, [activeTabId, activeTab?.url, activeTab?.fileName, activeTab?.rootId, revealFolders])
 
   const submitOmni = () => {
     const v = omni.trim()

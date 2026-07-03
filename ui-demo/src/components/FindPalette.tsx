@@ -26,6 +26,7 @@ export default function FindPalette() {
   const files = useStore((s) => s.files)
   const docs = useStore((s) => s.docs)
   const folders = useStore((s) => s.folders)
+  const spaces = useStore((s) => s.spaces)
   const activeSpaceId = useStore((s) => s.activeSpaceId)
   const openFileTab = useStore((s) => s.openFileTab)
   const openDoc = useStore((s) => s.openDoc)
@@ -39,12 +40,16 @@ export default function FindPalette() {
     const spaceFolderIds = new Set(
       folders.filter((f) => f.spaceId === activeSpaceId).map((f) => f.id),
     )
+    // 多根：sub 带根名前缀（多个文件夹同开时，同名相对路径靠它区分）；id 也要含 rootId 才唯一。
+    const space = spaces.find((sp) => sp.id === activeSpaceId)
+    const multiRoot = (space?.roots?.length ?? 0) > 1
+    const rootName = (id: string) => space?.roots?.find((r) => r.id === id)?.name ?? ''
     const fromFiles: Hit[] = files
       .filter((f) => f.spaceId === activeSpaceId)
       .map((f) => ({
-        id: 'f:' + f.path,
+        id: `f:${f.rootId}:${f.path}`,
         name: base(f.path),
-        sub: f.path,
+        sub: multiRoot ? `${rootName(f.rootId)} / ${f.path}` : f.path,
         open: () => openFileTab(f),
       }))
     const fromDocs: Hit[] = docs
@@ -56,7 +61,7 @@ export default function FindPalette() {
         open: () => openDoc(d.id),
       }))
     return [...fromFiles, ...fromDocs]
-  }, [files, docs, folders, activeSpaceId, openFileTab, openDoc])
+  }, [files, docs, folders, spaces, activeSpaceId, openFileTab, openDoc])
 
   const hits = useMemo(() => {
     const term = q.trim().toLowerCase()
