@@ -81,6 +81,9 @@ function showAiSoon() { window.alert('AI 功能开发中'); }
 // 仅用于显示的纯文件名：跨平台按 / 或 \ 切（Windows 路径用反斜杠）。真正加载用的 URL 一律走
 // 主进程的 window.ws2.pathInfo（Node url.pathToFileURL），renderer 不自己拼 file:// URL。
 function baseName(p) { return p.split(/[\\/]/).pop(); }
+// markdown 后端：主进程 read-doc 已把 .md 转成 HTML，renderer 只在「怎么渲染/怎么导出/另存为什么格式」
+// 三处按路径分流；编辑器/校验器链路完全不感知格式（与 src/main/md-adapter.js 的 isMdPath 同判定）。
+function isMdPath(p) { return typeof p === 'string' && /\.md$/i.test(p); }
 
 function injectBase(doc, dirUrl) {
   const base = doc.createElement('base');
@@ -379,7 +382,11 @@ function loadFromFile(opts) {
 async function reloadDoc() {
   detachEditors();
   // 外部改动可能翻转合规性（如 Claude 改完变合规/变不合规）→ 重判分流
-  try { if (docPath) docConform = routeDoc(await window.ws2.readDoc(docPath)); } catch (e) { /* 保持上次判定 */ }
+  let raw = null;
+  try { if (docPath) { raw = await window.ws2.readDoc(docPath); docConform = routeDoc(raw); } } catch (e) { /* 保持上次判定 */ }
+  // .md：渲染内容不在磁盘文件里（是 read-doc 的转换产物）→ 重载 = 重新 srcdoc（赋值天然重导航，
+  // 不需要下面 about:blank 的二段跳）。读盘失败（文件正被外部改写/删除）就先不动，等 watcher 下一拍。
+  if (isMdPath(docPath)) { if (raw != null) loadFromHtml(raw); return; }
   const gen = ++loadGen;
   frame.onload = () => {
     if (gen !== loadGen) return; // 被更晚的载入抢占
@@ -556,7 +563,10 @@ async function openDoc(p) {
   docInfo = info;
   docConform = routeDoc(raw); // 合规→完整编辑 / 不合规→基础编辑（判磁盘原始字节 reparse，§4.3 铁律③）
   zoomFactor = 1; // 新文档从 100% 开始（wireEditor 会按这个重挂缩放）
-  loadFromFile();
+  // .md 走 srcdoc（KD-1）：iframe file:// 直载 .md 会被 Chromium 当纯文本渲染；readDoc 返回的 raw
+  // 已是转换好的 HTML，loadFromHtml 的 injectBase(dirUrl) 让相对图片照常解析。
+  if (isMdPath(p)) loadFromHtml(raw);
+  else loadFromFile();
   window.ws2.watchDoc(p); // 盯外部磁盘改动（Bug2）；换文档时主进程会重指向到新路径
   // 先建标签/高亮（onOpen 内会清 __pendingColdOpen）。放在 recents 之前，且 recents 设成尽力而为：
   // recents 写盘失败（userData 只读/满）不该把建标签和清标记一起拖死——否则冷启动标签丢 + 标记泄漏。
@@ -618,7 +628,7 @@ async function pickAndOpen() {
   let meta;
   try { meta = await window.ws2.classifyFile(p); }
   catch (e) { meta = { kind: 'other', name: baseName(p), rel: null }; }
-  if (meta.kind === 'html') {
+  if (meta.kind === 'html' || meta.kind === 'md') {
     openDoc(p);
   } else {
     showViewer({ abs: p, rel: meta.rel, name: meta.name || baseName(p), kind: meta.kind });
@@ -674,7 +684,7 @@ async function saveAs() {
     ? WS2BasicEdit.serialize(frame.contentDocument)
     : WS2Serialize.serializeDocument(frame.contentDocument);
   let r;
-  try { r = await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.html?$/i, ''), html); }
+  try { r = await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.(html?|md)$/i, ''), html, isMdPath(docPath) ? 'md' : undefined); } // 另存为保持原格式（KD-6）
   catch (e) { alert('另存为失败：' + (e.message || e)); return; }
   if (!r || r.canceled || !r.abs) return;
   await openDoc(r.abs);
@@ -714,7 +724,7 @@ window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
 window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
-  if (cmd === 'export-pdf') exportPdf(basicEdit ? 'raw' : 'wordspace'); // 基础模式=raw 直印源文件
+  if (cmd === 'export-pdf') exportPdf(pdfExportMode()); // 基础模式=raw 直印源文件；md 一律 wordspace（KD-5）
   if (cmd === 'undo') runUndoRedo(false); // 菜单加速器（真实用户 Cmd+Z 走这，不走 doc keydown）
   if (cmd === 'redo') runUndoRedo(true);
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
@@ -774,7 +784,9 @@ function buildWordspacePrintHtml() {
 // 导出按钮 → 单按钮、无样式菜单。合规文档走 Wordspace 样式（所见即所得）；非合规（基础编辑）走 raw
 // 直印源文件（忠于野文件原貌、不套块编辑器排版，否则缺块标记会抛错）。Feature 3 让 raw 从「未接 UI 的逃生口」
 // 变回活路径 —— 故此处保 mode 版，不用 ux-fixes 那版收敛掉 raw 的无参 exportPdf()。
-exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(basicEdit ? 'raw' : 'wordspace'); };
+// .md 例外（KD-5）：raw=直印源文件会印出裸 markdown 文本 → 一律 wordspace（烤渲染后的 contentDocument，与格式无关）。
+function pdfExportMode() { return (basicEdit && !isMdPath(docPath)) ? 'raw' : 'wordspace'; }
+exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(pdfExportMode()); };
 
 renderRecents();
 

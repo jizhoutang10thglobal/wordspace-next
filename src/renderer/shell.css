@@ -203,6 +203,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 /* 文件类型图标上色（对齐 ui-demo） */
 .sb-kind-html .sb-ico { color: var(--c-text-2); }
+.sb-kind-md .sb-ico { color: var(--c-text-2); } /* md 同 html：可编辑文档，中性色 */
 .sb-kind-image .sb-ico { color: #8a3ffc; }
 .sb-kind-pdf .sb-ico { color: #d3353c; }
 .sb-kind-word .sb-ico { color: #1a73e8; }
