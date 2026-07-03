@@ -3,11 +3,10 @@
 # 主仓 skills/ 是开发真相源（防漂移测试锁着 docs/ 正本 ↔ skill 拷贝逐字节一致）；
 # org 仓只是发布端、永远被本 workflow 整体覆盖，别在那边手改。
 #
-# 前置（一次性，Colin）：
-#   1. 建 GitHub org `wordspace-ai`（免费）+ 空仓 `wordspace-ai/skills`（公开）。
-#   2. 造一个对该仓有写权限的 fine-grained PAT（contents: read/write），
-#      存进本仓 secret `SKILLS_MIRROR_TOKEN`。
-# secret 没配时本 workflow 静默跳过（不红），配好后自动生效。
+# 认证 = wordspace-ai/skills 仓上的可写 Deploy Key（2026-07-03 已配好：公钥在该仓
+# Settings→Deploy keys，私钥在本仓 secret `SKILLS_MIRROR_SSH_KEY`）。选 deploy key 不选 PAT：
+# 权限最小（只此一仓）、不挂个人账号；org 曾默认禁 deploy key，已 PATCH /orgs 打开
+# （deploy_keys_enabled_for_repositories=true）。secret 没配时本 workflow 静默跳过（不红）。
 name: Skills Mirror
 
 on:
@@ -26,13 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check mirror token
+      - name: Check mirror key
         id: gate
         env:
-          TOKEN: ${{ secrets.SKILLS_MIRROR_TOKEN }}
+          KEY: ${{ secrets.SKILLS_MIRROR_SSH_KEY }}
         run: |
-          if [ -z "$TOKEN" ]; then
-            echo "SKILLS_MIRROR_TOKEN 未配置——跳过镜像（建好 wordspace-ai/skills 并配 secret 后自动生效）"
+          if [ -z "$KEY" ]; then
+            echo "SKILLS_MIRROR_SSH_KEY 未配置——跳过镜像"
             echo "enabled=false" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
@@ -41,12 +40,16 @@ jobs:
       - name: Mirror skills/ to wordspace-ai/skills
         if: steps.gate.outputs.enabled == 'true'
         env:
-          TOKEN: ${{ secrets.SKILLS_MIRROR_TOKEN }}
+          KEY: ${{ secrets.SKILLS_MIRROR_SSH_KEY }}
         run: |
           set -euo pipefail
+          keyfile=$(mktemp)
+          printf '%s\n' "$KEY" > "$keyfile"
+          chmod 600 "$keyfile"
+          export GIT_SSH_COMMAND="ssh -i $keyfile -o StrictHostKeyChecking=accept-new"
           SRC_SHA=$(git rev-parse --short HEAD)
           workdir=$(mktemp -d)
-          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/wordspace-ai/skills.git" "$workdir"
+          git clone --depth 1 "git@github.com:wordspace-ai/skills.git" "$workdir"
           # 整体覆盖：删掉旧内容（保留 .git），拷入主仓 skills/ 的全部 skill 目录 + 说明
           find "$workdir" -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           cp -R skills/. "$workdir/"
