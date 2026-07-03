@@ -880,7 +880,7 @@ export default function ArcSidebar() {
   const util = [
     { to: '/templates', icon: LayoutTemplate, label: '模板' },
     { to: '/schema', icon: Shapes, label: 'Schema' },
-    { to: '/agents', icon: Bot, label: 'Agent' },
+    { to: '/agents', icon: Bot, label: 'AI 接入' },
     { to: '/settings', icon: Settings2, label: '设置' },
   ]
 
