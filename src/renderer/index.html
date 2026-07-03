@@ -118,9 +118,11 @@
     </div>
 
     <!-- 非合规文件降级提示条（Feature 3）：仅非合规文档时显示，shell.js 切换 hidden。位于 doc-header 与 iframe 之间。 -->
-    <div id="ws-degrade-notice" class="ws-degrade-notice" hidden>
+    <!-- 文案对齐 ui-demo nce-notice（Colin 2026-07-03：精简成一句）；长版操作说明收进悬停 title -->
+    <div id="ws-degrade-notice" class="ws-degrade-notice" hidden
+         title="基础编辑：点文字改字（选中出格式条：粗/斜/下/删 + 文字色/高亮/清除）· 悬停任意块右上角 🗑 删除 · 按 Esc 后用方向键在块间移动、Delete 删除">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-      <span>此文件不符合 Wordspace Schema，仅支持<strong>基础编辑</strong>：点文字改字（选中出格式条：粗/斜/下/删 + 文字色/高亮/清除）· 悬停任意块右上角 <strong>🗑 删除</strong> · 按 <strong>Esc</strong> 后用方向键在块间移动、Delete 删除。</span>
+      <span>该文件不符合 Wordspace Schema，仅支持基础编辑。</span>
     </div>
 
     <iframe id="doc-frame" sandbox="allow-same-origin" hidden></iframe>

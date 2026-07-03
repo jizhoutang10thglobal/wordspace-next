@@ -169,6 +169,10 @@ function runUndoRedo(isRedo) {
 // 快捷键 Cmd+S 存 / Cmd+B·I·U 富文字 / Cmd+Z 撤销 / 缩放键 —— 对称 wireEditor。
 // 撤销同样走 WS2Undo 快照（Colin 2026-07-02：基础模式也必须有撤销，推翻 v1「不挂 undoMgr」取舍）。
 function attachBasic() {
+  // 空态守卫（Colin 报的 bug）：没有任何打开的文档时绝不挂基础编辑器/亮降级条——关掉最后一个
+  // 非合规标签后，iframe 的陈旧 onload 可能晚到、拿着 docConform=false 把这里跑在空 iframe 上，
+  // 降级条就留在空白页上。防御两层：这里守空态 + shellCloseDoc 作废陈旧 onload（++loadGen）。
+  if (!docPath && !tempDoc) return;
   const doc = frame.contentDocument;
   detachEditors();
   undoMgr = new WS2Undo.UndoManager(doc);
@@ -593,6 +597,8 @@ function shellRetargetDoc(newAbs, newName) {
 }
 function shellCloseDoc() {
   window.ws2.unwatchDoc();
+  loadGen++; // 作废所有在飞/陈旧的 frame.onload（否则晚到的 load 会把编辑器/降级条重新挂回空白页）
+  frame.onload = null;
   detachEditors();
   docPath = null;
   docInfo = null;
@@ -600,6 +606,7 @@ function shellCloseDoc() {
   setDirty(false);
   frame.hidden = true;
   frame.removeAttribute('src');
+  frame.removeAttribute('srcdoc'); // 临时文档关掉后别让 srcdoc 内容留在 iframe 里（虽已 hidden，清干净）
   docHeader.hidden = true;
   if (docStatus) docStatus.hidden = true;
   closeViewer();
