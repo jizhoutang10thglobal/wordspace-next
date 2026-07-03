@@ -38,6 +38,43 @@
   margin-bottom: 10px;
 }
 
+/* 方式切换 Tab */
+.ag-tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 26px;
+  padding: 3px;
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-md);
+  width: fit-content;
+}
+.ag-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--c-text-2);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+}
+.ag-tab:hover { color: var(--c-text); }
+.ag-tab.is-active {
+  background: var(--c-surface);
+  color: var(--c-text);
+  box-shadow: var(--shadow-sm);
+}
+.ag-tab-hint {
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  font-weight: var(--fw-regular);
+}
+.ag-tab.is-active .ag-tab-hint { color: var(--c-text-2); }
+.ag-panel { margin-top: 12px; }
+
 /* card */
 .ag-card {
   background: var(--c-surface);
@@ -47,6 +84,172 @@
 }
 .ag-divider { height: 1px; background: var(--c-divider); }
 
+/* 方式卡头：图标 + 标题/说明 + 主按钮 */
+.ag-way-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+}
+.ag-way-text { flex: 1; min-width: 0; }
+.ag-way-title {
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+.ag-way-hint {
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
+
+/* 主按钮（复制 Prompt） */
+.ag-primary {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  background: var(--c-accent);
+  color: #fff;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-sm);
+}
+.ag-primary:hover { background: var(--c-accent-hover); }
+.ag-primary:active { background: var(--c-accent-press); }
+
+/* 次按钮（复制命令） */
+.ag-copy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+.ag-copy:hover { background: var(--c-hover); color: var(--c-text); }
+
+/* 步骤列表 */
+.ag-steps {
+  list-style: decimal;
+  margin: 0;
+  padding: 14px 16px 14px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--c-text-2);
+}
+.ag-steps code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-xs);
+  padding: 0 4px;
+}
+
+/* 安装命令行 */
+.ag-cmd-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px 2px;
+}
+.ag-cmd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 10px 12px;
+  background: #1c1e24;
+  color: #d7dae2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-radius: var(--r-sm);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Prompt 预览折叠 */
+.ag-preview-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 11px 16px;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--c-text-2);
+  background: transparent;
+  text-align: left;
+}
+.ag-preview-toggle:hover { background: var(--c-hover); color: var(--c-text); }
+.ag-preview-toggle svg { transition: transform var(--dur-fast, 120ms) ease; }
+.ag-preview-toggle svg.is-open { transform: rotate(180deg); }
+.ag-preview-meta {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  font-weight: var(--fw-regular);
+}
+.ag-preview {
+  margin: 0 16px 16px;
+  padding: 14px;
+  max-height: 380px;
+  overflow: auto;
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--c-text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 底部「校验器兜底」说明 */
+.ag-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 13px 15px;
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-divider);
+  border-radius: var(--r-md);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--c-text-2);
+}
+.ag-note-ico { flex: none; margin-top: 2px; color: var(--c-success); }
+.ag-note a { color: var(--c-accent); text-decoration: none; }
+.ag-note a:hover { text-decoration: underline; }
+
+/* ==== 以下为 Agent API 占位区（Wendi 原稿）的样式，随占位区保留 ==== */
+
+/* 占位组标 */
+.ag-planned-label {
+  margin-top: 34px;
+  padding-top: 22px;
+  border-top: 1px dashed var(--c-border);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+}
 .ag-row {
   display: flex;
   align-items: center;
