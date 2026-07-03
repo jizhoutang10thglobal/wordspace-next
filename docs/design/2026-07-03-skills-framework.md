@@ -63,8 +63,10 @@ skills/wordspace/                      ← 用户只装这一个：npx skills ad
   新 schema 加进来 = 在该测试里逐对加行。同步方式永远是 `cp` 覆盖，不做内容变体。
 - **发布仓**：`wordspace-ai/skills`（公开）。由 `.github/workflows/skills-mirror.yml` 自动镜像——
   main 上 `skills/**` 变更即整体覆盖推送（org 仓永远只是发布端、不手改）。
-  前置一次性动作（Colin）：建 org `wordspace-ai` + 空仓 `skills` + 配 secret `SKILLS_MIRROR_TOKEN`
-  （fine-grained PAT，contents r/w）。secret 未配时 workflow 静默跳过、不红。
+  认证 = skills 仓上的可写 Deploy Key（2026-07-03 已全部配好：org/仓已建、公钥已装、私钥在主仓
+  secret `SKILLS_MIRROR_SSH_KEY`）。选 deploy key 不选 fine-grained PAT：权限最小（只此一仓）、
+  不挂个人账号；org 默认禁 deploy key（`deploy_keys_enabled_for_repositories=false`），
+  已用 owner 账号 `PATCH /orgs/wordspace-ai` 打开。
 - **版本**：SKILL.md frontmatter `version`（semver）。内容更新流程 =
   改 docs/ 正本 → `cp` 同步拷贝 → bump version → 测试锁全绿 → 合 main → Action 自动发布 →
   用户 `npx skills update`（或重跑 add）。
