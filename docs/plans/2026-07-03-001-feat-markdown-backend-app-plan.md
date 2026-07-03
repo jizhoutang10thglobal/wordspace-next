@@ -1,7 +1,7 @@
 ---
 title: "Markdown 后端进真 app：.md 打开/编辑/保存走同一个块编辑器"
 type: feat
-status: active
+status: completed
 date: 2026-07-03
 origin: docs/design/2026-07-02-markdown-backend.md
 branch: feat/md-backend（worktree wordspace-next-align，base = main f86f6fe，含 ux-align）
