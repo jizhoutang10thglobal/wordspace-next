@@ -35,10 +35,14 @@ const REG_HTML = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 
 let app, page, tmp, wsDir;
 
+const WILD_HTML = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>野html</title></head><body>'
+  + '<h1 style="color:#c00">野 html 标题</h1><p>正文。</p></body></html>'; // 块级 style → 非合规
+
 async function seedWorkspace(dir) {
   await fs.writeFile(path.join(dir, '笔记.md'), CONFORM_MD, 'utf8');
   await fs.writeFile(path.join(dir, '野生.md'), WILD_MD, 'utf8');
   await fs.writeFile(path.join(dir, '对照.html'), REG_HTML, 'utf8');
+  await fs.writeFile(path.join(dir, '野生.html'), WILD_HTML, 'utf8');
 }
 
 async function launch(env) {
@@ -162,6 +166,42 @@ test('另存为（WS2_SAVE_AS_OUT seam）→ 落盘 .md 保持格式', async () 
   expect(out.startsWith('# 会议纪要'), '另存为的副本应是 md 字节：\n' + out.slice(0, 120)).toBe(true);
   expect(out.toLowerCase()).not.toContain('<!doctype');
   await expect(page.locator('#doc-name')).toHaveText('副本.md'); // 标准另存为语义：切到副本
+});
+
+test('导出为 Markdown：合规 html → .md 副本；当前文档不切换、原 html 文件不动', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
+  await app.close().catch(() => {});
+  const outPath = path.join(tmp, 'outside', '导出副本.md');
+  await fs.mkdir(path.join(tmp, 'outside'), { recursive: true });
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata2'), WS2_FOLDER_IN: wsDir, WS2_SAVE_AS_OUT: outPath }));
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="对照.html"]');
+  await expect(frame().locator('h1')).toHaveText('对照文档');
+  await page.click('#doc-menu-btn');
+  await expect(page.locator('#export-md-btn')).toBeEnabled(); // 合规 html → 可导出
+  await page.click('#export-md-btn');
+  await expect.poll(async () => { try { await fs.access(outPath); return true; } catch { return false; } }).toBe(true);
+  const out = await fs.readFile(outPath, 'utf8');
+  expect(out.startsWith('# 对照文档'), '导出副本应是 md 字节：\n' + out.slice(0, 120)).toBe(true);
+  expect(out).toContain('html 的正文。');
+  expect(out.toLowerCase()).not.toContain('<!doctype');
+  // 导出语义：不切换（还在编辑原 html），原文件磁盘不动
+  await expect(page.locator('#doc-name')).toHaveText('对照.html');
+  const orig = await fs.readFile(path.join(wsDir, '对照.html'), 'utf8');
+  expect(orig.toLowerCase().startsWith('<!doctype html>')).toBe(true);
+});
+
+test('导出为 Markdown 的门：md 文档禁用（已是 md）/ 非合规 html 禁用（转 md 会坏结构）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="笔记.md"]');
+  await expect(frame().locator('h1')).toHaveText('会议纪要');
+  await page.click('#doc-menu-btn');
+  await expect(page.locator('#export-md-btn')).toBeDisabled(); // 本身是 md → 无意义
+  await page.keyboard.press('Escape');
+  await page.click('.sb-file[data-rel="野生.html"]');
+  await expect(page.locator('#ws-degrade-notice')).toBeVisible();
+  await page.click('#doc-menu-btn');
+  await expect(page.locator('#export-md-btn')).toBeDisabled(); // 非合规 → 不给导出
 });
 
 test('回归哨兵：.html 文档保存后磁盘仍是 html（md 分流没串到 html 链路）', async () => {

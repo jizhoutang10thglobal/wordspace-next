@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsGetRoot: () => ipcRenderer.invoke('ws-get-root'),
   wsReadTree: () => ipcRenderer.invoke('ws-read-tree'),
   wsNewDoc: (dirRel, base, html) => ipcRenderer.invoke('ws-new-doc', dirRel, base, html),
-  wsSaveDocAs: (base, html, ext) => ipcRenderer.invoke('ws-save-doc-as', base, html, ext), // ext 'md' 时另存为保持 .md（KD-6）
+  wsSaveDocAs: (base, html, ext, opts) => ipcRenderer.invoke('ws-save-doc-as', base, html, ext, opts), // ext 'md'=写盘前转 md；opts.reveal=导出语义 Finder 高亮
   wsMakeDir: (dirRel, name) => ipcRenderer.invoke('ws-make-dir', dirRel, name),
   wsRename: (relPath, newLeaf) => ipcRenderer.invoke('ws-rename', relPath, newLeaf),
   wsMove: (relPath, destDirRel) => ipcRenderer.invoke('ws-move', relPath, destDirRel),
