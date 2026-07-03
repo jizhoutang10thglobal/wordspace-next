@@ -16,6 +16,9 @@ import SchemaPage from './components/SchemaPage'
 import PublishDialog from './components/PublishDialog'
 import CreateModal from './components/CreateModal'
 import CreateSpaceModal from './components/CreateSpaceModal'
+import AddFolderModal from './components/AddFolderModal'
+import SaveWorkspaceModal from './components/SaveWorkspaceModal'
+import ShortcutsPanel from './components/ShortcutsPanel'
 import FindPalette from './components/FindPalette'
 import SaveModal from './components/SaveModal'
 import CloseConfirmModal from './components/CloseConfirmModal'
@@ -78,6 +81,9 @@ export default function App() {
       <PublishDialog />
       <CreateModal />
       <CreateSpaceModal />
+      <AddFolderModal />
+      <SaveWorkspaceModal />
+      <ShortcutsPanel />
       <FindPalette />
       <SaveModal />
       <CloseConfirmModal />

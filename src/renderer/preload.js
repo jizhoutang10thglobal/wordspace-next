@@ -39,5 +39,6 @@ contextBridge.exposeInMainWorld('ws2', {
   wsFileUrl: (relPath) => ipcRenderer.invoke('ws-file-url', relPath),
   wsGetTabs: () => ipcRenderer.invoke('ws-get-tabs'),
   wsSetTabs: (state, root) => ipcRenderer.invoke('ws-set-tabs', state, root),
-  wsTemplates: () => ipcRenderer.invoke('ws-templates')
+  wsTemplates: () => ipcRenderer.invoke('ws-templates'),
+  aiGuide: () => ipcRenderer.invoke('ai-guide')
 });

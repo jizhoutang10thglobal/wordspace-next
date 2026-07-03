@@ -133,9 +133,25 @@ export interface Workspace {
 export type StorageKind = 'cloud' | 'local' | 'gdrive'
 
 /**
+ * 工作区里挂载的一个根文件夹（Feature: 多文件夹空间）。
+ * 一个连接空间可以同时打开多个根文件夹——每个根在侧栏是一棵独立的树。
+ * 文件身份从 (spaceId, path) 升级为 (spaceId, rootId, path)：两个根里同名的
+ * 相对路径不再互撞（VS Code multi-root 同款教训）。
+ */
+export interface MountRoot {
+  id: string
+  name: string // 侧栏显示名，默认取路径末段（重名根可改名消歧）
+  path: string // 完整挂载路径（demo 无真实文件系统，是假路径）
+}
+
+/**
  * An Arc-style Space: a switchable context shown in the left sidebar.
  * A space is a work scenario (a company, a person, a project). `storage` is the
  * separate dimension of where that space's files actually live.
+ *
+ * 连接空间（storage 非 cloud）从第一天就是「恰好 N 个根的工作区」——单文件夹
+ * 只是 roots.length === 1 的特例，不存在「单文件夹模式 / 工作区模式」两套心智
+ * （VS Code 双模式是历史包袱，我们不背）。
  */
 export interface Space {
   id: string
@@ -145,7 +161,10 @@ export interface Space {
   badge: string // short label shown in the switcher
   color: string
   subtitle: string
-  mountPath?: string // for connected folders: the root path shown in the library
+  roots?: MountRoot[] // connected spaces: the open folders (cloud spaces: undefined)
+  // 多根集合是否已被用户命名保存为「工作区」。false + roots>1 = 未保存的临时组合
+  // （VS Code untitled workspace 语义：先用后存，不打断）。
+  workspaceSaved?: boolean
 }
 
 /** The two real categories of space. Local and Google Drive are both connected
@@ -182,6 +201,7 @@ export interface Tab {
   favicon?: string
   fileName?: string // for kind 'file'
   fileKind?: FileKind // for kind 'file'
+  rootId?: string // for file tabs: which mount root the file lives in（多根后 url 是根内相对路径,必须配 rootId 才唯一）
   pinned?: boolean // pinned tabs live in 置顶; the rest are transient 标签页
 }
 
@@ -191,7 +211,8 @@ export type FileKind = 'html' | 'md' | 'word' | 'pdf' | 'image' | 'sheet' | 'sli
 
 export interface FileEntry {
   spaceId: string
-  path: string // path under the mounted root, e.g. '品牌/官网首页.html'
+  rootId: string // which mount root of the space this file lives under
+  path: string // path under that root, e.g. '品牌/官网首页.html'
   kind: FileKind
   docId?: string // set when kind === 'html' and it maps to an editable doc
 }

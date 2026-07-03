@@ -1,0 +1,57 @@
+/* 快捷键速查面板（Cmd+/） */
+.skp { width: 620px; max-width: calc(100vw - 48px); }
+.skp .ws-modal-title { display: flex; align-items: center; gap: 7px; }
+.skp-title-ico { color: var(--c-text-3); }
+.skp-platform {
+  padding: 0 7px;
+  border: 1px solid var(--c-border, #e3e2de);
+  border-radius: 99px;
+  font-size: 10.5px; font-weight: 500; line-height: 17px;
+  color: var(--c-text-3, #9b9a97);
+}
+
+.skp-body {
+  max-height: min(520px, 62vh);
+  overflow-y: auto;
+  padding: 4px 20px 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 28px;
+}
+.skp-group { min-width: 0; }
+.skp-group-title {
+  margin: 12px 0 2px;
+  font-size: 12px;
+  font-weight: var(--fw-semibold, 600);
+  color: var(--c-text-2, #555);
+}
+.skp-group-hint { font-size: 11px; color: var(--c-text-3, #9b9a97); margin-bottom: 2px; }
+.skp-items { display: flex; flex-direction: column; }
+.skp-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 3px 0;
+  font-size: 12.5px; color: var(--c-text, #333);
+}
+.skp-label { flex: 1; min-width: 0; }
+.skp-keys { flex: none; display: inline-flex; gap: 3px; }
+.skp-keys kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 5px;
+  text-align: center;
+  font: 11px/1.7 ui-monospace, 'SF Mono', Menlo, monospace;
+  background: var(--c-bg-sunken, #f7f8fa);
+  border: 1px solid var(--c-border, #e3e2de);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--c-text-2, #555);
+  white-space: nowrap;
+}
+
+.skp-foot { display: flex; align-items: center; gap: 12px; }
+.skp-doc-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-right: auto;
+  font-size: 12px; color: var(--c-accent, #1a73e8); text-decoration: none;
+}
+.skp-doc-link:hover { text-decoration: underline; }

@@ -1028,3 +1028,24 @@ test('T6: 块菜单每项带图标 + 色板前有第二道分隔线', async () =
   const dangerSvgColor = await frame.locator('.ws-blockmenu-danger svg').evaluate((el) => getComputedStyle(el).color);
   expect(dangerSvgColor).toBe('rgb(217, 48, 37)');
 });
+
+// 「AI 接入」入口（菜单 AI 接入…）：弹窗两卡 + 复制按钮写真剪贴板（Prompt=打包指南逐字节；命令=skills 安装命令）。
+test('AI 接入弹窗：菜单打开 + 复制 Prompt/命令 真进剪贴板', async () => {
+  await launch();
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'ai-access'));
+  await expect(page.locator('.aiax-modal')).toBeVisible();
+  await expect(page.locator('.aiax-modal .sb-modal-title')).toHaveText('AI 接入');
+  // 复制命令 → 剪贴板 = 安装命令
+  await page.click('.aiax-copy-cmd');
+  await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('npx skills add wordspace-ai/skills');
+  // 复制 Prompt → 剪贴板 = 打包的指南全文（与 docs/ 正本逐字节一致，防漂移测试锁的那份）
+  await page.click('.aiax-copy-prompt');
+  const guide = require('fs').readFileSync(path.join(ROOT, 'docs', 'schema-1-ai-authoring.md'), 'utf8');
+  await expect.poll(async () => {
+    const t = await app.evaluate(({ clipboard }) => clipboard.readText());
+    return t === guide;
+  }, { message: '剪贴板里的 Prompt 与 docs/ 正本不一致' }).toBe(true);
+  // X 关闭
+  await page.click('.aiax-modal .sb-modal-x');
+  await expect(page.locator('.aiax-modal')).toHaveCount(0);
+});
