@@ -265,6 +265,8 @@ function registerIpc() {
   ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
   // 新建文档模板（含空文档，第一项）。
   ipcMain.handle('ws-templates', () => TEMPLATES);
+  // 「AI 接入」弹窗的 Prompt 正文（打包进 app 的指南拷贝；防漂移测试锁它与 docs/ 正本逐字节一致）
+  ipcMain.handle('ai-guide', () => fsp.readFile(path.join(__dirname, '..', 'renderer', 'ai-guide.md'), 'utf8'));
   // 非 .html 文件 → 系统默认程序打开（编辑器只认 html）。
   ipcMain.handle('ws-open-external', async (_e, relPath) => {
     const abs = assertInsideWorkspace(requireRoot(), relPath);

@@ -16,6 +16,7 @@ const canonical = path.join(ROOT, 'docs', 'schema-1-ai-authoring.md');
 const copies = [
   path.join(ROOT, 'skills', 'wordspace', 'references', 'schema-1.md'),
   path.join(ROOT, 'ui-demo', 'src', 'lib', 'schema-prompt.md'),
+  path.join(ROOT, 'src', 'renderer', 'ai-guide.md'), // 真 app「AI 接入」弹窗复制按钮吐的那份（打包进 app）
 ];
 
 test('AI 创作指南的分发拷贝与 docs/ 正本逐字节一致（防漂移）', () => {
