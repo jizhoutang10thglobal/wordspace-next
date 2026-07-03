@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wordspace 快捷键体系 · 调研与设计 v1</title>
+<title>Wordspace 快捷键体系 · 调研与设计 v2</title>
 <style>
   :root {
     --ink: #1f1f1f; --ink-2: #555; --ink-3: #8a8a8a;
@@ -80,10 +80,10 @@
 <body>
 <div class="page">
 
-<h1>Wordspace 快捷键体系 · 调研与设计 <span style="color:var(--ink-3)">v1</span></h1>
+<h1>Wordspace 快捷键体系 · 调研与设计 <span style="color:var(--ink-3)">v2</span></h1>
 <div class="sub">
   文本编辑器常见快捷键调研(Notion / Word / Google Docs / Obsidian / Typora / Bear / Craft / VS Code / macOS 惯例) + 结合 Wordspace 现状的完整键位设计。
-  <div class="meta">2026-07-03 · 调研与起草:AI · 待 Colin review 拍板 → 按 §6 清单在 ui-demo 实现 → Wendi 照本表逐条验收</div>
+  <div class="meta">2026-07-03 · 调研与起草:AI · <b>§2 已拍板(Colin) · §6 已在 ui-demo 实现</b> → Wendi 照本表逐条验收</div>
 </div>
 
 <div class="toc">
@@ -96,10 +96,17 @@
   §6 <a href="#s6">ui-demo 本轮落地清单(= Wendi 验收清单)</a>
 </div>
 
+<div class="callout" style="border-left-color:var(--ok);background:var(--ok-bg)">
+  <b>v2 · 已拍板并实现(2026-07-03)</b>:§2 五项裁决 Colin 已全部按建议拍板;§3 表中标
+  <span class="tag t-have">✓ 已实现</span> 的键位已在 ui-demo 落地。<b>验证入口</b>:demo 左下角
+  ⌨ 图标或 <kbd>Cmd+/</kbd> 打开速查面板;本页即 Wendi 的逐条验收清单(§6)。
+  §5 的三处真 app 改键(Cmd+E→Cmd+Shift+E、Cmd+F 迁移、补标签导航键)待 ui-demo 验收通过后随移植一起做。
+</div>
+
 <div class="legend">
   状态标记:
   <span class="tag t-have">✓ ui-demo 已有</span>
-  <span class="tag t-do">本轮实现</span>
+  <span class="tag t-have">✓ 已实现</span>
   <span class="tag t-later">后续</span>
   <span class="tag t-no">不做</span>
   <span class="tag t-app">真 app 已有</span>
@@ -172,32 +179,32 @@
 <table>
   <tr><th style="width:150px">快捷键</th><th>动作</th><th>UseCase / 行为细节</th><th style="width:104px">业界对照</th><th style="width:88px">状态</th></tr>
   <tr><td class="keys"><kbd>Cmd+T</kbd></td><td>新建标签页(新文档)</td><td>开临时文档,手动保存才落盘。Wordspace 没有独立 Cmd+N——「新建」统一走标签页心智</td><td>浏览器 / N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+W</kbd></td><td>关闭当前标签页</td><td>未保存时先弹关闭确认;最后一个标签关掉后回空态页。<span class="note">浏览器抢占此键,网页版 demo 里无效,Electron 正常</span></td><td>浏览器 / 系</td><td><span class="tag t-do">本轮实现</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+W</kbd></td><td>关闭当前标签页</td><td>未保存时先弹关闭确认;最后一个标签关掉后回空态页。<span class="note">浏览器抢占此键,网页版 demo 里无效,Electron 正常</span></td><td>浏览器 / 系</td><td><span class="tag t-have">✓ 已实现</span><span class="tag t-app">真app</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+Shift+T</kbd></td><td>重新打开刚关闭的标签页</td><td>误关找回,按浏览器心智做一个关闭历史栈。<span class="note">浏览器抢占,demo 里无效</span></td><td>浏览器</td><td><span class="tag t-later">后续</span></td></tr>
-  <tr><td class="keys"><kbd>Ctrl+Tab</kbd> / <kbd>Ctrl+Shift+Tab</kbd></td><td>下一个 / 上一个标签页</td><td>按标签条顺序循环(不做 MRU)。浏览器不保留此键,demo 里能用</td><td>浏览器 / VS Code</td><td><span class="tag t-do">本轮实现</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+1…8</kbd>,<kbd>Cmd+9</kbd></td><td>直达第 N 个标签页;9=最后一个</td><td>置顶区+普通区合并计数。见裁决 1。<span class="note">浏览器菜单可能抢占,demo 里尽力拦截,Electron 正常</span></td><td>浏览器</td><td><span class="tag t-do">本轮实现</span></td></tr>
+  <tr><td class="keys"><kbd>Ctrl+Tab</kbd> / <kbd>Ctrl+Shift+Tab</kbd></td><td>下一个 / 上一个标签页</td><td>按标签条顺序循环(不做 MRU)。浏览器不保留此键,demo 里能用</td><td>浏览器 / VS Code</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+1…8</kbd>,<kbd>Cmd+9</kbd></td><td>直达第 N 个标签页;9=最后一个</td><td>置顶区+普通区合并计数。见裁决 1。<span class="note">浏览器菜单可能抢占,demo 里尽力拦截,Electron 正常</span></td><td>浏览器</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+S</kbd></td><td>保存</td><td>真文件就地保存(有自动保存,此键=安心键+落临时文档);临时文档弹「保存到哪里」</td><td>系</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+Shift+S</kbd></td><td>另存为…</td><td>原 Notion 系删除线让位(裁决 4),回归 HIG 语义;真 app ⋯ 菜单里的「另存为」补上快捷键</td><td>系</td><td><span class="tag t-do">本轮实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+S</kbd></td><td>另存为…</td><td>原 Notion 系删除线让位(裁决 4),回归 HIG 语义;真 app ⋯ 菜单里的「另存为」补上快捷键</td><td>系</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+O</kbd></td><td>打开文件…</td><td>系统文件选择框,可打开工作区外文件(外部标签页 ↗)。Wordspace 是文件/工作区型 app,Cmd+O 保持系统语义不叛变(Obsidian/Bear 那种库型才拿它做 quick open)</td><td>系 / Typora</td><td><span class="tag t-later">后续(demo 无真FS)</span><span class="tag t-app">真app</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+P</kbd></td><td>快速打开(文件搜索面板)</td><td>模糊搜文件名跳转,↑↓ 选、Enter 开、Esc 关。抢掉打印无妨:打印场景=导出 PDF(Cmd+Shift+E)</td><td>VS Code / N(Cmd+P)</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+Shift+F</kbd></td><td>文件筛选 / 全局搜索</td><td>聚焦侧栏筛选框(现状);将来升级成跨文件内容搜索也是这个键(裁决 3)</td><td>VS Code / Obsidian / Bear</td><td><span class="tag t-do">本轮实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+F</kbd></td><td>文件筛选 / 全局搜索</td><td>聚焦侧栏筛选框(现状);将来升级成跨文件内容搜索也是这个键(裁决 3)</td><td>VS Code / Obsidian / Bear</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+F</kbd></td><td>文档内查找(预留)</td><td>当前文档内文本查找+高亮跳转。功能尚不存在,<b>此键名分先冻结</b>(裁决 3),真 app 现绑的「文件筛选」迁走</td><td>W / G / N</td><td><span class="tag t-later">后续</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+Shift+E</kbd></td><td>导出 PDF…</td><td>从 Cmd+E 迁来(裁决 2)。合规文档=所见即所得样式,非合规=raw 直印</td><td>—</td><td><span class="tag t-later">后续(真app改键)</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+\</kbd></td><td>收起 / 展开侧栏</td><td>真收起(宽度 0),再按或点悬浮钮展开</td><td>N / Craft</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+=</kbd> / <kbd>Cmd+-</kbd> / <kbd>Cmd+0</kbd></td><td>放大 / 缩小 / 重置 100%</td><td>文档画布缩放。<span class="note">demo 里浏览器自身缩放已可用,不重复实现</span></td><td>系 / VS Code / N</td><td><span class="tag t-no">demo不做</span><span class="tag t-app">真app</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+/</kbd></td><td>快捷键速查面板</td><td>随时打开本表的精简浮层版——快捷键的「可发现性」入口(Docs/Slack 同款)。文档编辑器没有「注释代码」冲突,此键干净</td><td>G / Slack</td><td><span class="tag t-do">本轮实现</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+,</kbd></td><td>设置</td><td>打开设置页</td><td>系(全员)</td><td><span class="tag t-do">本轮实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+/</kbd></td><td>快捷键速查面板</td><td>随时打开本表的精简浮层版——快捷键的「可发现性」入口(Docs/Slack 同款)。文档编辑器没有「注释代码」冲突,此键干净</td><td>G / Slack</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+,</kbd></td><td>设置</td><td>打开设置页</td><td>系(全员)</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
 </table>
 
 <h3>3.2 编辑器 · 文本态(光标在块内)</h3>
 <table>
   <tr><th style="width:150px">快捷键</th><th>动作</th><th>UseCase / 行为细节</th><th style="width:104px">业界对照</th><th style="width:88px">状态</th></tr>
   <tr><td class="keys"><kbd>Cmd+B</kbd> / <kbd>Cmd+I</kbd> / <kbd>Cmd+U</kbd></td><td>加粗 / 斜体 / 下划线</td><td>作用于选中文字;块选中态则作用于整块。无选区时放行(不吞键)</td><td>全员</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+Shift+X</kbd></td><td>删除线</td><td>从 Cmd+Shift+S 迁来(裁决 4)</td><td>W / G</td><td><span class="tag t-do">本轮实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+X</kbd></td><td>删除线</td><td>从 Cmd+Shift+S 迁来(裁决 4)</td><td>W / G</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+E</kbd></td><td>行内代码</td><td>选中文字包 <code>&lt;code&gt;</code>(裁决 2)</td><td>N</td><td><span class="tag t-have">✓ 已有</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+K</kbd></td><td>插入 / 编辑链接</td><td>对选中文字加链接(裁决 5)。粘贴 URL 到选区=直接成链(Notion 行为,后续)</td><td>全员</td><td><span class="tag t-have">✓ 已有</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+Shift+H</kbd></td><td>重复上一次颜色/高亮</td><td>Notion 的「颜色格式刷」:把上次用过的文字色或高亮再刷到当前选区</td><td>N</td><td><span class="tag t-later">后续</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+Shift+V</kbd></td><td>粘贴为纯文本</td><td>去掉来源格式粘贴。W/G/N 三家一致,肌肉记忆极深</td><td>全员</td><td><span class="tag t-do">本轮实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+V</kbd></td><td>粘贴为纯文本</td><td>去掉来源格式粘贴。W/G/N 三家一致,肌肉记忆极深</td><td>全员</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+Z</kbd> / <kbd>Cmd+Shift+Z</kbd></td><td>撤销 / 重做</td><td>走编辑器统一撤销栈(不是浏览器原生)。<b>本轮要修</b>:现在焦点在侧栏输入框时也被编辑器劫持(见 §6 边界修复)</td><td>系(Cmd+Y 不学)</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
   <tr><td class="keys"><kbd>Enter</kbd> / <kbd>Shift+Enter</kbd></td><td>新块 / 块内软换行</td><td>块尾 Enter=其后新建正文块(标题/引用后接正文,Notion 式);列表内 Enter=新列表项,空项再 Enter=退出列表;Shift+Enter=块内换行</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
   <tr><td class="keys"><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>列表缩进 / 反缩进</td><td>光标所在列表项降/升一级(嵌套列表);非列表块吞掉 Tab 防焦点跑丢</td><td>N / W / G</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
@@ -215,10 +222,10 @@
   <tr><td class="keys"><kbd>↑</kbd> / <kbd>↓</kbd></td><td>选中上/下一个块</td><td>块选中态下移动选择</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
   <tr><td class="keys"><kbd>Enter</kbd></td><td>进入块编辑(文本态)</td><td>§1 阶梯的反向;不可编辑块(分割线/图片)则在其后新建正文块</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
   <tr><td class="keys"><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>删除选中块</td><td>最后一块删除时留一个空正文块(文档不留死态)</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+D</kbd></td><td>复制(duplicate)当前块</td><td>文本态或块选中态均可,复制体插在原块下方。块菜单里已有此功能,补键位</td><td>N</td><td><span class="tag t-do">本轮实现</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+Shift+↑</kbd> / <kbd>Cmd+Shift+↓</kbd></td><td>上移 / 下移当前块</td><td>键盘版拖块。文本态或块选中态均可;现在排序只能鼠标拖 ⋮⋮,补键盘路径</td><td>N</td><td><span class="tag t-do">本轮实现</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+Option+0…6</kbd></td><td>转块:0 正文 · 1/2/3 标题 · 4 待办 · 5 无序 · 6 有序</td><td>把当前块(光标所在或选中)转成目标类型,与浮条「转为」菜单同源(裁决 1)。7 toggle/8 代码块等我们还没有的块类型,键位预留</td><td>N</td><td><span class="tag t-do">本轮实现</span></td></tr>
-  <tr><td class="keys"><kbd>Cmd+Enter</kbd></td><td>切换待办勾选</td><td>光标在待办项里(或选中待办块)直接打勾/取消,不用摸鼠标——高频操作</td><td>N</td><td><span class="tag t-do">本轮实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+D</kbd></td><td>复制(duplicate)当前块</td><td>文本态或块选中态均可,复制体插在原块下方。块菜单里已有此功能,补键位</td><td>N</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+↑</kbd> / <kbd>Cmd+Shift+↓</kbd></td><td>上移 / 下移当前块</td><td>键盘版拖块。文本态或块选中态均可;现在排序只能鼠标拖 ⋮⋮,补键盘路径</td><td>N</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Option+0…6</kbd></td><td>转块:0 正文 · 1/2/3 标题 · 4 待办 · 5 无序 · 6 有序</td><td>把当前块(光标所在或选中)转成目标类型,与浮条「转为」菜单同源(裁决 1)。7 toggle/8 代码块等我们还没有的块类型,键位预留</td><td>N</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Enter</kbd></td><td>切换待办勾选</td><td>光标在待办项里(或选中待办块)直接打勾/取消,不用摸鼠标——高频操作</td><td>N</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
   <tr><td class="keys"><kbd>Cmd+A</kbd>(阶梯)</td><td>选块内文字 → 选整块 → 全选</td><td>第一下选当前块内全部文字,再按选中块本身,再按全选文档(Notion 渐进式)。<span class="note">依赖多块选择,一起后续</span></td><td>N</td><td><span class="tag t-later">后续</span></td></tr>
   <tr><td class="keys"><kbd>Shift+↑</kbd> / <kbd>Shift+↓</kbd>,<kbd>Cmd+Shift+点击</kbd></td><td>多块选择</td><td>扩选相邻块 / 点选多块,之后可整体删除/移动/转块。<span class="note">ui-demo 目前是单块选择模型,多选是独立一档工作量</span></td><td>N</td><td><span class="tag t-later">后续</span></td></tr>
   <tr><td class="keys"><kbd>Esc</kbd></td><td>取消块选中</td><td>§1 阶梯最后一级</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
@@ -264,7 +271,7 @@
 <h2 id="s6"><span class="no">§6</span>ui-demo 本轮落地清单(= Wendi 验收清单)</h2>
 <p>Colin 对 §2 裁决点无异议后,以下逐条在 ui-demo 实现;Wendi 验收时照此清单逐条打勾。</p>
 
-<h3>新增键位(§3 表中标「本轮实现」的)</h3>
+<h3>新增键位(全部已实现 ✅)</h3>
 <ol>
   <li><b>标签页</b>:<kbd>Ctrl+Tab</kbd>/<kbd>Ctrl+Shift+Tab</kbd> 循环、<kbd>Cmd+1…9</kbd> 直达、<kbd>Cmd+W</kbd> 关标签(浏览器抢占则 Electron 生效)</li>
   <li><b>格式</b>:删除线迁 <kbd>Cmd+Shift+X</kbd>、<kbd>Cmd+Shift+V</kbd> 纯文本粘贴</li>
@@ -272,7 +279,7 @@
   <li><b>应用壳</b>:<kbd>Cmd+Shift+S</kbd> 另存为、<kbd>Cmd+Shift+F</kbd> 聚焦文件筛选、<kbd>Cmd+,</kbd> 设置、<kbd>Cmd+/</kbd> 快捷键速查面板(本表的浮层精简版)</li>
 </ol>
 
-<h3>边界修复(调研时发现的既有问题,一并修掉)</h3>
+<h3>边界修复(调研时发现的既有问题,已一并修掉 ✅)</h3>
 <ol>
   <li><b>Cmd+Z 劫持</b>:焦点在侧栏输入框(筛选/改名/地址栏)时,编辑器不得抢撤销——按 §1 原则加焦点作用域守卫</li>
   <li><b>SaveModal 的 Enter</b>:焦点在「取消」按钮上按 Enter 不应触发保存——Enter 只在默认焦点链上确认</li>

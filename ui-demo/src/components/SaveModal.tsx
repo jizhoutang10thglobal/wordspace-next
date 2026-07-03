@@ -48,7 +48,12 @@ export default function SaveModal() {
     if (!docId) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeSave()
-      if (e.key === 'Enter') doSave()
+      // Enter 确认——但焦点在按钮上（比如 Tab 到了「取消」）时交还原生按钮激活，
+      // 不无脑保存（shortcuts.html §6 边界修复 2）。
+      if (e.key === 'Enter') {
+        if ((document.activeElement as HTMLElement | null)?.tagName === 'BUTTON') return
+        doSave()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

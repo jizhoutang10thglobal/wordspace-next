@@ -7,6 +7,7 @@ import {
 } from 'react'
 import { GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
+import { useUI, anyOverlayOpen } from '../mock/ui'
 import {
   VISIBILITY_META,
   isCloudStorage,
@@ -630,9 +631,16 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (slash) return // 斜杠菜单开时让斜杠监听处理按键
+      // ── 作用域守卫（shortcuts.html §1 派发原则）──
+      // ① 焦点在侧栏输入框（筛选/改名/地址栏）时，编辑器一个键都不抢——
+      //    修「Cmd+Z 劫持侧栏输入框原生撤销」的老毛病。
+      const ae = document.activeElement
+      if (ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement) return
+      // ② 弹层最优先：任何 modal/面板开着时编辑器快捷键不穿透。
+      if (anyOverlayOpen(useUI.getState())) return
       // 撤销 / 重做（Cmd/Ctrl+Z, Cmd/Ctrl+Shift+Z）。先 blur 提交并清焦点——否则被聚焦块的
       // contenteditable 不会从 store 重渲染；再 deselect 让恢复的内容贴回 DOM。
-      if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault()
         ;(document.activeElement as HTMLElement | null)?.blur?.()
         if (e.shiftKey) redo()
@@ -640,15 +648,102 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         deselect()
         return
       }
+      // 当前块 = 光标所在块或灰选中块（两个态的键位统一从这里解析,Notion 双态模型）
+      const curId = editingId ?? selectedId
+      // 把「编辑中的活内容」先写回 store,让复制/移动拿到最新文字（不打 checkpoint）
+      const commitLive = () => {
+        if (!doc || !editingId) return
+        const el = blockEls.current.get(editingId)
+        if (el) updateBlockHtml(doc.id, editingId, el.innerHTML)
+      }
+      // ⌘⌥0–6 转块：0 正文 · 1/2/3 标题 · 4 待办 · 5 无序 · 6 有序（裁决 1：跟 Notion,
+      // Cmd+数字留给标签直达）。用 e.code——mac 上 Option+数字会产出特殊字符,e.key 不可靠。
+      if (e.metaKey && e.altKey && /^Digit[0-6]$/.test(e.code) && doc && curId) {
+        e.preventDefault()
+        const d = Number(e.code.slice(5))
+        const targets: [BlockType, (1 | 2 | 3)?, ListStyle?][] = [
+          ['text'],
+          ['heading', 1],
+          ['heading', 2],
+          ['heading', 3],
+          ['list', undefined, 'todo'],
+          ['list', undefined, 'bulleted'],
+          ['list', undefined, 'numbered'],
+        ]
+        const [t, lv, ls] = targets[d]
+        commitLive()
+        turnInto(t, lv, ls, curId)
+        return
+      }
+      // ⌘D 复制当前块（复制体插在下方并选中,同 Notion）
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'd' || e.key === 'D') && doc && curId) {
+        e.preventDefault()
+        commitLive()
+        checkpoint()
+        const newId = duplicateBlock(doc.id, curId)
+        selectBlock(newId)
+        return
+      }
+      // ⌘⇧↑/↓ 上移/下移当前块（键盘版拖块）
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && doc && curId) {
+        e.preventDefault()
+        const idx = doc.blocks.findIndex((b) => b.id === curId)
+        const to = e.key === 'ArrowUp' ? idx - 1 : idx + 1
+        if (idx < 0 || to < 0 || to >= doc.blocks.length) return
+        commitLive()
+        checkpoint()
+        reorderBlocks(doc.id, idx, to)
+        if (editingId) editBlock(curId, { mode: 'end' })
+        return
+      }
+      // ⌘Enter 待办打勾/取消（光标在待办项里,或选中待办块时切第一项）
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && doc && curId) {
+        if (e.isComposing || e.keyCode === 229) return
+        const blk = doc.blocks.find((b) => b.id === curId)
+        if (blk && blk.type === 'list' && blk.listStyle === 'todo') {
+          e.preventDefault()
+          const el = blockEls.current.get(curId)
+          if (!el) return
+          let li: HTMLElement | null = null
+          if (editingId) {
+            const sel = window.getSelection()
+            const sc = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null
+            li = ((sc?.nodeType === 1 ? (sc as Element) : sc?.parentElement)?.closest('li') as HTMLElement) ?? null
+          }
+          if (!li) li = el.querySelector('li')
+          if (!li) return
+          checkpoint()
+          li.dataset.checked = li.dataset.checked === 'true' ? 'false' : 'true'
+          updateBlockHtml(doc.id, curId, el.innerHTML)
+          return
+        }
+      }
+      // 其余 ⌘/Ctrl+Enter：不是待办就什么都不做——直接 return,别掉进下面的
+      // 普通 Enter 分支误建新块（那个分支不查修饰键）。
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') return
+      // ⌘⇧V 粘贴为纯文本（去来源格式;W/G/N 三家一致的肌肉记忆）
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'v' || e.key === 'V') && editingId) {
+        e.preventDefault()
+        navigator.clipboard
+          ?.readText?.()
+          .then((t) => {
+            if (!t) return
+            checkpoint()
+            document.execCommand('insertText', false, t)
+          })
+          .catch(() => {}) // 剪贴板权限被拒 → 静默放弃
+        return
+      }
       // 文字格式快捷键 → 复用工具栏现有命令（不新增操作）。仅在有文字选区或选中块时
       // 拦截，否则交还浏览器（光标态的 Cmd+B 等仍走原生）。
-      if (e.metaKey || e.ctrlKey) {
+      // 删除线 = ⌘⇧X（裁决 4：Word/Docs 阵营;⌘⇧S 已还给「另存为」）。
+      if ((e.metaKey || e.ctrlKey) && !e.altKey) {
         const sel = window.getSelection()
         const hasSel = !!sel && !sel.isCollapsed && sel.rangeCount > 0
         if (hasSel || selectedId) {
           const k = e.key.toLowerCase()
           const cmd =
-            e.shiftKey && k === 's'
+            e.shiftKey && k === 'x'
               ? 'strikeThrough'
               : e.shiftKey
                 ? null
@@ -849,6 +944,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     checkpoint,
     undo,
     redo,
+    duplicateBlock,
+    reorderBlocks,
   ])
 
   // 浮动工具栏位置：① 编辑态有文字选区 → 浮在选区上方；② 块被选中（非编辑）→ 浮在块上方；
@@ -1061,9 +1158,12 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     }
   }
 
-  const turnInto = (type: BlockType, level?: 1 | 2 | 3, listStyle?: ListStyle) => {
-    if (!selectedId) return
-    const blk = doc.blocks.find((b) => b.id === selectedId)
+  // targetId 缺省 = 选中块（浮条「转为」菜单的原有路径）；键盘转块（⌘⌥0-6）从光标所在块
+  // 显式传入——光标态不经过 selectedId。
+  const turnInto = (type: BlockType, level?: 1 | 2 | 3, listStyle?: ListStyle, targetId?: string) => {
+    const id = targetId ?? selectedId
+    if (!id) return
+    const blk = doc.blocks.find((b) => b.id === id)
     if (!blk) return
     checkpoint()
     const wasList = blk.type === 'list'
@@ -1071,21 +1171,21 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     // 跨列表边界（段落↔列表）用「新建块替换」而非原地 setBlockType：避免被编辑的
     // contenteditable 在元素重挂时 blur 把旧形态内容写回、污染 <li> 包裹（沿用斜杠菜单做法）。
     if (willList !== wasList) {
-      const el = blockEls.current.get(selectedId)
+      const el = blockEls.current.get(id)
       const live = el ? el.innerHTML : blk.html
-      const newId = addBlock(doc.id, selectedId, type, listStyle)
+      const newId = addBlock(doc.id, id, type, listStyle)
       updateBlockHtml(
         doc.id,
         newId,
         willList ? `<li>${live.trim()}</li>` : unwrapListHtml(live),
       )
       if (!willList && level) setBlockType(doc.id, newId, type, level)
-      deleteBlock(doc.id, selectedId)
+      deleteBlock(doc.id, id)
       editBlock(newId, { mode: 'end' })
       return
     }
     // 同形态（列表样式互换 / 文本类互转）：直接改类型
-    setBlockType(doc.id, selectedId, type, level, listStyle)
+    setBlockType(doc.id, id, type, level, listStyle)
   }
 
   const askAI = () => setAiSoonOpen(true)
