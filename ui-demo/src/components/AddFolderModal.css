@@ -1,0 +1,33 @@
+/* 添加文件夹 modal（多文件夹空间） */
+.afm { width: 440px; }
+
+.afm-picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.afm-path {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line, #e3e2de);
+  border-radius: 8px;
+  background: var(--bg-2, #fafaf8);
+  font-size: 13px;
+  color: var(--ink, #333);
+}
+.afm-path.is-empty { color: var(--ink-3, #9b9a97); }
+.afm-browse {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.afm-current {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-3, #9b9a97);
+}

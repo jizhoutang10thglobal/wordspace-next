@@ -20,40 +20,52 @@ export default function SaveModal() {
   const closeTab = useStore((s) => s.closeTab)
 
   const space = spaces.find((sp) => sp.id === activeSpaceId)
+  // 多根：目标列表按根分组——每个根一条「根目录」+ 它的子文件夹（云空间只有一条空间默认项）。
   const options = useMemo(() => {
-    const rootLabel = (space?.mountPath ?? space?.name ?? '当前空间') + '（根目录）'
-    const opts = [{ dir: '', label: rootLabel, root: true }]
-    if (space && !isCloudStorage(space.storage)) {
-      dirs
-        .filter((d) => d.spaceId === space.id)
-        .sort((a, b) => a.path.localeCompare(b.path, 'zh'))
-        .forEach((d) => opts.push({ dir: d.path, label: d.path, root: false }))
+    const opts: { rootId: string | null; dir: string; label: string; root: boolean }[] = []
+    if (space && !isCloudStorage(space.storage) && space.roots?.length) {
+      for (const r of space.roots) {
+        opts.push({ rootId: r.id, dir: '', label: `${r.name}（根目录）`, root: true })
+        dirs
+          .filter((d) => d.spaceId === space.id && d.rootId === r.id)
+          .sort((a, b) => a.path.localeCompare(b.path, 'zh'))
+          .forEach((d) => opts.push({ rootId: r.id, dir: d.path, label: d.path, root: false }))
+      }
+    } else {
+      opts.push({ rootId: null, dir: '', label: (space?.name ?? '当前空间') + '（默认）', root: true })
     }
     return opts
   }, [space, dirs])
 
-  const [dir, setDir] = useState('')
+  const [sel, setSel] = useState<{ rootId: string | null; dir: string }>({ rootId: null, dir: '' })
   useEffect(() => {
-    if (docId) setDir('') // 每次打开默认根目录（当前文件夹）
+    // 每次打开默认第一个根的根目录（当前文件夹）
+    if (docId) setSel({ rootId: options[0]?.rootId ?? null, dir: '' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId])
 
   useEffect(() => {
     if (!docId) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeSave()
-      if (e.key === 'Enter') doSave()
+      // Enter 确认——但焦点在按钮上（比如 Tab 到了「取消」）时交还原生按钮激活，
+      // 不无脑保存（shortcuts.html §6 边界修复 2）。
+      if (e.key === 'Enter') {
+        if ((document.activeElement as HTMLElement | null)?.tagName === 'BUTTON') return
+        doSave()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docId, dir, closeAfterTab])
+  }, [docId, sel, closeAfterTab])
 
   if (!docId) return null
   const doc = getDoc(docId)
   if (!doc) return null
 
   const doSave = () => {
-    saveDocTo(docId, dir)
+    saveDocTo(docId, sel.rootId, sel.dir)
     if (closeAfterTab) closeTab(closeAfterTab)
     closeSave()
   }
@@ -78,17 +90,20 @@ export default function SaveModal() {
         </header>
 
         <div className="sm-list">
-          {options.map((o) => (
-            <button
-              key={o.dir || '__root__'}
-              className={'sm-row' + (dir === o.dir ? ' is-on' : '')}
-              onClick={() => setDir(o.dir)}
-            >
-              <span className="sm-ico">{o.root ? <FolderRoot size={16} /> : <FolderClosed size={16} />}</span>
-              <span className="sm-label ws-truncate">{o.label}</span>
-              {dir === o.dir && <Check size={15} className="sm-check" />}
-            </button>
-          ))}
+          {options.map((o) => {
+            const on = sel.rootId === o.rootId && sel.dir === o.dir
+            return (
+              <button
+                key={`${o.rootId ?? '__space__'}:${o.dir || '__root__'}`}
+                className={'sm-row' + (on ? ' is-on' : '') + (o.root ? ' sm-row-root' : '')}
+                onClick={() => setSel({ rootId: o.rootId, dir: o.dir })}
+              >
+                <span className="sm-ico">{o.root ? <FolderRoot size={16} /> : <FolderClosed size={16} />}</span>
+                <span className="sm-label ws-truncate">{o.label}</span>
+                {on && <Check size={15} className="sm-check" />}
+              </button>
+            )
+          })}
         </div>
 
         <div className="ws-modal-foot">

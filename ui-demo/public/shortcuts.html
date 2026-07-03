@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wordspace 快捷键体系 · 调研与设计 v2</title>
+<style>
+  :root {
+    --ink: #1f1f1f; --ink-2: #555; --ink-3: #8a8a8a;
+    --line: #e6e2da; --bg: #fbfaf7; --card: #ffffff;
+    --accent: #4a6cf7; --warn: #b45309; --warn-bg: #fef3e2;
+    --ok: #1a7f4e; --ok-bg: #e8f5ee;
+    --todo: #4a6cf7; --todo-bg: #eef1fe;
+    --later: #8a8a8a; --later-bg: #f1efe9;
+    --no: #b91c1c; --no-bg: #fdecec;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.75 -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .page { max-width: 980px; margin: 0 auto; padding: 48px 32px 120px; }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 8px; }
+  .sub { color: var(--ink-2); margin-bottom: 40px; }
+  .sub .meta { color: var(--ink-3); font-size: 13px; margin-top: 6px; }
+  h2 { font-size: 21px; margin: 56px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h2 .no { color: var(--ink-3); font-weight: 600; margin-right: 8px; }
+  h3 { font-size: 16.5px; margin: 32px 0 8px; }
+  p { margin: 10px 0; }
+  ul, ol { padding-left: 22px; }
+  li { margin: 5px 0; }
+  kbd {
+    display: inline-block; padding: 1px 7px; margin: 0 1px;
+    font: 12.5px/1.7 ui-monospace, "SF Mono", Menlo, monospace;
+    background: #fff; border: 1px solid #d5d0c6; border-bottom-width: 2px;
+    border-radius: 5px; color: #333; white-space: nowrap;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 8px; background: var(--card); font-size: 13.5px; }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; line-height: 1.6; }
+  th { background: #f4f1ea; font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+  td.keys { white-space: nowrap; }
+  .tag { display: inline-block; padding: 0 8px; border-radius: 99px; font-size: 12px; white-space: nowrap; }
+  .t-have  { color: var(--ok); background: var(--ok-bg); }
+  .t-do    { color: var(--todo); background: var(--todo-bg); }
+  .t-later { color: var(--later); background: var(--later-bg); }
+  .t-no    { color: var(--no); background: var(--no-bg); }
+  .t-app   { color: #6b21a8; background: #f5ecfd; }
+  .note { color: var(--ink-3); font-size: 12.5px; }
+  .callout {
+    background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 12px 16px; margin: 16px 0;
+  }
+  .callout.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+  .decision {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 20px; margin: 18px 0;
+  }
+  .decision h4 { margin: 0 0 6px; font-size: 15.5px; }
+  .decision .rec { color: var(--ok); font-weight: 600; }
+  .scope-stack { display: flex; flex-direction: column; gap: 6px; margin: 16px 0; }
+  .scope {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 16px; font-size: 13.5px; display: flex; gap: 14px; align-items: baseline;
+  }
+  .scope b { min-width: 176px; }
+  .scope .hint { color: var(--ink-3); font-size: 12.5px; }
+  .lvl0 { border-left: 3px solid #d946ef; }
+  .lvl1 { border-left: 3px solid var(--accent); }
+  .lvl2 { border-left: 3px solid #0ea5e9; }
+  .lvl3 { border-left: 3px solid #10b981; }
+  .lvl4 { border-left: 3px solid #a3a3a3; }
+  .toc { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 22px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .legend { margin: 8px 0 2px; font-size: 13px; color: var(--ink-2); }
+  .legend .tag { margin-right: 6px; }
+  code { font: 12.5px ui-monospace, Menlo, monospace; background: #f1efe9; padding: 1px 5px; border-radius: 4px; }
+  @media print { body { background: #fff; } .page { padding: 0; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Wordspace 快捷键体系 · 调研与设计 <span style="color:var(--ink-3)">v2</span></h1>
+<div class="sub">
+  文本编辑器常见快捷键调研(Notion / Word / Google Docs / Obsidian / Typora / Bear / Craft / VS Code / macOS 惯例) + 结合 Wordspace 现状的完整键位设计。
+  <div class="meta">2026-07-03 · 调研与起草:AI · <b>§2 已拍板(Colin) · §6 已在 ui-demo 实现</b> → Wendi 照本表逐条验收</div>
+</div>
+
+<div class="toc">
+  <b>目录</b><br>
+  §1 <a href="#s1">上下文模型:同一个键,不同场景不同含义</a><br>
+  §2 <a href="#s2">五个裁决点(需要拍板)</a><br>
+  §3 <a href="#s3">快捷键总表(按作用域分组)</a><br>
+  §4 <a href="#s4">系统白送的文本键:不许破坏清单</a><br>
+  §5 <a href="#s5">与真 app 现状的一致性对照</a><br>
+  §6 <a href="#s6">ui-demo 本轮落地清单(= Wendi 验收清单)</a><br>
+  §7 <a href="#s7">Windows 键位:映射规则与分歧表</a>
+</div>
+
+<div class="callout" style="border-left-color:var(--ok);background:var(--ok-bg)">
+  <b>v2 · 已拍板并实现(2026-07-03)</b>:§2 五项裁决 Colin 已全部按建议拍板;§3 表中标
+  <span class="tag t-have">✓ 已实现</span> 的键位已在 ui-demo 落地(mac + Windows 双平台,分歧见 §7)。
+  <b>验证入口</b>:demo 左下角 ⌨ 图标或 <kbd>Cmd+/</kbd>(Windows <kbd>Ctrl+/</kbd>)打开速查面板——
+  面板按平台自动显示对应键位;本页即 Wendi 的逐条验收清单(§6)。
+  §5 的三处真 app 改键(Cmd+E→Cmd+Shift+E、Cmd+F 迁移、补标签导航键)待 ui-demo 验收通过后随移植一起做。
+</div>
+
+<div class="legend">
+  状态标记:
+  <span class="tag t-have">✓ ui-demo 已有</span>
+  <span class="tag t-have">✓ 已实现</span>
+  <span class="tag t-later">后续</span>
+  <span class="tag t-no">不做</span>
+  <span class="tag t-app">真 app 已有</span>
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="s1"><span class="no">§1</span>上下文模型:同一个键,不同场景不同含义</h2>
+
+<p>调研里最值得抄的不是任何一张键位表,而是 Notion / VS Code 共同的<b>作用域模型</b>:好的编辑器不发明一堆冷僻组合键,而是让<b>一小撮键在明确的「当前场景」里复用</b>。场景由两件事决定:<b>焦点在哪</b>(编辑器 / 侧栏 / 弹层)和<b>编辑器处于哪个态</b>(光标打字中 / 块被选中)。</p>
+
+<div class="scope-stack">
+  <div class="scope lvl0"><b>弹层(最优先)</b><span>modal / 菜单 / 命令面板开着时,↑↓ Enter Esc 全归它,其余键不下发</span><span class="hint">Esc 永远=关掉它</span></div>
+  <div class="scope lvl1"><b>编辑器 · 文本态</b><span>光标在块里闪:格式键、markdown 触发、斜杠菜单、Enter/Tab/Backspace 的块行为</span><span class="hint">Esc → 降到块态</span></div>
+  <div class="scope lvl1"><b>编辑器 · 块选中态</b><span>块作为整体被选中(无光标):方向键选块、Delete 删块、Cmd+D 复制块、Enter 回文本态</span><span class="hint">Esc → 取消选中</span></div>
+  <div class="scope lvl2"><b>侧栏 / 文件树</b><span>树内 ↑↓ 移动、Enter 打开、重命名/删除(后续)</span><span class="hint">焦点在树上才生效</span></div>
+  <div class="scope lvl3"><b>应用壳(全局)</b><span>标签页、保存、快速打开、侧栏开关、缩放——任何焦点都响应</span></div>
+  <div class="scope lvl4"><b>系统层(碰不得)</b><span>Cmd+Q/Tab/Space/H/M、输入法组合态,以及 §4 的系统文本键</span></div>
+</div>
+
+<p><b>三条派发原则</b>(实现时的硬规则,也是 review 时判断「这个键行为对不对」的依据):</p>
+<ol>
+  <li><b>最内层命中即消费</b>:同一个 <kbd>Cmd+D</kbd>,块选中时=复制块;弹层开着时不响应;没人认领时必须放行给浏览器/系统。<b>没匹配到就不 preventDefault</b>——这是 §4 系统键存活的前提。</li>
+  <li><b>Esc 是逐层退出的阶梯,永不做破坏性动作</b>:关弹层 → 文本态退到块态 → 取消块选中 → 什么都不做。Notion / VS Code / Bear 全是这个设计。</li>
+  <li><b>Enter 是逐层进入</b>:块选中态按 Enter 进入文本态;树里按 Enter 打开文件;和 Esc 互为反向。</li>
+</ol>
+
+<div class="callout">
+  <b>Notion 的双态模型(我们的块编辑器已经隐性拥有)</b>:ui-demo 的 Canvas 已经区分 <code>editingId</code>(文本态)和 <code>selectedId</code>(块选中态),Esc 降档、方向键跨块也已实现——本设计不是引入新概念,而是把这个已有模型的键位补全、并把规则写明。
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="s2"><span class="no">§2</span>五个裁决点(需要拍板)</h2>
+<p>调研发现的真冲突:两个阵营的肌肉记忆抢同一个键,必须选边。每条给出建议,<b>不同意的话改这里,§3 总表会跟着变</b>。</p>
+
+<div class="decision">
+  <h4>裁决 1 · <kbd>Cmd+1…9</kbd> 给「标签直达」还是「标题」?</h4>
+  <p>写作 app 阵营(Bear/Typora/iA)把 <kbd>Cmd+1…6</kbd> 给标题;浏览器阵营(Chrome/Safari)给标签直达。<b>Notion 两边都不占:转块走 <kbd>Cmd+Option+数字</kbd></b>。</p>
+  <p class="rec">建议:跟 Notion——转块用 Cmd+Option+0…6,把 Cmd+1…9 留给标签直达(Wordspace 有浏览器式标签页,正好各得其所)。</p>
+</div>
+
+<div class="decision">
+  <h4>裁决 2 · <kbd>Cmd+E</kbd>:行内代码 vs 导出 PDF(ui-demo 与真 app 已打架)</h4>
+  <p>Notion 的 <kbd>Cmd+E</kbd>=行内代码,ui-demo 也已这么实现;<b>但真 app 已把 <kbd>Cmd+E</kbd> ship 给了「导出 PDF」</b>(v0.5.0 菜单加速键)。同一个键在两个产品面里含义不同,迟早撞车。</p>
+  <p class="rec">建议:编辑场景赢——Cmd+E=行内代码(Notion 肌肉记忆),导出 PDF 挪到 Cmd+Shift+E。真 app 需要跟着改一行菜单加速键。</p>
+</div>
+
+<div class="decision">
+  <h4>裁决 3 · <kbd>Cmd+F</kbd>:文档内查找 vs 文件筛选(真 app 现状)</h4>
+  <p>所有文档编辑器(Word/Docs/Notion)的 <kbd>Cmd+F</kbd>=当前文档内查找;<b>真 app 目前把它绑成「聚焦侧栏文件筛选框」</b>(因为还没有文档内查找功能)。跨文件/全局搜索的业界惯例是 <kbd>Cmd+Shift+F</kbd>(VS Code/Obsidian/Bear/iA 全一致)。</p>
+  <p class="rec">建议:把 Cmd+F 的名分留给「文档内查找」(功能后续做);文件筛选迁到 Cmd+Shift+F。趁现在没人有肌肉记忆,早迁早好。</p>
+</div>
+
+<div class="decision">
+  <h4>裁决 4 · 删除线:<kbd>Cmd+Shift+X</kbd> vs <kbd>Cmd+Shift+S</kbd></h4>
+  <p>Word(mac) 和 Google Docs 一致用 <kbd>Cmd+Shift+X</kbd>;Notion 独走 <kbd>Cmd+Shift+S</kbd>,而 macOS HIG 里 <kbd>Cmd+Shift+S</kbd> 的正统含义是「另存为/Duplicate」。ui-demo 目前跟的 Notion。</p>
+  <p class="rec">建议:删除线改 Cmd+Shift+X(两票对一票,X 也更像「划掉」),把 Cmd+Shift+S 还给「另存为」(真 app 的另存为目前只在 ⋯ 菜单里、无快捷键,正好补上)。</p>
+</div>
+
+<div class="decision">
+  <h4>裁决 5 · <kbd>Cmd+K</kbd> 与命令面板归属(基本无悬念,确认一下)</h4>
+  <p>五家写作 app(Bear/Obsidian/iA/Craft/Typora)全票 <kbd>Cmd+K</kbd>=插入链接,这是写作类铁律;web 产品(Slack/Linear)才拿它做 omnibox。真 app 已把 <kbd>Cmd+P</kbd> 给了快速打开(不是打印),方向正确。</p>
+  <p class="rec">建议:维持 Cmd+K=插入链接、Cmd+P=快速打开文件;将来若做「命令面板」(带动作搜索),用 Cmd+Shift+P(VS Code 双键流),Cmd+P 不动。打印/导出走 Cmd+Shift+E。</p>
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="s3"><span class="no">§3</span>快捷键总表(按作用域分组)</h2>
+<p class="note">「业界对照」列:N=Notion,W=Word(mac),G=Google Docs,系=macOS/跨 app 惯例。表内已按 §2 建议落键。<b>本表用 mac 记法;Windows 键位 = Cmd→Ctrl、Option→Alt 机械换算,五处例外见 §7</b>。</p>
+
+<h3>3.1 应用壳 · 全局(任何焦点都响应)</h3>
+<table>
+  <tr><th style="width:150px">快捷键</th><th>动作</th><th>UseCase / 行为细节</th><th style="width:104px">业界对照</th><th style="width:88px">状态</th></tr>
+  <tr><td class="keys"><kbd>Cmd+T</kbd></td><td>新建标签页(新文档)</td><td>开临时文档,手动保存才落盘。Wordspace 没有独立 Cmd+N——「新建」统一走标签页心智</td><td>浏览器 / N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+W</kbd></td><td>关闭当前标签页</td><td>未保存时先弹关闭确认;最后一个标签关掉后回空态页。<span class="note">浏览器抢占此键,网页版 demo 里无效,Electron 正常</span></td><td>浏览器 / 系</td><td><span class="tag t-have">✓ 已实现</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+T</kbd></td><td>重新打开刚关闭的标签页</td><td>误关找回,按浏览器心智做一个关闭历史栈。<span class="note">浏览器抢占,demo 里无效</span></td><td>浏览器</td><td><span class="tag t-later">后续</span></td></tr>
+  <tr><td class="keys"><kbd>Ctrl+Tab</kbd> / <kbd>Ctrl+Shift+Tab</kbd></td><td>下一个 / 上一个标签页</td><td>按标签条顺序循环(不做 MRU)。浏览器不保留此键,demo 里能用</td><td>浏览器 / VS Code</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+1…8</kbd>,<kbd>Cmd+9</kbd></td><td>直达第 N 个标签页;9=最后一个</td><td>置顶区+普通区合并计数。见裁决 1。<span class="note">浏览器菜单可能抢占,demo 里尽力拦截,Electron 正常</span></td><td>浏览器</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+S</kbd></td><td>保存</td><td>真文件就地保存(有自动保存,此键=安心键+落临时文档);临时文档弹「保存到哪里」</td><td>系</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+S</kbd></td><td>另存为…</td><td>原 Notion 系删除线让位(裁决 4),回归 HIG 语义;真 app ⋯ 菜单里的「另存为」补上快捷键</td><td>系</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+O</kbd></td><td>打开文件…</td><td>系统文件选择框,可打开工作区外文件(外部标签页 ↗)。Wordspace 是文件/工作区型 app,Cmd+O 保持系统语义不叛变(Obsidian/Bear 那种库型才拿它做 quick open)</td><td>系 / Typora</td><td><span class="tag t-later">后续(demo 无真FS)</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+P</kbd></td><td>快速打开(文件搜索面板)</td><td>模糊搜文件名跳转,↑↓ 选、Enter 开、Esc 关。抢掉打印无妨:打印场景=导出 PDF(Cmd+Shift+E)</td><td>VS Code / N(Cmd+P)</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+F</kbd></td><td>文件筛选 / 全局搜索</td><td>聚焦侧栏筛选框(现状);将来升级成跨文件内容搜索也是这个键(裁决 3)</td><td>VS Code / Obsidian / Bear</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+F</kbd></td><td>文档内查找(预留)</td><td>当前文档内文本查找+高亮跳转。功能尚不存在,<b>此键名分先冻结</b>(裁决 3),真 app 现绑的「文件筛选」迁走</td><td>W / G / N</td><td><span class="tag t-later">后续</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+E</kbd></td><td>导出 PDF…</td><td>从 Cmd+E 迁来(裁决 2)。合规文档=所见即所得样式,非合规=raw 直印</td><td>—</td><td><span class="tag t-later">后续(真app改键)</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+\</kbd></td><td>收起 / 展开侧栏</td><td>真收起(宽度 0),再按或点悬浮钮展开</td><td>N / Craft</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+=</kbd> / <kbd>Cmd+-</kbd> / <kbd>Cmd+0</kbd></td><td>放大 / 缩小 / 重置 100%</td><td>文档画布缩放。<span class="note">demo 里浏览器自身缩放已可用,不重复实现</span></td><td>系 / VS Code / N</td><td><span class="tag t-no">demo不做</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+/</kbd></td><td>快捷键速查面板</td><td>随时打开本表的精简浮层版——快捷键的「可发现性」入口(Docs/Slack 同款)。文档编辑器没有「注释代码」冲突,此键干净</td><td>G / Slack</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+,</kbd></td><td>设置</td><td>打开设置页</td><td>系(全员)</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+</table>
+
+<h3>3.2 编辑器 · 文本态(光标在块内)</h3>
+<table>
+  <tr><th style="width:150px">快捷键</th><th>动作</th><th>UseCase / 行为细节</th><th style="width:104px">业界对照</th><th style="width:88px">状态</th></tr>
+  <tr><td class="keys"><kbd>Cmd+B</kbd> / <kbd>Cmd+I</kbd> / <kbd>Cmd+U</kbd></td><td>加粗 / 斜体 / 下划线</td><td>作用于选中文字;块选中态则作用于整块。无选区时放行(不吞键)</td><td>全员</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+X</kbd></td><td>删除线</td><td>从 Cmd+Shift+S 迁来(裁决 4)</td><td>W / G</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+E</kbd></td><td>行内代码</td><td>选中文字包 <code>&lt;code&gt;</code>(裁决 2)</td><td>N</td><td><span class="tag t-have">✓ 已有</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+K</kbd></td><td>插入 / 编辑链接</td><td>对选中文字加链接(裁决 5)。粘贴 URL 到选区=直接成链(Notion 行为,后续)</td><td>全员</td><td><span class="tag t-have">✓ 已有</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+H</kbd></td><td>重复上一次颜色/高亮</td><td>Notion 的「颜色格式刷」:把上次用过的文字色或高亮再刷到当前选区</td><td>N</td><td><span class="tag t-later">后续</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+V</kbd></td><td>粘贴为纯文本</td><td>去掉来源格式粘贴。W/G/N 三家一致,肌肉记忆极深</td><td>全员</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Z</kbd> / <kbd>Cmd+Shift+Z</kbd></td><td>撤销 / 重做</td><td>走编辑器统一撤销栈(不是浏览器原生)。<b>本轮要修</b>:现在焦点在侧栏输入框时也被编辑器劫持(见 §6 边界修复)</td><td>系(Cmd+Y 不学)</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Enter</kbd> / <kbd>Shift+Enter</kbd></td><td>新块 / 块内软换行</td><td>块尾 Enter=其后新建正文块(标题/引用后接正文,Notion 式);列表内 Enter=新列表项,空项再 Enter=退出列表;Shift+Enter=块内换行</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></td><td>列表缩进 / 反缩进</td><td>光标所在列表项降/升一级(嵌套列表);非列表块吞掉 Tab 防焦点跑丢</td><td>N / W / G</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Backspace</kbd>(块首)</td><td>删空块 / 并入上一块</td><td>空块删除;非空则与上一个文本块合并(带内容安全合并)</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>↑</kbd> / <kbd>↓</kbd>(块边缘)</td><td>跨块移动光标</td><td>首行/末行继续按 ↑↓ 进入相邻块,保持列位置;相邻是不可编辑块则选中它</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>/</kbd></td><td>斜杠菜单</td><td>光标处呼出插入菜单:打字过滤、↑↓ 选、Enter 插入、Esc 关</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Esc</kbd></td><td>退到块选中态</td><td>收起光标,当前块整体选中(§1 阶梯)</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+</table>
+
+<p class="note"><b>Markdown 触发(行首输入+空格,已有 ✓,真 app 同)</b>:<code>#</code>/<code>##</code>/<code>###</code>→标题 1/2/3 · <code>-</code> <code>*</code>→无序列表 · <code>1.</code>→有序列表 · <code>[]</code>→待办 · <code>&gt;</code>→引用。行内自动格式(<code>**粗**</code> <code>*斜*</code> <code>`代码`</code> <code>~删~</code>,Notion 式)= <span class="tag t-later">后续</span></p>
+
+<h3>3.3 编辑器 · 块操作(块选中态为主)</h3>
+<table>
+  <tr><th style="width:170px">快捷键</th><th>动作</th><th>UseCase / 行为细节</th><th style="width:96px">业界对照</th><th style="width:88px">状态</th></tr>
+  <tr><td class="keys"><kbd>↑</kbd> / <kbd>↓</kbd></td><td>选中上/下一个块</td><td>块选中态下移动选择</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Enter</kbd></td><td>进入块编辑(文本态)</td><td>§1 阶梯的反向;不可编辑块(分割线/图片)则在其后新建正文块</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>删除选中块</td><td>最后一块删除时留一个空正文块(文档不留死态)</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+D</kbd></td><td>复制(duplicate)当前块</td><td>文本态或块选中态均可,复制体插在原块下方。块菜单里已有此功能,补键位</td><td>N</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Shift+↑</kbd> / <kbd>Cmd+Shift+↓</kbd></td><td>上移 / 下移当前块</td><td>键盘版拖块。文本态或块选中态均可;现在排序只能鼠标拖 ⋮⋮,补键盘路径</td><td>N</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Option+0…6</kbd></td><td>转块:0 正文 · 1/2/3 标题 · 4 待办 · 5 无序 · 6 有序</td><td>把当前块(光标所在或选中)转成目标类型,与浮条「转为」菜单同源(裁决 1)。7 toggle/8 代码块等我们还没有的块类型,键位预留</td><td>N</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Enter</kbd></td><td>切换待办勾选</td><td>光标在待办项里(或选中待办块)直接打勾/取消,不用摸鼠标——高频操作</td><td>N</td><td><span class="tag t-have">✓ 已实现</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+A</kbd>(阶梯)</td><td>选块内文字 → 选整块 → 全选</td><td>第一下选当前块内全部文字,再按选中块本身,再按全选文档(Notion 渐进式)。<span class="note">依赖多块选择,一起后续</span></td><td>N</td><td><span class="tag t-later">后续</span></td></tr>
+  <tr><td class="keys"><kbd>Shift+↑</kbd> / <kbd>Shift+↓</kbd>,<kbd>Cmd+Shift+点击</kbd></td><td>多块选择</td><td>扩选相邻块 / 点选多块,之后可整体删除/移动/转块。<span class="note">ui-demo 目前是单块选择模型,多选是独立一档工作量</span></td><td>N</td><td><span class="tag t-later">后续</span></td></tr>
+  <tr><td class="keys"><kbd>Esc</kbd></td><td>取消块选中</td><td>§1 阶梯最后一级</td><td>N</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+</table>
+
+<h3>3.4 侧栏、文件树与弹层</h3>
+<table>
+  <tr><th style="width:170px">快捷键</th><th>动作</th><th>UseCase / 行为细节</th><th style="width:96px">业界对照</th><th style="width:88px">状态</th></tr>
+  <tr><td class="keys"><kbd>Esc</kbd> / <kbd>↑↓</kbd> / <kbd>Enter</kbd></td><td>弹层三件套</td><td>所有 modal/菜单/面板:Esc 关、↑↓ 选、Enter 确认。<b>本轮要修</b>:SaveModal 的 Enter 现在无视焦点直接保存(见 §6)</td><td>系</td><td><span class="tag t-have">✓ 已有</span></td></tr>
+  <tr><td class="keys"><kbd>Enter</kbd> / <kbd>Esc</kbd>(重命名中)</td><td>确认 / 取消重命名</td><td>树内行内改名输入框</td><td>系</td><td><span class="tag t-have">✓ 已有</span><span class="tag t-app">真app</span></td></tr>
+  <tr><td class="keys"><kbd>↑↓</kbd> / <kbd>Enter</kbd> / <kbd>←→</kbd>(树聚焦)</td><td>树内键盘导航</td><td>↑↓ 在可见行间移动,Enter 打开文件,←→ 收起/展开文件夹(VS Code/Finder 式)。<span class="note">需要给树引入焦点态,独立一档工作量</span></td><td>VS Code / Finder</td><td><span class="tag t-later">后续</span></td></tr>
+  <tr><td class="keys"><kbd>Cmd+Backspace</kbd>(树聚焦)</td><td>删除选中文件/文件夹</td><td>Finder 正统删除键;与「编辑器里删到行首」同键不同义,靠焦点作用域区分(§1 的活例)</td><td>Finder</td><td><span class="tag t-later">后续</span></td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="s4"><span class="no">§4</span>系统白送的文本键:不许破坏清单</h2>
+<p>这些键来自 macOS 文本系统,<b>在任何 contenteditable 里天生就有</b>,用户肌肉记忆最深。我们一行代码都不用写,但<b>任何全局 keydown 拦截都可能砸掉它们</b>——判定标准:用户在任意输入框按 <kbd>Cmd+Backspace</kbd>,若触发了自定义功能而不是「删到行首」,用户会认为 app 坏了。</p>
+<table>
+  <tr><th style="width:230px">键</th><th>含义</th></tr>
+  <tr><td class="keys"><kbd>Cmd+←</kbd> / <kbd>Cmd+→</kbd>,<kbd>Cmd+↑</kbd> / <kbd>Cmd+↓</kbd></td><td>行首/行尾,文档首/尾(+Shift=选区扩展)</td></tr>
+  <tr><td class="keys"><kbd>Option+←</kbd> / <kbd>Option+→</kbd></td><td>按词跳(+Shift=按词选)</td></tr>
+  <tr><td class="keys"><kbd>Option+Backspace</kbd> / <kbd>Cmd+Backspace</kbd></td><td>删一个词 / 删到行首</td></tr>
+  <tr><td class="keys"><kbd>Ctrl+A/E/K</kbd> 等 Emacs 系</td><td>行首/行尾/删到行尾(Cocoa 标配)——别把 Ctrl+A/E/K 挪作他用</td></tr>
+  <tr><td class="keys"><kbd>Cmd+C/X/V/A</kbd></td><td>Electron 陷阱:这几个靠应用菜单的 Edit role 路由,自定义菜单时必须保留,否则编辑器里复制粘贴直接失灵(真 app 已正确保留)</td></tr>
+  <tr><td class="keys">输入法组合态(拼音候选中)</td><td>Enter/方向键在 <code>isComposing</code> 时必须放行给输入法——中文产品的生死线(块编辑器已守,新增键一律要带此守卫)</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="s5"><span class="no">§5</span>与真 app 现状的一致性对照</h2>
+<p class="note">真 app(Electron,v0.5.0)已有键位实测清单 vs 本设计。✓=一致直接沿用;⚠=按裁决需真 app 侧改动(都是一行加速键的事)。</p>
+<table>
+  <tr><th style="width:130px">键</th><th style="width:210px">真 app 现状</th><th>本设计</th><th style="width:56px">结论</th></tr>
+  <tr><td class="keys"><kbd>Cmd+T/W/S/O/P/\</kbd></td><td>新标签 / 关标签 / 保存 / 打开 / 快速打开 / 侧栏</td><td>完全一致</td><td>✓</td></tr>
+  <tr><td class="keys"><kbd>Cmd+Z/Shift+Z</kbd>,<kbd>Cmd+B/I/U</kbd></td><td>统一撤销栈;粗斜下划(焦点在文档内)</td><td>一致;另建议 B/I/U 挂进菜单让侧栏焦点时也可用</td><td>✓</td></tr>
+  <tr><td class="keys"><kbd>Cmd+= / − / 0</kbd></td><td>画布缩放三件套</td><td>一致</td><td>✓</td></tr>
+  <tr><td class="keys"><kbd>Cmd+E</kbd></td><td><b>导出 PDF</b></td><td>行内代码;导出迁 <kbd>Cmd+Shift+E</kbd>(裁决 2)</td><td>⚠ 改</td></tr>
+  <tr><td class="keys"><kbd>Cmd+F</kbd></td><td><b>聚焦文件筛选框</b></td><td>预留给文档内查找;筛选迁 <kbd>Cmd+Shift+F</kbd>(裁决 3)</td><td>⚠ 改</td></tr>
+  <tr><td class="keys">标签导航键</td><td><b>完全没有</b>(切标签只能鼠标)</td><td>Ctrl+Tab 循环 / Cmd+1…9 直达 / Cmd+Shift+T 重开</td><td>⚠ 补</td></tr>
+  <tr><td class="keys">块操作键</td><td>无 Cmd+D / Cmd+Shift+↑↓ / Cmd+Option+数字 / Cmd+Enter</td><td>本轮在 ui-demo 实现,验收后移植</td><td>⚠ 补</td></tr>
+</table>
+
+<!-- ===================================================================== -->
+<h2 id="s6"><span class="no">§6</span>ui-demo 本轮落地清单(= Wendi 验收清单)</h2>
+<p>Colin 对 §2 裁决点无异议后,以下逐条在 ui-demo 实现;Wendi 验收时照此清单逐条打勾。</p>
+
+<h3>新增键位(全部已实现 ✅)</h3>
+<ol>
+  <li><b>标签页</b>:<kbd>Ctrl+Tab</kbd>/<kbd>Ctrl+Shift+Tab</kbd> 循环、<kbd>Cmd+1…9</kbd> 直达、<kbd>Cmd+W</kbd> 关标签(浏览器抢占则 Electron 生效)</li>
+  <li><b>格式</b>:删除线迁 <kbd>Cmd+Shift+X</kbd>、<kbd>Cmd+Shift+V</kbd> 纯文本粘贴</li>
+  <li><b>块操作</b>:<kbd>Cmd+D</kbd> 复制块、<kbd>Cmd+Shift+↑/↓</kbd> 移动块、<kbd>Cmd+Option+0…6</kbd> 转块、<kbd>Cmd+Enter</kbd> 待办打勾</li>
+  <li><b>应用壳</b>:<kbd>Cmd+Shift+S</kbd> 另存为、<kbd>Cmd+Shift+F</kbd> 聚焦文件筛选、<kbd>Cmd+,</kbd> 设置、<kbd>Cmd+/</kbd> 快捷键速查面板(本表的浮层精简版)</li>
+</ol>
+
+<h3>边界修复(调研时发现的既有问题,已一并修掉 ✅)</h3>
+<ol>
+  <li><b>Cmd+Z 劫持</b>:焦点在侧栏输入框(筛选/改名/地址栏)时,编辑器不得抢撤销——按 §1 原则加焦点作用域守卫</li>
+  <li><b>SaveModal 的 Enter</b>:焦点在「取消」按钮上按 Enter 不应触发保存——Enter 只在默认焦点链上确认</li>
+  <li><b>全局键的弹层守卫</b>:modal 开着时 Cmd+S/Cmd+P 等全局键不应穿透执行</li>
+  <li><b>新增键全部带输入法守卫</b>(<code>isComposing</code>)与「未命中放行」原则,§4 系统键逐条复测不被破坏</li>
+</ol>
+
+<h3>明确不做 + 理由(防 review 时误判为遗漏)</h3>
+<ul>
+  <li><kbd>Cmd+N</kbd>:「新建」统一走 <kbd>Cmd+T</kbd> 标签页心智,不设第二入口(真 app 同)</li>
+  <li><kbd>Cmd+Y</kbd> 当重做:Windows 遗产,mac 上 Chrome 拿它开历史,统一 <kbd>Cmd+Shift+Z</kbd></li>
+  <li>缩放三件套:demo 用浏览器自身缩放,真 app 已有</li>
+  <li>对齐键(<kbd>Cmd+Shift+L/E/R/J</kbd>)、字号缩放(<kbd>Cmd+Shift+./,</kbd>):块模型暂无对齐/字号概念,等块能力扩展再谈</li>
+  <li>多块选择系(<kbd>Shift+↑↓</kbd>/<kbd>Cmd+A</kbd> 阶梯/<kbd>Cmd+Shift+点击</kbd>):依赖多选模型,单独立项</li>
+</ul>
+
+<!-- ===================================================================== -->
+<h2 id="s7"><span class="no">§7</span>Windows 键位:映射规则与分歧表</h2>
+
+<p>Wordspace 双平台发布(mac + Windows),快捷键体系是同一套。<b>§3 总表用 mac 记法,Windows 按下面一条规则机械换算,例外只有五处</b>——速查面板(<kbd>Ctrl+/</kbd>)会按当前平台自动显示对应键位,不用人肉换算。</p>
+
+<div class="callout">
+  <b>通用映射规则</b>:<kbd>Cmd</kbd> → <kbd>Ctrl</kbd>,<kbd>Option</kbd> → <kbd>Alt</kbd>;mac 记法里本来就是 <kbd>Ctrl</kbd> 的(如 <kbd>Ctrl+Tab</kbd>)两平台同键。实现层面所有键都收 <code>metaKey || ctrlKey</code> 双通道,90% 的键位天然跨平台。
+</div>
+
+<h3>7.1 五处分歧(不能机械换算的)</h3>
+<table>
+  <tr><th>意图</th><th style="width:170px">mac</th><th style="width:190px">Windows</th><th>为什么不一样</th><th style="width:88px">状态</th></tr>
+  <tr>
+    <td>转块(正文/标题/列表)</td>
+    <td class="keys"><kbd>Cmd+Option+0…6</kbd></td>
+    <td class="keys"><kbd>Ctrl+Shift+0…6</kbd></td>
+    <td><b>Windows 绝不能用 Ctrl+Alt 做快捷键</b>:欧洲/多语键盘的 AltGr 就是 Ctrl+Alt,占了会吃正常字符输入。Notion 在两平台就是这么分的(mac Cmd+Option / win Ctrl+Shift),照抄</td>
+    <td><span class="tag t-have">✓ 已实现</span></td>
+  </tr>
+  <tr>
+    <td>重做</td>
+    <td class="keys"><kbd>Cmd+Shift+Z</kbd></td>
+    <td class="keys"><kbd>Ctrl+Shift+Z</kbd> 或 <kbd>Ctrl+Y</kbd></td>
+    <td>Ctrl+Y 是 Windows 老牌标配(Office 一族的肌肉记忆),作别名收下;mac 上不绑 Cmd+Y——mac 文本系统里 Ctrl+Y 是 yank、Chrome 里 Cmd+Y 开历史</td>
+    <td><span class="tag t-have">✓ 已实现</span></td>
+  </tr>
+  <tr>
+    <td>系统文本键(§4 那批)</td>
+    <td class="keys"><kbd>Cmd+←/→</kbd> <kbd>Option+←/→</kbd> <kbd>Cmd+⌫</kbd></td>
+    <td class="keys"><kbd>Home/End</kbd> <kbd>Ctrl+←/→</kbd> <kbd>Ctrl+⌫</kbd></td>
+    <td>行首行尾=Home/End,按词跳/删词=Ctrl+方向/Ctrl+Backspace——Windows 文本系统白送的,同样列入「不许破坏」:任何全局拦截不得吞掉它们</td>
+    <td>不许破坏</td>
+  </tr>
+  <tr>
+    <td>系统保留键</td>
+    <td class="keys"><kbd>Cmd+Q/H/M/Tab</kbd> 等</td>
+    <td class="keys"><kbd>Alt+F4</kbd> <kbd>Alt+Tab</kbd> <kbd>Win+…</kbd></td>
+    <td>Windows 的「碰不得」清单:Alt+F4 关窗、Alt+Tab 切窗、Win 键组合全归系统;另外<b>单按 Alt 会聚焦菜单栏</b>(Electron 默认行为)——别设计任何「按住 Alt 单发」的交互</td>
+    <td>不许占用</td>
+  </tr>
+  <tr>
+    <td>浏览器保留键(网页版 demo)</td>
+    <td class="keys"><kbd>Cmd+T/W/N/1-9</kbd></td>
+    <td class="keys"><kbd>Ctrl+T/W/N/1-9</kbd></td>
+    <td>两平台浏览器同样抢标签管理键,网页 demo 里这些可能无效;Electron 真 app 两平台都正常。<kbd>Ctrl+Tab</kbd> 两平台浏览器都不保留,demo 里能用</td>
+    <td>说明项</td>
+  </tr>
+</table>
+
+<h3>7.2 实现与验收怎么做</h3>
+<ul>
+  <li><b>实现</b>:除上表两处真分歧(转块、Ctrl+Y)外零平台判断——所有 handler 收 <code>metaKey || ctrlKey</code>;转块两种组合都认(<code>Cmd+Option+数字</code> / <code>Ctrl+Shift+数字</code>),Ctrl+Y 仅 Windows 生效(平台探测 <code>lib/platform.ts</code>)。</li>
+  <li><b>速查面板</b>(<kbd>Cmd+/</kbd> / <kbd>Ctrl+/</kbd>)按平台自动渲染:mac 显示 ⌘⌥⌃⇧ 符号,Windows 显示 Ctrl·Alt·Shift 文字,右上角有平台徽标。</li>
+  <li><b>Wendi 验收</b>:mac 上照 §3 逐条;Windows 上照「§3 机械换算 + 7.1 五处分歧」,重点验转块 <kbd>Ctrl+Shift+0…6</kbd>、重做 <kbd>Ctrl+Y</kbd>、以及 7.1 第三行的 Windows 系统文本键没被破坏。</li>
+  <li><b>真 app 移植时</b>:Electron 菜单加速键用 <code>CmdOrCtrl</code> 前缀天然跨平台;转块菜单项要按平台注册两套加速键(<code>process.platform</code> 判断),与本表一致。</li>
+</ul>
+
+<p class="note" style="margin-top:40px;border-top:1px solid var(--line);padding-top:12px">
+调研来源:Notion 官方帮助中心(keyboard-shortcuts)、Google Docs / Microsoft Word 官方快捷键页、macOS HIG、VS Code / Obsidian / Typora / Bear / Craft / iA Writer 官方文档与键位表;Wordspace 真 app(v0.5.0 origin/main src/**)与 ui-demo 现状为实测盘点。撞车键位的取舍逻辑见 §2 各裁决点;Windows 分歧见 §7。
+</p>
+
+</div>
+</body>
+</html>

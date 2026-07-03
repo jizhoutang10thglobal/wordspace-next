@@ -38,7 +38,7 @@ export default function CreateModal() {
   const createOpen = useUI((s) => s.createOpen)
   const closeCreate = useUI((s) => s.closeCreate)
   const omni = useUI((s) => s.createOmni)
-  const targetDir = useUI((s) => s.createTargetDir)
+  const target = useUI((s) => s.createTarget)
 
   const createDoc = useStore((s) => s.createDoc)
   const createFromTemplate = useStore((s) => s.createFromTemplate)
@@ -75,10 +75,12 @@ export default function CreateModal() {
   if (!createOpen) return null
 
   const space = spaces.find((s) => s.id === activeSpaceId)
-  const dir = targetDir ?? undefined // undefined → store defaults (root / 我的草稿)
   const companyTemplates = templates.filter((t) => t.pool === 'private')
-  const where =
-    targetDir && targetDir !== '' ? `${space?.name} / ${targetDir}` : (space?.name ?? '当前空间')
+  // 多根：定位「建到哪」的展示——目标根名 + 子目录；没指定就是空间默认（第一个根 / 我的草稿）
+  const targetRoot = target ? space?.roots?.find((r) => r.id === target.rootId) : undefined
+  const where = target
+    ? `${targetRoot?.name ?? space?.name}${target.dir ? ` / ${target.dir}` : ''}`
+    : (space?.name ?? '当前空间')
   const active = PARADIGMS.find((p) => p.id === paradigm) ?? PARADIGMS[0]
 
   const done = () => {
@@ -87,11 +89,11 @@ export default function CreateModal() {
   }
   // omni（从「标签页 +」进）→ 临时文档，不进文件树/库，手动保存才落地。
   const blank = () => {
-    createDoc(DRAFTS, 'doc', '无标题文档', dir, omni)
+    createDoc(DRAFTS, 'doc', '无标题文档', target, omni)
     done()
   }
   const fromTemplate = (id: string) => {
-    createFromTemplate(id, DRAFTS, dir, omni)
+    createFromTemplate(id, DRAFTS, target, omni)
     done()
   }
 
