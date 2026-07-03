@@ -1035,10 +1035,15 @@ test('AI 接入弹窗：菜单打开 + 复制 Prompt/命令 真进剪贴板', as
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'ai-access'));
   await expect(page.locator('.aiax-modal')).toBeVisible();
   await expect(page.locator('.aiax-modal .sb-modal-title')).toHaveText('AI 接入');
+  // Tab 版（Colin）：默认 = 安装 Skill（推荐徽标）；步骤含 CLI 四个选择项
+  await expect(page.locator('#aiax-tab-skill')).toHaveClass(/is-active/);
+  await expect(page.locator('#aiax-tab-skill .aiax-badge')).toHaveText('推荐');
+  await expect(page.locator('.aiax-steps')).toContainText('Global');
   // 复制命令 → 剪贴板 = 安装命令
   await page.click('.aiax-copy-cmd');
   await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('npx skills add wordspace-ai/skills');
-  // 复制 Prompt → 剪贴板 = 打包的指南全文（与 docs/ 正本逐字节一致，防漂移测试锁的那份）
+  // 切到 Prompt 页 → 复制 Prompt → 剪贴板 = 打包的指南全文（与 docs/ 正本逐字节一致）
+  await page.click('#aiax-tab-prompt');
   await page.click('.aiax-copy-prompt');
   const guide = require('fs').readFileSync(path.join(ROOT, 'docs', 'schema-1-ai-authoring.md'), 'utf8');
   await expect.poll(async () => {
