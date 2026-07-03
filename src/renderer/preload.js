@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('ws2', {
   historyList: (p) => ipcRenderer.invoke('history-list', p),
   historyRead: (p, id) => ipcRenderer.invoke('history-read', p, id),
   setDirty: (v) => ipcRenderer.send('set-dirty', v),
+  winClose: () => ipcRenderer.send('win-close'), // Cmd+W 空态：关窗口（主进程按平台分流：macOS 隐藏驻留/其他退出）
   watchDoc: (p) => ipcRenderer.send('watch-doc', p),
   unwatchDoc: () => ipcRenderer.send('unwatch-doc'),
   onDocChanged: (cb) => ipcRenderer.on('doc-changed', (_e, p) => cb(p)),
