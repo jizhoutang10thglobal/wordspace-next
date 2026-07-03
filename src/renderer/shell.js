@@ -797,17 +797,14 @@ function openAiAccessModal() {
   cmdRow.append(cmdText, btnCmd);
   const steps = document.createElement('ol');
   steps.className = 'aiax-steps';
+  // 步骤按 CLI 真实交互实测校准（expect 驱动过全流程，别凭 README 想象）
   steps.innerHTML =
     '<li>打开「终端」（需要 <b>Node.js</b>，没有先去 nodejs.org 装 LTS）</li>' +
     '<li>粘贴上面的命令，回车</li>' +
-    '<li>按提示选（方向键移动、空格勾选、回车确认）：' +
-      '<ul>' +
-      '<li><b>Skills</b> → 选 <code>wordspace</code>（仓库里只有它）</li>' +
-      '<li><b>Agents</b> → 勾你在用的 AI 工具，拿不准就全选</li>' +
-      '<li><b>Scope</b> → 选 <b>Global</b>（所有项目可用）</li>' +
-      '<li><b>Method</b> → 选 <b>Symlink</b>（默认）</li>' +
-      '</ul></li>' +
-    '<li>重启 AI 工具，说「写一份 ×× 的 Wordspace 文档」试试。更新规范：<code>npx skills update</code></li>';
+    '<li><b>Which agents…</b>：Cursor / Codex 等 13 家已默认包含；<b>Claude Code 这类要自己勾</b>——↑↓ 或输入搜索找到它，按空格勾选，回车</li>' +
+    '<li><b>Installation scope</b>：选 <b>Global</b>（默认的 Project 只装进当前文件夹）</li>' +
+    '<li>确认安装；若追问要不要装 find-skills，随意</li>' +
+    '<li>重启 AI 工具，说「写一份 ×× 的 Wordspace 文档」试试。更新：<code>npx skills update</code></li>';
   paneSkill.append(introSkill, cmdRow, steps);
 
   // —— 面板二：复制 Prompt ——
