@@ -93,13 +93,15 @@
   §3 <a href="#s3">快捷键总表(按作用域分组)</a><br>
   §4 <a href="#s4">系统白送的文本键:不许破坏清单</a><br>
   §5 <a href="#s5">与真 app 现状的一致性对照</a><br>
-  §6 <a href="#s6">ui-demo 本轮落地清单(= Wendi 验收清单)</a>
+  §6 <a href="#s6">ui-demo 本轮落地清单(= Wendi 验收清单)</a><br>
+  §7 <a href="#s7">Windows 键位:映射规则与分歧表</a>
 </div>
 
 <div class="callout" style="border-left-color:var(--ok);background:var(--ok-bg)">
   <b>v2 · 已拍板并实现(2026-07-03)</b>:§2 五项裁决 Colin 已全部按建议拍板;§3 表中标
-  <span class="tag t-have">✓ 已实现</span> 的键位已在 ui-demo 落地。<b>验证入口</b>:demo 左下角
-  ⌨ 图标或 <kbd>Cmd+/</kbd> 打开速查面板;本页即 Wendi 的逐条验收清单(§6)。
+  <span class="tag t-have">✓ 已实现</span> 的键位已在 ui-demo 落地(mac + Windows 双平台,分歧见 §7)。
+  <b>验证入口</b>:demo 左下角 ⌨ 图标或 <kbd>Cmd+/</kbd>(Windows <kbd>Ctrl+/</kbd>)打开速查面板——
+  面板按平台自动显示对应键位;本页即 Wendi 的逐条验收清单(§6)。
   §5 的三处真 app 改键(Cmd+E→Cmd+Shift+E、Cmd+F 迁移、补标签导航键)待 ui-demo 验收通过后随移植一起做。
 </div>
 
@@ -173,7 +175,7 @@
 
 <!-- ===================================================================== -->
 <h2 id="s3"><span class="no">§3</span>快捷键总表(按作用域分组)</h2>
-<p class="note">「业界对照」列:N=Notion,W=Word(mac),G=Google Docs,系=macOS/跨 app 惯例。表内已按 §2 建议落键;裁决变更则表跟着变。</p>
+<p class="note">「业界对照」列:N=Notion,W=Word(mac),G=Google Docs,系=macOS/跨 app 惯例。表内已按 §2 建议落键。<b>本表用 mac 记法;Windows 键位 = Cmd→Ctrl、Option→Alt 机械换算,五处例外见 §7</b>。</p>
 
 <h3>3.1 应用壳 · 全局(任何焦点都响应)</h3>
 <table>
@@ -296,8 +298,65 @@
   <li>多块选择系(<kbd>Shift+↑↓</kbd>/<kbd>Cmd+A</kbd> 阶梯/<kbd>Cmd+Shift+点击</kbd>):依赖多选模型,单独立项</li>
 </ul>
 
+<!-- ===================================================================== -->
+<h2 id="s7"><span class="no">§7</span>Windows 键位:映射规则与分歧表</h2>
+
+<p>Wordspace 双平台发布(mac + Windows),快捷键体系是同一套。<b>§3 总表用 mac 记法,Windows 按下面一条规则机械换算,例外只有五处</b>——速查面板(<kbd>Ctrl+/</kbd>)会按当前平台自动显示对应键位,不用人肉换算。</p>
+
+<div class="callout">
+  <b>通用映射规则</b>:<kbd>Cmd</kbd> → <kbd>Ctrl</kbd>,<kbd>Option</kbd> → <kbd>Alt</kbd>;mac 记法里本来就是 <kbd>Ctrl</kbd> 的(如 <kbd>Ctrl+Tab</kbd>)两平台同键。实现层面所有键都收 <code>metaKey || ctrlKey</code> 双通道,90% 的键位天然跨平台。
+</div>
+
+<h3>7.1 五处分歧(不能机械换算的)</h3>
+<table>
+  <tr><th>意图</th><th style="width:170px">mac</th><th style="width:190px">Windows</th><th>为什么不一样</th><th style="width:88px">状态</th></tr>
+  <tr>
+    <td>转块(正文/标题/列表)</td>
+    <td class="keys"><kbd>Cmd+Option+0…6</kbd></td>
+    <td class="keys"><kbd>Ctrl+Shift+0…6</kbd></td>
+    <td><b>Windows 绝不能用 Ctrl+Alt 做快捷键</b>:欧洲/多语键盘的 AltGr 就是 Ctrl+Alt,占了会吃正常字符输入。Notion 在两平台就是这么分的(mac Cmd+Option / win Ctrl+Shift),照抄</td>
+    <td><span class="tag t-have">✓ 已实现</span></td>
+  </tr>
+  <tr>
+    <td>重做</td>
+    <td class="keys"><kbd>Cmd+Shift+Z</kbd></td>
+    <td class="keys"><kbd>Ctrl+Shift+Z</kbd> 或 <kbd>Ctrl+Y</kbd></td>
+    <td>Ctrl+Y 是 Windows 老牌标配(Office 一族的肌肉记忆),作别名收下;mac 上不绑 Cmd+Y——mac 文本系统里 Ctrl+Y 是 yank、Chrome 里 Cmd+Y 开历史</td>
+    <td><span class="tag t-have">✓ 已实现</span></td>
+  </tr>
+  <tr>
+    <td>系统文本键(§4 那批)</td>
+    <td class="keys"><kbd>Cmd+←/→</kbd> <kbd>Option+←/→</kbd> <kbd>Cmd+⌫</kbd></td>
+    <td class="keys"><kbd>Home/End</kbd> <kbd>Ctrl+←/→</kbd> <kbd>Ctrl+⌫</kbd></td>
+    <td>行首行尾=Home/End,按词跳/删词=Ctrl+方向/Ctrl+Backspace——Windows 文本系统白送的,同样列入「不许破坏」:任何全局拦截不得吞掉它们</td>
+    <td>不许破坏</td>
+  </tr>
+  <tr>
+    <td>系统保留键</td>
+    <td class="keys"><kbd>Cmd+Q/H/M/Tab</kbd> 等</td>
+    <td class="keys"><kbd>Alt+F4</kbd> <kbd>Alt+Tab</kbd> <kbd>Win+…</kbd></td>
+    <td>Windows 的「碰不得」清单:Alt+F4 关窗、Alt+Tab 切窗、Win 键组合全归系统;另外<b>单按 Alt 会聚焦菜单栏</b>(Electron 默认行为)——别设计任何「按住 Alt 单发」的交互</td>
+    <td>不许占用</td>
+  </tr>
+  <tr>
+    <td>浏览器保留键(网页版 demo)</td>
+    <td class="keys"><kbd>Cmd+T/W/N/1-9</kbd></td>
+    <td class="keys"><kbd>Ctrl+T/W/N/1-9</kbd></td>
+    <td>两平台浏览器同样抢标签管理键,网页 demo 里这些可能无效;Electron 真 app 两平台都正常。<kbd>Ctrl+Tab</kbd> 两平台浏览器都不保留,demo 里能用</td>
+    <td>说明项</td>
+  </tr>
+</table>
+
+<h3>7.2 实现与验收怎么做</h3>
+<ul>
+  <li><b>实现</b>:除上表两处真分歧(转块、Ctrl+Y)外零平台判断——所有 handler 收 <code>metaKey || ctrlKey</code>;转块两种组合都认(<code>Cmd+Option+数字</code> / <code>Ctrl+Shift+数字</code>),Ctrl+Y 仅 Windows 生效(平台探测 <code>lib/platform.ts</code>)。</li>
+  <li><b>速查面板</b>(<kbd>Cmd+/</kbd> / <kbd>Ctrl+/</kbd>)按平台自动渲染:mac 显示 ⌘⌥⌃⇧ 符号,Windows 显示 Ctrl·Alt·Shift 文字,右上角有平台徽标。</li>
+  <li><b>Wendi 验收</b>:mac 上照 §3 逐条;Windows 上照「§3 机械换算 + 7.1 五处分歧」,重点验转块 <kbd>Ctrl+Shift+0…6</kbd>、重做 <kbd>Ctrl+Y</kbd>、以及 7.1 第三行的 Windows 系统文本键没被破坏。</li>
+  <li><b>真 app 移植时</b>:Electron 菜单加速键用 <code>CmdOrCtrl</code> 前缀天然跨平台;转块菜单项要按平台注册两套加速键(<code>process.platform</code> 判断),与本表一致。</li>
+</ul>
+
 <p class="note" style="margin-top:40px;border-top:1px solid var(--line);padding-top:12px">
-调研来源:Notion 官方帮助中心(keyboard-shortcuts)、Google Docs / Microsoft Word 官方快捷键页、macOS HIG、VS Code / Obsidian / Typora / Bear / Craft / iA Writer 官方文档与键位表;Wordspace 真 app(v0.5.0 origin/main src/**)与 ui-demo 现状为实测盘点。撞车键位的取舍逻辑见 §2 各裁决点。
+调研来源:Notion 官方帮助中心(keyboard-shortcuts)、Google Docs / Microsoft Word 官方快捷键页、macOS HIG、VS Code / Obsidian / Typora / Bear / Craft / iA Writer 官方文档与键位表;Wordspace 真 app(v0.5.0 origin/main src/**)与 ui-demo 现状为实测盘点。撞车键位的取舍逻辑见 §2 各裁决点;Windows 分歧见 §7。
 </p>
 
 </div>

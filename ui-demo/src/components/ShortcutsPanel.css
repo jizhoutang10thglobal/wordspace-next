@@ -2,6 +2,13 @@
 .skp { width: 620px; max-width: calc(100vw - 48px); }
 .skp .ws-modal-title { display: flex; align-items: center; gap: 7px; }
 .skp-title-ico { color: var(--c-text-3); }
+.skp-platform {
+  padding: 0 7px;
+  border: 1px solid var(--c-border, #e3e2de);
+  border-radius: 99px;
+  font-size: 10.5px; font-weight: 500; line-height: 17px;
+  color: var(--c-text-3, #9b9a97);
+}
 
 .skp-body {
   max-height: min(520px, 62vh);

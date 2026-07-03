@@ -8,6 +8,7 @@ import {
 import { GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
+import { IS_MAC } from '../lib/platform'
 import {
   VISIBILITY_META,
   isCloudStorage,
@@ -648,6 +649,14 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         deselect()
         return
       }
+      // Ctrl+Y 重做——仅 Windows（Win 标配别名;mac 上 Ctrl+Y 是文本系统的 yank,不占）。
+      if (!IS_MAC && e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault()
+        ;(document.activeElement as HTMLElement | null)?.blur?.()
+        redo()
+        deselect()
+        return
+      }
       // 当前块 = 光标所在块或灰选中块（两个态的键位统一从这里解析,Notion 双态模型）
       const curId = editingId ?? selectedId
       // 把「编辑中的活内容」先写回 store,让复制/移动拿到最新文字（不打 checkpoint）
@@ -656,9 +665,13 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         const el = blockEls.current.get(editingId)
         if (el) updateBlockHtml(doc.id, editingId, el.innerHTML)
       }
-      // ⌘⌥0–6 转块：0 正文 · 1/2/3 标题 · 4 待办 · 5 无序 · 6 有序（裁决 1：跟 Notion,
-      // Cmd+数字留给标签直达）。用 e.code——mac 上 Option+数字会产出特殊字符,e.key 不可靠。
-      if (e.metaKey && e.altKey && /^Digit[0-6]$/.test(e.code) && doc && curId) {
+      // 转块：mac ⌘⌥0–6 / Windows Ctrl+Shift+0–6（Notion 同款平台分歧;Win 不用 Ctrl+Alt——
+      // 欧洲键盘 AltGr 就是 Ctrl+Alt,占了会吃正常字符输入）。0 正文 · 1/2/3 标题 · 4 待办 ·
+      // 5 无序 · 6 有序。用 e.code——mac Option+数字、Win Shift+数字都会变出别的字符,e.key 不可靠。
+      const turnCombo =
+        (e.metaKey && e.altKey && !e.ctrlKey) ||
+        (e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey)
+      if (turnCombo && /^Digit[0-6]$/.test(e.code) && doc && curId) {
         e.preventDefault()
         const d = Number(e.code.slice(5))
         const targets: [BlockType, (1 | 2 | 3)?, ListStyle?][] = [

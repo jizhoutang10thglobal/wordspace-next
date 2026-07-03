@@ -35,6 +35,7 @@ import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, type FileNode } from '../lib/tree'
+import { IS_MAC } from '../lib/platform'
 import { isCloudStorage } from '../types'
 import type { Doc, FileEntry, FileKind, Folder, MountRoot, Space, Tab } from '../types'
 import './ArcSidebar.css'
@@ -1161,7 +1162,7 @@ export default function ArcSidebar() {
           <button className="arc-ico" title="后退" onClick={goBack}><ChevronLeft size={16} /></button>
           <button className="arc-ico" title="前进" onClick={goForward}><ChevronRight size={16} /></button>
           <button className="arc-ico" title="刷新" onClick={reload}><RotateCw size={13} /></button>
-          <button className="arc-ico" title="查找文件 ⌘P" onClick={openFind}><Search size={14} /></button>
+          <button className="arc-ico" title={IS_MAC ? '查找文件 ⌘P' : '查找文件 Ctrl+P'} onClick={openFind}><Search size={14} /></button>
         </div>
       </div>
 
@@ -1236,10 +1237,10 @@ export default function ArcSidebar() {
               <Icon size={16} />
             </button>
           ))}
-          {/* 快捷键速查（⌘/）+ 完整键位文档入口（Wendi review 用） */}
+          {/* 快捷键速查（⌘/ 或 Ctrl+/）+ 完整键位文档入口（Wendi review 用） */}
           <button
             className="arc-util-btn"
-            title="快捷键 ⌘/"
+            title={IS_MAC ? '快捷键 ⌘/' : '快捷键 Ctrl+/'}
             onClick={() => useUI.getState().openShortcuts()}
           >
             <Keyboard size={16} />

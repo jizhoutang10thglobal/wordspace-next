@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { X, Keyboard, ExternalLink } from 'lucide-react'
 import { useUI } from '../mock/ui'
-import { SHORTCUT_GROUPS } from '../lib/shortcutList'
+import { shortcutGroupsForPlatform, renderKey } from '../lib/shortcutList'
+import { IS_MAC } from '../lib/platform'
 import './ShortcutsPanel.css'
 
 // 快捷键速查面板（Cmd+/ 或左下角 ⌨ 打开）——只列 demo 里真的能用的键位。
@@ -22,6 +23,8 @@ export default function ShortcutsPanel() {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, close])
 
+  const groups = useMemo(() => shortcutGroupsForPlatform(), [])
+
   if (!open) return null
 
   return (
@@ -38,6 +41,7 @@ export default function ShortcutsPanel() {
             <div className="ws-modal-title">
               <Keyboard size={16} className="skp-title-ico" />
               快捷键
+              <span className="skp-platform">{IS_MAC ? 'macOS' : 'Windows'}</span>
             </div>
             <div className="ws-modal-sub">同一个键在不同场景下含义不同：弹层 &gt; 编辑器 &gt; 全局壳，Esc 逐层退出</div>
           </div>
@@ -47,7 +51,7 @@ export default function ShortcutsPanel() {
         </header>
 
         <div className="skp-body">
-          {SHORTCUT_GROUPS.map((g) => (
+          {groups.map((g) => (
             <section key={g.title} className="skp-group">
               <h3 className="skp-group-title">{g.title}</h3>
               {g.hint && <div className="skp-group-hint">{g.hint}</div>}
@@ -57,7 +61,7 @@ export default function ShortcutsPanel() {
                     <span className="skp-label ws-truncate">{it.label}</span>
                     <span className="skp-keys">
                       {it.keys.map((k, j) => (
-                        <kbd key={j}>{k}</kbd>
+                        <kbd key={j}>{renderKey(k)}</kbd>
                       ))}
                     </span>
                   </div>
