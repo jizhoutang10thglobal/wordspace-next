@@ -749,12 +749,11 @@ function openAiAccessModal() {
   function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
   const modal = document.createElement('div');
   modal.className = 'sb-modal aiax-modal';
-  // head（结构同 sidebar 的 modalHead，shell.js 侧自建）
   const head = document.createElement('div');
   head.className = 'sb-modal-head';
   const ht = document.createElement('div');
   ht.className = 'sb-modal-head-text';
-  ht.innerHTML = '<div class="sb-modal-title">AI 接入</div><div class="sb-modal-where">让你的 AI 会写、会改 Wordspace 文档——写歪了也不怕，打开时校验器把关</div>';
+  ht.innerHTML = '<div class="sb-modal-title">AI 接入</div><div class="sb-modal-where">让你的 AI 会写 Wordspace 文档</div>';
   const x = document.createElement('button');
   x.className = 'sb-modal-x';
   x.setAttribute('aria-label', '关闭');
@@ -763,46 +762,86 @@ function openAiAccessModal() {
   head.append(ht, x);
   const body = document.createElement('div');
   body.className = 'sb-modal-body';
-  // 复制反馈：按钮文字闪「✓ 已复制」
   const flashBtn = (btn, ok) => { const t = btn.textContent; btn.textContent = ok; btn.disabled = true; setTimeout(() => { btn.textContent = t; btn.disabled = false; }, 1400); };
-  // 方式一：复制 Prompt
-  const way1 = document.createElement('div');
-  way1.className = 'aiax-way';
-  way1.innerHTML = '<div class="aiax-way-title">方式一 · 复制 Prompt</div>'
-    + '<div class="aiax-way-desc">粘给任何对话式 AI，零安装。粘完直接说「帮我写一份 ×× 的 Wordspace 文档」。</div>';
-  const btn1 = document.createElement('button');
-  btn1.className = 'sb-btn sb-btn-primary aiax-copy-prompt';
-  btn1.textContent = '复制 Prompt';
-  btn1.onclick = async () => {
-    try {
-      const text = await window.ws2.aiGuide();
-      await navigator.clipboard.writeText(text);
-      flashBtn(btn1, '✓ 已复制');
-    } catch (e) { alert('复制失败：' + (e.message || e)); }
-  };
-  way1.appendChild(btn1);
-  // 方式二：安装 Skill
-  const way2 = document.createElement('div');
-  way2.className = 'aiax-way';
-  way2.innerHTML = '<div class="aiax-way-title">方式二 · 安装 Skill（推荐）</div>'
-    + '<div class="aiax-way-desc">一次安装，Claude Code / Cursor 等 30+ 工具通用；以后我们更新规范，跑 <code>npx skills update</code> 即可。</div>';
+
+  // Tab 切换（Colin：skill 是方式一、标推荐；步骤写详但分页装）
+  const tabs = document.createElement('div');
+  tabs.className = 'aiax-tabs';
+  const tabSkill = document.createElement('button');
+  tabSkill.className = 'aiax-tab is-active';
+  tabSkill.id = 'aiax-tab-skill';
+  tabSkill.innerHTML = '安装 Skill <span class="aiax-badge">推荐</span>';
+  const tabPrompt = document.createElement('button');
+  tabPrompt.className = 'aiax-tab';
+  tabPrompt.id = 'aiax-tab-prompt';
+  tabPrompt.textContent = '复制 Prompt';
+  tabs.append(tabSkill, tabPrompt);
+
+  // —— 面板一：安装 Skill ——
+  const paneSkill = document.createElement('div');
+  paneSkill.className = 'aiax-pane';
+  const introSkill = document.createElement('div');
+  introSkill.className = 'aiax-way-desc';
+  introSkill.textContent = '装一次，Claude Code / Cursor 等 30+ 工具通用。';
   const cmdRow = document.createElement('div');
   cmdRow.className = 'aiax-cmd';
   const cmdText = document.createElement('code');
   cmdText.textContent = AI_SKILL_CMD;
-  const btn2 = document.createElement('button');
-  btn2.className = 'sb-btn aiax-copy-cmd';
-  btn2.textContent = '复制命令';
-  btn2.onclick = async () => {
-    try { await navigator.clipboard.writeText(AI_SKILL_CMD); flashBtn(btn2, '✓ 已复制'); }
+  const btnCmd = document.createElement('button');
+  btnCmd.className = 'sb-btn aiax-copy-cmd';
+  btnCmd.textContent = '复制命令';
+  btnCmd.onclick = async () => {
+    try { await navigator.clipboard.writeText(AI_SKILL_CMD); flashBtn(btnCmd, '✓ 已复制'); }
     catch (e) { alert('复制失败：' + (e.message || e)); }
   };
-  cmdRow.append(cmdText, btn2);
-  way2.appendChild(cmdRow);
+  cmdRow.append(cmdText, btnCmd);
+  const steps = document.createElement('ol');
+  steps.className = 'aiax-steps';
+  steps.innerHTML =
+    '<li>打开「终端」（需要 <b>Node.js</b>，没有先去 nodejs.org 装 LTS）</li>' +
+    '<li>粘贴上面的命令，回车</li>' +
+    '<li>按提示选（方向键移动、空格勾选、回车确认）：' +
+      '<ul>' +
+      '<li><b>Skills</b> → 选 <code>wordspace</code>（仓库里只有它）</li>' +
+      '<li><b>Agents</b> → 勾你在用的 AI 工具，拿不准就全选</li>' +
+      '<li><b>Scope</b> → 选 <b>Global</b>（所有项目可用）</li>' +
+      '<li><b>Method</b> → 选 <b>Symlink</b>（默认）</li>' +
+      '</ul></li>' +
+    '<li>重启 AI 工具，说「写一份 ×× 的 Wordspace 文档」试试。更新规范：<code>npx skills update</code></li>';
+  paneSkill.append(introSkill, cmdRow, steps);
+
+  // —— 面板二：复制 Prompt ——
+  const panePrompt = document.createElement('div');
+  panePrompt.className = 'aiax-pane';
+  panePrompt.hidden = true;
+  const introPrompt = document.createElement('div');
+  introPrompt.className = 'aiax-way-desc';
+  introPrompt.textContent = '不装任何东西：复制全文，粘到对话开头，再提需求。每次新会话要重新粘。';
+  const btnPrompt = document.createElement('button');
+  btnPrompt.className = 'sb-btn sb-btn-primary aiax-copy-prompt';
+  btnPrompt.textContent = '复制 Prompt';
+  btnPrompt.onclick = async () => {
+    try {
+      const text = await window.ws2.aiGuide();
+      await navigator.clipboard.writeText(text);
+      flashBtn(btnPrompt, '✓ 已复制');
+    } catch (e) { alert('复制失败：' + (e.message || e)); }
+  };
+  panePrompt.append(introPrompt, btnPrompt);
+
+  const setTab = (skill) => {
+    tabSkill.classList.toggle('is-active', skill);
+    tabPrompt.classList.toggle('is-active', !skill);
+    paneSkill.hidden = !skill;
+    panePrompt.hidden = skill;
+  };
+  tabSkill.onclick = () => setTab(true);
+  tabPrompt.onclick = () => setTab(false);
+
   const foot = document.createElement('div');
   foot.className = 'aiax-note';
-  foot.textContent = '不合规的文件不会坏：Wordspace 打开时自动校验，通过 = 完整块编辑，不通过 = 基础编辑兜底。';
-  body.append(way1, way2, foot);
+  foot.textContent = '打开文件时自动校验：合规 = 完整块编辑，不合规 = 基础编辑。';
+  body.append(tabs, paneSkill, panePrompt, foot);
   modal.append(head, body);
   overlay.appendChild(modal);
   overlay.onmousedown = (e) => { if (e.target === overlay) close(); };
