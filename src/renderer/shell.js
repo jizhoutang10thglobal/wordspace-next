@@ -716,7 +716,11 @@ if (docMenuBtn && docMenu) {
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !docMenu.hidden) docMenu.hidden = true; });
 }
+window.__shellOpenAiAccess = openAiAccessModal; // 侧栏页脚 AI 钮（sidebar.js）也开同一个弹窗
 document.getElementById('open-btn').onclick = pickAndOpen;
+// 打开文件夹（⋯ 菜单 / 菜单栏）：走侧栏的 pickFolder（含 WS2_FOLDER_IN 测试 seam 与工作区装载全流程）
+const openFolderMenuBtn = document.getElementById('open-folder-btn');
+if (openFolderMenuBtn) openFolderMenuBtn.onclick = () => { if (window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder(); };
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = saveAs; // 菜单里的「另存为…」；Cmd+S / 菜单栏「保存」仍走 save()（真文件即存、临时弹 SaveModal）
@@ -808,6 +812,7 @@ function openAiAccessModal() {
 
 window.ws2.onMenu((cmd) => {
   if (cmd === 'ai-access') openAiAccessModal();
+  if (cmd === 'open-folder' && window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder();
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
   if (cmd === 'export-pdf') exportPdf(pdfExportMode()); // 基础模式=raw 直印源文件；md 一律 wordspace（KD-5）

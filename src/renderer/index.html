@@ -48,6 +48,10 @@
   </div>
   <!-- 品牌页脚：wordspace.ai logo + 版本号（左侧栏底部，增强 branding）。 -->
   <div class="sb-foot">
+    <!-- AI 接入入口（Colin：对齐 ui-demo 左下角位置；菜单「AI 接入…」保留作无工作区时的兜底） -->
+    <button id="sb-ai" class="sb-icobtn sb-foot-ai" title="AI 接入">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 3.6 11 1l1.1 2.6a6 6 0 0 0 3.2 3.2L18 8l-2.6 1.1a6 6 0 0 0-3.2 3.2L11 15l-1.1-2.6a6 6 0 0 0-3.2-3.2L4 8l2.6-1.1a6 6 0 0 0 3.3-3.3Z"/><path d="M19 14l.7 1.6L21.5 16l-1.7.7L19 18l-.7-1.6-1.7-.7 1.7-.7Z"/></svg>
+    </button>
     <img class="sb-foot-logo" src="wordspace-wordmark.png" alt="wordspace.ai">
     <span class="sb-foot-ver" id="ws-ver"></span>
   </div>
@@ -69,8 +73,13 @@
     </button>
     <div id="doc-menu" class="ws-docmenu" hidden>
       <button id="open-btn" class="ws-docmenu-item">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+        <span>打开文件…</span>
+      </button>
+      <!-- 打开文件夹（Colin：单文件模式没有开工作区入口 → 集成进「打开」菜单，永远可达） -->
+      <button id="open-folder-btn" class="ws-docmenu-item">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
-        <span>打开…</span>
+        <span>打开文件夹…</span>
       </button>
       <button id="save-btn" class="ws-docmenu-item" disabled>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7H7v7"/><path d="M7 3v4h8"/></svg>

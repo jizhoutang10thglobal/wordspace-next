@@ -917,6 +917,8 @@
   if (emptyOpenBtn) emptyOpenBtn.onclick = pickFolder;
   const findBtn = document.getElementById('sb-find');
   if (findBtn) findBtn.onclick = () => openFindPalette(); // T7：查找的可见入口（openFindPalette 自守「无工作区不开」）
+  const aiBtn = document.getElementById('sb-ai');
+  if (aiBtn) aiBtn.onclick = () => { if (window.__shellOpenAiAccess) window.__shellOpenAiAccess(); }; // 左下角 AI 接入（同菜单那个弹窗）
   // B9（Wendi）：侧栏头部「新建文档」加号已删（跟标签页加号功能重复）。新建入口 = 标签页区加号 + Cmd+T + 右键文件夹。
   const homeOpenFolder = document.getElementById('home-open-folder'); // 首页空态的「打开文件夹」入口（无工作区时侧栏隐藏）
   if (homeOpenFolder) homeOpenFolder.onclick = pickFolder;
@@ -1234,6 +1236,7 @@
     onDirtyChange: (d) => {
       document.querySelectorAll('.sb-tab.is-active:not(.sb-tab-temp) .sb-tab-dot').forEach((el) => { el.hidden = !d; });
     },
+    pickFolder: () => pickFolder(), // ⋯ 菜单/菜单栏「打开文件夹…」（单文件模式也要有开工作区的入口）
     onOpen: async (abs) => {
       // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc

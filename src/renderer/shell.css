@@ -573,3 +573,6 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .aiax-cmd { display: flex; align-items: center; gap: 8px; }
 .aiax-cmd code { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-sm); background: #23262b; color: #e8eaed; padding: 8px 12px; border-radius: var(--r-sm); overflow-x: auto; white-space: nowrap; }
 .aiax-note { margin-top: 12px; font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.5; }
+
+/* 侧栏页脚 AI 接入钮（左下角，对齐 ui-demo arc-foot 位置） */
+.sb-foot-ai { width: 24px; height: 24px; margin-left: -4px; margin-right: 2px; }
