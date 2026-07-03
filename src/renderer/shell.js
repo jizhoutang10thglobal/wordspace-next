@@ -29,6 +29,7 @@ const docStatus = document.getElementById('doc-status');
 const viewer = document.getElementById('viewer');
 const saveBtn = document.getElementById('save-btn');
 const exportBtn = document.getElementById('export-btn');
+const exportMdBtn = document.getElementById('export-md-btn');
 
 let savedTimer = null; // 「✓ 已保存」淡出定时器（保存成功后闪一下再消失）
 function setDirty(v) {
@@ -81,6 +82,9 @@ function showAiSoon() { window.alert('AI 功能开发中'); }
 // 仅用于显示的纯文件名：跨平台按 / 或 \ 切（Windows 路径用反斜杠）。真正加载用的 URL 一律走
 // 主进程的 window.ws2.pathInfo（Node url.pathToFileURL），renderer 不自己拼 file:// URL。
 function baseName(p) { return p.split(/[\\/]/).pop(); }
+// markdown 后端：主进程 read-doc 已把 .md 转成 HTML，renderer 只在「怎么渲染/怎么导出/另存为什么格式」
+// 三处按路径分流；编辑器/校验器链路完全不感知格式（与 src/main/md-adapter.js 的 isMdPath 同判定）。
+function isMdPath(p) { return typeof p === 'string' && /\.md$/i.test(p); }
 
 function injectBase(doc, dirUrl) {
   const base = doc.createElement('base');
@@ -174,6 +178,7 @@ function attachBasic() {
   undoMgr = new WS2Undo.UndoManager(doc);
   basicEdit = WS2BasicEdit.attach(doc, { win: frame.contentWindow, host: mainEl, markDirty });
   if (degradeNotice) degradeNotice.hidden = false;
+  updateExportMd(); // 非合规 → 导出 md 禁用
   // 输入调度 undo checkpoint（连续打字塌成一个 op）；标脏由基础编辑器内部 onInput 做
   doc.addEventListener('input', () => { if (undoMgr && undoMgr.scheduleCheckpoint) undoMgr.scheduleCheckpoint(); });
   // 导出仍可用：基础模式走 raw（直印源文件、忠于野文件原貌），不走块编辑器的 Wordspace 排版（见导出触发点）
@@ -202,6 +207,7 @@ function wireEditor() {
   const doc = frame.contentDocument;
   if (basicEdit) { basicEdit.detach(); basicEdit = null; } // 合规路径：清掉可能残留的基础编辑器 + 收起降级条
   if (degradeNotice) degradeNotice.hidden = true;
+  updateExportMd(); // 合规态定了（含 reloadDoc 外部改动翻转合规性的路径）→ 刷新「导出为 Markdown」可用性
   if (undoMgr && undoMgr.timer) clearTimeout(undoMgr.timer); // 取消上个文档悬挂的 checkpoint 定时器（防 stale 闭包）
   undoMgr = new WS2Undo.UndoManager(doc);
   try { doc.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) {}
@@ -293,6 +299,7 @@ async function showViewer(node) {
   docHeader.hidden = true;
   if (docStatus) docStatus.hidden = true;
   exportBtn.disabled = true; // 非 html 不能导出
+  if (exportMdBtn) exportMdBtn.disabled = true;
   if (window.__sbHooks) window.__sbHooks.onOpen(node.abs); // 侧栏高亮当前查看的文件
 
   const kind = node.kind || 'other';
@@ -383,7 +390,11 @@ function loadFromFile(opts) {
 async function reloadDoc() {
   detachEditors();
   // 外部改动可能翻转合规性（如 Claude 改完变合规/变不合规）→ 重判分流
-  try { if (docPath) docConform = routeDoc(await window.ws2.readDoc(docPath)); } catch (e) { /* 保持上次判定 */ }
+  let raw = null;
+  try { if (docPath) { raw = await window.ws2.readDoc(docPath); docConform = routeDoc(raw); } } catch (e) { /* 保持上次判定 */ }
+  // .md：渲染内容不在磁盘文件里（是 read-doc 的转换产物）→ 重载 = 重新 srcdoc（赋值天然重导航，
+  // 不需要下面 about:blank 的二段跳）。读盘失败（文件正被外部改写/删除）就先不动，等 watcher 下一拍。
+  if (isMdPath(docPath)) { if (raw != null) loadFromHtml(raw); return; }
   const gen = ++loadGen;
   frame.onload = () => {
     if (gen !== loadGen) return; // 被更晚的载入抢占
@@ -500,6 +511,7 @@ function renderTemp(id) {
   docName.textContent = rec.base;
   docName.title = rec.base;
   exportBtn.disabled = true; // 临时文档没落盘、不能导出（保存后才亮）
+  if (exportMdBtn) exportMdBtn.disabled = true; // 导出 md 同理（updateExportMd 的 tempDoc 闸也兜着）
 }
 // 把当前活跃临时文档的编辑内容序列化存回 tempStore（切走 / 保存前调，防单编辑器切标签丢内容）。
 function stashActiveTemp() {
@@ -560,7 +572,10 @@ async function openDoc(p) {
   docInfo = info;
   docConform = routeDoc(raw); // 合规→完整编辑 / 不合规→基础编辑（判磁盘原始字节 reparse，§4.3 铁律③）
   zoomFactor = 1; // 新文档从 100% 开始（wireEditor 会按这个重挂缩放）
-  loadFromFile();
+  // .md 走 srcdoc（KD-1）：iframe file:// 直载 .md 会被 Chromium 当纯文本渲染；readDoc 返回的 raw
+  // 已是转换好的 HTML，loadFromHtml 的 injectBase(dirUrl) 让相对图片照常解析。
+  if (isMdPath(p)) loadFromHtml(raw);
+  else loadFromFile();
   window.ws2.watchDoc(p); // 盯外部磁盘改动（Bug2）；换文档时主进程会重指向到新路径
   // 先建标签/高亮（onOpen 内会清 __pendingColdOpen）。放在 recents 之前，且 recents 设成尽力而为：
   // recents 写盘失败（userData 只读/满）不该把建标签和清标记一起拖死——否则冷启动标签丢 + 标记泄漏。
@@ -596,6 +611,7 @@ function shellCloseDoc() {
   if (docStatus) docStatus.hidden = true;
   closeViewer();
   exportBtn.disabled = true;
+  if (exportMdBtn) exportMdBtn.disabled = true;
   home.hidden = false;
 }
 window.__shellRetargetDoc = shellRetargetDoc;
@@ -625,7 +641,7 @@ async function pickAndOpen() {
   let meta;
   try { meta = await window.ws2.classifyFile(p); }
   catch (e) { meta = { kind: 'other', name: baseName(p), rel: null }; }
-  if (meta.kind === 'html') {
+  if (meta.kind === 'html' || meta.kind === 'md') {
     openDoc(p);
   } else {
     showViewer({ abs: p, rel: meta.rel, name: meta.name || baseName(p), kind: meta.kind });
@@ -681,7 +697,7 @@ async function saveAs() {
     ? WS2BasicEdit.serialize(frame.contentDocument)
     : WS2Serialize.serializeDocument(frame.contentDocument);
   let r;
-  try { r = await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.html?$/i, ''), html); }
+  try { r = await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.(html?|md)$/i, ''), html, isMdPath(docPath) ? 'md' : undefined); } // 另存为保持原格式（KD-6）
   catch (e) { alert('另存为失败：' + (e.message || e)); return; }
   if (!r || r.canceled || !r.abs) return;
   await openDoc(r.abs);
@@ -721,7 +737,7 @@ window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
 window.ws2.onMenu((cmd) => {
   if (cmd === 'open') pickAndOpen();
   if (cmd === 'save') save();
-  if (cmd === 'export-pdf') exportPdf(basicEdit ? 'raw' : 'wordspace'); // 基础模式=raw 直印源文件
+  if (cmd === 'export-pdf') exportPdf(pdfExportMode()); // 基础模式=raw 直印源文件；md 一律 wordspace（KD-5）
   if (cmd === 'undo') runUndoRedo(false); // 菜单加速器（真实用户 Cmd+Z 走这，不走 doc keydown）
   if (cmd === 'redo') runUndoRedo(true);
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
@@ -781,7 +797,25 @@ function buildWordspacePrintHtml() {
 // 导出按钮 → 单按钮、无样式菜单。合规文档走 Wordspace 样式（所见即所得）；非合规（基础编辑）走 raw
 // 直印源文件（忠于野文件原貌、不套块编辑器排版，否则缺块标记会抛错）。Feature 3 让 raw 从「未接 UI 的逃生口」
 // 变回活路径 —— 故此处保 mode 版，不用 ux-fixes 那版收敛掉 raw 的无参 exportPdf()。
-exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(basicEdit ? 'raw' : 'wordspace'); };
+// .md 例外（KD-5）：raw=直印源文件会印出裸 markdown 文本 → 一律 wordspace（烤渲染后的 contentDocument，与格式无关）。
+function pdfExportMode() { return (basicEdit && !isMdPath(docPath)) ? 'raw' : 'wordspace'; }
+exportBtn.onclick = () => { if (!exportBtn.disabled) exportPdf(pdfExportMode()); };
+
+// 「导出为 Markdown」（Colin+Wendi 2026-07-03：新建不选格式、默认 html；合规文档事后可导出 md 副本）。
+// 门：真文件 + 符合 Schema #1（非合规转 md 会丢/坏结构，不给）+ 本身不是 md（另存为已保 .md，导出无意义）。
+function updateExportMd() {
+  if (!exportMdBtn) return;
+  exportMdBtn.disabled = !(docPath && !tempDoc && docConform && !isMdPath(docPath));
+}
+// 导出语义：产 .md 副本、当前文档不切换（对齐导出 PDF；「另存为」才切换）。序列化当前 DOM=所见即所得
+//（含未保存编辑）；主进程 ws-save-doc-as ext='md' 写盘前 htmlToMd，成功后 Finder 高亮副本。
+async function exportAsMd() {
+  if (!exportMdBtn || exportMdBtn.disabled) return;
+  const html = WS2Serialize.serializeDocument(frame.contentDocument);
+  try { await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.(html?|md)$/i, ''), html, 'md', { reveal: true }); }
+  catch (e) { alert('导出 Markdown 失败：' + (e.message || e)); }
+}
+if (exportMdBtn) exportMdBtn.onclick = exportAsMd;
 
 renderRecents();
 

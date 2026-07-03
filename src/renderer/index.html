@@ -82,6 +82,12 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
         <span>导出 PDF</span>
       </button>
+      <!-- 导出为 Markdown（Colin+Wendi 2026-07-03）：仅符合 Schema #1 的 html 文档可用——产 .md 副本、
+           不切换当前文档（导出语义，对齐导出 PDF；「另存为」才切换）。md 文档本身/非合规/临时文档禁用。 -->
+      <button id="export-md-btn" class="ws-docmenu-item" disabled title="导出为 Markdown（仅符合 Schema 的文档）">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+        <span>导出为 Markdown…</span>
+      </button>
     </div>
   </div>
 
@@ -102,7 +108,7 @@
     <div id="home" class="ws-empty-wrap">
       <div class="ws-empty">
         <div class="ws-empty-title">Wordspace Next</div>
-        <div class="ws-empty-note">打开一个 HTML 文档，或把一个文件夹当工作区</div>
+        <div class="ws-empty-note">打开一个 HTML / Markdown 文档，或把一个文件夹当工作区</div>
         <div class="ws-empty-actions">
           <button id="home-open" class="top-share">打开文档</button>
           <button id="home-open-folder" class="ta-ghost ws-empty-ghost">打开文件夹</button>

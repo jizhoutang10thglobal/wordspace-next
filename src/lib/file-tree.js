@@ -5,7 +5,7 @@
 // 供渲染层把「点了哪个节点」回传给主进程做真实文件操作。
 const path = require('path');
 
-// 文件名 → 类型。只有 html/htm 能在编辑器里打开；其余按扩展名归类，仅用于图标 + 「点了走系统默认程序」。
+// 文件名 → 类型。html/htm 与 md 能在编辑器里打开（md 走读写两端适配）；其余按扩展名归类，仅用于图标 + 「点了走系统默认程序」。
 function kindOf(name) {
   if (String(name).indexOf('.') < 0) return 'other'; // 无扩展名（含 README 等）
   const ext = String(name).split('.').pop().toLowerCase();
@@ -13,6 +13,8 @@ function kindOf(name) {
     case 'html':
     case 'htm':
       return 'html';
+    case 'md': // 单列 kind（不并进 'html'）：保住「这是 md」的信息，将来树上要标
+      return 'md';
     case 'png':
     case 'jpg':
     case 'jpeg':

@@ -55,6 +55,8 @@ test('buildFileTree shows an explicit empty dir', () => {
 test('kindOf maps extensions case-insensitively; no-ext is other', () => {
   assert.equal(kindOf('x.HTML'), 'html');
   assert.equal(kindOf('a.htm'), 'html');
+  assert.equal(kindOf('笔记.md'), 'md');
+  assert.equal(kindOf('NOTES.MD'), 'md');
   assert.equal(kindOf('cover.PNG'), 'image');
   assert.equal(kindOf('report.pdf'), 'pdf');
   assert.equal(kindOf('plan.docx'), 'word');
