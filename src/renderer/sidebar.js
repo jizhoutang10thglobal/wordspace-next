@@ -50,6 +50,7 @@
   };
   KIND_PATH.pdf = KIND_PATH.word; // FileText 同款（ui-demo：word/pdf/html 都是 FileText、靠颜色区分）
   KIND_PATH.html = KIND_PATH.word;
+  KIND_PATH.md = KIND_PATH.word; // md 也是可编辑文档，同 FileText 轮廓（.sb-kind-md 类是将来单独标色的钩子）
   const kindSvg = (kind) =>
     '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
     (KIND_PATH[kind] || '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>') +
@@ -350,9 +351,9 @@
     }
   }
 
-  // ---- 打开节点：.html 进编辑器；其余进应用内查看器（图片/PDF 预览，其余给外部打开卡片）----
+  // ---- 打开节点：.html/.md 进编辑器（md 读盘处已转 HTML）；其余进应用内查看器（图片/PDF 预览，其余给外部打开卡片）----
   function openNode(node) {
-    if (node.kind === 'html') {
+    if (node.kind === 'html' || node.kind === 'md') {
       openDoc(node.abs); // shell.js 的漏斗（脏检查/载入/watch/recents）
     } else if (window.__shellShowViewer) {
       window.__shellShowViewer(node); // 编辑区出预览/卡片，不再直接外部打开
@@ -744,7 +745,7 @@
       if (n) { openNode(n); expandToFile(entry.rel); } // 点标签 → 文件树展开到该文件并滚动定位
       return;
     }
-    if (entry.kind === 'html') openDoc(entry.abs);
+    if (entry.kind === 'html' || entry.kind === 'md') openDoc(entry.abs); // 外部标签的可编辑文档（含 md）
     else if (window.__shellShowViewer) window.__shellShowViewer({ abs: entry.abs, rel: null, kind: entry.kind, name: entry.title });
   }
   function tabRow(entry, zone) {
