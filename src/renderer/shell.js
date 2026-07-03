@@ -66,6 +66,9 @@ function flashSaved() {
 // 1.2s 自动落盘；临时文档没有落盘目标、仍显式选位置保存（save() 的 tempDoc 分支会弹 SaveModal，
 // 这里必须拦在前面）。每次保存仍走历史归档（安全网）——代价是连续编辑会多出一些历史版本，接受。
 let autoSaveTimer = null;
+// 用户确认「丢弃修改」/ 重载在飞时必须缴械 pending 自动保存：已到期的定时器会在随后的 await 让出期
+// 开火，把刚被丢弃（或将被磁盘版本替换）的编辑写回磁盘（对抗审计实证：外部版本被反杀/三态分叉）。
+function discardPendingAutoSave() { if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; } }
 function scheduleAutoSave() {
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
@@ -204,6 +207,9 @@ function attachBasic() {
 
 // 块编辑内核（WS2BlockEdit）跑在父层、操作 iframe 的 contentDocument（iframe sandbox 不跑脚本）。
 function wireEditor() {
+  // 空态守卫（对称 attachBasic，审计整改）：查看器态/空态下陈旧 onload 晚到时，绝不把块编辑器挂上
+  // 已清空的隐藏 iframe——否则 Cmd+Z 会操作 detached 文档并 markDirty，产生「看图也提示未保存」的幽灵脏态。
+  if (!docPath && !tempDoc) return;
   const doc = frame.contentDocument;
   if (basicEdit) { basicEdit.detach(); basicEdit = null; } // 合规路径：清掉可能残留的基础编辑器 + 收起降级条
   if (degradeNotice) degradeNotice.hidden = true;
@@ -286,15 +292,20 @@ function openExternalBtn(node, cls) {
 // node = { name, rel, abs, kind } —— rel 来自侧栏文件树；「打开」按钮选的工作区外文件 rel 为 null、走 abs
 async function showViewer(node) {
   if (tempDoc) { stashActiveTemp(); tempDoc = null; }
-  else if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
+  else if (dirty) {
+    if (!confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
+    discardPendingAutoSave(); // 确认丢弃：到期的自动保存不能把刚丢弃的编辑写回盘
+  }
   // 退出编辑器态：停 watch、拆编辑内核（块+基础都拆）、清 docPath（非可编辑文件没有保存目标）
   window.ws2.unwatchDoc();
   detachEditors();
+  loadGen++; frame.onload = null; // 对称 #94 shellCloseDoc：作废在飞导航，否则晚到的 load 把块编辑器挂上查看器底下的隐藏 iframe（幽灵脏态）
   docPath = null;
   docInfo = null;
   setDirty(false);
   frame.hidden = true;
   frame.removeAttribute('src');
+  frame.removeAttribute('srcdoc');
   home.hidden = true;
   docHeader.hidden = true;
   if (docStatus) docStatus.hidden = true;
@@ -388,13 +399,21 @@ function loadFromFile(opts) {
 // loadGen 守卫：若重载途中又来一次载入（外部连续改动 / 同时打开别的文档），旧 onload 作废，
 // 不把 wireEditor 跑在 about:blank 或错误文档上。setDirty(false) 放到真正载完磁盘版本后才清。
 async function reloadDoc() {
-  detachEditors();
-  // 外部改动可能翻转合规性（如 Claude 改完变合规/变不合规）→ 重判分流
+  const p = docPath;
+  if (!p) return;
+  discardPendingAutoSave(); // 旧 DOM 的自动保存不能在重载让出期开火（会把将被替换的内容写回盘）
   let raw = null;
-  try { if (docPath) { raw = await window.ws2.readDoc(docPath); docConform = routeDoc(raw); } } catch (e) { /* 保持上次判定 */ }
+  try { raw = await window.ws2.readDoc(p); } catch (e) { /* 读失败：保留现有编辑器，等下一拍/用户操作 */ }
+  // 身份守卫（审计 P1）：await 让出期间用户切了文档 → 这次重载作废。没有这行，旧文档内容会灌进
+  // 新文档身份（md 分支直接 srcdoc 渲染旧 raw），自动保存随后把 A 的内容写进 B——跨文件数据覆盖；
+  // docConform 也会被旧内容覆写、给新文档挂错编辑器。
+  if (docPath !== p) return;
+  if (raw != null) docConform = routeDoc(raw); // 外部改动可能翻转合规性 → 重判分流
   // .md：渲染内容不在磁盘文件里（是 read-doc 的转换产物）→ 重载 = 重新 srcdoc（赋值天然重导航，
-  // 不需要下面 about:blank 的二段跳）。读盘失败（文件正被外部改写/删除）就先不动，等 watcher 下一拍。
-  if (isMdPath(docPath)) { if (raw != null) loadFromHtml(raw); return; }
+  // 不需要下面 about:blank 的二段跳）。读盘失败时不拆不换——保留现有编辑器可继续编辑/另存，
+  // 而不是「可见但点不动」的悬挂态（loadFromHtml 内部自带 detachEditors）。
+  if (isMdPath(p)) { if (raw != null) loadFromHtml(raw); return; }
+  detachEditors();
   const gen = ++loadGen;
   frame.onload = () => {
     if (gen !== loadGen) return; // 被更晚的载入抢占
@@ -477,7 +496,10 @@ function loadFromHtml(html, opts) {
 // （单编辑器切走 = 丢编辑，跟 openDoc 的脏守卫一致）。返回 false = 用户取消、别切。
 function canLeaveActive() {
   if (tempDoc) { stashActiveTemp(); return true; }
-  if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并切换？')) return false;
+  if (dirty) {
+    if (!confirm('当前文档有未保存的修改，确定丢弃并切换？')) return false;
+    discardPendingAutoSave(); // 确认丢弃：同 openDoc，别让到期的自动保存把丢弃的编辑写回盘
+  }
   return true;
 }
 // 新建一个临时文档并渲染：生成 id、存进 tempStore、渲染。返回 id 给侧栏建标签（取消切换则返回 null）。
@@ -543,6 +565,7 @@ async function shellFinalizeTemp(id, abs, name) {
   docName.title = name;
   window.ws2.watchDoc(abs);
   exportBtn.disabled = false;
+  updateExportMd(); // 落盘成真文件（合规 html）后「导出为 Markdown」的四个门已全开，别停在 renderTemp 的禁用态
   setDirty(false);
   flashSaved();
 }
@@ -557,7 +580,10 @@ async function openDoc(p) {
   // （如 app 已开 + 当前文档脏，第二实例双击别的文件、用户点「取消」时会走到这）。
   // 离开活跃临时文档：序列化存回 tempStore（不弹脏守卫，切回它还在）；真文件仍走原脏守卫。
   if (tempDoc) { stashActiveTemp(); tempDoc = null; }
-  else if (dirty && !confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
+  else if (dirty) {
+    if (!confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
+    discardPendingAutoSave(); // 确认丢弃：到期的自动保存不能在下面 readDoc 的让出期把刚丢弃的编辑写回盘
+  }
   let info; let raw; // raw：接住磁盘原始文本做 Feature 3 分流判定（routeDoc）
   try {
     // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；接住返回的原始文本做分流判定（Feature 3，不新增 IPC）；再取 file:// URL 等
@@ -728,10 +754,28 @@ window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition();
 window.addEventListener('keydown', handleZoomKey); // 焦点在父层 shell（点过保存按钮/首页）时也能 Cmd± 缩放（iframe 内事件不冒泡到这）
 
 // 外部磁盘改动（Bug2）：是当前文档才处理；有未保存改动先问，免得静默覆盖用户的编辑。
-window.ws2.onDocChanged((p) => {
+// 审计整改两条：①问之前缴械 pending 自动保存（到期定时器会在 confirm 之后的让出期把「用户刚决定
+// 丢弃」的编辑写回盘）；②窗口隐藏驻留中（macOS 关窗后）别对隐形窗口弹阻塞 confirm——挂起，唤醒再问。
+let pendingExternalChange = null;
+function handleDocChanged(p) {
   if (!docPath || p !== docPath) return;
-  if (dirty && !confirm('这个文件在外部被改动了，但你有未保存的修改。\n重新加载会丢弃你的修改、改用磁盘上的新版本，继续吗？')) return;
+  if (dirty) {
+    discardPendingAutoSave();
+    if (document.hidden) { pendingExternalChange = p; return; }
+    if (!confirm('这个文件在外部被改动了，但你有未保存的修改。\n重新加载会丢弃你的修改、改用磁盘上的新版本，继续吗？')) {
+      scheduleAutoSave(); // 用户选保留自己的版本：恢复自动保存语义（跟旧行为一致，编辑照常落盘）
+      return;
+    }
+  }
   reloadDoc();
+}
+window.ws2.onDocChanged(handleDocChanged);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && pendingExternalChange) {
+    const p = pendingExternalChange;
+    pendingExternalChange = null;
+    handleDocChanged(p);
+  }
 });
 
 // 主进程发来「打开这个文件」（Finder 双击 / 文件关联 / 第二实例）。冷启动时这跟侧栏「恢复上次工作区」
@@ -835,7 +879,11 @@ async function exportPdf(mode) {
   try {
     if (dirty) { await save(); if (dirty) return; } // save 失败（仍脏）→ 不导出
     mode = mode === 'raw' ? 'raw' : 'wordspace';
-    const html = mode === 'wordspace' ? buildWordspacePrintHtml() : null; // raw 无需烤 HTML（主进程直印源文件）；wordspace 可能抛错，下面 catch 兜
+    // 基础编辑（非合规——含非合规 md，pdfExportMode 对 md 一律 wordspace）：没有块编辑器的 canvas 标记，
+    // buildWordspacePrintHtml 会误抛「文档尚未就绪」→ 改烤结构保真序列化的当前文档（所见即所得、不套排版）。
+    const html = mode === 'wordspace'
+      ? (basicEdit ? WS2BasicEdit.serialize(frame.contentDocument) : buildWordspacePrintHtml())
+      : null; // raw 无需烤 HTML（主进程直印源文件）；wordspace 可能抛错，下面 catch 兜
     const res = await window.ws2.exportPdf(docPath, mode, html);          // 主进程按 mode 分 exportPdfFromHtml / 直印源文件
     if (res && res.error) alert('导出 PDF 失败：' + res.error);
   } catch (e) {
@@ -889,7 +937,10 @@ function updateExportMd() {
 //（含未保存编辑）；主进程 ws-save-doc-as ext='md' 写盘前 htmlToMd，成功后 Finder 高亮副本。
 async function exportAsMd() {
   if (!exportMdBtn || exportMdBtn.disabled) return;
-  const html = WS2Serialize.serializeDocument(frame.contentDocument);
+  const cd = frame.contentDocument;
+  // 外部重载二段跳期间 contentDocument 可能是 about:blank——别把空壳序列化成「看起来导出成功」的空 .md
+  if (!cd || !cd.querySelector('[data-ws2-canvas],[data-ws2-root]')) { alert('文档尚未就绪（可能正在重新加载），请稍后再导出'); return; }
+  const html = WS2Serialize.serializeDocument(cd);
   try { await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.(html?|md)$/i, ''), html, 'md', { reveal: true }); }
   catch (e) { alert('导出 Markdown 失败：' + (e.message || e)); }
 }
