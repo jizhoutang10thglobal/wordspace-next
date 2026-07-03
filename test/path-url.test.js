@@ -54,3 +54,9 @@ test('htmlPathFromArgv：取第一个匹配项 + 空 argv 安全', () => {
   assert.equal(htmlPathFromArgv([], '/c'), null);
   assert.equal(htmlPathFromArgv(undefined, '/c'), null);
 });
+
+test('htmlPathFromArgv：.md 也是可编辑文档（审计整改：Win/Linux 双击 .md 不再被静默吞掉）', () => {
+  assert.equal(htmlPathFromArgv(['app.exe', '/abs/笔记.md'], '/cwd'), '/abs/笔记.md');
+  assert.equal(htmlPathFromArgv(['app.exe', 'rel/NOTES.MD'], '/cwd'), '/cwd/rel/NOTES.MD');
+  assert.equal(htmlPathFromArgv(['app.exe', '/abs/x.markdown'], '/cwd'), null); // 只认 .md（与 assertDocPath 口径一致）
+});

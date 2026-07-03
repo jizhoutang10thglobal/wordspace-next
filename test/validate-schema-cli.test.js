@@ -68,3 +68,24 @@ test('CLI 无参数 → 退出码 2、打印用法', () => {
   assert.equal(r.status, 2);
   assert.match(r.stderr, /用法/);
 });
+
+// ---- .md 支持（审计整改：CLI 是 agent 的自检门，裸 md 被当 HTML 解析会给出错误结论）----
+function runMd(md) {
+  const f = path.join(TMP, 'doc-' + Math.abs(hash(md)) + '.md');
+  fs.writeFileSync(f, md, 'utf8');
+  const r = spawnSync('node', [CLI, f], { encoding: 'utf8' });
+  return { code: r.status, json: JSON.parse(r.stdout), stderr: r.stderr };
+}
+
+test('CLI 合规 .md → 先 md→html 再校验 → 退出 0（与 app 打开 .md 分流同链路）', () => {
+  const r = runMd('# 标题\n\n正文 **粗**\n\n- [x] 完成\n- [ ] 未完成\n');
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.json.conform, true, JSON.stringify(r.json.violations));
+  assert.match(r.stderr, /md→html 转换后校验/);
+});
+
+test('CLI 含 <script> 岛的 .md → 退出 1、含 rule script', () => {
+  const r = runMd('# t\n\n<script>alert(1)</' + 'script>\n');
+  assert.equal(r.code, 1);
+  assert.ok(hasRule(r.json, 'script'));
+});

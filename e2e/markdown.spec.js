@@ -12,7 +12,7 @@ const ROOT = path.join(__dirname, '..');
 const CONFORM_MD = [
   '# 会议纪要',
   '',
-  '正文段落 **重点** 和 <mark>高亮</mark>。',
+  '正文段落 **重点** 和 <mark>高亮</mark>，还有 <span style="color:#cc0000">红字岛</span>。',
   '',
   '- [x] 已完成事项',
   '- [ ] 待办事项',
@@ -202,6 +202,54 @@ test('导出为 Markdown 的门：md 文档禁用（已是 md）/ 非合规 html
   await expect(page.locator('#ws-degrade-notice')).toBeVisible();
   await page.click('#doc-menu-btn');
   await expect(page.locator('#export-md-btn')).toBeDisabled(); // 非合规 → 不给导出
+});
+
+test('md 的 style 岛真渲染（S4 强断言：computed-style，不查 class）——srcdoc CSP 镜像对 md 首扫生效', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="笔记.md"]');
+  // 注意：srcdoc 的 CSP 镜像（mirrorSrcdocStyles）重放 style 时会把属性文本规范化成 rgb() 形态，
+  // 不能按 "cc0000" 属性子串找——按文本定位元素、量 computed-style（S4 口径：量真实渲染，不查属性/class）。
+  await expect(frame().locator('span', { hasText: '红字岛' }).first()).toBeVisible();
+  const color = await page.evaluate(() => {
+    const f = document.getElementById('doc-frame');
+    const s = [...f.contentDocument.querySelectorAll('span')].find((el) => el.textContent === '红字岛');
+    return s ? f.contentWindow.getComputedStyle(s).color : null;
+  });
+  expect(color, 'style 岛没真渲染出颜色（mirrorSrcdocStyles 首扫回归？）').toBe('rgb(204, 0, 0)');
+});
+
+test('非合规 .md 导出 PDF（WS2_PDF_OUT seam）→ 真出 PDF 文件（审计：原来必失败且报错误导）', async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
+  await app.close().catch(() => {});
+  const pdfPath = path.join(tmp, 'outside', '野生导出.pdf');
+  await fs.mkdir(path.join(tmp, 'outside'), { recursive: true });
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata3'), WS2_FOLDER_IN: wsDir, WS2_PDF_OUT: pdfPath }));
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="野生.md"]');
+  await expect(page.locator('#ws-degrade-notice')).toBeVisible(); // 基础编辑态
+  await page.click('#doc-menu-btn');
+  await page.click('#export-btn');
+  await expect.poll(async () => { try { return (await fs.stat(pdfPath)).size > 500; } catch { return false; } }, { timeout: 15000 }).toBe(true);
+});
+
+test('清空 md 文档保存 → 磁盘落一个换行、不陷入保存失败循环（审计：空串撞拒写守卫）', async () => {
+  const mdPath = path.join(wsDir, '单段.md');
+  await fs.writeFile(mdPath, '就一行\n', 'utf8');
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="单段.md"]');
+  await expect(frame().locator('p')).toHaveText('就一行');
+  // 单块内全选删除（Cmd+A 选中块内文本）
+  await frame().locator('p').click();
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+a' : 'Control+a');
+  await page.keyboard.press('Delete');
+  await menuSave();
+  // 核心断言 = 保存必须成功（脏点消失），不是「保存失败」死循环；清空后的块编辑器留 <p><br></p>，
+  // 落盘是 '<br>' 或空白——都合法，只要非零字节（零字节会撞 writeDocSafe 拒写）且不是 html。
+  await expect(page.locator('#dirty-dot')).toBeHidden({ timeout: 5000 }); // 脏态清了 = save 真成功
+  await expect.poll(async () => (await fs.readFile(mdPath, 'utf8')).length).toBeGreaterThan(0);
+  const bytes = await fs.readFile(mdPath, 'utf8');
+  expect(bytes.toLowerCase()).not.toContain('<!doctype');
+  expect(bytes.trim().length, '清空后的 md 至多剩一个 <br> 占位：' + JSON.stringify(bytes)).toBeLessThanOrEqual(4);
 });
 
 test('回归哨兵：.html 文档保存后磁盘仍是 html（md 分流没串到 html 链路）', async () => {
