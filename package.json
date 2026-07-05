@@ -69,6 +69,13 @@
           ],
           "name": "HTML Document",
           "role": "Editor"
+        },
+        {
+          "ext": [
+            "md"
+          ],
+          "name": "Markdown Document",
+          "role": "Editor"
         }
       ]
     },
@@ -89,6 +96,13 @@
             "htm"
           ],
           "name": "HTML Document",
+          "role": "Editor"
+        },
+        {
+          "ext": [
+            "md"
+          ],
+          "name": "Markdown Document",
           "role": "Editor"
         }
       ]
