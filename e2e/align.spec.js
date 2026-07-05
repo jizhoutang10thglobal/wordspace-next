@@ -134,6 +134,51 @@ test('保存并关闭：临时文档 × → 确认 →「保存并关闭」→ S
   await expect(page.locator('#sb-tabs .sb-tab[data-rel="未命名.html"]')).toHaveCount(0); // 存完关掉
 });
 
+// 回归（Colin 2026-07-05 抓的 bug）：从别的标签页上关「后台」临时标签，原来直接静默丢弃——
+// closeOrRemove 的确认守卫错加了 wasActive 前置。临时=内容未落盘，后台关一样要确认。
+test('后台临时标签 × → 也弹未保存确认（原来静默直接关）→ 不保存 → 消失且没落盘', async () => {
+  await openWorkspace();
+  await newTempDoc();
+  const frame = page.frameLocator('#doc-frame');
+  await frame.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_MARK_'); // 有真实编辑内容,丢了才叫事故
+  await page.click('.sb-file[data-rel="a.html"]'); // 切走 → 临时标签变后台(stash 进 tempStore)
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  const tempTab = page.locator('#sb-tabs .sb-tab.sb-tab-temp');
+  await expect(tempTab).not.toHaveClass(/is-active/); // 前置:确实是后台标签
+  await tempTab.hover();
+  await tempTab.locator('.sb-tab-close').click();
+  await expect(page.locator('.sb-modal-confirm')).toBeVisible(); // 修复点:后台关也必须确认
+  await page.locator('.sb-modal-confirm .sb-btn-danger').click();
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(0);
+  await page.waitForTimeout(150);
+  expect(await exists(path.join(wsDir, '未命名.html'))).toBe(false);
+});
+
+test('后台临时标签「保存并关闭」→ 先激活它再弹 SaveModal → 存的是它的内容不是当前文档', async () => {
+  await openWorkspace();
+  await newTempDoc();
+  const frame = page.frameLocator('#doc-frame');
+  await frame.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_TEMPMARK_');
+  await page.click('.sb-file[data-rel="a.html"]'); // 临时标签转后台
+  const tempTab = page.locator('#sb-tabs .sb-tab.sb-tab-temp');
+  await tempTab.hover();
+  await tempTab.locator('.sb-tab-close').click();
+  await expect(page.locator('.sb-modal-confirm')).toBeVisible();
+  await page.locator('.sb-modal-confirm .sb-btn-primary').click(); // 保存并关闭
+  await expect(page.locator('.sb-modal-save')).toBeVisible(); // 修复点:先激活后台临时文档再弹保存框(原来 __shellActiveTemp 为空,静默没反应)
+  await page.locator('.sb-modal-save .sb-btn-primary').click(); // 存根目录
+  await expect.poll(() => exists(path.join(wsDir, '未命名.html'))).toBe(true);
+  const saved = await fs.readFile(path.join(wsDir, '未命名.html'), 'utf8');
+  expect(saved).toContain('_TEMPMARK_'); // 存的是那个后台临时文档的内容
+  const aHtml = await fs.readFile(path.join(wsDir, 'a.html'), 'utf8');
+  expect(aHtml).toContain('AAA'); // 当前文档 a.html 没被误写
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="未命名.html"]')).toHaveCount(0); // 存完关掉
+});
+
 test('临时文档切标签不丢：编辑 → 切到别的文件 → 切回，编辑内容还在', async () => {
   await openWorkspace();
   await newTempDoc();
