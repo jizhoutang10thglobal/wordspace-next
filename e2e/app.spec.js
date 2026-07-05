@@ -821,13 +821,13 @@ const NOZOOM = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><t
 const USERZOOM = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title><style>body{zoom:1.5}</style></head><body><p id="p1">同一段</p></body></html>';
 test('回归(缩放A)：不覆盖用户文档自带的 body{zoom}（factor=1 写空规则、渲染保真）', async () => {
   await launch();
-  await openDoc(NOZOOM);
-  await page.waitForTimeout(120);
-  const h0 = await frame.locator('#p1').evaluate((e) => e.getBoundingClientRect().height); // 用 height：全宽块 width 在 zoom 下恒等 viewport（见捏合放大测试注释）
+  // 直接断言 computed zoom（= 不变式本身）。原来的「跨文档段落高度比对」被 baseline v2 排版底线搅了：
+  // NOZOOM 合规 → 块编辑器注 baseline（1.75 行高段落变高）；USERZOOM 带作者 <style> → head-style
+  // 非合规 → 基础编辑器无 baseline——两文档段高不再只差 zoom，高度比 ≈1 假红。
   await openDoc(USERZOOM); // 自带 body{zoom:1.5}，我们没主动缩放（factor=1）→ 应保留用户的 1.5
   await page.waitForTimeout(150);
-  const h1 = await frame.locator('#p1').evaluate((e) => e.getBoundingClientRect().height);
-  expect(h1 / h0, '用户自带 body{zoom:1.5} 被 factor=1 的 body{zoom:1} 压平了').toBeGreaterThan(1.3);
+  const z = await frame.locator('body').evaluate((b) => parseFloat(getComputedStyle(b).zoom));
+  expect(z, '用户自带 body{zoom:1.5} 被 factor=1 的 body{zoom:1} 压平了').toBeGreaterThan(1.3);
 });
 
 test('回归(缩放B)：编辑态缩放后 ⋮⋮ 手柄跟随重定位、不漂在旧坐标', async () => {

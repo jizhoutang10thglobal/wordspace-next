@@ -166,8 +166,37 @@
       (doc.head || doc.documentElement).appendChild(st);
     }
     // §0：编辑器不套 canvas 装饰排版（已删）。data-ws2-root 仍打——只驱动「空块占一行高度」这种编辑可用性 CSS（非装饰），存盘剥除。
+    const BASELINE_CSS =
+      ':where(body){max-width:820px;margin:0 auto;padding:48px 60px;box-sizing:border-box;' +
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;' +
+        'font-size:16px;line-height:1.75;color:#37352f;-webkit-font-smoothing:antialiased;overflow-wrap:break-word}' +
+      ':where(h1){font-size:1.875em;line-height:1.3;font-weight:700;letter-spacing:-.011em;margin:1.35em 0 .45em}' +
+      ':where(h2){font-size:1.5em;line-height:1.35;font-weight:600;letter-spacing:-.008em;margin:1.25em 0 .4em}' +
+      ':where(h3){font-size:1.25em;line-height:1.4;font-weight:600;margin:1.1em 0 .35em}' +
+      ':where(h4){font-size:1.125em;line-height:1.45;font-weight:600;margin:1em 0 .3em}' +
+      ':where(body>h1:first-child,body>h2:first-child,body>h3:first-child){margin-top:.2em}' +
+      ':where(p){margin:.5em 0}' +
+      ':where(ul,ol){margin:.5em 0;padding-left:1.7em}' +
+      ':where(li){margin:.3em 0}' +
+      ':where(li>ul,li>ol){margin:.15em 0}' +
+      ':where(blockquote){margin:.7em 0;padding:2px 0 2px 14px;border-left:3px solid #d9d7d2}' +
+      ':where(table){border-collapse:collapse;margin:.8em 0}' +
+      ':where(th,td){border:1px solid #e3e2de;padding:7px 12px;text-align:left;vertical-align:top}' +
+      ':where(th){background:#f7f6f3;font-weight:600}' +
+      ':where(code){font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.875em;background:#f2f1ee;border-radius:4px;padding:.15em .4em}' +
+      ':where(pre){background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;overflow-x:auto;line-height:1.6}' +
+      ':where(pre code){background:none;padding:0;font-size:.875em}' +
+      ':where(hr){border:none;border-top:1px solid #e3e2de;margin:2em 0}' +
+      ':where(a){color:#1a73e8;text-decoration-color:rgba(26,115,232,.35);text-underline-offset:2px}' +
+      ':where(img){max-width:100%;height:auto}';
+    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#9b9891;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+    const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
+    // §0 决策1 固定色板（块级上色 class；也是入盘 color CSS 的单一来源）。
+    const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
+    const COLOR_CSS = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
     blockRoot.setAttribute('data-ws2-root', '');
-    ensureSchemaBaseline(); // baseline 页边距入盘（四周留白；不 markDirty）
+    ensureSchemaBaseline(); // baseline 排版底线入盘（v2：字体/行高/标题节奏/块间距；旧文件静默升级；不 markDirty）
+    refreshSemanticStyles(); // 旧文件的 todo/callout v1 语义 CSS → 同步升级到当前版（同上不 markDirty）
 
     // ---- 状态 ----
     let selectedEl = null;   // 灰选中的不可编辑块
@@ -334,12 +363,14 @@
     // 待办勾选框样式烤进存盘文件：首次出现待办时往 <head> 注一个 <style id=ws-todo-style>（真实内容、
     // 随 serialize 存盘，不像 EDITOR_CSS 那样不入盘）。这样 .html 在 app 外用任何浏览器打开，待办也渲染成
     // checklist。幂等（按 id 查重），用 ::before 画框故无需 JS。
+    // 待办/callout 的入盘语义 CSS 常量（v2 与 baseline 排版底线同调：勾选框对 1.75 行高垂直居中、
+    // 灰阶与 baseline 同色板）。旧文件里的 v1 版本在 attach 时由 refreshSemanticStyles 静默升级。
     function ensureTodoStyle() {
       if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="todo"]')) return; // 属性查重（不靠固定 id，防作者内容碰撞，S9）
       const st = doc.createElement('style');
       st.id = 'ws-todo-style';
       st.setAttribute('data-ws-schema-css', 'todo'); // U5：标 schema baseline 语义 CSS——存盘保留 + 校验器 head 白名单认它合规
-      st.textContent = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-20px;top:.28em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #d3d6db;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#8a8f96;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+      st.textContent = TODO_CSS;
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
     }
@@ -350,28 +381,61 @@
       const st = doc.createElement('style');
       st.id = 'ws-callout-style';
       st.setAttribute('data-ws-schema-css', 'callout');
-      st.textContent = '.ws-callout{background:#f7f8fa;border:1px solid #e4e6e9;border-radius:7px;padding:14px 16px;margin:12px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
+      st.textContent = CALLOUT_CSS;
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
+    }
+    // attach 时对齐语义 CSS 与文档现状（两件事，都不 markDirty——样式归编辑器托管、不算用户
+    // 编辑，下次真实编辑保存时随文件落盘）：
+    // ① 升级：旧文件带着 v1 版语义 CSS（老勾选框偏上、老灰阶）→ 覆写成当前版；
+    // ② 补注：文档里**存在**语义块（ws-todo/ws-callout/ws-color-*）但 head 缺对应入盘 CSS →
+    //    补上。这类文件真实存在：md 转换产物（adapter 的 head 只有 charset/meta/title）、外部
+    //    AI 生成时漏带语义 CSS 的合规文档、手写文件——原来它们在编辑器里靠 EDITOR_CSS 看着
+    //    正常，存盘后浏览器直开却是裸样式（callout 变纯文本、待办变圆点列表）。
+    function refreshSemanticStyles() {
+      if (!doc) return;
+      const host = doc.head || doc.documentElement;
+      const pairs = [
+        ['todo', TODO_CSS, 'ws-todo-style', 'ul.ws-todo'],
+        ['callout', CALLOUT_CSS, 'ws-callout-style', '.ws-callout'],
+        ['color', COLOR_CSS, 'ws-color-style', '[class*="ws-color-"]'],
+      ];
+      for (const [kind, css, id, presentSel] of pairs) {
+        let st = host.querySelector('style[data-ws-schema-css="' + kind + '"]');
+        if (st) { if (st.textContent !== css) st.textContent = css; continue; } // ① 升级
+        if (!doc.querySelector(presentSel)) continue;
+        st = doc.createElement('style'); // ② 补注
+        st.id = id;
+        st.setAttribute('data-ws-schema-css', kind);
+        st.textContent = css;
+        host.appendChild(st);
+      }
     }
     // 按块的 schema class 注入对应入盘语义 CSS（创建/转换块时调）。
     function ensureBlockStyle(cls) {
       if (cls === 'ws-todo') ensureTodoStyle();
       else if (cls === 'ws-callout') ensureCalloutStyle();
     }
-    // baseline 排版底线（§0 决策2 / Wendi 2026-07-01 拍：要居中可读宽度，像 Notion/Word）：
-    // 给文档可读宽度（max-width 居中 + 四周留白），data-ws-schema-css 入盘随文件走。
-    // 跟「删 canvas」不矛盾——canvas 是编辑器运行时强套、不入盘的整套装饰（820窄栏+字号+颜色）；
-    // baseline 是**入盘随文件走的格式约束**（只管宽度+留白、不碰字号颜色），按原生渲染时它在文件里。
-    // :where(body) 零权重 → 文档自带 body 样式优先（baseline 只是地板，不覆盖作者排版）。attach 注入、不 markDirty。
+    // baseline 排版底线 v2（§0 决策2 演进,Colin 2026-07-05 拍：基础样式要好看,参考 Notion/Obsidian）：
+    // v1 只管宽度+留白,其余全吃浏览器 UA 默认(衬线体/紧行高/默认边距)——「裸 markdown 感」的根源。
+    // v2 = 完整的排版地板：字体栈/字号/行高/标题层级节奏(上重下轻)/段落列表引用表格代码的间距与底线样式,
+    // 色彩只用中性灰阶(正文墨色/边框灰),不带任何装饰性彩色——好看的「白纸」,不是主题(主题=Template)。
+    // 跟「删 canvas」仍不矛盾——canvas 是编辑器运行时强套、不入盘的装饰;baseline 是入盘随文件走的格式
+    // 底线,app 外任何浏览器打开同样好看。全部 :where() 零权重 → 作者自带样式永远优先(只是地板)。
+    // 已有 v1 baseline 的旧文件在 attach 时静默升级成 v2(内容对不上就覆写,样式归编辑器托管,同 v1 惯例
+    // 不 markDirty,下次真实编辑保存时随文件落盘)。⚠ 820px/48px 是 e2e 锚点(fidelity/align/app.spec),别动。
     function ensureSchemaBaseline() {
       if (!doc) return;
       const head = doc.head || doc.documentElement;
-      if (head.querySelector('style[data-ws-schema-css="baseline"]')) return; // 属性查重（不靠固定 id，S9）
+      const existing = head.querySelector('style[data-ws-schema-css="baseline"]'); // 属性查重（不靠固定 id，S9）
+      if (existing) {
+        if (existing.textContent !== BASELINE_CSS) existing.textContent = BASELINE_CSS; // v1 旧文件 → 静默升级 v2
+        return;
+      }
       const st = doc.createElement('style');
       st.id = 'ws-schema-baseline';
       st.setAttribute('data-ws-schema-css', 'baseline');
-      st.textContent = ':where(body){max-width:820px;margin:0 auto;padding:48px 60px;box-sizing:border-box}';
+      st.textContent = BASELINE_CSS;
       head.appendChild(st);
     }
     // U6（§0 决策1 + A2）：固定色板文字色 CSS 入盘。块级上色用 class 不写 style（块 style 非法），
@@ -381,7 +445,7 @@
       const st = doc.createElement('style');
       st.id = 'ws-color-style';
       st.setAttribute('data-ws-schema-css', 'color');
-      st.textContent = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
+      st.textContent = COLOR_CSS;
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
     }
@@ -640,7 +704,7 @@
       fmtbar.appendChild(ai);
     }
     function sepEl() { const s = doc.createElement('span'); s.setAttribute('data-ws2-ui', WS2_OVERLAY); s.className = 'ws-fmtbar-sep'; return s; }
-    const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
+    // TEXT_COLORS 声明已上移到语义 CSS 常量区（attach 早期 refreshSemanticStyles 要用,躲 TDZ）。
     const HILITE_COLORS = ['#fff3bf', '#ffd8d8', '#d7f0db', '#d6e4ff', '#eadcff', '#eceef0'];
     function colorHolder(title, hilite) {
       const holder = doc.createElement('span'); holder.setAttribute('data-ws2-ui', WS2_OVERLAY); holder.className = 'ws-fmtbar-holder';
@@ -1195,8 +1259,8 @@
      下面只保留「编辑器内」功能渲染（待办勾选框 + 编辑态高亮/占位/空块高度），均不入序列化。 */
   ul.ws-todo, ul.ws-todo ul, ul.ws-todo ol { list-style:none; }
   .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
-  .ws-todo > li::before { content:'';position:absolute;left:-20px;top:0.28em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #d3d6db;border-radius:4px;background:#fff;cursor:pointer; }
-  .ws-todo > li[data-checked="true"] { color:#8a8f96;text-decoration:line-through; }
+  .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff;cursor:pointer; }
+  .ws-todo > li[data-checked="true"] { color:#9b9891;text-decoration:line-through; }
   .ws-todo > li[data-checked="true"]::before { content:'✓';border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center; }
 
   [contenteditable='true']{outline:none;}
