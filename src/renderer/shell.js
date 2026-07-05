@@ -254,7 +254,26 @@ function wireEditor() {
   applyZoom();
 }
 
+// KD-5/KD-7：切到任何文档/查看器/空态表面前，先摘掉可能盖在上面的 web view（漏斗未覆盖的路径如
+// 直接点树也兜住）。__webDetach 只 detach 不销毁（切回秒回）。
+function detachWebIfAny() { if (window.__webDetach) window.__webDetach(); }
+// web 激活时隐藏全部文档 DOM 表面（不 detachEditors、不清 docPath → 切回原文档 openDoc no-op 秒回,KD-7）。
+window.__shellHideDocSurfaces = () => {
+  home.hidden = true;
+  docHeader.hidden = true;
+  frame.hidden = true;
+  if (viewer) viewer.hidden = true;
+  if (degradeNotice) degradeNotice.hidden = true;
+};
+// 从 web 切回已加载文档（openDoc no-op 路径）：把文档表面重新显出来。
+function showDocSurfaces() {
+  home.hidden = true;
+  docHeader.hidden = false;
+  if (docStatus) docStatus.hidden = false;
+  frame.hidden = false;
+}
 function prepFrame(asDirty) {
+  detachWebIfAny();
   home.hidden = true;
   docHeader.hidden = false;
   if (docStatus) docStatus.hidden = false; // 本地状态标
@@ -287,6 +306,7 @@ function openExternalBtn(node, cls) {
 }
 // node = { name, rel, abs, kind } —— rel 来自侧栏文件树；「打开」按钮选的工作区外文件 rel 为 null、走 abs
 async function showViewer(node) {
+  detachWebIfAny();
   if (tempDoc) { stashActiveTemp(); tempDoc = null; }
   else if (dirty) {
     if (!confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
@@ -574,7 +594,7 @@ function shellDiscardTemp(id) {
 async function openDoc(p) {
   // 修 SH-4：点当前已打开文档的标签/树行 → 无条件全量重载（实测同 file:// 赋 src 会重导航），undo 栈清空、
   // 缩放滚动复位；脏态还弹「丢弃?」。点已激活项应是 no-op。
-  if (p === docPath && !tempDoc) return;
+  if (p === docPath && !tempDoc) { detachWebIfAny(); showDocSurfaces(); return; } // 从 web 切回已加载文档:摘 view + 重显表面（KD-7 秒回）
   const seq = ++openSeq; // 修 SH-1：本次 open 的序号；await 期间又开/关了别的文档，落地时作废（最后点击者赢）
   // 没真打开成 → 撤销 onOpenFile 设的 __pendingColdOpen，否则它会一直抑制后续 loadTabs 的「恢复激活标签」
   // （如 app 已开 + 当前文档脏，第二实例双击别的文件、用户点「取消」时会走到这）。
@@ -623,6 +643,7 @@ function shellRetargetDoc(newAbs, newName) {
   if (window.__sbHooks) window.__sbHooks.onOpen(docPath);
 }
 function shellCloseDoc() {
+  detachWebIfAny();
   window.ws2.unwatchDoc();
   loadGen++; // 作废所有在飞/陈旧的 frame.onload（否则晚到的 load 会把编辑器/降级条重新挂回空白页）
   openSeq++; // 修 SH-1：关文档也作废在飞的 openDoc（await 期间关掉 → 落地时不该把内容挂回来）
@@ -900,7 +921,27 @@ function openAiAccessModal() {
   document.body.appendChild(overlay);
 }
 
+window.__focusMainFrame = () => { if (window.ws2.webFocusChrome) window.ws2.webFocusChrome(); }; // KD-8:view 聚焦时 DOM input.focus() 静默失败,先让主进程把焦点拉回主 frame
 window.ws2.onMenu((cmd) => {
+  // KD-7/KD-8：web 标签激活时,可路由的菜单命令交给 browser-chrome，按 (viewState × cmd) 分派（policy.routeMenuCmd）。
+  const webKey = window.__webActiveKey && window.__webActiveKey();
+  if (webKey) {
+    const vs = window.__webViewState ? window.__webViewState() : 'live';
+    const action = window.WS2WebPolicy ? window.WS2WebPolicy.routeMenuCmd('web', vs, cmd) : null;
+    if (cmd === 'web-address') { window.__focusMainFrame(); const a = document.getElementById('bc-addr'); if (a) { a.focus(); a.select(); } return; }
+    if (cmd === 'web-back') { if (window.__webBack) window.__webBack(); return; }
+    if (cmd === 'web-forward') { if (window.__webForward) window.__webForward(); return; }
+    if (cmd === 'web-reload' || cmd === 'reload') { if (window.__webReload) window.__webReload(); return; }
+    if (action === 'web-find' || (cmd === 'find-file' && vs === 'live')) { window.__focusMainFrame(); if (window.__webShowFind) window.__webShowFind(); return; }
+    if (action === 'web-pdf') { window.ws2.webPdf(webKey); return; }
+    if (action === 'web-undo') { window.ws2.webNav(webKey, 'undo'); return; }
+    if (action === 'web-redo') { window.ws2.webNav(webKey, 'redo'); return; }
+    if (action === 'noop' || action === 'disabled') {
+      // 新标签页/占位态：save/export/undo/redo 无意义,吞掉（但 new-tab/close-tab/palette 仍要走下面通用路径）
+      if (cmd === 'save' || cmd === 'export-pdf' || cmd === 'undo' || cmd === 'redo' || cmd === 'find-file') return;
+    }
+    // 未被 web 拦截的命令（new-tab/close-tab/find-palette/open…）继续走下面通用分发
+  }
   if (cmd === 'ai-access') openAiAccessModal();
   if (cmd === 'open-folder' && window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder();
   if (cmd === 'open') pickAndOpen();
@@ -910,7 +951,7 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'redo') runUndoRedo(true);
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
   if (cmd === 'close-tab' && window.__sbHooks && window.__sbHooks.closeActiveTab) window.__sbHooks.closeActiveTab(); // Cmd+W
-  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F
+  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F（无 web 激活时=侧栏筛选）
   if (cmd === 'find-palette' && window.__sbHooks && window.__sbHooks.findPalette) window.__sbHooks.findPalette();     // Cmd+P
 });
 

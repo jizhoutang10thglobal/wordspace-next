@@ -159,26 +159,30 @@ function syncNav(key) {
 
 // ---- 显示/隐藏/销毁 ----
 function show(key, bounds) {
-  const win = getWin(); if (!win) return;
+  const win = getWin(); if (!win || win.isDestroyed()) return;
   const rec = registry.get(key); if (!rec) return;
   const children = win.contentView.children;
   // 排他:先摘掉其它所有 web view（同一时刻最多一个 attach）
   for (const [k, r] of registry) { if (k !== key && children.indexOf(r.view) !== -1) win.contentView.removeChildView(r.view); }
-  if (children.indexOf(rec.view) === -1) win.contentView.addChildView(rec.view);
-  else win.contentView.addChildView(rec.view); // re-add = 提到最顶（官方 z-order）
+  // re-add 已存在的 view = 提到最顶（官方 z-order）;不存在则新挂。
+  win.contentView.addChildView(rec.view);
   if (bounds) rec.view.setBounds(bounds);
   rec.view.setVisible(true);
 }
-function setBounds(key, bounds) { const r = registry.get(key); if (r && bounds) r.view.setBounds(bounds); }
-function setVisible(key, visible) { const r = registry.get(key); if (r) r.view.setVisible(visible); }
+function setBounds(key, bounds) { const r = registry.get(key); if (r && bounds) { try { r.view.setBounds(bounds); } catch { /* view 已销毁 */ } } }
+function setVisible(key, visible) { const r = registry.get(key); if (r) { try { r.view.setVisible(visible); } catch { /* view 已销毁 */ } } }
 function hide(key) {
   const win = getWin(); const rec = registry.get(key); if (!win || !rec) return;
-  if (win.contentView.children.indexOf(rec.view) !== -1) win.contentView.removeChildView(rec.view);
+  // 窗口/view 可能已销毁（如 'closed' 事件里跑 destroyAll）→ 访问 contentView 会抛「Object has been destroyed」。
+  try {
+    if (win.isDestroyed()) return;
+    if (win.contentView.children.indexOf(rec.view) !== -1) win.contentView.removeChildView(rec.view);
+  } catch { /* 窗口/view 已销毁,无需 detach */ }
 }
 function destroy(key) {
   const rec = registry.get(key); if (!rec) return;
   hide(key);
-  try { rec.view.webContents.close(); } catch { /* 已销毁 */ } // 显式 close,否则内存泄漏
+  try { if (rec.view.webContents && !rec.view.webContents.isDestroyed()) rec.view.webContents.close(); } catch { /* 已销毁 */ } // 显式 close,否则内存泄漏
   registry.delete(key);
 }
 function destroyAll() { for (const key of Array.from(registry.keys())) destroy(key); }
@@ -210,11 +214,24 @@ function nav(key, action) {
   else if (action === 'forward') { nh && nh.canGoForward() ? nh.goForward() : wc.canGoForward() && wc.goForward(); }
   else if (action === 'reload') wc.reload();
   else if (action === 'stop') wc.stop();
+  else if (action === 'undo') wc.undo();   // 转发网页内文本框撤销（KD-7:菜单吞了 Cmd+Z,不转发=杀死网页撤销）
+  else if (action === 'redo') wc.redo();
 }
 function find(key, text, opts) { const r = registry.get(key); if (r && text) r.view.webContents.findInPage(text, opts || {}); }
 function stopFind(key, action) { const r = registry.get(key); if (r) r.view.webContents.stopFindInPage(action || 'clearSelection'); }
 function setAudioMutedAll(muted) { for (const r of registry.values()) { try { r.view.webContents.setAudioMuted(muted); } catch { /* ignore */ } } }
-async function printToPdf(key) { const r = registry.get(key); if (!r) return null; return r.view.webContents.printToPDF({ printBackground: true }); }
+// 网页导出 PDF（KD-7）：printToPDF → 存进下载目录（复用下载的清洗/去重）+ 推 toast。返回落盘路径。
+async function printToPdf(key) {
+  const r = registry.get(key); if (!r) return null;
+  const buf = await r.view.webContents.printToPDF({ printBackground: true });
+  const dir = downloadDir || path.join(os.homedir(), 'Downloads');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+  const base = policy.safeFilename((r.title || 'webpage').replace(/[/\\:*?"<>|]/g, '_').slice(0, 60) + '.pdf');
+  const out = policy.uniqueName(dir, base, (p) => fs.existsSync(p));
+  fs.writeFileSync(out, buf);
+  sendToRenderer('web-download', { state: 'completed', name: path.basename(out), savePath: out, received: buf.length, total: buf.length });
+  return out;
+}
 
 function wireFoundInPage(key) {
   const r = registry.get(key); if (!r) return;

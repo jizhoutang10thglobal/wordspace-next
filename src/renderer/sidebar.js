@@ -51,6 +51,7 @@
   KIND_PATH.pdf = KIND_PATH.word; // FileText 同款（ui-demo：word/pdf/html 都是 FileText、靠颜色区分）
   KIND_PATH.html = KIND_PATH.word;
   KIND_PATH.md = KIND_PATH.word; // md 也是可编辑文档，同 FileText 轮廓（.sb-kind-md 类是将来单独标色的钩子）
+  KIND_PATH.web = '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'; // 地球（无 favicon 时的通用 web 图标）
   const kindSvg = (kind) =>
     '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
     (KIND_PATH[kind] || '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>') +
@@ -64,6 +65,9 @@
     if (data) setWorkspace(data);
   }
   function setWorkspace(data) {
+    // 切工作区先销毁旧根的全部 web view（KD-17）——view 是主进程对象,不跟 tabState 清、不销毁就内存泄漏+音频继续播。
+    if (window.__webDestroyAll) window.__webDestroyAll();
+    Object.keys(webStatus).forEach((k) => delete webStatus[k]);
     current = data;
     query = '';
     tabState = { entries: [], activeRel: null }; // 先清旧工作区的标签，loadTabs 再按新根拉回
@@ -409,6 +413,11 @@
   const TEMP_PREFIX = 'temp:';
   const isTempKey = (k) => typeof k === 'string' && k.indexOf(TEMP_PREFIX) === 0;
   const isTempEntry = (e) => isTempKey(keyOf(e));
+  // 网页标签（第三身份类）：身份键 'web:<seq>:<ts>' 塞 abs（同 temp: 先例,靠前缀识别,tabs.js 已有 isWebKey）。
+  const isWebKey = (k) => window.WS2Tabs.isWebKey(k);
+  const isWebEntry = (e) => isWebKey(keyOf(e));
+  let webSeq = 0;
+  const nextWebId = () => window.WS2Tabs.mkWebId(++webSeq, Date.now());
   const baseName = (p) => String(p).split(/[\\/]/).pop();
   // 外部标签的「↗」轻标记图标（shell.js 的 EXT_SVG 是 script 作用域 const、跨不到这里，单独定义）。
   const EXT_ICO_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>';
@@ -495,13 +504,17 @@
   function finishClose(key, op) {
     const wasActive = tabState.activeRel === key;
     const entry = tabState.entries.find((e) => keyOf(e) === key);
+    const wasWeb = entry && isWebEntry(entry);
     if (entry && isTempEntry(entry)) { if (window.__shellDiscardTemp) window.__shellDiscardTemp(key); }
+    else if (wasWeb) { /* 网页标签无脏文档概念,下面统一销毁 view */ }
     else if (wasActive && window.__shellDiscard) window.__shellDiscard();
+    // op 可能是 closeEntry（销毁未置顶）或 removeEntry（整条删）——若该 key 已不再是任何区的条目,销毁其 view。
     applyTabs(op(tabState, key));
+    if (wasWeb && !tabState.entries.some((e) => keyOf(e) === key) && window.__webCloseView) window.__webCloseView(key);
     if (wasActive) {
       const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
-      if (e) openTabRow(e); // 回落项可能是外部/临时标签 → 走统一分发
-      else if (window.__shellCloseDoc) window.__shellCloseDoc();
+      if (e) openTabRow(e); // 回落项可能是外部/临时/网页标签 → 走统一分发（漏斗）
+      else { if (window.__webDetach) window.__webDetach(); if (window.__shellCloseDoc) window.__shellCloseDoc(); }
     }
   }
   // —— 统一模态壳部件（T1，对齐 ui-demo ws-modal）：带关闭 X 的 head + 分隔线；调用方再挂 body/foot ——
@@ -748,8 +761,9 @@
     try { st = await window.ws2.wsGetTabs(); } catch (e) { st = { entries: [], activeRel: null }; }
     if (!current || current.root !== rootBefore) return;
     const raw = st.entries || [];
+    // 存在性校验三分流：网页标签(web:)恒有效(不做 fs 检查——store 已校验 url);内部看树;外部问 fs.stat。
     const checks = await Promise.all(raw.map((e) =>
-      e.rel ? Promise.resolve(!!findNode(e.rel)) : window.ws2.pathExists(e.abs).catch(() => false),
+      isWebKey(keyOf(e)) ? Promise.resolve(true) : e.rel ? Promise.resolve(!!findNode(e.rel)) : window.ws2.pathExists(e.abs).catch(() => false),
     ));
     if (!current || current.root !== rootBefore) return;
     const entries = raw.filter((_e, i) => checks[i]);
@@ -763,7 +777,9 @@
     // 标签状态仍恢复，只是不自动载入。onOpen 随后会把冷启动文件设为激活。
     if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
-      if (e) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发
+      // KD-2/流分析 #5：网页激活标签恢复成「未加载占位」——不自动 __webActivate（不冷启动网络请求）,
+      // 标签行照常渲染（favicon/标题来自持久化）,用户点击才首次加载。非 web 照旧自动打开。
+      if (e && !isWebEntry(e)) openTabRow(e);
     }
   }
 
@@ -780,7 +796,15 @@
     const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel);
     if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   }
+  // 激活漏斗（KD-5）：所有激活路径（点标签 / loadTabs 恢复 / finishClose·doDelete·onTreeChanged 回落 /
+  // Cmd+T 新标签 / window.open / 历史命中）都收口到这里。web 分支交给 browser-chrome 的 __webActivate;
+  // 非 web 分支先 __webDetach 摘掉任何 attach 的 view（否则原生 view 永久盖住编辑器 = blocker #1）,再走原路。
   function openTabRow(entry) {
+    if (isWebEntry(entry)) { // 网页标签：交给 browser-chrome 漏斗（显示 chrome + attach/show view 或新标签页）
+      if (window.__webActivate) window.__webActivate(entry);
+      return;
+    }
+    if (window.__webDetach) window.__webDetach(); // 切到任何文档/查看器表面前,先摘掉 web view
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
       if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry));
       return;
@@ -793,25 +817,77 @@
     if (entry.kind === 'html' || entry.kind === 'md') openDoc(entry.abs); // 外部标签的可编辑文档（含 md）
     else if (window.__shellShowViewer) window.__shellShowViewer({ abs: entry.abs, rel: null, kind: entry.kind, name: entry.title });
   }
+
+  // ---- 网页标签的创建/激活（KD-9/KD-15/KD-16 的入口都收口到这，全走漏斗）----
+  // 新标签页（Cmd+T）：建一个 url=null 的 web entry,激活 → browser-chrome 显示新标签页 surface（地址栏聚焦）。
+  function openNewWebTab() {
+    if (!current) return; // 无工作区不建（v1 网页标签 workspace-gated,同现 Cmd+T）
+    const id = nextWebId();
+    applyTabs(window.WS2Tabs.openEntry(tabState, { abs: id, kind: 'web', title: '新标签页', url: null }));
+    openTabRow(tabState.entries.find((e) => keyOf(e) === id));
+  }
+  // 带 URL 开网页标签（window.open / 历史命中 / 外部链接）：建 entry(有 url),前台则激活。
+  function openWebTabUrl(url, background) {
+    if (!current || !url) return;
+    const id = nextWebId();
+    applyTabs(window.WS2Tabs.openEntry(tabState, { abs: id, kind: 'web', title: url, url }));
+    if (background) { applyTabs(window.WS2Tabs.setActive(tabState, tabState.activeRel)); renderZones(); }
+    else openTabRow(tabState.entries.find((e) => keyOf(e) === id));
+  }
+  // browser-chrome 首次导航后回调：url=null 的新标签页原地变真网页标签 → 更新 entry.url + 落盘。
+  window.__sbWebNavigated = (key, url) => {
+    applyTabs(window.WS2Tabs.updateEntry(tabState, key, { url, title: url }));
+  };
+  // browser-chrome 推来 web 标签状态（title/favicon/loading/audible/error）→ 更新缓存 + 标签行（含 entry.title/url 落盘）。
+  window.__sbWebStatus = (s) => {
+    webStatus[s.key] = { favicon: s.favicon, loading: s.loading, audible: s.audible, error: s.error };
+    const e = tabState.entries.find((x) => keyOf(x) === s.key);
+    if (e && (s.title || s.url)) {
+      const patch = {};
+      if (s.title) patch.title = s.title;
+      if (s.url != null) patch.url = s.url;
+      applyTabs(window.WS2Tabs.updateEntry(tabState, s.key, patch));
+    } else {
+      renderZones(); // 只刷图标态（favicon/spinner/喇叭/错误）,不动 entry
+    }
+  };
+  window.__sbOpenWebTab = (url, background) => openWebTabUrl(url, background);
+  // 新标签页 surface 上的入口：新建文档（走老模板台）/ 打开文件夹。
+  window.__sbNewDoc = () => { if (current) openCreateModal('', { temp: true }); };
+  const webStatus = Object.create(null); // key -> { favicon, loading, audible, error }（browser-chrome 经 __sbWebStatus 喂）
   function tabRow(entry, zone) {
     const key = keyOf(entry);
     const temp = isTempEntry(entry);
-    const external = isExternal(entry) && !temp; // 临时文档不算「工作区外」，不显示 ↗ 标记
+    const web = isWebEntry(entry);
+    const external = isExternal(entry) && !temp && !web; // 临时文档/网页标签都不算「工作区外」，不显示 ↗ 标记
     const row = document.createElement('div');
-    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '') + (temp ? ' sb-tab-temp' : '');
-    row.dataset.rel = key; // 属性名沿用 data-rel（e2e 选择器靠它）；值=keyOf（内部=rel、外部=abs）
+    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '') + (temp ? ' sb-tab-temp' : '') + (web ? ' sb-tab-web' : '');
+    row.dataset.rel = key; // 属性名沿用 data-rel（e2e 选择器靠它）；值=keyOf（内部=rel、外部=abs、网页=web:id）
     row.setAttribute('role', 'button');
     row.draggable = true;
     if (external) row.title = entry.abs; // 外部标签悬停显完整绝对路径
     if (key === tabState.activeRel) row.classList.add('is-active');
     const ico = document.createElement('span');
     ico.className = 'sb-ico';
-    ico.innerHTML = kindSvg(entry.kind); // T8：标签也按类型换形状（跟树一套）
+    if (web) {
+      // 网页标签图标位：加载中→spinner；有 favicon→图；否则地球通用图标（favicon 拉取失败是高频态）
+      const st = webStatus[key] || {};
+      if (st.loading) { ico.innerHTML = '<span class="sb-tab-spinner"></span>'; }
+      else if (st.favicon) { const img = document.createElement('img'); img.className = 'sb-tab-fav'; img.src = st.favicon; img.onerror = () => { ico.innerHTML = kindSvg('web'); }; ico.innerHTML = ''; ico.append(img); }
+      else ico.innerHTML = kindSvg('web');
+    } else {
+      ico.innerHTML = kindSvg(entry.kind); // T8：标签也按类型换形状（跟树一套）
+    }
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
-    name.textContent = entry.title;
-    name.title = external ? entry.abs : entry.title; // 截断时悬停显全名（外部标签显完整绝对路径）
+    name.textContent = entry.title; // textContent：网页 title 是不可信内容,只走文本插入（KD-4）
+    name.title = external ? entry.abs : (web && entry.url ? entry.url : entry.title); // 网页悬停显 URL
     row.append(ico, name);
+    if (web) {
+      const st = webStatus[key] || {};
+      if (st.audible) { const a = document.createElement('span'); a.className = 'sb-tab-audio'; a.title = '正在播放音频'; a.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/></svg>'; row.append(a); }
+      if (st.error) { const er = document.createElement('span'); er.className = 'sb-tab-err'; er.title = '加载失败'; er.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>'; row.append(er); }
+    }
     if (external) {
       const ext = document.createElement('span');
       ext.className = 'sb-tab-ext-ico';
@@ -1315,7 +1391,8 @@
       window.__pendingColdOpen = null; // 标签已建，撤销 loadTabs 的「别抢 viewer」抑制
     },
     refresh,
-    newTab: () => { if (current) openCreateModal('', { temp: true }); },              // Cmd+T：新建临时文档（无工作区时不建，没地方保存）
+    // Cmd+T：新建网页标签（KD-9,传统浏览器习惯）——新标签页 surface 地址栏聚焦,下方留「新建文档」入口。
+    newTab: () => openNewWebTab(),
     // Cmd+W：有活跃标签关标签；无标签但还有内容（工作区外查看器 / 单文件模式的文档）先关内容回空态；
     // 真·空态 → 关窗口（Wendi 2026-07-03：macOS=隐藏驻留、后台开着；Windows/Linux 按平台惯例退出）。
     closeActiveTab: () => {

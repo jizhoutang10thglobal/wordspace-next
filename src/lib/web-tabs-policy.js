@@ -1,7 +1,9 @@
 // 网页标签的纯决策逻辑（无 electron 依赖 → node:test 直接可测,CLAUDE.md S1）。
 // web-tabs.js（主进程,要 electron）消费这里；把「判定」从「副作用」里剥出来单测。
 (function () {
-  var path = require('path');
+  // path 只被 safeFilename/isInsideDir/uniqueName 用（全是主进程下载路径逻辑）。renderer 无 require,
+  // 惰性取：加载不因 require 缺失而崩,routeMenuCmd/permissionAllowed/isAllowedNavUrl 在 renderer 照常可用。
+  var path = (typeof require !== 'undefined') ? require('path') : null;
 
   // ---- 权限：默认拒绝,白名单放行（KD-4）----
   // Electron 不设 handler 默认全放行 → 必须显式判。v1 白名单只放这三个低风险项,其余(摄像头/麦克风/

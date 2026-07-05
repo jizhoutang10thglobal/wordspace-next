@@ -6,6 +6,7 @@
 <title>Wordspace Next</title>
 <link rel="stylesheet" href="shell.css">
 <link rel="stylesheet" href="basic-edit.css">
+<link rel="stylesheet" href="browser-chrome.css">
 </head>
 <body>
 
@@ -113,6 +114,40 @@
       </div>
     </div>
 
+    <!-- 浏览器 chrome 条（web 标签激活时显示；永不被 native view 盖,画在 view 上方）。browser-chrome.js 掌管。 -->
+    <div id="browser-chrome" class="bc-bar" hidden>
+      <button id="bc-back" class="bc-nav" title="后退" aria-label="后退">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button id="bc-fwd" class="bc-nav" title="前进" aria-label="前进">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <button id="bc-reload" class="bc-nav" title="刷新" aria-label="刷新">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      </button>
+      <input id="bc-addr" class="bc-addr" type="text" spellcheck="false" autocomplete="off" placeholder="搜索或输入网址" aria-label="地址栏" />
+      <div id="bc-find" class="bc-find" hidden>
+        <input id="bc-find-input" class="bc-find-input" type="text" placeholder="在页面中查找" aria-label="页内查找" />
+        <span id="bc-find-count" class="bc-find-count"></span>
+      </div>
+    </div>
+
+    <!-- 新标签页 surface（Cmd+T / url=null 的 web 标签）。地址栏聚焦 + 新建文档入口 + 最近浏览。 -->
+    <div id="web-newtab" class="web-newtab" hidden>
+      <div class="nt-inner">
+        <div class="nt-brand">Wordspace</div>
+        <input id="nt-addr" class="nt-addr" type="text" spellcheck="false" autocomplete="off" placeholder="搜索网页或输入网址" aria-label="新标签页地址栏" />
+        <div class="nt-actions">
+          <button id="nt-new-doc" class="nt-chip">＋ 新建文档</button>
+          <button id="nt-open-folder" class="nt-chip">打开文件夹</button>
+        </div>
+        <ul id="nt-recent" class="nt-recent" hidden></ul>
+      </div>
+    </div>
+
+    <!-- web view 的 bounds 锚（native view 画在它上面；本身只占位、不渲染内容）。 -->
+    <div id="web-viewport" class="web-viewport" hidden></div>
+
     <!-- 空态（无文档时） -->
     <div id="home" class="ws-empty-wrap">
       <div class="ws-empty">
@@ -152,6 +187,10 @@
 <script src="pdf-viewer.js"></script>
 <script src="shell.js"></script>
 <script src="../lib/tabs.js"></script>
+<script src="../lib/tld-set.js"></script>
+<script src="../lib/url-input.js"></script>
+<script src="../lib/web-tabs-policy.js"></script>
 <script src="sidebar.js"></script>
+<script src="browser-chrome.js"></script>
 </body>
 </html>

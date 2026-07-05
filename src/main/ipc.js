@@ -304,6 +304,8 @@ function registerIpc() {
   ipcMain.on('web-nav', (_e, key, action) => webTabs.nav(key, action)); // back/forward/reload/stop
   ipcMain.on('web-find', (_e, key, text, opts) => webTabs.find(key, text, opts));
   ipcMain.on('web-stop-find', (_e, key, action) => webTabs.stopFind(key, action));
+  // KD-8:web view 聚焦时 renderer 的 input.focus() 静默失败——把焦点拉回主 frame,地址栏/查找条才聚焦得上。
+  ipcMain.on('web-focus-chrome', () => { const w = BrowserWindow.getAllWindows()[0]; if (w && !w.isDestroyed()) w.webContents.focus(); });
   // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
   ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
   // 新建文档模板（含空文档，第一项）。

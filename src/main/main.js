@@ -122,6 +122,16 @@ function buildMenu() {
       ]
     },
     {
+      // 浏览（网页标签）：KD-8 铁律——web view 聚焦时 renderer DOM keydown 全死,浏览快捷键必须走应用菜单加速器。
+      label: '浏览',
+      submenu: [
+        { label: '地址栏', accelerator: 'CmdOrCtrl+L', click: () => sendMenu('web-address') },
+        { label: '刷新页面', accelerator: 'CmdOrCtrl+R', click: () => sendMenu('web-reload') },
+        { label: '后退', accelerator: 'CmdOrCtrl+[', click: () => sendMenu('web-back') },
+        { label: '前进', accelerator: 'CmdOrCtrl+]', click: () => sendMenu('web-forward') }
+      ]
+    },
+    {
       label: '编辑',
       submenu: [
         { label: '撤销', accelerator: 'CmdOrCtrl+Z', click: () => sendMenu('undo') },
