@@ -17,7 +17,10 @@ async function add(storeFile, docPath) {
   list.unshift({ path: docPath, openedAt: Date.now() });
   const trimmed = list.slice(0, MAX);
   await fs.mkdir(path.dirname(storeFile), { recursive: true });
-  await fs.writeFile(storeFile, JSON.stringify(trimmed, null, 2), 'utf8');
+  // 修 MP-11：原子写（tmp+rename），防写一半崩溃损坏 JSON → 最近列表静默清空。
+  const tmp = storeFile + '.tmp';
+  await fs.writeFile(tmp, JSON.stringify(trimmed, null, 2), 'utf8');
+  await fs.rename(tmp, storeFile);
   return trimmed;
 }
 

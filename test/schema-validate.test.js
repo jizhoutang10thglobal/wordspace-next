@@ -212,3 +212,60 @@ test('P2 <a href=blob:> 也被拦（同类 scheme 遗漏）', () => {
   assert.equal(r.conform, false);
   assert.ok(rules(r).includes('unsafe-href'));
 });
+
+// ── Bug sweep 2026-07-05：内核对抗审计整改（KV-1..KV-6 + ED-A1/A6）──
+
+test('KV-1 phrasing 包裹绕过：块级裹 span/a 应被抓（不递归=漏判）', () => {
+  // 容器
+  assert.equal(v('<blockquote><span><ul><li>x</li></ul></span></blockquote>').conform, false, 'quote span ul');
+  assert.equal(v('<div class="ws-callout"><span><table><tr><td>x</td></tr></table></span></div>').conform, false, 'callout span table');
+  // 单元格里裹 iframe（外部内容混进合规文档的关键路径）
+  assert.equal(v('<table><tr><td><span><iframe src="https://evil.example"></iframe></span></td></tr></table>').conform, false, 'cell span iframe');
+  // li
+  assert.equal(v('<ul><li>a<span><ul><li>y</li></ul></span></li></ul>').conform, false, 'li span ul');
+  // summary / figcaption
+  assert.equal(v('<details><summary><span><ul><li>x</li></ul></span></summary><p>b</p></details>').conform, false, 'summary span ul');
+  assert.equal(v('<figure><img src="a.png"><figcaption><span><table><tr><td>x</td></tr></table></span></figcaption></figure>').conform, false, 'figcaption span table');
+  // 正常单层 phrasing 不误伤
+  assert.equal(v('<blockquote><span>普通 <b>行内</b> 文字</span></blockquote>').conform, true, 'quote 普通行内不误伤');
+});
+
+test('KV-2 data-ws2-ui 覆盖层标记不能骗过磁盘字节校验', () => {
+  assert.equal(v('<p>hi<span data-ws2-ui><iframe src="https://evil.example/track"></iframe></span></p>').conform, false, 'overlay iframe');
+  assert.equal(v('<p><span data-ws2-ui><button>click</button></span></p>').conform, false, 'overlay button');
+  assert.equal(v('<p><span data-ws2-ui><input name="x"></span></p>').conform, false, 'overlay input');
+});
+
+test('KV-3 容器内块级元素的 style 属性要抓（p/li/td/summary/figcaption）', () => {
+  assert.ok(rules(v('<blockquote><p style="color:red">hi</p></blockquote>')).includes('block-style'), 'quote>p');
+  assert.ok(rules(v('<div class="ws-callout"><p style="color:red">hi</p></div>')).includes('block-style'), 'callout>p');
+  assert.ok(rules(v('<ul><li style="color:red">x</li></ul>')).includes('block-style'), 'li');
+  assert.ok(rules(v('<table><tr><td style="color:green">c</td></tr></table>')).includes('block-style'), 'td');
+  assert.ok(rules(v('<details><summary style="color:red">s</summary><p>x</p></details>')).includes('block-style'), 'summary');
+  assert.ok(rules(v('<figure><img src="a.png"><figcaption style="color:red">cap</figcaption></figure>')).includes('block-style'), 'figcaption');
+});
+
+test('KV-5 figure 必须恰含一个 img（0 或 ≥2 都非法）', () => {
+  assert.equal(v('<figure><img src="a.png"></figure>').conform, true, '恰一 img 合法');
+  assert.equal(v('<figure><img src="a.png"><figcaption>说明</figcaption></figure>').conform, true, 'img+caption 合法');
+  assert.equal(v('<figure><img src="a.png"><img src="b.png"></figure>').conform, false, '两个 img');
+  assert.equal(v('<figure><figcaption>无图</figcaption></figure>').conform, false, '零 img');
+});
+
+test('KV-6 colspan=1/rowspan=1 是 no-op，不该判合并格', () => {
+  assert.equal(v('<table><tr><td colspan="1">a</td><td>b</td></tr></table>').conform, true, 'colspan=1 不算合并');
+  assert.equal(v('<table><tr><td rowspan="1">a</td><td>b</td></tr></table>').conform, true, 'rowspan=1 不算合并');
+  assert.ok(rules(v('<table><tr><td colspan="2">a</td></tr><tr><td>b</td><td>c</td></tr></table>')).includes('table-merge'), 'colspan=2 仍抓');
+});
+
+test('ED-A1 <strike> 是合法行内（删除线），不判非合规', () => {
+  assert.equal(v('<p>hello <strike>删除线</strike> world</p>').conform, true);
+  assert.equal(v('<p><s>s标签</s> 和 <strike>strike标签</strike> 等价</p>').conform, true);
+});
+
+test('ED-A6 ul/ol 直接挂裸文本 → non-conform', () => {
+  const r = v('<ul>裸文本</ul>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('list-child'), rules(r).join(','));
+  assert.equal(v('<ul><li>正常项</li></ul>').conform, true, '正常列表不误伤');
+});
