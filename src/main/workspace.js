@@ -12,7 +12,9 @@ const files = require('./files');
 
 // 不进树的噪音：隐藏文件 / 版本目录 / 原子写的临时文件。
 const IGNORE = new Set(['node_modules', '.git']);
-const skip = (name) => name.startsWith('.') || name.endsWith('.ws2tmp') || IGNORE.has(name);
+// 原子写 tmp 命名从 `.ws2tmp` 改成了 `.ws2tmp-<pid>-<seq>`（防并发保存互踩，files.js），endsWith('.ws2tmp')
+// 匹配不上新名字 → 存盘时临时文件漏进侧栏树。用 includes 兜住新旧两种命名（不该给用户看的写盘中间产物）。
+const skip = (name) => name.startsWith('.') || name.includes('.ws2tmp') || IGNORE.has(name);
 
 async function listNames(absDir) {
   try {
