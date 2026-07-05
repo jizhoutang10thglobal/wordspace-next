@@ -14,12 +14,12 @@
   font-size: var(--fs-xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--c-accent);
+  color: var(--c-text-3);
   font-weight: var(--fw-semibold);
 }
 .spx-title {
-  font-size: 30px;
-  font-weight: 800;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
   letter-spacing: -0.02em;
   color: var(--c-text);
   margin: 8px 0 12px;
@@ -52,7 +52,7 @@
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
-  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.04), 0 10px 30px rgba(28, 25, 23, 0.05);
+  box-shadow: var(--shadow-menu);
   overflow: hidden;
 }
 .spx-editor {
@@ -92,8 +92,8 @@
   width: 21px;
   height: 21px;
   border-radius: 50%;
-  background: var(--c-accent);
-  color: #fff;
+  background: var(--c-ink);
+  color: var(--c-text-invert);
   font-size: 11px;
   font-weight: var(--fw-semibold);
   display: flex;

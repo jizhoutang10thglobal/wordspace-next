@@ -8,8 +8,9 @@
   width: 560px;
   max-width: calc(100vw - 32px);
   background: var(--c-surface);
+  border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
-  box-shadow: var(--shadow-modal);
+  box-shadow: var(--stack-float);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -22,7 +23,14 @@
   gap: 10px;
   padding: 13px 14px;
   border-bottom: 1px solid var(--c-divider);
+  /* 签名动作:聚焦时墨线从左划过 */
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  transition: background-size var(--dur-slow) var(--ease-enter);
 }
+.fp-bar:focus-within { background-size: 100% 2px; }
 .fp-bar-ico {
   flex: none;
   color: var(--c-text-3);

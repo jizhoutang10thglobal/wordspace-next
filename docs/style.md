@@ -79,8 +79,8 @@ UI 字号阶梯 11/12/13/14/15/18/22,正文 13px 行高 1.5。
   同款脚;hover 抬 1px 脚变 3px,active 沉 1px 脚归零;ghost = 无边无脚,墨条滑入。
 - **输入框**:凹进纸里(sunken 底 + inset 投影,无边框),focus 时底变白 + 2px 墨青蓝
   墨线从左划到右(320ms enter),**不加批注圈**。错误态:底变 danger-wash + 墨线变红。
-- **弹窗**:白纸 + `--shadow-modal`,10px 圆角;× 按钮 hover 旋转 90°(spring)。
-- **菜单/右键菜单**:白纸 8px 圆角 + `--stack-float` 叠纸边;菜单项 hover 墨条滑入。
+- **弹窗**:白纸 + `--shadow-modal`,10px 圆角,背后垫两张微倾斜的纸(::before/::after 叠纸,「叠了有边」);× 按钮 hover 旋转 90°(spring)。
+- **菜单/右键菜单/命令面板**:白纸圆角 + 1px 细边 + `--stack-float` 叠纸边;菜单项 hover 墨条滑入(danger 项同滑入、只换 tint 色)。命令面板归菜单族,不用弹窗投影。
 - **toast**:书签纸条——左侧 4px 语义色条 + `--stack` 叠纸边。
 - **tooltip**:墨底白字,hover 延迟 400ms 浮现(200ms enter)。
 - **kbd**:键帽——`border-bottom-width 2px`,按下变 1px + 沉 1px。

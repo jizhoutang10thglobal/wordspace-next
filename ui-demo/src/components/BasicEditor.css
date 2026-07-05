@@ -70,7 +70,7 @@
     background-color var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease);
 }
-.nce-modes button.on { background: var(--c-surface); color: var(--c-accent); box-shadow: var(--shadow-xs); }
+.nce-modes button.on { background: var(--c-surface); color: var(--c-text); box-shadow: var(--shadow-xs); }
 .nce-frame {
   flex: 1;
   width: 100%;

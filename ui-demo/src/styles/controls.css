@@ -100,6 +100,7 @@
   animation: ws-modal-fade var(--dur-fast) var(--ease-enter);
 }
 .ws-modal {
+  position: relative;
   width: 100%;
   background: var(--c-surface);
   border-radius: var(--r-lg);
@@ -107,9 +108,23 @@
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - 48px);
-  overflow: hidden;
   animation: ws-modal-pop var(--dur) var(--ease-enter);
 }
+/* 背后垫两张微倾斜的纸(§0-2「叠了有边」);overflow:hidden 会裁掉它们,
+   所以外壳不裁、圆角裁剪交给首末子元素的圆角补丁 */
+.ws-modal::before,
+.ws-modal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-border);
+}
+.ws-modal::before { background: #f1f0ee; transform: rotate(1.2deg) translate(4px, 5px); }
+.ws-modal::after { background: #ebe9e7; transform: rotate(-1.4deg) translate(-3px, 9px); }
+.ws-modal > :first-child { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.ws-modal > :last-child { border-radius: 0 0 var(--r-lg) var(--r-lg); }
 @keyframes ws-modal-fade {
   from { opacity: 0; }
   to { opacity: 1; }

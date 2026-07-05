@@ -1,12 +1,12 @@
 /* 快捷键速查面板（Cmd+/） */
-.skp { width: 620px; max-width: calc(100vw - 48px); }
+.ws-modal.skp { width: 620px; max-width: calc(100vw - 48px); }
 .skp .ws-modal-title { display: flex; align-items: center; gap: 7px; }
 .skp-title-ico { color: var(--c-text-3); }
 .skp-platform {
   padding: 0 7px;
   border: 1px solid var(--c-border);
-  border-radius: var(--r-pill);
-  font-size: 10.5px; font-weight: var(--fw-medium); line-height: 17px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium); line-height: 17px;
   color: var(--c-text-3);
 }
 
@@ -30,7 +30,7 @@
 .skp-item {
   display: flex; align-items: center; gap: 10px;
   padding: 3px 0;
-  font-size: 12.5px; color: var(--c-text);
+  font-size: var(--fs-base); color: var(--c-text);
 }
 .skp-label { flex: 1; min-width: 0; }
 .skp-keys { flex: none; display: inline-flex; gap: 3px; }

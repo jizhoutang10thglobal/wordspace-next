@@ -2,7 +2,7 @@
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  background: var(--c-bg);
+  background: var(--c-bg-sunken);
 }
 .ag-page {
   max-width: 860px;
@@ -81,9 +81,10 @@
 /* card */
 .ag-card {
   background: var(--c-surface);
-  border: 1px solid var(--c-border);
+  border: 1px solid var(--c-divider);
   border-radius: var(--r-lg);
   overflow: hidden;
+  box-shadow: var(--shadow-xs);
 }
 .ag-divider { height: 1px; background: var(--c-divider); }
 
