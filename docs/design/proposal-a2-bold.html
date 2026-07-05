@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wordspace 主题方案 A · v2「纸方墨圆」组件加胆版</title>
+<style>
+/* ============================================================
+   方案 A v2「纸方墨圆」
+   token 层与 v1 完全一致(shadcn stone 原值 / 墨青蓝 accent / Notion 排版)。
+   v2 只重写组件的「形」与「手感」:
+   · 纸是方的:承载内容的面(卡片/菜单/弹窗)微圆角 + 真实叠纸边
+   · 墨是圆的:会动的件(按钮/开关/pill)全圆,letterpress 按压
+   · 焦点是圈选不是发光:2px 墨青蓝外圈 + 3px offset
+   · hover 语汇统一:3px 墨条从左滑入
+   ============================================================ */
+:root{
+  /* —— 色 token(与 v1 逐字节相同)—— */
+  --bg:#FAFAF9; --bg-sunken:#F5F5F4; --hover:rgba(28,25,23,.05);
+  --surface:#FFFFFF;
+  --border:#E7E5E4; --border-strong:#D6D3D1;
+  --t1:#292524; --t2:#57534E; --t3:#A8A29E;
+  --accent:#1D6FBF; --accent-hover:#165CA0; --accent-wash:#E8F1FA;
+  --ok:#15803D; --ok-wash:#E9F3EC;
+  --warn:#B45309; --warn-wash:#F9F1E5;
+  --danger:#B91C1C; --danger-wash:#FBECEC;
+  --ink:#1C1917; --ink-hover:#292524;
+  --shadow-xs:0 1px 2px rgba(28,25,23,.05);
+  --shadow-sm:0 1px 3px rgba(28,25,23,.07),0 1px 2px rgba(28,25,23,.04);
+  --shadow-md:0 4px 14px rgba(28,25,23,.09),0 1px 3px rgba(28,25,23,.05);
+  --shadow-lg:0 14px 36px rgba(28,25,23,.14),0 2px 8px rgba(28,25,23,.07);
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",
+         "Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"PingFang SC",monospace;
+
+  /* —— v2 新增:动效 token —— */
+  --d-fast:120ms;   /* 按压 / 颜色变化 */
+  --d-base:200ms;   /* 背景滑入 / 墨条 / tooltip */
+  --d-slow:320ms;   /* 墨线划过 / 入场 */
+  --e-standard:cubic-bezier(.2,0,0,1);
+  --e-enter:cubic-bezier(0,0,.2,1);
+  --e-exit:cubic-bezier(.4,0,1,1);
+  --e-spring:cubic-bezier(.34,1.56,.64,1);
+
+  /* —— v2 新增:叠纸边(shadow-stack,纸的厚度)—— */
+  --stack:0 1px 2px rgba(28,25,23,.05),
+          0 6px 0 -3px #F4F3F1, 0 7px 0 -3px var(--border),
+          0 13px 0 -7px #EFEDEB, 0 14px 0 -7px var(--border);
+  --stack-float:0 4px 14px rgba(28,25,23,.09),
+          0 6px 0 -3px #F4F3F1, 0 7px 0 -3px var(--border),
+          0 13px 0 -7px #EFEDEB, 0 14px 0 -7px var(--border);
+}
+
+/* ============ 基架 ============ */
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0; background:var(--bg); color:var(--t1); font-family:var(--sans);
+  font-size:16px; line-height:1.75; -webkit-font-smoothing:antialiased}
+::selection{background:rgba(29,111,191,.16)}
+a{color:var(--accent); text-underline-offset:3px;
+  text-decoration-color:rgba(29,111,191,.35)}
+a:hover{color:var(--accent-hover); text-decoration-color:currentColor}
+.wrap{max-width:1120px; margin:0 auto; padding:0 48px}
+@media (max-width:900px){ .wrap{padding:0 24px} }
+
+/* 全站焦点 = 批注环(不发光) */
+:focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:4px}
+
+/* 纸纹理(纯 CSS grain) */
+.grain{position:relative}
+.grain::before{content:""; position:absolute; inset:0; pointer-events:none;
+  border-radius:inherit; opacity:.5;
+  background-image:radial-gradient(rgba(28,25,23,.045) 1px,transparent 1px),
+                   radial-gradient(rgba(28,25,23,.028) 1px,transparent 1px);
+  background-size:3px 3px,5px 5px; background-position:0 0,1px 2px}
+
+/* ============ 头部 / 目录 ============ */
+.hero{position:relative; padding:100px 0 68px; overflow:hidden}
+.hero .ghost{position:absolute; right:-8px; top:0; font-size:270px; line-height:1;
+  font-weight:200; color:#EFEEEC; user-select:none; pointer-events:none}
+.hero .inner{position:relative; z-index:1}
+.kicker{font-family:var(--mono); font-size:12px; letter-spacing:.18em;
+  color:var(--t3); margin-bottom:22px}
+.hero h1{font-size:52px; line-height:1.15; font-weight:650;
+  letter-spacing:-.015em; margin:0 0 8px}
+.hero .sub{font-size:19px; color:var(--t2); margin:0 0 30px}
+.hero .sub em{font-style:italic; color:var(--t3); font-size:16px}
+.strip{display:flex; width:420px; height:10px; border-radius:5px; overflow:hidden;
+  border:1px solid var(--border)}
+.strip i{flex:1}
+.toc{position:sticky; top:0; z-index:60; background:rgba(250,250,249,.92);
+  backdrop-filter:blur(8px);
+  border-top:1px solid var(--border); border-bottom:1px solid var(--border)}
+.toc .row{display:flex; gap:28px; padding:14px 0; font-size:13px}
+.toc a{color:var(--t2); text-decoration:none; padding-bottom:2px;
+  background:linear-gradient(var(--ink),var(--ink)) left bottom/0% 1.5px no-repeat;
+  transition:background-size var(--d-base) var(--e-standard), color var(--d-fast)}
+.toc a:hover{color:var(--t1); background-size:100% 1.5px}
+.toc a b{color:var(--t3); font-weight:500; font-family:var(--mono);
+  font-size:11px; margin-right:6px}
+
+/* ============ 章节骨架 ============ */
+.sec{padding:84px 0; border-bottom:1px solid var(--border)}
+.sec-label{font-family:var(--mono); font-size:12px; letter-spacing:.16em;
+  color:var(--t3); margin-bottom:12px}
+.sec-title{font-size:30px; font-weight:650; letter-spacing:-.01em; margin:0 0 12px}
+.sec-lede{font-size:16px; color:var(--t2); max-width:760px; margin:0 0 44px}
+h3.block-title{font-size:18px; font-weight:600; margin:56px 0 20px}
+h3.block-title:first-of-type{margin-top:0}
+.note{font-size:13px; color:var(--t3); line-height:1.7}
+.spec{font-family:var(--mono); font-size:11px; color:var(--t3); line-height:1.9}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:24px}
+.grid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:24px}
+@media (max-width:900px){ .grid2,.grid3{grid-template-columns:1fr} }
+
+/* 纸卡(v2:叠纸边替代描边卡) */
+.demo{background:var(--surface); border-radius:8px; padding:28px;
+  box-shadow:var(--stack); border:1px solid var(--border)}
+.demo .cap{font-size:13px; font-weight:600; color:var(--t2); margin:0 0 20px}
+
+/* ============ v2 组件语言 ============ */
+
+/* —— 按钮:墨丸 + letterpress 按压 —— */
+.btn{display:inline-flex; align-items:center; gap:6px; height:36px; padding:0 18px;
+  border-radius:999px; font-size:14px; font-weight:500; font-family:var(--sans);
+  border:1px solid transparent; cursor:pointer; line-height:1; white-space:nowrap;
+  transition:transform var(--d-fast) var(--e-standard),
+             box-shadow var(--d-fast) var(--e-standard),
+             background-color var(--d-fast) var(--e-standard)}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--ink); color:#FAFAF9;
+  box-shadow:0 2px 0 rgba(12,10,9,.35)}
+.btn-primary:hover{background:var(--ink-hover); transform:translateY(-1px);
+  box-shadow:0 3px 0 rgba(12,10,9,.35)}
+.btn-primary:active{transform:translateY(1px); box-shadow:0 0 0 rgba(12,10,9,.35)}
+.btn-secondary{background:var(--surface); color:var(--t1);
+  border-color:var(--border-strong); box-shadow:0 2px 0 var(--border-strong)}
+.btn-secondary:hover{transform:translateY(-1px); box-shadow:0 3px 0 var(--border-strong)}
+.btn-secondary:active{transform:translateY(1px); box-shadow:0 0 0 var(--border-strong)}
+.btn-ghost{background:linear-gradient(var(--hover),var(--hover)) left center/0% 100% no-repeat;
+  color:var(--t2);
+  transition:background-size var(--d-base) var(--e-standard),
+             color var(--d-fast), transform var(--d-fast)}
+.btn-ghost:hover{background-size:100% 100%; color:var(--t1)}
+.btn-danger{background:var(--danger); color:#FFF; box-shadow:0 2px 0 #7F1D1D}
+.btn-danger:hover{transform:translateY(-1px); box-shadow:0 3px 0 #7F1D1D}
+.btn-danger:active{transform:translateY(1px); box-shadow:0 0 0 #7F1D1D}
+.btn-disabled{background:var(--bg-sunken); color:var(--t3); cursor:not-allowed;
+  border-color:var(--border); box-shadow:none}
+.btn-disabled:hover,.btn-disabled:active{transform:none}
+.btn-row{display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start}
+.btn-row figure{margin:0; text-align:center}
+.btn-row figcaption{margin-top:10px}
+
+/* —— 输入框:凹进纸里,墨线从左划过 —— */
+.field{width:100%; max-width:340px; margin-bottom:22px}
+.field label{display:block; font-size:13px; font-weight:500; color:var(--t2);
+  margin-bottom:7px}
+.input{width:100%; height:38px; padding:0 13px; border:none; border-radius:6px;
+  font-size:14px; font-family:var(--sans); color:var(--t1);
+  background-color:var(--bg-sunken);
+  background-image:linear-gradient(var(--accent),var(--accent));
+  background-repeat:no-repeat; background-position:left bottom;
+  background-size:0% 2px; outline:none;
+  box-shadow:inset 0 1px 2px rgba(28,25,23,.04);
+  transition:background-color var(--d-fast) var(--e-standard),
+             background-size var(--d-slow) var(--e-enter),
+             box-shadow var(--d-fast)}
+.input::placeholder{color:var(--t3)}
+.input:hover{background-color:#F0EFED}
+.input:focus{background-color:var(--surface); background-size:100% 2px;
+  box-shadow:inset 0 1px 2px rgba(28,25,23,.04), var(--shadow-xs)}
+.input:focus-visible{outline:none} /* 输入框的焦点表达 = 墨线,不再加批注环 */
+.input.is-error{background-color:var(--danger-wash);
+  background-image:linear-gradient(var(--danger),var(--danger));
+  background-size:100% 2px}
+.field .err{font-size:12.5px; color:var(--danger); margin-top:6px}
+
+/* —— 菜单 / 右键菜单 / 命令面板:墨条滑入 —— */
+.menu{width:236px; background:var(--surface); border-radius:8px;
+  border:1px solid var(--border); box-shadow:var(--stack-float);
+  padding:6px; font-size:13.5px}
+.mi{position:relative; display:flex; align-items:center; gap:9px;
+  padding:8px 11px 8px 14px; border-radius:5px; color:var(--t1); cursor:default;
+  background:linear-gradient(var(--hover),var(--hover)) left center/0% 100% no-repeat;
+  transition:background-size var(--d-base) var(--e-standard)}
+.mi::before{content:""; position:absolute; left:3px; top:22%; bottom:22%;
+  width:3px; border-radius:2px; background:var(--ink);
+  transform:scaleY(0); transform-origin:center;
+  transition:transform var(--d-base) var(--e-standard)}
+.mi:hover{background-size:100% 100%}
+.mi:hover::before{transform:scaleY(1)}
+.mi .grow{flex:1}
+.mi.is-danger{color:var(--danger)}
+.mi.is-danger::before{background:var(--danger)}
+.mi.is-selected{background:var(--accent-wash); background-size:100% 100%}
+.mi.is-selected::before{transform:scaleY(1); background:var(--accent)}
+.sep{height:1px; background:var(--border); margin:6px 8px}
+.mlabel{font-size:11px; letter-spacing:.08em; color:var(--t3); padding:8px 12px 4px;
+  font-weight:500}
+
+.palette{width:100%; max-width:560px; background:var(--surface); border-radius:10px;
+  border:1px solid var(--border); box-shadow:var(--stack-float); overflow:hidden}
+.palette .phead{display:flex; align-items:center; gap:10px; padding:14px 16px;
+  border-bottom:1px solid var(--border)}
+.palette .phead input{flex:1; border:none; outline:none; font-size:15px;
+  font-family:var(--sans); color:var(--t1); background:transparent}
+.palette .phead input::placeholder{color:var(--t3)}
+.palette .plist{padding:6px}
+.palette .pfoot{display:flex; gap:18px; padding:10px 16px;
+  border-top:1px solid var(--border); font-size:12px; color:var(--t3);
+  background:var(--bg-sunken)}
+
+/* —— kbd:可以按的键帽 —— */
+.kbd{display:inline-block; padding:1px 6px 2px; font-family:var(--mono);
+  font-size:11.5px; color:var(--t2); background:var(--bg-sunken);
+  border:1px solid var(--border-strong); border-bottom-width:2px; border-radius:5px;
+  line-height:1.5; vertical-align:middle; cursor:default;
+  transition:transform var(--d-fast) var(--e-standard),
+             border-bottom-width var(--d-fast)}
+.kbd:active{transform:translateY(1px); border-bottom-width:1px}
+
+/* —— Modal:叠起来的纸(背后两张微倾斜)—— */
+.overlay-demo{background:rgba(12,10,9,.42); border-radius:12px; padding:60px 32px;
+  display:flex; justify-content:center}
+.stackwrap{position:relative; width:400px}
+.stackwrap .backsheet{position:absolute; inset:0; border-radius:10px;
+  border:1px solid var(--border)}
+.stackwrap .b1{background:#F1F0EE; transform:rotate(1.2deg) translate(4px,5px)}
+.stackwrap .b2{background:#EBE9E7; transform:rotate(-1.4deg) translate(-3px,9px)}
+.modal{position:relative; background:var(--surface); border-radius:10px;
+  box-shadow:var(--shadow-lg); overflow:hidden}
+.modal .hd{display:flex; align-items:center; justify-content:space-between;
+  padding:16px 20px 0}
+.modal .hd b{font-size:15px; font-weight:600}
+.modal .hd .x{color:var(--t3); font-size:18px; line-height:1; cursor:default;
+  transition:color var(--d-fast), transform var(--d-fast) var(--e-spring)}
+.modal .hd .x:hover{color:var(--t1); transform:rotate(90deg)}
+.modal .bd{padding:16px 20px 4px; font-size:14px; color:var(--t2)}
+.modal .ft{display:flex; justify-content:flex-end; gap:10px; padding:16px 20px 20px}
+
+/* —— Toast:书签纸条 —— */
+.toast{position:relative; display:flex; gap:12px; align-items:flex-start;
+  width:372px; background:var(--surface); border:1px solid var(--border);
+  border-radius:8px; box-shadow:var(--stack); padding:12px 14px 12px 18px;
+  margin-bottom:16px; overflow:hidden;
+  transition:transform var(--d-base) var(--e-spring),
+             box-shadow var(--d-base) var(--e-standard)}
+.toast:hover{transform:translateY(-2px); box-shadow:var(--stack-float)}
+.toast::before{content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+  background:var(--bar,var(--ink))}
+.toast b{display:block; font-size:13.5px; font-weight:600}
+.toast p{margin:1px 0 0; font-size:12.5px; color:var(--t2); line-height:1.55}
+.toast .act{font-size:12.5px; font-weight:500}
+
+/* —— Segmented control —— */
+.seg{display:inline-flex; background:var(--bg-sunken); border-radius:999px;
+  padding:3px; box-shadow:inset 0 1px 2px rgba(28,25,23,.05)}
+.seg input{position:absolute; opacity:0; pointer-events:none}
+.seg label{padding:5px 16px; border-radius:999px; font-size:13.5px; color:var(--t2);
+  cursor:pointer; transition:all var(--d-base) var(--e-standard)}
+.seg label:hover{color:var(--t1)}
+.seg input:checked + label{background:var(--surface); color:var(--t1);
+  font-weight:500; box-shadow:var(--shadow-xs), 0 1px 0 rgba(28,25,23,.04)}
+.seg input:focus-visible + label{outline:2px solid var(--accent); outline-offset:2px}
+
+/* —— Switch —— */
+.swt{position:relative; display:inline-flex; align-items:center; gap:10px;
+  cursor:pointer; font-size:14px}
+.swt input{position:absolute; opacity:0; pointer-events:none}
+.swt .track{width:40px; height:23px; border-radius:999px; background:var(--border-strong);
+  position:relative; transition:background-color var(--d-base) var(--e-standard);
+  box-shadow:inset 0 1px 2px rgba(28,25,23,.08)}
+.swt .track::after{content:""; position:absolute; left:2px; top:2px; width:19px;
+  height:19px; border-radius:999px; background:#FFF;
+  box-shadow:0 1px 2px rgba(28,25,23,.25);
+  transition:transform var(--d-base) var(--e-spring), width var(--d-fast)}
+.swt input:checked + .track{background:var(--ink)}
+.swt input:checked + .track::after{transform:translateX(17px)}
+.swt:active .track::after{width:23px}
+.swt:active input:checked + .track::after{transform:translateX(13px)}
+.swt input:focus-visible + .track{outline:2px solid var(--accent); outline-offset:3px}
+
+/* —— Checkbox(勾是画出来的)—— */
+.cbx{display:inline-flex; align-items:center; gap:10px; cursor:pointer; font-size:14px}
+.cbx input{position:absolute; opacity:0; pointer-events:none}
+.cbx .box{width:18px; height:18px; border-radius:4px; background:var(--surface);
+  border:1.5px solid var(--border-strong); position:relative;
+  transition:background-color var(--d-fast) var(--e-standard),
+             border-color var(--d-fast)}
+.cbx .box::after{content:""; position:absolute; left:5px; top:1.5px; width:4.5px;
+  height:9px; border:solid #FFF; border-width:0 1.8px 1.8px 0;
+  transform:rotate(45deg) scale(0); transform-origin:center;
+  transition:transform var(--d-base) var(--e-spring)}
+.cbx input:checked + .box{background:var(--accent); border-color:var(--accent)}
+.cbx input:checked + .box::after{transform:rotate(45deg) scale(1)}
+.cbx input:focus-visible + .box{outline:2px solid var(--accent); outline-offset:3px}
+.cbx input:checked ~ .lbl{color:var(--t3); text-decoration:line-through;
+  text-decoration-color:rgba(168,162,158,.7)}
+.cbx .lbl{transition:color var(--d-base) var(--e-standard)}
+
+/* —— 侧栏 / 标签页 —— */
+.rail{width:100%; background:var(--bg-sunken); border:1px solid var(--border);
+  border-radius:10px; padding:10px; font-size:13px}
+.slabel{font-size:11px; letter-spacing:.08em; color:var(--t3);
+  padding:10px 8px 6px; font-weight:500}
+.pin-grid{display:flex; gap:8px; padding:0 2px}
+.pin{flex:1; height:58px; border-radius:8px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:4px; color:var(--t2);
+  position:relative; cursor:default;
+  transition:transform var(--d-base) var(--e-spring),
+             box-shadow var(--d-base) var(--e-standard),
+             background-color var(--d-fast)}
+.pin:hover{background:var(--surface); transform:translateY(-2px);
+  box-shadow:var(--shadow-sm)}
+.pin.is-active{background:var(--surface); box-shadow:var(--stack)}
+.pin span{font-size:11px; max-width:64px; overflow:hidden; text-overflow:ellipsis;
+  white-space:nowrap}
+.pin .x{position:absolute; top:2px; right:6px; font-size:12px; color:var(--t3);
+  opacity:0; transition:opacity var(--d-fast)}
+.pin:hover .x{opacity:1}
+.row-item{position:relative; display:flex; align-items:center; gap:8px;
+  padding:6px 8px 6px 12px; border-radius:6px; color:var(--t2); margin-bottom:1px;
+  cursor:default;
+  background:linear-gradient(var(--hover),var(--hover)) left center/0% 100% no-repeat;
+  transition:background-size var(--d-base) var(--e-standard)}
+.row-item::before{content:""; position:absolute; left:2px; top:24%; bottom:24%;
+  width:3px; border-radius:2px; background:var(--ink); transform:scaleY(0);
+  transition:transform var(--d-base) var(--e-standard)}
+.row-item:hover{background-size:100% 100%}
+.row-item:hover::before{transform:scaleY(1)}
+.row-item .nm{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.row-item .x{color:var(--t3); font-size:13px; opacity:0;
+  transition:opacity var(--d-fast)}
+.row-item:hover .x{opacity:1}
+.row-item .dot-un{width:7px; height:7px; border-radius:50%; background:var(--accent);
+  animation:breathe 2s var(--e-standard) infinite}
+@keyframes breathe{0%,100%{transform:scale(1); opacity:1}
+  50%{transform:scale(1.3); opacity:.55}}
+.row-item .ext{color:var(--t3); font-size:11px}
+.row-item.is-active{background:var(--surface); background-size:100% 100%;
+  box-shadow:var(--shadow-xs); color:var(--t1); font-weight:500}
+.row-item.is-active::before{transform:scaleY(1); background:var(--accent)}
+.tree-kids{margin-left:13px; padding-left:9px; border-left:1px solid var(--border)}
+.ic{width:14px; height:14px; flex:none; color:var(--t3)}
+.row-item.is-active .ic{color:var(--t2)}
+.space{display:flex; align-items:center; gap:9px; padding:7px 8px; border-radius:6px;
+  margin-bottom:6px; transition:background-color var(--d-fast)}
+.space:hover{background:var(--hover)}
+.logo{flex:none; width:24px; height:24px; border-radius:6px; background:var(--ink);
+  color:#FAFAF9; font-size:13px; font-weight:700; display:flex;
+  align-items:center; justify-content:center}
+.space b{flex:1; font-size:13.5px; font-weight:600}
+
+.app-frame{border:1px solid var(--border); border-radius:12px; overflow:hidden;
+  box-shadow:var(--shadow-md); background:var(--bg)}
+.titlebar{display:flex; align-items:center; gap:7px; height:38px; padding:0 14px;
+  background:var(--bg-sunken); border-bottom:1px solid var(--border)}
+.titlebar i{width:11px; height:11px; border-radius:50%}
+.titlebar .tl-title{flex:1; text-align:center; font-size:12px; color:var(--t3);
+  margin-right:47px}
+.app-body{display:grid; grid-template-columns:264px 1fr}
+.app-side{background:var(--bg-sunken); border-right:1px solid var(--border);
+  padding:10px; font-size:13px}
+.app-canvas{padding:40px 48px; background:var(--bg)}
+.app-canvas h5{font-size:19px; font-weight:650; margin:0 0 4px}
+.app-canvas .cmeta{font-size:12px; color:var(--t3); margin-bottom:16px}
+.app-canvas p{font-size:13px; color:var(--t2); margin:0 0 10px; line-height:1.8}
+
+/* —— Tooltip:真 hover,400ms 延迟浮现 —— */
+.tipwrap{position:relative; display:inline-block}
+.tooltip{position:absolute; bottom:calc(100% + 9px); left:50%;
+  transform:translate(-50%,4px); background:var(--ink); color:#FAFAF9;
+  font-size:12px; line-height:1.5; padding:5px 10px; border-radius:6px;
+  white-space:nowrap; box-shadow:var(--shadow-md); opacity:0; pointer-events:none;
+  transition:opacity var(--d-base) var(--e-enter) 0ms,
+             transform var(--d-base) var(--e-enter) 0ms}
+.tipwrap:hover .tooltip{opacity:1; transform:translate(-50%,0);
+  transition-delay:400ms,400ms}
+.tooltip .tk{color:#A8A29E; margin-left:7px; font-family:var(--mono); font-size:11px}
+.tooltip::after{content:""; position:absolute; top:100%; left:50%;
+  transform:translateX(-50%); border:5px solid transparent;
+  border-top-color:var(--ink)}
+
+/* ============ 动效演示台 ============ */
+.ez-row{display:flex; align-items:center; gap:18px; padding:13px 0;
+  border-bottom:1px solid var(--border)}
+.ez-row:last-child{border-bottom:none}
+.ez-meta{flex:none; width:250px}
+.ez-meta b{display:block; font-size:13.5px; font-weight:600}
+.ez-meta code{font-family:var(--mono); font-size:11px; color:var(--t3)}
+.ez-track{flex:none; width:400px; max-width:46vw; height:34px;
+  background:var(--bg-sunken); border-radius:999px; position:relative;
+  box-shadow:inset 0 1px 2px rgba(28,25,23,.05)}
+.ez-chip{position:absolute; left:4px; top:4px; width:26px; height:26px;
+  border-radius:999px; background:var(--ink); box-shadow:0 1px 2px rgba(12,10,9,.3)}
+.ez-row:hover .ez-chip{transform:translateX(min(366px, calc(46vw - 34px)))}
+.ez-1 .ez-chip{transition:transform 600ms var(--e-standard)}
+.ez-2 .ez-chip{transition:transform 600ms var(--e-enter)}
+.ez-3 .ez-chip{transition:transform 600ms var(--e-exit)}
+.ez-4 .ez-chip{transition:transform 600ms var(--e-spring)}
+
+.mo-table{width:100%; border-collapse:collapse; font-size:13.5px;
+  background:var(--surface); border:1px solid var(--border); border-radius:10px;
+  overflow:hidden}
+.mo-table th,.mo-table td{padding:10px 14px; border-bottom:1px solid var(--border);
+  text-align:left}
+.mo-table th{background:var(--bg-sunken); font-size:12px; color:var(--t2);
+  font-weight:600}
+.mo-table tr:last-child td{border-bottom:none}
+.mo-table code{font-family:var(--mono); font-size:12px}
+
+/* ============ 文档样张(v1 原样保留,已获认可) ============ */
+.doc-stage{background:var(--bg); border:1px solid var(--border); border-radius:14px;
+  box-shadow:var(--shadow-sm); padding:80px 96px; max-width:860px; margin:0 auto}
+@media (max-width:900px){ .doc-stage{padding:48px 28px} }
+.doc{font-size:16px; line-height:1.75; color:var(--t1)}
+.doc h1{font-size:1.875em; line-height:1.3; font-weight:650; letter-spacing:-.01em;
+  margin:0 0 6px}
+.doc .dmeta{font-size:.8125em; color:var(--t3); margin-bottom:2.6em; display:flex;
+  align-items:center; gap:10px; flex-wrap:wrap}
+.doc .tag{font-size:11px; color:var(--t2); background:var(--bg-sunken);
+  border:1px solid var(--border); border-radius:99px; padding:1px 9px 2px}
+.doc h2{font-size:1.5em; line-height:1.35; font-weight:600; margin:2.1em 0 .55em}
+.doc h3{font-size:1.25em; line-height:1.4; font-weight:600; margin:1.7em 0 .45em}
+.doc p{margin:0 0 .85em}
+.doc ul,.doc ol{margin:0 0 .9em; padding-left:1.5em}
+.doc li{margin-bottom:.3em}
+.doc strong{font-weight:650}
+.doc s{color:var(--t3)}
+.doc u{text-decoration-color:rgba(41,37,36,.4); text-underline-offset:3px}
+.doc code{font-family:var(--mono); font-size:.85em; color:#9A3412;
+  background:var(--bg-sunken); border:1px solid var(--border); border-radius:4px;
+  padding:1px 5px 2px}
+.doc .todo{list-style:none; padding-left:.2em; margin:0 0 .9em}
+.doc .todo li{display:flex; gap:10px; align-items:flex-start; margin-bottom:.45em}
+.doc blockquote{margin:1.4em 0; padding:.1em 0 .1em 1em;
+  border-left:3px solid var(--t1)}
+.doc blockquote footer{font-size:.8125em; color:var(--t3); margin-top:.4em}
+.doc .callout{display:flex; gap:12px; background:var(--bg-sunken);
+  border:1px solid var(--border); border-radius:8px; padding:14px 16px;
+  margin:1.4em 0; font-size:.9375em; line-height:1.7}
+.doc .callout .emo{flex:none; font-size:18px; line-height:1.5}
+.doc table{width:100%; border-collapse:collapse; margin:1.2em 0 1.6em;
+  font-size:.9375em}
+.doc th,.doc td{border:1px solid var(--border); padding:7px 12px; text-align:left;
+  line-height:1.6}
+.doc th{background:var(--bg-sunken); font-weight:600; font-size:.9em; color:var(--t2)}
+.doc pre{background:var(--bg-sunken); border:1px solid var(--border);
+  border-radius:8px; padding:16px 18px; overflow-x:auto; margin:1.2em 0 1.6em;
+  font-family:var(--mono); font-size:13px; line-height:1.7; color:var(--t1)}
+.doc pre .cm{color:var(--t3)}
+.doc pre .tg{color:var(--accent)}
+.doc hr{border:none; border-top:1px solid var(--border); margin:2.4em 0}
+
+footer.end{padding:56px 0 88px; color:var(--t3); font-size:13px}
+
+/* 动效科学的兜底:尊重系统设置 */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:0ms!important; animation:none!important}
+}
+</style>
+</head>
+<body>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-file" viewBox="0 0 16 16">
+    <path d="M4 1.5h5.2L12.5 5v9.5H4z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M9.2 1.5V5h3.3" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16">
+    <path d="M1.8 3.2h4.1l1.4 1.8h6.9v7.8H1.8z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-pin" viewBox="0 0 16 16">
+    <path d="M6.2 1.8h3.6l-.4 3.8 2.4 2v1.6H4.2V7.6l2.4-2z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M8 9.2v4.6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-chevd" viewBox="0 0 16 16">
+    <path d="M4.5 6.2 8 9.8l3.5-3.6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-chevr" viewBox="0 0 16 16">
+    <path d="M6.2 4.5 9.8 8l-3.6 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16">
+    <path d="M8 3.2v9.6M3.2 8h9.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="i-search" viewBox="0 0 16 16">
+    <circle cx="7" cy="7" r="4.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <path d="M10.4 10.4 14 14" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  </symbol>
+</svg>
+
+<!-- ================= 头部 ================= -->
+<header class="hero grain">
+  <div class="wrap inner">
+    <div class="ghost">A2</div>
+    <div class="kicker">WORDSPACE · UI 主题提案 · 方案 A · v2 组件加胆版</div>
+    <h1>纸感暖白 · 纸方墨圆</h1>
+    <p class="sub">色板一个字节没动;动的是组件的形与手感。<em>Paper is square, ink is round.</em></p>
+    <div class="strip" title="stone-50 → stone-900 · 与 v1 完全一致">
+      <i style="background:#FAFAF9"></i><i style="background:#F5F5F4"></i>
+      <i style="background:#E7E5E4"></i><i style="background:#D6D3D1"></i>
+      <i style="background:#A8A29E"></i><i style="background:#78716C"></i>
+      <i style="background:#57534E"></i><i style="background:#292524"></i>
+      <i style="background:#1C1917"></i><i style="background:#1D6FBF"></i>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <div class="wrap row">
+    <a href="#diff"><b>00</b>v2 改了什么</a>
+    <a href="#motion"><b>01</b>动效与手感规范</a>
+    <a href="#components"><b>02</b>组件走查 v2</a>
+    <a href="#document"><b>03</b>文档样张(沿用 v1)</a>
+  </div>
+</nav>
+
+<!-- ================= 00 v2 改了什么 ================= -->
+<section class="sec" id="diff">
+  <div class="wrap">
+    <div class="sec-label">00 · WHAT CHANGED</div>
+    <h2 class="sec-title">v2 改了什么,观点是什么</h2>
+    <p class="sec-lede">Colin 的反馈:组件略普通。v2 的回答是一套贯穿所有组件的设计语言——<b style="color:var(--t1)">「纸方墨圆,按了会陷,叠了有边」</b>。以下五条,每一条都能在 02 节亲手摸到。</p>
+
+    <div class="grid2" style="gap:40px; align-items:start">
+      <ol style="margin:0; padding-left:1.4em; font-size:15px; line-height:1.9; color:var(--t1)">
+        <li style="margin-bottom:14px"><b>纸方,墨圆。</b>承载内容的「纸」(卡片/菜单/弹窗)保持微圆角;
+          所有会动的「墨」(按钮/开关/分段控件)一律变成圆丸。可点的和可读的,一眼分开——这是 v1
+          "全员圆角矩形"最缺的辨识度。</li>
+        <li style="margin-bottom:14px"><b>层级不再靠边框,靠纸的物理。</b>卡片与菜单底下露出真实的叠纸边
+          (多层硬投影),弹窗背后垫两张微倾斜的纸;边框大幅退场,留白与层差接管分隔。</li>
+        <li style="margin-bottom:14px"><b>按了会陷(letterpress)。</b>按钮 hover 抬 1px、按下沉 1px,
+          脚下的硬投影同步伸缩;kbd 键帽同理能按。位移只有 1–2px,但手指能感觉到。</li>
+        <li style="margin-bottom:14px"><b>焦点是圈选,不是发光。</b>全站 <code style="font-family:var(--mono); font-size:13px">:focus-visible</code>
+          = 2px 墨青蓝外圈 + 3px offset,像在纸上圈重点;拒绝模糊 glow。输入框例外——它的焦点表达是一根
+          320ms 从左划过的墨线。</li>
+        <li><b>hover 语汇统一为「墨条滑入」。</b>菜单、右键菜单、侧栏、命令面板,同一根 3px
+          墨条从左缘生长 + 底色淡入。另新增四个件:segmented / switch / 右键菜单 / ⌘K 命令面板,
+          全部纯 CSS 可交互,动效收进 120/200/320ms 三档规范。</li>
+      </ol>
+      <div>
+        <div class="demo" style="margin-bottom:18px">
+          <p class="cap">30 秒手感自测(都摸一遍)</p>
+          <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin-bottom:18px">
+            <button class="btn btn-primary">按住我再松开</button>
+            <label class="swt"><input type="checkbox" checked><span class="track"></span>自动保存</label>
+            <span class="kbd">⌘</span><span class="kbd">K</span>
+          </div>
+          <div class="menu" style="width:100%; box-shadow:var(--shadow-xs)">
+            <div class="mi"><svg class="ic"><use href="#i-file"/></svg><span class="grow">把鼠标滑过这两行</span></div>
+            <div class="mi"><svg class="ic"><use href="#i-pin"/></svg><span class="grow">墨条从左边生长出来</span></div>
+          </div>
+          <p class="spec" style="margin-top:14px">按钮压下 120ms · 墨条 200ms · 全部 token 化,见 01 节</p>
+        </div>
+        <p class="note">token 层(stone 色板 / 墨青蓝 / Notion 排版 / 深色对照)与 v1 完全一致,
+          v1 页的 02、05、06 节继续有效;本页只谈组件的形与动。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 01 动效与手感规范 ================= -->
+<section class="sec" id="motion">
+  <div class="wrap">
+    <div class="sec-label">01 · MOTION SPEC</div>
+    <h2 class="sec-title">动效与手感规范</h2>
+    <p class="sec-lede">三档时长、四条曲线,全部收进 CSS 变量。原则:越贴手指越快(按压 120ms),越大的纸越慢(弹窗 320ms);spring 只给"物"(开关滑块、置顶卡),不给颜色。</p>
+
+    <div style="display:grid; gap:24px">
+      <div class="demo">
+        <p class="cap">时长阶梯</p>
+        <table class="mo-table" style="border:none; box-shadow:none">
+          <tr><th>token</th><th>值</th><th>用在哪</th></tr>
+          <tr><td><code>--d-fast</code></td><td><code>120ms</code></td><td>按压位移、颜色/透明度、× 浮现</td></tr>
+          <tr><td><code>--d-base</code></td><td><code>200ms</code></td><td>墨条滑入、背景滑入、tooltip、开关</td></tr>
+          <tr><td><code>--d-slow</code></td><td><code>320ms</code></td><td>输入框墨线划过、弹窗/命令面板入场</td></tr>
+        </table>
+        <p class="spec" style="margin-top:14px">tooltip 额外规则:transition-delay 400ms,防误触;离开 0ms 立即消失</p>
+      </div>
+      <div class="demo">
+        <p class="cap">缓动曲线(把鼠标停在行上,看小球怎么跑 · 演示用 600ms 慢放)</p>
+        <div class="ez-row ez-1"><div class="ez-meta"><b>标准 standard</b>
+          <code>cubic-bezier(.2, 0, 0, 1)</code></div>
+          <div class="ez-track"><div class="ez-chip"></div></div></div>
+        <div class="ez-row ez-2"><div class="ez-meta"><b>进入 enter</b>
+          <code>cubic-bezier(0, 0, .2, 1)</code></div>
+          <div class="ez-track"><div class="ez-chip"></div></div></div>
+        <div class="ez-row ez-3"><div class="ez-meta"><b>退出 exit</b>
+          <code>cubic-bezier(.4, 0, 1, 1)</code></div>
+          <div class="ez-track"><div class="ez-chip"></div></div></div>
+        <div class="ez-row ez-4"><div class="ez-meta"><b>spring 近似</b>
+          <code>cubic-bezier(.34, 1.56, .64, 1)</code></div>
+          <div class="ez-track"><div class="ez-chip"></div></div></div>
+      </div>
+    </div>
+
+    <h3 class="block-title">组件 → 动效映射</h3>
+    <table class="mo-table">
+      <tr><th>交互</th><th>时长</th><th>曲线</th><th>属性</th></tr>
+      <tr><td>按钮 hover 抬起 / active 压下</td><td><code>120ms</code></td><td>standard</td><td>transform + 硬投影伸缩</td></tr>
+      <tr><td>菜单 / 侧栏行:墨条滑入 + 底色淡入</td><td><code>200ms</code></td><td>standard</td><td>transform: scaleY + background-size</td></tr>
+      <tr><td>输入框聚焦:墨线从左划过</td><td><code>320ms</code></td><td>enter</td><td>background-size(0% → 100%)</td></tr>
+      <tr><td>tooltip 浮现(延迟 400ms)</td><td><code>200ms</code></td><td>enter</td><td>opacity + translateY 4px</td></tr>
+      <tr><td>switch 滑块 / 置顶卡抬起 / 勾选画勾</td><td><code>200ms</code></td><td><b>spring</b></td><td>transform(允许 1 次过冲)</td></tr>
+      <tr><td>弹窗 / 命令面板入场(落地实现)</td><td><code>320ms</code></td><td>enter</td><td>opacity + scale .98 → 1</td></tr>
+      <tr><td>未保存圆点呼吸</td><td><code>2s 循环</code></td><td>standard</td><td>scale 1 → 1.3,唯一的常驻动画</td></tr>
+    </table>
+    <p class="note" style="margin-top:16px">科学兜底:全页带 <code style="font-family:var(--mono); font-size:12px">@media (prefers-reduced-motion: reduce)</code>,
+      系统设置减弱动效时全部动画归零;所有动画只碰 transform / opacity / background-size,不碰布局属性,60fps 不掉帧。</p>
+  </div>
+</section>
+
+<!-- ================= 02 组件走查 v2 ================= -->
+<section class="sec" id="components">
+  <div class="wrap">
+    <div class="sec-label">02 · COMPONENTS v2</div>
+    <h2 class="sec-title">组件走查(全部可交互,纯 CSS)</h2>
+    <p class="sec-lede">hover / active / focus / checked 都是真的。用鼠标按、用 Tab 圈、用手感验收。</p>
+
+    <h3 class="block-title">按钮五态 · 墨丸 + letterpress</h3>
+    <div class="demo">
+      <div class="btn-row">
+        <figure><button class="btn btn-primary">发布文档</button>
+          <figcaption class="spec">primary · 墨丸,脚下 2px 硬投影<br>hover 抬 1px / active 陷 1px</figcaption></figure>
+        <figure><button class="btn btn-secondary">导出 PDF</button>
+          <figcaption class="spec">secondary · 纸丸,同一套按压物理</figcaption></figure>
+        <figure><button class="btn btn-ghost">取消</button>
+          <figcaption class="spec">ghost · 底色从左滑入 200ms</figcaption></figure>
+        <figure><button class="btn btn-danger">删除文件</button>
+          <figcaption class="spec">danger · 红丸,投影 #7F1D1D</figcaption></figure>
+        <figure><button class="btn btn-disabled" disabled>发布文档</button>
+          <figcaption class="spec">disabled · 摘掉投影 = 摘掉可按感</figcaption></figure>
+      </div>
+      <p class="spec" style="margin-top:18px">按 Tab 走一圈:焦点是 2px 墨青蓝批注环(offset 3px),不是 glow · transform/box-shadow 120ms standard</p>
+    </div>
+
+    <div class="grid2" style="margin-top:24px">
+      <div class="demo">
+        <p class="cap">输入框三态 · 凹进纸里,墨线划过(点进去试)</p>
+        <div class="field"><label>常态(下沉纸面,无边框)</label>
+          <input class="input" placeholder="给文档起个名字…"></div>
+        <div class="field"><label>聚焦(纸面升白,墨线 320ms 从左划过)</label>
+          <input class="input" value="产品愿景"></div>
+        <div class="field" style="margin-bottom:6px"><label>错误(红线 + 红纸底)</label>
+          <input class="input is-error" value="产品愿景.html.html">
+          <div class="err">文件名重复了,换一个试试。</div></div>
+        <p class="spec" style="margin-top:14px">background-size 0%→100% 2px · 320ms enter · 去边框化:分隔靠层差</p>
+      </div>
+      <div class="demo">
+        <p class="cap">下拉菜单 · 墨条滑入(滑过每一行)</p>
+        <div class="menu">
+          <div class="mi"><svg class="ic"><use href="#i-file"/></svg><span class="grow">新建文档</span><span class="kbd">⌘N</span></div>
+          <div class="mi"><svg class="ic"><use href="#i-folder"/></svg><span class="grow">移动到…</span></div>
+          <div class="mi"><svg class="ic"><use href="#i-pin"/></svg><span class="grow">置顶标签</span><span class="kbd">⌘⇧P</span></div>
+          <div class="sep"></div>
+          <div class="mi"><span class="grow">在访达中显示</span><span style="color:var(--t3); font-size:11px">↗</span></div>
+          <div class="sep"></div>
+          <div class="mi is-danger"><span class="grow">删除</span><span class="kbd">⌘⌫</span></div>
+        </div>
+        <p class="spec" style="margin-top:16px">3px 墨条 scaleY 0→1 + 底色滑入 · 200ms standard · 危险项的条是红的 · 菜单底部=叠纸边</p>
+      </div>
+    </div>
+
+    <h3 class="block-title">⌘K 命令面板(新件 · 第三行为选中态)</h3>
+    <div style="display:flex; justify-content:center; padding:8px 0 0">
+      <div class="palette">
+        <div class="phead">
+          <svg class="ic" style="width:16px;height:16px"><use href="#i-search"/></svg>
+          <input placeholder="搜索命令、文档、块…" value="主题">
+          <span class="kbd">esc</span>
+        </div>
+        <div class="plist">
+          <div class="mlabel">命令</div>
+          <div class="mi"><span class="grow">切换主题:纸感暖白</span><span class="kbd">↵</span></div>
+          <div class="mi"><span class="grow">切换主题:石灰岩夜色</span></div>
+          <div class="mi is-selected"><span class="grow">主题设置…</span><span class="kbd">⌘,</span></div>
+          <div class="mlabel">文档</div>
+          <div class="mi"><svg class="ic"><use href="#i-file"/></svg><span class="grow">主题方案A.html</span><span style="color:var(--t3); font-size:11px">设计/</span></div>
+        </div>
+        <div class="pfoot">
+          <span><span class="kbd">↑</span> <span class="kbd">↓</span> 选择</span>
+          <span><span class="kbd">↵</span> 打开</span>
+          <span><span class="kbd">esc</span> 关闭</span>
+        </div>
+      </div>
+    </div>
+    <p class="spec" style="text-align:center; margin-top:14px">选中态 = 墨青蓝条 + accent-wash 底 · 面板入场规范 320ms enter, scale .98→1 · 底部快捷键脚注是这套语言的"说明书栏"</p>
+
+    <div class="grid2" style="margin-top:48px">
+      <div class="demo" style="padding:0; overflow:hidden">
+        <p class="cap" style="padding:24px 28px 0">Modal · 叠起来的纸(背后两张微倾斜)</p>
+        <div class="overlay-demo grain" style="border-radius:0; margin-top:16px">
+          <div class="stackwrap">
+            <div class="backsheet b2"></div>
+            <div class="backsheet b1"></div>
+            <div class="modal">
+              <div class="hd"><b>重命名文档</b><span class="x">×</span></div>
+              <div class="bd">
+                <div class="field" style="max-width:none; margin-bottom:4px">
+                  <label>名称</label>
+                  <input class="input" value="产品愿景.html">
+                </div>
+              </div>
+              <div class="ft">
+                <button class="btn btn-ghost">取消</button>
+                <button class="btn btn-primary">重命名</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="demo">
+        <p class="cap">Toast · 书签纸条(hover 会抬起)</p>
+        <div class="toast" style="--bar:var(--ok)">
+          <div><b>已保存</b><p>产品愿景.html · 刚刚写入磁盘</p></div></div>
+        <div class="toast" style="--bar:var(--warn)">
+          <div><b>文件被外部修改</b><p>已从磁盘重新载入最新内容</p></div></div>
+        <div class="toast" style="margin-bottom:0; --bar:var(--danger)">
+          <div><b>导出失败</b><p>目标文件夹不可写 · <a class="act" href="#components">重试</a></p></div></div>
+        <p class="spec" style="margin-top:16px">左缘 4px 语义色书签条 · 底部叠纸边 · hover 抬 2px spring · 入场规范 320ms spring 自右滑入</p>
+      </div>
+    </div>
+
+    <h3 class="block-title">开关 · 分段 · 勾选(新件,全可点)</h3>
+    <div class="grid3">
+      <div class="demo">
+        <p class="cap">Switch(按住看滑块变宽)</p>
+        <div style="display:flex; flex-direction:column; gap:16px">
+          <label class="swt"><input type="checkbox" checked><span class="track"></span>自动保存到磁盘</label>
+          <label class="swt"><input type="checkbox"><span class="track"></span>跟随系统深色模式</label>
+        </div>
+        <p class="spec" style="margin-top:18px">开 = 墨色不是蓝色(状态≠链接)<br>滑块 200ms spring · 按住变宽 = iOS 手感</p>
+      </div>
+      <div class="demo">
+        <p class="cap">Segmented control(点着切)</p>
+        <div class="seg">
+          <input type="radio" name="segv" id="seg1" checked><label for="seg1">编辑</label>
+          <input type="radio" name="segv" id="seg2"><label for="seg2">预览</label>
+          <input type="radio" name="segv" id="seg3"><label for="seg3">分屏</label>
+        </div>
+        <p class="spec" style="margin-top:18px">下沉纸槽 + 选中项浮起白纸丸<br>200ms standard · 用于编辑/预览切换</p>
+      </div>
+      <div class="demo">
+        <p class="cap">Checkbox(点了画勾 + 划掉)</p>
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <label class="cbx"><input type="checkbox" checked><span class="box"></span><span class="lbl">修复置顶标签换行</span></label>
+          <label class="cbx"><input type="checkbox"><span class="box"></span><span class="lbl">合并导出 PDF 选项</span></label>
+        </div>
+        <p class="spec" style="margin-top:18px">勾 scale 0→1 · 200ms spring<br>文字划掉 + 退灰 200ms,与文档待办同款</p>
+      </div>
+    </div>
+
+    <h3 class="block-title">标签页(侧栏内 · 全部真 hover)</h3>
+    <div class="grid2">
+      <div class="demo">
+        <p class="cap">置顶方卡 + 普通行(滑过试试,× 只在 hover 浮现)</p>
+        <div class="rail">
+          <div class="slabel">置顶</div>
+          <div class="pin-grid">
+            <div class="pin is-active"><span class="x">×</span><svg class="ic"><use href="#i-file"/></svg><span>产品愿景</span></div>
+            <div class="pin"><span class="x">×</span><svg class="ic"><use href="#i-file"/></svg><span>发布说明</span></div>
+            <div class="pin"><span class="x">×</span><svg class="ic"><use href="#i-file"/></svg><span>写作手册</span></div>
+          </div>
+          <div class="slabel">标签页</div>
+          <div class="row-item is-active"><svg class="ic"><use href="#i-file"/></svg><span class="nm">产品愿景.html</span><span class="x">×</span></div>
+          <div class="row-item"><svg class="ic"><use href="#i-file"/></svg><span class="nm">发布说明.html</span><span class="dot-un" title="未保存"></span></div>
+          <div class="row-item"><svg class="ic"><use href="#i-file"/></svg><span class="nm">会议记录.html</span><span class="x">×</span></div>
+          <div class="row-item"><svg class="ic"><use href="#i-file"/></svg><span class="nm">临时草稿.html</span><span class="ext">↗</span></div>
+        </div>
+      </div>
+      <div class="demo" style="display:flex; flex-direction:column; justify-content:center">
+        <p class="cap">v2 状态语言</p>
+        <ul style="margin:0; padding-left:1.3em; font-size:13.5px; color:var(--t2); line-height:2.1">
+          <li><b style="color:var(--t1)">激活行</b> = 白纸卡 + 左缘墨青蓝条(唯一用彩条的地方:「你在这」)</li>
+          <li><b style="color:var(--t1)">hover</b> = 墨条滑入 + × 浮现(120ms);置顶卡 hover 抬 2px spring</li>
+          <li><b style="color:var(--t1)">未保存</b> = 墨青蓝圆点 2s 呼吸,全站唯一常驻动画</li>
+          <li><b style="color:var(--t1)">激活置顶卡</b> = 白卡 + 叠纸边(它是"一叠里最上面那张")</li>
+          <li>工作区外文件 = ↗,stone-400,与 v1 一致</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 class="block-title">左侧栏完整 mock(行 hover 全部真实)</h3>
+    <div class="app-frame">
+      <div class="titlebar">
+        <i style="background:#F6635C"></i><i style="background:#F5BD4F"></i><i style="background:#63C454"></i>
+        <span class="tl-title">Wordspace — 产品愿景.html</span>
+      </div>
+      <div class="app-body">
+        <div class="app-side">
+          <div class="space">
+            <div class="logo">W</div><b>我的工作区</b>
+            <svg class="ic"><use href="#i-chevd"/></svg>
+            <svg class="ic"><use href="#i-plus"/></svg>
+          </div>
+          <div class="slabel">置顶</div>
+          <div class="pin-grid">
+            <div class="pin is-active"><svg class="ic"><use href="#i-file"/></svg><span>产品愿景</span></div>
+            <div class="pin"><svg class="ic"><use href="#i-file"/></svg><span>发布说明</span></div>
+          </div>
+          <div class="slabel">标签页</div>
+          <div class="row-item"><svg class="ic"><use href="#i-file"/></svg><span class="nm">会议记录.html</span><span class="dot-un"></span></div>
+          <div class="slabel">文件</div>
+          <div class="row-item"><svg class="ic"><use href="#i-chevd"/></svg><svg class="ic"><use href="#i-folder"/></svg><span class="nm" style="font-weight:600; color:var(--t1)">根文件夹</span></div>
+          <div class="tree-kids">
+            <div class="row-item"><svg class="ic"><use href="#i-chevr"/></svg><svg class="ic"><use href="#i-folder"/></svg><span class="nm">产品</span></div>
+            <div class="row-item"><svg class="ic"><use href="#i-chevd"/></svg><svg class="ic"><use href="#i-folder"/></svg><span class="nm">设计</span></div>
+            <div class="tree-kids">
+              <div class="row-item is-active"><svg class="ic"><use href="#i-file"/></svg><span class="nm">主题方案A.html</span></div>
+              <div class="row-item"><svg class="ic"><use href="#i-file"/></svg><span class="nm">组件清单.html</span></div>
+            </div>
+            <div class="row-item"><svg class="ic"><use href="#i-file"/></svg><span class="nm">读我.html</span></div>
+          </div>
+        </div>
+        <div class="app-canvas">
+          <h5>产品愿景</h5>
+          <div class="cmeta">上次编辑 · 3 分钟前 · 已同步到磁盘</div>
+          <p>Wordspace 是一个 HTML-native 的本地文档编辑器:你的每一篇文档,都是磁盘上一个
+             真实的 .html 文件,任何浏览器都能打开,五十年后依然如此。</p>
+          <p>v2 的侧栏行没有一根边框:分区靠 stone-100 与 stone-50 的层差,状态靠墨条与白纸卡。
+             把鼠标在左边的树里游一圈,感受同一套语言。</p>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="block-title">Tooltip 与键帽</h3>
+    <div class="grid2">
+      <div class="demo">
+        <p class="cap">Tooltip(真 hover:停 400ms 才出现,离开立即消失)</p>
+        <div style="display:flex; align-items:flex-end; gap:48px; padding-top:44px">
+          <div class="tipwrap">
+            <div class="tooltip">发布到 Web<span class="tk">⌘⇧P</span></div>
+            <button class="btn btn-secondary">发布</button>
+          </div>
+          <p class="spec" style="margin:0">出现 200ms enter + 4px 上浮<br>delay 400ms 防误触 · 墨底反白不变</p>
+        </div>
+      </div>
+      <div class="demo">
+        <p class="cap">kbd 键帽(用鼠标按一下)</p>
+        <p style="font-size:14px; color:var(--t2); margin:0 0 14px; line-height:2.4">
+          命令面板 <span class="kbd">⌘</span> <span class="kbd">K</span> ·
+          保存 <span class="kbd">⌘</span> <span class="kbd">S</span> ·
+          关闭标签 <span class="kbd">⌘</span> <span class="kbd">W</span> ·
+          退出 <span class="kbd">Esc</span></p>
+        <p class="spec">active:下沉 1px,2px 键程边收成 1px —— 和真键盘一样,120ms</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 03 文档样张(沿用 v1) ================= -->
+<section class="sec" id="document" style="border-bottom:none">
+  <div class="wrap">
+    <div class="sec-label">03 · DOCUMENT SPECIMEN</div>
+    <h2 class="sec-title">文档样张(v1 原样,已获认可)</h2>
+    <p class="sec-lede">排版层一个值没改:16px / 1.75 / 标题上重下轻。组件语言只活在界面里,不打扰纸上的字——这本身就是 v2 的观点之一。</p>
+
+    <div class="doc-stage grain">
+      <article class="doc">
+        <h1>把文档放回自己的电脑里</h1>
+        <div class="dmeta">汪迪 · 2026 年 6 月 30 日 · <span class="tag">产品手记</span><span class="tag">本地优先</span></div>
+
+        <p>过去十年,我们把笔记搬进了一个又一个云端应用,也把它们锁进了一个又一个私有格式。服务关停、订阅涨价、导出残缺,同样的故事每隔几年就重演一次。Wordspace 想做的事情很简单:你的文档,就是你磁盘上的一个 <code>.html</code> 文件,任何浏览器都能打开,五十年后依然如此。</p>
+        <p>这不是复古,而是把「所有权」当成产品的第一性原理——编辑器可以换、公司可以消失,但文件必须一直属于你。</p>
+
+        <h2>为什么是 HTML</h2>
+        <p>HTML 是唯一同时满足三个条件的格式:<strong>开放标准</strong>、<em>人类可读</em>,并且自带排版能力。Markdown 足够简单,但表格、待办和嵌套结构都要靠方言;<s>PDF</s> 是打印品不是文档;私有 JSON 则把内容<u>锁在应用里</u>。我们选择 <a href="#document">HTML Living Standard</a> 的一个受限子集,细节见 <code>docs/html-kernel.md</code>。</p>
+        <ul>
+          <li>任何浏览器双击即读,不需要安装任何软件</li>
+          <li>Git 能 diff,全文检索工具能直接索引</li>
+          <li>五十年后的解析器,仍然认识它</li>
+        </ul>
+
+        <h3>我们给自己的三条底线</h3>
+        <ol>
+          <li>文件永远以标准 HTML 存盘,不写任何私有标记</li>
+          <li>断网时所有功能可用,同步只是锦上添花</li>
+          <li>卸载 Wordspace 之后,你不损失任何内容</li>
+        </ol>
+
+        <h2>本周待办(v2:这里也能点了)</h2>
+        <ul class="todo">
+          <li><label class="cbx"><input type="checkbox" checked><span class="box"></span><span class="lbl">修复置顶标签在窄侧栏下的换行问题</span></label></li>
+          <li><label class="cbx"><input type="checkbox" checked><span class="box"></span><span class="lbl">给工作区外文件的标签加 ↗ 标记</span></label></li>
+          <li><label class="cbx"><input type="checkbox"><span class="box"></span><span class="lbl">把「导出 PDF」的两个选项合并成一个</span></label></li>
+          <li><label class="cbx"><input type="checkbox"><span class="box"></span><span class="lbl">深色模式下 callout 的对比度复查</span></label></li>
+        </ul>
+
+        <blockquote>
+          写作的工具应该像一张好纸:你注意不到它,直到你换回一张差的。
+          <footer>—— 内部设计原则,2026</footer>
+        </blockquote>
+
+        <div class="callout"><span class="emo">💡</span>
+          <span>小提示:按 <span class="kbd">⌘</span> <span class="kbd">K</span> 唤起命令面板,输入「主题」即可在纸感暖白与石灰岩夜色之间切换,正在编辑的文档不会重新加载。</span></div>
+
+        <h2>块类型支持一览</h2>
+        <table>
+          <tr><th>块类型</th><th>状态</th><th>备注</th></tr>
+          <tr><td>表格</td><td>✅ 已支持</td><td>表头底 stone-100,单元格线 stone-200</td></tr>
+          <tr><td>自由画布</td><td>🚧 开发中</td><td>F01,对齐 heyhtml 的交互</td></tr>
+          <tr><td>AI 生成</td><td>🗓 规划中</td><td>限定在受限 HTML 范式内产出</td></tr>
+        </table>
+
+        <p>存盘格式长这样——没有任何私有字段:</p>
+<pre><span class="cm">&lt;!-- 一份最小的 Wordspace 文档 --&gt;</span>
+<span class="tg">&lt;article</span> data-ws-doc=&quot;1.0&quot;<span class="tg">&gt;</span>
+  <span class="tg">&lt;h1&gt;</span>把文档放回自己的电脑里<span class="tg">&lt;/h1&gt;</span>
+  <span class="tg">&lt;p&gt;</span>你的文件,永远是你的。<span class="tg">&lt;/p&gt;</span>
+<span class="tg">&lt;/article&gt;</span></pre>
+
+        <hr>
+
+        <p>这份样张与 v1 逐字相同,唯一的差别是待办真的能勾了。界面的胆放在组件上,纸上的字保持安静——如果两版并排看不出正文有差别,v2 就没有越界。</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<footer class="end">
+  <div class="wrap">
+    Wordspace UI 主题提案 · 方案 A v2「纸方墨圆」 · token 与 v1 逐字节一致 ·
+    自包含单文件,零 JS,零外部请求 · 交互全部纯 CSS · 深色模式与落地映射见 v1 页 05/06 节 · 2026-06
+  </div>
+</footer>
+
+</body>
+</html>

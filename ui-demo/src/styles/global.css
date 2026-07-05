@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./controls.css";
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
@@ -31,18 +32,27 @@ a { color: var(--c-accent); text-decoration: none; }
 input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
 input:focus, textarea:focus, button:focus { outline: none; }
 
+/* 全站键盘焦点 = 批注圈(不发光),见 docs/style.md;输入框例外(焦点表达 = 墨线) */
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+input:focus-visible,
+textarea:focus-visible { outline: none; }
+
 h1, h2, h3, h4, p, ul, ol, figure { margin: 0; }
 ul, ol { padding: 0; list-style: none; }
 
-/* thin desktop-style scrollbars */
+/* thin desktop-style scrollbars(暖墨) */
 ::-webkit-scrollbar { width: 11px; height: 11px; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(0,0,0,.18);
+  background: rgba(28, 25, 23, 0.16);
   border-radius: 8px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
-::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.30); background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(28, 25, 23, 0.28); background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
 

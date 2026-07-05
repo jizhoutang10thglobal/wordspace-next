@@ -1,134 +1,4 @@
-/* ------------------------------------------------------------------ */
-/* Shared modal shell (also declared in PublishDialog.css so each      */
-/* component is self-contained). Keep the two copies in sync.          */
-/* ------------------------------------------------------------------ */
-.ws-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: rgba(20, 22, 26, 0.32);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  animation: ws-modal-fade var(--dur-fast) var(--ease);
-}
-.ws-modal {
-  width: 100%;
-  background: var(--c-surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-modal);
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100vh - 48px);
-  overflow: hidden;
-  animation: ws-modal-pop var(--dur) var(--ease);
-}
-@keyframes ws-modal-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes ws-modal-pop {
-  from { opacity: 0; transform: translateY(6px) scale(0.99); }
-  to { opacity: 1; transform: none; }
-}
-
-.ws-modal-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px 18px 14px;
-  border-bottom: 1px solid var(--c-divider);
-}
-.ws-modal-head-text { min-width: 0; flex: 1; }
-.ws-modal-title {
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-  color: var(--c-text);
-  line-height: var(--lh-tight);
-}
-.ws-modal-sub {
-  margin-top: 3px;
-  font-size: var(--fs-sm);
-  color: var(--c-text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ws-modal-x {
-  flex: none;
-  width: 26px;
-  height: 26px;
-  margin: -2px -4px 0 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--r-sm);
-  color: var(--c-text-3);
-}
-.ws-modal-x:hover { background: var(--c-hover); color: var(--c-text); }
-.ws-modal-x:disabled { opacity: 0.5; }
-
-.ws-modal-body {
-  padding: 14px 18px;
-  overflow-y: auto;
-}
-.ws-modal-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 18px;
-  border-top: 1px solid var(--c-divider);
-}
-
-/* buttons */
-.ws-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 14px;
-  border-radius: var(--r-sm);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-medium);
-  color: var(--c-text);
-  background: var(--c-surface);
-  border: 1px solid var(--c-border-strong);
-  white-space: nowrap;
-  transition: background var(--dur-fast) var(--ease);
-}
-.ws-btn:hover { background: var(--c-hover); }
-.ws-btn:active { background: var(--c-active); }
-.ws-btn:disabled { opacity: 0.6; cursor: default; }
-.ws-btn-primary {
-  background: var(--c-accent);
-  border-color: var(--c-accent);
-  color: var(--c-text-invert);
-}
-.ws-btn-primary:hover { background: var(--c-accent-hover); }
-.ws-btn-primary:active { background: var(--c-accent-press); }
-.ws-btn-primary:disabled:hover { background: var(--c-accent); }
-
-/* text input */
-.ws-input {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  padding: 0 11px;
-  border: 1px solid var(--c-border-strong);
-  border-radius: var(--r-sm);
-  background: var(--c-surface);
-  font-family: var(--font-ui);
-  font-size: var(--fs-base);
-  color: var(--c-text);
-}
-.ws-input::placeholder { color: var(--c-text-3); }
-.ws-input:focus {
-  outline: none;
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 2px var(--c-accent-tint);
-}
+/* 共享外壳(.ws-modal* / .ws-btn* / .ws-input)已收编到 styles/controls.css——单一来源,别在这里重新声明。 */
 
 /* ------------------------------------------------------------------ */
 /* Create modal — template picker                                     */
@@ -157,6 +27,7 @@
   padding: 14px 12px;
   border-right: 1px solid var(--c-divider);
   background: var(--c-bg-sunken);
+  border-bottom-left-radius: var(--r-lg); /* 外壳不再 overflow:hidden,自己收左下角 */
 }
 .cm-rail-label {
   padding: 2px 8px 6px;
@@ -174,9 +45,10 @@
   text-align: left;
   border: 1px solid transparent;
   border-radius: var(--r-md);
-  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), opacity var(--dur-fast) var(--ease);
 }
-.cm-para:hover { background: var(--c-hover); }
+.cm-para:hover { background-size: 100% 100%; }
 .cm-para.is-active {
   background: var(--c-surface);
   border-color: var(--c-border);
@@ -208,7 +80,7 @@
 .cm-para-tag {
   flex: none;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   font-size: 10px;
   font-weight: var(--fw-semibold);
   background: var(--c-accent-tint);
@@ -323,7 +195,14 @@
   gap: 10px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--c-divider);
+  /* 签名动作:聚焦时墨线从左划过 */
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  transition: background-size var(--dur-slow) var(--ease-enter);
 }
+.cm-omnibar:focus-within { background-size: 100% 2px; }
 .cm-omnibar-ico { flex: none; color: var(--c-text-3); }
 .cm-omnibar-input {
   flex: 1;
@@ -343,9 +222,12 @@
   align-items: center;
   gap: 4px;
   padding: 2px 7px;
+  border: 1px solid var(--c-border-strong);
+  border-bottom-width: 2px;
   border-radius: var(--r-sm);
   background: var(--c-bg-sunken);
   color: var(--c-text-3);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   white-space: nowrap;
 }

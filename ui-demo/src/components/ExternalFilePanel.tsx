@@ -55,7 +55,7 @@ export default function ExternalFilePanel({ tab }: { tab: Tab }) {
         </div>
         <p className="efp-note">这不是 HTML 文档,Wordspace 不能直接编辑它。你可以一键用默认程序打开。</p>
         <button
-          className="efp-open"
+          className="ws-btn ws-btn-primary efp-open"
           onClick={() => toast(`正在用 ${app} 打开「${tab.fileName}」`, 'success')}
         >
           <ExternalLink size={15} />用 {app} 打开

@@ -14,12 +14,12 @@
   font-size: var(--fs-xs);
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--c-accent);
+  color: var(--c-text-3);
   font-weight: var(--fw-semibold);
 }
 .spx-title {
-  font-size: 30px;
-  font-weight: 800;
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
   letter-spacing: -0.02em;
   color: var(--c-text);
   margin: 8px 0 12px;
@@ -49,10 +49,10 @@
 
 /* ---- 左：内嵌真编辑器（白纸卡片） ---- */
 .spx-paper {
-  background: #fff;
+  background: var(--c-surface);
   border: 1px solid var(--c-border);
-  border-radius: 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 10px 30px rgba(0, 0, 0, 0.05);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-menu);
   overflow: hidden;
 }
 .spx-editor {
@@ -63,7 +63,7 @@
 }
 /* Canvas 内嵌：填满卡片、内部滚动；收掉默认的超大文档留白，但左右留够空间给 ⋮⋮ 手柄 / 删除按钮 */
 .spx-editor .ws-canvas {
-  border-radius: 14px;
+  border-radius: var(--r-lg);
 }
 .ws-canvas-embed .ws-doc {
   max-width: none;
@@ -84,7 +84,7 @@
   gap: 11px;
   background: var(--c-bg);
   border: 1px solid var(--c-border);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   padding: 12px 13px;
 }
 .spx-note-n {
@@ -92,8 +92,8 @@
   width: 21px;
   height: 21px;
   border-radius: 50%;
-  background: var(--c-accent);
-  color: #fff;
+  background: var(--c-ink);
+  color: var(--c-text-invert);
   font-size: 11px;
   font-weight: var(--fw-semibold);
   display: flex;
@@ -135,10 +135,10 @@
   gap: 12px;
 }
 .spx-dont-card {
-  background: #fff;
+  background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-left: 3px solid var(--c-danger);
-  border-radius: 11px;
+  border-radius: var(--r-lg);
   padding: 14px 16px;
 }
 .spx-dont-title {

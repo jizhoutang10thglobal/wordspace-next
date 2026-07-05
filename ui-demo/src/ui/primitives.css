@@ -41,7 +41,7 @@
   gap: 4px;
   height: 18px;
   padding: 0 7px;
-  border-radius: var(--r-pill);
+  border-radius: var(--r-sm); /* 静态徽标是「可读」不是「可点」,方角(圆丸只给可点控件) */
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
 }

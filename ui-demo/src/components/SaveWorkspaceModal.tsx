@@ -61,7 +61,7 @@ export default function SaveWorkspaceModal() {
           <label className="swm-field">
             <span className="swm-label">工作区名字</span>
             <input
-              className="swm-input"
+              className="ws-input swm-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="比如 品牌项目、2026 官网改版"

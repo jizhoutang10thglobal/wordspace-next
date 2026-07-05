@@ -32,12 +32,24 @@
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-border-strong);
+  background: var(--c-surface);
+  box-shadow: 0 2px 0 var(--c-border-strong);
   font-size: var(--fs-sm);
   color: var(--c-text-2);
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 .fv-open:hover {
-  background: var(--c-hover);
+  background: var(--c-bg-chrome);
   color: var(--c-text);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 0 var(--c-border-strong);
+}
+.fv-open:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 var(--c-border-strong);
 }

@@ -13,13 +13,13 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid var(--line, #e3e2de);
-  border-radius: 8px;
-  background: var(--bg-2, #fafaf8);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-bg-sunken);
   font-size: 13px;
-  color: var(--ink, #333);
+  color: var(--c-text);
 }
-.afm-path.is-empty { color: var(--ink-3, #9b9a97); }
+.afm-path.is-empty { color: var(--c-text-3); }
 .afm-browse {
   display: inline-flex;
   align-items: center;
@@ -29,5 +29,5 @@
 .afm-current {
   margin-top: 10px;
   font-size: 12px;
-  color: var(--ink-3, #9b9a97);
+  color: var(--c-text-3);
 }

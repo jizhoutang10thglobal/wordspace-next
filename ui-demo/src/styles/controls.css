@@ -1,0 +1,186 @@
+/* 共享控件 · 单一来源(此前在 CreateModal.css / PublishDialog.css 各有一份拷贝)。
+   设计语言「纸方墨圆」:按钮全圆丸、primary 是墨不是蓝、按了会陷(letterpress)、
+   输入框凹进纸里+焦点墨线、弹窗是浮起的纸。canonical 规范见 docs/style.md。 */
+
+/* ---- 按钮:墨圆 ---- */
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  box-shadow: 0 2px 0 var(--c-border-strong);
+  white-space: nowrap;
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+.ws-btn:hover { background: var(--c-bg-chrome); transform: translateY(-1px); box-shadow: 0 3px 0 var(--c-border-strong); }
+.ws-btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--c-border-strong); }
+.ws-btn:disabled { opacity: 0.6; cursor: default; transform: none; box-shadow: 0 2px 0 var(--c-border-strong); }
+
+.ws-btn-primary {
+  background: var(--c-ink);
+  border-color: transparent;
+  color: var(--c-text-invert);
+  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
+}
+.ws-btn-primary:hover { background: var(--c-ink-hover); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
+.ws-btn-primary:active { box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
+.ws-btn-primary:disabled { background: var(--c-ink); box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35); }
+
+.ws-btn-danger {
+  background: var(--c-danger);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 2px 0 #7f1d1d;
+}
+.ws-btn-danger:hover { box-shadow: 0 3px 0 #7f1d1d; }
+.ws-btn-danger:active { box-shadow: 0 0 0 #7f1d1d; }
+
+/* 文字钮:底色从左滑入 */
+.ws-btn-ghost {
+  border-color: transparent;
+  box-shadow: none;
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  color: var(--c-text-2);
+  transition: background-size var(--dur) var(--ease),
+    color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.ws-btn-ghost:hover { background-size: 100% 100%; color: var(--c-text); transform: none; box-shadow: none; }
+.ws-btn-ghost:active { transform: translateY(1px); }
+
+/* ---- 输入框:凹进纸里,焦点 = 墨线从左划过(不加批注环) ---- */
+.ws-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-md);
+  background-color: var(--c-bg-sunken);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04);
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  color: var(--c-text);
+  transition: background-color var(--dur-fast) var(--ease),
+    background-size var(--dur-slow) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease);
+}
+.ws-input::placeholder { color: var(--c-text-3); }
+.ws-input:hover { background-color: #f0efed; }
+.ws-input:focus {
+  outline: none;
+  background-color: var(--c-surface);
+  background-size: 100% 2px;
+  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04), var(--shadow-xs);
+}
+
+/* ---- 弹窗:浮起的纸 ---- */
+.ws-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(28, 25, 23, 0.32);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: ws-modal-fade var(--dur-fast) var(--ease-enter);
+}
+.ws-modal {
+  position: relative;
+  width: 100%;
+  background: var(--c-surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-modal);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+  animation: ws-modal-pop var(--dur) var(--ease-enter);
+}
+/* 背后垫两张微倾斜的纸(§0-2「叠了有边」);overflow:hidden 会裁掉它们,
+   所以外壳不裁、圆角裁剪交给首末子元素的圆角补丁 */
+.ws-modal::before,
+.ws-modal::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--c-border);
+}
+.ws-modal::before { background: #f1f0ee; transform: rotate(1.2deg) translate(4px, 5px); }
+.ws-modal::after { background: #ebe9e7; transform: rotate(-1.4deg) translate(-3px, 9px); }
+.ws-modal > :first-child { border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.ws-modal > :last-child { border-radius: 0 0 var(--r-lg) var(--r-lg); }
+@keyframes ws-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ws-modal-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+
+.ws-modal-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--c-divider);
+}
+.ws-modal-head-text { min-width: 0; flex: 1; }
+.ws-modal-title {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+  line-height: var(--lh-tight);
+}
+.ws-modal-sub {
+  margin-top: 3px;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-modal-x {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: -2px -4px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-pill);
+  color: var(--c-text-3);
+  transition: color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease-spring);
+}
+.ws-modal-x:hover { background: var(--c-hover); color: var(--c-text); transform: rotate(90deg); }
+.ws-modal-x:disabled { opacity: 0.5; }
+
+.ws-modal-body {
+  padding: 14px 18px;
+  overflow-y: auto;
+}
+.ws-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--c-divider);
+}
