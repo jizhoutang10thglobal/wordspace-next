@@ -447,13 +447,16 @@
   function unpinRel(key) {
     applyTabs(window.WS2Tabs.unpinEntry(tabState, key));
   }
-  // 关/删一条标签：关激活的「临时文档 / 有未保存改动的真文件」→ 弹未保存确认 modal（对齐 ui-demo）；
-  // 否则直接关 + 回落。op = closeEntry（标签页区的 ×）/ removeEntry（置顶区的 ×）。
+  // 关/删一条标签：「临时文档（不管是否激活）/ 激活且有未保存改动的真文件」→ 弹未保存确认
+  // modal（对齐 ui-demo）；否则直接关 + 回落。op = closeEntry（标签页区的 ×）/ removeEntry（置顶区的 ×）。
+  // ⚠ 临时文档的守卫不能加 wasActive 前置（Colin 2026-07-05 抓的 bug）：临时 = 内容只在
+  // tempStore、关掉即丢，从别的标签页上点它的 × 一样要确认；真文件才是「只有激活才可能脏」
+  // （自动保存 + 切走守卫兜着，后台真文件必然已落盘）。
   function closeOrRemove(key, op) {
     const wasActive = tabState.activeRel === key;
     const entry = tabState.entries.find((e) => keyOf(e) === key);
     const dirtyActive = wasActive && window.__shellIsDirty && window.__shellIsDirty();
-    if (wasActive && (isTempEntry(entry) || dirtyActive)) {
+    if (isTempEntry(entry) || dirtyActive) {
       openCloseConfirm(key, op, entry);
       return;
     }
@@ -547,7 +550,18 @@
     save.textContent = '保存并关闭';
     save.onclick = async () => {
       close();
-      if (temp) { openSaveModal(true); return; } // 临时 → 选文件夹存，存完自动关
+      if (temp) {
+        // 临时 → 选文件夹存，存完自动关。SaveModal 存的是「当前活跃临时文档」（__shellActiveTemp），
+        // 所以后台临时标签要先激活它再弹保存框——否则会把别的文档存进去（后台关闭 bug 的另半边）。
+        if (tabState.activeRel !== key) {
+          if (window.__shellReopenTemp) window.__shellReopenTemp(key);
+          const now = window.__shellActiveTemp && window.__shellActiveTemp();
+          if (!now || now.id !== key) return; // 切换被「脏文件切走」守卫取消 → 放弃本次保存（标签保留，可重试）
+          openTabEntry(entry); // activeRel 同步切过去：高亮、保存后关闭的回落基准才一致
+        }
+        openSaveModal(true);
+        return;
+      }
       if (window.__shellSaveActive) await window.__shellSaveActive(); // 已落盘的脏文档：存原路径
       if (!window.__shellIsDirty || !window.__shellIsDirty()) finishClose(key, op);
     };
