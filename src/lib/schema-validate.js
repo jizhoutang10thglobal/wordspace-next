@@ -14,7 +14,9 @@
   const UNSAFE_SCHEME = /^(javascript|data|vbscript|file|blob):/i;   // 链接类一律禁（加 blob，同类遗漏）
   const HARD_UNSAFE = /^(javascript|vbscript|file|blob):/i;          // 任何 URL 属性都禁（data 另判：媒体可放 data:image）
   // 行内 style 值里的危险片段：全屏覆盖层点击劫持 / 外链请求 / 老式 CSS 执行向量。块级带 style 另由 block-style 抓。
-  const STYLE_DANGER = /(position\s*:\s*(fixed|sticky)|url\s*\(|expression\s*\(|-moz-binding|behavior\s*:|@import|javascript:)/i;
+  // 修 KV-7：position:absolute 与 fixed/sticky 同类——配 display:block/宽高 100% 能把「只该上色」的行内 span
+  // 变成任意覆盖层/点击劫持面。行内 style 是收白名单外的排版属性都放行、只黑名单危险值，故补进危险位置集。
+  const STYLE_DANGER = /(position\s*:\s*(fixed|sticky|absolute)|url\s*\(|expression\s*\(|-moz-binding|behavior\s*:|@import|javascript:)/i;
 
   function isPhrasing(el) { return PHRASING.has(el.tagName); }
   // 判磁盘字节时找块级后代：穿透行内标签，但**不信任运行时 data-ws2-ui 覆盖层标记**（铁律③）——
