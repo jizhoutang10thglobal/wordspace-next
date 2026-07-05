@@ -819,19 +819,20 @@
   }
 
   // ---- 网页标签的创建/激活（KD-9/KD-15/KD-16 的入口都收口到这，全走漏斗）----
-  // 新标签页（Cmd+T）：建一个 url=null 的 web entry,激活 → browser-chrome 显示新标签页 surface（地址栏聚焦）。
-  function openNewWebTab() {
-    if (!current) return; // 无工作区不建（v1 网页标签 workspace-gated,同现 Cmd+T）
+  // 新标签页（Cmd+T）：打开「新建」modal（模板 + 顶部地址栏）——输网址浏览、选模板建文档（对齐 ui-demo）。
+  function openNewWebTab() { openCreateModal('', { temp: true, omni: true }); }
+  // 直接建一个 url=null 的空网页标签（modal 里点「打开空标签页」或程序内调用）。无工作区也可建（浏览不依赖工作区）。
+  function openBlankWebTab() {
     const id = nextWebId();
     applyTabs(window.WS2Tabs.openEntry(tabState, { abs: id, kind: 'web', title: '新标签页', url: null }));
     openTabRow(tabState.entries.find((e) => keyOf(e) === id));
   }
-  // 带 URL 开网页标签（window.open / 历史命中 / 外部链接）：建 entry(有 url),前台则激活。
+  // 带 URL 开网页标签（omnibox / window.open / 历史命中 / 外部链接）：建 entry(有 url),前台则激活。无工作区也可建。
   function openWebTabUrl(url, background) {
-    if (!current || !url) return;
+    if (!url) return;
     const id = nextWebId();
     applyTabs(window.WS2Tabs.openEntry(tabState, { abs: id, kind: 'web', title: url, url }));
-    if (background) { applyTabs(window.WS2Tabs.setActive(tabState, tabState.activeRel)); renderZones(); }
+    if (background) { renderZones(); }
     else openTabRow(tabState.entries.find((e) => keyOf(e) === id));
   }
   // browser-chrome 首次导航后回调：url=null 的新标签页原地变真网页标签 → 更新 entry.url + 落盘。
@@ -1019,7 +1020,7 @@
 
     tabsEl.innerHTML = '';
     tabsEl.hidden = false;
-    tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal('', { temp: true })));
+    tabsEl.appendChild(zoneHeader('标签页', () => openNewWebTab()));
     const tlist = zoneList('tabs');
     if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
     else tlist.appendChild(zoneHint('没有打开的标签'));
@@ -1106,6 +1107,7 @@
   // 否则（文件夹 hover-+ / 右键新建）落点 dirRel、直接落盘。
   async function openCreateModal(dirRel, opts) {
     const temp = !!(opts && opts.temp);
+    const omni = !!(opts && opts.omni); // Cmd+T：顶部加地址栏——输网址浏览、选模板建文档（对齐 ui-demo cm-omni）
     let templates = [];
     try {
       templates = await window.ws2.wsTemplates();
@@ -1122,8 +1124,37 @@
       document.removeEventListener('keydown', onKey);
     }
     const modal = document.createElement('div');
-    modal.className = 'sb-modal';
-    const head = modalHead('新建文档', temp
+    modal.className = 'sb-modal' + (omni ? ' sb-modal-omni' : '');
+    // 顶部地址栏（omni 模式）：globe 图标 + 输入 + 「⏎ 打开」提示 + 关闭 X。Enter=新建网页标签浏览并关弹窗。
+    if (omni) {
+      const bar = document.createElement('div');
+      bar.className = 'cm-omnibar';
+      const gico = document.createElement('span');
+      gico.className = 'cm-omnibar-ico';
+      gico.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+      const uin = document.createElement('input');
+      uin.className = 'cm-omnibar-input';
+      uin.type = 'text'; uin.placeholder = '搜索，或输入网址'; uin.spellcheck = false;
+      const kbd = document.createElement('span');
+      kbd.className = 'cm-omnibar-kbd'; kbd.textContent = '⏎ 打开'; kbd.hidden = true;
+      uin.addEventListener('input', () => { kbd.hidden = !uin.value.trim(); });
+      uin.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && uin.value.trim()) {
+          e.preventDefault();
+          const parsed = window.WS2UrlInput.parse(uin.value);
+          close();
+          if (parsed.kind === 'blocked') return;
+          if (parsed.kind === 'url' || parsed.kind === 'search') openWebTabUrl(parsed.url, false);
+        }
+      });
+      const x = document.createElement('button');
+      x.className = 'ws-modal-x cm-omnibar-x'; x.title = '关闭'; x.setAttribute('aria-label', '关闭');
+      x.innerHTML = X_SVG16; x.onclick = close;
+      bar.append(gico, uin, kbd, x);
+      modal.appendChild(bar);
+      setTimeout(() => uin.focus(), 0);
+    }
+    const head = omni ? null : modalHead('新建文档', temp
       ? '新建的是临时文档，编辑后保存时再选存到哪个文件夹'
       : '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : ''), close);
     const grid = document.createElement('div');
@@ -1156,8 +1187,15 @@
       grid.appendChild(card);
     }
     const body = modalBody();
+    if (omni) {
+      const label = document.createElement('div');
+      label.className = 'cm-pane-label';
+      label.textContent = '或新建文档';
+      body.appendChild(label);
+    }
     body.appendChild(grid);
-    modal.append(head, body);
+    if (head) modal.appendChild(head);
+    modal.appendChild(body);
     overlay.appendChild(modal);
     wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);
@@ -1424,19 +1462,39 @@
   if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
   window.addEventListener('focus', () => { if (current) onTreeChanged(); });
 
+  // 侧栏始终显示（对齐 ui-demo：omnibox + 标签栏常在,不再「无工作区就整个隐藏」）。renderZones 让标签/置顶区可见。
+  (function ensureShellAlwaysOn() {
+    const sb = document.getElementById('sidebar');
+    if (sb) sb.classList.add('sb-on');
+    const emptyHint = document.getElementById('sb-empty');
+    if (emptyHint) emptyHint.hidden = true; // 老「打开文件夹」占位收起（头部图标 + NewTab 页都有入口）
+    renderZones();
+  })();
+
   // 启动恢复上次工作区。await setWorkspace（含 loadTabs）整条跑完才 resolveRestore，
   // 让冷启动的 open-file 建标签等在这后面（无工作区 / 出错也要 resolve，否则 onOpen 永久挂起）。
   (async () => {
+    let hadWorkspace = false;
     try {
       const root = await window.ws2.wsGetRoot();
       if (root) {
         const data = await window.ws2.wsReadTree();
-        if (data) await setWorkspace(data);
+        if (data) { await setWorkspace(data); hadWorkspace = true; }
       }
     } catch (e) {
       /* 无工作区 / 已不存在：保持空态 */
     } finally {
       resolveRestore();
+      // 开屏空态（对齐 ui-demo）：没有工作区/没有恢复出激活标签/没有冷启动文件在路上 → 显示 NewTab 页,
+      // 而不是空白「打开文档/文件夹」选择屏。有工作区但无激活标签也显示 NewTab（内容区不留空）。
+      // ⚠ browser-chrome.js 可能还没定义 __webShowEmpty（脚本加载/异步顺序不定）→ 用 pending 标志,
+      // browser-chrome 加载完自己兜底消费；此刻已就绪就直接调。
+      const hasActive = tabState.activeRel != null;
+      const hasDoc = window.__shellDocPath && window.__shellDocPath();
+      if (!hasActive && !hasDoc && !window.__pendingColdOpen) {
+        if (window.__webShowEmpty) window.__webShowEmpty();
+        else window.__pendingEmptyState = true;
+      }
     }
   })();
 })();

@@ -26,6 +26,26 @@
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
     </button>
   </div>
+  <!-- 浏览器 omnibox（对齐 ui-demo .arc-omni）：始终可见,导航钮在上、地址栏在下。输网址上网、输搜索词搜索。 -->
+  <div class="sb-browser" id="sb-browser">
+    <div class="sb-nav">
+      <button id="bc-back" class="sb-navbtn" title="后退" aria-label="后退" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <button id="bc-fwd" class="sb-navbtn" title="前进" aria-label="前进" disabled>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+      <button id="bc-reload" class="sb-navbtn" title="刷新" aria-label="刷新">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      </button>
+    </div>
+    <div class="arc-omni" id="sb-omni">
+      <span class="arc-omni-ico" id="omni-ico">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </span>
+      <input id="bc-addr" class="arc-omni-input" type="text" spellcheck="false" autocomplete="off" placeholder="搜索,或输入网址" aria-label="地址栏" />
+    </div>
+  </div>
   <div class="sb-body" id="sb-body">
     <div class="sb-empty" id="sb-empty">
       <div class="sb-empty-note">打开一个本地文件夹，把这里当工作区</div>
@@ -114,29 +134,17 @@
       </div>
     </div>
 
-    <!-- 浏览器 chrome 条（web 标签激活时显示；永不被 native view 盖,画在 view 上方）。browser-chrome.js 掌管。 -->
-    <div id="browser-chrome" class="bc-bar" hidden>
-      <button id="bc-back" class="bc-nav" title="后退" aria-label="后退">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <button id="bc-fwd" class="bc-nav" title="前进" aria-label="前进">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-      </button>
-      <button id="bc-reload" class="bc-nav" title="刷新" aria-label="刷新">
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-      </button>
-      <input id="bc-addr" class="bc-addr" type="text" spellcheck="false" autocomplete="off" placeholder="搜索或输入网址" aria-label="地址栏" />
-      <div id="bc-find" class="bc-find" hidden>
-        <input id="bc-find-input" class="bc-find-input" type="text" placeholder="在页面中查找" aria-label="页内查找" />
-        <span id="bc-find-count" class="bc-find-count"></span>
-      </div>
+    <!-- 页内查找条（Cmd+F 网页态）：内容区右上角浮层,永在 native view 上方靠 setVisible 让位。 -->
+    <div id="bc-find" class="bc-find" hidden>
+      <input id="bc-find-input" class="bc-find-input" type="text" placeholder="在页面中查找" aria-label="页内查找" />
+      <span id="bc-find-count" class="bc-find-count"></span>
     </div>
 
-    <!-- 新标签页 surface（Cmd+T / url=null 的 web 标签）。地址栏聚焦 + 新建文档入口 + 最近浏览。 -->
+    <!-- 新标签页 / 开屏空页面（对齐 ui-demo NewTab）：居中 Wordspace + 大搜索框 + 新建文档入口。 -->
     <div id="web-newtab" class="web-newtab" hidden>
       <div class="nt-inner">
         <div class="nt-brand">Wordspace</div>
-        <input id="nt-addr" class="nt-addr" type="text" spellcheck="false" autocomplete="off" placeholder="搜索网页或输入网址" aria-label="新标签页地址栏" />
+        <input id="nt-addr" class="nt-omni" type="text" spellcheck="false" autocomplete="off" placeholder="搜索，或输入网址" aria-label="新标签页地址栏" />
         <div class="nt-actions">
           <button id="nt-new-doc" class="nt-chip">＋ 新建文档</button>
           <button id="nt-open-folder" class="nt-chip">打开文件夹</button>

@@ -1,100 +1,70 @@
-/* 浏览器 chrome 条 + 新标签页 surface（U5）。复用 shell.css 的设计 token,与现有 UI 一套语言。 */
+/* 浏览器 UI（对齐 ui-demo）。复用 shell.css 设计 token。 */
 
-/* ---- chrome 条：导航钮 + 地址栏（永在 native view 上方,#browser-chrome 用 flex:none 定高） ---- */
-.bc-bar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 48px;
-  padding: 0 var(--top-actions-reserve) 0 14px; /* 右留位给右上角 ⋯ 菜单浮层,同 doc-header */
-  border-bottom: 1px solid var(--c-border);
-  background: var(--c-bg-chrome);
-}
-.bc-nav {
-  flex: none;
-  width: 30px; height: 30px;
+/* ---- 侧栏 omnibox + 导航钮（.sb-browser 在 .sb-head 与 .sb-body 之间,始终可见） ---- */
+.sb-browser { flex: none; padding: 4px 10px 8px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--c-divider); }
+.sb-nav { display: flex; align-items: center; gap: 2px; }
+.sb-navbtn {
+  width: 26px; height: 26px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 0; border-radius: 8px;
-  background: transparent; color: var(--c-text-2);
-  cursor: pointer;
+  border: 0; border-radius: 7px; background: transparent; color: var(--c-text-2); cursor: pointer;
 }
-.bc-nav:hover:not(:disabled) { background: var(--c-hover); color: var(--c-text); }
-.bc-nav:disabled { opacity: .35; cursor: default; }
-.bc-reload.is-loading svg { animation: bc-spin .8s linear infinite; }
+.sb-navbtn:hover:not(:disabled) { background: var(--c-hover); color: var(--c-text); }
+.sb-navbtn:disabled { opacity: .3; cursor: default; }
+.sb-navbtn.is-loading svg { animation: bc-spin .8s linear infinite; }
 @keyframes bc-spin { to { transform: rotate(360deg); } }
 
-.bc-addr {
-  flex: 1 1 auto;
-  min-width: 0;
-  height: 32px;
-  margin-left: 4px;
-  padding: 0 12px;
-  border: 1px solid var(--c-border);
-  border-radius: 16px;
-  background: var(--c-surface);
-  color: var(--c-text);
-  font-family: var(--font-ui);
-  font-size: var(--fs-sm, 13px);
-  outline: none;
+.arc-omni {
+  display: flex; align-items: center; gap: 8px;
+  height: 32px; padding: 0 10px;
+  border: 1px solid var(--c-border); border-radius: 9px; background: var(--c-surface);
 }
-.bc-addr:focus { border-color: var(--c-accent); background: #fff; box-shadow: 0 0 0 2px var(--c-accent-tint); }
+.arc-omni:hover { border-color: var(--c-border-strong); }
+.arc-omni:focus-within { border-color: var(--c-accent); box-shadow: 0 0 0 2px var(--c-accent-tint); }
+.arc-omni-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.arc-omni-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--c-text); font-family: var(--font-ui); font-size: var(--fs-sm, 13px); }
 
-/* 页内查找条：嵌在地址栏右侧 */
-.bc-find {
-  flex: none;
-  display: inline-flex; align-items: center; gap: 6px;
-  margin-left: 6px;
-  padding: 3px 6px 3px 10px;
-  border: 1px solid var(--c-border);
-  border-radius: 14px;
-  background: var(--c-surface);
-}
-.bc-find-input { width: 150px; height: 24px; border: 0; outline: none; background: transparent; color: var(--c-text); font-size: var(--fs-sm, 13px); }
-.bc-find-count { font-size: var(--fs-xs, 11px); color: var(--c-text-3); min-width: 30px; text-align: right; }
-
-/* ---- web view bounds 锚：占据 chrome 以下的编辑区,native view 画在它上面 ---- */
+/* ---- web view bounds 锚 + NewTab 页 ---- */
 .web-viewport { flex: 1 1 auto; min-height: 0; background: var(--c-bg); }
-
-/* ---- 新标签页 surface ---- */
-.web-newtab { flex: 1 1 auto; min-height: 0; display: flex; align-items: flex-start; justify-content: center; background: var(--c-bg-sunken); }
-.nt-inner { width: min(560px, 82%); margin-top: 16vh; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.web-newtab { flex: 1 1 auto; min-height: 0; display: flex; align-items: flex-start; justify-content: center; background: var(--c-bg-sunken); overflow: auto; }
+.nt-inner { width: min(600px, 84%); margin-top: 16vh; display: flex; flex-direction: column; align-items: center; gap: 20px; }
 .nt-brand { font-size: 30px; font-weight: 700; letter-spacing: -.02em; color: var(--c-text); }
-.nt-addr {
-  width: 100%;
-  height: 46px;
-  padding: 0 18px;
-  border: 1px solid var(--c-border-strong);
-  border-radius: 23px;
-  background: var(--c-surface);
-  color: var(--c-text);
-  font-family: var(--font-ui);
-  font-size: 15px;
-  outline: none;
+.nt-omni {
+  width: 100%; height: 52px; padding: 0 20px;
+  border: 1px solid var(--c-border-strong); border-radius: 26px; background: var(--c-surface);
+  color: var(--c-text); font-family: var(--font-ui); font-size: 15px; outline: none;
   box-shadow: 0 1px 3px rgba(0,0,0,.04);
 }
-.nt-addr:focus { border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-tint); }
+.nt-omni:focus { border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-tint); }
 .nt-actions { display: flex; gap: 10px; }
-.nt-chip {
-  padding: 7px 14px;
-  border: 1px solid var(--c-border);
-  border-radius: 18px;
-  background: var(--c-surface);
-  color: var(--c-text-2);
-  font-size: var(--fs-sm, 13px);
-  cursor: pointer;
-}
+.nt-chip { padding: 7px 15px; border: 1px solid var(--c-border); border-radius: 18px; background: var(--c-surface); color: var(--c-text-2); font-size: var(--fs-sm, 13px); cursor: pointer; }
 .nt-chip:hover { background: var(--c-hover); color: var(--c-text); border-color: var(--c-border-strong); }
 .nt-recent { width: 100%; margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .nt-recent li { padding: 7px 12px; border-radius: 8px; cursor: pointer; color: var(--c-text-2); font-size: var(--fs-sm, 13px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nt-recent li:hover { background: var(--c-hover); color: var(--c-text); }
 
+/* ---- 页内查找条（内容区右上角浮层） ---- */
+.bc-find {
+  position: absolute; top: 10px; right: calc(var(--top-actions-reserve) + 8px); z-index: 50;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 8px 5px 12px;
+  border: 1px solid var(--c-border); border-radius: 16px; background: var(--c-surface);
+  box-shadow: 0 4px 14px rgba(0,0,0,.12);
+}
+.bc-find-input { width: 170px; height: 24px; border: 0; outline: none; background: transparent; color: var(--c-text); font-size: var(--fs-sm, 13px); }
+.bc-find-count { font-size: var(--fs-xs, 11px); color: var(--c-text-3); min-width: 34px; text-align: right; }
+
+/* ---- 新建 modal 顶部地址栏（omni 模式,对齐 ui-demo cm-omnibar） ---- */
+.sb-modal-omni { width: 720px; max-width: 92vw; }
+.cm-omnibar { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 2px solid var(--c-accent); }
+.cm-omnibar-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.cm-omnibar-input { flex: 1; min-width: 0; height: 30px; border: 0; outline: none; background: transparent; color: var(--c-text); font-family: var(--font-ui); font-size: var(--fs-lg, 17px); }
+.cm-omnibar-kbd { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; background: var(--c-accent-tint); color: var(--c-accent); font-size: var(--fs-xs, 11px); }
+.cm-omnibar-x { flex: none; border: 0; background: transparent; color: var(--c-text-3); cursor: pointer; display: inline-flex; }
+.cm-omnibar-x:hover { color: var(--c-text); }
+.cm-pane-label { padding: 12px 16px 0; font-size: var(--fs-sm, 13px); color: var(--c-text-3); }
+
 /* ---- 标签行 web 态：favicon / spinner / 音频喇叭 / 错误角标 ---- */
 .sb-tab-fav { flex: none; width: 15px; height: 15px; border-radius: 3px; object-fit: contain; }
-.sb-tab-spinner {
-  flex: none; width: 13px; height: 13px; border-radius: 50%;
-  border: 2px solid var(--c-border-strong); border-top-color: var(--c-accent);
-  animation: bc-spin .7s linear infinite;
-}
+.sb-tab-spinner { flex: none; width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--c-border-strong); border-top-color: var(--c-accent); animation: bc-spin .7s linear infinite; }
 .sb-tab-audio { flex: none; color: var(--c-text-3); display: inline-flex; }
 .sb-tab-err { flex: none; color: var(--c-danger); display: inline-flex; }

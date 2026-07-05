@@ -661,7 +661,8 @@ function shellCloseDoc() {
   closeViewer();
   exportBtn.disabled = true;
   if (exportMdBtn) exportMdBtn.disabled = true;
-  home.hidden = false;
+  // 关掉文档后回落到 NewTab 空页面（对齐 ui-demo:不给空白「打开文档/文件夹」选择屏）。无 browser-chrome 时兜底老 home。
+  if (window.__webShowEmpty) window.__webShowEmpty(); else home.hidden = false;
 }
 window.__shellRetargetDoc = shellRetargetDoc;
 window.__shellCloseDoc = shellCloseDoc;

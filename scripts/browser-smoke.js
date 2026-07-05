@@ -32,10 +32,13 @@ const ROOT = path.join(__dirname, '..');
   const log = [];
   const ok = (c, m) => log.push((c ? 'PASS ' : 'FAIL ') + m);
 
-  // 开工作区
-  await page.click('#home-open-folder');
+  // 侧栏始终在（对齐 ui-demo：不再需要先开工作区）——启动即 sb-on + omnibox 可见
   await page.waitForSelector('#sidebar.sb-on', { timeout: 8000 });
-  ok(true, '工作区打开');
+  ok(true, '侧栏启动即显示');
+  const omniVisible = await page.evaluate(() => { const el = document.getElementById('bc-addr'); return !!el && el.offsetParent !== null; });
+  ok(omniVisible, '侧栏 omnibox 可见');
+  const emptyNewtab = await page.waitForSelector('#web-newtab:not([hidden])', { timeout: 5000 }).then(() => true).catch(() => false);
+  ok(emptyNewtab, '开屏显示 NewTab 空页面（非空白选择屏）');
 
   // 关键 hook 都在（脚本加载无异常）
   const hooks = await page.evaluate(() => ({
@@ -43,28 +46,33 @@ const ROOT = path.join(__dirname, '..');
     detach: typeof window.__webDetach,
     urlInput: typeof (window.WS2UrlInput && window.WS2UrlInput.parse),
     policy: typeof (window.WS2WebPolicy && window.WS2WebPolicy.routeMenuCmd),
-    newTabHook: !!(window.__sbHooks && window.__sbHooks.newTab),
   }));
   ok(hooks.activate === 'function', '__webActivate 存在');
   ok(hooks.detach === 'function', '__webDetach 存在');
   ok(hooks.urlInput === 'function', 'WS2UrlInput 加载');
   ok(hooks.policy === 'function', 'WS2WebPolicy 加载');
-  ok(hooks.newTabHook, 'newTab hook 就位');
 
   const childCount = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].contentView.children.length);
 
-  // Cmd+T → 新标签页 surface
+  // Cmd+T → 新建 modal（顶部地址栏 cm-omnibar）
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
-  await page.waitForSelector('#web-newtab:not([hidden])', { timeout: 5000 }).catch(() => {});
-  const newtabShown = await page.evaluate(() => !document.getElementById('web-newtab').hidden);
-  ok(newtabShown, 'Cmd+T 显示新标签页 surface');
-  const webTabRow = await page.evaluate(() => !!document.querySelector('.sb-tab.sb-tab-web'));
-  ok(webTabRow, '侧栏出现网页标签行');
+  await page.waitForSelector('.cm-omnibar', { timeout: 5000 }).catch(() => {});
+  const modalOmni = await page.evaluate(() => !!document.querySelector('.cm-omnibar-input'));
+  ok(modalOmni, 'Cmd+T 打开新建 modal（含地址栏）');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
 
-  // 地址栏输入本地 URL → 导航,view attach
-  await page.fill('#nt-addr', url);
-  await page.press('#nt-addr', 'Enter');
+  // 开工作区（头部 open-folder,WS2_FOLDER_IN 跳过对话框）→ 树出现 doc.html
+  await page.click('#sb-open-folder');
+  await page.waitForSelector('.sb-file[data-rel="doc.html"]', { timeout: 8000 });
+  ok(true, '工作区打开、文件树出现');
+
+  // 工作区内:侧栏 omnibox 输网址 + Enter → 新建网页标签并导航
+  await page.fill('#bc-addr', url);
+  await page.press('#bc-addr', 'Enter');
   await page.waitForTimeout(1500);
+  const webTabRow = await page.evaluate(() => !!document.querySelector('.sb-tab.sb-tab-web'));
+  ok(webTabRow, 'omnibox 输网址后侧栏出现网页标签行');
   const c1 = await childCount();
   ok(c1 === 1, '导航后恰好 1 个 web view attach（实际 ' + c1 + '）');
 
