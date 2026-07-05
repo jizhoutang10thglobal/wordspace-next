@@ -74,6 +74,20 @@ test.afterEach(async () => {
   await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
 });
 
+test('SH-4：点当前已激活的标签是 no-op，不重载（未保存编辑不丢、不弹丢弃确认）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  // 在文档里改点东西（进脏态）——用编辑器把标题文字改掉
+  const h1 = page.frameLocator('#doc-frame').locator('h1');
+  await h1.click();
+  await page.frameLocator('#doc-frame').locator('h1').evaluate((el) => { el.textContent = 'AAA-edited'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  // 若点激活标签触发重载（旧行为），会从磁盘重载回 'AAA'（且脏态会弹确认）。修后应保持 'AAA-edited'。
+  await tabRow('a.html').click();
+  await page.waitForTimeout(300);
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA-edited');
+});
+
 test('打开文件→进标签页区且激活；开第二个→两标签；点标签切回', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');

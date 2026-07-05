@@ -31,8 +31,10 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
   win.on('closed', () => docWatcher.close()); // 关窗即停文件监听（防悬挂 watcher / 去抖定时器在窗口销毁后还触发）
-  // 修 MP-5：renderer 每次重载都先置未就绪；did-finish-load 后置就绪并 flush 排队的 open-file。
-  win.webContents.on('did-start-loading', () => { rendererReady = false; });
+  // 修 MP-5：did-finish-load（主框架加载完成）后置就绪并 flush 排队的 open-file。
+  // ⚠ 不用 did-start-loading 重置——它对 iframe（文档 frame）导航也触发，会把每次开文档都误判成 renderer 未就绪、
+  // 而 did-finish-load 只认主框架、不会再触发 → rendererReady 永久卡 false（residency 唤醒开文档就废）。
+  // 真正需要重置的只有主窗口重载（render-process-gone 里的 win.reload()），那处显式置 false。
   win.webContents.on('did-finish-load', () => {
     rendererReady = true;
     const q = pendingOpenPaths; pendingOpenPaths = [];
@@ -46,7 +48,7 @@ function createWindow() {
     dialog.showMessageBox(win, {
       type: 'error', buttons: ['重新加载'], defaultId: 0,
       message: '编辑器意外崩溃', detail: '未保存到磁盘的临时内容可能已丢失。已保存的文件不受影响。'
-    }).then(() => { if (win && !win.isDestroyed()) win.reload(); }).catch(() => {});
+    }).then(() => { if (win && !win.isDestroyed()) { rendererReady = false; win.reload(); } }).catch(() => {});
   });
   // 渲染层 beforeunload 在 Electron 里是静默拦截，提示必须由主进程弹
   win.on('close', (e) => {
