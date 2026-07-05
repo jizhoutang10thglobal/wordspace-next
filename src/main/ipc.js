@@ -86,7 +86,9 @@ function registerIpc() {
   // 不是 workspace-relative、也不来自可被篡改的 recents/workspace.json，而是用户当场在原生 showOpenDialog
   // 里亲手选的（可信来源）。仅服务「打开」按钮这一条 pick→view 流，别把这两个 IPC 接到其它入口。
   ipcMain.handle('file-url-abs', (_e, abs) => pathToFileURL(abs).href);
-  ipcMain.handle('open-external-abs', async (_e, abs) => { await shell.openPath(abs); return { ok: true }; });
+  // 修 MP-6：shell.openPath 失败不抛、resolve 一个错误串（无关联程序/文件刚被删）。原来无条件 {ok:true} →
+  // 「用默认程序打开」失败时用户完全无感。检查返回串，非空转 {error} 让 renderer 弹提示。
+  ipcMain.handle('open-external-abs', async (_e, abs) => { const err = await shell.openPath(abs); return err ? { error: err } : { ok: true }; });
   ipcMain.handle('read-doc', async (_e, p) => {
     assertDocPath(p);
     const buf = await files.readDocBuffer(p);
@@ -105,7 +107,8 @@ function registerIpc() {
     // 自动保存会把相同磁盘快照重复灌进历史、挤掉真历史版本）。转换产物为空（用户清空文档）写 '\n'：
     // writeDocSafe 拒空串（防误清空），一个换行 = 合法的空 md，否则清空后的 md 永远保存失败。
     let out = content;
-    if (mdAdapter.isMdPath(p)) {
+    const isMd = mdAdapter.isMdPath(p);
+    if (isMd) {
       out = await mdAdapter.htmlToMd(content);
       if (!out.trim()) out = '\n';
     }
@@ -119,7 +122,7 @@ function registerIpc() {
         console.error('history archive failed:', err);
       });
     }
-    await files.writeDocSafe(p, out);
+    await files.writeDocSafe(p, out, { allowWhitespaceOnly: isMd }); // md 清空后 '\n' 也要能存（修 MD-1）
     docWatcher.noteSelfWrite(); // 写完才打戳：抑制窗口覆盖「写完→watcher 触发」的延迟，不被写入耗时吃掉（慢盘也不会自存盘误触发重载）
     return { ok: true, archiveWarning };
   });
@@ -246,7 +249,7 @@ function registerIpc() {
       content = await mdAdapter.htmlToMd(html);
       if (!content.trim()) content = '\n'; // 同 save-doc：空产物写一个换行，不撞 writeDocSafe 的拒空守卫
     }
-    await files.writeDocSafe(out, content);
+    await files.writeDocSafe(out, content, { allowWhitespaceOnly: isMd }); // 修 MD-1：md 空文档 '\n' 也要能存
     // 导出语义的调用方要 Finder 高亮产物（确认成功+落在哪，对齐 export-pdf）；测试 seam 路径不弹
     if (opts && opts.reveal && !seamUsed) shell.showItemInFolder(out);
     return { ok: true, abs: out };
@@ -283,8 +286,8 @@ function registerIpc() {
   // 非 .html 文件 → 系统默认程序打开（编辑器只认 html）。
   ipcMain.handle('ws-open-external', async (_e, relPath) => {
     const abs = assertInsideWorkspace(requireRoot(), relPath);
-    await shell.openPath(abs);
-    return { ok: true };
+    const err = await shell.openPath(abs); // 修 MP-6：失败 resolve 错误串，surface 给 renderer
+    return err ? { error: err } : { ok: true };
   });
   // 工作区内任意文件的 file:// URL（给图片/PDF 内置查看器；assertInsideWorkspace 约束在根内防越权）。
   // pathInfo 那条只放 .html，这条放任意类型，所以单独开一个。

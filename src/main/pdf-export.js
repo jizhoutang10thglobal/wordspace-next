@@ -63,7 +63,7 @@ async function exportPdfFromHtml(html, srcDir, outPath) {
   try {
     await fs.writeFile(tmp, html, 'utf8');
   } catch (e) {
-    throw new Error('无法在文档所在文件夹创建临时文件（可能是只读目录）。可改用「原 HTML 样式」导出。');
+    throw new Error('无法在文档所在文件夹创建临时文件导出 PDF（可能是只读目录）。请把文档移到有写入权限的文件夹后再试。');
   }
   try {
     await exportPdf(tmp, outPath);

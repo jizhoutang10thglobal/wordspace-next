@@ -96,7 +96,12 @@ body {
 button { font-family: inherit; font-size: inherit; color: inherit; cursor: pointer; border: none; background: none; }
 button:disabled { cursor: default; }
 input { font-family: inherit; font-size: inherit; color: inherit; }
-input:focus, button:focus { outline: none; }
+/* 修 VC-1：原来 input/button:focus 全局 outline:none 把键盘焦点环也杀了（鼠标点了不该有环，但键盘 Tab 必须有）。
+   只对「非键盘聚焦」去环（:focus:not(:focus-visible)），键盘聚焦补一条 accent 焦点环——全仓原本 0 处 :focus-visible。 */
+input:focus:not(:focus-visible), button:focus:not(:focus-visible) { outline: none; }
+:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; border-radius: 3px; }
+/* opacity:0 的标签按钮（pin/×）键盘聚焦时要现形，否则焦点落在完全看不见的按钮上 */
+.sb-tab-pin:focus-visible, .sb-tab-close:focus-visible { opacity: 1; }
 ul { list-style: none; }
 
 ::-webkit-scrollbar { width: 11px; height: 11px; }
@@ -295,7 +300,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-ctx-item.is-danger:hover { background: var(--c-danger-tint); }
 
 /* 删除「撤销」toast */
-.sb-toast-host { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 300; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+/* 修 VC-6：toast 提到模态遮罩（400）之上——否则删除撤销 toast 被弹出的模态盖住、6.5s 撤销窗口白流失。 */
+.sb-toast-host { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 8px; align-items: center; }
 .sb-toast { display: flex; align-items: center; gap: 10px; background: #23262b; color: #fff; font-size: var(--fs-md); padding: 9px 15px; border-radius: var(--r-md); box-shadow: var(--shadow-menu); }
 .sb-toast-action { color: #8ab4ff; font-weight: var(--fw-semibold); font-size: var(--fs-md); padding: 2px 7px; border-radius: var(--r-sm); }
 .sb-toast-action:hover { background: rgba(255,255,255,.12); }
@@ -327,7 +333,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* 关闭确认：橙色圆形警告图标 + 右侧标题/说明（对齐 ui-demo cc-body/cc-ico） */
 .sb-cc-body { display: flex; gap: 12px; padding: 20px 20px 14px; }
 .sb-cc-ico { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: #fff4e5; color: #b26a00; }
-.sb-cc-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); margin-bottom: 4px; }
+/* 修 VC-9：长无空格文件名（ASCII）不换行会撑破模态被 overflow:hidden 从字中间切断、无省略。允许任意处断行。 */
+.sb-cc-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); margin-bottom: 4px; overflow-wrap: anywhere; }
 .sb-modal-desc { font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.55; }
 /* SaveModal 文件名输入行（Colin：保存时可改名，后缀 .html 固定显示） */
 .sb-save-namerow { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
@@ -346,6 +353,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-btn:hover { background: var(--c-hover); }
 .sb-btn:active { background: var(--c-active); }
 .sb-btn:disabled { opacity: .6; cursor: default; }
+.sb-btn:disabled:hover { background: var(--c-surface); } /* 修 VC-11：disabled 时不给 hover 高亮（如「✓ 已复制」态，别看着像还能点） */
 .sb-btn-primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
 .sb-btn-primary:hover { background: var(--c-accent-hover); }
 .sb-btn-primary:active { background: var(--c-accent-press); }
@@ -460,7 +468,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .pdfv-err { margin: 40px; color: var(--c-text-3); }
 
 /* 空态 */
-.ws-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
+/* 修 VC-8：最小窗高（520）下空态标题+提示+两按钮+10 条最近文档 ≈500px、flex 居中会上下同时裁切且无滚动。允许竖向滚。 */
+.ws-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; overflow-y: auto; }
 .ws-empty-wrap[hidden] { display: none; }
 .ws-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 520px; padding: 0 40px; text-align: center; }
 .ws-empty-title { font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--c-text); }
@@ -472,7 +481,9 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 #recent-list li:hover { background: var(--c-hover); color: var(--c-text); }
 
 /* 右上角浮动 actions（Colin 2026-07-02：收成一个 ⋯ 菜单）。top 居中于 52px 文档头条：(52-30)/2≈11。 */
-.top-actions { position: absolute; top: 11px; right: 22px; z-index: 30; display: flex; align-items: center; gap: 8px; }
+/* 修 VC-5：z-index 提到基础编辑浮层（格式条 z60 / 焦点框 z55 / hover 框 z50，挂 body 顶层）之上——
+   否则 .top-actions 建的 z:30 stacking context 把 ⋯ 下拉（z:200）困在 30、被基础编辑浮层盖住。仍在模态(400)/toast(500)之下。 */
+.top-actions { position: absolute; top: 11px; right: 22px; z-index: 65; display: flex; align-items: center; gap: 8px; }
 .ta-more { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--c-text-2); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
 .ta-more:hover { background: var(--c-hover); color: var(--c-text); }
 .ta-more:active { background: var(--c-active); }
@@ -496,72 +507,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* 导出 PDF：保存右侧的 ghost 按钮（单按钮，直接导出 Wordspace 样式） */
 #export-btn { gap: 6px; }
 
-/* 「+ 插入」触发钮（WS2Insert 建在 #insert-slot），样式同 ghost action */
-#insert-slot { position: relative; display: inline-flex; align-items: center; }
-#insert-slot button.tb-btn { height: 30px; width: auto; padding: 0 12px; border-radius: var(--r-sm); background: transparent; color: var(--c-text-2); font-size: var(--fs-base); display: inline-flex; align-items: center; gap: 4px; }
-#insert-slot button.tb-btn:hover { background: var(--c-hover); color: var(--c-text); }
-#insert-slot button.tb-btn:disabled { opacity: .4; }
-
-/* insert 面板（父层 chrome，从 #insert-slot 下展开；actions 在右上角，故面板右对齐） */
-.insert-panel { position: absolute; top: calc(100% + 7px); right: 0; left: auto; display: none; background: var(--c-surface); border-radius: var(--r-md); box-shadow: var(--shadow-menu); padding: 10px; z-index: 70; width: 244px; }
-.insert-panel.open { display: block; animation: tb-in var(--dur-fast) var(--ease); }
-.insert-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
-.insert-cell { height: 36px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font: inherit; font-size: 13px; color: var(--c-text); cursor: pointer; transition: background var(--dur-fast) var(--ease); }
-.insert-cell:hover { background: var(--c-hover); }
-
-/* ============================================================ 浮动富工具栏（Notion 气泡） */
-#toolbar {
-  position: fixed; top: 0; left: 0; z-index: 80;
-  display: flex; align-items: center; gap: 1px;
-  height: 36px; padding: 0 5px;
-  background: var(--c-surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-menu);
-  font-family: var(--font-ui);
-  animation: tb-in var(--dur-fast) var(--ease);
-}
-#toolbar[hidden] { display: none; }
-@keyframes tb-in { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
-
-.tb-group { display: inline-flex; align-items: center; gap: 1px; }
-.tb-group[hidden] { display: none; }
-.tb-group + .tb-group:not([hidden]) { margin-left: 5px; padding-left: 6px; border-left: 1px solid var(--c-divider); }
-
-.tb-btn { min-width: 30px; height: 30px; padding: 0 6px; border: none; background: transparent; border-radius: var(--r-sm); cursor: pointer; color: var(--c-text-2); font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-.tb-btn:hover { background: var(--c-hover); color: var(--c-text); }
-.tb-btn:active { background: var(--c-active); }
-.tb-btn.active { background: var(--c-accent-tint); color: var(--c-accent); }
-.tb-btn:disabled { opacity: .4; cursor: default; background: transparent; }
-.tb-btn svg { display: block; }
-.tb-danger:hover { background: var(--c-danger-tint); color: var(--c-danger); }
-.tb-turn { width: auto; padding: 0 8px; gap: 2px; font-size: 13px; color: var(--c-text); }
-.tb-turn svg { color: var(--c-text-3); }
-.tb-textbtn { width: auto; padding: 0 10px; font-size: 13px; }
-.tb-aglyph { font-weight: 700; font-size: 14px; border-bottom: 2px solid var(--c-accent); line-height: 1; padding-bottom: 1px; }
-
-.tb-holder { position: relative; display: inline-flex; }
-.tb-pop { position: absolute; top: calc(100% + 7px); left: 0; display: none; background: var(--c-surface); border-radius: var(--r-md); box-shadow: var(--shadow-menu); padding: 5px; z-index: 90; }
-.tb-pop.open { display: block; animation: tb-in var(--dur-fast) var(--ease); }
-
-.tb-swatches { width: 150px; padding: 6px; }
-.tb-swatch { display: inline-block; vertical-align: middle; width: 20px; height: 20px; margin: 2px; border: 1px solid var(--c-border); border-radius: var(--r-sm); cursor: pointer; padding: 0; transition: transform var(--dur-fast) var(--ease); }
-.tb-swatch:hover { transform: scale(1.12); }
-.tb-swatch-clear { display: block; width: 100%; margin-top: 4px; font-size: 12px; color: var(--c-text-3); background: none; border: none; border-radius: var(--r-sm); cursor: pointer; text-align: left; padding: 5px 6px; }
-.tb-swatch-clear:hover { background: var(--c-hover); color: var(--c-text); }
-
-.tb-menu { min-width: 150px; }
-.tb-menu-wide { min-width: 190px; }
-.tb-menu-item { display: flex; align-items: center; width: 100%; height: 32px; padding: 0 10px; border: none; background: transparent; border-radius: var(--r-sm); font: inherit; font-size: 13px; color: var(--c-text); text-align: left; cursor: pointer; }
-.tb-menu-item:hover { background: var(--c-hover); }
-.tb-menu-row { padding: 4px 6px; }
-.tb-menu-sep { height: 1px; background: var(--c-divider); margin: 5px 6px; }
-.tb-select { width: 100%; height: 30px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); font: inherit; font-size: 13px; padding: 0 6px; color: var(--c-text); cursor: pointer; }
-.tb-select:disabled { opacity: .4; cursor: default; }
-
-.tb-linkpop { width: 308px; }
-.tb-linkrow { display: flex; gap: 6px; align-items: center; padding: 3px; }
-.tb-linkinput { flex: 1; min-width: 0; height: 30px; border: 1px solid var(--c-border); border-radius: var(--r-sm); padding: 0 9px; font: inherit; font-size: 13px; color: var(--c-text); transition: border-color var(--dur-fast) var(--ease); }
-.tb-linkinput:focus { outline: none; border-color: var(--c-accent); }
+/* 修 VC-13：删掉 ~65 行死 CSS（#insert-slot/.insert-panel/#toolbar/.tb-*/tb-in keyframes）——
+   index.html 不加载 insert.js/toolbar.js，这些元素永不存在（旧常驻工具栏时代遗物，还占着 z70/80/90 污染层级体系）。 */
 
 /* 「AI 接入」弹窗（菜单 AI 接入…；两卡结构对齐 ui-demo /agents） */
 .aiax-modal { width: 520px; }

@@ -82,6 +82,10 @@ function addAbs(nodes, root) {
 // 并行 stat 填充（bigint 防大 inode 精度丢失，转字符串作比较键）；stat 失败留 undefined（该文件退化成「删=关标签」）。
 async function readTree(root) {
   const r = path.resolve(root);
+  // 修 SB-3/MP-3：根不可达（外部删除/改名 / 网络盘断连 / U 盘拔出）时返回 null，与「根在但空」区分开——
+  // 否则 walk 对读不到的根静默返回空树 → renderer 把它当「文件夹空了」，reconcile 清空全部标签+置顶并持久化，
+  // 盘回来也回不来。onTreeChanged 对 null 现成 return（不 reconcile 不写盘），保持现状。
+  try { const st = await fs.stat(r); if (!st.isDirectory()) return null; } catch { return null; }
   const { files: fl, dirs } = await walk(r);
   await Promise.all(
     fl.map(async (f) => {
@@ -175,6 +179,9 @@ async function deletePath(root, relPath, backupRoot, opts = {}) {
 // 撤销删除：从备份还原回原位（原位被占则去重），清掉该备份。
 async function undoDelete(root, token, backupRoot) {
   const r = path.resolve(root);
+  // 修 MP-16：token 直接进 path.join，畸形值（含 ../ 或分隔符）能把 backupDir 指出 backupRoot。加固：
+  // 只认 deletePath 生成的格式（del-<base36>-<hex>），不符即拒——正常 UI 流不可达，防御 renderer 被攻破。
+  if (!/^del-[0-9a-z]+-[0-9a-f]+$/.test(String(token || ''))) throw new Error('非法的撤销令牌');
   const backupDir = path.join(backupRoot, token);
   const manifest = JSON.parse(await fs.readFile(path.join(backupDir, 'manifest.json'), 'utf8'));
   const origAbs = assertInsideWorkspace(r, manifest.rel);

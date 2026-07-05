@@ -6,7 +6,9 @@
 (function (global) {
   // phrasing（行内）标签：可安全做节点级文字拼接的内容。其余 = 块级，禁塞进叶子文字块。
   // 与 blockedit.js 的 INLINE_TAGS 对齐（U3 接线时由编辑器改用本表，去重）。
-  const PHRASING_TAGS = new Set(['B', 'I', 'EM', 'STRONG', 'U', 'S', 'A', 'CODE', 'SPAN', 'BR', 'IMG', 'SUB', 'SUP', 'MARK', 'SMALL', 'BIG', 'FONT', 'LABEL', 'ABBR', 'TIME', 'CITE', 'Q', 'KBD', 'SAMP', 'VAR', 'WBR', 'DEL', 'INS']);
+  // 含 STRIKE：Chromium 的 execCommand('strikeThrough')（styleWithCSS=false）产 <strike> 不是 <s>——
+  // 若不在行内白名单，格式条点一次删除线就把文档判成 nested-block 非合规、掉出块编辑（ED-A1）。<strike> 与 <s> 等价。
+  const PHRASING_TAGS = new Set(['B', 'I', 'EM', 'STRONG', 'U', 'S', 'STRIKE', 'A', 'CODE', 'SPAN', 'BR', 'IMG', 'SUB', 'SUP', 'MARK', 'SMALL', 'BIG', 'FONT', 'LABEL', 'ABBR', 'TIME', 'CITE', 'Q', 'KBD', 'SAMP', 'VAR', 'WBR', 'DEL', 'INS']);
 
   const isOverlay = (el) => el && el.nodeType === 1 && el.hasAttribute && el.hasAttribute('data-ws2-ui');
 

@@ -26,6 +26,9 @@ function watch(root, onChange) {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => { timer = null; onChange(); }, DEBOUNCE_MS);
     });
+    // 修 SB-2/MP-4：FSWatcher 是 EventEmitter，'error' 无监听 = 主进程未捕获异常崩溃。
+    // 根被外部删除/改名时 Windows 会发 EPERM error（doc-watcher.js 早有此守卫，这里漏了）→ 静默放弃，靠聚焦兜底。
+    watcher.on('error', () => close());
   } catch (e) {
     watcher = null; // recursive 不支持 → 放弃监听，靠 renderer 聚焦兜底
   }

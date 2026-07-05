@@ -16,7 +16,11 @@ async function readRaw(storeFile) {
 }
 async function writeRaw(storeFile, raw) {
   await fs.mkdir(path.dirname(storeFile), { recursive: true });
-  await fs.writeFile(storeFile, JSON.stringify(raw, null, 2), 'utf8');
+  // 修 MP-11：原子写（tmp+rename）——裸 writeFile 写一半崩溃/断电 → JSON 损坏 → 下次启动 readRaw 吞成 {}，
+  // 工作区/标签/置顶全静默重置。rename 是原子的，坏了也只坏 tmp、正本完好。
+  const tmp = storeFile + '.tmp';
+  await fs.writeFile(tmp, JSON.stringify(raw, null, 2), 'utf8');
+  await fs.rename(tmp, storeFile);
 }
 
 // 一条 entry 合法 = 有字符串 rel（工作区内）或字符串 abs（工作区外文件）且 open||pinned（丢幽灵/坏数据）。

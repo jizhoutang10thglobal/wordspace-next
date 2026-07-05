@@ -28,7 +28,9 @@ function pathInfo(p) {
 // 而非当前已运行实例的 process.cwd()。纯函数（仅 path）→ 可单测，给「无 Windows 机器」补一层自动化覆盖。
 // 审计整改：原来只认 .html——Win/Linux 双击 .md 时 app 聚焦但文件被静默吞掉，与 mac 行为不一致。
 function htmlPathFromArgv(argv, cwd) {
-  const a = (argv || []).slice(1).find((x) => /\.(html?|md)$/i.test(x));
+  // 修 MP-12：排除以 - 开头的参数——否则「值以 .html/.md 结尾的 flag」（如 Chromium 注入的
+  // --user-data-dir=/x/y.html）会被当成文件路径，把真文件吞掉、弹「无法打开」。
+  const a = (argv || []).slice(1).find((x) => !x.startsWith('-') && /\.(html?|md)$/i.test(x));
   return a ? path.resolve(cwd || process.cwd(), a) : null;
 }
 

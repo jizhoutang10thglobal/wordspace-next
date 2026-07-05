@@ -174,6 +174,24 @@ test('删除当前打开的文件 → 编辑区回空态、不崩', async () => 
   await expect(page.locator('#home')).toBeVisible(); // 回空态
 });
 
+test('SB-1：重命名包含当前打开文档的文件夹 → 编辑器重指向、保存不 ENOENT', async () => {
+  await page.click('#home-open-folder');
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/b.html"]'); // 打开 数据/b.html
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('BBB');
+  // 重命名父文件夹 数据 → 资料
+  await page.click('.sb-dir[data-rel="数据"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '重命名' }).click();
+  const input = page.locator('.sb-rename');
+  await input.fill('资料');
+  await input.press('Enter');
+  await expect.poll(() => exists(path.join(wsDir, '资料', 'b.html'))).toBe(true);
+  // 编辑并保存：修前 docPath 仍指 数据/b.html → 保存 ENOENT；修后应重指向 资料/b.html 并成功写盘
+  await page.frameLocator('#doc-frame').locator('h1').evaluate((el) => { el.textContent = 'BBB-saved'; el.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.evaluate(() => window.__shellSaveActive && window.__shellSaveActive());
+  await expect.poll(async () => (await fs.readFile(path.join(wsDir, '资料', 'b.html'), 'utf8')).includes('BBB-saved')).toBe(true);
+});
+
 test('Cmd/Ctrl+\\ 收起/展开侧栏', async () => {
   await page.click('#home-open-folder');
   await page.keyboard.press('Control+\\');

@@ -35,8 +35,16 @@ async function main(argv) {
       return 2;
     }
   }
-  const doc = new JSDOM(html).window.document;
-  const r = validate(doc);
+  // 修 KV-4：深嵌套（details/ul 深链）会让 jsdom 解析或 validate 递归 RangeError。原来不 catch → 崩，stdout 空、
+  // exit 1 冒充「非合规」违反契约（外部 agent 会误读成「去改文档」）。翻车归到 exit 2（用法/处理错），与读不了文件同类。
+  let r;
+  try {
+    const doc = new JSDOM(html).window.document;
+    r = validate(doc);
+  } catch (e) {
+    process.stderr.write('校验失败（文档过深或畸形）：' + ((e && e.message) || e) + '\n');
+    return 2;
+  }
   process.stdout.write(JSON.stringify(r) + '\n');
   const via = isMd ? '（已按 md→html 转换后校验，与 app 打开 .md 的分流同链路）' : '';
   if (r.conform) {

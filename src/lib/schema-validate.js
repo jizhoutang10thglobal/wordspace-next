@@ -17,6 +17,17 @@
   const STYLE_DANGER = /(position\s*:\s*(fixed|sticky)|url\s*\(|expression\s*\(|-moz-binding|behavior\s*:|@import|javascript:)/i;
 
   function isPhrasing(el) { return PHRASING.has(el.tagName); }
+  // 判磁盘字节时找块级后代：穿透行内标签，但**不信任运行时 data-ws2-ui 覆盖层标记**（铁律③）——
+  // model.hasBlockLevelDescendant 跳过 overlay 是给活 DOM 用的；磁盘字节里 overlay 标记可被手写/AI/粘贴
+  // 伪造来藏 <iframe>/<button>/块级（KV-2）。这里一律下探。修 KV-1：块级裹一层 span/a 就绕过 phrasing-only 检查。
+  function hasBlockDescendant(el) {
+    if (!el || !el.children) return false;
+    for (const c of el.children) {
+      if (!PHRASING.has(c.tagName)) return true;
+      if (hasBlockDescendant(c)) return true;
+    }
+    return false;
+  }
   // 命名空间无关地判脚本（修 P0-2：SVG/MathML 里的 <script> 其 tagName 是小写 'script'，===‘SCRIPT’ 漏过）
   function isScript(el) { return !!el.localName && el.localName.toLowerCase() === 'script'; }
   // 修 P0（本轮）：<template> 在 Schema #1 任何位置都不合法，且其 .content 逃过 querySelectorAll('*') 扫描 → fail-closed 拒
@@ -36,25 +47,34 @@
   // 容器（blockquote / callout）允许的子：phrasing，或一段 <p>（决策4：多段文字），不许列表/别的块。
   function childrenAreMultiPara(el, V) {
     for (const c of el.children) {
-      if (c.tagName === 'P') { if (model.hasBlockLevelDescendant(c)) V.push({ rule: 'nested-block', tag: 'P', msg: '容器内的 <p> 不能再含块级' }); continue; }
+      if (c.tagName === 'P') { if (hasBlockDescendant(c)) V.push({ rule: 'nested-block', tag: 'P', msg: '容器内的 <p> 不能再含块级' }); if (c.hasAttribute('style')) V.push({ rule: 'block-style', tag: 'P', msg: '块级不能带 style 属性' }); continue; }
+      // 修 KV-1：块级裹在 phrasing（span/a）里也要抓
       if (!isPhrasing(c)) V.push({ rule: 'nested-block', tag: c.tagName, msg: '容器（callout/quote）只允许多段 <p> + 行内，不允许列表/别的块' });
+      else if (hasBlockDescendant(c)) V.push({ rule: 'nested-block', tag: c.tagName, msg: '容器（callout/quote）里的行内元素不能藏块级' });
     }
   }
   function phrasingOnly(el, V, rule, what) {
-    for (const c of el.children) if (!isPhrasing(c)) V.push({ rule: rule, tag: c.tagName, msg: what + '只能放行内内容，不能是 ' + c.tagName });
+    for (const c of el.children) {
+      if (!isPhrasing(c)) V.push({ rule: rule, tag: c.tagName, msg: what + '只能放行内内容，不能是 ' + c.tagName });
+      else if (hasBlockDescendant(c)) V.push({ rule: rule, tag: c.tagName, msg: what + '里的行内元素不能藏块级' }); // 修 KV-1
+    }
   }
 
   function validateList(ul, V) {
     const isTodo = ul.classList.contains('ws-todo');
+    // 修 ED-A6：ul/ol 直接挂裸文本（删空唯一 li 后打字产 <ul>裸文本</ul>）也是违规——原来只遍历 children 漏了文本节点。
+    for (const n of ul.childNodes) if (n.nodeType === 3 && n.textContent.trim()) { V.push({ rule: 'list-child', tag: '#text', msg: 'ul/ol 直接子只能是 <li>，不能是裸文本' }); break; }
     for (const c of ul.children) {
       if (c.tagName !== 'LI') { V.push({ rule: 'list-child', tag: c.tagName, msg: 'ul/ol 直接子只能是 <li>' }); continue; }
       if (isTodo) {
         const dc = c.getAttribute('data-checked');
         if (dc !== null && dc !== 'true' && dc !== 'false') V.push({ rule: 'todo-checked', tag: 'LI', msg: 'data-checked 只能是 true/false，当前: ' + dc });
       }
+      if (c.hasAttribute('style')) V.push({ rule: 'block-style', tag: 'LI', msg: '块级不能带 style 属性' }); // 修 KV-3
       for (const sub of c.children) {
         if (sub.tagName === 'UL' || sub.tagName === 'OL') validateList(sub, V);
         else if (!isPhrasing(sub)) V.push({ rule: 'li-content', tag: sub.tagName, msg: '<li> 内只能是行内 + 尾随子列表' });
+        else if (hasBlockDescendant(sub)) V.push({ rule: 'li-content', tag: sub.tagName, msg: '<li> 内的行内元素不能藏块级' }); // 修 KV-1
       }
     }
   }
@@ -62,9 +82,14 @@
   function rowCells(tr) { return [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH'); }
   function validateTable(tbl, V) {
     tbl.querySelectorAll('td,th').forEach((cell) => {
-      if (cell.hasAttribute('colspan') || cell.hasAttribute('rowspan')) V.push({ rule: 'table-merge', tag: cell.tagName, msg: '禁合并格 colspan/rowspan' });
+      // 修 KV-6：colspan="1"/rowspan="1" 是语义 no-op（等同没写），不该判合并格。只在跨度 >1 时 flag。
+      if (cell.colSpan > 1 || cell.rowSpan > 1) V.push({ rule: 'table-merge', tag: cell.tagName, msg: '禁合并格 colspan/rowspan' });
+      if (cell.hasAttribute('style')) V.push({ rule: 'block-style', tag: cell.tagName, msg: '块级不能带 style 属性' }); // 修 KV-3
       // 修 P1-2：单元格内容 = phrasing-only（决策4），iframe/object/embed/块都挡在这
-      for (const c of cell.children) if (!isPhrasing(c)) V.push({ rule: 'cell-content', tag: c.tagName, msg: '单元格只能放行内内容，不能是 ' + c.tagName });
+      for (const c of cell.children) {
+        if (!isPhrasing(c)) V.push({ rule: 'cell-content', tag: c.tagName, msg: '单元格只能放行内内容，不能是 ' + c.tagName });
+        else if (hasBlockDescendant(c)) V.push({ rule: 'cell-content', tag: c.tagName, msg: '单元格里的行内元素不能藏块级' }); // 修 KV-1
+      }
     });
     // 修 P2-1：结构不变式（§2.3）
     if (tbl.querySelector('caption')) V.push({ rule: 'table-structure', tag: 'CAPTION', msg: '禁 <caption>' });
@@ -78,11 +103,14 @@
 
   // 修 P2-3：figure（§5 captioned image canonical）= 一个 <img> + 可选 <figcaption>(phrasing)
   function validateFigure(fig, V) {
+    let imgs = 0;
     for (const c of fig.children) {
-      if (c.tagName === 'IMG') continue;
-      if (c.tagName === 'FIGCAPTION') { phrasingOnly(c, V, 'figcaption-content', 'figcaption'); continue; }
+      if (c.tagName === 'IMG') { imgs++; continue; }
+      if (c.tagName === 'FIGCAPTION') { if (c.hasAttribute('style')) V.push({ rule: 'block-style', tag: 'FIGCAPTION', msg: '块级不能带 style 属性' }); phrasingOnly(c, V, 'figcaption-content', 'figcaption'); continue; }
       V.push({ rule: 'figure-content', tag: c.tagName, msg: 'figure 只能含 <img> + 可选 <figcaption>' });
     }
+    // 修 KV-5：canonical = 恰好一个 <img>（0 或 ≥2 都不是合法 captioned image）
+    if (imgs !== 1) V.push({ rule: 'figure-content', tag: 'FIGURE', msg: 'figure 必须恰含一个 <img>，当前 ' + imgs + ' 个' });
   }
 
   // U0：toggle（<details>）内部校验（§2.1 规格 + §0 决策3）= 恰一个 <summary> 作首子（phrasing-only）
@@ -96,7 +124,7 @@
       V.push({ rule: 'details-summary', tag: 'DETAILS', msg: '<summary> 必须是 details 的第一个子元素' });
     }
     for (const c of kids) {
-      if (c.tagName === 'SUMMARY') phrasingOnly(c, V, 'details-summary-content', 'summary');
+      if (c.tagName === 'SUMMARY') { if (c.hasAttribute('style')) V.push({ rule: 'block-style', tag: 'SUMMARY', msg: '块级不能带 style 属性' }); phrasingOnly(c, V, 'details-summary-content', 'summary'); } // 修 KV-3
       else validateBlock(c, V); // 正文=flow：逐块校验（可嵌块 / 再嵌 details）
     }
   }
@@ -112,7 +140,7 @@
     if (t === 'FIGURE') { validateFigure(el, V); return; }
     if (!TOP_BLOCKS.has(t)) { V.push({ rule: 'block-tag', tag: t, msg: t + ' 不在 Schema #1 块集合（h5/h6/section/… 不符合）' }); return; }
     if (t === 'P' || t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') {
-      if (model.hasBlockLevelDescendant(el)) V.push({ rule: 'nested-block', tag: t, msg: t + ' 是叶子文字块、不能含块级' });
+      if (hasBlockDescendant(el)) V.push({ rule: 'nested-block', tag: t, msg: t + ' 是叶子文字块、不能含块级' }); // 修 KV-2：不信 overlay 标记
     } else if (t === 'BLOCKQUOTE') {
       childrenAreMultiPara(el, V); // 决策4：引用 = 多段文字
     } else if (t === 'UL' || t === 'OL') {

@@ -62,6 +62,28 @@ test.afterEach(async ({}, testInfo) => {
   app = null; page = null; frame = null;
 });
 
+test('ED-A4：多行文本粘贴进标题 → 劈成兄弟块、不嵌套 <p>、文档仍合规', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#t').click(); // 进标题 h1 编辑
+  await setCaret('t', 2); // 光标放标题末（「标题」2 字）
+  // 模拟粘贴三行纯文本（构造 paste 事件 + DataTransfer）
+  await frame.locator('body').evaluate((body) => {
+    const el = document.getElementById('t');
+    el.focus();
+    const dt = new DataTransfer();
+    dt.setData('text/plain', '第一行\n第二行\n第三行');
+    el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+  });
+  await page.waitForTimeout(200);
+  // 断言：没有任何标题里嵌 <p>（旧 bug 的表现），且整篇 reparse 后合规
+  const nestedP = await frame.locator('body').evaluate(() => document.querySelectorAll('h1 p, h2 p, h3 p, h4 p').length);
+  expect(nestedP).toBe(0);
+  const html = await serialize();
+  const conform = await page.evaluate((h) => WS2SchemaRegistry.classify(new DOMParser().parseFromString(h, 'text/html')).conform, html);
+  expect(conform).toBe(true);
+});
+
 test('单击即编辑 + 加粗 + 斜杠菜单 + Enter 新建 + Backspace 合并', async () => {
   await launch();
   await openDoc(SIMPLE);
@@ -584,6 +606,34 @@ async function setCrossSel(a, b, c, d) {
     let n = 0; const chk = () => { const s = document.getSelection(); if (s && s.rangeCount && !s.isCollapsed) res(); else if (n++ > 90) res(); else requestAnimationFrame(chk); }; chk();
   }));
 }
+
+const conformOf = () => page.evaluate(async () => {
+  const h = WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument);
+  return WS2SchemaRegistry.classify(new DOMParser().parseFromString(h, 'text/html')).conform;
+});
+
+test('ED-A2：跨块选区从段落删到表格中间 → 表格不被削成非矩形、文档仍合规', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>' +
+    '<h2 id="h">标题abc</h2><table id="tb"><tbody><tr><td id="c11">a1</td><td>b1</td></tr><tr><td id="c21">a2</td><td>b2</td></tr></tbody></table><p id="tail">尾段</p></body></html>');
+  await frame.locator('#h').click();
+  // 从 h2 中间选到表格第二行第一格中间（端点落在表格内）
+  await setCrossSel('h', 2, 'c21', 1);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(200);
+  expect(await conformOf()).toBe(true); // 修前：table-ragged 非合规
+});
+
+test('ED-A3：跨块选区从段落删到 toggle 正文 → summary 不被删、文档仍合规', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>' +
+    '<p id="p">前段xyz</p><details open id="dt"><summary id="sm">开关标题</summary><p id="dbody">折叠正文内容</p></details><p id="tail">尾段</p></body></html>');
+  await frame.locator('#p').click();
+  await setCrossSel('p', 2, 'dbody', 3); // 端点越过 summary 落进 toggle 正文
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(200);
+  expect(await conformOf()).toBe(true); // 修前：details-summary（summary 被删）非合规
+});
 
 test('回归：跨块选区 Backspace 能删并合并（Wendi Bug4/5）', async () => {
   await launch();
