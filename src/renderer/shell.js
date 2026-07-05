@@ -227,12 +227,7 @@ function wireEditor() {
 
   // 输入：标脏 + 调度 undo checkpoint（连续打字塌成一个 op）
   doc.addEventListener('input', () => { markDirty(); if (undoMgr.scheduleCheckpoint) undoMgr.scheduleCheckpoint(); });
-  // 粘贴：只取纯文本（不带外部样式/脚本）
-  doc.addEventListener('paste', (e) => {
-    e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    doc.execCommand('insertText', false, text);
-  });
+  // 粘贴改由块编辑器 blockedit.onPaste 处理（结构感知：只取纯文本 + 多行自己劈成同类型兄弟块、不产生嵌套，修 ED-A4）。
   // 全局快捷键（Cmd/Ctrl）：撤销/重做/保存/加粗斜体下划线。块内 Enter/Backspace/斜杠/Esc 由 blockEdit 处理。
   doc.addEventListener('keydown', (e) => {
     if (handleZoomKey(e)) return; // 缩放键 Cmd/Ctrl +=/-/0（与父层共用一份逻辑）

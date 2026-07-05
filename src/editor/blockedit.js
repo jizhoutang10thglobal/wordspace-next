@@ -706,8 +706,12 @@
         blockMenu.appendChild(it); return it;
       };
       const sub = (label, item, icon) => add(label, () => { const nx = turnInto(el, item); closeBlockMenu(); selectBlock(nx); }, false, icon);
-      sub('转为正文', itemByKey('text'), 'text'); sub('转为标题', itemByKey('h2'), 'heading'); sub('转为引用', itemByKey('quote'), 'quote');
-      const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
+      // 修 ED-B1：「转为」只对文字承载块给（table/img/hr 等结构块转正文会把表格文字黏成团 / 图片直接消失、
+      // 属性搬到 h2 上）。非可编辑块只留插入/复制/删除。
+      if (isEditableEl(el)) {
+        sub('转为正文', itemByKey('text'), 'text'); sub('转为标题', itemByKey('h2'), 'heading'); sub('转为引用', itemByKey('quote'), 'quote');
+        const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
+      }
       add('在下方插入', () => { const nx = insertAfter(el, SLASH_ITEMS[0]); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); }, false, 'plus');
       add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); }, false, 'copy');
       add('删除', () => { closeBlockMenu(); removeBlock(el); }, true, 'trash');
@@ -1138,8 +1142,28 @@
     grip.addEventListener('dragstart', (e) => { dragFrom = selectedEl || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} } });
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
     function clearDrop() { const p = body.querySelector('[data-ws2-drop]'); if (p) p.removeAttribute('data-ws2-drop'); }
-    function onDragOver(e) { if (!dragFrom) return; e.preventDefault(); const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop(); el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top'); }
-    function onDrop(e) { if (!dragFrom) return; e.preventDefault(); const el = blockOf(e.target); if (el && el !== dragFrom) { const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING; if (before) el.after(dragFrom); else el.before(dragFrom); if (undoMgr) undoMgr.checkpoint(); markDirty(); } clearDrop(); dragFrom = null; }
+    // 修 ED-A5：外部拖放（dragFrom 为空=不是内部块拖拽）一律吞掉，别让浏览器默认 insertFromDrop 把带任意
+    // 标签的富 HTML（div/h1/span style/a…）插进 contenteditable → 落盘非合规。粘贴那道「只取纯文本」的闸在
+    // drop 路径不存在，这里补上（拖放直接拒绝，用户仍可 Cmd+V 走纯文本粘贴）。
+    // 修 ED-A4：粘贴只取纯文本，且多行文本自己按 \n 劈成同类型兄弟块——不交给 execCommand 处理换行。
+    // 原来 shell 的 paste 用 execCommand('insertText', 带换行的文本)：Chromium 会把 \n 转成段落切分、
+    // 在标题块里塞 <p>（<h2><p>..</p></h2>），reparse 后原样保留 → 持久非合规；段落块里也多出垃圾空 <p> + 活 DOM/磁盘分叉。
+    function onPaste(e) {
+      const cd = e.clipboardData || (typeof window !== 'undefined' && window.clipboardData);
+      const text = cd && cd.getData ? cd.getData('text/plain') : '';
+      e.preventDefault();
+      const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+      if (!editingEl || lines.length <= 1) { doc.execCommand('insertText', false, lines.join(' ')); return; } // 单行/非编辑态：普通纯文本插入
+      doc.execCommand('insertText', false, lines[0]);
+      for (let i = 1; i < lines.length; i++) {
+        if (splitBlock()) { if (lines[i]) doc.execCommand('insertText', false, lines[i]); } // splitBlock 劈出同类型新块（不嵌套）+ 光标移到新块首
+        else if (lines[i]) doc.execCommand('insertText', false, ' ' + lines[i]);
+      }
+      if (undoMgr) undoMgr.checkpoint();
+      markDirty();
+    }
+    function onDragOver(e) { if (!dragFrom) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; } e.preventDefault(); const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop(); el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top'); }
+    function onDrop(e) { if (!dragFrom) { e.preventDefault(); return; } e.preventDefault(); const el = blockOf(e.target); if (el && el !== dragFrom) { const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING; if (before) el.after(dragFrom); else el.before(dragFrom); if (undoMgr) undoMgr.checkpoint(); markDirty(); } clearDrop(); dragFrom = null; }
 
     buildFmtbar();
     doc.addEventListener('mousedown', onMouseDown, true);
@@ -1153,6 +1177,7 @@
     doc.addEventListener('scroll', onScroll, true);
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
+    doc.addEventListener('paste', onPaste);
     doc.documentElement.addEventListener('mouseleave', onDocLeave);
 
     function detach() {
@@ -1168,6 +1193,7 @@
       doc.removeEventListener('scroll', onScroll, true);
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
+      doc.removeEventListener('paste', onPaste);
       exitEdit();
       [grip, fmtbar, blockMenu, slashMenu].forEach((n) => n.remove());
     }

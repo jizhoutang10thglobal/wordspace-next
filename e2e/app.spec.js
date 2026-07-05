@@ -62,6 +62,28 @@ test.afterEach(async ({}, testInfo) => {
   app = null; page = null; frame = null;
 });
 
+test('ED-A4：多行文本粘贴进标题 → 劈成兄弟块、不嵌套 <p>、文档仍合规', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#t').click(); // 进标题 h1 编辑
+  await setCaret('t', 2); // 光标放标题末（「标题」2 字）
+  // 模拟粘贴三行纯文本（构造 paste 事件 + DataTransfer）
+  await frame.locator('body').evaluate((body) => {
+    const el = document.getElementById('t');
+    el.focus();
+    const dt = new DataTransfer();
+    dt.setData('text/plain', '第一行\n第二行\n第三行');
+    el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
+  });
+  await page.waitForTimeout(200);
+  // 断言：没有任何标题里嵌 <p>（旧 bug 的表现），且整篇 reparse 后合规
+  const nestedP = await frame.locator('body').evaluate(() => document.querySelectorAll('h1 p, h2 p, h3 p, h4 p').length);
+  expect(nestedP).toBe(0);
+  const html = await serialize();
+  const conform = await page.evaluate((h) => WS2SchemaRegistry.classify(new DOMParser().parseFromString(h, 'text/html')).conform, html);
+  expect(conform).toBe(true);
+});
+
 test('单击即编辑 + 加粗 + 斜杠菜单 + Enter 新建 + Backspace 合并', async () => {
   await launch();
   await openDoc(SIMPLE);
