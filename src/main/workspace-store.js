@@ -3,6 +3,7 @@
 // 损坏/缺失返回 null/空（不抛）。标签按根存（tabsByRoot[root]={entries,activeRel}），换工作区各自保留。
 // 迁移：v0.4.0 的旧 pinsByRoot[root]=[rel] → 合成 {open:false,pinned:true} entries（一次性，读时转）。
 const fs = require('fs/promises');
+const fsSync = require('fs');
 const path = require('path');
 const { kindOf } = require('../lib/file-tree');
 
@@ -93,4 +94,25 @@ async function clear(storeFile) {
   await fs.rm(storeFile, { force: true }).catch(() => {});
 }
 
-module.exports = { load, save, clear, getTabs, setTabs };
+// before-quit 专用同步合并落盘（KD-11）：把主进程 web-tabs registry 的权威 url/title 合并进
+// tabsByRoot[root] 的 web 条目再写盘。⚠ 必须同步——异步写不保证进程退出前落地,复用 setTabs 会把
+// 「最后一写必丢」原样复刻。webSnapshot = { key: { url, title } }。缺 store/桶/root 时安静返回。
+function mergeTabsSync(storeFile, root, webSnapshot) {
+  let raw = {};
+  try { raw = JSON.parse(fsSync.readFileSync(storeFile, 'utf8')) || {}; } catch { raw = {}; }
+  if (!raw.tabsByRoot || typeof raw.tabsByRoot !== 'object') return;
+  const bucket = raw.tabsByRoot[root];
+  if (!bucket || !Array.isArray(bucket.entries)) return;
+  bucket.entries = bucket.entries.map((e) => {
+    const key = e.rel || e.abs;
+    const snap = webSnapshot && webSnapshot[key];
+    return snap ? { ...e, url: snap.url, title: snap.title != null ? snap.title : e.title } : e;
+  });
+  raw.tabsByRoot[root] = sanitize(bucket);
+  try {
+    fsSync.mkdirSync(path.dirname(storeFile), { recursive: true });
+    fsSync.writeFileSync(storeFile, JSON.stringify(raw, null, 2), 'utf8');
+  } catch { /* 退出路径尽力而为 */ }
+}
+
+module.exports = { load, save, clear, getTabs, setTabs, mergeTabsSync };

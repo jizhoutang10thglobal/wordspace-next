@@ -40,5 +40,24 @@ contextBridge.exposeInMainWorld('ws2', {
   wsGetTabs: () => ipcRenderer.invoke('ws-get-tabs'),
   wsSetTabs: (state, root) => ipcRenderer.invoke('ws-set-tabs', state, root),
   wsTemplates: () => ipcRenderer.invoke('ws-templates'),
-  aiGuide: () => ipcRenderer.invoke('ai-guide')
+  aiGuide: () => ipcRenderer.invoke('ai-guide'),
+
+  // 网页标签（浏览器）——view 活在主进程,renderer 只发指令 + 收状态镜像（U3）
+  webNavigate: (key, input) => ipcRenderer.invoke('web-navigate', key, input),
+  webLoad: (key, url) => ipcRenderer.invoke('web-load', key, url),
+  webPdf: (key) => ipcRenderer.invoke('web-pdf', key),
+  webShow: (key, bounds) => ipcRenderer.send('web-show', key, bounds),
+  webHide: (key) => ipcRenderer.send('web-hide', key),
+  webSetBounds: (key, bounds) => ipcRenderer.send('web-set-bounds', key, bounds),
+  webSetVisible: (key, visible) => ipcRenderer.send('web-set-visible', key, visible),
+  webClose: (key) => ipcRenderer.send('web-close', key),
+  webDestroyAll: () => ipcRenderer.send('web-destroy-all'),
+  webNav: (key, action) => ipcRenderer.send('web-nav', key, action),
+  webFind: (key, text, opts) => ipcRenderer.send('web-find', key, text, opts),
+  webStopFind: (key, action) => ipcRenderer.send('web-stop-find', key, action),
+  onWebTabUpdated: (cb) => ipcRenderer.on('web-tab-updated', (_e, s) => cb(s)),
+  onWebOpenRequest: (cb) => ipcRenderer.on('web-open-request', (_e, r) => cb(r)),
+  onWebFound: (cb) => ipcRenderer.on('web-found', (_e, r) => cb(r)),
+  onWebDownload: (cb) => ipcRenderer.on('web-download', (_e, r) => cb(r)),
+  onWebRebound: (cb) => ipcRenderer.on('web-rebound', () => cb()) // 唤回后主进程要 renderer 重发 view bounds
 });

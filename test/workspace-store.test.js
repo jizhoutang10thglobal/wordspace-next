@@ -172,3 +172,27 @@ test('web 与 doc 混合持久化互不干扰', async () => {
   assert.ok(got.entries.some((e) => e.rel === 'doc.html'));
   assert.ok(got.entries.some((e) => e.abs === 'web:1:x' && e.url === 'https://a.com'));
 });
+
+test('mergeTabsSync：registry 权威 url/title 合并进 web 条目（before-quit）', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-wstore-'));
+  const f = path.join(dir, 'workspace.json');
+  const root = '/Users/me/ws';
+  await store.setTabs(f, root, {
+    entries: [
+      { rel: 'doc.html', kind: 'html', title: 'doc', open: true, pinned: false },
+      { abs: 'web:1:x', kind: 'web', title: '旧标题', url: 'https://old.com', open: true, pinned: false },
+    ],
+    activeRel: 'web:1:x',
+  });
+  // 模拟 registry 里页面已导航到新 URL/标题
+  store.mergeTabsSync(f, root, { 'web:1:x': { url: 'https://new.com', title: '新标题' } });
+  const got = await store.getTabs(f, root);
+  const web = got.entries.find((e) => e.abs === 'web:1:x');
+  assert.equal(web.url, 'https://new.com');
+  assert.equal(web.title, '新标题');
+  assert.ok(got.entries.some((e) => e.rel === 'doc.html')); // doc 不受影响
+});
+
+test('mergeTabsSync：无桶/无 root 安静跳过不抛', () => {
+  assert.doesNotThrow(() => store.mergeTabsSync('/nonexistent/ws.json', '/r', { 'web:1:x': { url: 'x' } }));
+});

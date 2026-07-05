@@ -11,6 +11,7 @@ const workspace = require('./workspace');
 const workspaceStore = require('./workspace-store');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
 const mdAdapter = require('./md-adapter');
+const webTabs = require('./web-tabs');
 const { pathInfo } = require('../lib/path-url');
 const { assertInsideWorkspace, kindOf } = require('../lib/file-tree');
 const { TEMPLATES } = require('../lib/doc-templates');
@@ -275,8 +276,34 @@ function registerIpc() {
   ipcMain.handle('ws-set-tabs', (_e, state, root) => {
     const active = requireRoot();
     if (root && path.resolve(root) !== active) return null;
+    // web 条目：registry 无条件赢（KD-11）——封死「迟到的 renderer 镜像覆盖主进程权威 url/title」的窄竞态。
+    const snap = webTabs.snapshot();
+    if (state && Array.isArray(state.entries)) {
+      state = {
+        ...state,
+        entries: state.entries.map((e) => {
+          const key = e && (e.rel || e.abs);
+          return key && snap[key] ? { ...e, url: snap[key].url, title: snap[key].title != null ? snap[key].title : e.title } : e;
+        }),
+      };
+    }
     return workspaceStore.setTabs(workspaceFile(), active, state);
   });
+
+  // ---- 网页标签 view 管理（U3）。全部只接受主 frame（web view 的 webContents 零 IPC 暴露,KD-4）----
+  // renderer 的 activate 漏斗是唯一 attach 驱动:web-show 是唯一 attach 入口,主进程不自作主张 attach。
+  ipcMain.handle('web-navigate', (_e, key, input) => webTabs.navigate(key, input));
+  ipcMain.handle('web-load', (_e, key, url) => webTabs.loadUrlDirect(key, url)); // 书签/历史命中/恢复
+  ipcMain.handle('web-pdf', (_e, key) => webTabs.printToPdf(key));
+  ipcMain.on('web-show', (_e, key, bounds) => { webTabs.createView(key); webTabs.wireFoundInPage(key); webTabs.show(key, bounds); });
+  ipcMain.on('web-hide', (_e, key) => webTabs.hide(key));
+  ipcMain.on('web-set-bounds', (_e, key, bounds) => webTabs.setBounds(key, bounds));
+  ipcMain.on('web-set-visible', (_e, key, visible) => webTabs.setVisible(key, visible));
+  ipcMain.on('web-close', (_e, key) => webTabs.destroy(key));
+  ipcMain.on('web-destroy-all', () => webTabs.destroyAll());
+  ipcMain.on('web-nav', (_e, key, action) => webTabs.nav(key, action)); // back/forward/reload/stop
+  ipcMain.on('web-find', (_e, key, text, opts) => webTabs.find(key, text, opts));
+  ipcMain.on('web-stop-find', (_e, key, action) => webTabs.stopFind(key, action));
   // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
   ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
   // 新建文档模板（含空文档，第一项）。
@@ -300,4 +327,11 @@ function registerIpc() {
   workspace.sweepBackups(trashRoot()).catch(() => {});
 }
 
-module.exports = { registerIpc };
+// before-quit（KD-11）：把 web-tabs registry 的权威 url/title 同步合并进当前工作区桶落盘。
+// 放这里因为 activeRoot / workspaceFile 是 ipc 模块的私有真相。无工作区时安静跳过。
+function flushWebTabsSync() {
+  if (!activeRoot) return;
+  workspaceStore.mergeTabsSync(workspaceFile(), activeRoot, webTabs.snapshot());
+}
+
+module.exports = { registerIpc, flushWebTabsSync };

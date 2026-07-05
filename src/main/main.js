@@ -1,7 +1,8 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const path = require('path');
-const { registerIpc } = require('./ipc');
+const { registerIpc, flushWebTabsSync } = require('./ipc');
 const docWatcher = require('./doc-watcher');
+const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
 
 // e2e 测试用：隔离 userData，避免污染真实的最近文档与历史。
@@ -30,7 +31,10 @@ function createWindow() {
     }
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
-  win.on('closed', () => docWatcher.close()); // 关窗即停文件监听（防悬挂 watcher / 去抖定时器在窗口销毁后还触发）
+  // 网页标签 view 管理器：注入窗口 getter（view 挂在这个窗口上）。WS2_DL_DIR seam 供 e2e 落盘（!isPackaged）。
+  webTabs.init(() => win);
+  if (process.env.WS2_DL_DIR && !app.isPackaged) webTabs.setDownloadDir(process.env.WS2_DL_DIR);
+  win.on('closed', () => { docWatcher.close(); webTabs.destroyAll(); }); // 关窗即停监听 + 销毁全部 web view（webContents 不自动销毁,会泄漏）
   // 修 MP-5：did-finish-load（主框架加载完成）后置就绪并 flush 排队的 open-file。
   // ⚠ 不用 did-start-loading 重置——它对 iframe（文档 frame）导航也触发，会把每次开文档都误判成 renderer 未就绪、
   // 而 did-finish-load 只认主框架、不会再触发 → rendererReady 永久卡 false（residency 唤醒开文档就废）。
@@ -59,6 +63,7 @@ function createWindow() {
     // Windows/Linux 不驻留：按平台惯例关窗即退（走下面守卫 → window-all-closed → quit）。
     if (process.platform === 'darwin' && !quitting) {
       e.preventDefault();
+      webTabs.setAudioMutedAll(true); // KD-13:隐藏驻留时静音全部 web view,否则窗口藏起来还在播=幽灵声音
       win.hide();
       return;
     }
@@ -224,9 +229,11 @@ function openExternalPath(p) {
 // 隐藏驻留中（macOS 关窗后）被唤起也走这：先 show 再 focus——hidden 窗口只 focus 不会显形。
 function focusWindow() {
   if (!win || win.isDestroyed()) return;
-  if (!win.isVisible()) win.show();
+  const wasHidden = !win.isVisible();
+  if (wasHidden) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();
+  if (wasHidden) { webTabs.setAudioMutedAll(false); win.webContents.send('web-rebound'); } // KD-13:唤回时解除静音 + 让 renderer 重发 view bounds（隐藏期间显示器/缩放可能变了）
 }
 
 // macOS：Finder 双击 / 拖到 Dock（可能在 whenReady 之前触发，故走 pendingOpenPath 兜底）。
@@ -269,7 +276,18 @@ if (!app.requestSingleInstanceLock()) {
   });
   // 真退出的第一信号（Cmd+Q / autoUpdater.quitAndInstall 内部 quit 都会先发 before-quit）：
   // 打上标志，close 守卫据此放行销毁而不是隐藏。
-  app.on('before-quit', () => { quitting = true; });
+  app.on('before-quit', (e) => {
+    quitting = true;
+    // 下载守卫（KD-13/#17）：有在飞下载先问,取消则中止退出。seam 静默跳过（e2e）。
+    if (webTabs.hasActiveDownloads() && !(process.env.WS2_NO_CLOSE_DIALOG && !app.isPackaged)) {
+      const r = dialog.showMessageBoxSync({
+        type: 'warning', buttons: ['取消', '仍要退出'], defaultId: 0, cancelId: 0,
+        message: '下载未完成', detail: '仍在下载的文件会中断。',
+      });
+      if (r === 0) { e.preventDefault(); quitting = false; return; }
+    }
+    flushWebTabsSync(); // KD-11:同步合并 web 标签权威 url/title 落盘（异步写退不出前落不了盘）
+  });
   // macOS：隐藏驻留中点 Dock 图标 → 把窗口带回来（标准 mac 行为）。
   app.on('activate', () => focusWindow());
   app.on('window-all-closed', () => app.quit());
