@@ -175,6 +175,9 @@ async function deletePath(root, relPath, backupRoot, opts = {}) {
 // 撤销删除：从备份还原回原位（原位被占则去重），清掉该备份。
 async function undoDelete(root, token, backupRoot) {
   const r = path.resolve(root);
+  // 修 MP-16：token 直接进 path.join，畸形值（含 ../ 或分隔符）能把 backupDir 指出 backupRoot。加固：
+  // 只认 deletePath 生成的格式（del-<base36>-<hex>），不符即拒——正常 UI 流不可达，防御 renderer 被攻破。
+  if (!/^del-[0-9a-z]+-[0-9a-f]+$/.test(String(token || ''))) throw new Error('非法的撤销令牌');
   const backupDir = path.join(backupRoot, token);
   const manifest = JSON.parse(await fs.readFile(path.join(backupDir, 'manifest.json'), 'utf8'));
   const origAbs = assertInsideWorkspace(r, manifest.rel);

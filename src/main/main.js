@@ -4,11 +4,14 @@ const { registerIpc } = require('./ipc');
 const docWatcher = require('./doc-watcher');
 const { htmlPathFromArgv } = require('../lib/path-url');
 
-// e2e 测试用：隔离 userData，避免污染真实的最近文档与历史
-if (process.env.WS2_USERDATA) app.setPath('userData', process.env.WS2_USERDATA);
+// e2e 测试用：隔离 userData，避免污染真实的最近文档与历史。
+// 修 MP-8：加 !app.isPackaged 闸（对齐 WS2_PDF_OUT 等全部 seam 惯例，这条原来漏了）——
+// 生产包若继承到该环境变量会把 recents/history/workspace/标签全重定向，用户状态凭空消失。
+if (process.env.WS2_USERDATA && !app.isPackaged) app.setPath('userData', process.env.WS2_USERDATA);
 
 let win = null;
-let pendingOpenPath = null;
+let rendererReady = false; // 修 MP-5：renderer 脚本是否已就绪（did-finish-load）；未就绪时 open-file 必须排队，不能直接 send
+let pendingOpenPaths = []; // 修 MP-5：改成队列——mac 冷启动一次多选双击 N 个文件时单槽会只留最后一个
 let isDirty = false;
 let forceClose = false;
 let quitting = false; // 真退出（Cmd+Q / 自动更新重启）标志：区分「关窗=隐藏驻留」与「退出=真销毁」
@@ -28,11 +31,22 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
   win.on('closed', () => docWatcher.close()); // 关窗即停文件监听（防悬挂 watcher / 去抖定时器在窗口销毁后还触发）
+  // 修 MP-5：renderer 每次重载都先置未就绪；did-finish-load 后置就绪并 flush 排队的 open-file。
+  win.webContents.on('did-start-loading', () => { rendererReady = false; });
   win.webContents.on('did-finish-load', () => {
-    if (pendingOpenPath) {
-      win.webContents.send('open-file', pendingOpenPath);
-      pendingOpenPath = null;
-    }
+    rendererReady = true;
+    const q = pendingOpenPaths; pendingOpenPaths = [];
+    for (const p of q) win.webContents.send('open-file', p);
+  });
+  // 修 MP-15：renderer 崩溃（OOM/GPU 挂）原来无处理 = 白屏死窗，未保存临时文档（只活在 renderer 内存）全丢、
+  // 唯一出路强退。这里提示并重载，至少把窗口救回来（磁盘文件不受影响）。
+  win.webContents.on('render-process-gone', (_e, details) => {
+    if (details && details.reason === 'clean-exit') return;
+    if (!win || win.isDestroyed()) return;
+    dialog.showMessageBox(win, {
+      type: 'error', buttons: ['重新加载'], defaultId: 0,
+      message: '编辑器意外崩溃', detail: '未保存到磁盘的临时内容可能已丢失。已保存的文件不受影响。'
+    }).then(() => { if (win && !win.isDestroyed()) win.reload(); }).catch(() => {});
   });
   // 渲染层 beforeunload 在 Electron 里是静默拦截，提示必须由主进程弹
   win.on('close', (e) => {
@@ -71,7 +85,11 @@ function createWindow() {
 }
 
 function sendMenu(cmd) {
-  if (win) win.webContents.send('menu', cmd);
+  if (!win || win.isDestroyed()) return; // 修 MP-9：补 isDestroyed 守卫（退出竞态期点菜单会 throw）
+  // 修 MP-9：mac 隐藏驻留中菜单栏仍可点，但窗口 hidden → Cmd+O 选完文件在隐形窗口打开、Cmd+T 隐形建标签，
+  // 用户感知「没反应」。发命令前先把窗口带回前台（这些命令都作用于窗口，show 是正确的）。
+  focusWindow();
+  win.webContents.send('menu', cmd);
 }
 
 // Bug 报告表单（Notion 公开表单）。应用菜单「Wordspace Next → 报告问题 / 反馈…」点开，用系统浏览器打开。
@@ -120,6 +138,7 @@ function buildMenu() {
 // manualCheck 标志区分两条路的弹窗（手动才弹「已是最新 / 失败」，自动保持静默）。
 let autoUpdater = null;
 let manualCheck = false;
+let manualDownloading = false; // 修 MP-7：手动检查同意下载后，下载失败也要弹提示（不然用户以为在更新、永远等不到重启）
 
 function setupAutoUpdater() {
   if (!app.isPackaged) return;
@@ -131,7 +150,7 @@ function setupAutoUpdater() {
     if (manualCheck) {
       manualCheck = false;
       dialog.showMessageBox(up.buildAvailableDialogOptions(info && info.version)).then(({ response }) => {
-        if (up.shouldDownload(response)) autoUpdater.downloadUpdate().catch((e) => console.error('[updater] download error:', e && e.message));
+        if (up.shouldDownload(response)) { manualDownloading = true; autoUpdater.downloadUpdate().catch((e) => console.error('[updater] download error:', e && e.message)); }
       }).catch((e) => console.error('[updater] dialog error:', e && e.message));
     } else {
       // 启动自动更新：静默下载（保持原行为），下载完走下面 update-downloaded 的「立即重启」弹窗。
@@ -147,6 +166,7 @@ function setupAutoUpdater() {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    manualDownloading = false;
     dialog.showMessageBox(up.buildUpdateDialogOptions(info && info.version)).then(({ response }) => {
       if (up.shouldInstall(response)) autoUpdater.quitAndInstall();
     }).catch((err) => console.error('[updater] dialog/install error:', err && err.message));
@@ -154,8 +174,10 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (err) => {
     console.error('[updater] error:', err && err.message);
-    if (manualCheck) {
+    // 修 MP-7：手动检查（查阶段）或手动下载（下载阶段）失败都要给用户可见反馈，别静默。
+    if (manualCheck || manualDownloading) {
       manualCheck = false;
+      manualDownloading = false;
       dialog.showMessageBox(up.buildCheckErrorDialogOptions()).catch(() => {});
     }
   });
@@ -185,11 +207,14 @@ function manualCheckForUpdates() {
 // 把外部请求打开的文件路径送进窗口：已就绪则发并聚焦，未就绪则挂起等 did-finish-load。
 function openExternalPath(p) {
   if (!p) return;
-  if (win && !win.isDestroyed()) {
+  // 修 MP-5：只有窗口在且 renderer 已就绪才直接 send；否则排队等 did-finish-load（防冷启动慢时 send 给
+  // 还没跑 shell.js 的页面 → 消息无人接收静默丢、文件不打开）。
+  if (win && !win.isDestroyed() && rendererReady) {
     focusWindow();
     win.webContents.send('open-file', p);
   } else {
-    pendingOpenPath = p;
+    if (win && !win.isDestroyed()) focusWindow();
+    pendingOpenPaths.push(p);
   }
 }
 
@@ -234,11 +259,11 @@ if (!app.requestSingleInstanceLock()) {
     // 此时 renderer 尚未 ready，挂 pendingOpenPath 等 did-finish-load 发出。
     if (process.platform !== 'darwin') {
       const p = htmlPathFromArgv(process.argv);
-      if (p) pendingOpenPath = p;
+      if (p) pendingOpenPaths.push(p);
     }
-    // 测试 seam（仅非打包态，仿 WS2_FOLDER_IN）：挂 pendingOpenPath 忠实复现 macOS 冷启动
+    // 测试 seam（仅非打包态，仿 WS2_FOLDER_IN）：挂 pendingOpenPaths 忠实复现 macOS 冷启动
     // 「Finder 双击」那条路（open-file 在 ready 前到、等 did-finish-load 才发），e2e 点不了真 Finder。
-    if (!app.isPackaged && process.env.WS2_OPEN_FILE) pendingOpenPath = process.env.WS2_OPEN_FILE;
+    if (!app.isPackaged && process.env.WS2_OPEN_FILE) pendingOpenPaths.push(process.env.WS2_OPEN_FILE);
   });
   // 真退出的第一信号（Cmd+Q / autoUpdater.quitAndInstall 内部 quit 都会先发 before-quit）：
   // 打上标志，close 守卫据此放行销毁而不是隐藏。
