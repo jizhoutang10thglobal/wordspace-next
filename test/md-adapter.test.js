@@ -223,3 +223,61 @@ test('isMdPath：.md 大小写认、别的不认', () => {
   assert.equal(isMdPath('/a/b.markdown'), false); // MVP 只认 .md
   assert.equal(isMdPath(null), false);
 });
+
+// ── Sweep followup 2026-07-05：md 后端保真整改（MD-2/3/4/5）──
+const { splitFrontMatter } = require('../src/main/md-adapter.js');
+
+test('MD-2 frontmatter 字节保真往返（不再被当 hr+setext 毁掉）', async () => {
+  const md = '---\ntitle: 我的笔记\ntags: [a, b]\ndate: 2026-07-05\n---\n\n# 正文标题\n\n内容。\n';
+  const html = await mdToHtml(md, { title: 't' });
+  assert.equal(conformOf(html).conform, true, '带 frontmatter 的 md 仍合规');
+  assert.ok(!html.includes('<hr'), '首个 --- 不能变 hr');
+  assert.ok(html.includes('ws-frontmatter'), 'frontmatter 进 head meta');
+  const back = await htmlToMd(html);
+  assert.ok(back.startsWith('---\ntitle: 我的笔记\ntags: [a, b]\ndate: 2026-07-05\n---\n'), 'frontmatter 原样贴回：' + JSON.stringify(back.slice(0, 80)));
+});
+
+test('MD-2 边界：无闭合不剥 / 首行非 --- 不动 / 正文分隔线不误吞 / CRLF / ...', () => {
+  assert.equal(splitFrontMatter('---\nno close\n# body').frontMatter, null);
+  assert.equal(splitFrontMatter('# title\n---\n正文').frontMatter, null);
+  assert.ok(splitFrontMatter('---\r\ntitle: x\r\n---\r\nbody').frontMatter !== null, 'CRLF frontmatter 认得');
+  assert.ok(splitFrontMatter('---\ntitle: x\n...\nbody').frontMatter !== null, 'YAML ... 闭合也认');
+});
+
+test('MD-3 toggle(details) 里的 ws-todo 存一轮不丢、重开仍合规', async () => {
+  const html = '<!doctype html><html><head><meta charset="utf-8"></head><body>' +
+    '<details open><summary>任务</summary><ul class="ws-todo"><li data-checked="true">做完</li><li data-checked="false">没做</li></ul></details>' +
+    '</body></html>';
+  const md = await htmlToMd(html);
+  const back = await mdToHtml(md, { title: 't' });
+  assert.equal(conformOf(back).conform, true, '重读仍合规');
+  assert.ok(back.includes('ws-todo') && back.includes('data-checked'), 'canonical todo 原样保留');
+  // 反向：顶层 ws-todo 仍正常转 GFM
+  const top = await htmlToMd('<!doctype html><html><head></head><body><ul class="ws-todo"><li data-checked="true">A</li></ul></body></html>');
+  assert.ok(/- \[x\]/i.test(top), '顶层 todo 仍转 GFM task-list：' + JSON.stringify(top));
+});
+
+test('MD-4 md 无语法的有效 HTML 元素不再静默丢（dialog/template/dl/picture/ruby）', async () => {
+  const cases = [
+    ['dialog', '<dialog open><p>对话框内容</p></dialog>'],
+    ['template', '<template><p>模板内容</p></template>'],
+    ['dl', '<dl><dt>术语</dt><dd>定义内容</dd></dl>'],
+    ['webp', '<picture><source srcset="a.webp"><img src="a.png" alt="图"></picture>'],
+    ['<rt', '<ruby>漢<rt>kan</rt></ruby>'],
+  ];
+  for (const [needle, frag] of cases) {
+    const md = await htmlToMd('<!doctype html><html><head></head><body>' + frag + '</body></html>');
+    assert.ok(md.trim() !== '' && md.includes(needle), needle + ' 内容没蒸发：' + JSON.stringify(md));
+  }
+});
+
+test('MD-5 列表尾段（子列表后还有内容）跨保存不漂移', async () => {
+  let md = '- a\n  - b\n\n  尾段\n';
+  const snaps = [];
+  for (let i = 0; i < 3; i++) { md = await htmlToMd(await mdToHtml(md, { title: 't' })); snaps.push(md); }
+  assert.equal(snaps[0], snaps[1], '第1/2轮稳定');
+  assert.equal(snaps[1], snaps[2], '第2/3轮稳定');
+  // 正常嵌套列表（子列表在末尾）不被误岛化
+  const normal = await htmlToMd(await mdToHtml('- a\n  - b\n  - c\n- d\n', { title: 't' }));
+  assert.ok(!normal.includes('<ul'), '正常嵌套列表仍是干净 md 列表：' + JSON.stringify(normal));
+});
