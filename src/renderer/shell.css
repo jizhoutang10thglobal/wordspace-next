@@ -5,6 +5,9 @@
 
 /* ---------------------------------------------------------------- tokens */
 :root {
+  /* 修 VC-16（最低成本）：锁原生控件（confirm/alert、原生菜单、滚动条、文件框）为浅色，消除 mac 暗色模式下
+     浅色 UI + 深色系统框的混搭割裂。真正的暗色主题另议——这里只是不让系统把控件反色。 */
+  color-scheme: light;
   --c-bg: #ffffff;
   --c-bg-sunken: #f7f8fa;
   --c-bg-rail: #ececef;
@@ -99,7 +102,7 @@ input { font-family: inherit; font-size: inherit; color: inherit; }
 /* 修 VC-1：原来 input/button:focus 全局 outline:none 把键盘焦点环也杀了（鼠标点了不该有环，但键盘 Tab 必须有）。
    只对「非键盘聚焦」去环（:focus:not(:focus-visible)），键盘聚焦补一条 accent 焦点环——全仓原本 0 处 :focus-visible。 */
 input:focus:not(:focus-visible), button:focus:not(:focus-visible) { outline: none; }
-:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; border-radius: 3px; }
+:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
 /* opacity:0 的标签按钮（pin/×）键盘聚焦时要现形，否则焦点落在完全看不见的按钮上 */
 .sb-tab-pin:focus-visible, .sb-tab-close:focus-visible { opacity: 1; }
 ul { list-style: none; }

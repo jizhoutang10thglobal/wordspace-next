@@ -116,19 +116,26 @@ function loadEngine() {
     // class——它往返经 GFM contains-task-list 规范化重生，留着会触发下面的属性保真升级、把整个 todo 列表岛化。
     function rehypeFromWsTodo() {
       return (tree) => {
-        walk(tree, (node) => {
-          if (!isEl(node, 'ul') || !hasClass(node, 'ws-todo')) return;
-          delete node.properties.className;
-          for (const li of node.children) {
-            if (!isEl(li, 'li') || !li.properties || li.properties.dataChecked == null) continue;
-            const checked = String(li.properties.dataChecked) === 'true';
-            delete li.properties.dataChecked;
-            li.children.unshift(
-              { type: 'element', tagName: 'input', properties: { type: 'checkbox', checked }, children: [] },
-              { type: 'text', value: ' ' },
-            );
+        // 修 MD-3：跳过有「岛」祖先的 ws-todo。岛（details/div/section…）走 rawIsland=toHtml 原样穿透，
+        // 其内 canonical 的 ws-todo/data-checked 往返完美、重开仍 conform；若在这里被改造成 GFM <input>，
+        // toHtml 会把坏形态写进岛 → 重开 li-content:INPUT 非合规、todo 永久降级。只改「会真走 GFM 管道」的顶层 ws-todo。
+        function rec(node, inIsland) {
+          const island = inIsland || (isEl(node) && ISLAND_SET.has(node.tagName));
+          if (!island && isEl(node, 'ul') && hasClass(node, 'ws-todo')) {
+            delete node.properties.className;
+            for (const li of node.children) {
+              if (!isEl(li, 'li') || !li.properties || li.properties.dataChecked == null) continue;
+              const checked = String(li.properties.dataChecked) === 'true';
+              delete li.properties.dataChecked;
+              li.children.unshift(
+                { type: 'element', tagName: 'input', properties: { type: 'checkbox', checked }, children: [] },
+                { type: 'text', value: ' ' },
+              );
+            }
           }
-        });
+          if (node.children) for (const c of node.children) rec(c, island);
+        }
+        rec(tree, false);
       };
     }
     // HTML 岛序列化侧：md 没有语法的标签原样吐 outerHTML（to-mdast 默认会把认不得的标签拆壳丢标记）。
@@ -147,6 +154,12 @@ function loadEngine() {
       // 文档基础编辑保存时同样过这条链路，必须保真、不能静默丢）
       'div', 'details', 'figure', 'script', 'style', 'iframe', 'video', 'audio', 'canvas', 'svg', 'object', 'embed',
       'form', 'section', 'article', 'aside', 'nav', 'header', 'footer', 'main', 'button', 'select', 'textarea',
+      // 修 MD-4：md 无语法、且 hast-util-to-mdast 会「拆壳丢标签 / 整块丢弃」的其余有效 HTML 元素——
+      // 不 island 就静默丢内容（dialog/template 整块蒸发、dl 被改成 bullet 列表、picture 丢 source、ruby 注音混进正文）。
+      // unknownHandler 对这些不生效（实测），只有显式 handler→rawIsland 才保真。补齐已知会丢的一批。
+      'dialog', 'template', 'dl', 'dt', 'dd', 'center', 'ruby', 'rt', 'rp', 'rtc', 'bdi', 'bdo', 'wbr', 'data', 'dfn',
+      'picture', 'source', 'track', 'map', 'area', 'fieldset', 'legend', 'noscript', 'marquee', 'output', 'meter',
+      'progress', 'datalist', 'optgroup', 'option', 'menu', 'hgroup', 'search', 'slot', 'figcaption', 'summary',
     ];
     const ISLAND_SET = new Set(ISLAND_TAGS);
     const islandHandlers = {};
@@ -184,6 +197,28 @@ function loadEngine() {
       const dflt = defaultHandlers[t];
       if (!dflt) continue;
       islandHandlers[t] = (state, node) => (hasUnrepresentableAttrs(node, true) ? rawIsland(state, node) : dflt(state, node));
+    }
+    // 修 MD-5：li 内「子列表之后还有内容」（尾段被 unwrapLiParagraphs 拼成 <br>+文字）→ md 列表语法表达不了，
+    // 序列化会让 <br>/尾段每存一轮往子项缩进里漂一格（对抗审计实证 3 轮收敛到错误结构、内容从父项迁到子项）。
+    // 该结构整个列表升级 HTML 岛（raw 穿透、往返稳定），fail-closed 保内容不漂。
+    function liHasContentAfterSublist(li) {
+      let seenSublist = false;
+      for (const c of li.children || []) {
+        if (isEl(c, 'ul') || isEl(c, 'ol')) { seenSublist = true; continue; }
+        if (seenSublist) {
+          if (c.type === 'element') return true;
+          if (c.type === 'text' && c.value.trim()) return true;
+        }
+      }
+      return false;
+    }
+    for (const t of ['ul', 'ol']) {
+      const prev = islandHandlers[t];
+      islandHandlers[t] = (state, node) => {
+        let drift = false;
+        walk(node, (n) => { if (!drift && isEl(n, 'li') && liHasContentAfterSublist(n)) drift = true; });
+        return drift ? rawIsland(state, node) : prev(state, node);
+      };
     }
     // 表格升级 HTML 岛的三种情况（否则走 GFM 管道表）：①合并格（管道表表达不了）；②单元格含块级子元素
     // （ul/pre/div…——序列化出带真实换行的非法管道表，重开时整表碎裂，对抗审计实证）；③带不可表达属性。
@@ -223,22 +258,56 @@ function loadEngine() {
 
 const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// 修 MD-2（零依赖 frontmatter 保真）：野生 .md（Obsidian/Jekyll/Hugo）极常见首部 YAML frontmatter（--- 包起来）。
+// 不处理的话 md→html 会把首个 --- 当 hr、YAML 体+第二个 --- 当 setext h2 → 判 conform 进块编辑 → 存一次永久损坏。
+// 方案：读盘时把整段 frontmatter（含分隔线，字节原样）剥出来 base64 塞进 <head> 的 <meta name="ws-frontmatter">
+// （校验器 validateHead 放行 meta[name]，编辑器不碰 head、WS2Serialize/基础编辑序列化都保留 head）——它随文档穿行、
+// 不进 md 转换管道、不参与 schema 判定；存盘时从 content 里抠出来解码、原样贴回 md 首部。无外部状态、不受改名影响。
+function splitFrontMatter(md) {
+  const s = String(md == null ? '' : md);
+  const hasBom = s.charCodeAt(0) === 0xFEFF;
+  const t = hasBom ? s.slice(1) : s;
+  const lines = t.split('\n');
+  if (!/^---[ \t]*\r?$/.test(lines[0])) return { frontMatter: null, body: s }; // 首行不是 --- → 没有 frontmatter
+  let closeIdx = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (/^(---|\.\.\.)[ \t]*\r?$/.test(lines[i])) { closeIdx = i; break; } // YAML 闭合 --- 或 ...
+  }
+  if (closeIdx < 0) return { frontMatter: null, body: s }; // 没闭合 = 不是 frontmatter，绝不乱剥
+  const frontMatter = (hasBom ? '﻿' : '') + lines.slice(0, closeIdx + 1).join('\n') + '\n';
+  return { frontMatter, body: lines.slice(closeIdx + 1).join('\n') };
+}
+function encodeFm(fm) { return Buffer.from(fm, 'utf8').toString('base64'); }
+function extractFrontMatterMeta(html) {
+  const tag = /<meta\b[^>]*\bname=["']ws-frontmatter["'][^>]*>/i.exec(String(html || ''));
+  if (!tag) return null;
+  const c = /\bcontent=["']([^"']*)["']/i.exec(tag[0]);
+  if (!c) return null;
+  try { return Buffer.from(c[1], 'base64').toString('utf8'); } catch (e) { return null; }
+}
+
 // md 字符串 → 完整 HTML 文档字符串（校验器 validateHead / loadFromHtml 都吃完整文档）。
 // title = 文件名去扩展名（调用方传）；head 形态对齐 app 合规文档惯例（charset + schema meta + title）。
 async function mdToHtml(md, opts) {
   const { md2html } = await loadEngine();
-  const body = String(await md2html.process(String(md == null ? '' : md)));
+  const { frontMatter, body: mdBody } = splitFrontMatter(md); // 修 MD-2：先剥 frontmatter，别让 --- 进转换管道
+  const body = String(await md2html.process(String(mdBody == null ? '' : mdBody)));
   const title = escapeHtml((opts && opts.title) || '未命名');
-  return '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n<title>'
+  const fmMeta = frontMatter ? '<meta name="ws-frontmatter" content="' + encodeFm(frontMatter) + '">\n' : '';
+  return '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n' + fmMeta + '<title>'
     + title + '</title>\n</head>\n<body>\n' + body + '\n</body>\n</html>\n';
 }
 
 // 完整 HTML 文档字符串（编辑器序列化产物）→ md 字符串。只转 body；head 丢弃（载入时再生）。
+// 修 MD-2：先从 content 抠出 ws-frontmatter meta 解码，转换后原样贴回 md 首部（frontmatter 字节保真）。
 async function htmlToMd(html) {
   const { html2md } = await loadEngine();
-  return String(await html2md.process(String(html == null ? '' : html)));
+  const src = String(html == null ? '' : html);
+  const fm = extractFrontMatterMeta(src);
+  const body = String(await html2md.process(src));
+  return (fm || '') + body;
 }
 
 const isMdPath = (p) => typeof p === 'string' && /\.md$/i.test(p);
 
-module.exports = { mdToHtml, htmlToMd, isMdPath };
+module.exports = { mdToHtml, htmlToMd, isMdPath, splitFrontMatter, extractFrontMatterMeta };

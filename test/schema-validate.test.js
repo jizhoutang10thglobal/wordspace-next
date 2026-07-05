@@ -269,3 +269,11 @@ test('ED-A6 ul/ol 直接挂裸文本 → non-conform', () => {
   assert.ok(rules(r).includes('list-child'), rules(r).join(','));
   assert.equal(v('<ul><li>正常项</li></ul>').conform, true, '正常列表不误伤');
 });
+
+test('KV-7 span style position:absolute（配 display:block 变覆盖层）被拦', () => {
+  const r = v('<p><span style="display:block;position:absolute;width:100%;height:100%">x</span></p>');
+  assert.equal(r.conform, false);
+  assert.ok(rules(r).includes('style-value'), rules(r).join(','));
+  // 正常排版 style 不误伤
+  assert.equal(v('<p><span style="color:#c00;font-weight:bold">x</span></p>').conform, true);
+});
