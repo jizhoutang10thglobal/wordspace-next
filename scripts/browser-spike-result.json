@@ -1,0 +1,19 @@
+{
+  "ranAt": "2026-07-05-U1",
+  "findings": {
+    "focusOnNavigation_accepted": true,
+    "bounds_applies": true,
+    "bounds_follows_resize": true,
+    "dom_keeps_focus_after_load": true,
+    "focus_reclaimable": true,
+    "setVisible_toggles": true,
+    "removeChildView_detaches": true,
+    "removeChildView_ghost": "MANUAL: 目视确认 removeChildView 后 view 区域无残留像素（#44652，41-42 应已修）",
+    "dnd_ghost_over_view": "MANUAL: 拖标签行 ghost 是否浮在 view 之上（macOS NSDraggingSession，大概率是，spike 无法自动断言）",
+    "sidebar_dnd_leak": "MANUAL: 侧栏 dragstart 的相对路径是否能被 view 内页面 ondrop 读到（U3 实现前用注入页做一次真拖拽验证）"
+  },
+  "verdict": "GO（自动可测项全过；④⑤及残影目视另行确认）",
+  "notes": [
+    "loadURL 前 DOM activeElement=addr"
+  ]
+}
