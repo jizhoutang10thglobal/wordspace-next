@@ -24,6 +24,7 @@ origin: workflow define-schema-1 (25 agents · ground+spec+behaviors+verify+synt
 - **符合 Schema → 完整 schema 编辑；不符合 → 只给基础文字编辑（feature 3），不强行修成符合。**
 - ⛔ **删，不是修**：下文 §1 原则 6 / §7 C2 里"编辑器给裸文档套 Notion canvas 排版（`docHasAuthorStyles` / `data-ws2-canvas`）"那套**整体删除**——漂亮 = Template，不是编辑器硬套。删后 C2 自然消失。
 - ✅ **保留并升级为"Schema baseline"**：让块长对样子的**语义 CSS** 入盘（to-do 勾选框、callout 提示框、table 边框/对齐）+ 页边距/宽度底线，全部打 `data-ws-schema-css` 标记随文件走 = "Schema 自带的最小样式"。所以 §7 C1（callout 无入盘 CSS）的修法照做 = 把 callout 语义 CSS 纳入 Schema baseline。
+- 🔄 **baseline v2 演进（Colin 2026-07-05 拍）**：baseline 从「宽度+留白」升级为**完整排版底线**——字体栈/16px/1.75 行高/标题层级节奏（上重下轻）/段落列表引用表格代码分割线的间距与形状，色彩只用中性灰阶（正文墨色 #37352f + 边框灰），参考 Notion/Obsidian 的基础观感。仍然全部 `:where()` 零权重（作者样式永远优先，baseline 只是地板）、仍然 `data-ws-schema-css="baseline"` 入盘随文件走、app 外浏览器直开同样好看。**装饰性主题（配色/字体个性）仍归 Template**——baseline 是"好看的白纸"，不是主题。旧文件的 v1 baseline / v1 todo·callout CSS 在编辑器 attach 时静默升级；文档里存在语义块但缺入盘 CSS 的（md 转换产物 / 外部 AI 生成）attach 时补注。
 
 ### 六个决策（覆盖下文对应处）
 
