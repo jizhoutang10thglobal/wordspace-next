@@ -474,7 +474,9 @@
     // 非激活 temp 先切到前台（编辑器渲染它 + 设为激活），确认框的「保存并关闭」才作用在正确目标上。
     if (isTempEntry(entry) || dirtyActive) {
       if (isTempEntry(entry) && !wasActive) {
-        if (window.__shellReopenTemp) window.__shellReopenTemp(key);
+        // 修 SB-4 边角：切到该 temp；若切走守卫（活跃脏文档丢弃确认）被取消 → 整个关闭 abort，
+        // 别让 tabState 标它激活而编辑器还停在旧文档（状态错位、后续保存打错目标）。
+        if (!(window.__shellReopenTemp && window.__shellReopenTemp(key))) return;
         openTabEntry(entry);
       }
       openCloseConfirm(key, op, entry);
@@ -533,8 +535,11 @@
     const name = entry ? entry.title : '这个文件';
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay';
+    if (window.__shellPauseAutosave) window.__shellPauseAutosave(); // 修 SH-3：弹窗期间挂起自动保存
     const onKey = (e) => { if (e.key === 'Escape') close(); };
-    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    // close() 里恢复自动保存：scheduleAutoSave 的落地回调有 dirty&&docPath&&!tempDoc 守卫，
+    // 丢弃/保存并关闭随后关掉文档也不会误存（docPath 变 null）。
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); if (window.__shellResumeAutosave) window.__shellResumeAutosave(); }
     const modal = document.createElement('div');
     modal.className = 'sb-modal sb-modal-confirm';
     const body = document.createElement('div');
@@ -629,7 +634,8 @@
     browse.title = '用系统保存框选任意位置（可存到工作区外）';
     browse.onclick = async () => {
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取最新内容
-      if (!cur) { close(); return; }
+      // 修 SH-5：防御——活跃临时文档若已不是打开这个 SaveModal 时的那个（加速器穿透切走），别静默存错/存空
+      if (!cur || cur.id !== t.id) { close(); showToast('文档已切换，未保存'); return; }
       let r;
       try { r = await window.ws2.wsSaveDocAs(pickedName(), cur.html); }
       catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
@@ -643,7 +649,8 @@
     ok.onclick = async () => {
       close();
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取一次最新内容
-      if (cur) await doSaveTemp(cur.id, pickedName(), cur.html, selectedDir, closeAfter);
+      if (!cur || cur.id !== t.id) { showToast('文档已切换，未保存'); return; } // 修 SH-5：防御，同 browse
+      await doSaveTemp(cur.id, pickedName(), cur.html, selectedDir, closeAfter);
     };
     const onKey = (e) => {
       if (e.key === 'Escape') close();
@@ -1009,6 +1016,7 @@
   // opts.temp：从「标签页 +」/ Cmd+T 来 → 建临时文档（不落盘，手动保存才进文件夹）；
   // 否则（文件夹 hover-+ / 右键新建）落点 dirRel、直接落盘。
   async function openCreateModal(dirRel, opts) {
+    if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：已有弹层（如 SaveModal）时不叠——Cmd+T 加速器穿透会走到这
     const temp = !!(opts && opts.temp);
     let templates = [];
     try {
@@ -1073,6 +1081,7 @@
   function openFindPalette() {
     if (!current) return; // 没工作区没得搜
     if (document.getElementById('fp-overlay')) return; // 已开着，别叠一层
+    if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：SaveModal/关闭确认开着时 Cmd+P 加速器穿透不叠层
     const allFiles = [];
     (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(current.tree);
     let q = '', sel = 0, hits = [];

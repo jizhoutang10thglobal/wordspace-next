@@ -244,6 +244,39 @@ test('临时文档 Cmd+Z：打字 → 菜单 undo → 还原到模板基线（sr
   await expect(frame.locator('h1')).toHaveText('未命名');
 });
 
+test('SH-3：关闭确认弹窗期间自动保存被挂起（「不保存」前不偷偷落盘）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('AAA');
+  await frame.locator('h1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('_SH3_');       // 脏 + 排 1.2s 自动保存
+  // 立刻发 close-tab 菜单命令（synthetic Cmd+W 不触发原生菜单加速器，走 webContents.send 同真实菜单路径）
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'close-tab'));
+  await expect(page.locator('.sb-modal-confirm')).toBeVisible();
+  await page.waitForTimeout(1600);          // 盖过 1.2s debounce——挂起后不应落盘
+  expect((await fs.readFile(path.join(wsDir, 'a.html'), 'utf8')).includes('_SH3_'), '弹窗期间自动保存没被挂起').toBe(false);
+  await page.locator('.sb-modal-confirm .sb-btn-danger').click(); // 不保存直接关闭
+  await page.waitForTimeout(200);
+  expect((await fs.readFile(path.join(wsDir, 'a.html'), 'utf8')).includes('_SH3_'), '「不保存」后仍被落盘').toBe(false);
+});
+
+test('SH-5：SaveModal 开着时 Cmd+T / Cmd+P 加速器不叠第二层弹窗', async () => {
+  await openWorkspace();
+  await newTempDoc();
+  await page.click('#doc-menu-btn');
+  await page.click('#save-btn');            // 临时文档 → SaveModal
+  await expect(page.locator('.sb-modal-save')).toBeVisible();
+  // 加速器穿透：走菜单命令路径（synthetic 键不触发原生菜单加速器）
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'find-palette'));
+  await page.waitForTimeout(200);
+  expect(await page.locator('.sb-modal-overlay').count(), '弹层被叠了第二层').toBe(1);
+  await expect(page.locator('#fp-overlay')).toHaveCount(0);
+  await expect(page.locator('.sb-modal-save')).toBeVisible(); // 原 SaveModal 还在
+});
+
 test('自动保存：真文件打字后自动落盘（不按 Cmd+S）；临时文档不自动落盘', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');

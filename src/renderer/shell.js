@@ -70,7 +70,13 @@ let autoSaveTimer = null;
 // 用户确认「丢弃修改」/ 重载在飞时必须缴械 pending 自动保存：已到期的定时器会在随后的 await 让出期
 // 开火，把刚被丢弃（或将被磁盘版本替换）的编辑写回磁盘（对抗审计实证：外部版本被反杀/三态分叉）。
 function discardPendingAutoSave() { if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; } }
+// 修 SH-3：非阻塞 DOM 模态（侧栏关闭确认）打开期间必须挂起自动保存——否则弹窗背后 1.2s 定时器照常
+// 把编辑写盘，用户点「不保存直接关闭」时数据已落盘、弹窗文案成谎（且弹出条件就是 1.2s 内 dirty→几乎必现）。
+let autoSavePaused = false;
+function pauseAutoSave() { autoSavePaused = true; discardPendingAutoSave(); }
+function resumeAutoSave() { autoSavePaused = false; if (dirty && docPath && !tempDoc) scheduleAutoSave(); }
 function scheduleAutoSave() {
+  if (autoSavePaused) return; // 挂起期间不排新定时器
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
     autoSaveTimer = null;
@@ -508,9 +514,10 @@ function shellNewTemp(base, html) {
 }
 // 切回一个已存在的临时文档（点它的标签）。
 function shellReopenTemp(id) {
-  if (!tempStore.has(id)) return;
-  if (!canLeaveActive()) return;
+  if (!tempStore.has(id)) return false;
+  if (!canLeaveActive()) return false; // 切走守卫（活跃脏文档「丢弃?」）被用户取消 → 没切成
   renderTemp(id);
+  return true;
 }
 // 渲染某临时文档进编辑器（切走守卫由 canLeaveActive 处理过）。
 function renderTemp(id) {
@@ -655,6 +662,8 @@ window.__shellFinalizeTemp = shellFinalizeTemp;
 window.__shellDiscardTemp = shellDiscardTemp;
 window.__shellIsTemp = () => !!tempDoc; // 当前活跃的是不是临时文档
 window.__shellSaveActive = () => save(); // 「保存并关闭」里保存已落盘的脏文档用（返回 promise）
+window.__shellPauseAutosave = pauseAutoSave; // 修 SH-3：侧栏关闭确认弹窗开合时挂起/恢复自动保存
+window.__shellResumeAutosave = resumeAutoSave;
 // 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
@@ -903,7 +912,9 @@ function openAiAccessModal() {
 window.ws2.onMenu((cmd) => {
   if (cmd === 'ai-access') openAiAccessModal();
   if (cmd === 'open-folder' && window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder();
-  if (cmd === 'open') pickAndOpen();
+  // 修 SH-5：弹层（SaveModal/关闭确认/命令面板）开着时 Cmd+O 加速器穿透会把活跃文档从弹层底下换走
+  // （最坏：SaveModal 点「保存到这里」时 activeTemp 已 null → 静默什么都不存）。有弹层就忽略「打开」。
+  if (cmd === 'open' && !document.querySelector('.sb-modal-overlay') && !document.getElementById('fp-overlay')) pickAndOpen();
   if (cmd === 'save') save();
   if (cmd === 'export-pdf') exportPdf(pdfExportMode()); // 基础模式=raw 直印源文件；md 一律 wordspace（KD-5）
   if (cmd === 'undo') runUndoRedo(false); // 菜单加速器（真实用户 Cmd+Z 走这，不走 doc keydown）
