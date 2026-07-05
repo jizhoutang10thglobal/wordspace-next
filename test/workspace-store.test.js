@@ -106,3 +106,69 @@ test('clear removes the store', async () => {
   await store.clear(f);
   assert.equal(await store.load(f), null);
 });
+
+// ============ web 标签持久化（KD-3）============
+test('web 条目 round-trips（url 保留）', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-wstore-'));
+  const f = path.join(dir, 'workspace.json');
+  const root = '/Users/me/ws';
+  await store.setTabs(f, root, {
+    entries: [{ abs: 'web:1:x', kind: 'web', title: 'A', url: 'https://a.com', open: true, pinned: false }],
+    activeRel: 'web:1:x',
+  });
+  const got = await store.getTabs(f, root);
+  assert.equal(got.entries.length, 1);
+  assert.equal(got.entries[0].url, 'https://a.com');
+  assert.equal(got.activeRel, 'web:1:x');
+});
+
+test('web 条目 url 坏数据（数字/缺失）→ 丢该条', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-wstore-'));
+  const f = path.join(dir, 'workspace.json');
+  const root = '/Users/me/ws';
+  await store.setTabs(f, root, {
+    entries: [
+      { abs: 'web:1:x', kind: 'web', title: 'bad', url: 123, open: true, pinned: false }, // url 非法
+      { abs: 'web:2:y', kind: 'web', title: 'nourl', open: true, pinned: false }, // url 缺失
+      { abs: 'web:3:z', kind: 'web', title: 'ok', url: 'https://ok.com', open: true, pinned: false },
+    ],
+    activeRel: 'web:3:z',
+  });
+  const got = await store.getTabs(f, root);
+  assert.equal(got.entries.length, 1);
+  assert.equal(got.entries[0].abs, 'web:3:z');
+});
+
+test('空白新标签页（url=null 未置顶）非激活的落盘被过滤,激活的保留', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-wstore-'));
+  const f = path.join(dir, 'workspace.json');
+  const root = '/Users/me/ws';
+  await store.setTabs(f, root, {
+    entries: [
+      { abs: 'web:1:x', kind: 'web', title: '新标签页', url: null, open: true, pinned: false }, // 非激活空白→丢
+      { abs: 'web:2:y', kind: 'web', title: '新标签页', url: null, open: true, pinned: false }, // 激活空白→留
+      { abs: 'web:3:z', kind: 'web', title: '钉住的新标签', url: null, open: false, pinned: true }, // 置顶空白→留
+    ],
+    activeRel: 'web:2:y',
+  });
+  const got = await store.getTabs(f, root);
+  const keys = got.entries.map((e) => e.abs).sort();
+  assert.deepEqual(keys, ['web:2:y', 'web:3:z']);
+});
+
+test('web 与 doc 混合持久化互不干扰', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-wstore-'));
+  const f = path.join(dir, 'workspace.json');
+  const root = '/Users/me/ws';
+  await store.setTabs(f, root, {
+    entries: [
+      { rel: 'doc.html', kind: 'html', title: 'doc', open: true, pinned: false },
+      { abs: 'web:1:x', kind: 'web', title: 'A', url: 'https://a.com', open: true, pinned: false },
+    ],
+    activeRel: 'doc.html',
+  });
+  const got = await store.getTabs(f, root);
+  assert.equal(got.entries.length, 2);
+  assert.ok(got.entries.some((e) => e.rel === 'doc.html'));
+  assert.ok(got.entries.some((e) => e.abs === 'web:1:x' && e.url === 'https://a.com'));
+});

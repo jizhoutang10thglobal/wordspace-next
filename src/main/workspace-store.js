@@ -25,12 +25,27 @@ async function writeRaw(storeFile, raw) {
 
 // 一条 entry 合法 = 有字符串 rel（工作区内）或字符串 abs（工作区外文件）且 open||pinned（丢幽灵/坏数据）。
 // 放行无 rel 的外部标签——否则它每次 setTabs 都被静默扔掉、重启恢复落空。
+// web 条目（abs 以 'web:' 开头）额外要求 url 是 string 或 null——缺失/数字等坏数据 → 丢该条,
+// 避免恢复出无 URL 的死标签（KD-3）。
+const WEB_PREFIX = 'web:';
+function isWebAbs(e) {
+  return typeof e.abs === 'string' && e.abs.indexOf(WEB_PREFIX) === 0;
+}
 function validEntry(e) {
-  return e && (typeof e.rel === 'string' || typeof e.abs === 'string') && (e.open === true || e.pinned === true);
+  if (!e || (typeof e.rel !== 'string' && typeof e.abs !== 'string')) return false;
+  if (!(e.open === true || e.pinned === true)) return false;
+  if (isWebAbs(e) && !(typeof e.url === 'string' || e.url === null)) return false;
+  return true;
 }
 function sanitize(state) {
-  const entries = Array.isArray(state && state.entries) ? state.entries.filter(validEntry) : [];
+  let entries = Array.isArray(state && state.entries) ? state.entries.filter(validEntry) : [];
   const activeRel = state && typeof state.activeRel === 'string' ? state.activeRel : null;
+  // 空白新标签页（web 且 url===null 且未置顶）只保留激活中那一条——否则每次 Cmd+T 后改点别的都留一条,
+  // 重启不消、机械累积侵蚀侧栏 Arc 观感（KD-3）。激活中的空白新标签页要留（恢复出「新标签页」态）。
+  entries = entries.filter((e) => {
+    const blankNewtab = isWebAbs(e) && e.url === null && !e.pinned;
+    return !blankNewtab || (e.rel || e.abs) === activeRel;
+  });
   return { entries, activeRel };
 }
 

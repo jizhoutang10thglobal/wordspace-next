@@ -16,6 +16,20 @@
   function keyOf(e) {
     return e.rel || e.abs;
   }
+  // 第三身份类：网页标签。身份键塞进 abs（照抄 temp: 先例），前缀 'web:'。URL 是 entry 上的可变状态,
+  // 导航不改身份。⚠ id 必须带时间戳（见 mkWebId）——web 条目要跨重启持久化,裸递增 seq 每次从 1 重数
+  // 会与恢复条目撞键、openEntry 撞键即把两个逻辑标签合并成一个。
+  var WEB_PREFIX = 'web:';
+  function isWebKey(key) {
+    return typeof key === 'string' && key.indexOf(WEB_PREFIX) === 0;
+  }
+  function isWebEntry(e) {
+    return !!e && isWebKey(keyOf(e));
+  }
+  // 纯函数生成 web 身份键：'web:' + seq + ':' + base36(nowMs)。seq 保证同会话内唯一,时间戳保证跨重启唯一。
+  function mkWebId(seq, nowMs) {
+    return WEB_PREFIX + seq + ':' + Number(nowMs).toString(36);
+  }
   function pinnedEntries(entries) {
     return entries.filter((e) => e.pinned);
   }
@@ -34,14 +48,19 @@
     return open.length ? keyOf(open[open.length - 1]) : null;
   }
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-  const mkEntry = ({ rel, abs, kind, title }, open, pinned) => ({
-    rel,
-    abs,
-    kind: kind || 'other',
-    title: title != null ? title : rel || abs,
-    open,
-    pinned,
-  });
+  const mkEntry = ({ rel, abs, kind, title, url }, open, pinned) => {
+    const e = {
+      rel,
+      abs,
+      kind: kind || 'other',
+      title: title != null ? title : rel || abs,
+      open,
+      pinned,
+    };
+    // web 条目携带当前 URL（null = 新标签页,尚未导航）；doc 条目无此字段,不污染。
+    if (url !== undefined) e.url = url;
+    return e;
+  };
 
   // 打开文件：已跟踪 → open=true（钉的状态保持）+ 激活；未跟踪 → 新建 {open:true,pinned:false} 追加 + 激活。
   function openEntry(state, file) {
@@ -135,6 +154,18 @@
     return { entries, activeRel };
   }
 
+  // 更新被跟踪 entry 的字段（web 导航后主进程推来 url/title 刷新用）。只 patch 命中的项,
+  // 不动 open/pinned/激活态；未命中原样返回。
+  function updateEntry(state, key, patch) {
+    let hit = false;
+    const entries = state.entries.map((e) => {
+      if (keyOf(e) !== key) return e;
+      hit = true;
+      return { ...e, ...patch };
+    });
+    return hit ? { entries, activeRel: state.activeRel } : state;
+  }
+
   // 销毁一条 entry（按身份键 keyOf）+ 激活项则回落。按 key 删：内部传 rel、外部传 abs 都能删
   // （置顶区的 × 直接关闭就靠它）。工作区内文件删除/移动仍传 rel，外部 entry 的 key=abs≠rel、不会被误删。
   function removeEntry(state, key) {
@@ -159,6 +190,9 @@
 
   const API = {
     keyOf,
+    isWebKey,
+    isWebEntry,
+    mkWebId,
     reconcileTree,
     openEntry,
     setActive,
@@ -167,6 +201,7 @@
     unpinEntry,
     dropEntry,
     retargetEntry,
+    updateEntry,
     removeEntry,
     pinnedEntries,
     tabEntries,
