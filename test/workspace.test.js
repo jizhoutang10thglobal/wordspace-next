@@ -172,3 +172,17 @@ test('MP-16 undoDelete：畸形 token（含 ../）被拒，不越出 backupRoot'
   await assert.rejects(() => ws.undoDelete(root, 'del-x/../../y', backup), /非法的撤销令牌/);
   await assert.rejects(() => ws.undoDelete(root, '', backup), /非法的撤销令牌/);
 });
+
+test('隐藏/临时文件不进树：dotfile + .ws2tmp（新旧命名）都被过滤', async () => {
+  const { root } = await seed();
+  await fs.writeFile(path.join(root, '.DS_Store'), 'x');           // dotfile
+  await fs.writeFile(path.join(root, '.hidden.md'), 'x');           // 点开头的隐藏 md
+  await fs.mkdir(path.join(root, '.obsidian'), { recursive: true }); // 隐藏目录
+  await fs.writeFile(path.join(root, 'a.html.ws2tmp-999-0'), 'x');  // 新命名原子写 tmp（MP-2 后）
+  await fs.writeFile(path.join(root, 'old.html.ws2tmp'), 'x');      // 旧命名
+  const names = [];
+  (function w(nodes) { for (const n of nodes) { names.push(n.name); if (n.children) w(n.children); } })((await ws.readTree(root)).tree);
+  assert.ok(!names.some((n) => n.startsWith('.')), '不该出现 dotfile：' + names.join(','));
+  assert.ok(!names.some((n) => n.includes('.ws2tmp')), '不该出现原子写临时文件：' + names.join(','));
+  assert.deepEqual(names.sort(), ['a.html', 'b.html', 'c.png', '数据'].sort()); // 只剩正常文件
+});
