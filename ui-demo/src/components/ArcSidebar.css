@@ -29,9 +29,11 @@
 .arc-top-nav { display: flex; align-items: center; gap: 1px; margin-left: auto; }
 .arc-ico {
   display: flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--c-text-2);
+  width: 28px; height: 28px; border-radius: var(--r-pill); color: var(--c-text-2);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
-.arc-ico:hover { background: rgba(0, 0, 0, 0.06); color: var(--c-text); }
+.arc-ico:hover { background-size: 100% 100%; color: var(--c-text); }
 .arc-ico-sm { width: 24px; height: 24px; }
 
 /* omnibox */
@@ -42,13 +44,25 @@
   align-items: center;
   gap: 8px;
   padding: 0 11px;
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
+  background-color: var(--c-bg-rail);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  border: none;
   border-radius: var(--r-md);
+  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04);
   color: var(--c-text-2);
   flex: none;
+  transition: background-color var(--dur-fast) var(--ease),
+    background-size var(--dur-slow) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease);
 }
-.arc-omni:hover { border-color: var(--c-border-strong); }
+.arc-omni:focus-within {
+  background-color: var(--c-surface);
+  background-size: 100% 2px;
+  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04), var(--shadow-xs);
+}
 .arc-omni-url { font-size: var(--fs-sm); color: var(--c-text); flex: 1; min-width: 0; }
 .arc-omni-tag {
   font-size: var(--fs-xs); font-weight: var(--fw-medium);
@@ -139,7 +153,7 @@
 }
 .arc-tab:hover .arc-tab-dot { display: none; }
 .arc-tab-act {
-  width: 18px; height: 18px; border-radius: var(--r-xs);
+  width: 18px; height: 18px; border-radius: var(--r-pill);
   display: flex; align-items: center; justify-content: center;
   color: var(--c-text-3); flex: none; opacity: 0;
 }
@@ -147,7 +161,7 @@
 .arc-tab-act:hover { background: var(--c-active); color: var(--c-text); }
 
 /* library */
-.arc-lib { animation: arc-space-in 240ms var(--ease); }
+.arc-lib { animation: arc-space-in var(--dur) var(--ease-enter); }
 @keyframes arc-space-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
 .arc-lib-root {
   display: flex; align-items: center; gap: 6px;
@@ -165,7 +179,7 @@
 .arc-folder-head:hover { background: var(--c-hover); color: var(--c-text); }
 .arc-caret {
   flex: none; color: var(--c-text-3);
-  transition: transform 140ms var(--ease);
+  transition: transform var(--dur-fast) var(--ease);
 }
 .arc-caret.is-open { transform: rotate(90deg); }
 .arc-doc, .arc-file {
@@ -187,10 +201,12 @@
 .arc-util { display: flex; align-items: center; gap: 2px; padding: 0 2px; }
 .arc-util-btn {
   display: flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: var(--r-sm); color: var(--c-text-2);
+  width: 30px; height: 30px; border-radius: var(--r-pill); color: var(--c-text-2);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
-.arc-util-btn:hover { background: var(--c-hover); color: var(--c-text); }
-.arc-util-btn.is-active { background: var(--c-accent-tint); color: var(--c-accent); }
+.arc-util-btn:hover { background-size: 100% 100%; color: var(--c-text); }
+.arc-util-btn.is-active { background-color: var(--c-accent-tint); color: var(--c-accent); }
 .arc-util-spacer { flex: 1; }
 .arc-util-me {
   display: flex; align-items: center; justify-content: center;
@@ -214,7 +230,7 @@
   flex: 1; min-width: 0; text-align: left;
   font-size: var(--fs-sm); font-weight: var(--fw-semibold);
 }
-.arc-space-chev { flex: none; color: var(--c-text-3); transition: transform 140ms var(--ease); }
+.arc-space-chev { flex: none; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
 .arc-space-chev.is-open { transform: rotate(180deg); }
 
 .arc-space-menu {
@@ -222,8 +238,8 @@
   min-width: 248px; max-width: 280px; z-index: 20;
   max-height: 320px; overflow-y: auto;
   background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: var(--r-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--c-border); border-radius: 8px;
+  box-shadow: var(--stack-float);
   padding: 5px; display: flex; flex-direction: column; gap: 1px;
 }
 .arc-space-item {
@@ -231,9 +247,11 @@
   display: flex; align-items: center; gap: 10px;
   padding: 7px 9px; border-radius: var(--r-sm); text-align: left;
   color: var(--c-text);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
 }
-.arc-space-item:hover { background: var(--c-hover); }
-.arc-space-item.is-active { background: var(--c-selected); }
+.arc-space-item:hover { background-size: 100% 100%; }
+.arc-space-item.is-active { background-color: var(--c-selected); }
 
 /* colored identity square — the space initial on its accent color */
 .arc-space-ic {
@@ -307,7 +325,7 @@
   font-size: 11px; font-weight: var(--fw-regular);
   color: var(--c-text-3);
 }
-.arc-root-head.is-drop { background: var(--c-accent-tint-2, #e8f0fe); border-color: var(--c-accent); }
+.arc-root-head.is-drop { background: var(--c-accent-tint-2); border-color: var(--c-accent); }
 /* 根重排：拖另一个根经过时的上/下沿插入线 */
 .arc-root-head.is-insert-before { box-shadow: 0 -2px 0 0 var(--c-accent); }
 .arc-root-head.is-insert-after { box-shadow: 0 2px 0 0 var(--c-accent); }
@@ -327,10 +345,12 @@
 }
 .arc-ws-hint .ws-truncate { flex: 1; min-width: 0; }
 .arc-ws-save {
-  flex: none; border: none; background: none; cursor: pointer;
-  font-size: 11.5px; color: var(--c-accent); padding: 2px 5px; border-radius: 4px;
+  flex: none; border: none; cursor: pointer;
+  font-size: 11.5px; color: var(--c-accent); padding: 2px 5px; border-radius: var(--r-pill);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
 }
-.arc-ws-save:hover { background: var(--c-hover); }
+.arc-ws-save:hover { background-size: 100% 100%; }
 /* 「添加文件夹…」行 */
 .arc-add-root {
   display: flex; align-items: center; gap: 6px;
@@ -344,7 +364,7 @@
 /* 空间切换器里的「工作区」徽标 */
 .arc-space-ws-badge {
   display: inline-block; margin-left: 6px; padding: 0 5px;
-  border: 1px solid var(--c-border); border-radius: 99px;
+  border: 1px solid var(--c-border); border-radius: var(--r-pill);
   font-size: 10px; line-height: 15px; color: var(--c-text-3); vertical-align: 1px;
 }
 
@@ -366,8 +386,10 @@
   padding: 7px 8px; margin-top: 3px;
   border-top: 1px solid var(--c-border);
   color: var(--c-text-3); font-size: var(--fs-sm);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
-.arc-space-new:hover { background: var(--c-hover); color: var(--c-text); }
+.arc-space-new:hover { background-size: 100% 100%; color: var(--c-text); }
 
 /* Finder-style right-click menu for file-tree rows */
 .arc-ctx {
@@ -377,8 +399,8 @@
   padding: 4px;
   background: var(--c-surface);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  box-shadow: var(--stack-float);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -390,10 +412,12 @@
   border-radius: var(--r-sm);
   font-size: var(--fs-sm);
   color: var(--c-text);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
 }
-.arc-ctx-item:hover { background: var(--c-hover); }
-.arc-ctx-item.is-danger { color: #d3353c; }
-.arc-ctx-item.is-danger:hover { background: rgba(211, 53, 60, 0.1); }
+.arc-ctx-item:hover { background-size: 100% 100%; }
+.arc-ctx-item.is-danger { color: var(--c-danger); }
+.arc-ctx-item.is-danger:hover { background-color: var(--c-danger-tint); }
 
 /* inline rename input in the file tree */
 .arc-file-rename {
@@ -416,12 +440,24 @@
   margin: 0 8px 4px;
   padding: 0 8px;
   height: 28px;
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
+  background-color: var(--c-bg-rail);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  border: none;
+  border-radius: var(--r-md);
+  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04);
   color: var(--c-text-3);
+  transition: background-color var(--dur-fast) var(--ease),
+    background-size var(--dur-slow) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease);
 }
-.arc-filter:focus-within { border-color: var(--c-border-strong); }
+.arc-filter:focus-within {
+  background-color: var(--c-surface);
+  background-size: 100% 2px;
+  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04), var(--shadow-xs);
+}
 .arc-filter-ico { flex: none; }
 .arc-filter-input {
   flex: 1;
@@ -440,7 +476,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-pill);
   color: var(--c-text-3);
 }
 .arc-filter-clear:hover { background: var(--c-active); color: var(--c-text); }
@@ -466,7 +502,7 @@
 .arc-folder-add {
   width: 18px;
   height: 18px;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-pill);
   display: flex;
   align-items: center;
   justify-content: center;

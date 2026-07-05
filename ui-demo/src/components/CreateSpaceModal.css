@@ -17,19 +17,11 @@
   color: var(--c-text-2);
 }
 
+/* 输入框走共享 .ws-input(凹纸+焦点墨线),这里只补块级拉伸(flex:none 中和 .ws-input 的 flex:1,column 容器里会抢 height) */
 .csm-input {
+  flex: none;
   width: 100%;
-  padding: 9px 11px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-md);
-  color: var(--c-text);
-  background: var(--c-surface);
-}
-.csm-input:focus {
-  outline: none;
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
+  box-sizing: border-box;
 }
 
 .csm-options {
@@ -47,7 +39,7 @@
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   background: var(--c-surface);
-  transition: border-color 120ms var(--ease), background 120ms var(--ease);
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 .csm-option:hover {
   background: var(--c-hover);
@@ -94,8 +86,8 @@
 .csm-tag {
   font-size: 10px;
   font-weight: var(--fw-medium);
-  color: #1a73e8;
-  background: rgba(26, 115, 232, 0.12);
+  color: var(--c-accent);
+  background: var(--c-accent-tint);
   padding: 1px 6px;
   border-radius: var(--r-pill);
 }
@@ -134,15 +126,26 @@
   width: 100%;
   padding: 10px 12px;
   border: 1px dashed var(--c-border-strong);
-  border-radius: var(--r-md);
+  border-radius: var(--r-pill);
   background: var(--c-bg-sunken);
   color: var(--c-text-2);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
+  box-shadow: 0 2px 0 var(--c-border-strong);
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 .csm-pickbtn:hover {
-  border-color: var(--c-accent);
-  color: var(--c-accent);
+  background: var(--c-surface);
+  color: var(--c-text);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 0 var(--c-border-strong);
+}
+.csm-pickbtn:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 var(--c-border-strong);
 }
 .csm-picked {
   display: flex;
@@ -170,9 +173,4 @@
 }
 .csm-repick:hover {
   text-decoration: underline;
-}
-
-.ws-btn-primary:disabled {
-  opacity: 0.5;
-  pointer-events: none;
 }

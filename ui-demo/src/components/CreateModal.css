@@ -44,9 +44,10 @@
   text-align: left;
   border: 1px solid transparent;
   border-radius: var(--r-md);
-  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), opacity var(--dur-fast) var(--ease);
 }
-.cm-para:hover { background: var(--c-hover); }
+.cm-para:hover { background-size: 100% 100%; }
 .cm-para.is-active {
   background: var(--c-surface);
   border-color: var(--c-border);
@@ -78,7 +79,7 @@
 .cm-para-tag {
   flex: none;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   font-size: 10px;
   font-weight: var(--fw-semibold);
   background: var(--c-accent-tint);
@@ -213,9 +214,12 @@
   align-items: center;
   gap: 4px;
   padding: 2px 7px;
+  border: 1px solid var(--c-border-strong);
+  border-bottom-width: 2px;
   border-radius: var(--r-sm);
   background: var(--c-bg-sunken);
   color: var(--c-text-3);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   white-space: nowrap;
 }

@@ -11,33 +11,45 @@
 .top-share {
   display: flex; align-items: center; gap: 6px;
   height: 30px; padding: 0 14px;
-  background: var(--c-accent); color: #fff;
+  background: var(--c-ink); color: var(--c-text-invert);
   font-size: var(--fs-base); font-weight: var(--fw-medium);
-  border-radius: var(--r-sm);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--r-pill);
+  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
 }
-.top-share:hover { background: var(--c-accent-hover); }
-.top-share:active { background: var(--c-accent-press); }
+.top-share:hover { background: var(--c-ink-hover); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
+.top-share:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
 
 .top-save {
   display: flex; align-items: center; gap: 6px;
   height: 30px; padding: 0 14px;
-  background: var(--c-accent); color: #fff;
+  background: var(--c-ink); color: var(--c-text-invert);
   font-size: var(--fs-base); font-weight: var(--fw-medium);
-  border-radius: var(--r-sm);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--r-pill);
+  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
 }
-.top-save:hover { background: var(--c-accent-hover); }
-.top-save:active { background: var(--c-accent-press); }
+.top-save:hover { background: var(--c-ink-hover); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
+.top-save:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
 
 /* Markdown 源码开关：次要按钮（描边），开着时高亮。 */
 .top-mdsrc {
   display: flex; align-items: center; gap: 6px;
   height: 30px; padding: 0 12px;
   background: var(--c-surface); color: var(--c-text-2);
-  border: 1px solid var(--c-border);
+  border: 1px solid var(--c-border-strong);
   font-size: var(--fs-base); font-weight: var(--fw-medium);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
+  box-shadow: 0 2px 0 var(--c-border-strong);
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
-.top-mdsrc:hover { background: var(--c-hover); color: var(--c-text); }
-.top-mdsrc.is-on { background: var(--c-accent-tint); border-color: var(--c-accent); color: var(--c-accent); }
+.top-mdsrc:hover { background: var(--c-bg-chrome); color: var(--c-text); transform: translateY(-1px); box-shadow: 0 3px 0 var(--c-border-strong); }
+.top-mdsrc:active { transform: translateY(1px); box-shadow: 0 0 0 var(--c-border-strong); }
+.top-mdsrc.is-on { background: var(--c-accent-tint); border-color: var(--c-accent); color: var(--c-accent); box-shadow: 0 2px 0 var(--c-accent-tint-2); }

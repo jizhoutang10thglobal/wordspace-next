@@ -13,7 +13,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  animation: ws-modal-pop var(--dur) var(--ease);
+  animation: ws-modal-pop var(--dur) var(--ease-enter);
 }
 
 .fp-bar {
@@ -49,9 +49,12 @@
   align-items: center;
   gap: 4px;
   padding: 2px 7px;
+  border: 1px solid var(--c-border-strong);
+  border-bottom-width: 2px;
   border-radius: var(--r-sm);
   background: var(--c-bg-sunken);
   color: var(--c-text-3);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   white-space: nowrap;
 }
@@ -69,6 +72,11 @@
   padding: 8px 10px;
   border-radius: var(--r-sm);
   text-align: left;
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
+}
+.fp-row:hover {
+  background-size: 100% 100%;
 }
 .fp-row.is-sel {
   background: var(--c-accent-tint);

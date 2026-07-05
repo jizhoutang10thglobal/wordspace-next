@@ -10,29 +10,51 @@
   z-index: 1000;
   pointer-events: none;
 }
+/* 书签纸条:纸底墨字 + 左侧 4px 语义色条 + 叠纸边(docs/style.md §5) */
 .ws-toast {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 8px;
-  background: #23262b;
-  color: #fff;
+  background: var(--c-surface);
+  color: var(--c-text);
   font-size: var(--fs-md);
   padding: 9px 15px;
   border-radius: var(--r-md);
-  box-shadow: var(--shadow-modal);
-  animation: ws-pop-in var(--dur) var(--ease);
+  box-shadow: var(--stack);
+  animation: ws-pop-in var(--dur) var(--ease-enter);
+  transition: transform var(--dur) var(--ease-spring),
+    box-shadow var(--dur) var(--ease-spring);
 }
-.ws-toast-success .ws-toast-check { color: #6ee7a0; }
-.ws-toast-danger { background: var(--c-danger); }
+.ws-toast::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--c-ink);
+}
+.ws-toast:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--stack-float);
+}
+.ws-toast-success::before { background: var(--c-success); }
+.ws-toast-danger::before { background: var(--c-danger); }
+.ws-toast-progress::before { background: var(--c-accent); }
+.ws-toast-success .ws-toast-check { color: var(--c-success); }
 
 /* actionable toast (e.g. 删除…撤销): clickable, with an accent action button */
 .ws-toast.has-action { pointer-events: auto; }
 .ws-toast-action {
   margin-left: 4px;
-  color: #8ab4ff;
+  color: var(--c-accent);
   font-weight: var(--fw-semibold);
   font-size: var(--fs-md);
   padding: 2px 7px;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
 }
-.ws-toast-action:hover { background: rgba(255, 255, 255, 0.12); }
+.ws-toast-action:hover { background-size: 100% 100%; }

@@ -77,7 +77,7 @@ export default function CreateSpaceModal() {
           <label className="csm-field">
             <span className="csm-label">名字</span>
             <input
-              className="csm-input"
+              className="ws-input csm-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="比如 我的公司、某个项目、个人"

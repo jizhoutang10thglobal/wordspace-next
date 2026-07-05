@@ -19,8 +19,11 @@
   padding: 10px 11px;
   border-radius: var(--r-md);
   border: 1px solid transparent;
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease),
+    border-color var(--dur-fast) var(--ease);
 }
-.pub-level:hover { background: var(--c-hover); }
+.pub-level:hover { background-size: 100% 100%; }
 .pub-level.is-active {
   background: var(--c-accent-tint);
   border-color: var(--c-accent-tint-2);

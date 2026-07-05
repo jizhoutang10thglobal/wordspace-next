@@ -17,12 +17,13 @@
   align-items: center;
   gap: 10px;
   padding: 9px 12px;
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   text-align: left;
-  transition: background var(--dur-fast) var(--ease);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
 }
 .sm-row:hover {
-  background: var(--c-hover);
+  background-size: 100% 100%;
 }
 .sm-row.is-on {
   background: var(--c-accent-tint);

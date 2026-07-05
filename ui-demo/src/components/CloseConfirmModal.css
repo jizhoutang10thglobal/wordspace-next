@@ -15,8 +15,8 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: #fff4e5;
-  color: #b26a00;
+  background: var(--c-warning-tint);
+  color: var(--c-warning);
 }
 .cc-title {
   font-size: var(--fs-md);
@@ -37,9 +37,8 @@
 }
 .cc-discard {
   color: var(--c-danger);
-  border-color: var(--c-border);
 }
 .cc-discard:hover {
-  background: var(--c-danger-tint, #fdecec);
+  background: var(--c-danger-tint);
   border-color: var(--c-danger);
 }
