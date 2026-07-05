@@ -165,3 +165,10 @@ test('all ops reject path traversal outside the workspace root', async () => {
   await assert.rejects(() => ws.renamePath(root, '../../etc/passwd', 'pwned'));
   await assert.rejects(() => ws.movePath(root, 'a.html', '../..'));
 });
+
+test('MP-16 undoDelete：畸形 token（含 ../）被拒，不越出 backupRoot', async () => {
+  const { root, backup } = await seed();
+  await assert.rejects(() => ws.undoDelete(root, '../../etc/x', backup), /非法的撤销令牌/);
+  await assert.rejects(() => ws.undoDelete(root, 'del-x/../../y', backup), /非法的撤销令牌/);
+  await assert.rejects(() => ws.undoDelete(root, '', backup), /非法的撤销令牌/);
+});

@@ -74,7 +74,16 @@
     const doctypeStr = dt ? '<!DOCTYPE ' + dt.name
       + (dt.publicId ? ' PUBLIC "' + dt.publicId + '"' : '')
       + (dt.systemId ? (dt.publicId ? '' : ' SYSTEM') + ' "' + dt.systemId + '"' : '') + '>' : '';
-    return doctypeStr + (doctypeStr ? '\n' : '') + root.outerHTML;
+    // 修 ED-B4：<html> 之外的注释（浏览器「另存网页」的 <!-- saved from url... --> 是基础编辑的典型输入）
+    // 也要保真——原来只拼 documentElement.outerHTML 会把顶层注释全丢，违反基础编辑「结构保真」契约（KD-c）。
+    // 逐个序列化文档顶层节点，对齐 WS2Serialize.serializeDocument。
+    const parts = [];
+    for (const node of doc.childNodes) {
+      if (node.nodeType === 10) parts.push(doctypeStr);
+      else if (node.nodeType === 8) parts.push('<!--' + node.data + '-->');
+      else if (node === doc.documentElement) parts.push(root.outerHTML);
+    }
+    return parts.join('\n');
   }
 
   // ---- 宿主浮层小工具 ----
@@ -96,6 +105,9 @@
   function attach(doc, opts) {
     opts = opts || {};
     const win = opts.win || doc.defaultView;
+    // 修 ED-B2：iframe sandbox 无 allow-modals，contentWindow.confirm 静默返回 false（大块删除的二次确认
+    // 因此恒「取消」→ 删除对整篇挂一个大 div 的文档整体失效）。用宿主窗口的 confirm（blockedit addLink 同法）。
+    const hostWin = (opts.host && opts.host.ownerDocument && opts.host.ownerDocument.defaultView) || win;
     const markDirty = opts.markDirty || function () {};
     const body = doc.body;
     if (!body) return { detach() {}, reposition() {}, serialize: () => serialize(doc) };
@@ -218,7 +230,7 @@
       try {
         const br = elm.getBoundingClientRect(); const bb = body.getBoundingClientRect();
         const frac = (br.width * br.height) / Math.max(1, bb.width * bb.height);
-        if (frac > 0.85 && win.confirm && !win.confirm('这一块几乎是整个文档，确定删除？')) return;
+        if (frac > 0.85 && hostWin.confirm && !hostWin.confirm('这一块几乎是整个文档，确定删除？')) return;
       } catch (e) {}
       const next = keepNext ? (nearestInDir(elm, 'down', blocks) || nearestInDir(elm, 'up', blocks)) : null;
       elm.remove();

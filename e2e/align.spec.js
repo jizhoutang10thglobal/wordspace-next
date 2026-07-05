@@ -105,6 +105,21 @@ test('未保存关闭：临时文档 × → CloseConfirmModal →「不保存直
   expect(await exists(path.join(wsDir, '未命名.html'))).toBe(false);
 });
 
+test('SB-4：关闭非激活的临时文档也要确认（不零确认静默销毁）', async () => {
+  await openWorkspace();
+  await newTempDoc(); // temp #1（激活）
+  await newTempDoc(); // temp #2（激活，#1 变非激活）
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(2);
+  // 关第一个（非激活）temp 的 ×
+  const firstTemp = page.locator('#sb-tabs .sb-tab.sb-tab-temp').first();
+  await firstTemp.hover();
+  await firstTemp.locator('.sb-tab-close').click();
+  // 修前：直接销毁、无确认。修后：先切到它 + 弹确认框
+  await expect(page.locator('.sb-modal-confirm')).toBeVisible();
+  await page.locator('.sb-modal-confirm .sb-btn-danger').click(); // 不保存
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(1); // 只关了一个
+});
+
 test('保存并关闭：临时文档 × → 确认 →「保存并关闭」→ SaveModal → 落盘 + 关标签', async () => {
   await openWorkspace();
   await newTempDoc();

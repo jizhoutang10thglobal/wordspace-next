@@ -146,10 +146,27 @@
   }
 
   async function commitRenameOp(node, newLeaf) {
-    const wasOpen = !node.isDir && openPath() === node.abs;
+    const op = openPath();
+    const wasOpen = !node.isDir && op === node.abs;
+    // 修 SB-1：改的是「包含当前打开文档的文件夹」时也要给编辑器重指向——否则 docPath 仍指旧路径，
+    // 此后每次（自动）保存都 ENOENT 失败、弹 alert 风暴（doDelete 早有 isUnder 处理，rename 漏了）。
+    const openUnderDir = node.isDir && isUnder(op, node.abs);
     const r = await window.ws2.wsRename(node.rel, newLeaf);
     if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
-    if (r.rel !== node.rel) retargetTabsUnder(node.rel, r.rel, node.isDir); // 标签跟随改名
+    else if (openUnderDir && window.__shellRetargetDoc) {
+      const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 已确认 op 以 node.abs+分隔符 开头）
+      window.__shellRetargetDoc(newAbs, newAbs.split(/[\\/]/).pop());
+    }
+    if (r.rel !== node.rel) {
+      retargetTabsUnder(node.rel, r.rel, node.isDir); // 标签跟随改名
+      // 修 SB-12：collapsed 以 rel 为键，改目录名后旧键残留、新键不在集合 → 被改名的收起文件夹连同子树全展开。
+      // 把旧 rel 前缀的收起项迁到新 rel 前缀，保持展开/收起状态。
+      if (node.isDir) {
+        for (const rel of [...collapsed]) {
+          if (rel === node.rel || rel.indexOf(node.rel + '/') === 0) { collapsed.delete(rel); collapsed.add(r.rel + rel.slice(node.rel.length)); }
+        }
+      }
+    }
     await refresh();
   }
   async function doMove(node, destDirRel) {
@@ -456,7 +473,19 @@
     const wasActive = tabState.activeRel === key;
     const entry = tabState.entries.find((e) => keyOf(e) === key);
     const dirtyActive = wasActive && window.__shellIsDirty && window.__shellIsDirty();
+    // 修 SB-4（bug-sweep #111 与本 PR 撞车,两家合一）：临时文档永远是未保存内容 → 无论激活
+    // 与否都要确认,别让非激活 temp 的 × 零确认直接销毁。非激活 temp 先切到前台（编辑器渲染它 +
+    // 设为激活）,确认框的「保存并关闭」才作用在正确目标上。
+    // 本 PR 补的防御：__shellReopenTemp 内部走 canLeaveActive,若被「脏文件切走」守卫取消,它会
+    // 静默 no-op——此时不能再 openTabEntry（否则侧栏高亮已切、shell 还在旧文档,状态分裂,后续
+    // 「保存并关闭」会把别的文档存进去）。校验 shell 真切过去了才继续,否则保守放弃本次关闭。
     if (isTempEntry(entry) || dirtyActive) {
+      if (isTempEntry(entry) && !wasActive) {
+        if (window.__shellReopenTemp) window.__shellReopenTemp(key);
+        const now = window.__shellActiveTemp && window.__shellActiveTemp();
+        if (!now || now.id !== key) return; // 切换被守卫取消 → 标签保留,可重试
+        openTabEntry(entry);
+      }
       openCloseConfirm(key, op, entry);
       return;
     }
@@ -863,6 +892,9 @@
     };
     list.ondrop = (e) => {
       if (!dragTabRel) return;
+      // 修 SB-8：临时文档不能拖进置顶区——置顶是持久快捷入口，temp 重启即弃，拖进去得到一个「带常显未保存点、
+      // 重启就失踪」的假置顶（tabRow 对 temp 本就不渲染 pin 钮，拖拽是绕过它的漏网路径）。
+      if (zone === 'pinned' && isTempKey(dragTabRel)) { list.classList.remove('sb-drop'); clearDropMarks(); return; }
       e.preventDefault();
       e.stopPropagation();
       list.classList.remove('sb-drop');
