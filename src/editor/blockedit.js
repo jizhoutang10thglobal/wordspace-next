@@ -536,19 +536,28 @@
       const tops = topBlocks();
       const i = tops.indexOf(sBlk), j = tops.indexOf(eBlk);
       if (i < 0 || j < 0 || i > j) return false;
-      const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sBlk, sBlk.childNodes.length); r1.deleteContents(); // 裁起块：选区起点→块末
-      const r2 = doc.createRange(); r2.setStart(eBlk, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents();                       // 裁末块：块首→选区终点
+      // 修 ED-A2/A3：端点是结构块（table/details/figure/img 等非叶子文字块）时，Range 部分裁剪会把表格削成
+      // 非矩形（table-ragged）、把 details 的 <summary> 删掉（details-summary）→ 落盘非合规。只对可编辑叶子块
+      // 做部分裁剪，结构端点改成整块删除（「从 h2 中间选到表格中间删」= 删 h2 尾巴 + 整删表格，绝不产非法结构）。
+      const sEditable = isEditableEl(sBlk), eEditable = isEditableEl(eBlk);
+      if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sBlk, sBlk.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
+      if (eEditable) { const r2 = doc.createRange(); r2.setStart(eBlk, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
       for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === blockRoot) m.remove(); }                            // 删中间整块
-      const prefixEnd = sBlk.lastChild; // 接合点（合并前 prefix 末尾）
-      if (SM.canMerge(sBlk, eBlk)) { // 修 B1/B2：两端都是叶子文字块才节点级拼接（替代弱的 classify!=='list'，挡透明包裹块/空容器/void）
-        while (eBlk.firstChild) sBlk.appendChild(eBlk.firstChild); // 起末都是文字块 → 末块剩余并入起块
+      const prefixEnd = sEditable ? sBlk.lastChild : null; // 接合点（合并前 prefix 末尾）
+      if (sEditable && eEditable && SM.canMerge(sBlk, eBlk)) { // 两端都是存活的叶子文字块才节点级拼接（挡透明包裹块/空容器/void）
+        while (eBlk.firstChild) sBlk.appendChild(eBlk.firstChild); // 末块剩余并入起块
         eBlk.remove();
       }
+      if (!eEditable) eBlk.remove(); // 结构末块整删
+      if (!sEditable) sBlk.remove(); // 结构起块整删
       markDirty(); if (undoMgr) undoMgr.checkpoint();
-      if (isEditableEl(sBlk)) {
-        enterEdit(sBlk, { mode: 'keep' });
-        try { const cr = doc.createRange(); if (prefixEnd && prefixEnd.parentNode === sBlk) cr.setStartAfter(prefixEnd); else cr.setStart(sBlk, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
-      } else { selectBlock(sBlk); positionGrip(sBlk); }
+      // 光标/选中落点：优先存活的起块，其次存活的末块，再次删除处附近块
+      let anchor = sEditable && sBlk.parentElement ? sBlk : (eEditable && eBlk.parentElement ? eBlk : null);
+      if (!anchor) { const rest = topBlocks(); anchor = rest[Math.min(i, rest.length - 1)] || rest[0] || null; }
+      if (anchor && isEditableEl(anchor)) {
+        enterEdit(anchor, { mode: 'keep' });
+        try { const cr = doc.createRange(); if (anchor === sBlk && prefixEnd && prefixEnd.parentNode === sBlk) cr.setStartAfter(prefixEnd); else cr.setStart(anchor, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
+      } else if (anchor) { selectBlock(anchor); positionGrip(anchor); }
       return true;
     }
     // 在光标处把当前编辑块劈成两个同类型同 class 的顶层块（换段）。非折叠选区先删再劈。光标落后块块首。
