@@ -9,10 +9,12 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 
 (async () => {
-  // 本地测试页
+  // 本地测试页(带站内链接 + 302 重定向,验 will-navigate/will-redirect 守卫没误拦)
   const server = http.createServer((req, res) => {
+    if (req.url === '/2') { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end('<!doctype html><title>PAGE 2</title><h1 id=h>page two</h1>'); return; }
+    if (req.url === '/go') { res.statusCode = 302; res.setHeader('location', '/2'); res.end(); return; }
     res.setHeader('content-type', 'text/html; charset=utf-8');
-    res.end('<!doctype html><title>SMOKE PAGE</title><h1 id=h>hello from local</h1><input id=box>');
+    res.end('<!doctype html><title>SMOKE PAGE</title><h1 id=h>hello from local</h1><a id=lnk href="/2">下一页</a><input id=box>');
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
@@ -83,6 +85,19 @@ const ROOT = path.join(__dirname, '..');
     return v ? v.webContents.executeJavaScript('document.title') : null;
   });
   ok(title === 'SMOKE PAGE', '网页在 view 里真加载（title=' + title + '）');
+
+  // 站内链接点击 → 真导航到 /2（will-navigate 守卫不能误拦 http 跳转,security review 抓的参数 bug 回归）
+  await app.evaluate(async ({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    const v = win.contentView.children.find((c) => c.webContents);
+    if (v) v.webContents.executeJavaScript('document.getElementById("lnk").click()');
+  });
+  await page.waitForTimeout(1500);
+  const title2 = await app.evaluate(async ({ BrowserWindow }) => {
+    const v = BrowserWindow.getAllWindows()[0].contentView.children.find((c) => c.webContents);
+    return v ? v.webContents.executeJavaScript('document.title') : null;
+  });
+  ok(title2 === 'PAGE 2', '站内链接点击真导航（守卫不误拦 http,title2=' + title2 + '）');
 
   // 切到文档标签 → web view detach（排他,不盖编辑器）
   await page.click('.sb-file[data-rel="doc.html"]');

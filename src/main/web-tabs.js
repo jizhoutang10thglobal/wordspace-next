@@ -112,8 +112,11 @@ function createView(key, url) {
 
 function wireViewEvents(key, view) {
   const wc = view.webContents;
-  // file:// 三层封死之二：will-navigate + will-redirect + will-frame-navigate（KD-4）
-  const guard = (e, details) => { if (!policy.isAllowedNavUrl(details && details.url)) e.preventDefault(); };
+  // file:// 三层封死之二：will-navigate + will-redirect + will-frame-navigate（KD-4）。
+  // ⚠ Electron 42:这三个事件的 URL 在**第一个参数**(Event 对象,同时带 .url 和 .preventDefault());
+  // 第二个位置参数是 deprecated 的 url 字符串。读错参数(details.url)会永远 undefined → 无条件 preventDefault
+  // → 拦掉所有站内跳转/重定向/iframe(http→https、OAuth、点链接全废)。security review 抓的,e2e 补真链接点击。
+  const guard = (e) => { if (!policy.isAllowedNavUrl(e && e.url)) e.preventDefault(); };
   wc.on('will-navigate', guard);
   wc.on('will-redirect', guard);
   if (wc.on) wc.on('will-frame-navigate', guard);
@@ -228,6 +231,7 @@ async function printToPdf(key) {
   try { fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
   const base = policy.safeFilename((r.title || 'webpage').replace(/[/\\:*?"<>|]/g, '_').slice(0, 60) + '.pdf');
   const out = policy.uniqueName(dir, base, (p) => fs.existsSync(p));
+  if (!policy.isInsideDir(dir, out)) return null; // 防御纵深:与 will-download 同一道越界闸(security review 建议对齐)
   fs.writeFileSync(out, buf);
   sendToRenderer('web-download', { state: 'completed', name: path.basename(out), savePath: out, received: buf.length, total: buf.length });
   return out;
