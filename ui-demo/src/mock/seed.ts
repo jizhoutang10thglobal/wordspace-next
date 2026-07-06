@@ -4,10 +4,9 @@ import type {
   FileEntry,
   Folder,
   Member,
-  Space,
+  MountRoot,
   Template,
   Workspace,
-  WorkspaceFile,
 } from '../types'
 import { NON_CONFORM_SAMPLES } from '../lib/nonConformSamples'
 import { mdToBlocks } from '../lib/markdown'
@@ -75,11 +74,12 @@ export const seedMembers: Member[] = [
 // ---------------------------------------------------------------------------
 // All seeded folders belong to the Tenth Global cloud space; other cloud spaces
 // start with their own (separate) folders.
+// 唯一的 Wordspace 云盘的文件夹（团队共享 / 我的私有）——侧栏置顶小区。
 export const seedFolders: Folder[] = [
-  { id: 'f-strategy', name: '战略', scope: 'team', spaceId: 'sp-tg', order: 0 },
-  { id: 'f-people', name: '人事', scope: 'team', spaceId: 'sp-tg', order: 1 },
-  { id: 'f-product', name: '产品', scope: 'team', spaceId: 'sp-tg', order: 2 },
-  { id: 'f-drafts', name: '我的草稿', scope: 'personal', spaceId: 'sp-tg', order: 0 },
+  { id: 'f-strategy', name: '战略', scope: 'team', order: 0 },
+  { id: 'f-people', name: '人事', scope: 'team', order: 1 },
+  { id: 'f-product', name: '产品', scope: 'team', order: 2 },
+  { id: 'f-drafts', name: '我的草稿', scope: 'personal', order: 0 },
 ]
 
 // ---------------------------------------------------------------------------
@@ -93,7 +93,7 @@ export const seedDocs: Doc[] = [
     title: '用 Markdown 写文档',
     emoji: '📝',
     kind: 'doc',
-    folderId: 'sp-local',
+    folderId: 'r-brand', // 连接文件夹里的文档：folderId 记它所属的根（不进云盘小区）
     format: 'markdown',
     visibility: 'private',
     localPath: '~/项目/产品说明.md',
@@ -274,7 +274,7 @@ export const seedDocs: Doc[] = [
     id: 'd-schema-sample',
     title: '产品周报 · 第 24 周',
     kind: 'doc',
-    folderId: 'sp-local',
+    folderId: 'r-brand',
     visibility: 'private',
     localPath: '~/Projects/品牌升级/产品周报.html',
     updatedAt: now - 2 * HR,
@@ -316,7 +316,7 @@ export const seedDocs: Doc[] = [
     id: 'd-r2-manual',
     title: '产品手册',
     kind: 'doc',
-    folderId: 'sp-local',
+    folderId: 'r-docs',
     visibility: 'private',
     localPath: '~/Documents/产品资料/产品手册.html',
     updatedAt: now - 5 * HR,
@@ -324,15 +324,15 @@ export const seedDocs: Doc[] = [
     collaborators: [ME_ID],
     blocks: [
       { id: 'r2m1', type: 'heading', level: 1, html: '产品手册' },
-      { id: 'r2m2', type: 'text', html: '这份文档来自工作区里的<b>第二个根文件夹</b>「产品资料」——左侧栏现在可以同时打开多个文件夹，每个文件夹是一棵独立的树。' },
-      { id: 'r2m3', type: 'list', listStyle: 'bulleted', html: '<li>侧栏底部「＋ 添加文件夹」可以再挂新的文件夹进来</li><li>根标题右键可以把它从工作区移除（磁盘文件不动）</li><li>多个文件夹可以打包保存成一个工作区，下次一键整组打开</li>' },
+      { id: 'r2m2', type: 'text', html: '这份文档来自<b>第二个打开的文件夹</b>「产品资料」——左侧栏可以同时打开多个文件夹，每个文件夹是一棵独立的树。' },
+      { id: 'r2m3', type: 'list', listStyle: 'bulleted', html: '<li>侧栏底部「＋ 添加文件夹」可以再打开新的文件夹</li><li>拖动根标题可以调整文件夹的上下顺序，顺序会记住</li><li>根标题右键可以把它移除（只是不再显示，磁盘文件不动）</li>' },
     ],
   },
   {
     id: 'd-r2-interview',
     title: '访谈纪要',
     kind: 'doc',
-    folderId: 'sp-local',
+    folderId: 'r-docs',
     visibility: 'private',
     localPath: '~/Documents/产品资料/用户调研/访谈纪要.html',
     updatedAt: now - 26 * HR,
@@ -350,7 +350,7 @@ export const seedDocs: Doc[] = [
       id: s.id,
       title: s.fileName.replace(/\.html$/, ''),
       kind: 'doc',
-      folderId: 'sp-local', // 本地空间文件以 spaceId 作 folderId（见 store loadSpaceData）
+      folderId: 'r-brand', // 连接文件夹里的非合规样例，归属「品牌升级」根
       blocks: [],
       rawHtml: s.html,
       visibility: 'private',
@@ -455,72 +455,46 @@ export const seedWorkspace: Workspace = {
 }
 
 // ---------------------------------------------------------------------------
-// spaces (Arc-style, swiped in the sidebar)
+// 打开的文件夹（多文件夹：侧栏顶层一列根，全部常显、拖动排序、持久化）
 // ---------------------------------------------------------------------------
-// Two real categories of space: the Wordspace cloud (native, collaborative,
-// team/private sections) and connected folders (an external mount you browse —
-// local disk or Google Drive, the same kind of thing).
-export const seedSpaces: Space[] = [
-  { id: 'sp-tg', name: 'Tenth Global', kind: 'team', storage: 'cloud', badge: 'TG', color: '#1a73e8', subtitle: '团队工作区' },
-  {
-    id: 'sp-drive', name: '公司网盘', kind: 'project', storage: 'gdrive', badge: 'G', color: '#1e8e3e', subtitle: 'Google Drive',
-    roots: [{ id: 'r-drive', name: 'Tenth Global', path: 'Google Drive/Tenth Global' }],
-  },
-  // 多文件夹空间：本地空间开局就同时挂两个根文件夹（= 未保存的工作区），
-  // 让「多根侧栏 + 保存为工作区」两个半边一进 demo 就看得见。
-  {
-    id: 'sp-local', name: '设计项目', kind: 'project', storage: 'local', badge: '设', color: '#b8541d', subtitle: '本地项目',
-    roots: [
-      { id: 'r-brand', name: '品牌升级', path: '~/Projects/品牌升级' },
-      { id: 'r-docs', name: '产品资料', path: '~/Documents/产品资料' },
-    ],
-    workspaceSaved: false,
-  },
-]
-
-// 磁盘上已有的 .wsworkspace 工作区文件（demo mock）。这个「客户交付」还没作为空间
-// 打开过——用来演示「打开工作区 = 整组文件夹一次性挂载」：空间切换器 → 打开工作区…
-export const seedWorkspaceFiles: WorkspaceFile[] = [
-  {
-    id: 'wf-client',
-    name: '客户交付',
-    path: '~/Documents/客户交付.wsworkspace',
-    savedAt: now - 2 * 24 * HR,
-    folders: [
-      { name: '客户资料', path: '~/Work/客户资料' },
-      { name: '交付物', path: '~/Desktop/交付物' },
-    ],
-  },
+// 没有「工作区 / Space」外壳——开局就同时打开三个文件夹（两个本地 + 一个 Google Drive），
+// 让「多根侧栏」一进 demo 就看得见。数组顺序 = 侧栏显示顺序。
+// r-missing 演示「失联根」：底层文件夹不可达（外置盘拔出），灰显、可重新定位 / 移除。
+export const seedRoots: MountRoot[] = [
+  { id: 'r-brand', name: '品牌升级', path: '~/Projects/品牌升级', origin: 'local' },
+  { id: 'r-docs', name: '产品资料', path: '~/Documents/产品资料', origin: 'local' },
+  { id: 'r-drive', name: 'Tenth Global', path: 'Google Drive/Tenth Global', origin: 'gdrive' },
+  { id: 'r-missing', name: '2024 归档', path: '/Volumes/外置硬盘/2024 归档', origin: 'local', missing: true },
 ]
 
 // Connected folders show every file, not just Wordspace docs. HTML opens in the
 // editor (docId set); the rest hand off to the OS default app.
 export const seedFiles: FileEntry[] = [
   // 公司网盘 (Google Drive)
-  { spaceId: 'sp-drive', rootId: 'r-drive', path: '人事/员工手册.html', kind: 'html', docId: 'd-handbook' },
-  { spaceId: 'sp-drive', rootId: 'r-drive', path: '人事/入职流程.docx', kind: 'word' },
-  { spaceId: 'sp-drive', rootId: 'r-drive', path: '战略/2026 战略规划.docx', kind: 'word' },
-  { spaceId: 'sp-drive', rootId: 'r-drive', path: '战略/市场分析.pdf', kind: 'pdf' },
-  { spaceId: 'sp-drive', rootId: 'r-drive', path: '品牌/官网首页.html', kind: 'html', docId: 'd-recruit' },
-  { spaceId: 'sp-drive', rootId: 'r-drive', path: '品牌/Logo.png', kind: 'image' },
-  { spaceId: 'sp-drive', rootId: 'r-drive', path: '财务/Q2 预算.xlsx', kind: 'sheet' },
-  { spaceId: 'sp-drive', rootId: 'r-drive', path: '产品/发布会.pptx', kind: 'slides' },
-  // 设计项目 · 根 1「品牌升级」
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '提案.docx', kind: 'word' },
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '产品说明.md', kind: 'md', docId: 'd-md-guide' },
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '落地页.html', kind: 'html', docId: 'd-recruit' },
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '素材/封面.png', kind: 'image' },
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '数据/转化分析.xlsx', kind: 'sheet' },
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '说明.html', kind: 'html', docId: 'd-handbook' },
+  { rootId: 'r-drive', path: '人事/员工手册.html', kind: 'html', docId: 'd-handbook' },
+  { rootId: 'r-drive', path: '人事/入职流程.docx', kind: 'word' },
+  { rootId: 'r-drive', path: '战略/2026 战略规划.docx', kind: 'word' },
+  { rootId: 'r-drive', path: '战略/市场分析.pdf', kind: 'pdf' },
+  { rootId: 'r-drive', path: '品牌/官网首页.html', kind: 'html', docId: 'd-recruit' },
+  { rootId: 'r-drive', path: '品牌/Logo.png', kind: 'image' },
+  { rootId: 'r-drive', path: '财务/Q2 预算.xlsx', kind: 'sheet' },
+  { rootId: 'r-drive', path: '产品/发布会.pptx', kind: 'slides' },
+  // 品牌升级
+  { rootId: 'r-brand', path: '提案.docx', kind: 'word' },
+  { rootId: 'r-brand', path: '产品说明.md', kind: 'md', docId: 'd-md-guide' },
+  { rootId: 'r-brand', path: '落地页.html', kind: 'html', docId: 'd-recruit' },
+  { rootId: 'r-brand', path: '素材/封面.png', kind: 'image' },
+  { rootId: 'r-brand', path: '数据/转化分析.xlsx', kind: 'sheet' },
+  { rootId: 'r-brand', path: '说明.html', kind: 'html', docId: 'd-handbook' },
   // 非合规样例（野生 HTML）：HTML 文件 + docId 指向带 rawHtml 的样例文档 → 打开走 BasicEditor 降级编辑
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '外部导入/新品落地页.html', kind: 'html', docId: 'd-nc-landing' },
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '外部导入/季度数据表.html', kind: 'html', docId: 'd-nc-table' },
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '外部导入/活动报名页.html', kind: 'html', docId: 'd-nc-signup' },
-  { spaceId: 'sp-local', rootId: 'r-brand', path: '外部导入/产品页.html', kind: 'html', docId: 'd-nc-interactive' },
-  // 设计项目 · 根 2「产品资料」——注意「素材/」在两个根里都有：多根身份 (rootId, path) 保证互不相撞
-  { spaceId: 'sp-local', rootId: 'r-docs', path: '产品手册.html', kind: 'html', docId: 'd-r2-manual' },
-  { spaceId: 'sp-local', rootId: 'r-docs', path: '用户调研/访谈纪要.html', kind: 'html', docId: 'd-r2-interview' },
-  { spaceId: 'sp-local', rootId: 'r-docs', path: '用户调研/问卷数据.xlsx', kind: 'sheet' },
-  { spaceId: 'sp-local', rootId: 'r-docs', path: '路线图.pdf', kind: 'pdf' },
-  { spaceId: 'sp-local', rootId: 'r-docs', path: '素材/产品截图.png', kind: 'image' },
+  { rootId: 'r-brand', path: '外部导入/新品落地页.html', kind: 'html', docId: 'd-nc-landing' },
+  { rootId: 'r-brand', path: '外部导入/季度数据表.html', kind: 'html', docId: 'd-nc-table' },
+  { rootId: 'r-brand', path: '外部导入/活动报名页.html', kind: 'html', docId: 'd-nc-signup' },
+  { rootId: 'r-brand', path: '外部导入/产品页.html', kind: 'html', docId: 'd-nc-interactive' },
+  // 产品资料——注意「素材/」在两个根里都有：多根身份 (rootId, path) 保证互不相撞
+  { rootId: 'r-docs', path: '产品手册.html', kind: 'html', docId: 'd-r2-manual' },
+  { rootId: 'r-docs', path: '用户调研/访谈纪要.html', kind: 'html', docId: 'd-r2-interview' },
+  { rootId: 'r-docs', path: '用户调研/问卷数据.xlsx', kind: 'sheet' },
+  { rootId: 'r-docs', path: '路线图.pdf', kind: 'pdf' },
+  { rootId: 'r-docs', path: '素材/产品截图.png', kind: 'image' },
 ]

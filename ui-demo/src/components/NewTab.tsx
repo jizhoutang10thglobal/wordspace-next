@@ -27,7 +27,7 @@ const shortcuts: Shortcut[] = [
 
 export default function NewTab() {
   const [value, setValue] = useState('')
-  const pins = useStore((s) => s.tabs.filter((t) => t.spaceId === s.activeSpaceId && t.pinned))
+  const pins = useStore((s) => s.tabs.filter((t) => t.pinned))
   const setActiveTab = useStore((s) => s.setActiveTab)
   const go = (url: string) => useBrowser.getState().navigate(url)
 

@@ -20,10 +20,9 @@ const leafOf = (p: string) => p.replace(/\/+$/, '').split('/').pop() || p
 export default function AddFolderModal() {
   const open = useUI((s) => s.addFolderOpen)
   const close = useUI((s) => s.closeAddFolder)
-  const activeSpaceId = useStore((s) => s.activeSpaceId)
-  const space = useStore((s) => s.spaces.find((sp) => sp.id === s.activeSpaceId))
-  const addRootToSpace = useStore((s) => s.addRootToSpace)
-  const absorbRootIntoSpace = useStore((s) => s.absorbRootIntoSpace)
+  const allRoots = useStore((s) => s.roots)
+  const addRoot = useStore((s) => s.addRoot)
+  const absorbRoot = useStore((s) => s.absorbRoot)
 
   const [folder, setFolder] = useState('')
   const [pickIdx, setPickIdx] = useState(0)
@@ -46,8 +45,9 @@ export default function AddFolderModal() {
 
   if (!open) return null
 
+  // 嵌套分类只看可达的根（失联根不参与）。
+  const roots = allRoots.filter((r) => !r.missing)
   // 模拟 OS 文件夹选择框：轮流给可信假路径，跳过完全相同的已挂载路径（嵌套的仍给，用来演示分类）。
-  const roots = space?.roots ?? []
   const mounted = new Set(roots.map((r) => canonPath(r.path)))
   const pool = SAMPLE_FOLDERS.filter((p) => !mounted.has(canonPath(p)))
   const pickFolder = () => {
@@ -66,8 +66,8 @@ export default function AddFolderModal() {
 
   const submit = () => {
     if (!folder || !relation) return
-    if (relation.rel === 'independent') addRootToSpace(activeSpaceId, folder)
-    else if (relation.rel === 'parent') absorbRootIntoSpace(activeSpaceId, folder, childRootIds)
+    if (relation.rel === 'independent') addRoot(folder)
+    else if (relation.rel === 'parent') absorbRoot(folder, childRootIds)
     // same / child：不新增（提示已解释原因），点主按钮=知道了
     close()
   }
@@ -85,7 +85,7 @@ export default function AddFolderModal() {
           <div className="ws-modal-head-text">
             <div className="ws-modal-title">添加文件夹</div>
             <div className="ws-modal-sub">
-              把另一个文件夹添加进「{space?.name}」，和现有的文件夹并排打开；随时可以从工作区移除，磁盘文件不受影响。
+              再打开一个文件夹，和现有的并排显示；随时可以移除，磁盘文件不受影响。
             </div>
           </div>
           <button className="ws-modal-x" onClick={close} aria-label="关闭">
@@ -120,10 +120,8 @@ export default function AddFolderModal() {
               </span>
             </div>
           )}
-          {space?.roots?.length ? (
-            <div className="afm-current">
-              已打开：{space.roots.map((r) => r.name).join('、')}
-            </div>
+          {roots.length ? (
+            <div className="afm-current">已打开：{roots.map((r) => r.name).join('、')}</div>
           ) : null}
         </div>
 
