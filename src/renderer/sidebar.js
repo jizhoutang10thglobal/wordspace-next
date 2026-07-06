@@ -805,11 +805,18 @@
   // Cmd+T 新标签 / window.open / 历史命中）都收口到这里。web 分支交给 browser-chrome 的 __webActivate;
   // 非 web 分支先 __webDetach 摘掉任何 attach 的 view（否则原生 view 永久盖住编辑器 = blocker #1）,再走原路。
   function openTabRow(entry) {
+    const key = keyOf(entry);
+    const tracked = tabState.entries.some((e) => keyOf(e) === key);
     if (isWebEntry(entry)) { // 网页标签：交给 browser-chrome 漏斗（显示 chrome + attach/show view 或新标签页）
+      // P1#2:统一设激活态。web/temp/no-op 分支原来不设 activeRel → 高亮错标签、Cmd+W 关错标签。
+      // openEntry 同时补 open=true(点未打开的置顶书签也能激活)+ 设 activeRel。
+      if (tracked) applyTabs(window.WS2Tabs.openEntry(tabState, entry));
       if (window.__webActivate) window.__webActivate(entry);
       return;
     }
     if (window.__webDetach) window.__webDetach(); // 切到任何文档/查看器表面前,先摘掉 web view
+    // P1#2:temp/no-op 文档分支下游没有 onOpen 回拨 active → 这里统一设。真文件走 onOpen 会再设一次(幂等)。
+    if (tracked) applyTabs(window.WS2Tabs.setActive(tabState, key));
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
       if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry));
       return;
@@ -835,9 +842,12 @@
   // 带 URL 开网页标签（omnibox / window.open / 历史命中 / 外部链接）：建 entry(有 url),前台则激活。无工作区也可建。
   function openWebTabUrl(url, background) {
     if (!url) return;
+    const prevActive = tabState.activeRel;
     const id = nextWebId();
-    applyTabs(window.WS2Tabs.openEntry(tabState, { abs: id, kind: 'web', title: url, url }));
-    if (background) { renderZones(); }
+    let next = window.WS2Tabs.openEntry(tabState, { abs: id, kind: 'web', title: url, url });
+    if (background) next = { entries: next.entries, activeRel: prevActive }; // P2#3:后台标签不抢激活态(否则高亮跳走、Cmd+W 关错)
+    applyTabs(next);
+    if (background) { window.ws2.webLoad(id, url); } // 后台:主进程建 view 后台加载,不 show;不激活
     else openTabRow(tabState.entries.find((e) => keyOf(e) === id));
   }
   // browser-chrome 首次导航后回调：url=null 的新标签页原地变真网页标签 → 更新 entry.url + 落盘。

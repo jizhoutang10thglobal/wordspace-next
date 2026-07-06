@@ -165,6 +165,19 @@
     <!-- web view 的 bounds 锚（native view 画在它上面；本身只占位、不渲染内容）。 -->
     <div id="web-viewport" class="web-viewport" hidden></div>
 
+    <!-- 网页加载失败 / 崩溃的错误页（DOM 层,view setVisible(false) 让它透出）。 -->
+    <div id="web-error" class="web-error" hidden>
+      <div class="we-inner">
+        <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        <div class="we-title" id="web-error-title">无法打开此页面</div>
+        <div class="we-desc" id="web-error-desc"></div>
+        <button id="web-error-retry" class="nt-chip">重试</button>
+      </div>
+    </div>
+
+    <!-- 下载反馈 toast（锚侧栏区,web 激活时不被 native view 盖）。 -->
+    <div id="web-downloads" class="web-downloads" hidden></div>
+
     <!-- 空态（无文档时） -->
     <div id="home" class="ws-empty-wrap">
       <div class="ws-empty">

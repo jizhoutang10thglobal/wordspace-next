@@ -306,6 +306,8 @@ function registerIpc() {
   ipcMain.on('web-stop-find', (_e, key, action) => webTabs.stopFind(key, action));
   // KD-8:web view 聚焦时 renderer 的 input.focus() 静默失败——把焦点拉回主 frame,地址栏/查找条才聚焦得上。
   ipcMain.on('web-focus-chrome', () => { const w = BrowserWindow.getAllWindows()[0]; if (w && !w.isDestroyed()) w.webContents.focus(); });
+  // 下载完成「在 Finder 显示」:路径是我们自己写的下载文件(信任),直接 reveal。
+  ipcMain.on('ws-reveal-path', (_e, p) => { if (typeof p === 'string' && p) shell.showItemInFolder(p); });
   // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
   ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
   // 新建文档模板（含空文档，第一项）。

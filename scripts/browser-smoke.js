@@ -95,6 +95,19 @@ const ROOT = path.join(__dirname, '..');
   // 切回网页标签 → 重新 attach
   await page.click('.sb-tab.sb-tab-web');
   await page.waitForTimeout(800);
+  // P1#2:点网页标签后侧栏高亮 = 该标签(activeRel 同步了)
+  const webActive = await page.evaluate(() => { const r = document.querySelector('.sb-tab.sb-tab-web'); return r && r.classList.contains('is-active'); });
+  ok(webActive, 'P1#2:点网页标签后它高亮(activeRel 同步)');
+  // P1#1:web view attach 中开 Cmd+T modal → view 让位(setVisible false),modal 不被盖
+  const viewVisibleBefore = await app.evaluate(({ BrowserWindow }) => { const v = BrowserWindow.getAllWindows()[0].contentView.children.find((c) => c.webContents); return v ? v.getVisible() : null; });
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
+  await page.waitForSelector('.cm-omnibar', { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  const viewVisibleWithModal = await app.evaluate(({ BrowserWindow }) => { const v = BrowserWindow.getAllWindows()[0].contentView.children.find((c) => c.webContents); return v ? v.getVisible() : null; });
+  ok(viewVisibleBefore === true && viewVisibleWithModal === false, 'P1#1:开 modal 时 web view 让位(setVisible false),modal 不被盖');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(400);
+  const viewVisibleAfter = await app.evaluate(({ BrowserWindow }) => { const v = BrowserWindow.getAllWindows()[0].contentView.children.find((c) => c.webContents); return v ? v.getVisible() : null; });
+  ok(viewVisibleAfter === true, 'P1#1:关 modal 后 web view 恢复显示');
   const c3 = await childCount();
   ok(c3 === 1, '切回网页标签重新 attach（实际 ' + c3 + '）');
 

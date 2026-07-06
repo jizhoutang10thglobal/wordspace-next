@@ -51,7 +51,7 @@
     setOmniContext(entry);
     if (entry.url == null) {
       // 新标签页：detach view,显示 NewTab 页,聚焦大搜索框
-      if (attachedKey) { window.ws2.webHide(attachedKey); attachedKey = null; }
+      if (attachedKey) { window.ws2.webHide(attachedKey); attachedKey = null; } syncWebActiveClass();
       if (webHeader) webHeader.hidden = true;
       if (viewport) viewport.hidden = true;
       if (newtab) newtab.hidden = false;
@@ -60,22 +60,24 @@
       if (newtab) newtab.hidden = true;
       updateWebHeader(entry);         // 网页头(标题+安全标+域名),与文档面包屑同壳
       if (viewport) viewport.hidden = false;
+      if (recs[key] && recs[key].error) showError(recs[key].error); else hideError(); // 重新激活错误标签→仍显错误页
       window.ws2.webShow(key, bounds());
-      attachedKey = key; // ⚠ 记住 attach 的 key,否则 __webDetach 守卫 no-op
+      attachedKey = key; syncWebActiveClass(); // ⚠ 记住 attach 的 key,否则 __webDetach 守卫 no-op
       if (!(recs[key] && recs[key]._loaded)) { window.ws2.webLoad(key, entry.url); if (!recs[key]) recs[key] = {}; recs[key]._loaded = true; }
     }
   };
   window.__webDetach = function () {
-    if (attachedKey) { window.ws2.webHide(attachedKey); attachedKey = null; }
+    if (attachedKey) { window.ws2.webHide(attachedKey); attachedKey = null; } syncWebActiveClass();
     activeWebEntry = null;
     if (viewport) viewport.hidden = true;
     if (newtab) newtab.hidden = true;
     if (webHeader) webHeader.hidden = true;
+    if (webError) webError.hidden = true;
     hideFind();
     setOmniContext(null); // 切到文档:omnibox 回落到文件夹上下文
   };
-  window.__webCloseView = function (key) { window.ws2.webClose(key); delete recs[key]; if (attachedKey === key) attachedKey = null; };
-  window.__webDestroyAll = function () { window.ws2.webDestroyAll(); recs = Object.create(null); attachedKey = null; activeWebEntry = null; setOmniContext(null); }; // 清空 omnibox,别留幽灵 URL(审计 P1.3)
+  window.__webCloseView = function (key) { window.ws2.webClose(key); delete recs[key]; if (attachedKey === key) attachedKey = null; syncWebActiveClass(); };
+  window.__webDestroyAll = function () { window.ws2.webDestroyAll(); recs = Object.create(null); attachedKey = null; activeWebEntry = null; setOmniContext(null); syncWebActiveClass(); }; // 清空 omnibox,别留幽灵 URL(审计 P1.3)
   window.__webActiveKey = function () { return activeWebEntry ? (activeWebEntry.rel || activeWebEntry.abs) : null; };
   window.__webViewState = function () {
     if (!activeWebEntry) return null;
@@ -87,7 +89,7 @@
   window.__webShowEmpty = function () {
     if (window.__shellHideDocSurfaces) window.__shellHideDocSurfaces();
     activeWebEntry = null;
-    if (attachedKey) { window.ws2.webHide(attachedKey); attachedKey = null; }
+    if (attachedKey) { window.ws2.webHide(attachedKey); attachedKey = null; } syncWebActiveClass();
     if (webHeader) webHeader.hidden = true;
     if (viewport) viewport.hidden = true;
     if (newtab) newtab.hidden = false;
@@ -154,7 +156,7 @@
     updateWebHeader(entry);
     if (viewport) viewport.hidden = false;
     window.ws2.webShow(key, bounds());
-    attachedKey = key;
+    attachedKey = key; syncWebActiveClass();
     if (!recs[key]) recs[key] = {}; recs[key]._loaded = true;
     setOmniContext(entry);
   }
@@ -201,6 +203,22 @@
   }
   if (window.ws2.onWebFound) window.ws2.onWebFound(function (r) { if (findCount) findCount.textContent = r.matches ? (r.active + '/' + r.matches) : '0/0'; });
 
+  // ---- 错误页（加载失败/崩溃）：显示 DOM 错误 + view setVisible(false) 让它透出；重试=reload ----
+  var webError = document.getElementById('web-error');
+  var webErrDesc = document.getElementById('web-error-desc');
+  var webErrTitle = document.getElementById('web-error-title');
+  var webErrRetry = document.getElementById('web-error-retry');
+  var ERR_MSG = { '-105': '找不到该网站（域名无法解析）', '-106': '当前没有网络连接', '-102': '连接被拒绝', '-118': '连接超时', '-201': '证书无效或不受信任', 'crash': '页面崩溃了' };
+  function showError(err) {
+    if (!webError) return;
+    var k = window.__webActiveKey(); if (k) window.ws2.webSetVisible(k, false); // 让 DOM 错误页透出
+    if (webErrTitle) webErrTitle.textContent = err.code === 'crash' ? '页面崩溃了' : '无法打开此页面';
+    if (webErrDesc) webErrDesc.textContent = (ERR_MSG[String(err.code)] || ('错误码 ' + err.code)) + (err.url ? '\n' + UrlInput.pretty(err.url) : '');
+    webError.hidden = false;
+  }
+  function hideError() { if (webError && !webError.hidden) { webError.hidden = true; var k = window.__webActiveKey(); if (k) window.ws2.webSetVisible(k, true); } }
+  if (webErrRetry) webErrRetry.onclick = function () { var k = window.__webActiveKey(); if (!k) return; hideError(); window.ws2.webNav(k, 'reload'); };
+
   // ---- 消费主进程状态推送 ----
   if (window.ws2.onWebTabUpdated) window.ws2.onWebTabUpdated(function (s) {
     var prev = recs[s.key] || {};
@@ -210,6 +228,28 @@
       if (s.url != null) activeWebEntry.url = s.url;
       setOmniContext(activeWebEntry);
       updateWebHeader(activeWebEntry); // 标题/域名/安全标随导航刷新
+      if (s.error) showError(s.error); else if (s.loading || s.url) hideError();
+    }
+  });
+  // 下载反馈:开始/进度/完成的 toast(锚侧栏区,web 激活时不被 native view 盖)
+  var dlHost = document.getElementById('web-downloads');
+  var dlItems = Object.create(null);
+  if (window.ws2.onWebDownload) window.ws2.onWebDownload(function (d) {
+    if (!dlHost) return;
+    var el = dlItems[d.savePath];
+    if (!el) {
+      el = document.createElement('div'); el.className = 'wd-item'; dlItems[d.savePath] = el; dlHost.appendChild(el); dlHost.hidden = false;
+    }
+    var pct = d.total > 0 ? Math.round(d.received / d.total * 100) : 0;
+    if (d.state === 'completed') {
+      el.innerHTML = ''; var n = document.createElement('span'); n.className = 'wd-name'; n.textContent = '✓ ' + d.name;
+      var open = document.createElement('button'); open.className = 'wd-reveal'; open.textContent = '在 Finder 显示'; open.onclick = function () { window.ws2.wsRevealPath && window.ws2.wsRevealPath(d.savePath); };
+      el.append(n, open);
+      setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); delete dlItems[d.savePath]; if (dlHost && !dlHost.children.length) dlHost.hidden = true; }, 8000);
+    } else if (d.state === 'cancelled' || d.state === 'interrupted') {
+      el.textContent = '✕ ' + d.name + ' 下载中断'; setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); delete dlItems[d.savePath]; if (dlHost && !dlHost.children.length) dlHost.hidden = true; }, 5000);
+    } else {
+      el.textContent = '↓ ' + d.name + (d.total > 0 ? '  ' + pct + '%' : '  下载中…');
     }
   });
   if (window.ws2.onWebOpenRequest) window.ws2.onWebOpenRequest(function (r) { if (window.__sbOpenWebTab) window.__sbOpenWebTab(r.url, r.background); });
@@ -219,6 +259,19 @@
   function scheduleBounds() { if (raf) return; raf = requestAnimationFrame(function () { raf = null; pushBounds(); }); }
   window.addEventListener('resize', scheduleBounds);
   window.__webRebound = scheduleBounds;
+
+  // ---- KD-6:居中 DOM 浮层打开时让 native view 让位（否则原生 view 盖死模态,看不见也点不到）----
+  // 单一收口:MutationObserver 盯 body 上的浮层增删,不用改每个弹层的 open/close 点。
+  var OVERLAY_SEL = '.sb-modal-overlay, #fp-overlay';
+  function overlayOpen() { return !!document.querySelector(OVERLAY_SEL); }
+  function syncOverlayVeil() {
+    if (!attachedKey) return;
+    if (overlayOpen()) { window.ws2.webSetVisible(attachedKey, false); if (window.__focusMainFrame) window.__focusMainFrame(); } // 让位 + 把焦点拉回主 frame,浮层输入框才聚焦得上
+    else if (!webError || webError.hidden) window.ws2.webSetVisible(attachedKey, true); // 全关且无错误页 → 恢复
+  }
+  try { new MutationObserver(syncOverlayVeil).observe(document.body, { childList: true }); } catch (e) { /* ignore */ }
+
+  function syncWebActiveClass() { document.body.classList.toggle('ws-web-active', !!attachedKey); } // toast 锚点切换用
 
   window.__webReload = function () { var k = window.__webActiveKey(); if (k) window.ws2.webNav(k, 'reload'); };
   window.__webBack = function () { var k = window.__webActiveKey(); if (k) window.ws2.webNav(k, 'back'); };

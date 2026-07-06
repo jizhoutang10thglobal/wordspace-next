@@ -52,6 +52,24 @@
 .nt-recent li { padding: 7px 12px; border-radius: 8px; cursor: pointer; color: var(--c-text-2); font-size: var(--fs-sm, 13px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nt-recent li:hover { background: var(--c-hover); color: var(--c-text); }
 
+/* ---- 网页错误页 ---- */
+.web-error { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--c-bg-sunken); }
+.web-error[hidden] { display: none !important; }
+.we-inner { display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--c-text-2); text-align: center; max-width: 420px; }
+.we-inner > svg { color: var(--c-text-3); }
+.we-title { font-size: 17px; font-weight: 600; color: var(--c-text); }
+.we-desc { font-size: var(--fs-sm, 13px); color: var(--c-text-3); white-space: pre-line; }
+
+/* ---- 下载 toast（锚侧栏底部上方,web 激活时不被 native view 盖） ---- */
+.web-downloads { position: fixed; left: 12px; bottom: 46px; z-index: 320; width: calc(var(--sb-width, 260px) - 24px); display: flex; flex-direction: column; gap: 6px; }
+.web-downloads[hidden] { display: none !important; }
+.wd-item { padding: 8px 10px; border-radius: 8px; background: var(--c-surface); border: 1px solid var(--c-border); box-shadow: 0 3px 10px rgba(0,0,0,.1); font-size: var(--fs-sm, 13px); color: var(--c-text); display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.wd-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wd-reveal { flex: none; border: 0; background: transparent; color: var(--c-accent); font-size: var(--fs-xs, 11px); cursor: pointer; }
+
+/* ---- web 激活时,把壳的居中 toast 挪到侧栏,别被 native view 盖（KD-6） ---- */
+body.ws-web-active .sb-toast-host { left: 12px; right: auto; bottom: 46px; transform: none; }
+
 /* ---- 页内查找条（内容区右上角浮层） ---- */
 .bc-find {
   position: absolute; top: 10px; right: calc(var(--top-actions-reserve) + 8px); z-index: 50;

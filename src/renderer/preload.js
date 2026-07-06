@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('ws2', {
   webFind: (key, text, opts) => ipcRenderer.send('web-find', key, text, opts),
   webStopFind: (key, action) => ipcRenderer.send('web-stop-find', key, action),
   webFocusChrome: () => ipcRenderer.send('web-focus-chrome'),
+  wsRevealPath: (p) => ipcRenderer.send('ws-reveal-path', p),
   onWebTabUpdated: (cb) => ipcRenderer.on('web-tab-updated', (_e, s) => cb(s)),
   onWebOpenRequest: (cb) => ipcRenderer.on('web-open-request', (_e, r) => cb(r)),
   onWebFound: (cb) => ipcRenderer.on('web-found', (_e, r) => cb(r)),
