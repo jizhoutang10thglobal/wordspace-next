@@ -488,7 +488,9 @@
   border-radius: 1px;
   z-index: 15;
   pointer-events: none;
-  transition: top 600ms var(--ease), left 600ms var(--ease);
+  /* 有意例外:模拟远程协作光标的「网络平滑」慢滑,600ms 刻意长于 UI 时长阶梯
+     (--dur-page 420ms);位置由 JS 设 top/left,故此处不走 transform。 */
+  transition: top 600ms var(--ease-smooth), left 600ms var(--ease-smooth);
 }
 .ws-caret-flag {
   position: absolute;
