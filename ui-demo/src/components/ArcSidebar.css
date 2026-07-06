@@ -239,7 +239,7 @@
   max-height: 320px; overflow-y: auto;
   background: var(--c-surface);
   border: 1px solid var(--c-border); border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
   padding: 5px; display: flex; flex-direction: column; gap: 1px;
 }
 .arc-space-item {
@@ -400,7 +400,7 @@
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
   display: flex;
   flex-direction: column;
   gap: 1px;

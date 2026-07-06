@@ -238,7 +238,7 @@
   padding: 4px;
   background: var(--c-surface);
   border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
 }
 .ws-addmenu-item {
   display: flex; align-items: center; gap: 9px;
@@ -262,7 +262,7 @@
   padding: 4px;
   background: var(--c-surface);
   border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
 }
 .ws-docmenu-item {
   display: flex; align-items: center; gap: 10px;
@@ -334,7 +334,7 @@
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
   min-width: 132px; padding: 4px;
   background: var(--c-surface); border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
 }
 .ws-fmtbar-menu-item {
   display: block; width: 100%; height: 30px; padding: 0 10px;
@@ -348,7 +348,7 @@
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
   display: flex; gap: 4px; padding: 7px;
   background: var(--c-surface); border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
 }
 .ws-fmtbar-swatches .ws-fmtbar-swatch {
   width: 20px; height: 20px; border-radius: var(--r-xs);
@@ -407,7 +407,7 @@
   z-index: 80;
   min-width: 168px; padding: 4px;
   background: var(--c-surface); border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
 }
 .ws-blockmenu-item {
   display: flex; align-items: center; gap: 10px;
@@ -433,7 +433,7 @@
 .ws-slashmenu {
   z-index: 80; min-width: 184px; max-height: 290px; overflow-y: auto;
   padding: 4px; background: var(--c-surface); border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
 }
 .ws-slashmenu-item {
   display: block; width: 100%; height: 32px; padding: 0 10px;

@@ -22,7 +22,7 @@
   font-size: var(--fs-md);
   padding: 9px 15px;
   border-radius: var(--r-md);
-  box-shadow: var(--stack);
+  box-shadow: var(--shadow-menu);
   animation: ws-pop-in var(--dur) var(--ease-enter);
   transition: transform var(--dur) var(--ease-spring),
     box-shadow var(--dur) var(--ease-spring);
@@ -38,7 +38,7 @@
 }
 .ws-toast:hover {
   transform: translateY(-2px);
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-pop);
 }
 .ws-toast-success::before { background: var(--c-success); }
 .ws-toast-danger::before { background: var(--c-danger); }
