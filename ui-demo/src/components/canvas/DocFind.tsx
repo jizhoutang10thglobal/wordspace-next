@@ -98,6 +98,7 @@ export default function DocFind({ container, onClose }: { container: HTMLElement
       e.preventDefault()
       onClose()
     } else if (e.key === 'Enter') {
+      if (e.nativeEvent.isComposing) return // 中文/日文组字中按 Enter = 确认候选词，别当「跳下一个匹配」（同 Canvas 守法）
       e.preventDefault()
       go(e.shiftKey ? -1 : 1)
     }
