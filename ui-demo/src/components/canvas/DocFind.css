@@ -1,0 +1,94 @@
+/* 文档内查找条——纸方墨圆：纸面卡片微圆角、控件墨圆、批注圈焦点。
+   浮在编辑器右上角，像浏览器查找条，非模态。 */
+.ws-docfind {
+  position: absolute;
+  top: 14px;
+  right: 20px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 12px;
+  background: var(--c-surface, #fff);
+  border: 1px solid var(--c-border, #e7e5e4);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04), 0 12px 32px -18px rgba(28, 25, 23, 0.35);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ws-docfind {
+    animation: ws-docfind-in 0.16s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  @keyframes ws-docfind-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+  }
+}
+.ws-docfind-input {
+  width: 190px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--c-text, #1c1917);
+  padding: 2px 0;
+}
+.ws-docfind-input::placeholder {
+  color: var(--c-text-3, #a8a29e);
+}
+.ws-docfind-count {
+  font-size: 12.5px;
+  color: var(--c-text-3, #78716c);
+  font-variant-numeric: tabular-nums;
+  min-width: 46px;
+  text-align: right;
+  white-space: nowrap;
+}
+.ws-docfind-nav {
+  display: flex;
+  gap: 2px;
+  padding-left: 4px;
+  margin-left: 2px;
+  border-left: 1px solid var(--c-divider, #efedeb);
+}
+.ws-docfind-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--c-text-2, #57534e);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.ws-docfind-btn:hover:not(:disabled) {
+  background: var(--c-bg-sunken, #f5f5f4);
+  color: var(--c-text, #1c1917);
+}
+.ws-docfind-btn:disabled {
+  color: var(--c-text-3, #d6d3d1);
+  cursor: default;
+}
+.ws-docfind-btn:focus-visible {
+  outline: 2px solid var(--c-accent, #1d6fbf);
+  outline-offset: 1px;
+}
+.ws-docfind-close {
+  margin-left: 2px;
+}
+
+/* 匹配高亮——CSS Custom Highlight API。所有匹配淡黄，当前匹配琥珀色。
+   ::highlight 不吃 DOM，纯绘制层。 */
+::highlight(ws-find-hit) {
+  background-color: #fef08a;
+  color: #1c1917;
+}
+::highlight(ws-find-cur) {
+  background-color: #f59e0b;
+  color: #1c1917;
+}

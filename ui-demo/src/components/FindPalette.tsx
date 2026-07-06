@@ -15,8 +15,8 @@ interface Hit {
 }
 
 /**
- * 查找文件面板（Cmd+P / 顶栏放大镜）。按文件名搜当前空间的文件 → 回车/点击打开。
- * mock：搜的是当前空间的本地文件（连接文件夹）或文档（云空间）。打开后配合 F6 在左侧树里定位高亮。
+ * 查找文件面板（Cmd+P / 顶栏放大镜）。按文件名搜所有打开文件夹里的文件 → 回车/点击打开。
+ * 打开后配合 F6 在左侧树里定位高亮。
  */
 export default function FindPalette() {
   const navigate = useNavigate()
@@ -24,44 +24,23 @@ export default function FindPalette() {
   const close = useUI((s) => s.closeFind)
 
   const files = useStore((s) => s.files)
-  const docs = useStore((s) => s.docs)
-  const folders = useStore((s) => s.folders)
-  const spaces = useStore((s) => s.spaces)
-  const activeSpaceId = useStore((s) => s.activeSpaceId)
+  const roots = useStore((s) => s.roots)
   const openFileTab = useStore((s) => s.openFileTab)
-  const openDoc = useStore((s) => s.openDoc)
 
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 当前空间的候选：连接文件夹 → files；云空间 → docs（两者互斥，自然只出一种）
+  // 候选：所有打开文件夹里的文件（sub 带根名前缀消歧，id 含 rootId 才唯一）。
   const candidates = useMemo<Hit[]>(() => {
-    const spaceFolderIds = new Set(
-      folders.filter((f) => f.spaceId === activeSpaceId).map((f) => f.id),
-    )
-    // 多根：sub 带根名前缀（多个文件夹同开时，同名相对路径靠它区分）；id 也要含 rootId 才唯一。
-    const space = spaces.find((sp) => sp.id === activeSpaceId)
-    const multiRoot = (space?.roots?.length ?? 0) > 1
-    const rootName = (id: string) => space?.roots?.find((r) => r.id === id)?.name ?? ''
-    const fromFiles: Hit[] = files
-      .filter((f) => f.spaceId === activeSpaceId)
-      .map((f) => ({
-        id: `f:${f.rootId}:${f.path}`,
-        name: base(f.path),
-        sub: multiRoot ? `${rootName(f.rootId)} / ${f.path}` : f.path,
-        open: () => openFileTab(f),
-      }))
-    const fromDocs: Hit[] = docs
-      .filter((d) => spaceFolderIds.has(d.folderId))
-      .map((d) => ({
-        id: 'd:' + d.id,
-        name: d.title,
-        sub: (d.localPath ?? '').replace(/^~\/Wordspace\/?/, ''),
-        open: () => openDoc(d.id),
-      }))
-    return [...fromFiles, ...fromDocs]
-  }, [files, docs, folders, spaces, activeSpaceId, openFileTab, openDoc])
+    const rootName = (id: string) => roots.find((r) => r.id === id)?.name ?? ''
+    return files.map((f) => ({
+      id: `f:${f.rootId}:${f.path}`,
+      name: base(f.path),
+      sub: `${rootName(f.rootId)} / ${f.path}`,
+      open: () => openFileTab(f),
+    }))
+  }, [files, roots, openFileTab])
 
   const hits = useMemo(() => {
     const term = q.trim().toLowerCase()

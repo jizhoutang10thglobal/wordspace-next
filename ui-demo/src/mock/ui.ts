@@ -17,24 +17,10 @@ interface UI {
   openNewTab: () => void
   closeCreate: () => void
 
-  spaceModalOpen: boolean
-  openSpaceModal: () => void
-  closeSpaceModal: () => void
-
-  // 「添加文件夹」modal（多文件夹空间：往当前连接空间再挂一个根）
+  // 「添加文件夹」modal（多文件夹：再打开一个根，和现有的并排）
   addFolderOpen: boolean
   openAddFolder: () => void
   closeAddFolder: () => void
-
-  // 「保存工作区」modal（把当前打开的一组文件夹命名保存）
-  saveWorkspaceOpen: boolean
-  openSaveWorkspace: () => void
-  closeSaveWorkspace: () => void
-
-  // 「打开工作区」modal（列磁盘上的 .wsworkspace 文件,选一个整组打开）
-  openWorkspaceOpen: boolean
-  openOpenWorkspace: () => void
-  closeOpenWorkspace: () => void
 
   // 「保存到哪里」modal：临时文档手动保存时弹出选位置（默认当前文件夹）。
   saveDocId: string | null
@@ -52,6 +38,9 @@ interface UI {
   findOpen: boolean
   openFind: () => void
   closeFind: () => void
+  docFindOpen: boolean // 文档内查找条（Cmd+F）——非模态、不进 anyOverlayOpen
+  openDocFind: () => void
+  closeDocFind: () => void
 
   // 快捷键速查面板（Cmd+/ 或左下角 ⌨）
   shortcutsOpen: boolean
@@ -93,21 +82,9 @@ export const useUI = create<UI>((set) => ({
   openNewTab: () => set({ createOpen: true, createTarget: null, createOmni: true }),
   closeCreate: () => set({ createOpen: false }),
 
-  spaceModalOpen: false,
-  openSpaceModal: () => set({ spaceModalOpen: true }),
-  closeSpaceModal: () => set({ spaceModalOpen: false }),
-
   addFolderOpen: false,
   openAddFolder: () => set({ addFolderOpen: true }),
   closeAddFolder: () => set({ addFolderOpen: false }),
-
-  saveWorkspaceOpen: false,
-  openSaveWorkspace: () => set({ saveWorkspaceOpen: true }),
-  closeSaveWorkspace: () => set({ saveWorkspaceOpen: false }),
-
-  openWorkspaceOpen: false,
-  openOpenWorkspace: () => set({ openWorkspaceOpen: true }),
-  closeOpenWorkspace: () => set({ openWorkspaceOpen: false }),
 
   saveDocId: null,
   saveCloseAfterTab: null,
@@ -121,6 +98,9 @@ export const useUI = create<UI>((set) => ({
   findOpen: false,
   openFind: () => set({ findOpen: true }),
   closeFind: () => set({ findOpen: false }),
+  docFindOpen: false,
+  openDocFind: () => set({ docFindOpen: true }),
+  closeDocFind: () => set({ docFindOpen: false }),
 
   shortcutsOpen: false,
   openShortcuts: () => set({ shortcutsOpen: true }),
@@ -160,10 +140,7 @@ export const useUI = create<UI>((set) => ({
 export function anyOverlayOpen(s: UI): boolean {
   return !!(
     s.createOpen ||
-    s.spaceModalOpen ||
     s.addFolderOpen ||
-    s.saveWorkspaceOpen ||
-    s.openWorkspaceOpen ||
     s.saveDocId ||
     s.confirmCloseTab ||
     s.findOpen ||

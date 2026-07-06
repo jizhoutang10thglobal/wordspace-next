@@ -1,7 +1,6 @@
 import { Share2, Save, FileCode2 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
-import { isCloudStorage } from '../types'
 import './TopActions.css'
 
 // 文档画布右上角的浮动操作。
@@ -14,16 +13,14 @@ export default function TopActions() {
   const openSave = useUI((s) => s.openSave)
   const mdSourceOpen = useUI((s) => s.mdSourceOpen)
   const toggleMdSource = useUI((s) => s.toggleMdSource)
-  const isFolderSpace = useStore((s) => {
-    const sp = s.spaces.find((x) => x.id === s.activeSpaceId)
-    return !!sp && !isCloudStorage(sp.storage)
-  })
 
   const tab = tabs.find((t) => t.id === activeTabId)
   const doc = tab?.docId ? getDoc(tab.docId) : undefined
+  // 连接文件夹里的文档（有 FileEntry 指向它）没有「分享/发布」；只有云盘文档能发布。
+  const isFolderDoc = useStore((s) => (doc ? s.files.some((f) => f.docId === doc.id) : false))
   if (!doc) return null
   const isMd = doc.format === 'markdown'
-  const showShare = !doc.unsaved && !isFolderSpace
+  const showShare = !doc.unsaved && !isFolderDoc
   // md 文档始终给源码开关；否则「已保存 + 连接文件夹里」没有可显示的操作
   if (!isMd && !doc.unsaved && !showShare) return null
 

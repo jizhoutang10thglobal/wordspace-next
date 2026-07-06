@@ -11,7 +11,6 @@ import { useUI, anyOverlayOpen } from '../mock/ui'
 import { IS_MAC } from '../lib/platform'
 import {
   VISIBILITY_META,
-  isCloudStorage,
   type Block,
   type BlockType,
   type Doc,
@@ -24,6 +23,7 @@ import FormatToolbar, { type FormatRect } from './canvas/FormatToolbar'
 import AiSoonModal from './canvas/AiSoonModal'
 import BlockActionMenu from './canvas/BlockActionMenu'
 import SlashMenu from './canvas/SlashMenu'
+import DocFind from './canvas/DocFind'
 import './Canvas.css'
 
 const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout']
@@ -328,19 +328,15 @@ function BlockRow({
 // Header: breadcrumb, meta, and the "…" menu (export / link / rename / delete)
 // ---------------------------------------------------------------------------
 export function DocHeader({ doc }: { doc: Doc }) {
-  const folder = useStore((s) => s.folders.find((f) => f.id === doc.folderId))
   const editor = useStore((s) => s.getMember(doc.updatedBy))
   const renameDoc = useStore((s) => s.renameDoc)
-  // In a connected folder there is no Wordspace publish/visibility, and the
-  // breadcrumb is the mounted path, not a cloud workspace. null in a cloud space.
+  // 面包屑：连接文件夹里的文档（文件标签页带 rootId）→ 根名 / 路径；未保存的临时文档 / 网页 → null。
   const folderCrumb = useStore((s) => {
-    const sp = s.spaces.find((x) => x.id === s.activeSpaceId)
-    if (!sp || isCloudStorage(sp.storage)) return null
     const t = s.tabs.find((x) => x.id === s.activeTabId)
-    // 多根：面包屑锚在文件所属的根上（根名即文件夹名）；没有根信息就退回空间名
-    const root = sp.roots?.find((r) => r.id === t?.rootId) ?? sp.roots?.[0]
-    const mount = root?.name ?? sp.name
-    return t?.url ? `${mount} / ${t.url}` : mount
+    if (!t?.rootId) return null
+    const root = s.roots.find((r) => r.id === t.rootId)
+    const mount = root?.name ?? ''
+    return t.url ? `${mount} / ${t.url}` : mount
   })
   const isFolderSpace = folderCrumb !== null
   const [menuOpen, setMenuOpen] = useState(false)
@@ -360,11 +356,7 @@ export function DocHeader({ doc }: { doc: Doc }) {
         {folderCrumb ? (
           <span className="ws-truncate">{folderCrumb}</span>
         ) : (
-          <>
-            <span>{folder?.scope === 'team' ? '团队空间' : '我的草稿'}</span>
-            <span className="ws-bc-sep">/</span>
-            <span>{folder?.name}</span>
-          </>
+          <span>{doc.unsaved ? '未保存的草稿' : '文档'}</span>
         )}
         <div className="ws-doc-more">
           <button
@@ -438,6 +430,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   const tab = tabs.find((x) => x.id === activeTabId)
   const doc = docId ? getDoc(docId) : tab?.docId ? getDoc(tab.docId) : undefined
+
+  const docFindOpen = useUI((s) => s.docFindOpen)
+  const closeDocFind = useUI((s) => s.closeDocFind)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
@@ -708,6 +703,61 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         reorderBlocks(doc.id, idx, to)
         if (editingId) editBlock(curId, { mode: 'end' })
         return
+      }
+      // ⌘⇧K 删除当前块（VS Code「删行」→ 映射删块；调研裁决：绝不用 ⌘D，那已是复制块）。
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'k' || e.key === 'K') && doc && curId) {
+        e.preventDefault()
+        const idx = doc.blocks.findIndex((b) => b.id === curId)
+        const fallback = doc.blocks[idx + 1]?.id ?? doc.blocks[idx - 1]?.id ?? null
+        checkpoint()
+        deleteBlock(doc.id, curId)
+        if (fallback) selectBlock(fallback)
+        else deselect()
+        return
+      }
+      // ⌘⇧7 有序 / ⌘⇧8 无序列表（Google Docs 直达键，肌肉记忆强）。用 e.code——Shift+数字在 mac 会变符号，e.key 不可靠。
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        !e.altKey &&
+        (e.code === 'Digit7' || e.code === 'Digit8') &&
+        doc &&
+        curId
+      ) {
+        e.preventDefault()
+        commitLive()
+        turnInto('list', undefined, e.code === 'Digit7' ? 'numbered' : 'bulleted', curId)
+        return
+      }
+      // ⌘⇧H 高亮（Notion 键位；套默认高亮色。有文字选区或选中块时才拦，否则放行）。
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'h' || e.key === 'H')) {
+        const sel = window.getSelection()
+        const hasSel = !!sel && !sel.isCollapsed && sel.rangeCount > 0
+        if (hasSel || selectedId) {
+          e.preventDefault()
+          applyCmd('hiliteColor', '#fff59d')
+          return
+        }
+      }
+      // ⌘A 分级全选（Notion 式）：块内文字未全选 → 全选块内文字；已全选 → 升到块选中态。
+      // （块编辑器里一步选全文会误伤；逐级放大才顺手。全文多块选中需多选基建，本期到块选中态为止。）
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A') && editingId && doc) {
+        const el = blockEls.current.get(editingId)
+        const sel = window.getSelection()
+        if (el && sel) {
+          const blockText = (el.textContent ?? '').trim()
+          const allSelected = blockText.length > 0 && sel.toString().trim() === blockText
+          e.preventDefault()
+          if (!allSelected) {
+            const r = document.createRange()
+            r.selectNodeContents(el)
+            sel.removeAllRanges()
+            sel.addRange(r)
+          } else {
+            selectBlock(editingId) // 已全选 → 升到块选中态（退出文字编辑）
+          }
+          return
+        }
       }
       // ⌘Enter 待办打勾/取消（光标在待办项里,或选中待办块时切第一项）
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && doc && curId) {
@@ -1239,6 +1289,10 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   return (
     <main className={'ws-canvas' + (embedded ? ' ws-canvas-embed' : '')}>
+      {/* 文档内查找条（Cmd+F）。key=doc.id：切文档时重挂、重搜、清旧高亮 */}
+      {docFindOpen && (
+        <DocFind key={doc.id} container={scrollRef.current} onClose={closeDocFind} />
+      )}
       {/* 点空白处（非任何块）取消选中——块的 onClick 会 stopPropagation，故此处只接到空白点击 */}
       <div
         className="ws-canvas-scroll"

@@ -4,7 +4,6 @@ import {
   PanelLeft,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   RotateCw,
   Lock,
   Globe,
@@ -24,10 +23,10 @@ import {
   File,
   FolderPlus,
   Keyboard,
-  Layers,
   Pin,
   PinOff,
   Search,
+  AlertCircle,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
@@ -35,8 +34,7 @@ import { useBrowser } from '../mock/browser'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, type FileNode } from '../lib/tree'
 import { IS_MAC } from '../lib/platform'
-import { isCloudStorage } from '../types'
-import type { Doc, FileEntry, FileKind, Folder, MountRoot, Space, Tab } from '../types'
+import type { FileEntry, FileKind, MountRoot, Tab } from '../types'
 import './ArcSidebar.css'
 
 // ---------------------------------------------------------------------------
@@ -150,20 +148,12 @@ function TabRow({
   )
 }
 
-// One strip for a (space, pinned?) group of tabs. It is a drop zone: dropping a
-// tab here sets its pinned state and positions it where the insertion line was.
-function TabStrip({
-  spaceId,
-  pinned,
-  emptyHint,
-}: {
-  spaceId: string
-  pinned: boolean
-  emptyHint?: string
-}) {
+// One strip for a (pinned?) group of tabs. It is a drop zone: dropping a tab
+// here sets its pinned state and positions it where the insertion line was.
+function TabStrip({ pinned, emptyHint }: { pinned: boolean; emptyHint?: string }) {
   const allTabs = useStore((s) => s.tabs)
   const dropTab = useStore((s) => s.dropTab)
-  const tabs = allTabs.filter((t) => t.spaceId === spaceId && !!t.pinned === pinned)
+  const tabs = allTabs.filter((t) => !!t.pinned === pinned)
   const [insert, setInsert] = useState<{ id: string; pos: InsertPos } | null>(null)
   const [zoneOver, setZoneOver] = useState(false)
   const empty = tabs.length === 0
@@ -212,58 +202,6 @@ function TabStrip({
           />
         ))
       )}
-    </div>
-  )
-}
-
-function DocRow({ doc }: { doc: Doc }) {
-  const navigate = useNavigate()
-  const { openDoc, tabs, activeTabId } = useStore()
-  const activeDocId = tabs.find((t) => t.id === activeTabId)?.docId
-  return (
-    <button
-      className={`arc-doc ${doc.id === activeDocId ? 'is-active' : ''}`}
-      onClick={() => {
-        openDoc(doc.id)
-        navigate('/docs')
-      }}
-    >
-      <FileText size={13} className="arc-doc-ico" />
-      <span className="arc-doc-title ws-truncate">{doc.title}</span>
-    </button>
-  )
-}
-
-function FolderGroup({ folder, query }: { folder: Folder; query: string }) {
-  const docs = useStore((s) =>
-    s.docs
-      .filter((d) => d.folderId === folder.id && !d.unsaved)
-      .sort((a, b) => b.updatedAt - a.updatedAt),
-  )
-  const q = query.trim().toLowerCase()
-  const shown = q ? docs.filter((d) => d.title.toLowerCase().includes(q)) : docs
-  const key = 'folder:' + folder.id
-  const openState = useUI((s) => !s.collapsedKeys[key])
-  const open = q ? true : openState // while filtering, keep matches in view
-  const toggle = useUI((s) => s.toggleCollapsed)
-  // while filtering, drop folders with no matches; otherwise an empty folder
-  // stays visible (you can still see and navigate into it — unlike before).
-  if (q && !shown.length) return null
-  return (
-    <div className="arc-folder">
-      <button className="arc-folder-head" onClick={() => toggle(key)}>
-        <ChevronRight size={12} className={`arc-caret ${open ? 'is-open' : ''}`} />
-        <FolderClosed size={13} />
-        <span className="ws-truncate">{folder.name}</span>
-      </button>
-      {open &&
-        (shown.length ? (
-          shown.map((d) => <DocRow key={d.id} doc={d} />)
-        ) : (
-          <div className="arc-tree-empty" style={{ paddingLeft: 26 }}>
-            空文件夹
-          </div>
-        ))}
     </div>
   )
 }
@@ -339,14 +277,12 @@ function FileBranch({
   node,
   depth,
   path,
-  spaceId,
   rootId,
   forceOpen,
 }: {
   node: FileNode
   depth: number
   path: string
-  spaceId: string
   rootId: string
   forceOpen?: boolean
 }) {
@@ -495,14 +431,8 @@ function FileBranch({
           setMenu({ x: e.clientX, y: e.clientY })
         }}
         onDragOver={(e) => {
-          // skip if no file dragged, cross-space/cross-root, or already in this folder
-          if (
-            !dragFile ||
-            dragFile.spaceId !== spaceId ||
-            dragFile.rootId !== rootId ||
-            parentDir(dragFile.path) === path
-          )
-            return
+          // skip if no file dragged, cross-root, or already in this folder
+          if (!dragFile || dragFile.rootId !== rootId || parentDir(dragFile.path) === path) return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
           clearDrop = () => setDropOver(false)
@@ -512,7 +442,7 @@ function FileBranch({
           if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropOver(false)
         }}
         onDrop={(e) => {
-          if (!dragFile || dragFile.spaceId !== spaceId || dragFile.rootId !== rootId) return
+          if (!dragFile || dragFile.rootId !== rootId) return
           e.preventDefault()
           e.stopPropagation()
           setDropOver(false)
@@ -555,7 +485,6 @@ function FileBranch({
               node={c}
               depth={depth + 1}
               path={`${path}/${c.name}`}
-              spaceId={spaceId}
               rootId={rootId}
               forceOpen={forceOpen}
             />
@@ -569,48 +498,17 @@ function FileBranch({
   )
 }
 
-// The colored identity square for a space (its initial on its accent color).
-function SpaceIcon({ space }: { space: Space }) {
-  return (
-    <span className="arc-space-ic" style={{ background: space.color }} aria-hidden>
-      {space.badge}
-    </span>
-  )
-}
-
-// A space's one-line detail under its name. Category is already carried by the
-// group header, so this shows the useful bit: capability for cloud, the folder
-// path (or folder count) for a connected space.
-function spaceDetail(space: Space): string {
-  if (isCloudStorage(space.storage)) return '实时协作、Agent'
-  const roots = space.roots ?? []
-  if (roots.length > 1) return `${roots.length} 个文件夹`
-  return roots[0]?.path ?? space.subtitle
-}
-
-// One mount root's section in the library: a collapsible root header (folder
+// One opened folder's section in the library: a collapsible root header (folder
 // name; hover shows the full path; right-click to manage) + its own file tree,
-// indented inside a rail so「根包含下面这些」的层级一眼可读。
-// The header is (a) the "drop file here to move to this root's top level"
-// target and (b) draggable itself, to reorder roots（顺序随 spaces 持久化）。
-function RootSection({
-  space,
-  root,
-  index,
-  query,
-  removable,
-}: {
-  space: Space
-  root: MountRoot
-  index: number
-  query: string
-  removable: boolean
-}) {
+// indented inside a rail. The header is (a) the "drop file here to move to this
+// root's top level" target and (b) draggable itself, to reorder roots（顺序持久化）。
+function RootSection({ root, index, query }: { root: MountRoot; index: number; query: string }) {
   const files = useStore((s) => s.files)
   const dirs = useStore((s) => s.dirs)
   const moveFile = useStore((s) => s.moveFile)
-  const removeRootFromSpace = useStore((s) => s.removeRootFromSpace)
+  const removeRoot = useStore((s) => s.removeRoot)
   const reorderRoots = useStore((s) => s.reorderRoots)
+  const relocateRoot = useStore((s) => s.relocateRoot)
   const openCreate = useUI((s) => s.openCreate)
   const key = 'root:' + root.id
   const openState = useUI((s) => !s.collapsedKeys[key])
@@ -621,20 +519,62 @@ function RootSection({
   const [insert, setInsert] = useState<InsertPos | null>(null) // 根重排的插入线位置
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
 
-  const mine = files.filter((f) => f.spaceId === space.id && f.rootId === root.id)
+  // 失联根：底层文件夹不可达。灰显 header + 「重新定位 / 移除」，不渲染树；筛选时直接跳过。
+  if (root.missing) {
+    if (q) return null
+    return (
+      <div className="arc-root is-missing">
+        <div
+          className="arc-root-head"
+          role="button"
+          tabIndex={0}
+          title={`${root.path} · 失联（文件夹不可达）`}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setMenu({ x: e.clientX, y: e.clientY })
+          }}
+        >
+          <AlertCircle size={12} className="arc-root-miss-ic" />
+          <span className="ws-truncate arc-root-name">{root.name}</span>
+          <span className="arc-root-miss-tag">失联</span>
+        </div>
+        <div className="arc-root-miss-note">
+          <span className="ws-truncate">文件夹不可达（可能被移动、删除，或所在磁盘未连接）</span>
+          <span className="arc-root-miss-acts">
+            <button className="arc-root-miss-act" onClick={() => relocateRoot(root.id)}>
+              重新定位
+            </button>
+            <button className="arc-root-miss-act" onClick={() => removeRoot(root.id)}>
+              移除
+            </button>
+          </span>
+        </div>
+        {menu && (
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
+              { label: '重新定位…', onClick: () => relocateRoot(root.id) },
+              { label: '移除', danger: true, onClick: () => removeRoot(root.id) },
+            ]}
+          />
+        )}
+      </div>
+    )
+  }
+
+  const mine = files.filter((f) => f.rootId === root.id)
   const shown = q ? mine.filter((f) => f.path.toLowerCase().includes(q)) : mine
-  const rootDirs = q
-    ? []
-    : dirs.filter((d) => d.spaceId === space.id && d.rootId === root.id).map((d) => d.path)
+  const rootDirs = q ? [] : dirs.filter((d) => d.rootId === root.id).map((d) => d.path)
   const tree = buildFileTree(shown, rootDirs)
   if (q && !shown.length) return null // while filtering, drop roots with no matches
-  const drive = space.storage === 'gdrive'
+  const drive = root.origin === 'gdrive'
   return (
     <div className="arc-root">
       <div
         className={
-          `arc-root-head ${rootDrop ? 'is-drop' : ''}` +
-          (insert ? ` is-insert-${insert}` : '')
+          `arc-root-head ${rootDrop ? 'is-drop' : ''}` + (insert ? ` is-insert-${insert}` : '')
         }
         role="button"
         tabIndex={0}
@@ -670,14 +610,8 @@ function RootSection({
             setInsert(insertAt(e))
             return
           }
-          // 文件挪到根顶层：skip if no file dragged, cross-space/cross-root, or already at top
-          if (
-            !dragFile ||
-            dragFile.spaceId !== space.id ||
-            dragFile.rootId !== root.id ||
-            parentDir(dragFile.path) === ''
-          )
-            return
+          // 文件挪到根顶层：skip if no file dragged, cross-root, or already at top
+          if (!dragFile || dragFile.rootId !== root.id || parentDir(dragFile.path) === '') return
           e.preventDefault()
           e.dataTransfer.dropEffect = 'move'
           clearDrop = () => setRootDrop(false)
@@ -695,12 +629,12 @@ function RootSection({
             const pos = insert ?? insertAt(e)
             setInsert(null)
             clearDrop = null
-            const ids = (space.roots ?? []).map((r) => r.id)
-            reorderRoots(space.id, dragRootId, targetIndex(ids, dragRootId, root.id, pos))
+            const ids = useStore.getState().roots.map((r) => r.id)
+            reorderRoots(dragRootId, targetIndex(ids, dragRootId, root.id, pos))
             dragRootId = null
             return
           }
-          if (!dragFile || dragFile.spaceId !== space.id || dragFile.rootId !== root.id) return
+          if (!dragFile || dragFile.rootId !== root.id) return
           e.preventDefault()
           setRootDrop(false)
           clearDrop = null
@@ -720,17 +654,9 @@ function RootSection({
           items={[
             { label: '新建文档', onClick: () => openCreate({ rootId: root.id, dir: '' }) },
             ...(index > 0
-              ? [{ label: '移到最上面', onClick: () => reorderRoots(space.id, root.id, 0) }]
+              ? [{ label: '移到最上面', onClick: () => reorderRoots(root.id, 0) }]
               : []),
-            ...(removable
-              ? [
-                  {
-                    label: '从工作区移除（磁盘文件不动）',
-                    danger: true,
-                    onClick: () => removeRootFromSpace(space.id, root.id),
-                  },
-                ]
-              : []),
+            { label: '移除（磁盘文件不动）', danger: true, onClick: () => removeRoot(root.id) },
           ]}
         />
       )}
@@ -738,15 +664,7 @@ function RootSection({
         <div className="arc-root-kids">
           {tree.length ? (
             tree.map((n, i) => (
-              <FileBranch
-                key={i}
-                node={n}
-                depth={0}
-                path={n.name}
-                spaceId={space.id}
-                rootId={root.id}
-                forceOpen={!!q}
-              />
+              <FileBranch key={i} node={n} depth={0} path={n.name} rootId={root.id} forceOpen={!!q} />
             ))
           ) : (
             <div className="arc-lib-empty">{q ? '没有匹配的文件' : '这个文件夹还没有文件'}</div>
@@ -757,194 +675,34 @@ function RootSection({
   )
 }
 
-function SpaceLibrary({ space, query }: { space: Space; query: string }) {
-  const folders = useStore((s) => s.folders)
-  const files = useStore((s) => s.files)
-  const docs = useStore((s) => s.docs)
+// The sidebar library: the flat list of opened folders (roots) — each an
+// independent tree, draggable to reorder. 没有「工作区 / Space」外壳、没有切换器；
+// 云盘（团队/私有）是「之后上云」的内容，当前不在这里。
+function Library({ query }: { query: string }) {
+  const roots = useStore((s) => s.roots)
   const openAddFolder = useUI((s) => s.openAddFolder)
-  const openSaveWorkspace = useUI((s) => s.openSaveWorkspace)
   const q = query.trim().toLowerCase()
 
-  // A connected space: N mount roots side by side, each its own tree — the
-  // multi-folder workspace. 单文件夹只是 roots.length === 1 的特例，没有第二种模式。
-  if (!isCloudStorage(space.storage)) {
-    const roots = space.roots ?? []
-    const matches = q
-      ? files.some((f) => f.spaceId === space.id && f.path.toLowerCase().includes(q))
-      : true
-    return (
-      <div className="arc-lib" key={space.id}>
-        {roots.length > 1 && !space.workspaceSaved && !q && (
-          <div className="arc-ws-hint">
-            <span className="ws-truncate">{roots.length} 个文件夹 · 未保存为工作区</span>
-            <button className="arc-ws-save" onClick={openSaveWorkspace}>
-              保存…
-            </button>
-          </div>
-        )}
-        {roots.map((r, i) => (
-          <RootSection
-            key={r.id}
-            space={space}
-            root={r}
-            index={i}
-            query={query}
-            removable={roots.length > 1}
-          />
-        ))}
-        {q && !matches && <div className="arc-lib-empty">没有匹配的文件</div>}
-        {!roots.length && (
-          <div className="arc-lib-empty">
-            这个空间还没有打开任何文件夹。
-          </div>
-        )}
-        {!q && (
-          <button className="arc-add-root" onClick={openAddFolder} title="把另一个文件夹添加进当前空间，和现有文件夹并排打开">
-            <FolderPlus size={13} />
-            <span>添加文件夹…</span>
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  // Wordspace cloud: a team-shared section and a private one, scoped to THIS
-  // space — cloud spaces are isolated workspaces, like Notion.
-  const team = folders
-    .filter((f) => f.spaceId === space.id && f.scope === 'team')
-    .sort((a, b) => a.order - b.order)
-  const personal = folders
-    .filter((f) => f.spaceId === space.id && f.scope === 'personal')
-    .sort((a, b) => a.order - b.order)
-  const folderIds = new Set([...team, ...personal].map((f) => f.id))
-  const hasDocs = docs.some((d) => folderIds.has(d.folderId) && !d.unsaved)
-  const matches = q
-    ? docs.some((d) => folderIds.has(d.folderId) && !d.unsaved && d.title.toLowerCase().includes(q))
-    : true
   return (
-    <div className="arc-lib" key={space.id}>
-      {!hasDocs ? (
-        <div className="arc-lib-empty">这个空间还没有文档，点上方「标签页」右边的 + 新建。</div>
-      ) : q && !matches ? (
-        <div className="arc-lib-empty">没有匹配的文档</div>
-      ) : (
-        <>
-          {team.length > 0 && <div className="arc-sec-label">团队共享</div>}
-          {team.map((f) => (
-            <FolderGroup key={f.id} folder={f} query={query} />
-          ))}
-          {personal.length > 0 && <div className="arc-sec-label">我的私有</div>}
-          {personal.map((f) => (
-            <FolderGroup key={f.id} folder={f} query={query} />
-          ))}
-        </>
+    <div className="arc-lib">
+      {roots.map((r, i) => (
+        <RootSection key={r.id} root={r} index={i} query={query} />
+      ))}
+      {!roots.length && !q && <div className="arc-lib-empty">还没有打开任何文件夹。</div>}
+      {!q && (
+        <button
+          className="arc-add-root"
+          onClick={openAddFolder}
+          title="再打开一个文件夹，和现有的并排显示"
+        >
+          <FolderPlus size={13} />
+          <span>添加文件夹…</span>
+        </button>
       )}
     </div>
   )
 }
 
-function SpaceSwitcher() {
-  const { spaces, activeSpaceId, setActiveSpace } = useStore()
-  const openSpaceModal = useUI((s) => s.openSpaceModal)
-  const openOpenWorkspace = useUI((s) => s.openOpenWorkspace)
-  const active = spaces.find((s) => s.id === activeSpaceId)
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  // Close the menu on outside click or Escape.
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-  const cloud = spaces.filter((s) => isCloudStorage(s.storage))
-  const connected = spaces.filter((s) => !isCloudStorage(s.storage))
-  const item = (s: Space) => {
-    const Icon = s.storage === 'local' ? HardDrive : Cloud
-    return (
-      <button
-        key={s.id}
-        className={`arc-space-item ${s.id === activeSpaceId ? 'is-active' : ''}`}
-        onClick={() => {
-          setActiveSpace(s.id)
-          setOpen(false)
-        }}
-      >
-        <SpaceIcon space={s} />
-        <span className="arc-space-item-text">
-          <span className="arc-space-item-name ws-truncate">
-            {s.name}
-            {/* 已保存的多文件夹组合带「工作区」徽标（消歧用，仿 VS Code Open Recent 的 "(Workspace)"） */}
-            {s.workspaceSaved && (s.roots?.length ?? 0) > 1 && (
-              <span className="arc-space-ws-badge">工作区</span>
-            )}
-          </span>
-          <span className="arc-space-item-sub ws-truncate">
-            <Icon size={11} />
-            {spaceDetail(s)}
-          </span>
-        </span>
-        {s.id === activeSpaceId && <Check size={15} className="arc-space-check" />}
-      </button>
-    )
-  }
-  return (
-    <div className="arc-spaces" ref={ref}>
-      <button className="arc-space-trigger" onClick={() => setOpen((v) => !v)}>
-        <span className="arc-space-title ws-truncate">{active?.name}</span>
-        {active && (
-          <span className="arc-space-trig-ic">
-            {active.storage === 'local' ? <HardDrive size={13} /> : <Cloud size={13} />}
-          </span>
-        )}
-        <ChevronDown size={14} className={`arc-space-chev ${open ? 'is-open' : ''}`} />
-      </button>
-      {open && (
-        <div className="arc-space-menu">
-          {/* local-first: connected folders lead; Wordspace cloud comes later */}
-          {connected.length > 0 && <div className="arc-space-group">连接的文件夹</div>}
-          {connected.map(item)}
-          {cloud.length > 0 && <div className="arc-space-group">Wordspace 云盘</div>}
-          {cloud.map(item)}
-          {/* 打开 .wsworkspace 工作区文件——「打包成工作区」的另一半 */}
-          <button
-            className="arc-space-new"
-            onClick={() => {
-              setOpen(false)
-              openOpenWorkspace()
-            }}
-          >
-            <Layers size={14} />
-            <span>打开工作区…</span>
-          </button>
-          <button
-            className="arc-space-new"
-            onClick={() => {
-              setOpen(false)
-              openSpaceModal()
-            }}
-          >
-            <Plus size={14} />
-            <span>新建空间</span>
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// The collapsed (48px) sidebar: a condensed icon rail of the active space —
-// its badge, open tabs, and top-level folders — each with a hover bubble that
-// previews its name + contents. Click a folder/badge to expand; a tab to switch.
 export default function ArcSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -952,9 +710,6 @@ export default function ArcSidebar() {
     tabs,
     activeTabId,
     getDoc,
-    spaces,
-    activeSpaceId,
-    setActiveSpace,
     newBrowserTab,
     openNewTab,
     saveActiveDoc,
@@ -996,7 +751,6 @@ export default function ArcSidebar() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
   const doc = activeTab?.docId ? getDoc(activeTab.docId) : undefined
-  const space = spaces.find((s) => s.id === activeSpaceId) ?? spaces[0]
   const isLocal = !doc?.publishedUrl || doc.visibility === 'private' || doc.visibility === 'invited'
 
   const [omni, setOmni] = useState(activeTab?.url ?? '')
@@ -1006,20 +760,16 @@ export default function ArcSidebar() {
 
   // file-tree quick filter (the real "search my files", separate from the web omnibox)
   const [query, setQuery] = useState('')
-  useEffect(() => {
-    setQuery('')
-  }, [activeSpaceId])
 
   // 全局壳快捷键（作用域模型的最外层，见 public/shortcuts.html §1/§3.1）。
   // 原则：弹层开着时不穿透（anyOverlayOpen 守卫）；未命中必须放行（不 preventDefault）。
   // 注意：浏览器保留 Cmd+T/Cmd+W/Cmd+1-9（菜单级），这些在网页 demo 里可能被浏览器吞掉，
   // 真 Electron app 里正常；Ctrl+Tab 浏览器不保留，demo 里就能用。
   useEffect(() => {
-    // 当前空间标签页的「显示顺序」：置顶组在前、普通组在后（与 TabStrip 渲染一致）
-    const spaceTabsInOrder = () => {
+    // 标签页的「显示顺序」：置顶组在前、普通组在后（与 TabStrip 渲染一致）
+    const tabsInOrder = () => {
       const st = useStore.getState()
-      const mine = st.tabs.filter((t) => t.spaceId === st.activeSpaceId)
-      return [...mine.filter((t) => t.pinned), ...mine.filter((t) => !t.pinned)]
+      return [...st.tabs.filter((t) => t.pinned), ...st.tabs.filter((t) => !t.pinned)]
     }
     const onKey = (e: KeyboardEvent) => {
       const ui = useUI.getState()
@@ -1027,7 +777,7 @@ export default function ArcSidebar() {
       if (e.ctrlKey && !e.metaKey && e.key === 'Tab') {
         if (anyOverlayOpen(ui)) return
         e.preventDefault()
-        const seq = spaceTabsInOrder()
+        const seq = tabsInOrder()
         if (seq.length < 2) return
         const st = useStore.getState()
         const idx = seq.findIndex((t) => t.id === st.activeTabId)
@@ -1067,8 +817,16 @@ export default function ArcSidebar() {
       } else if (!e.shiftKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault()
         saveActiveDoc()
+      } else if (!e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        // Cmd+F = 文档内查找（调研裁决：全软件铁律，还给正文）。仅当编辑器有打开的文档时。
+        const st = useStore.getState()
+        const tab = st.tabs.find((t) => t.id === st.activeTabId)
+        if (tab?.docId) {
+          e.preventDefault()
+          ui.openDocFind()
+        }
       } else if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
-        // 聚焦文件筛选框（裁决 3：Cmd+F 的名分留给将来的文档内查找）
+        // Cmd+Shift+F = 聚焦文件筛选框（Cmd+F 让位给文档内查找后，文件筛选下沉到这，抄 VS Code 分层）
         e.preventDefault()
         if (useUI.getState().sidebarCollapsed) toggleSidebar()
         window.setTimeout(() => {
@@ -1089,7 +847,7 @@ export default function ArcSidebar() {
       } else if (!e.shiftKey && /^[1-9]$/.test(e.key)) {
         // 直达第 N 个标签页；9 = 最后一个（浏览器语义）
         e.preventDefault()
-        const seq = spaceTabsInOrder()
+        const seq = tabsInOrder()
         if (!seq.length) return
         const target = e.key === '9' ? seq[seq.length - 1] : seq[Number(e.key) - 1]
         if (target) useStore.getState().setActiveTab(target.id)
@@ -1135,18 +893,6 @@ export default function ArcSidebar() {
   const reload = () => {
     if (activeTab?.kind === 'web' && activeTab.url) useBrowser.getState().navigate(activeTab.url)
     navigate('/docs')
-  }
-
-  const wheelLock = useRef(0)
-  const onWheel = (e: React.WheelEvent) => {
-    if (Math.abs(e.deltaX) > 28 && Math.abs(e.deltaX) > Math.abs(e.deltaY) * 2) {
-      const t = Date.now()
-      if (t - wheelLock.current < 600) return
-      wheelLock.current = t
-      const idx = spaces.findIndex((s) => s.id === activeSpaceId)
-      const dir = e.deltaX > 0 ? 1 : -1
-      setActiveSpace(spaces[(idx + dir + spaces.length) % spaces.length].id)
-    }
   }
 
   const util = [
@@ -1207,13 +953,9 @@ export default function ArcSidebar() {
         {isLocal && activeTab?.kind !== 'web' && <span className="arc-omni-tag">本地</span>}
       </div>
 
-      <div className="arc-space-bar">
-        <SpaceSwitcher />
-      </div>
-
-      <div className="arc-scroll" onWheel={onWheel} ref={scrollRef}>
+      <div className="arc-scroll" ref={scrollRef}>
         <div className="arc-section-label">置顶</div>
-        <TabStrip spaceId={activeSpaceId} pinned emptyHint="把标签页拖到这里置顶" />
+        <TabStrip pinned emptyHint="把标签页拖到这里置顶" />
 
         <div className="arc-section-label arc-tabs-label">
           <span>标签页</span>
@@ -1221,7 +963,7 @@ export default function ArcSidebar() {
             <Plus size={14} />
           </button>
         </div>
-        <TabStrip spaceId={activeSpaceId} pinned={false} />
+        <TabStrip pinned={false} />
 
         <div className="arc-section-label">文档</div>
         <div className="arc-filter">
@@ -1230,7 +972,7 @@ export default function ArcSidebar() {
             className="arc-filter-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="筛选当前空间的文件"
+            placeholder="筛选文件"
             spellCheck={false}
           />
           {query && (
@@ -1239,7 +981,7 @@ export default function ArcSidebar() {
             </button>
           )}
         </div>
-        <SpaceLibrary space={space} query={query} />
+        <Library query={query} />
       </div>
 
       <div className="arc-foot">

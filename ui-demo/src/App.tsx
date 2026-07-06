@@ -13,10 +13,7 @@ import Agents from './components/Agents'
 import Settings from './components/Settings'
 import PublishDialog from './components/PublishDialog'
 import CreateModal from './components/CreateModal'
-import CreateSpaceModal from './components/CreateSpaceModal'
 import AddFolderModal from './components/AddFolderModal'
-import SaveWorkspaceModal from './components/SaveWorkspaceModal'
-import OpenWorkspaceModal from './components/OpenWorkspaceModal'
 import ShortcutsPanel from './components/ShortcutsPanel'
 import FindPalette from './components/FindPalette'
 import SaveModal from './components/SaveModal'
@@ -89,10 +86,7 @@ export default function App() {
       <Agents />
       <PublishDialog />
       <CreateModal />
-      <CreateSpaceModal />
       <AddFolderModal />
-      <SaveWorkspaceModal />
-      <OpenWorkspaceModal />
       <ShortcutsPanel />
       <FindPalette />
       <SaveModal />

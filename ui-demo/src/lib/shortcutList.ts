@@ -36,6 +36,13 @@ const GROUPS: ShortcutGroup[] = [
     ],
   },
   {
+    title: '编辑器 · 查找与选择',
+    items: [
+      { keys: ['Mod', 'F'], label: '在文档中查找（Enter 下一个 · Shift+Enter 上一个）' },
+      { keys: ['Mod', 'A'], label: '全选块内文字，再按升到块选中态' },
+    ],
+  },
+  {
     title: '编辑器 · 文本态（光标在块里）',
     hint: '格式键作用于选中文字；无选区时放行原生',
     items: [
@@ -43,6 +50,7 @@ const GROUPS: ShortcutGroup[] = [
       { keys: ['Mod', 'I'], label: '斜体' },
       { keys: ['Mod', 'U'], label: '下划线' },
       { keys: ['Mod', 'Shift', 'X'], label: '删除线' },
+      { keys: ['Mod', 'Shift', 'H'], label: '高亮' },
       { keys: ['Mod', 'E'], label: '行内代码' },
       { keys: ['Mod', 'K'], label: '插入链接' },
       { keys: ['Mod', 'Shift', 'V'], label: '粘贴为纯文本' },
@@ -58,14 +66,27 @@ const GROUPS: ShortcutGroup[] = [
     title: '编辑器 · 块操作（文本态或块选中态）',
     items: [
       { keys: ['Mod', 'D'], label: '复制当前块' },
+      { keys: ['Mod', 'Shift', 'K'], label: '删除当前块' },
       { keys: ['Mod', 'Shift', '↑/↓'], label: '上移 / 下移当前块' },
       { keys: ['Mod', 'Alt', '0'], keysWin: ['Ctrl', 'Shift', '0'], label: '转为正文' },
       { keys: ['Mod', 'Alt', '1…3'], keysWin: ['Ctrl', 'Shift', '1…3'], label: '转为标题 1 / 2 / 3' },
       { keys: ['Mod', 'Alt', '4…6'], keysWin: ['Ctrl', 'Shift', '4…6'], label: '转为待办 / 无序 / 有序列表' },
+      { keys: ['Mod', 'Shift', '8'], label: '无序列表' },
+      { keys: ['Mod', 'Shift', '7'], label: '有序列表' },
       { keys: ['Mod', 'Enter'], label: '待办打勾 / 取消' },
       { keys: ['↑', '↓'], label: '块选中态：移动选择' },
       { keys: ['Enter'], label: '块选中态：进入编辑' },
       { keys: ['⌫'], label: '块选中态：删除块' },
+    ],
+  },
+  {
+    title: '光标导航 · 系统原生',
+    hint: '操作系统直接提供，编辑器不拦截',
+    items: [
+      { keys: ['Alt', '⌫'], keysWin: ['Ctrl', '⌫'], label: '按词删除' },
+      { keys: ['Alt', '←/→'], keysWin: ['Ctrl', '←/→'], label: '按词左右移动（+Shift 扩选）' },
+      { keys: ['Mod', '←/→'], label: '到行首 / 行尾', macOnly: true },
+      { keys: ['Mod', '↑/↓'], label: '跳到文档首 / 尾', macOnly: true },
     ],
   },
   {
