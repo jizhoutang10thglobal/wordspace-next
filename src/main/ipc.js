@@ -307,6 +307,7 @@ function registerIpc() {
   ipcMain.handle('web-navigate', (_e, key, input) => webTabs.navigate(key, input));
   ipcMain.handle('web-load', (_e, key, url) => webTabs.loadUrlDirect(key, url)); // 书签/历史命中/恢复
   ipcMain.handle('web-pdf', (_e, key) => webTabs.printToPdf(key));
+  ipcMain.handle('web-clip', (_e, key) => webTabs.extractReadable(key)); // 网页抽正文 → 存成本地文档(融合桥)
   ipcMain.on('web-show', (_e, key, bounds) => { webTabs.createView(key); webTabs.wireFoundInPage(key); webTabs.show(key, bounds); });
   ipcMain.on('web-hide', (_e, key) => webTabs.hide(key));
   ipcMain.on('web-set-bounds', (_e, key, bounds) => webTabs.setBounds(key, bounds));

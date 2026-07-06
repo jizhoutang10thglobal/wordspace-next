@@ -237,6 +237,22 @@ async function printToPdf(key) {
   return out;
 }
 
+// 网页存成本地文档（融合核心桥,Colin 方向）：在网页里抽正文(标题/段落/标题层级),回传纯文本转义后的
+// 干净 HTML(无 script/style/外链资源,进我们的编辑器)。抽取跑在不可信页面上下文=只读 DOM,产物全 escape。
+async function extractReadable(key) {
+  const r = registry.get(key); if (!r) return null;
+  const js = '(function(){' +
+    'function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}' +
+    'var parts=[];' +
+    'var nodes=document.body?document.body.querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,blockquote,pre"):[];' +
+    'for(var i=0;i<nodes.length;i++){var el=nodes[i];var t=(el.innerText||"").trim();if(!t)continue;' +
+    'var tag=el.tagName.toLowerCase();if(tag==="li")tag="p";if(tag==="h5"||tag==="h6")tag="h4";' +
+    'if(tag==="pre"){parts.push("<pre>"+esc(t)+"</pre>");}else{parts.push("<"+tag+">"+esc(t)+"</"+tag+">");}}' +
+    'return JSON.stringify({title:document.title||location.href,url:location.href,body:parts.join("\\n")});' +
+    '})()';
+  try { return JSON.parse(await r.view.webContents.executeJavaScript(js, true)); } catch (e) { return null; }
+}
+
 function wireFoundInPage(key) {
   const r = registry.get(key); if (!r || r._foundWired) return; // 幂等:web-show 每次激活都调,不守会累积 listener 泄漏(adversarial)
   r._foundWired = true;
@@ -255,6 +271,6 @@ function hasActiveDownloads() { return activeDownloads.size > 0; }
 
 module.exports = {
   init, setDownloadDir, createView, show, hide, setBounds, setVisible, destroy, destroyAll,
-  navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setAudioMutedAll, printToPdf,
+  navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setAudioMutedAll, printToPdf, extractReadable,
   snapshot, hasActiveDownloads, _registry: registry,
 };

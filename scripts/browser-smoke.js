@@ -126,6 +126,17 @@ const ROOT = path.join(__dirname, '..');
   const c3 = await childCount();
   ok(c3 === 1, '切回网页标签重新 attach（实际 ' + c3 + '）');
 
+  // 融合桥:网页存成本地文档 → 工作区多一个 .html 且用编辑器打开
+  await page.click('.sb-tab.sb-tab-web'); await page.waitForTimeout(600);
+  await page.click('#web-clip-btn').catch(() => {});
+  await page.waitForTimeout(2000);
+  const clipped = await page.evaluate(() => !!document.querySelector('.sb-file[data-rel$=".html"]') && !document.getElementById('doc-frame').hidden);
+  const clipFile = fs.readdirSync(wsDir).filter((f) => f.endsWith('.html') && f !== 'doc.html');
+  ok(clipFile.length >= 1, '网页存成本地文档：工作区新增 .html（' + clipFile.join(',') + '）');
+
+  // 存文档后活跃变成了新文档 → 重启前先切回网页标签,验证网页态的重启恢复
+  await page.click('.sb-tab.sb-tab-web'); await page.waitForTimeout(600);
+
   // 重启恢复:活跃标签是 web → 重开后 activeRel 与 browser-chrome 的 activeWebEntry 必须同步(adversarial P1)
   await page.waitForTimeout(1000); // 让 fire-and-forget 的全局 web 标签持久化落盘(销毁窗口前)
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});

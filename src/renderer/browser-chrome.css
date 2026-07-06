@@ -28,6 +28,9 @@
 .arc-omni-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--c-text); font-family: var(--font-ui); font-size: var(--fs-sm, 13px); }
 
 /* ---- 网页头（复用 .ws-doc-header 外壳,这里只加安全标） ---- */
+.web-clip-btn { margin-left: auto; margin-right: 8px; flex: none; padding: 4px 12px; border: 1px solid var(--c-border); border-radius: 14px; background: var(--c-surface); color: var(--c-accent); font-size: var(--fs-sm, 13px); cursor: pointer; }
+.web-clip-btn:hover:not(:disabled) { background: var(--c-accent-tint); border-color: var(--c-accent); }
+.web-clip-btn:disabled { opacity: .5; cursor: default; }
 .web-sec { display: inline-flex; align-items: center; margin-right: 2px; }
 .web-sec.is-secure { color: var(--c-success); }
 .web-sec.is-insecure { color: var(--c-text-3); }
@@ -51,6 +54,7 @@
 .nt-recent { width: 100%; margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
 .nt-recent li { padding: 7px 12px; border-radius: 8px; cursor: pointer; color: var(--c-text-2); font-size: var(--fs-sm, 13px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nt-recent li:hover { background: var(--c-hover); color: var(--c-text); }
+.nt-safe-note { margin-top: 8px; font-size: var(--fs-xs, 11px); color: var(--c-text-3); text-align: center; }
 
 /* ---- 网页错误页 ---- */
 .web-error { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--c-bg-sunken); }

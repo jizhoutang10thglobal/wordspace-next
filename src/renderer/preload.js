@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('ws2', {
   webNavigate: (key, input) => ipcRenderer.invoke('web-navigate', key, input),
   webLoad: (key, url) => ipcRenderer.invoke('web-load', key, url),
   webPdf: (key) => ipcRenderer.invoke('web-pdf', key),
+  webClip: (key) => ipcRenderer.invoke('web-clip', key), // 网页存成本地文档
   webShow: (key, bounds) => ipcRenderer.send('web-show', key, bounds),
   webHide: (key) => ipcRenderer.send('web-hide', key),
   webSetBounds: (key, bounds) => ipcRenderer.send('web-set-bounds', key, bounds),

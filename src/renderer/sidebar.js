@@ -885,6 +885,16 @@
   window.__sbOpenWebTab = (url, background) => openWebTabUrl(url, background);
   // 新标签页 surface 上的入口：新建文档（走老模板台）/ 打开文件夹。
   window.__sbNewDoc = () => { if (current) openCreateModal('', { temp: true }); };
+  // 网页存成本地文档（融合桥）:在工作区根建一个 .html、刷新树、用编辑器打开。需要工作区。
+  window.__sbHasWorkspace = () => !!current;
+  window.__sbClipToDoc = async (name, html) => {
+    if (!current) return;
+    try {
+      const r = await window.ws2.wsNewDoc('', name, html);
+      await refresh();
+      if (r && r.abs) { openDoc(r.abs); showToast('已把网页存成文档：' + name); }
+    } catch (e) { showToast('保存失败'); }
+  };
   const webStatus = Object.create(null); // key -> { favicon, loading, audible, error }（browser-chrome 经 __sbWebStatus 喂）
   function tabRow(entry, zone) {
     const key = keyOf(entry);

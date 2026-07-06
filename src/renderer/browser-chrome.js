@@ -182,6 +182,28 @@
   if (ntNewDoc) ntNewDoc.onclick = function () { if (window.__sbNewDoc) window.__sbNewDoc(); };
   if (ntOpenFolder) ntOpenFolder.onclick = function () { if (window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder(); };
 
+  // ---- 网页存成本地文档（融合核心桥）：抽正文 → 存进工作区 → 用编辑器打开 ----
+  var clipBtn = document.getElementById('web-clip-btn');
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function safeFileName(t) { return (String(t || '网页').replace(/[/\\:*?"<>|\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)) || '网页'; }
+  if (clipBtn) clipBtn.onclick = function () {
+    var k = window.__webActiveKey(); if (!k) return;
+    if (!window.__sbHasWorkspace || !window.__sbHasWorkspace()) { // 存进文档库需要一个工作区
+      if (window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder();
+      return;
+    }
+    clipBtn.disabled = true; clipBtn.textContent = '正在保存…';
+    window.ws2.webClip(k).then(function (clip) {
+      clipBtn.disabled = false; clipBtn.textContent = '＋ 存为文档';
+      if (!clip) return;
+      var html = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(clip.title) + '</title></head><body>\n' +
+        '<h1>' + esc(clip.title) + '</h1>\n' +
+        '<p>来源：<a href="' + esc(clip.url) + '">' + esc(clip.url) + '</a></p>\n' +
+        (clip.body || '') + '\n</body></html>';
+      if (window.__sbClipToDoc) window.__sbClipToDoc(safeFileName(clip.title), html);
+    }).catch(function () { clipBtn.disabled = false; clipBtn.textContent = '＋ 存为文档'; });
+  };
+
   // ---- 导航按钮 ----
   if (backBtn) backBtn.onclick = function () { var k = window.__webActiveKey(); if (k) window.ws2.webNav(k, 'back'); };
   if (fwdBtn) fwdBtn.onclick = function () { var k = window.__webActiveKey(); if (k) window.ws2.webNav(k, 'forward'); };
