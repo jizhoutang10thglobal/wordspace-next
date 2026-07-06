@@ -11,7 +11,6 @@ import { useUI, anyOverlayOpen } from '../mock/ui'
 import { IS_MAC } from '../lib/platform'
 import {
   VISIBILITY_META,
-  isCloudStorage,
   type Block,
   type BlockType,
   type Doc,
@@ -335,13 +334,12 @@ export function DocHeader({ doc }: { doc: Doc }) {
   // In a connected folder there is no Wordspace publish/visibility, and the
   // breadcrumb is the mounted path, not a cloud workspace. null in a cloud space.
   const folderCrumb = useStore((s) => {
-    const sp = s.spaces.find((x) => x.id === s.activeSpaceId)
-    if (!sp || isCloudStorage(sp.storage)) return null
     const t = s.tabs.find((x) => x.id === s.activeTabId)
-    // 多根：面包屑锚在文件所属的根上（根名即文件夹名）；没有根信息就退回空间名
-    const root = sp.roots?.find((r) => r.id === t?.rootId) ?? sp.roots?.[0]
-    const mount = root?.name ?? sp.name
-    return t?.url ? `${mount} / ${t.url}` : mount
+    // 连接文件夹里的文档（文件标签页带 rootId）→ 面包屑 = 根名 / 路径；云盘文档 / 网页 → 无面包屑。
+    if (!t?.rootId) return null
+    const root = s.roots.find((r) => r.id === t.rootId)
+    const mount = root?.name ?? ''
+    return t.url ? `${mount} / ${t.url}` : mount
   })
   const isFolderSpace = folderCrumb !== null
   const [menuOpen, setMenuOpen] = useState(false)

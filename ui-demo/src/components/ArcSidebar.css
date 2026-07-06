@@ -221,80 +221,7 @@
 }
 .arc-util-me:hover { box-shadow: 0 0 0 2px var(--c-accent-tint); }
 
-/* top-level space bar: governs everything below it (favorites, tabs, library) */
-.arc-space-bar { flex: none; padding: 0 10px 6px; position: relative; z-index: 5; }
-
-/* space switcher: a flat name + dropdown of every space (scales to any count) */
-.arc-spaces { position: relative; flex: 1; min-width: 0; }
-.arc-space-trigger {
-  width: 100%;
-  display: flex; align-items: center; gap: 4px;
-  padding: 3px 6px 3px 2px; border-radius: var(--r-sm);
-  color: var(--c-text);
-}
-.arc-space-trigger:hover { background: var(--c-hover); }
-.arc-space-title {
-  flex: 1; min-width: 0; text-align: left;
-  font-size: var(--fs-sm); font-weight: var(--fw-semibold);
-}
-.arc-space-chev { flex: none; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
-.arc-space-chev.is-open { transform: rotate(180deg); }
-
-.arc-space-menu {
-  position: absolute; top: calc(100% + 4px); left: 0;
-  min-width: 248px; max-width: 280px; z-index: 20;
-  max-height: 320px; overflow-y: auto;
-  background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: 8px;
-  box-shadow: var(--shadow-menu);
-  padding: 5px; display: flex; flex-direction: column; gap: 1px;
-  transform-origin: top left;
-  animation: ws-pop-in var(--dur) var(--ease-enter);
-}
-.arc-space-item {
-  width: 100%;
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 9px; border-radius: var(--r-sm); text-align: left;
-  color: var(--c-text);
-  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
-  transition: background-size var(--dur) var(--ease);
-}
-.arc-space-item:hover { background-size: 100% 100%; }
-.arc-space-item.is-active { background-color: var(--c-selected); }
-
-/* colored identity square — the space initial on its accent color */
-.arc-space-ic {
-  flex: none;
-  width: 24px; height: 24px; border-radius: 6px;
-  display: grid; place-items: center;
-  color: #fff; font-size: 11px; font-weight: var(--fw-semibold);
-  line-height: 1;
-}
-.arc-space-item-text {
-  flex: 1; min-width: 0;
-  display: flex; flex-direction: column; gap: 2px; line-height: 1.3;
-}
-.arc-space-item-name { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
-.arc-space-item-sub {
-  display: flex; align-items: center; gap: 4px;
-  font-size: 11px; color: var(--c-text-3);
-}
-.arc-space-item-sub svg { flex: none; opacity: .9; }
-.arc-space-check { flex: none; color: var(--c-accent); }
-
-/* small muted storage hint on the always-visible trigger */
-.arc-space-trig-ic { flex: none; display: flex; color: var(--c-text-3); margin-right: 1px; }
-
-/* group headers inside the space menu (the two real categories) */
-.arc-space-group {
-  font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--c-text-3);
-  padding: 8px 8px 3px;
-}
-.arc-space-group:first-child { padding-top: 4px; }
-
-/* team / private section labels inside a cloud space library */
+/* team / private section labels inside the cloud library */
 .arc-sec-label {
   font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   letter-spacing: 0.04em; text-transform: uppercase;
@@ -344,22 +271,6 @@
   padding-left: 4px;
   border-left: 1px solid var(--c-border);
 }
-/* 「N 个文件夹 · 未保存为工作区」提示条（untitled workspace 语义） */
-.arc-ws-hint {
-  display: flex; align-items: center; gap: 8px;
-  margin: 2px 0 6px; padding: 4px 8px 4px 10px;
-  border: 1px dashed var(--c-border);
-  border-radius: var(--r-sm);
-  font-size: var(--fs-sm); color: var(--c-text-3);
-}
-.arc-ws-hint .ws-truncate { flex: 1; min-width: 0; }
-.arc-ws-save {
-  flex: none; border: none; cursor: pointer;
-  font-size: var(--fs-sm); color: var(--c-accent); padding: 2px 5px; border-radius: var(--r-pill);
-  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
-  transition: background-size var(--dur) var(--ease);
-}
-.arc-ws-save:hover { background-size: 100% 100%; }
 /* 「添加文件夹…」行 */
 .arc-add-root {
   display: flex; align-items: center; gap: 6px;
@@ -370,12 +281,6 @@
 }
 .arc-add-root:hover { background: var(--c-hover); color: var(--c-text-2); }
 .arc-add-root svg { flex: none; }
-/* 空间切换器里的「工作区」徽标 */
-.arc-space-ws-badge {
-  display: inline-block; margin-left: 6px; padding: 0 5px;
-  border: 1px solid var(--c-border); border-radius: var(--r-pill);
-  font-size: 10px; line-height: 15px; color: var(--c-text-3); vertical-align: 1px;
-}
 
 /* non-HTML files are browsable but not editable here — file-type icon colors */
 .arc-file.is-foreign { color: var(--c-text-2); }
@@ -387,18 +292,6 @@
 .arc-file-ico.is-html { color: var(--c-text-2); }
 
 .arc-lib-empty { padding: 8px 12px; font-size: var(--fs-sm); color: var(--c-text-3); }
-
-/* new-space action pinned under the space list */
-.arc-space-new {
-  width: 100%;
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 8px; margin-top: 3px;
-  border-top: 1px solid var(--c-border);
-  color: var(--c-text-3); font-size: var(--fs-sm);
-  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
-  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
-}
-.arc-space-new:hover { background-size: 100% 100%; color: var(--c-text); }
 
 /* Finder-style right-click menu for file-tree rows */
 .arc-ctx {
@@ -525,6 +418,49 @@
 }
 .arc-folder-head:hover .arc-folder-add { opacity: 1; }
 .arc-folder-add:hover { background: var(--c-active); color: var(--c-text); }
+
+/* Wordspace 云盘：置顶小区（团队 / 私有文件夹），与下面「打开的文件夹」用一条细分隔线分开。 */
+.arc-cloud {
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--c-border);
+}
+.arc-cloud-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 8px 4px;
+  font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  color: var(--c-text-2);
+}
+.arc-cloud-head svg { flex: none; color: var(--c-accent); }
+
+/* 失联根：底层文件夹不可达。灰显 header + 一行说明 + 「重新定位 / 移除」。 */
+.arc-root.is-missing .arc-root-head {
+  background: var(--c-bg-sunken);
+  box-shadow: none;
+  border: 1px dashed var(--c-border-strong);
+  color: var(--c-text-3);
+  cursor: default;
+}
+.arc-root-miss-ic { flex: none; color: var(--c-danger, #b3261e); opacity: 0.75; }
+.arc-root-miss-tag {
+  margin-left: auto; padding: 0 5px;
+  border: 1px solid var(--c-border-strong); border-radius: var(--r-pill);
+  font-size: 10px; line-height: 15px; font-weight: var(--fw-regular);
+  color: var(--c-text-3);
+}
+.arc-root-miss-note {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 8px 6px 26px;
+  font-size: 11px; color: var(--c-text-3);
+}
+.arc-root-miss-note > .ws-truncate { min-width: 0; }
+.arc-root-miss-acts { display: flex; gap: 8px; margin-left: auto; flex: none; }
+.arc-root-miss-act {
+  border: none; background: none; cursor: pointer; padding: 0;
+  font-size: 11px; font-weight: var(--fw-semibold); color: var(--c-accent);
+}
+.arc-root-miss-act:hover { text-decoration: underline; }
 
 /* collapsed sidebar: a thin strip with just the expand button (vertical icon
    rail removed per B2 — collapsed view no longer lists files/folders as icons). */
