@@ -64,6 +64,18 @@ ul, ol { padding: 0; list-style: none; }
 .ws-mono { font-family: var(--font-mono); }
 .ws-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* editorial 眉标(kicker):等宽 + 宽字距 + 大写,页面标题上方的刊物式栏标。
+   色板不变,只是排版语言——把海报的编辑感带进 app(见 docs/style.md §7)。 */
+.ws-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--c-text-3);
+  margin-bottom: 8px;
+}
+
 /* ============================================================
    动效库 · keyframes(canonical 规范见 docs/style.md §4)
    命名约定 ws-<动作>;时长/缓动由调用点用 token 指定,keyframe 只描述形变。

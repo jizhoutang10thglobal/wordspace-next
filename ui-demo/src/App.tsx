@@ -9,10 +9,8 @@ import PdfViewer from './components/PdfViewer'
 import ImageViewer from './components/ImageViewer'
 import TopActions from './components/TopActions'
 import ToastHost from './components/ToastHost'
-import Templates from './components/Templates'
 import Agents from './components/Agents'
 import Settings from './components/Settings'
-import SchemaPage from './components/SchemaPage'
 import PublishDialog from './components/PublishDialog'
 import CreateModal from './components/CreateModal'
 import AddFolderModal from './components/AddFolderModal'
@@ -56,9 +54,6 @@ function RoutedView() {
     <div className="ws-route ws-anim-view" key={seg}>
       <Routes location={location}>
         <Route path="/docs" element={<MainDocs />} />
-        <Route path="/templates" element={<Templates />} />
-        <Route path="/schema" element={<SchemaPage />} />
-        <Route path="/agents" element={<Agents />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/docs" replace />} />
       </Routes>
@@ -88,6 +83,7 @@ export default function App() {
         </div>
       </div>
       <ToastHost />
+      <Agents />
       <PublishDialog />
       <CreateModal />
       <AddFolderModal />

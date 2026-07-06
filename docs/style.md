@@ -124,6 +124,22 @@ UI 字号阶梯 11/12/13/14/15/18/22,正文 13px 行高 1.5。
 - **segmented**:sunken 圆丸槽 + 选中项白纸浮起(浮起用 `--dur`/spring 微弹)。
 - **焦点**:全站 `:focus-visible` 批注圈(见 §0-4);输入框例外。
 
+## 7. Editorial chrome(把海报的编辑感搬进 app · Colin 2026-07-06)
+
+设计系统的组件和调色板已经对了,但一个功能工具天生比一张展示海报"平"。补一层**编辑感排版**
+让 app 带上 proposal 那种刊物气质——**只动排版/节奏,调色板一个字节不改(仍是 #FAFAF9 暖白)**。
+
+- **页面眉标(kicker)**:内容页大标题上方加一行 `.ws-eyebrow`——等宽字体 + 宽字距(`--tracking-label`)
+  + 大写 + `--c-text-3`,像刊物的 "模板库 · TEMPLATES"。全站单一来源在 `global.css`。
+- **大标题**:内容页标题用 `--fs-3xl`(28px)/ `font-weight: 700` / 紧字距,更自信的刊头。
+  **仍是无衬线**(a2 proposal 本身没有衬线字,别引 serif)。
+- **刊头分隔线**:标题区下方一条 `--c-divider` hairline,建立编辑节奏。
+- **分区栏标**:侧栏 `.arc-section-label`、内容页 `.ag-label`/`.st-label` 等改等宽 + `--tracking-label`,
+  和眉标同一套语汇。
+- **透气**:内容页上边距/节间距放大(44px 起),不再挤成工具。
+- **禁止**:借"编辑感"之名改调色板(奶油纸/米色 = 错,已被否);引衬线字;加纸纹理 grain。
+  编辑感只来自**排版**,不来自换材质。
+
 ## 6. 落地与对齐
 
 - ui-demo:`styles/tokens.css`(token)→ `styles/controls.css`(共享控件,单一来源,

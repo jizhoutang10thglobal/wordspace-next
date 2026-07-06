@@ -11,6 +11,7 @@ export default function Settings() {
     <div className="st-scroll">
       <div className="st-page">
         <header className="st-head">
+          <div className="ws-eyebrow">设置 · SETTINGS</div>
           <h1 className="st-title">设置</h1>
         </header>
 
