@@ -17,8 +17,14 @@ const h = (html: string, level: 1 | 2 | 3 = 1): Block => ({ id: '', type: 'headi
 const p = (html: string): Block => ({ id: '', type: 'text', html })
 const callout = (html: string): Block => ({ id: '', type: 'callout', html })
 
-const sourceLine = (url: string): Block =>
-  callout(`来源：<a href="${url}">${url}</a>`)
+// tab.url 完全来自用户在地址栏键入，下游经 el.innerHTML 播种执行 → 拼进 HTML 前必须转义，
+// 否则含引号/尖括号的 URL 会破坏来源链接、甚至注入（真 app 那侧也 escape 了，这里对齐）。
+const esc = (s: string): string =>
+  String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+const linkHtml = (url: string): string => `<a href="${esc(url)}">${esc(url)}</a>`
+
+const sourceLine = (url: string): Block => callout(`来源：${linkHtml(url)}`)
 
 // 每个 mock 站点预置的「正文」——模拟 Readability 抽出的干净可读文章。
 const ARTICLES: Record<string, { title: string; paras: string[] }> = {
@@ -72,7 +78,7 @@ export function clipPage(url: string): ClipResult {
     blocks: [
       h(title),
       callout('这个页面没有可提取的正文，已存为链接收藏。'),
-      p(`来源：<a href="${url}">${url}</a>`),
+      p(`来源：${linkHtml(url)}`),
     ],
   }
 }

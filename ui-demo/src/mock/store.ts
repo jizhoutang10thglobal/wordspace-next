@@ -398,26 +398,42 @@ export const useStore = create<State>()(
         set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
       },
 
-      // 网页存成本地文档（融合桥）：剪藏出来的块 → 一份真文档落「我的草稿」→ 打开。
-      // 块重新发 id（同 createFromTemplate）；不 unsaved = 直接进库、和别的文档一样。
+      // 网页存成本地文档（融合桥）：剪藏出来的块 → 一份真文档 → 打开。
+      // ⚠ 云盘/「我的草稿」在 #119 被删掉后 seedFolders=[]、'f-drafts' 不存在——不能再往那放，
+      // 否则文档在侧栏零可见、关掉标签就永远找不回（静默丢文档）。落第一个打开的文件夹（真进树、真保存）；
+      // 一个文件夹都没开时退化成「未保存临时文档」——至少是个可见、能 ⌘S 保存、关闭有守卫的标签，不当孤儿。
       clipToDoc: (title, blocks, note) => {
         const id = uid('d')
-        const doc: Doc = {
-          id,
-          title,
-          emoji: '🌐',
-          kind: 'doc',
-          folderId: 'f-drafts',
-          blocks: blocks.map((b) => ({ ...b, id: uid('b') })),
-          visibility: 'private',
-          localPath: `~/Wordspace/我的草稿/${title}.html`,
-          updatedAt: Date.now(),
-          updatedBy: get().meId,
-          collaborators: [get().meId],
+        const root = get().roots.find((r) => !r.missing)
+        const newBlocks = blocks.map((b) => ({ ...b, id: uid('b') }))
+        if (root) {
+          const fileName = uniqueFileInDir(get().files, root.id, '', title, '.html')
+          const doc: Doc = {
+            id, title, emoji: '🌐', kind: 'doc',
+            folderId: root.id,
+            blocks: newBlocks,
+            visibility: 'private',
+            localPath: `${root.path}/${fileName}`,
+            updatedAt: Date.now(), updatedBy: get().meId, collaborators: [get().meId],
+          }
+          const file: FileEntry = { rootId: root.id, path: fileName, kind: 'html', docId: id }
+          set((s) => ({ docs: [doc, ...s.docs], files: [...s.files, file] }))
+          get().openFileTab(file)
+          get().toast(`${note}${title} → ${root.name}`, 'success')
+        } else {
+          const doc: Doc = {
+            id, title, emoji: '🌐', kind: 'doc',
+            folderId: '',
+            blocks: newBlocks,
+            visibility: 'private',
+            localPath: `~/${title}.html`,
+            updatedAt: Date.now(), updatedBy: get().meId, collaborators: [get().meId],
+            unsaved: true,
+          }
+          set((s) => ({ docs: [doc, ...s.docs] }))
+          get().openDoc(id)
+          get().toast(`已把网页剪藏成文档（未保存，⌘S 存到文件夹）`, 'success')
         }
-        set((s) => ({ docs: [doc, ...s.docs] }))
-        get().openDoc(id)
-        get().toast(`${note}${title}`, 'success')
         return id
       },
 
