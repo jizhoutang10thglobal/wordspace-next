@@ -60,9 +60,11 @@
       if (newtab) newtab.hidden = true;
       updateWebHeader(entry);         // 网页头(标题+安全标+域名),与文档面包屑同壳
       if (viewport) viewport.hidden = false;
-      if (recs[key] && recs[key].error) showError(recs[key].error); else hideError(); // 重新激活错误标签→仍显错误页
       window.ws2.webShow(key, bounds());
       attachedKey = key; syncWebActiveClass(); // ⚠ 记住 attach 的 key,否则 __webDetach 守卫 no-op
+      // ⚠ 顺序:先 webShow(主进程 show() 无条件 setVisible(true)),再 showError 的 setVisible(false),
+      // 否则 show 的 true 盖掉 error 的 false → 重新激活错误标签会显空白 view、盖住错误页+重试钮(adversarial P2)。
+      if (recs[key] && recs[key].error) showError(recs[key].error); else hideError();
       if (!(recs[key] && recs[key]._loaded)) { window.ws2.webLoad(key, entry.url); if (!recs[key]) recs[key] = {}; recs[key]._loaded = true; }
     }
   };
@@ -216,7 +218,7 @@
     if (webErrDesc) webErrDesc.textContent = (ERR_MSG[String(err.code)] || ('错误码 ' + err.code)) + (err.url ? '\n' + UrlInput.pretty(err.url) : '');
     webError.hidden = false;
   }
-  function hideError() { if (webError && !webError.hidden) { webError.hidden = true; var k = window.__webActiveKey(); if (k) window.ws2.webSetVisible(k, true); } }
+  function hideError() { if (webError && !webError.hidden) { webError.hidden = true; var k = window.__webActiveKey(); if (k && !overlayOpen()) window.ws2.webSetVisible(k, true); } } // 有浮层开着时别恢复 view(否则盖住模态,adversarial 残留)
   if (webErrRetry) webErrRetry.onclick = function () { var k = window.__webActiveKey(); if (!k) return; hideError(); window.ws2.webNav(k, 'reload'); };
 
   // ---- 消费主进程状态推送 ----

@@ -193,9 +193,9 @@ function destroyAll() { for (const key of Array.from(registry.keys())) destroy(k
 // ---- 导航操作 ----
 const urlInput = require('../lib/url-input');
 function navigate(key, input, opts) {
-  const rec = registry.get(key) || { view: createView(key, null) } && registry.get(key);
   const parsed = urlInput.parse(input, opts || {});
-  if (parsed.kind === 'blocked') return { blocked: true };
+  if (parsed.kind === 'blocked') return { blocked: true }; // 先判 blocked,别为拒绝的输入白建 view(adversarial:潜在泄漏)
+  createView(key, null);
   const r = registry.get(key);
   r.url = parsed.url; r.error = null;
   r.view.webContents.loadURL(parsed.url); // noop rejection 已内附,不必 catch
@@ -238,7 +238,8 @@ async function printToPdf(key) {
 }
 
 function wireFoundInPage(key) {
-  const r = registry.get(key); if (!r) return;
+  const r = registry.get(key); if (!r || r._foundWired) return; // 幂等:web-show 每次激活都调,不守会累积 listener 泄漏(adversarial)
+  r._foundWired = true;
   r.view.webContents.on('found-in-page', (_e, result) => {
     if (result.finalUpdate) sendToRenderer('web-found', { key, matches: result.matches, active: result.activeMatchOrdinal });
   });

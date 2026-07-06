@@ -778,9 +778,10 @@
     let openedActive = false;
     if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
-      // KD-2/流分析 #5：网页激活标签恢复成「未加载占位」——不自动 __webActivate（不冷启动网络请求）,
-      // 标签行照常渲染（favicon/标题来自持久化）,用户点击才首次加载。非 web 照旧自动打开。
-      if (e && !isWebEntry(e)) { openTabRow(e); openedActive = true; }
+      // 恢复上次激活标签,全部走漏斗（含 web）。adversarial 抓的:web 激活标签若只当占位、不走 __webActivate,
+      // tabState.activeRel 与 browser-chrome 的 activeWebEntry 脱钩 → 高亮它但内容空、Cmd+R 死键、omnibox 建重复标签。
+      // 激活标签加载=Chrome 重启行为(后台标签仍惰性:它们不是 activeRel、永不自动打开)。修正 KD-2「占位不加载」到「仅激活标签加载」。
+      if (e) { openTabRow(e); openedActive = true; }
     }
     // 没有要自动打开的激活标签、也没有冷启动文件在路上 → 内容区落到 NewTab 页,别留空白(审计 05)。
     if (!openedActive && !window.__pendingColdOpen && !(window.__shellDocPath && window.__shellDocPath()) && window.__webShowEmpty) {
@@ -1299,8 +1300,9 @@
     if (!sidebarEl) return;
     sidebarEl.classList.toggle('is-collapsed', v);
     document.body.classList.toggle('is-sb-collapsed', v);
-    // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
-    if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
+    // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位 + web view 重发 bounds（否则原生 view 停在旧位、
+    // 露出空白条,adversarial:__webRebound 原来零调用=死钩）。都等下一帧布局落定再调。
+    requestAnimationFrame(() => { if (window.__shellReposition) window.__shellReposition(); if (window.__webRebound) window.__webRebound(); });
   }
   function toggleCollapsed() { if (sidebarEl) setSidebarCollapsed(!sidebarEl.classList.contains('is-collapsed')); }
   if (toggleBtn) toggleBtn.onclick = toggleCollapsed;
@@ -1327,6 +1329,7 @@
       const onMove = (ev) => {
         const w = Math.max(SB_MIN, Math.min(SB_MAX, startW + (ev.clientX - startX)));
         sidebarEl.style.setProperty('--sb-width', w + 'px');
+        if (window.__webRebound) window.__webRebound(); // 拖拽分隔条时 web view 跟随(rAF 合并,adversarial)
       };
       const onUp = () => {
         document.removeEventListener('mousemove', onMove);

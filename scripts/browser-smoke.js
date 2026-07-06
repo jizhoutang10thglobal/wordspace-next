@@ -126,6 +126,25 @@ const ROOT = path.join(__dirname, '..');
   const c3 = await childCount();
   ok(c3 === 1, '切回网页标签重新 attach（实际 ' + c3 + '）');
 
+  // 重启恢复:活跃标签是 web → 重开后 activeRel 与 browser-chrome 的 activeWebEntry 必须同步(adversarial P1)
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
+  await app.close().catch(() => {});
+  const app2 = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_USERDATA: userData, WS2_FOLDER_IN: wsDir, WS2_NO_CLOSE_DIALOG: '1' } });
+  const page2 = await app2.firstWindow();
+  await page2.waitForLoadState('domcontentloaded');
+  await page2.waitForSelector('#sidebar.sb-on', { timeout: 8000 });
+  await page2.waitForTimeout(2000);
+  const restoreSync = await page2.evaluate(() => {
+    const r = document.querySelector('.sb-tab.sb-tab-web');
+    const highlighted = r && r.classList.contains('is-active');
+    const modelKey = window.__webActiveKey ? window.__webActiveKey() : null; // browser-chrome 的 activeWebEntry
+    return { highlighted, modelSynced: !!(highlighted && modelKey && r.dataset.rel === modelKey) };
+  });
+  ok(restoreSync.highlighted, '重启后网页标签恢复且高亮');
+  ok(restoreSync.modelSynced, 'P1:重启后 activeRel 与 activeWebEntry 同步(不脱钩→Cmd+R/omnibox 正常)');
+  await app2.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
+  await app2.close().catch(() => {});
+
   console.log('\n' + log.join('\n'));
   const failed = log.filter((l) => l.startsWith('FAIL'));
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
