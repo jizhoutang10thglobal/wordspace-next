@@ -1,5 +1,9 @@
 /* 浏览器 UI（对齐 ui-demo）。复用 shell.css 设计 token。 */
 
+/* ⚠ 铁律:凡下面给了 display 的元素,必须让 [hidden] 属性仍能藏住它——否则 .X{display:flex} 会盖过
+   UA 的 [hidden]{display:none},JS 里 el.hidden=true 视觉上无效(开屏 NewTab 页盖在文档上/查找条常显的根因)。 */
+.web-newtab[hidden], .bc-find[hidden], .web-viewport[hidden], .sb-browser[hidden], .arc-omni[hidden] { display: none !important; }
+
 /* ---- 侧栏 omnibox + 导航钮（.sb-browser 在 .sb-head 与 .sb-body 之间,始终可见） ---- */
 .sb-browser { flex: none; padding: 4px 10px 8px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--c-divider); }
 .sb-nav { display: flex; align-items: center; gap: 2px; }
