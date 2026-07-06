@@ -10,8 +10,17 @@ const ROOT = path.join(__dirname, '..');
 
 (async () => {
   // 本地测试页(带站内链接 + 302 重定向,验 will-navigate/will-redirect 守卫没误拦)
+  // /2 是一篇有真实正文的文章(给 Readability 剪藏抽取用:够长才会被判为有正文)
+  const ARTICLE = '<!doctype html><html><head><title>PAGE 2</title></head><body><article>' +
+    '<h1 id=h>page two</h1>' +
+    '<p>' + 'This is the first substantial paragraph of the article body. '.repeat(4) + '</p>' +
+    '<p>' + 'A second paragraph follows with more readable prose so Readability keeps it. '.repeat(4) + '</p>' +
+    '<p>Here is an <a href="https://example.com/ref">inline link</a> and an image below.</p>' +
+    '<img src="/pic.png" alt="a picture">' +
+    '<p>' + 'Closing paragraph with enough text content to clear the extraction threshold. '.repeat(3) + '</p>' +
+    '</article></body></html>';
   const server = http.createServer((req, res) => {
-    if (req.url === '/2') { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end('<!doctype html><title>PAGE 2</title><h1 id=h>page two</h1>'); return; }
+    if (req.url === '/2') { res.setHeader('content-type', 'text/html; charset=utf-8'); res.end(ARTICLE); return; }
     if (req.url === '/go') { res.statusCode = 302; res.setHeader('location', '/2'); res.end(); return; }
     res.setHeader('content-type', 'text/html; charset=utf-8');
     res.end('<!doctype html><title>SMOKE PAGE</title><h1 id=h>hello from local</h1><a id=lnk href="/2">下一页</a><input id=box>');
@@ -130,9 +139,12 @@ const ROOT = path.join(__dirname, '..');
   await page.click('.sb-tab.sb-tab-web'); await page.waitForTimeout(600);
   await page.click('#web-clip-btn').catch(() => {});
   await page.waitForTimeout(2000);
-  const clipped = await page.evaluate(() => !!document.querySelector('.sb-file[data-rel$=".html"]') && !document.getElementById('doc-frame').hidden);
   const clipFile = fs.readdirSync(wsDir).filter((f) => f.endsWith('.html') && f !== 'doc.html');
   ok(clipFile.length >= 1, '网页存成本地文档：工作区新增 .html（' + clipFile.join(',') + '）');
+  // Readability 真抽了正文:存出来的文件含文章段落文字 + 图片(不是空壳/纯链接)
+  const clipHtml = clipFile.length ? fs.readFileSync(path.join(wsDir, clipFile[0]), 'utf8') : '';
+  ok(/first substantial paragraph/.test(clipHtml), '剪藏抽到正文段落（Readability 生效,非空壳）');
+  ok(/<img/i.test(clipHtml), '剪藏保留了图片');
 
   // 存文档后活跃变成了新文档 → 重启前先切回网页标签,验证网页态的重启恢复
   await page.click('.sb-tab.sb-tab-web'); await page.waitForTimeout(600);

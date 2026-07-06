@@ -237,20 +237,43 @@ async function printToPdf(key) {
   return out;
 }
 
-// 网页存成本地文档（融合核心桥,Colin 方向）：在网页里抽正文(标题/段落/标题层级),回传纯文本转义后的
-// 干净 HTML(无 script/style/外链资源,进我们的编辑器)。抽取跑在不可信页面上下文=只读 DOM,产物全 escape。
+// 网页存成本地文档（融合核心桥,Colin 拍板「正经剪藏」）：用 Mozilla Readability(Firefox 阅读模式那套)
+// 抽正文——保留图片(绝对 URL)/行内链接/标题层级,产出干净可读可编辑的文章。抽取跑在不可信页面上下文;
+// 抽完在页面里就地 sanitize(去 script/style/iframe/on*/javascript:)再回传。没正文的页面(如 baidu 首页)
+// 回 {empty:true} → renderer 降级成链接收藏。
+let READABILITY_SRC = null; // 懒加载 + 兜底:vendor 文件万一在打包里缺失,只让剪藏失效,别在 require 期崩整个主进程
+function readabilitySrc() {
+  if (READABILITY_SRC === null) {
+    try { READABILITY_SRC = fs.readFileSync(path.join(__dirname, 'vendor', 'readability.js'), 'utf8'); }
+    catch (e) { READABILITY_SRC = ''; }
+  }
+  return READABILITY_SRC;
+}
 async function extractReadable(key) {
   const r = registry.get(key); if (!r) return null;
-  const js = '(function(){' +
-    'function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}' +
-    'var parts=[];' +
-    'var nodes=document.body?document.body.querySelectorAll("h1,h2,h3,h4,h5,h6,p,li,blockquote,pre"):[];' +
-    'for(var i=0;i<nodes.length;i++){var el=nodes[i];var t=(el.innerText||"").trim();if(!t)continue;' +
-    'var tag=el.tagName.toLowerCase();if(tag==="li")tag="p";if(tag==="h5"||tag==="h6")tag="h4";' +
-    'if(tag==="pre"){parts.push("<pre>"+esc(t)+"</pre>");}else{parts.push("<"+tag+">"+esc(t)+"</"+tag+">");}}' +
-    'return JSON.stringify({title:document.title||location.href,url:location.href,body:parts.join("\\n")});' +
-    '})()';
-  try { return JSON.parse(await r.view.webContents.executeJavaScript(js, true)); } catch (e) { return null; }
+  const wc = r.view && r.view.webContents;
+  if (!wc || wc.isDestroyed()) return null;
+  const src = readabilitySrc();
+  if (!src) return { error: 'readability-unavailable' };
+  try {
+    await wc.executeJavaScript(src, true); // 注入 Readability(guard 了 module,页面里安全)
+    const js = '(function(){try{' +
+      'var art=null;try{art=new Readability(document.cloneNode(true)).parse();}catch(e){}' +   // 传 clone,构造器会改文档
+      'var title=document.title||location.href, url=location.href;' +
+      'if(!art||!art.content||(art.textContent||"").replace(/\\s+/g," ").trim().length<80){' +
+        'return JSON.stringify({empty:true,title:title,url:url,excerpt:(art&&art.excerpt)||""});' +   // 没正文 → 降级链接
+      '}' +
+      'var box=document.createElement("div");box.innerHTML=art.content;' +
+      'box.querySelectorAll("script,style,iframe,object,embed,form,noscript").forEach(function(n){n.remove();});' +
+      'box.querySelectorAll("*").forEach(function(n){Array.prototype.slice.call(n.attributes).forEach(function(a){' +
+        'var nm=a.name.toLowerCase();' +
+        'if(nm.indexOf("on")===0){n.removeAttribute(a.name);return;}' +
+        'if((nm==="href"||nm==="src")&&/^\\s*javascript:/i.test(a.value)){n.removeAttribute(a.name);}' +
+      '});});' +
+      'return JSON.stringify({title:art.title||title,url:url,content:box.innerHTML,byline:art.byline||"",excerpt:art.excerpt||""});' +
+    '}catch(e){return JSON.stringify({error:String(e&&e.message||e),title:document.title,url:location.href});}})()';
+    return JSON.parse(await wc.executeJavaScript(js, true));
+  } catch (e) { return null; }
 }
 
 function wireFoundInPage(key) {

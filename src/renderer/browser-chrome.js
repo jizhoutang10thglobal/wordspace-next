@@ -195,13 +195,23 @@
     clipBtn.disabled = true; clipBtn.textContent = '正在保存…';
     window.ws2.webClip(k).then(function (clip) {
       clipBtn.disabled = false; clipBtn.textContent = '＋ 存为文档';
-      if (!clip) return;
-      var html = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(clip.title) + '</title></head><body>\n' +
+      if (!clip || clip.error) { if (window.__sbToast) window.__sbToast('这个页面读不出内容'); return; }
+      var head = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(clip.title) + '</title></head><body>\n' +
         '<h1>' + esc(clip.title) + '</h1>\n' +
-        '<p>来源：<a href="' + esc(clip.url) + '">' + esc(clip.url) + '</a></p>\n' +
-        (clip.body || '') + '\n</body></html>';
-      if (window.__sbClipToDoc) window.__sbClipToDoc(safeFileName(clip.title), html);
-    }).catch(function () { clipBtn.disabled = false; clipBtn.textContent = '＋ 存为文档'; });
+        '<p>来源：<a href="' + esc(clip.url) + '">' + esc(clip.url) + '</a></p>\n';
+      var html, note;
+      if (clip.empty) {
+        // 没正文的页面(baidu 首页这种应用页)→ 降级成链接收藏,老实告诉用户
+        html = head + (clip.excerpt ? '<p>' + esc(clip.excerpt) + '</p>\n' : '') +
+          '<p>这个页面没有可提取的正文，已存为链接收藏。</p>\n</body></html>';
+        note = '这页没有正文，已存为链接收藏：';
+      } else {
+        html = head + (clip.byline ? '<p><em>' + esc(clip.byline) + '</em></p>\n' : '') +
+          (clip.content || '') + '\n</body></html>';
+        note = '已把网页存成文档：';
+      }
+      if (window.__sbClipToDoc) window.__sbClipToDoc(safeFileName(clip.title), html, note);
+    }).catch(function () { clipBtn.disabled = false; clipBtn.textContent = '＋ 存为文档'; if (window.__sbToast) window.__sbToast('保存失败'); });
   };
 
   // ---- 导航按钮 ----
