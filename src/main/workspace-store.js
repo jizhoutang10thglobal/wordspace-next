@@ -24,6 +24,16 @@ async function writeRaw(storeFile, raw) {
   await fs.rename(tmp, storeFile);
 }
 
+// 串行化所有 read-modify-write（setTabs/setWebTabs/save 都是「读整个 JSON→改一块→写回」）。
+// ⚠ 并发调用会互相 clobber:两个写各自读到旧 raw、各改各的、后写覆盖先写——网页标签持久化引入第二个
+// 并发写者后必现(setWebTabs 的 webTabs 被 setTabs 的写覆盖没)。用 promise 链保证一次只跑一个读-改-写。
+let rmwChain = Promise.resolve();
+function rmw(fn) {
+  const run = rmwChain.then(fn, fn);
+  rmwChain = run.then(() => {}, () => {}); // 链不因单次失败断裂
+  return run;
+}
+
 // 一条 entry 合法 = 有字符串 rel（工作区内）或字符串 abs（工作区外文件）且 open||pinned（丢幽灵/坏数据）。
 // 放行无 rel 的外部标签——否则它每次 setTabs 都被静默扔掉、重启恢复落空。
 // web 条目（abs 以 'web:' 开头）额外要求 url 是 string 或 null——缺失/数字等坏数据 → 丢该条,
@@ -55,12 +65,14 @@ async function load(storeFile) {
   return typeof raw.root === 'string' ? raw : null;
 }
 
-async function save(storeFile, root) {
-  const raw = await readRaw(storeFile); // 保留 tabsByRoot，别被覆盖
-  raw.root = root;
-  raw.savedAt = Date.now();
-  await writeRaw(storeFile, raw);
-  return { root };
+function save(storeFile, root) {
+  return rmw(async () => {
+    const raw = await readRaw(storeFile); // 保留 tabsByRoot，别被覆盖
+    raw.root = root;
+    raw.savedAt = Date.now();
+    await writeRaw(storeFile, raw);
+    return { root };
+  });
 }
 
 // 取某根的标签状态 { entries, activeRel }。无则尝试迁移旧 pinsByRoot；再无则空。
@@ -82,37 +94,63 @@ async function getTabs(storeFile, root) {
   return { entries: [], activeRel: null };
 }
 
-async function setTabs(storeFile, root, state) {
-  const raw = await readRaw(storeFile);
-  if (!raw.tabsByRoot || typeof raw.tabsByRoot !== 'object') raw.tabsByRoot = {};
-  raw.tabsByRoot[root] = sanitize(state);
-  await writeRaw(storeFile, raw);
-  return raw.tabsByRoot[root];
+function setTabs(storeFile, root, state) {
+  return rmw(async () => {
+    const raw = await readRaw(storeFile);
+    if (!raw.tabsByRoot || typeof raw.tabsByRoot !== 'object') raw.tabsByRoot = {};
+    raw.tabsByRoot[root] = sanitize(state);
+    await writeRaw(storeFile, raw);
+    return raw.tabsByRoot[root];
+  });
 }
 
 async function clear(storeFile) {
   await fs.rm(storeFile, { force: true }).catch(() => {});
 }
 
+// 全局网页标签（Colin 2026-07-06 拍板：网页标签跟工作区无关、切文件夹不丢，像真浏览器）。
+// 存 raw.webTabs 数组 + raw.webActiveKey(最后激活的网页标签,让浏览状态完全自足:无工作区也能恢复
+// 上次看的网页,像 Chrome)。不进 tabsByRoot。
+async function getWebTabs(storeFile) {
+  const raw = await readRaw(storeFile);
+  return {
+    entries: Array.isArray(raw.webTabs) ? raw.webTabs.filter(validEntry) : [],
+    activeKey: typeof raw.webActiveKey === 'string' ? raw.webActiveKey : null,
+  };
+}
+function setWebTabs(storeFile, entries, activeKey) {
+  return rmw(async () => {
+    const raw = await readRaw(storeFile);
+    raw.webTabs = Array.isArray(entries) ? entries.filter(validEntry) : [];
+    raw.webActiveKey = typeof activeKey === 'string' ? activeKey : null;
+    await writeRaw(storeFile, raw);
+    return raw.webTabs;
+  });
+}
+
 // before-quit 专用同步合并落盘（KD-11）：把主进程 web-tabs registry 的权威 url/title 合并进
-// tabsByRoot[root] 的 web 条目再写盘。⚠ 必须同步——异步写不保证进程退出前落地,复用 setTabs 会把
-// 「最后一写必丢」原样复刻。webSnapshot = { key: { url, title } }。缺 store/桶/root 时安静返回。
+// 全局 raw.webTabs 再写盘。⚠ 必须同步——异步写不保证进程退出前落地。webSnapshot = { key: { url, title } }。
+// web 标签现在全局(raw.webTabs),不在 tabsByRoot 里。
 function mergeTabsSync(storeFile, root, webSnapshot) {
   let raw = {};
   try { raw = JSON.parse(fsSync.readFileSync(storeFile, 'utf8')) || {}; } catch { raw = {}; }
-  if (!raw.tabsByRoot || typeof raw.tabsByRoot !== 'object') return;
-  const bucket = raw.tabsByRoot[root];
-  if (!bucket || !Array.isArray(bucket.entries)) return;
-  bucket.entries = bucket.entries.map((e) => {
+  const mergeOne = (e) => {
     const key = e.rel || e.abs;
     const snap = webSnapshot && webSnapshot[key];
     return snap ? { ...e, url: snap.url, title: snap.title != null ? snap.title : e.title } : e;
-  });
-  raw.tabsByRoot[root] = sanitize(bucket);
+  };
+  let dirty = false;
+  if (Array.isArray(raw.webTabs)) { raw.webTabs = raw.webTabs.map(mergeOne).filter(validEntry); dirty = true; }
+  // 兼容:旧数据里 web 曾在 per-root 桶,顺手也合一遍(现在应为空)
+  if (root && raw.tabsByRoot && raw.tabsByRoot[root] && Array.isArray(raw.tabsByRoot[root].entries)) {
+    raw.tabsByRoot[root].entries = raw.tabsByRoot[root].entries.map(mergeOne);
+    raw.tabsByRoot[root] = sanitize(raw.tabsByRoot[root]); dirty = true;
+  }
+  if (!dirty) return;
   try {
     fsSync.mkdirSync(path.dirname(storeFile), { recursive: true });
     fsSync.writeFileSync(storeFile, JSON.stringify(raw, null, 2), 'utf8');
   } catch { /* 退出路径尽力而为 */ }
 }
 
-module.exports = { load, save, clear, getTabs, setTabs, mergeTabsSync };
+module.exports = { load, save, clear, getTabs, setTabs, getWebTabs, setWebTabs, mergeTabsSync };

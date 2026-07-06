@@ -290,6 +290,18 @@ function registerIpc() {
     return workspaceStore.setTabs(workspaceFile(), active, state);
   });
 
+  // 全局网页标签(跟工作区无关,Colin 拍板:切文件夹不丢)——不需要 activeRoot,任何时候都能读写。
+  ipcMain.handle('ws-get-web-tabs', () => workspaceStore.getWebTabs(workspaceFile()));
+  ipcMain.handle('ws-set-web-tabs', (_e, entries, activeKey) => {
+    // registry 权威 url/title 覆写(KD-11 同款,防迟到镜像盖权威)
+    const snap = webTabs.snapshot();
+    const merged = Array.isArray(entries) ? entries.map((e) => {
+      const key = e && (e.rel || e.abs);
+      return key && snap[key] ? { ...e, url: snap[key].url, title: snap[key].title != null ? snap[key].title : e.title } : e;
+    }) : [];
+    return workspaceStore.setWebTabs(workspaceFile(), merged, activeKey);
+  });
+
   // ---- 网页标签 view 管理（U3）。全部只接受主 frame（web view 的 webContents 零 IPC 暴露,KD-4）----
   // renderer 的 activate 漏斗是唯一 attach 驱动:web-show 是唯一 attach 入口,主进程不自作主张 attach。
   ipcMain.handle('web-navigate', (_e, key, input) => webTabs.navigate(key, input));

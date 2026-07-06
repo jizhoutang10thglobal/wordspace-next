@@ -65,12 +65,12 @@
     if (data) setWorkspace(data);
   }
   function setWorkspace(data) {
-    // 切工作区先销毁旧根的全部 web view（KD-17）——view 是主进程对象,不跟 tabState 清、不销毁就内存泄漏+音频继续播。
-    if (window.__webDestroyAll) window.__webDestroyAll();
-    Object.keys(webStatus).forEach((k) => delete webStatus[k]);
+    // Colin 2026-07-06 拍板:网页标签**全局**——切工作区**不再** destroyAll web view(它们跨工作区活着,
+    // 像真浏览器切文件夹标签不丢)。旧 KD-17「web workspace-gated + 切根销毁」已废。
     current = data;
     query = '';
-    tabState = { entries: [], activeRel: null }; // 先清旧工作区的标签，loadTabs 再按新根拉回
+    // 清掉旧工作区的**文档**标签,保留网页标签(全局);loadTabs 再按新根拉回文档 + 合并全局 web。
+    tabState = { entries: tabState.entries.filter(isWebEntry), activeRel: null };
     collapsed.clear();
     collectDirRels(current.tree, collapsed); // 默认全部收起：一打开只露顶层，要看哪层自己点开
     if (filterInput) filterInput.value = '';
@@ -448,14 +448,19 @@
     return tabState.entries.some((e) => keyOf(e) === key && e.pinned);
   }
   function persistTabs() {
-    // 带上当前 root：主进程校验 === activeRoot，防 fire-and-forget 的写在切工作区后到达、把标签写错桶。
-    // 临时文档不落盘、重启无从恢复 → 从持久化副本里剔掉（内存里的 tabState 仍保留它们，只是不写盘）。
-    if (!window.ws2.wsSetTabs) return;
+    // 网页标签**全局**(Colin 拍板:跟工作区无关、切文件夹不丢)→ 单独全局桶 + 全局激活键(浏览状态自足)。
+    if (window.ws2.wsSetWebTabs) {
+      const webActive = isWebKey(tabState.activeRel) ? tabState.activeRel : null;
+      window.ws2.wsSetWebTabs(tabState.entries.filter(isWebEntry), webActive).catch(() => {});
+    }
+    // 文档标签仍按 root 存。临时文档不落盘。root 桶里剔掉 web(它们全局了)。activeRel 可能指向 web(全局),照存,
+    // 恢复时 resolveActive 在合并后的 entries 里找得到。带上 current.root:主进程校验防跨工作区写错桶。
+    if (!window.ws2.wsSetTabs || !current || !current.root) return;
     const clean = {
-      entries: tabState.entries.filter((e) => !isTempEntry(e)),
+      entries: tabState.entries.filter((e) => !isTempEntry(e) && !isWebEntry(e)),
       activeRel: isTempKey(tabState.activeRel) ? null : tabState.activeRel,
     };
-    window.ws2.wsSetTabs(clean, current && current.root).catch(() => {});
+    window.ws2.wsSetTabs(clean, current.root).catch(() => {});
   }
   function applyTabs(next) {
     tabState = next;
@@ -757,17 +762,26 @@
   // （不在 = 静默丢，符合拍板①）。两处 await 都加「期间切了工作区就放弃」的竞态守卫。
   async function loadTabs() {
     const rootBefore = current && current.root;
-    let st;
+    let st, web = { entries: [], activeKey: null };
     try { st = await window.ws2.wsGetTabs(); } catch (e) { st = { entries: [], activeRel: null }; }
+    try { web = (await window.ws2.wsGetWebTabs()) || web; } catch (e) { /* keep default */ }
     if (!current || current.root !== rootBefore) return;
-    const raw = st.entries || [];
+    // ⚠ 在 await 之后抓内存里的 web:loadTabs 在飞期间(IPC 往返)用户可能刚建了个网页标签(omnibox),
+    // 若不 union 进来会被这次 loadTabs 的 tabState 覆盖没(开工作区后立刻上网就丢标签的竞态)。
+    const inMemWeb = tabState.entries.filter(isWebEntry);
+    // 合并:全局网页标签 ∪ 内存里的 web + 本工作区文档标签(root 桶里理论无 web,防御性过滤)。
+    const loadedWeb = web.entries || [];
+    const loadedKeys = new Set(loadedWeb.map((e) => keyOf(e)));
+    const mergedWeb = [...loadedWeb, ...inMemWeb.filter((e) => !loadedKeys.has(keyOf(e)))];
+    const raw = [...mergedWeb, ...(st.entries || []).filter((e) => !isWebKey(keyOf(e)))];
     // 存在性校验三分流：网页标签(web:)恒有效(不做 fs 检查——store 已校验 url);内部看树;外部问 fs.stat。
     const checks = await Promise.all(raw.map((e) =>
       isWebKey(keyOf(e)) ? Promise.resolve(true) : e.rel ? Promise.resolve(!!findNode(e.rel)) : window.ws2.pathExists(e.abs).catch(() => false),
     ));
     if (!current || current.root !== rootBefore) return;
     const entries = raw.filter((_e, i) => checks[i]);
-    const activeRel = window.WS2Tabs.resolveActive(entries, st.activeRel);
+    // 激活种子:root 桶 activeRel(工作区上下文)优先;没有则用全局 web 激活键(上次看的网页)。
+    const activeRel = window.WS2Tabs.resolveActive(entries, st.activeRel || web.activeKey);
     const changed = entries.length !== raw.length || activeRel !== st.activeRel;
     tabState = { entries, activeRel };
     if (changed) persistTabs();
@@ -1502,6 +1516,20 @@
     } catch (e) {
       /* 无工作区 / 已不存在：保持空态 */
     } finally {
+      // 无工作区也要显示全局网页标签(Colin 拍板:浏览不依赖工作区),并恢复上次激活的网页(浏览状态自足,像 Chrome)。
+      // 有工作区时 loadTabs 已合并过全局 web。
+      if (!hadWorkspace) {
+        let web = { entries: [], activeKey: null };
+        try { web = (await window.ws2.wsGetWebTabs()) || web; } catch (e2) { /* keep default */ }
+        const entries = web.entries || [];
+        const activeRel = window.WS2Tabs.resolveActive(entries, web.activeKey);
+        tabState = { entries, activeRel };
+        renderZones();
+        if (activeRel && !window.__pendingColdOpen) {
+          const e = entries.find((x) => keyOf(x) === activeRel);
+          if (e) openTabRow(e); // 恢复上次看的网页(走漏斗,activeWebEntry 同步)
+        }
+      }
       resolveRestore();
       // 开屏空态（对齐 ui-demo）：没有工作区/没有恢复出激活标签/没有冷启动文件在路上 → 显示 NewTab 页,
       // 而不是空白「打开文档/文件夹」选择屏。有工作区但无激活标签也显示 NewTab（内容区不留空）。

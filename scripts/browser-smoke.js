@@ -127,8 +127,10 @@ const ROOT = path.join(__dirname, '..');
   ok(c3 === 1, '切回网页标签重新 attach（实际 ' + c3 + '）');
 
   // 重启恢复:活跃标签是 web → 重开后 activeRel 与 browser-chrome 的 activeWebEntry 必须同步(adversarial P1)
+  await page.waitForTimeout(1000); // 让 fire-and-forget 的全局 web 标签持久化落盘(销毁窗口前)
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
   await app.close().catch(() => {});
+  await new Promise((r) => setTimeout(r, 600));
   const app2 = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_USERDATA: userData, WS2_FOLDER_IN: wsDir, WS2_NO_CLOSE_DIALOG: '1' } });
   const page2 = await app2.firstWindow();
   await page2.waitForLoadState('domcontentloaded');
