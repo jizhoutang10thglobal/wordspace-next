@@ -71,3 +71,6 @@
 }
 
 /* 打开按钮已收编到共享 .ws-btn ws-btn-primary(styles/controls.css),不再有局部定义 */
+
+/* 这是居中的内容卡(非侧边抽屉),载入时轻轻落定——上浮不缩放,不夸张 */
+.efp-card { animation: ws-view-in var(--dur-slow) var(--ease-enter) both; }

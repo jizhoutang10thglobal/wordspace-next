@@ -61,8 +61,8 @@
   font-size: var(--fs-base);
   font-weight: var(--fw-medium);
   transition: color var(--dur-fast) var(--ease),
-    background-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
+    background-color var(--dur) var(--ease-spring),
+    box-shadow var(--dur) var(--ease-spring);
 }
 .ag-tab:hover { color: var(--c-text); }
 .ag-tab.is-active {
@@ -77,6 +77,8 @@
 }
 .ag-tab.is-active .ag-tab-hint { color: var(--c-text-2); }
 .ag-panel { margin-top: 12px; }
+/* 切换接入方式时,当前方式卡落定入场(面板随 tab 重挂 → 动画重放) */
+.ag-panel .ag-card { animation: ws-pop-in var(--dur-slow) var(--ease-enter) both; }
 
 /* card */
 .ag-card {
@@ -410,7 +412,18 @@
   gap: 9px;
   padding: 10px 14px;
   font-size: var(--fs-base);
+  /* 逐条落定;新模拟的事件插到列首时也会顺势滑入(旧行不重挂、不重放) */
+  animation: ws-stagger-in var(--dur) var(--ease-enter) both;
 }
+.ag-event:nth-child(1) { animation-delay: 60ms; }
+.ag-event:nth-child(2) { animation-delay: 94ms; }
+.ag-event:nth-child(3) { animation-delay: 128ms; }
+.ag-event:nth-child(4) { animation-delay: 162ms; }
+.ag-event:nth-child(5) { animation-delay: 196ms; }
+.ag-event:nth-child(6) { animation-delay: 230ms; }
+.ag-event:nth-child(7) { animation-delay: 264ms; }
+.ag-event:nth-child(8) { animation-delay: 298ms; }
+.ag-event:nth-child(n+9) { animation-delay: 0ms; }
 .ag-event + .ag-event { border-top: 1px solid var(--c-divider); }
 .ag-chip {
   flex: none;

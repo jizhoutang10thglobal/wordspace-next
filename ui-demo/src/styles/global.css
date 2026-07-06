@@ -32,14 +32,15 @@ a { color: var(--c-accent); text-decoration: none; }
 input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
 input:focus, textarea:focus, button:focus { outline: none; }
 
-/* 全站键盘焦点 = 批注圈(不发光),见 docs/style.md;输入框例外(焦点表达 = 墨线) */
+/* 全站键盘焦点 = 批注圈(不发光,圈一下落定),见 docs/style.md;输入框例外(焦点表达 = 墨线) */
 :focus-visible {
   outline: 2px solid var(--c-accent);
   outline-offset: 3px;
   border-radius: 4px;
+  animation: ws-ring-pop var(--dur-fast) var(--ease-enter);
 }
 input:focus-visible,
-textarea:focus-visible { outline: none; }
+textarea:focus-visible { outline: none; animation: none; }
 
 h1, h2, h3, h4, p, ul, ol, figure { margin: 0; }
 ul, ol { padding: 0; list-style: none; }
@@ -63,7 +64,60 @@ ul, ol { padding: 0; list-style: none; }
 .ws-mono { font-family: var(--font-mono); }
 .ws-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ============================================================
+   动效库 · keyframes(canonical 规范见 docs/style.md §4)
+   命名约定 ws-<动作>;时长/缓动由调用点用 token 指定,keyframe 只描述形变。
+   ============================================================ */
 @keyframes ws-fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes ws-pop-in { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes ws-fade-out { from { opacity: 1; } to { opacity: 0; } }
+/* 浮层入场:落定感(轻微上移+缩放,配 --ease-enter) */
+@keyframes ws-pop-in { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes ws-pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px) scale(.99); } }
+/* 从下往上滑入(toast / 抽屉底部) */
+@keyframes ws-slide-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+/* 从右滑入(右侧抽屉 / 面板) */
+@keyframes ws-slide-in-right { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+/* toast 侧滑入(带一点回弹) */
+@keyframes ws-toast-in { 0% { opacity: 0; transform: translateX(24px) scale(.97); } 60% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes ws-toast-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(16px) scale(.98); } }
+/* 列表项 stagger:每项延迟入场(配 nth-child inline delay 或 --i 变量) */
+@keyframes ws-stagger-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+/* 树节点展开:高度由 JS/grid 控制,这里给内容一个淡入下沉 */
+@keyframes ws-reveal-down { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+/* 遮罩淡入 */
+@keyframes ws-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+/* 勾选打钩:描线 */
+@keyframes ws-check-draw { from { stroke-dashoffset: 18; } to { stroke-dashoffset: 0; } }
+/* 焦点批注圈:圈一下(offset 从外收到定位,只动 outline 不动元素) */
+@keyframes ws-ring-pop { from { outline-offset: 7px; } to { outline-offset: 3px; } }
+/* 骨架微光扫过 */
+@keyframes ws-shimmer { from { background-position: -180% 0; } to { background-position: 180% 0; } }
+/* 保存脉冲(状态点) */
+@keyframes ws-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @keyframes ws-spin { to { transform: rotate(360deg); } }
 @keyframes ws-blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+/* 页面/视图入场:整块内容轻轻上浮落定 */
+@keyframes ws-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* 可复用动画工具类 */
+.ws-anim-view { animation: ws-view-in var(--dur-page) var(--ease-enter) both; }
+.ws-anim-pop { animation: ws-pop-in var(--dur-slow) var(--ease-enter) both; }
+.ws-skeleton {
+  background: linear-gradient(100deg, var(--c-bg-sunken) 30%, var(--c-hover) 50%, var(--c-bg-sunken) 70%);
+  background-size: 220% 100%;
+  animation: ws-shimmer 1.4s var(--ease) infinite;
+  border-radius: var(--r-sm);
+}
+
+/* ============================================================
+   可访问性:尊重「减少动态效果」。关掉位移/缩放这类前庭刺激,
+   保留极短的透明度过渡(不致于让界面跳变)。
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

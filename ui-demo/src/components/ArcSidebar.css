@@ -123,6 +123,10 @@
   height: 32px; padding: 0 8px 0 10px; border-radius: var(--r-sm);
   color: var(--c-text-2);
   cursor: pointer;
+  /* 新标签打开时轻轻落定;hover/激活态平滑过渡 */
+  animation: ws-reveal-down var(--dur) var(--ease-enter);
+  transition: background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease);
 }
 
 /* drag-reorder insertion line (shared by tabs and bookmarks) */
@@ -187,6 +191,9 @@
   display: flex; align-items: center; gap: 8px;
   height: 30px; padding: 0 8px 0 24px; border-radius: var(--r-sm);
   color: var(--c-text); text-align: left;
+  /* 文件树:折叠展开 / 首次加载时逐行落定 */
+  animation: ws-reveal-down var(--dur) var(--ease-enter);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .arc-doc:hover, .arc-file:hover { background: var(--c-hover); }
 .arc-doc.is-active, .arc-file.is-active { background: var(--c-selected); color: var(--c-accent); }
@@ -239,8 +246,10 @@
   max-height: 320px; overflow-y: auto;
   background: var(--c-surface);
   border: 1px solid var(--c-border); border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
   padding: 5px; display: flex; flex-direction: column; gap: 1px;
+  transform-origin: top left;
+  animation: ws-pop-in var(--dur) var(--ease-enter);
 }
 .arc-space-item {
   width: 100%;
@@ -400,7 +409,9 @@
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: 8px;
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-menu);
+  transform-origin: top left;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
   display: flex;
   flex-direction: column;
   gap: 1px;

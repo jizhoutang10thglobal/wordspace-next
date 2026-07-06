@@ -21,6 +21,8 @@
   color: var(--c-warning);
   background: var(--c-warning-tint);
   border-top: 1px solid color-mix(in srgb, var(--c-warning) 22%, transparent);
+  /* 降级提示条出现时从下轻轻升入(它在文档下方) */
+  animation: ws-slide-up var(--dur-slow) var(--ease-enter) both;
 }
 .nce-notice svg {
   flex: none;
@@ -66,9 +68,10 @@
   padding: 5px 14px;
   border-radius: var(--r-pill);
   cursor: pointer;
+  /* 分段控件:选中项白纸浮起,box-shadow 走 spring 做一下微弹落定 */
   transition: color var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
+    box-shadow var(--dur) var(--ease-spring);
 }
 .nce-modes button.on { background: var(--c-surface); color: var(--c-text); box-shadow: var(--shadow-xs); }
 .nce-frame {

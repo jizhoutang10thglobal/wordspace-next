@@ -10,11 +10,12 @@
   background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: var(--r-lg);
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-pop);
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  animation: ws-modal-pop var(--dur) var(--ease-enter);
+  transform-origin: top center;
+  animation: ws-pop-in var(--dur-slow) var(--ease-enter);
 }
 
 .fp-bar {
@@ -81,13 +82,26 @@
   border-radius: var(--r-sm);
   text-align: left;
   background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
-  transition: background-size var(--dur) var(--ease);
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
+  /* 结果逐行落定(stagger 由下方 nth-child 延迟给出) */
+  animation: ws-stagger-in var(--dur) var(--ease-enter) both;
 }
+/* 前 8 行做阶梯延迟,超过的直接显示(避免长列表拖尾) */
+.fp-row:nth-child(1) { animation-delay: 0ms; }
+.fp-row:nth-child(2) { animation-delay: 22ms; }
+.fp-row:nth-child(3) { animation-delay: 44ms; }
+.fp-row:nth-child(4) { animation-delay: 66ms; }
+.fp-row:nth-child(5) { animation-delay: 88ms; }
+.fp-row:nth-child(6) { animation-delay: 110ms; }
+.fp-row:nth-child(7) { animation-delay: 132ms; }
+.fp-row:nth-child(8) { animation-delay: 154ms; }
 .fp-row:hover {
   background-size: 100% 100%;
 }
+/* 键盘选中态:平滑而非瞬跳,选中项左侧墨青蓝竖条 */
 .fp-row.is-sel {
   background: var(--c-accent-tint);
+  box-shadow: inset 2px 0 0 var(--c-accent);
 }
 .fp-row-ico {
   flex: none;

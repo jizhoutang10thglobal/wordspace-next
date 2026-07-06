@@ -3,7 +3,7 @@
    基调:暖白纸面(stone 灰阶)、墨色控件、墨青蓝 accent。
    纸方——承载内容的容器(卡片/菜单/弹窗)微圆角;
    墨圆——可交互的控件(按钮/开关/分段)全圆丸;
-   按了会陷(letterpress)、叠了有边(shadow-stack)、焦点是批注圈不发光。 */
+   按了会陷(letterpress)、焦点是批注圈不发光、动是有物理的反馈。 */
 :root {
   /* ---- color:纸(stone 暖灰阶) ---- */
   --c-bg: #ffffff;            /* 文档纸面 */
@@ -77,19 +77,15 @@
   --r-lg: 10px;   /* 弹窗 / 卡片 */
   --r-pill: 999px; /* 一切可点的控件 */
 
-  /* ---- shadow:暖墨投影(rgba 基于 #1c1917) ---- */
+  /* ---- shadow:干净的暖墨投影分层(rgba 基于 #1c1917)。
+     Wendi 2026-07-06 拍板去掉「模拟纸张堆叠」:层级只靠真实 elevation 阴影,
+     不再用露边假纸(--stack)、不再垫微倾斜纸。阴影两层——近处硬边+远处软晕。 ---- */
   --shadow-xs: 0 1px 2px rgba(28, 25, 23, 0.05);
   --shadow-sm: 0 1px 3px rgba(28, 25, 23, 0.07), 0 1px 2px rgba(28, 25, 23, 0.04);
   --shadow-menu: 0 4px 14px rgba(28, 25, 23, 0.09), 0 1px 3px rgba(28, 25, 23, 0.05);
-  --shadow-modal: 0 14px 36px rgba(28, 25, 23, 0.14), 0 2px 8px rgba(28, 25, 23, 0.07);
-
-  /* 叠纸边:菜单/toast 底下露出的两张纸(有厚度) */
-  --stack: 0 1px 2px rgba(28, 25, 23, 0.05),
-    0 6px 0 -3px #f4f3f1, 0 7px 0 -3px var(--c-border),
-    0 13px 0 -7px #efedeb, 0 14px 0 -7px var(--c-border);
-  --stack-float: 0 4px 14px rgba(28, 25, 23, 0.09),
-    0 6px 0 -3px #f4f3f1, 0 7px 0 -3px var(--c-border),
-    0 13px 0 -7px #efedeb, 0 14px 0 -7px var(--c-border);
+  --shadow-pop: 0 10px 30px rgba(28, 25, 23, 0.12), 0 3px 8px rgba(28, 25, 23, 0.07),
+    0 0 0 1px rgba(28, 25, 23, 0.04); /* 命令面板 / toast:悬浮更高一档,带一圈极淡描边定形 */
+  --shadow-modal: 0 20px 48px rgba(28, 25, 23, 0.18), 0 6px 16px rgba(28, 25, 23, 0.09);
 
   /* ---- metrics ---- */
   --h-titlebar: 40px;
@@ -98,12 +94,16 @@
   --list-w: 268px;
   --maxdoc-w: 820px;
 
-  /* ---- motion:三档时长 + 四条曲线 ---- */
-  --dur-fast: 120ms;  /* 按压 / 颜色变化 */
-  --dur: 200ms;       /* 背景滑入 / 墨条 / tooltip */
-  --dur-slow: 320ms;  /* 墨线划过 / 入场 */
-  --ease: cubic-bezier(0.2, 0, 0, 1);          /* 标准 */
-  --ease-enter: cubic-bezier(0, 0, 0.2, 1);    /* 入场 */
-  --ease-exit: cubic-bezier(0.4, 0, 1, 1);     /* 退场 */
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 弹(switch 滑块/关闭钮) */
+  /* ---- motion:分工明确的时长阶梯 + 缓动曲线。
+     动是反馈不是装饰——每一档对应一种物理感,详见 docs/style.md §4。 ---- */
+  --dur-instant: 80ms;  /* 微反馈:按压、勾选、图标态 */
+  --dur-fast: 120ms;    /* 颜色变化、小位移、kbd 下沉 */
+  --dur: 200ms;         /* 背景滑入、墨条、tooltip、hover 抬起 */
+  --dur-slow: 320ms;    /* 墨线划过、浮层入场、抽屉滑出 */
+  --dur-page: 420ms;    /* 路由/视图切换的编排级动画 */
+  --ease: cubic-bezier(0.2, 0, 0, 1);               /* 标准(大多数状态变化) */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);      /* 入场:快起慢收,东西"落定" */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);          /* 退场:直接撤走 */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 回弹:switch 滑块、关闭钮、盖章式反馈 */
+  --ease-smooth: cubic-bezier(0.45, 0, 0.15, 1);    /* 平滑对称:折叠/展开、滑块拖动 */
 }

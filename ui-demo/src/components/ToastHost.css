@@ -10,7 +10,7 @@
   z-index: 1000;
   pointer-events: none;
 }
-/* 书签纸条:纸底墨字 + 左侧 4px 语义色条 + 叠纸边(docs/style.md §5) */
+/* 书签纸条:纸底墨字 + 左侧 4px 语义色条 + 干净 elevation(docs/style.md §5) */
 .ws-toast {
   position: relative;
   overflow: hidden;
@@ -22,8 +22,9 @@
   font-size: var(--fs-md);
   padding: 9px 15px;
   border-radius: var(--r-md);
-  box-shadow: var(--stack);
-  animation: ws-pop-in var(--dur) var(--ease-enter);
+  box-shadow: var(--shadow-pop);
+  /* 从下方带一点回弹地弹上来 */
+  animation: ws-slide-up var(--dur-slow) var(--ease-spring);
   transition: transform var(--dur) var(--ease-spring),
     box-shadow var(--dur) var(--ease-spring);
 }
@@ -38,7 +39,7 @@
 }
 .ws-toast:hover {
   transform: translateY(-2px);
-  box-shadow: var(--stack-float);
+  box-shadow: var(--shadow-pop);
 }
 .ws-toast-success::before { background: var(--c-success); }
 .ws-toast-danger::before { background: var(--c-danger); }

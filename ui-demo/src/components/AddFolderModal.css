@@ -32,6 +32,10 @@
   color: var(--c-text-3);
 }
 
+/* 无列表——正文两块轻轻落定(拾取器 + 已打开提示) */
+.afm-picker { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.afm-current { animation: ws-stagger-in var(--dur) var(--ease-enter) both; animation-delay: 45ms; }
+
 /* 嵌套关系通知横幅——纸方墨圆：纸面卡片微圆角，info 墨青蓝、warn 琥珀。 */
 .afm-notice {
   display: flex;

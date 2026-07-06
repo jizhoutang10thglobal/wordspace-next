@@ -53,3 +53,6 @@
   transform: translateY(1px);
   box-shadow: 0 0 0 var(--c-border-strong);
 }
+
+/* 工具栏随查看器内容一起淡入落定(按钮 hover/letterpress 已在上方齐全,不重复) */
+.fv-bar { animation: ws-fade-in var(--dur) var(--ease-enter) both; }

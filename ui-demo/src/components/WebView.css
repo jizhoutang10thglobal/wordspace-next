@@ -55,4 +55,6 @@
   width: 100%;
   border: none;
   background: #fff;
+  /* iframe 内容载入淡入;打开按钮 hover 过渡本就齐全,不重复加 */
+  animation: ws-fade-in var(--dur-slow) var(--ease-enter) both;
 }
