@@ -232,3 +232,21 @@
   white-space: nowrap;
 }
 .cm-omnibar-x { margin: 0; }
+
+/* ------------------------------------------------------------------ */
+/* 弹窗内容首次出现的轻 stagger（外壳 ws-modal-pop 已管入场,这里只补内部内容） */
+/* omnibar 的聚焦墨线本就有(background-size 0→100% 2px),不重复加。          */
+/* ------------------------------------------------------------------ */
+/* 范式轨落定(cm-rail 里只有 .cm-para 是 button,nth-of-type 稳映射) */
+.cm-para { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.cm-para:nth-of-type(1) { animation-delay: 0ms; }
+.cm-para:nth-of-type(2) { animation-delay: 40ms; }
+.cm-para:nth-of-type(3) { animation-delay: 80ms; }
+/* 模板卡落定(≤6 张,避免长列表拖尾) */
+.cm-card { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.cm-card:nth-child(1) { animation-delay: 40ms; }
+.cm-card:nth-child(2) { animation-delay: 75ms; }
+.cm-card:nth-child(3) { animation-delay: 110ms; }
+.cm-card:nth-child(4) { animation-delay: 145ms; }
+.cm-card:nth-child(5) { animation-delay: 180ms; }
+.cm-card:nth-child(6) { animation-delay: 215ms; }

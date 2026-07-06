@@ -31,3 +31,7 @@
   font-size: 12px;
   color: var(--c-text-3);
 }
+
+/* 无列表——正文两块轻轻落定(拾取器 + 已打开提示) */
+.afm-picker { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.afm-current { animation: ws-stagger-in var(--dur) var(--ease-enter) both; animation-delay: 45ms; }

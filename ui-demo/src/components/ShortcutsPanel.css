@@ -55,3 +55,12 @@
   font-size: 12px; color: var(--c-accent); text-decoration: none;
 }
 .skp-doc-link:hover { text-decoration: underline; }
+
+/* 首次打开:整组淡入落定(条目太多不逐条,避免拖尾)。kbd 键帽保持静态。 */
+.skp-group { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.skp-group:nth-child(1) { animation-delay: 0ms; }
+.skp-group:nth-child(2) { animation-delay: 30ms; }
+.skp-group:nth-child(3) { animation-delay: 60ms; }
+.skp-group:nth-child(4) { animation-delay: 90ms; }
+.skp-group:nth-child(5) { animation-delay: 120ms; }
+.skp-group:nth-child(6) { animation-delay: 150ms; }

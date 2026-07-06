@@ -46,3 +46,14 @@
   flex: none;
   color: var(--c-accent);
 }
+
+/* 目标行首次出现轻 stagger 落定 */
+.sm-row { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.sm-row:nth-child(1) { animation-delay: 0ms; }
+.sm-row:nth-child(2) { animation-delay: 30ms; }
+.sm-row:nth-child(3) { animation-delay: 60ms; }
+.sm-row:nth-child(4) { animation-delay: 90ms; }
+.sm-row:nth-child(5) { animation-delay: 120ms; }
+.sm-row:nth-child(6) { animation-delay: 150ms; }
+.sm-row:nth-child(7) { animation-delay: 180ms; }
+.sm-row:nth-child(8) { animation-delay: 210ms; }
