@@ -112,21 +112,25 @@
     try { api.delete(HL); api.delete(HL_CUR); } catch (e) {}
   }
 
+  // 建一个含指定 range 的 Highlight。用 .add() 逐个加（Highlight 是 Set-like）——
+  // 不用 `new Highlight(...ranges)` 变参展开：匹配数极大（>数万）时变参会撞引擎实参上限
+  // 抛 RangeError，导致「全部匹配」层静默不渲染而计数仍显示总数。逐个 add 无此上限。
+  function makeHighlight(Ctor, ranges) {
+    var h = new Ctor();
+    for (var i = 0; i < ranges.length; i++) { try { h.add(ranges[i]); } catch (e) {} }
+    return h;
+  }
+
   function applyHighlights() {
     var api = hlApi(), Ctor = HLCtor();
     if (!api || !Ctor) return;
     if (!matches.length) { clearHighlights(); return; }
     ensureSheet();
     try {
-      api.set(HL, construct(Ctor, matches)); // 全部匹配一层
-      api.set(HL_CUR, new Ctor(matches[active])); // 当前匹配另一层
+      api.set(HL, makeHighlight(Ctor, matches)); // 全部匹配一层
+      api.set(HL_CUR, makeHighlight(Ctor, [matches[active]])); // 当前匹配另一层
     } catch (e) {}
     scrollActiveIntoView();
-  }
-
-  // `new Ctor(...matches)` 的可变参构造（避开 apply on constructor 的旧引擎问题）。
-  function construct(Ctor, args) {
-    return new (Function.prototype.bind.apply(Ctor, [null].concat(args)))();
   }
 
   function scrollActiveIntoView() {
@@ -163,7 +167,7 @@
     var n = matches.length;
     active = (((active + dir) % n) + n) % n;
     var api = hlApi(), Ctor = HLCtor();
-    if (api && Ctor) { try { api.set(HL_CUR, new Ctor(matches[active])); } catch (e) {} }
+    if (api && Ctor) { try { api.set(HL_CUR, makeHighlight(Ctor, [matches[active]])); } catch (e) {} }
     scrollActiveIntoView();
     updateCount();
   }
@@ -189,7 +193,9 @@
     frame = targetFrame || document.getElementById('doc-frame');
     if (!frame) return;
     if (!bar) buildBar();
-    findSheet = null; // 换文档/重开 → 强制重注 ::highlight 表到当前 iframe
+    // 不清 findSheet：ensureSheet 的 indexOf 守卫已正确处理两种情形——同文档重开时旧表仍在
+    // adoptedStyleSheets 里（indexOf≥0，不重复注，避免泄漏累积）；换文档后新 iframe 数组不含旧表
+    // （indexOf<0，重建）。此处再置 null 会让同文档每次 Cmd+F 都追加一张、旧表从不移除。
     isOpen = true;
     bar.hidden = false;
     reposition();

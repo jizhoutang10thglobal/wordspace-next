@@ -69,3 +69,12 @@ test('中文匹配', () => {
   const rs = buildMatchRanges(bodyOf('<p>查找这个词，再查找一次</p>'), '查找');
   assert.equal(rs.length, 2);
 });
+
+// 已知限制（v1）：只在单个文本节点内匹配。显式钉住当前行为，别让它成「被 rig 的绿灯」掩盖的隐性 bug。
+test('已知限制：查询词被行内标签切断则跨节点不匹配', () => {
+  // "wor" + <b>"ld"</b> —— "world" 横跨两个文本节点，当前实现抓不到。
+  const rs = buildMatchRanges(bodyOf('<p>hello wor<b>ld</b> here</p>'), 'world');
+  assert.equal(rs.length, 0); // 记录现状=0；将来支持跨节点时把这条改成 1（提醒实现者）
+  // 但整词落在同一节点内仍正常
+  assert.equal(buildMatchRanges(bodyOf('<p>hello <b>world</b> here</p>'), 'world').length, 1);
+});

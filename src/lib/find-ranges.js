@@ -11,6 +11,9 @@
   // query: 查询串（大小写不敏感、非重叠匹配）。
   // opts.skipSelector: 命中它的元素子树整段跳过——默认跳过编辑器注入 iframe 的浮层
   //   [data-ws2-ui]（grip / 块菜单 / 斜杠菜单等），免得把 UI 文字也搜进去。
+  // ⚠ 已知限制（v1，与 ui-demo 同）：只在**单个文本节点内** indexOf 匹配。查询词若被行内标签
+  //   切成两段（如 "wor<b>ld</b>" 搜 "world"）或跨块，抓不到。Schema 文档的行内标签通常整词包裹
+  //   （<b>词</b>），跨节点漏匹配是低频情形；真跨节点匹配要把文本铺平+记节点边界，是后续增强。
   function buildMatchRanges(rootEl, query, opts) {
     var q = (query == null ? '' : String(query)).toLowerCase();
     if (!rootEl || !q) return [];
