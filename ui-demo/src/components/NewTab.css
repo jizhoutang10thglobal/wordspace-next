@@ -146,3 +146,11 @@
   transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
 .nt-mark-link:hover { background-size: 100% 100%; color: var(--c-text); }
+
+/* 安全口径提示（对齐真 app）：内置浏览器无恶意网站防护 */
+.nt-safe-note {
+  margin-top: 34px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  text-align: center;
+}

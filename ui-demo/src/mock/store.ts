@@ -140,6 +140,8 @@ interface State {
   deleteDirWithUndo: (rootId: string, dirPath: string) => void
   moveFile: (file: FileEntry, destDir: string) => void
   newBrowserTab: () => void
+  // 「存为文档」融合桥：把剪藏出来的正文块存成一份本地文档（落我的草稿）并打开。
+  clipToDoc: (title: string, blocks: Block[], note: string) => string
   setTabUrl: (tabId: string, url: string, title?: string) => void
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
@@ -394,6 +396,29 @@ export const useStore = create<State>()(
       openWebTab: (url, title) => {
         const tab: Tab = { id: uid('tab'), kind: 'web', title, url }
         set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
+      },
+
+      // 网页存成本地文档（融合桥）：剪藏出来的块 → 一份真文档落「我的草稿」→ 打开。
+      // 块重新发 id（同 createFromTemplate）；不 unsaved = 直接进库、和别的文档一样。
+      clipToDoc: (title, blocks, note) => {
+        const id = uid('d')
+        const doc: Doc = {
+          id,
+          title,
+          emoji: '🌐',
+          kind: 'doc',
+          folderId: 'f-drafts',
+          blocks: blocks.map((b) => ({ ...b, id: uid('b') })),
+          visibility: 'private',
+          localPath: `~/Wordspace/我的草稿/${title}.html`,
+          updatedAt: Date.now(),
+          updatedBy: get().meId,
+          collaborators: [get().meId],
+        }
+        set((s) => ({ docs: [doc, ...s.docs] }))
+        get().openDoc(id)
+        get().toast(`${note}${title}`, 'success')
+        return id
       },
 
       // Open a file from a connected folder. HTML opens in the editor (a 'doc'

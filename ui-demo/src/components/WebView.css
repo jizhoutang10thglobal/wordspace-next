@@ -1,3 +1,71 @@
+/* 网页态外壳：顶上一条 Wordspace 网页头（安全 + 标题 + 域名 + 存为文档），下面是内容
+   （mock 站点 / 真 iframe）。对齐真 app 的 #web-header 罩在 WebContentsView 上。 */
+.webpage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.web-chrome {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px 0 14px;
+  background: var(--c-bg-chrome);
+  border-bottom: 1px solid var(--c-border);
+}
+.web-chrome-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.web-sec {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+.web-sec.is-secure { color: var(--c-success); }
+.web-sec.is-insecure { color: var(--c-text-3); }
+.web-chrome-title {
+  min-width: 0;
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-base);
+  color: var(--c-text);
+}
+.web-chrome-host {
+  flex: none;
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+}
+/* 存为文档：融合桥的入口。纸方墨圆的 2px 实边按钮，accent 字。 */
+.web-clip-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  color: var(--c-accent);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--c-border-strong);
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease);
+}
+.web-clip-btn:hover { background: var(--c-accent-tint); transform: translateY(-1px); box-shadow: 0 3px 0 var(--c-border-strong); }
+.web-clip-btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--c-border-strong); }
+
 /* Frame around a real external <iframe>. The mock sites and the new-tab page
    bring their own styling; this file only dresses the iframe fallback. */
 .webview {
