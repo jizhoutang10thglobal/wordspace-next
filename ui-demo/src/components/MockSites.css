@@ -298,3 +298,33 @@
   border-top: 1px solid var(--c-border);
   font-size: 13px; color: #a3a8af;
 }
+
+/* ========================================================================
+   动效 polish：给这些模拟站点补「真实网站」级别的克制 hover 反馈。
+   只用 transform + 现有配色,绝不引入新色 / 不改站点身份色(见任务硬规矩)。
+   ===================================================================== */
+/* 内容卡轻抬——通用网页 hover 手感 */
+.co-feature,
+.fd-card { transition: transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.co-feature:hover,
+.fd-card:hover { transform: translateY(-2px); }
+/* 杂志缩略图随卡片 hover 上浮 */
+.nw-thumb { transition: transform var(--dur) var(--ease); }
+.nw-card:hover .nw-thumb { transform: translateY(-2px); }
+
+/* 导航 / 链接 / 结果标题的变色本来是瞬跳,补平滑过渡 */
+.co-links button, .fd-links button, .nw-links button,
+.co-foot-cols button, .fd-foot-links button,
+.gl-result-title, .nw-card-title,
+.fd-signin, .gl-home-chips button {
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+/* CTA / 按钮:平滑变色 + 轻抬 */
+.co-cta, .fd-cta, .nw-cta,
+.co-btn-primary, .co-btn-ghost, .fd-btn-primary, .fd-btn-ghost {
+  transition: background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+.co-cta:hover, .fd-cta:hover, .nw-cta:hover,
+.co-btn-primary:hover, .fd-btn-primary:hover { transform: translateY(-1px); }

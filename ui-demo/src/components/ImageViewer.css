@@ -36,3 +36,6 @@
   font-size: var(--fs-sm);
   color: rgba(255, 255, 255, 0.7);
 }
+
+/* 图片载入淡入(不做缩放入场) */
+.imgv-frame { animation: ws-fade-in var(--dur-slow) var(--ease-enter) both; }

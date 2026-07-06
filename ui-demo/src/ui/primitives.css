@@ -12,7 +12,10 @@
   line-height: 1;
   flex: none;
   user-select: none;
+  transition: transform var(--dur-fast) var(--ease);
 }
+/* 极轻:悬停时头像微微放大,像被点亮(不碰头像身份色) */
+.ws-avatar:hover { transform: scale(1.08); }
 .ws-avatar-extra {
   background: var(--c-active);
   color: var(--c-text-2);
@@ -44,6 +47,8 @@
   border-radius: var(--r-sm); /* 静态徽标是「可读」不是「可点」,方角(圆丸只给可点控件) */
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
+  /* 出现时淡入(纯透明度,不加位移;挂载即落定) */
+  animation: ws-fade-in var(--dur) var(--ease-enter) both;
 }
 .ws-pill-neutral { background: var(--c-active); color: var(--c-text-2); }
 .ws-pill-accent { background: var(--c-accent-tint); color: var(--c-accent); }

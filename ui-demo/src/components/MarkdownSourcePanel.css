@@ -77,3 +77,6 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* 源码抽屉从右滑入(此前无入场动画) */
+.mdsrc { animation: ws-slide-in-right var(--dur-slow) var(--ease-enter) both; }

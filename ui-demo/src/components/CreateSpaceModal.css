@@ -174,3 +174,8 @@
 .csm-repick:hover {
   text-decoration: underline;
 }
+
+/* 存储位置选项:轻 stagger 落定(名字输入框走共享 .ws-input,焦点墨线本就有) */
+.csm-option { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.csm-option:nth-child(1) { animation-delay: 0ms; }
+.csm-option:nth-child(2) { animation-delay: 45ms; }

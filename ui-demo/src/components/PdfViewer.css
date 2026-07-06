@@ -82,3 +82,7 @@
   color: var(--c-text-3);
   text-align: center;
 }
+
+/* 内容载入淡入(不做缩放入场);两页轻 stagger 落定 */
+.pdfv-page { animation: ws-fade-in var(--dur-slow) var(--ease-enter) both; }
+.pdfv-page:nth-child(2) { animation-delay: 60ms; }

@@ -42,3 +42,6 @@
   background: var(--c-danger-tint);
   border-color: var(--c-danger);
 }
+
+/* 警示图标盖章式落定,把注意力引到「未保存」上(轻微 spring 微弹,不循环) */
+.cc-ico { animation: ws-pop-in var(--dur-slow) var(--ease-spring) both; }
