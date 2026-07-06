@@ -103,6 +103,7 @@ function TabRow({
   return (
     <div
       className={`arc-tab ${active ? 'is-active' : ''} ${insert ? 'drop-' + insert : ''}`}
+      title={tab.title}
       draggable
       onDragStart={(e) => {
         dragTabId = tab.id
@@ -348,6 +349,7 @@ function FileBranch({
         <button
           className={`arc-file ${isActive ? 'is-active' : ''} ${foreign ? 'is-foreign' : ''}`}
           style={{ paddingLeft: treeIndent(26, depth) }}
+          title={node.name}
           draggable
           onDragStart={(e) => {
             dragFile = f
@@ -418,6 +420,7 @@ function FileBranch({
         className={`arc-folder-head ${dropOver ? 'is-drop' : ''}`}
         role="button"
         tabIndex={0}
+        title={node.name}
         style={{ paddingLeft: treeIndent(8, depth) }}
         onClick={() => toggle(`file:${rootId}:${path}`)}
         onKeyDown={(e) => {
