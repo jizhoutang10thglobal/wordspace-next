@@ -52,6 +52,9 @@ interface UI {
   findOpen: boolean
   openFind: () => void
   closeFind: () => void
+  docFindOpen: boolean // 文档内查找条（Cmd+F）——非模态、不进 anyOverlayOpen
+  openDocFind: () => void
+  closeDocFind: () => void
 
   // 快捷键速查面板（Cmd+/ 或左下角 ⌨）
   shortcutsOpen: boolean
@@ -116,6 +119,9 @@ export const useUI = create<UI>((set) => ({
   findOpen: false,
   openFind: () => set({ findOpen: true }),
   closeFind: () => set({ findOpen: false }),
+  docFindOpen: false,
+  openDocFind: () => set({ docFindOpen: true }),
+  closeDocFind: () => set({ docFindOpen: false }),
 
   shortcutsOpen: false,
   openShortcuts: () => set({ shortcutsOpen: true }),

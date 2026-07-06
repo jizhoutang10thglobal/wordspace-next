@@ -166,6 +166,7 @@ interface State {
   createSpace: (name: string, storage: StorageKind, folderPath?: string) => void
   // 多文件夹工作区（Feature: 多文件夹空间同时打开）
   addRootToSpace: (spaceId: string, path: string) => void // 「添加文件夹」：往连接空间再挂一个根
+  absorbRootIntoSpace: (spaceId: string, path: string, childRootIds: string[]) => void // 父目录吸收：移除被它包含的子根，加入父根（嵌套裁决）
   removeRootFromSpace: (spaceId: string, rootId: string) => void // 从工作区移除（磁盘不动），可撤销
   saveWorkspaceAs: (spaceId: string, name: string) => void // 把当前多根组合命名保存为工作区（落 .wsworkspace 文件）
   // 拖拽调整根的上下顺序（顺序 = roots 数组序，随 spaces 持久化）
@@ -812,6 +813,36 @@ export const useStore = create<State>()(
           }
         })
         get().toast(`已把「${root.name}」添加进当前空间`, 'success')
+      },
+
+      // 父目录吸收（嵌套裁决：加一个「包住了已打开子根」的父目录时，把子根并入父根，避免同一批文件两次出现）。
+      // 移除被包含的子根的文件/目录（磁盘不动，纯 UI），再把父根加进来。
+      absorbRootIntoSpace: (spaceId, path, childRootIds) => {
+        const space = get().spaces.find((sp) => sp.id === spaceId)
+        if (!space || isCloudStorage(space.storage)) return
+        const drop = new Set(childRootIds)
+        const root: MountRoot = { id: uid('r'), name: rootNameOf(path), path }
+        const sample = sampleConnectedFolder(spaceId, root.id, path)
+        set((s) => {
+          const spaces = s.spaces.map((sp) =>
+            sp.id === spaceId
+              ? { ...sp, roots: [...(sp.roots ?? []).filter((r) => !drop.has(r.id)), root] }
+              : sp,
+          )
+          const dropDocIds = new Set(
+            s.files.filter((f) => f.spaceId === spaceId && drop.has(f.rootId) && f.docId).map((f) => f.docId!),
+          )
+          return {
+            spaces,
+            docs: [...sample.docs, ...s.docs.filter((d) => !dropDocIds.has(d.id))],
+            files: [...s.files.filter((f) => !(f.spaceId === spaceId && drop.has(f.rootId))), ...sample.files],
+            dirs: [...s.dirs.filter((d) => !(d.spaceId === spaceId && drop.has(d.rootId))), ...sample.dirs],
+            // 指向被移除子根文档的标签页一并关掉，防悬挂
+            tabs: s.tabs.filter((t) => !t.docId || !dropDocIds.has(t.docId)),
+            workspaceFiles: syncWorkspaceFile(s.workspaceFiles, spaces.find((sp) => sp.id === spaceId)),
+          }
+        })
+        get().toast(`「${root.name}」已并入，含原来的子文件夹`, 'success')
       },
 
       // 从工作区移除一个根：文件/目录/标签页整组撤走，磁盘文件不动（remove ≠ delete）。

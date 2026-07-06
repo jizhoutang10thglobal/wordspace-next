@@ -82,3 +82,32 @@ export function buildLocalTree(docs: Doc[]): TreeNode[] {
   }
   return root.children
 }
+
+// ---- 多根文件夹：加根前的嵌套关系判定（调研裁决：禁止真嵌套 + 智能处理）----
+// canon：规范化路径用于比较（demo 是假路径，真 app 里还要 realpath 解符号链接）。
+// 去尾斜杠 + 折叠大小写（macOS 默认大小写不敏感）。
+export function canonPath(p: string): string {
+  return p.replace(/\/+$/, '').toLowerCase()
+}
+export type RootRelation =
+  | { rel: 'same'; other: string } // 完全相同路径
+  | { rel: 'child'; parent: string } // 新根是某已有根的子目录 → 别单独开，进它里面
+  | { rel: 'parent'; children: string[] } // 新根包住了一个或多个已有根 → 确认后吸收
+  | { rel: 'independent' } // 无重叠 → 正常加
+
+// 前缀判定必须带分隔符边界，否则 /foo/bar 会误判成 /foo/bar-baz 的父目录。
+function isUnder(childCanon: string, parentCanon: string): boolean {
+  return childCanon.startsWith(parentCanon + '/')
+}
+export function classifyRoot(newPath: string, existingPaths: string[]): RootRelation {
+  const a = canonPath(newPath)
+  for (const ex of existingPaths) {
+    if (canonPath(ex) === a) return { rel: 'same', other: ex }
+  }
+  for (const ex of existingPaths) {
+    if (isUnder(a, canonPath(ex))) return { rel: 'child', parent: ex } // 新根在已有根里
+  }
+  const contained = existingPaths.filter((ex) => isUnder(canonPath(ex), a)) // 已有根在新根里
+  if (contained.length) return { rel: 'parent', children: contained }
+  return { rel: 'independent' }
+}
