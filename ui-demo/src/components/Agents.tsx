@@ -64,6 +64,7 @@ export default function Agents() {
     <div className="ag-scroll">
       <div className="ag-page">
         <header className="ag-head">
+          <div className="ws-eyebrow">AI 接入 · AGENTS</div>
           <h1 className="ag-title">AI 接入</h1>
           <p className="ag-intro">
             让任何 AI 按 Wordspace Schema 生成、编辑文档。两种接入方式，产出的 .html

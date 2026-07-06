@@ -61,6 +61,10 @@
   --fs-lg: 15px;
   --fs-xl: 18px;
   --fs-2xl: 22px;
+  --fs-3xl: 28px;   /* editorial:内容页大标题(海报刊头感) */
+  --fs-4xl: 34px;   /* editorial:最重的页面标题 */
+  /* editorial 栏标字距(等宽 + 宽 tracking,像刊物的 "02 · SECTION") */
+  --tracking-label: 0.16em;
 
   --fw-regular: 400;
   --fw-medium: 500;

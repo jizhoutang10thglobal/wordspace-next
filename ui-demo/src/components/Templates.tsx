@@ -85,6 +85,7 @@ export default function Templates() {
       <div className="tpl-page">
         <header className="tpl-head">
           <div className="tpl-head-text">
+            <div className="ws-eyebrow">模板库 · TEMPLATES</div>
             <h1 className="tpl-title">模板</h1>
             <p className="tpl-subtitle">调用模板,快速生成带公司样式的文档</p>
           </div>

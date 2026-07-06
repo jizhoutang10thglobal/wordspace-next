@@ -7,17 +7,23 @@
 .ag-page {
   max-width: 860px;
   margin: 0 auto;
-  padding: 30px 40px 100px;
+  padding: 44px 40px 100px;   /* editorial:更透气 */
 }
 
 /* header */
-.ag-head { margin-bottom: 28px; }
+.ag-head {
+  margin-bottom: 34px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--c-divider);   /* editorial:刊头分隔线 */
+}
 .ag-title {
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-semibold);
-  letter-spacing: -0.01em;
+  /* editorial:大标题拉大加重(无衬线,色板不变) */
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   color: var(--c-text);
-  margin: 0 0 6px;
+  margin: 0 0 8px;
 }
 .ag-intro {
   font-size: var(--fs-md);
@@ -28,14 +34,16 @@
 }
 
 /* sections */
-.ag-section { margin-top: 26px; }
+.ag-section { margin-top: 30px; }
 .ag-label {
+  /* editorial:节标题等宽 + 宽字距(刊物栏标) */
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--c-text-3);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 /* 方式切换 Tab */

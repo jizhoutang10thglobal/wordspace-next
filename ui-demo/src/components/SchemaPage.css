@@ -8,21 +8,25 @@
 .spx-head {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 36px 32px 8px;
+  padding: 44px 32px 8px;   /* editorial:更透气 */
 }
 .spx-eyebrow {
+  /* editorial:等宽栏标(和全站 .ws-eyebrow 对齐) */
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  letter-spacing: 0.14em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--c-text-3);
   font-weight: var(--fw-semibold);
 }
 .spx-title {
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-semibold);
+  /* editorial:大标题拉大加重 */
+  font-size: var(--fs-3xl);
+  font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1.15;
   color: var(--c-text);
-  margin: 8px 0 12px;
+  margin: 10px 0 14px;
 }
 .spx-lede {
   font-size: var(--fs-lg);
