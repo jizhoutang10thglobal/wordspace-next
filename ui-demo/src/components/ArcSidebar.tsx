@@ -1060,8 +1060,16 @@ export default function ArcSidebar() {
       } else if (!e.shiftKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault()
         saveActiveDoc()
+      } else if (!e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        // Cmd+F = 文档内查找（调研裁决：全软件铁律，还给正文）。仅当编辑器有打开的文档时。
+        const st = useStore.getState()
+        const tab = st.tabs.find((t) => t.id === st.activeTabId)
+        if (tab?.docId) {
+          e.preventDefault()
+          ui.openDocFind()
+        }
       } else if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
-        // 聚焦文件筛选框（裁决 3：Cmd+F 的名分留给将来的文档内查找）
+        // Cmd+Shift+F = 聚焦文件筛选框（Cmd+F 让位给文档内查找后，文件筛选下沉到这，抄 VS Code 分层）
         e.preventDefault()
         if (useUI.getState().sidebarCollapsed) toggleSidebar()
         window.setTimeout(() => {
