@@ -419,21 +419,6 @@
 .arc-folder-head:hover .arc-folder-add { opacity: 1; }
 .arc-folder-add:hover { background: var(--c-active); color: var(--c-text); }
 
-/* Wordspace 云盘：置顶小区（团队 / 私有文件夹），与下面「打开的文件夹」用一条细分隔线分开。 */
-.arc-cloud {
-  padding-bottom: 8px;
-  margin-bottom: 4px;
-  border-bottom: 1px solid var(--c-border);
-}
-.arc-cloud-head {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 8px 4px;
-  font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
-  color: var(--c-text-2);
-}
-.arc-cloud-head svg { flex: none; color: var(--c-accent); }
-
 /* 失联根：底层文件夹不可达。灰显 header + 一行说明 + 「重新定位 / 移除」。 */
 .arc-root.is-missing .arc-root-head {
   background: var(--c-bg-sunken);

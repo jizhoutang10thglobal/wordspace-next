@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X, FolderClosed, FolderRoot, Check, Cloud } from 'lucide-react'
+import { X, FolderClosed, FolderRoot, Check } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
 import './SaveModal.css'
@@ -17,9 +17,9 @@ export default function SaveModal() {
   const saveDocTo = useStore((s) => s.saveDocTo)
   const closeTab = useStore((s) => s.closeTab)
 
-  // 目标列表：每个打开的文件夹（根目录 + 子文件夹）+ 一条云盘「我的草稿」。默认第一个根。
+  // 目标列表：每个打开的文件夹（根目录 + 子文件夹）。默认第一个根。
   const options = useMemo(() => {
-    const opts: { rootId: string | null; dir: string; label: string; root: boolean; cloud?: boolean }[] = []
+    const opts: { rootId: string | null; dir: string; label: string; root: boolean }[] = []
     for (const r of roots.filter((r) => !r.missing)) {
       opts.push({ rootId: r.id, dir: '', label: `${r.name}（根目录）`, root: true })
       dirs
@@ -27,7 +27,6 @@ export default function SaveModal() {
         .sort((a, b) => a.path.localeCompare(b.path, 'zh'))
         .forEach((d) => opts.push({ rootId: r.id, dir: d.path, label: `${r.name} / ${d.path}`, root: false }))
     }
-    opts.push({ rootId: null, dir: '', label: 'Wordspace 云盘 / 我的草稿', root: true, cloud: true })
     return opts
   }, [roots, dirs])
 
@@ -92,7 +91,7 @@ export default function SaveModal() {
                 className={'sm-row' + (on ? ' is-on' : '') + (o.root ? ' sm-row-root' : '')}
                 onClick={() => setSel({ rootId: o.rootId, dir: o.dir })}
               >
-                <span className="sm-ico">{o.cloud ? <Cloud size={16} /> : o.root ? <FolderRoot size={16} /> : <FolderClosed size={16} />}</span>
+                <span className="sm-ico">{o.root ? <FolderRoot size={16} /> : <FolderClosed size={16} />}</span>
                 <span className="sm-label ws-truncate">{o.label}</span>
                 {on && <Check size={15} className="sm-check" />}
               </button>

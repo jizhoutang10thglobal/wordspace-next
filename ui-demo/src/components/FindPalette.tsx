@@ -15,7 +15,7 @@ interface Hit {
 }
 
 /**
- * 查找文件面板（Cmd+P / 顶栏放大镜）。按文件名搜所有打开文件夹里的文件 + 云盘文档 → 回车/点击打开。
+ * 查找文件面板（Cmd+P / 顶栏放大镜）。按文件名搜所有打开文件夹里的文件 → 回车/点击打开。
  * 打开后配合 F6 在左侧树里定位高亮。
  */
 export default function FindPalette() {
@@ -24,36 +24,23 @@ export default function FindPalette() {
   const close = useUI((s) => s.closeFind)
 
   const files = useStore((s) => s.files)
-  const docs = useStore((s) => s.docs)
-  const folders = useStore((s) => s.folders)
   const roots = useStore((s) => s.roots)
   const openFileTab = useStore((s) => s.openFileTab)
-  const openDoc = useStore((s) => s.openDoc)
 
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 候选：所有打开文件夹里的文件（sub 带根名前缀消歧，id 含 rootId 才唯一）+ 云盘文档。
+  // 候选：所有打开文件夹里的文件（sub 带根名前缀消歧，id 含 rootId 才唯一）。
   const candidates = useMemo<Hit[]>(() => {
-    const cloudFolderIds = new Set(folders.map((f) => f.id))
     const rootName = (id: string) => roots.find((r) => r.id === id)?.name ?? ''
-    const fromFiles: Hit[] = files.map((f) => ({
+    return files.map((f) => ({
       id: `f:${f.rootId}:${f.path}`,
       name: base(f.path),
       sub: `${rootName(f.rootId)} / ${f.path}`,
       open: () => openFileTab(f),
     }))
-    const fromDocs: Hit[] = docs
-      .filter((d) => cloudFolderIds.has(d.folderId) && !d.unsaved)
-      .map((d) => ({
-        id: 'd:' + d.id,
-        name: d.title,
-        sub: (d.localPath ?? '').replace(/^~\/Wordspace\/?/, ''),
-        open: () => openDoc(d.id),
-      }))
-    return [...fromFiles, ...fromDocs]
-  }, [files, docs, folders, roots, openFileTab, openDoc])
+  }, [files, roots, openFileTab])
 
   const hits = useMemo(() => {
     const term = q.trim().toLowerCase()

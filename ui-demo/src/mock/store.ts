@@ -32,7 +32,7 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 19
+const SEED_VERSION = 20
 
 // A directory entry under one opened root. 身份 = (rootId, path)。
 type DirEntry = { rootId: string; path: string }
@@ -361,7 +361,6 @@ export const useStore = create<State>()(
         { id: 'tab-tg', kind: 'web', pinned: true, title: 'Tenth Global', url: 'https://tenthglobal.com' },
         { id: 'tab-flow', kind: 'web', pinned: true, title: 'FlowDesk', url: 'https://flowdesk.app' },
         // 标签页 (transient)
-        { id: 'tab-strategy', docId: 'd-strategy', kind: 'doc', title: '2026 公司战略', url: '~/Wordspace/团队/战略/2026战略.html' },
         { id: 'tab-web', kind: 'web', title: 'Designer News · 行业动态', url: 'https://news.design/today' },
         // 开局落在一篇本地 .html 文档上，直接进编辑器
         { id: 'tab-local', kind: 'doc', docId: 'd-recruit', title: '落地页.html', url: '落地页.html', fileName: '落地页.html', fileKind: 'html', rootId: 'r-brand' },
@@ -989,8 +988,10 @@ export const useStore = create<State>()(
         const st = get()
         const doc = st.getDoc(docId)
         if (!doc) return
-        // rootId 指定且可达 → 存进那个文件夹；否则存进云盘「我的草稿」。
-        const root = rootId ? st.roots.find((r) => r.id === rootId && !r.missing) : undefined
+        // rootId 指定且可达 → 存进那个文件夹；否则退到第一个可达的根（没有云盘草稿了）。
+        const root =
+          (rootId ? st.roots.find((r) => r.id === rootId && !r.missing) : undefined) ??
+          st.roots.find((r) => !r.missing)
         if (root) {
           const path = uniqueFileInDir(st.files, root.id, dir, doc.title, '.html')
           const file: FileEntry = { rootId: root.id, path, kind: 'html', docId }
@@ -1002,8 +1003,9 @@ export const useStore = create<State>()(
           }))
           st.toast(`已保存到 ${root.name}${dir ? ` / ${dir}` : ''}`, 'success')
         } else {
+          // 没有打开任何文件夹的极端情形——只清 unsaved，不落盘。
           set((s) => ({ docs: s.docs.map((d) => (d.id === docId ? { ...d, unsaved: false } : d)) }))
-          st.toast('已保存到 Wordspace 云盘 / 我的草稿', 'success')
+          st.toast('已保存', 'success')
         }
       },
 
