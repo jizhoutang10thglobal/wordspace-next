@@ -11,10 +11,9 @@ import {
   FileText,
   Plus,
   X,
-  LayoutTemplate,
+  Check,
   Bot,
   Settings2,
-  Shapes,
   Globe2,
   Cloud,
   HardDrive,
@@ -59,6 +58,15 @@ let clearDrop: (() => void) | null = null
 function parentDir(p: string): string {
   const i = p.lastIndexOf('/')
   return i >= 0 ? p.slice(0, i) : ''
+}
+
+// 文件树缩进:每级 14px,但**封顶**——层级再深也不会把行文字挤出侧栏。
+// 到第 8 级后缩进就不再增长(更深的层级共用同一缩进),靠 caret 展开/折叠 +
+// 文件名 ellipsis 保证深树始终可用,而不是无限往右扩展。
+const INDENT_STEP = 14
+const INDENT_MAX_LEVEL = 8
+function treeIndent(base: number, depth: number): number {
+  return base + Math.min(depth, INDENT_MAX_LEVEL) * INDENT_STEP
 }
 
 type InsertPos = 'before' | 'after'
@@ -312,7 +320,7 @@ function FileBranch({
 
     if (renaming) {
       return (
-        <div className="arc-file" style={{ paddingLeft: 26 + depth * 16 }}>
+        <div className="arc-file" style={{ paddingLeft: treeIndent(26, depth) }}>
           <FileIcon kind={f.kind} />
           <input
             className="arc-file-rename"
@@ -339,7 +347,7 @@ function FileBranch({
       <>
         <button
           className={`arc-file ${isActive ? 'is-active' : ''} ${foreign ? 'is-foreign' : ''}`}
-          style={{ paddingLeft: 26 + depth * 16 }}
+          style={{ paddingLeft: treeIndent(26, depth) }}
           draggable
           onDragStart={(e) => {
             dragFile = f
@@ -379,7 +387,7 @@ function FileBranch({
   // ---------- directory ----------
   if (renaming) {
     return (
-      <div className="arc-file" style={{ paddingLeft: 8 + depth * 16 }}>
+      <div className="arc-file" style={{ paddingLeft: treeIndent(8, depth) }}>
         <FolderClosed size={13} className="arc-file-ico" />
         <input
           className="arc-file-rename"
@@ -410,7 +418,7 @@ function FileBranch({
         className={`arc-folder-head ${dropOver ? 'is-drop' : ''}`}
         role="button"
         tabIndex={0}
-        style={{ paddingLeft: 8 + depth * 16 }}
+        style={{ paddingLeft: treeIndent(8, depth) }}
         onClick={() => toggle(`file:${rootId}:${path}`)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -482,7 +490,7 @@ function FileBranch({
             />
           ))
         ) : (
-          <div className="arc-tree-empty" style={{ paddingLeft: 26 + (depth + 1) * 16 }}>
+          <div className="arc-tree-empty" style={{ paddingLeft: treeIndent(26, depth + 1) }}>
             空文件夹
           </div>
         ))}
@@ -888,9 +896,6 @@ export default function ArcSidebar() {
   }
 
   const util = [
-    { to: '/templates', icon: LayoutTemplate, label: '模板' },
-    { to: '/schema', icon: Shapes, label: 'Schema' },
-    { to: '/agents', icon: Bot, label: 'AI 接入' },
     { to: '/settings', icon: Settings2, label: '设置' },
   ]
 
@@ -981,6 +986,14 @@ export default function ArcSidebar() {
 
       <div className="arc-foot">
         <div className="arc-util">
+          {/* AI 接入：浮动 modal（不再是整页路由） */}
+          <button
+            className="arc-util-btn"
+            title="AI 接入"
+            onClick={() => useUI.getState().openAgents()}
+          >
+            <Bot size={16} />
+          </button>
           {util.map(({ to, icon: Icon, label }) => (
             <button
               key={to}

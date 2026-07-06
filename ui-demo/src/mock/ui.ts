@@ -47,6 +47,11 @@ interface UI {
   openShortcuts: () => void
   closeShortcuts: () => void
 
+  // AI 接入（浮动 modal，从左下角 AI 图标打开）
+  agentsOpen: boolean
+  openAgents: () => void
+  closeAgents: () => void
+
   sidebarCollapsed: boolean
   toggleSidebar: () => void
 
@@ -100,6 +105,10 @@ export const useUI = create<UI>((set) => ({
   shortcutsOpen: false,
   openShortcuts: () => set({ shortcutsOpen: true }),
   closeShortcuts: () => set({ shortcutsOpen: false }),
+
+  agentsOpen: false,
+  openAgents: () => set({ agentsOpen: true }),
+  closeAgents: () => set({ agentsOpen: false }),
 
   sidebarCollapsed: false,
   toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),

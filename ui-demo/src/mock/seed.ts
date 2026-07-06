@@ -391,4 +391,7 @@ export const seedFiles: FileEntry[] = [
   { rootId: 'r-docs', path: '用户调研/问卷数据.xlsx', kind: 'sheet' },
   { rootId: 'r-docs', path: '路线图.pdf', kind: 'pdf' },
   { rootId: 'r-docs', path: '素材/产品截图.png', kind: 'image' },
+  // 深层嵌套样例：演示缩进封顶（层级再深也不会把行挤出侧栏）
+  { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华东区/门店复盘.html', kind: 'html', docId: 'd-r2-manual' },
+  { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华南区/门店复盘.html', kind: 'html', docId: 'd-r2-manual' },
 ]
