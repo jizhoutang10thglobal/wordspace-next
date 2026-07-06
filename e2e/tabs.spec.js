@@ -120,11 +120,16 @@ test('UX2: Cmd+W 关当前标签 / Cmd+T 弹模板台（菜单 onMenu 路由）'
   await expect(page.locator('.sb-modal-title')).toHaveText('新建文档');
 });
 
-// UX3（Wendi F5-②）：Cmd+F 经菜单路由聚焦筛选框，可按文件名查找定位。
-test('UX3: Cmd+F 聚焦筛选框（菜单 find-file 路由）', async () => {
+// UX3（Wendi F5-②；2026-07-06 调整）：Cmd+F 改成文档内查找（find-in-doc），无块编辑器文档时回退聚焦
+// 文件筛选；Cmd+Shift+F（find-file）恒聚焦文件筛选。此处无文档 → 两条都应落到 sb-filter-input。
+test('UX3: Cmd+Shift+F 聚焦筛选框 + 无文档时 Cmd+F 回退到筛选框', async () => {
   await openWorkspace();
+  // Cmd+Shift+F → 'find-file' → 恒聚焦筛选
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'find-file'));
-  // send menu 是异步 IPC → poll 等焦点落定（消除 race，否则全量跑偶发未就绪）
+  await expect.poll(() => page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('sb-filter-input');
+  // 移开焦点，再验 Cmd+F（find-in-doc）在无块编辑器文档时的回退
+  await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'find-in-doc'));
   await expect.poll(() => page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('sb-filter-input');
 });
 

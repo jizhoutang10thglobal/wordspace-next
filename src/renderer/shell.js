@@ -138,6 +138,7 @@ function setZoom(z) {
   applyZoom();
   if (blockEdit) blockEdit.reposition(); // 缩放后手柄/气泡按新内容尺寸重定位
   if (basicEdit) basicEdit.reposition();  // 基础编辑器的宿主浮层同理（Feature 3）
+  if (window.WS2Find) window.WS2Find.reposition(); // 查找条钉在 iframe 角，缩放不改 iframe 元素 rect，但保险重定位
 }
 
 // 分流判定（Feature 3，KD-e）：纯函数、不碰控制流——判「磁盘原始字节 reparse 出的 DOM」是否合规。
@@ -154,6 +155,7 @@ function routeDoc(rawHtml) {
 // undoMgr 一并清空——否则基础模式/空态下按 Cmd+Z 会去 undo 上一个文档的陈旧 manager
 //（改的是已换掉的 detached doc、还把当前文档标脏）。
 function detachEditors() {
+  if (window.WS2Find) window.WS2Find.close(); // 换/关文档：关查找条 + 清高亮，否则飘到下一个文档
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
   if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
@@ -667,7 +669,7 @@ window.__shellResumeAutosave = resumeAutoSave;
 // 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
-window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); };
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -769,7 +771,7 @@ if (openFolderMenuBtn) openFolderMenuBtn.onclick = () => { if (window.__sbHooks 
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = saveAs; // 菜单里的「另存为…」；Cmd+S / 菜单栏「保存」仍走 save()（真文件即存、临时弹 SaveModal）
-window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); }); // 窗口尺寸变 → 浮层跟上
+window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); }); // 窗口尺寸变 → 浮层跟上
 window.addEventListener('keydown', handleZoomKey); // 焦点在父层 shell（点过保存按钮/首页）时也能 Cmd± 缩放（iframe 内事件不冒泡到这）
 
 // 外部磁盘改动（Bug2）：是当前文档才处理；有未保存改动先问，免得静默覆盖用户的编辑。
@@ -921,7 +923,12 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'redo') runUndoRedo(true);
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
   if (cmd === 'close-tab' && window.__sbHooks && window.__sbHooks.closeActiveTab) window.__sbHooks.closeActiveTab(); // Cmd+W
-  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F
+  // Cmd+F = 文档内查找：块编辑器活跃（合规、已挂、非查看器/空态）→ 开查找条；否则回退聚焦侧栏文件筛选。
+  if (cmd === 'find-in-doc') {
+    if (blockEdit && frame.contentDocument && window.WS2Find) window.WS2Find.open(frame);
+    else if (window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();
+  }
+  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+Shift+F
   if (cmd === 'find-palette' && window.__sbHooks && window.__sbHooks.findPalette) window.__sbHooks.findPalette();     // Cmd+P
 });
 
