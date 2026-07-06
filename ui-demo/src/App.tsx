@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import ArcSidebar from './components/ArcSidebar'
 import Canvas from './components/Canvas'
 import BasicEditor from './components/BasicEditor'
@@ -50,6 +50,25 @@ function MainDocs() {
   )
 }
 
+// 路由切换 = 视图落定动画。key=第一段路径(/docs、/templates…),
+// 所以 /docs 内切标签页不会重放动画,只有真的换路由才落定一次。
+function RoutedView() {
+  const location = useLocation()
+  const seg = '/' + (location.pathname.split('/')[1] || 'docs')
+  return (
+    <div className="ws-route ws-anim-view" key={seg}>
+      <Routes location={location}>
+        <Route path="/docs" element={<MainDocs />} />
+        <Route path="/templates" element={<Templates />} />
+        <Route path="/schema" element={<SchemaPage />} />
+        <Route path="/agents" element={<Agents />} />
+        <Route path="/settings" element={<Settings />} />
+        <Route path="*" element={<Navigate to="/docs" replace />} />
+      </Routes>
+    </div>
+  )
+}
+
 export default function App() {
   // 关 Wordspace（关浏览器标签/窗口）时若有未保存的临时文档 → 浏览器原生「离开?」提示。
   useEffect(() => {
@@ -68,14 +87,7 @@ export default function App() {
       <div className="ws-body">
         <ArcSidebar />
         <div className="ws-main">
-          <Routes>
-            <Route path="/docs" element={<MainDocs />} />
-            <Route path="/templates" element={<Templates />} />
-            <Route path="/schema" element={<SchemaPage />} />
-            <Route path="/agents" element={<Agents />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/docs" replace />} />
-          </Routes>
+          <RoutedView />
         </div>
       </div>
       <ToastHost />

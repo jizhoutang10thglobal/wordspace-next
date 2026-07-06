@@ -19,6 +19,13 @@
   background: var(--c-bg);
 }
 
+/* 路由视图容器:占满主区并作为路由内容的 flex 父;key 变化时整体落定入场 */
+.ws-route {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
 .ws-main-doc {
   flex: 1;
   display: flex;
