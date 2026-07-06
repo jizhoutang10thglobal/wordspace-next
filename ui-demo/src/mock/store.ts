@@ -465,8 +465,11 @@ export const useStore = create<State>()(
         const sharedByOther = s.files.some(
           (f) => f.docId && f.docId === file.docId && !sameEntry(f),
         )
-        const removedDoc =
+        const cloudFolderIds = new Set(s.folders.map((f) => f.id))
+        const candidate =
           file.docId && !sharedByOther ? s.docs.find((d) => d.id === file.docId) : undefined
+        // 云盘文档有独立身份（云盘归属 / 发布 / 置顶），删连接文件只解除映射，绝不销毁它。
+        const removedDoc = candidate && !cloudFolderIds.has(candidate.folderId) ? candidate : undefined
         const removedTabs = s.tabs.filter(
           (t) => t.fileName && t.rootId === file.rootId && t.url === file.path,
         )
@@ -557,10 +560,12 @@ export const useStore = create<State>()(
         )
         if (!removedFiles.length && !removedDirs.length) return
         const survivingFiles = s.files.filter((f) => !(inRoot(f) && removedKeys.has(f.path)))
+        const cloudFolderIds = new Set(s.folders.map((f) => f.id))
         const removedDocs = s.docs.filter(
           (d) =>
             removedFiles.some((f) => f.docId === d.id) &&
-            !survivingFiles.some((sf) => sf.docId === d.id),
+            !survivingFiles.some((sf) => sf.docId === d.id) &&
+            !cloudFolderIds.has(d.folderId), // 云盘文档不随连接文件夹删除而销毁
         )
         const removedTabs = s.tabs.filter(
           (t) => t.fileName && inRoot(t) && removedKeys.has(t.url),
@@ -657,17 +662,35 @@ export const useStore = create<State>()(
         const root: MountRoot = { id: uid('r'), name: rootNameOf(path), path, origin: 'local' }
         const sample = sampleConnectedFolder(root.id, path)
         set((s) => {
-          const dropDocIds = new Set(
-            s.files.filter((f) => drop.has(f.rootId) && f.docId).map((f) => f.docId!),
+          const cloudFolderIds = new Set(s.folders.map((f) => f.id))
+          // 只有「没有存活文件仍引用、且不是云盘文档」的子根文档才真正丢弃——
+          // 否则会误删还被别的根（如 Google Drive 根）或云盘小区引用的共享文档。
+          const survivorDocIds = new Set(
+            s.files.filter((f) => !drop.has(f.rootId)).map((f) => f.docId).filter(Boolean),
           )
+          const dropDocIds = new Set(
+            s.files
+              .filter((f) => drop.has(f.rootId) && f.docId && !survivorDocIds.has(f.docId))
+              .map((f) => f.docId!)
+              .filter((id) => {
+                const d = s.docs.find((x) => x.id === id)
+                return !!d && !cloudFolderIds.has(d.folderId)
+              }),
+          )
+          // 关掉：指向被丢弃文档的标签页 + 落在被吸收子根里的文件标签页（那些文件已不在）。
+          const tabs = s.tabs.filter(
+            (t) => !(t.rootId && drop.has(t.rootId)) && !(t.docId && dropDocIds.has(t.docId)),
+          )
+          let activeTabId = s.activeTabId
+          if (!tabs.some((t) => t.id === activeTabId)) activeTabId = tabs[tabs.length - 1]?.id ?? ''
           return {
             // 子根从 roots 里去掉，父根追加到末尾
             roots: [...s.roots.filter((r) => !drop.has(r.id)), root],
             docs: [...sample.docs, ...s.docs.filter((d) => !dropDocIds.has(d.id))],
             files: [...s.files.filter((f) => !drop.has(f.rootId)), ...sample.files],
             dirs: [...s.dirs.filter((d) => !drop.has(d.rootId)), ...sample.dirs],
-            // 指向被移除子根文档的标签页一并关掉，防悬挂
-            tabs: s.tabs.filter((t) => !t.docId || !dropDocIds.has(t.docId)),
+            tabs,
+            activeTabId,
           }
         })
         get().toast(`「${root.name}」已并入，含原来的子文件夹`, 'success')
@@ -689,8 +712,12 @@ export const useStore = create<State>()(
         const survivorDocIds = new Set(
           s.files.filter((f) => f.rootId !== rootId).map((f) => f.docId).filter(Boolean),
         )
+        const cloudFolderIds = new Set(s.folders.map((f) => f.id))
         const removedDocs = s.docs.filter(
-          (d) => removedFiles.some((f) => f.docId === d.id) && !survivorDocIds.has(d.id),
+          (d) =>
+            removedFiles.some((f) => f.docId === d.id) &&
+            !survivorDocIds.has(d.id) &&
+            !cloudFolderIds.has(d.folderId), // 云盘文档不随连接根移除而销毁
         )
         const removedDocIds = new Set(removedDocs.map((d) => d.id))
         set((st) => {
