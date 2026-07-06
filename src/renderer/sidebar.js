@@ -775,11 +775,16 @@
     renderRail();
     // 有冷启动 open-file 在路上（用户刚双击的文件该占 viewer）→ 别把上次激活的标签开进 viewer 抢走它；
     // 标签状态仍恢复，只是不自动载入。onOpen 随后会把冷启动文件设为激活。
+    let openedActive = false;
     if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
       // KD-2/流分析 #5：网页激活标签恢复成「未加载占位」——不自动 __webActivate（不冷启动网络请求）,
       // 标签行照常渲染（favicon/标题来自持久化）,用户点击才首次加载。非 web 照旧自动打开。
-      if (e && !isWebEntry(e)) openTabRow(e);
+      if (e && !isWebEntry(e)) { openTabRow(e); openedActive = true; }
+    }
+    // 没有要自动打开的激活标签、也没有冷启动文件在路上 → 内容区落到 NewTab 页,别留空白(审计 05)。
+    if (!openedActive && !window.__pendingColdOpen && !(window.__shellDocPath && window.__shellDocPath()) && window.__webShowEmpty) {
+      window.__webShowEmpty();
     }
   }
 

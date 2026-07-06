@@ -27,6 +27,12 @@
 .arc-omni-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
 .arc-omni-input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--c-text); font-family: var(--font-ui); font-size: var(--fs-sm, 13px); }
 
+/* ---- 网页头（复用 .ws-doc-header 外壳,这里只加安全标） ---- */
+.web-sec { display: inline-flex; align-items: center; margin-right: 2px; }
+.web-sec.is-secure { color: var(--c-success); }
+.web-sec.is-insecure { color: var(--c-text-3); }
+#web-host { color: var(--c-text-3); }
+
 /* ---- web view bounds 锚 + NewTab 页 ---- */
 .web-viewport { flex: 1 1 auto; min-height: 0; background: var(--c-bg); }
 .web-newtab { flex: 1 1 auto; min-height: 0; display: flex; align-items: flex-start; justify-content: center; background: var(--c-bg-sunken); overflow: auto; }

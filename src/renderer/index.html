@@ -43,7 +43,7 @@
       <span class="arc-omni-ico" id="omni-ico">
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
       </span>
-      <input id="bc-addr" class="arc-omni-input" type="text" spellcheck="false" autocomplete="off" placeholder="搜索,或输入网址" aria-label="地址栏" />
+      <input id="bc-addr" class="arc-omni-input" type="text" spellcheck="false" autocomplete="off" placeholder="搜索，或输入网址" aria-label="地址栏" />
     </div>
   </div>
   <div class="sb-body" id="sb-body">
@@ -131,6 +131,15 @@
         <span id="dirty-dot" class="ws-dirty" hidden>● 未保存</span>
         <!-- 当前文件状态标（本地未发布）。对齐 ui-demo omnibox 的「本地」tag，复用面包屑、不另起地址栏。 -->
         <span id="doc-status" class="ws-status-tag" hidden>本地</span>
+      </div>
+    </div>
+
+    <!-- 网页头（与 #doc-header 同一套外壳,消除「文档有头、网页光秃」的割裂感）：安全标 + 页面标题 + 域名。 -->
+    <div id="web-header" class="ws-doc-header" hidden>
+      <div class="ws-breadcrumb">
+        <span id="web-sec" class="web-sec" title="连接状态"></span>
+        <span id="web-title" class="ws-doc-crumb"></span>
+        <span id="web-host" class="ws-status-tag"></span>
       </div>
     </div>
 

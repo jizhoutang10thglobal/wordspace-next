@@ -18,6 +18,12 @@
   var findInput = document.getElementById('bc-find-input');
   var findCount = document.getElementById('bc-find-count');
   var newtabAddr = document.getElementById('nt-addr');       // NewTab 页大搜索框
+  var webHeader = document.getElementById('web-header');      // 网页头(与 doc-header 同壳)
+  var webSec = document.getElementById('web-sec');
+  var webTitle = document.getElementById('web-title');
+  var webHost = document.getElementById('web-host');
+  var LOCK = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+  var INSECURE = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>';
 
   var attachedKey = null;        // 当前 attach 的 web view key（null=没有）
   var activeWebEntry = null;     // 当前激活的 web entry
@@ -46,11 +52,13 @@
     if (entry.url == null) {
       // 新标签页：detach view,显示 NewTab 页,聚焦大搜索框
       if (attachedKey) { window.ws2.webHide(attachedKey); attachedKey = null; }
+      if (webHeader) webHeader.hidden = true;
       if (viewport) viewport.hidden = true;
       if (newtab) newtab.hidden = false;
       focusNewtab();
     } else {
       if (newtab) newtab.hidden = true;
+      updateWebHeader(entry);         // 网页头(标题+安全标+域名),与文档面包屑同壳
       if (viewport) viewport.hidden = false;
       window.ws2.webShow(key, bounds());
       attachedKey = key; // ⚠ 记住 attach 的 key,否则 __webDetach 守卫 no-op
@@ -62,11 +70,12 @@
     activeWebEntry = null;
     if (viewport) viewport.hidden = true;
     if (newtab) newtab.hidden = true;
+    if (webHeader) webHeader.hidden = true;
     hideFind();
     setOmniContext(null); // 切到文档:omnibox 回落到文件夹上下文
   };
   window.__webCloseView = function (key) { window.ws2.webClose(key); delete recs[key]; if (attachedKey === key) attachedKey = null; };
-  window.__webDestroyAll = function () { window.ws2.webDestroyAll(); recs = Object.create(null); attachedKey = null; activeWebEntry = null; };
+  window.__webDestroyAll = function () { window.ws2.webDestroyAll(); recs = Object.create(null); attachedKey = null; activeWebEntry = null; setOmniContext(null); }; // 清空 omnibox,别留幽灵 URL(审计 P1.3)
   window.__webActiveKey = function () { return activeWebEntry ? (activeWebEntry.rel || activeWebEntry.abs) : null; };
   window.__webViewState = function () {
     if (!activeWebEntry) return null;
@@ -79,9 +88,11 @@
     if (window.__shellHideDocSurfaces) window.__shellHideDocSurfaces();
     activeWebEntry = null;
     if (attachedKey) { window.ws2.webHide(attachedKey); attachedKey = null; }
+    if (webHeader) webHeader.hidden = true;
     if (viewport) viewport.hidden = true;
     if (newtab) newtab.hidden = false;
     setOmniContext(null);
+    focusNewtab(); // 焦点落在中间大搜索框(主 CTA),不是侧栏那个(审计 P1.2)
   };
 
   function focusNewtab() { setTimeout(function () { if (newtabAddr) { newtabAddr.focus(); newtabAddr.select(); } }, 0); }
@@ -103,6 +114,18 @@
     if (backBtn) backBtn.disabled = !(rec && rec.canGoBack);
     if (fwdBtn) fwdBtn.disabled = !(rec && rec.canGoForward);
     if (reloadBtn) reloadBtn.classList.toggle('is-loading', !!(rec && rec.loading));
+  }
+  // 网页头（与文档面包屑同一套外壳）：安全标 + 标题 + 域名。web url 态显示,其余隐藏。textContent 防不可信内容。
+  function updateWebHeader(entry) {
+    if (!webHeader) return;
+    if (!entry || entry.url == null) { webHeader.hidden = true; return; }
+    var rec = recs[entry.rel || entry.abs] || {};
+    var url = rec.url || entry.url || '';
+    var https = /^https:/i.test(url);
+    if (webSec) { webSec.innerHTML = https ? LOCK : INSECURE; webSec.className = 'web-sec ' + (https ? 'is-secure' : 'is-insecure'); }
+    if (webTitle) webTitle.textContent = rec.title || entry.title || UrlInput.pretty(url);
+    if (webHost) { try { webHost.textContent = new URL(url).host; } catch (e) { webHost.textContent = ''; } }
+    webHeader.hidden = false;
   }
 
   // omnibox 提交（KD-12）：有 web 标签激活→在它上面导航;否则→新建 web 标签浏览（对齐 ui-demo submitOmni）。
@@ -128,6 +151,7 @@
     entry.url = normalized;
     if (window.__sbWebNavigated) window.__sbWebNavigated(key, normalized);
     if (newtab) newtab.hidden = true;
+    updateWebHeader(entry);
     if (viewport) viewport.hidden = false;
     window.ws2.webShow(key, bounds());
     attachedKey = key;
@@ -185,6 +209,7 @@
     if (activeWebEntry && (activeWebEntry.rel || activeWebEntry.abs) === s.key) {
       if (s.url != null) activeWebEntry.url = s.url;
       setOmniContext(activeWebEntry);
+      updateWebHeader(activeWebEntry); // 标题/域名/安全标随导航刷新
     }
   });
   if (window.ws2.onWebOpenRequest) window.ws2.onWebOpenRequest(function (r) { if (window.__sbOpenWebTab) window.__sbOpenWebTab(r.url, r.background); });
