@@ -328,14 +328,11 @@ function BlockRow({
 // Header: breadcrumb, meta, and the "…" menu (export / link / rename / delete)
 // ---------------------------------------------------------------------------
 export function DocHeader({ doc }: { doc: Doc }) {
-  const folder = useStore((s) => s.folders.find((f) => f.id === doc.folderId))
   const editor = useStore((s) => s.getMember(doc.updatedBy))
   const renameDoc = useStore((s) => s.renameDoc)
-  // In a connected folder there is no Wordspace publish/visibility, and the
-  // breadcrumb is the mounted path, not a cloud workspace. null in a cloud space.
+  // 面包屑：连接文件夹里的文档（文件标签页带 rootId）→ 根名 / 路径；未保存的临时文档 / 网页 → null。
   const folderCrumb = useStore((s) => {
     const t = s.tabs.find((x) => x.id === s.activeTabId)
-    // 连接文件夹里的文档（文件标签页带 rootId）→ 面包屑 = 根名 / 路径；云盘文档 / 网页 → 无面包屑。
     if (!t?.rootId) return null
     const root = s.roots.find((r) => r.id === t.rootId)
     const mount = root?.name ?? ''
@@ -359,11 +356,7 @@ export function DocHeader({ doc }: { doc: Doc }) {
         {folderCrumb ? (
           <span className="ws-truncate">{folderCrumb}</span>
         ) : (
-          <>
-            <span>{folder?.scope === 'team' ? '团队空间' : '我的草稿'}</span>
-            <span className="ws-bc-sep">/</span>
-            <span>{folder?.name}</span>
-          </>
+          <span>{doc.unsaved ? '未保存的草稿' : '文档'}</span>
         )}
         <div className="ws-doc-more">
           <button

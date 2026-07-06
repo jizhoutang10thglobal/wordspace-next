@@ -74,11 +74,12 @@ export default function CreateModal() {
   if (!createOpen) return null
 
   const companyTemplates = templates.filter((t) => t.pool === 'private')
-  // 定位「建到哪」的展示——目标根名 + 子目录；没指定就落云盘「我的草稿」。
+  // 定位「建到哪」的展示——目标根名 + 子目录；没指定就落第一个打开的文件夹（保存时可再选）。
+  const firstRoot = roots.find((r) => !r.missing)
   const targetRoot = target ? roots.find((r) => r.id === target.rootId) : undefined
   const where = target
-    ? `${targetRoot?.name ?? '我的草稿'}${target.dir ? ` / ${target.dir}` : ''}`
-    : 'Wordspace 云盘 / 我的草稿'
+    ? `${targetRoot?.name ?? firstRoot?.name ?? '文档'}${target.dir ? ` / ${target.dir}` : ''}`
+    : (firstRoot?.name ?? '文档')
   const active = PARADIGMS.find((p) => p.id === paradigm) ?? PARADIGMS[0]
 
   const done = () => {

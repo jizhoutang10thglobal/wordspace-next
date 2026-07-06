@@ -53,7 +53,6 @@ Notion 式的块和 Markdown 本来同源，绝大多数结构一一对应：
 const now = Date.now()
 const MIN = 60_000
 const HR = 60 * MIN
-const DAY = 24 * HR
 
 // ---------------------------------------------------------------------------
 // people (and a couple of agents, which are first-class members)
@@ -74,13 +73,9 @@ export const seedMembers: Member[] = [
 // ---------------------------------------------------------------------------
 // All seeded folders belong to the Tenth Global cloud space; other cloud spaces
 // start with their own (separate) folders.
-// 唯一的 Wordspace 云盘的文件夹（团队共享 / 我的私有）——侧栏置顶小区。
-export const seedFolders: Folder[] = [
-  { id: 'f-strategy', name: '战略', scope: 'team', order: 0 },
-  { id: 'f-people', name: '人事', scope: 'team', order: 1 },
-  { id: 'f-product', name: '产品', scope: 'team', order: 2 },
-  { id: 'f-drafts', name: '我的草稿', scope: 'personal', order: 0 },
-]
+// 云盘（团队共享 / 我的私有）是「之后上云」的内容，当前 demo 不含——空数组。
+// 保留 folders 字段与 Folder 类型，云盘回归时只需重新填充这里 + 恢复侧栏云盘小区。
+export const seedFolders: Folder[] = []
 
 // ---------------------------------------------------------------------------
 // documents
@@ -107,7 +102,7 @@ export const seedDocs: Doc[] = [
     title: '员工手册',
     emoji: '📘',
     kind: 'doc',
-    folderId: 'f-people',
+    folderId: 'r-drive', // 连接文件夹里的文档（云盘概念已移除）
     visibility: 'internal',
     publishedUrl: 'https://team.tenthglobal.com/handbook',
     localPath: '~/Wordspace/团队/人事/员工手册.html',
@@ -133,7 +128,7 @@ export const seedDocs: Doc[] = [
     title: '招聘 · 加入我们',
     emoji: '🧭',
     kind: 'page',
-    folderId: 'f-people',
+    folderId: 'r-drive', // 连接文件夹里的文档（云盘概念已移除）
     visibility: 'public',
     publishedUrl: 'https://tenthglobal.com/careers',
     localPath: '~/Wordspace/团队/人事/招聘.html',
@@ -166,107 +161,6 @@ export const seedDocs: Doc[] = [
       },
       { id: 'r4', type: 'heading', level: 2, html: '正在招的岗位' },
       { id: 'r5', type: 'list', html: '<li>项目经理(PM)</li><li>项目助理(PA)</li><li>财务运营(FO)</li>' },
-    ],
-  },
-  {
-    id: 'd-strategy',
-    title: '2026 公司战略',
-    emoji: '🎯',
-    kind: 'doc',
-    folderId: 'f-strategy',
-    visibility: 'invited',
-    localPath: '~/Wordspace/团队/战略/2026战略.html',
-    updatedAt: now - 5 * HR,
-    updatedBy: 'm-wendi',
-    collaborators: ['m-wendi', 'm-lin'],
-    blocks: [
-      { id: 's1', type: 'heading', level: 1, html: '2026 公司战略' },
-      { id: 's2', type: 'text', html: '今年的重点是把核心业务做深,同时为下一阶段的 AI 产品打基础。下面是四条业务线和各自的目标。' },
-      { id: 's3', type: 'heading', level: 2, html: '业务线' },
-      { id: 's4', type: 'list', html: '<li>咨询交付:稳住现金流,提升复购</li><li>培训与内容:沉淀方法论</li><li>AI 产品:从内部工具孵化</li><li>生态合作:拓展渠道</li>' },
-      { id: 's5', type: 'callout', html: '这份文档只对受邀的几个人可见,还在讨论中,定稿后再发到内网。' },
-    ],
-  },
-  {
-    id: 'd-deck',
-    title: 'Q2 业务汇报',
-    emoji: '📊',
-    kind: 'slides',
-    folderId: 'f-product',
-    visibility: 'private',
-    localPath: '~/Wordspace/团队/产品/Q2汇报.html',
-    updatedAt: now - 1 * DAY,
-    updatedBy: 'm-chen',
-    collaborators: ['m-chen'],
-    blocks: [
-      { id: 'k1', type: 'heading', level: 1, html: 'Q2 业务汇报' },
-      { id: 'k2', type: 'text', html: '这是一份演示文稿,和普通文档一样是一个 HTML 文件,可以放映,也可以导出成 PPT。' },
-      { id: 'k3', type: 'heading', level: 2, html: '关键数字' },
-      { id: 'k4', type: 'list', html: '<li>营收同比 +28%</li><li>新签客户 12 家</li><li>毛利率 41%</li>' },
-    ],
-  },
-  {
-    id: 'd-minutes',
-    title: '周会纪要 06-12',
-    emoji: '📝',
-    kind: 'doc',
-    folderId: 'f-strategy',
-    visibility: 'private',
-    localPath: '~/Wordspace/团队/战略/周会纪要-0612.html',
-    updatedAt: now - 2 * DAY,
-    updatedBy: 'm-lin',
-    collaborators: ['m-lin'],
-    blocks: [
-      { id: 'n1', type: 'heading', level: 1, html: '周会纪要 · 06-12' },
-      { id: 'n2', type: 'list', html: '<li>招聘页已上线,本周看转化</li><li>员工手册补充报销章节</li><li>下周评审 AI 产品 demo</li>' },
-    ],
-  },
-  {
-    id: 'd-offer',
-    title: 'Offer 模板(草稿)',
-    emoji: '✉️',
-    kind: 'doc',
-    folderId: 'f-drafts',
-    visibility: 'private',
-    localPath: '~/Wordspace/我的草稿/offer模板.html',
-    updatedAt: now - 40 * MIN,
-    updatedBy: 'm-wendi',
-    collaborators: ['m-wendi'],
-    blocks: [
-      { id: 'o1', type: 'heading', level: 1, html: 'Offer 模板' },
-      { id: 'o2', type: 'text', html: '尊敬的 {{候选人}},很高兴向你发出录用通知……(草稿,待定稿后存为模板)' },
-    ],
-  },
-  {
-    id: 'd-notes',
-    title: '读书笔记 · 增长飞轮',
-    emoji: '📖',
-    kind: 'doc',
-    folderId: 'f-drafts',
-    visibility: 'private',
-    localPath: '~/Wordspace/我的草稿/读书笔记-增长飞轮.html',
-    updatedAt: now - 90 * MIN,
-    updatedBy: 'm-wendi',
-    collaborators: ['m-wendi'],
-    blocks: [
-      { id: 'rn1', type: 'heading', level: 1, html: '读书笔记 · 增长飞轮' },
-      { id: 'rn2', type: 'text', html: '存在本地、只给自己看的随手记。' },
-    ],
-  },
-  {
-    id: 'd-todo',
-    title: '本周待办',
-    emoji: '✅',
-    kind: 'doc',
-    folderId: 'f-drafts',
-    visibility: 'private',
-    localPath: '~/Wordspace/我的草稿/本周待办.html',
-    updatedAt: now - 20 * MIN,
-    updatedBy: 'm-wendi',
-    collaborators: ['m-wendi'],
-    blocks: [
-      { id: 'tw1', type: 'heading', level: 1, html: '本周待办' },
-      { id: 'tw2', type: 'list', html: '<li>定稿招聘页</li><li>过一遍 Q2 汇报</li><li>约客户周会</li>' },
     ],
   },
   // Schema 演示页内嵌真编辑器用的「符合 Schema」示例文档（块模型，跑完整块编辑 UX）。

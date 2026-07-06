@@ -35,7 +35,7 @@ import { useBrowser } from '../mock/browser'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, type FileNode } from '../lib/tree'
 import { IS_MAC } from '../lib/platform'
-import type { Doc, FileEntry, FileKind, Folder, MountRoot, Tab } from '../types'
+import type { FileEntry, FileKind, MountRoot, Tab } from '../types'
 import './ArcSidebar.css'
 
 // ---------------------------------------------------------------------------
@@ -194,58 +194,6 @@ function TabStrip({ pinned, emptyHint }: { pinned: boolean; emptyHint?: string }
           />
         ))
       )}
-    </div>
-  )
-}
-
-function DocRow({ doc }: { doc: Doc }) {
-  const navigate = useNavigate()
-  const { openDoc, tabs, activeTabId } = useStore()
-  const activeDocId = tabs.find((t) => t.id === activeTabId)?.docId
-  return (
-    <button
-      className={`arc-doc ${doc.id === activeDocId ? 'is-active' : ''}`}
-      onClick={() => {
-        openDoc(doc.id)
-        navigate('/docs')
-      }}
-    >
-      <FileText size={13} className="arc-doc-ico" />
-      <span className="arc-doc-title ws-truncate">{doc.title}</span>
-    </button>
-  )
-}
-
-function FolderGroup({ folder, query }: { folder: Folder; query: string }) {
-  const docs = useStore((s) =>
-    s.docs
-      .filter((d) => d.folderId === folder.id && !d.unsaved)
-      .sort((a, b) => b.updatedAt - a.updatedAt),
-  )
-  const q = query.trim().toLowerCase()
-  const shown = q ? docs.filter((d) => d.title.toLowerCase().includes(q)) : docs
-  const key = 'folder:' + folder.id
-  const openState = useUI((s) => !s.collapsedKeys[key])
-  const open = q ? true : openState // while filtering, keep matches in view
-  const toggle = useUI((s) => s.toggleCollapsed)
-  // while filtering, drop folders with no matches; otherwise an empty folder
-  // stays visible (you can still see and navigate into it — unlike before).
-  if (q && !shown.length) return null
-  return (
-    <div className="arc-folder">
-      <button className="arc-folder-head" onClick={() => toggle(key)}>
-        <ChevronRight size={12} className={`arc-caret ${open ? 'is-open' : ''}`} />
-        <FolderClosed size={13} />
-        <span className="ws-truncate">{folder.name}</span>
-      </button>
-      {open &&
-        (shown.length ? (
-          shown.map((d) => <DocRow key={d.id} doc={d} />)
-        ) : (
-          <div className="arc-tree-empty" style={{ paddingLeft: 26 }}>
-            空文件夹
-          </div>
-        ))}
     </div>
   )
 }
@@ -719,40 +667,16 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
   )
 }
 
-// The sidebar library: a pinned「Wordspace 云盘」section (team + private folders)
-// on top, then the flat list of opened folders (roots) — each an independent
-// tree, draggable to reorder. 没有「工作区 / Space」外壳、没有切换器。
+// The sidebar library: the flat list of opened folders (roots) — each an
+// independent tree, draggable to reorder. 没有「工作区 / Space」外壳、没有切换器；
+// 云盘（团队/私有）是「之后上云」的内容，当前不在这里。
 function Library({ query }: { query: string }) {
-  const folders = useStore((s) => s.folders)
   const roots = useStore((s) => s.roots)
-  const docs = useStore((s) => s.docs)
   const openAddFolder = useUI((s) => s.openAddFolder)
   const q = query.trim().toLowerCase()
 
-  const team = folders.filter((f) => f.scope === 'team').sort((a, b) => a.order - b.order)
-  const personal = folders.filter((f) => f.scope === 'personal').sort((a, b) => a.order - b.order)
-  const cloudFolderIds = new Set([...team, ...personal].map((f) => f.id))
-  const cloudDocs = docs.filter((d) => cloudFolderIds.has(d.folderId) && !d.unsaved)
-  const cloudMatch = q ? cloudDocs.some((d) => d.title.toLowerCase().includes(q)) : cloudDocs.length > 0
-
   return (
     <div className="arc-lib">
-      {(cloudMatch || !q) && (
-        <div className="arc-cloud">
-          <div className="arc-cloud-head">
-            <Cloud size={12} />
-            <span>Wordspace 云盘</span>
-          </div>
-          {team.length > 0 && <div className="arc-sec-label">团队共享</div>}
-          {team.map((f) => (
-            <FolderGroup key={f.id} folder={f} query={query} />
-          ))}
-          {personal.length > 0 && <div className="arc-sec-label">我的私有</div>}
-          {personal.map((f) => (
-            <FolderGroup key={f.id} folder={f} query={query} />
-          ))}
-        </div>
-      )}
       {roots.map((r, i) => (
         <RootSection key={r.id} root={r} index={i} query={query} />
       ))}
