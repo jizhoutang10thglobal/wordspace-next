@@ -536,3 +536,45 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .aiax-steps { margin: 12px 0 0 2px; padding-left: 18px; font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.7; }
 .aiax-steps ul { padding-left: 16px; margin: 2px 0; list-style: disc; }
 .aiax-steps code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--c-bg-sunken); padding: 1px 5px; border-radius: var(--r-xs); }
+
+/* ── 文档内查找条（Cmd+F）──────────────────────────────────────────────
+   父层浮层，position:fixed 由 find.js 钉在 doc-frame 右上角（top/left CSSOM 设，
+   避开右上角 ⋯ 菜单）。匹配高亮走 CSS Custom Highlight（::highlight 注在 iframe 内，
+   见 find.js），这里只管查找条本身。纸方墨圆：纸面卡片小圆角、控件墨圆、批注圈焦点。 */
+.ws-docfind {
+  position: fixed;
+  z-index: 60; /* 低于 .top-actions(65)，别盖住 ⋯ 菜单 */
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 8px 6px 12px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-menu);
+}
+.ws-docfind[hidden] { display: none; } /* display:flex 会盖过 UA hidden，得显式声明 */
+@media (prefers-reduced-motion: no-preference) {
+  .ws-docfind { animation: ws-docfind-in var(--dur) var(--ease) both; }
+  @keyframes ws-docfind-in { from { opacity: 0; transform: translateY(-6px); } }
+}
+.ws-docfind-input {
+  width: 190px; border: none; outline: none; background: transparent;
+  font: inherit; font-size: var(--fs-md); color: var(--c-text); padding: 2px 0;
+}
+.ws-docfind-input::placeholder { color: var(--c-text-3); }
+.ws-docfind-count {
+  font-size: var(--fs-sm); color: var(--c-text-3);
+  font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; white-space: nowrap;
+}
+.ws-docfind-nav {
+  display: flex; gap: 2px; padding-left: 4px; margin-left: 2px;
+  border-left: 1px solid var(--c-divider);
+}
+.ws-docfind-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: none; border-radius: var(--r-pill);
+  background: transparent; color: var(--c-text-2); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ws-docfind-btn:hover:not(:disabled) { background: var(--c-hover); color: var(--c-text); }
+.ws-docfind-btn:disabled { color: var(--c-text-3); opacity: .6; cursor: default; }
+.ws-docfind-close { margin-left: 2px; }
