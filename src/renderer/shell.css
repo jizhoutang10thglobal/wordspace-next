@@ -2,7 +2,7 @@
    设计语言「纸方墨圆 · 保守版」（canonical：docs/style.md；token 权威值：ui-demo/src/styles/tokens.css）。
    纸方——容器微圆角；墨圆——可点的控件全圆丸；primary 是墨不是蓝；层级=1px 细边+底色差，
    装饰性阴影一律不要（唯一例外：真浮层 菜单/弹窗/toast 一层极淡阴影）；动是反馈不是装饰。
-   布局结构不动：左文件栏（F06）+ 右编辑区，类名体系保持 .sb-*/.top-*/.ws-*。 */
+   布局结构不动：左文件栏（F06）+ 右编辑区，类名体系保持 .sb- / .top- / .ws- 一族。 */
 
 /* ---------------------------------------------------------------- tokens
    色/圆角/阴影/动效值照抄 ui-demo tokens.css（stone 暖灰阶 + 墨 + 墨青蓝）。
@@ -299,8 +299,9 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
   width: 100%; display: flex; align-items: center; gap: 7px;
   height: 30px; padding-right: 8px; border-radius: var(--r-sm);
   color: var(--c-text); text-align: left; cursor: pointer;
-  /* 树行展开/首次渲染逐行落定（对齐 ui-demo arc-file） */
-  animation: ws-reveal-down var(--dur) var(--ease-enter);
+  /* ⚠ 不加 ws-reveal-down 入场动画：ui-demo（React）里它只在行首挂时放一次，
+     这里 renderTree 每次全量重建 DOM，动画会在每次无关重渲染时整树重放 =「乱动」
+     （且拖慢 e2e actionability 等待）。树展开动效要做对得先给 JS 加「新增行」标记 seam。 */
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .sb-row:hover { background: var(--c-hover); }
@@ -721,8 +722,9 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* 导出 PDF：保存右侧的 ghost 按钮（单按钮，直接导出 Wordspace 样式） */
 #export-btn { gap: 6px; }
 
-/* 修 VC-13：删掉 ~65 行死 CSS（#insert-slot/.insert-panel/#toolbar/.tb-*/tb-in keyframes）——
-   index.html 不加载 insert.js/toolbar.js，这些元素永不存在（旧常驻工具栏时代遗物，还占着 z70/80/90 污染层级体系）。 */
+/* 修 VC-13：删掉 ~65 行死 CSS（#insert-slot / .insert-panel / #toolbar / .tb- 族 / tb-in keyframes）——
+   index.html 不加载 insert.js/toolbar.js，这些元素永不存在（旧常驻工具栏时代遗物，还占着 z70/80/90 污染层级体系）。
+   注意：CSS 注释里通配写法「点 tb 横杠星斜杠」会被解析成注释终止符、吞掉下一条规则（原文件就踩过），别再写。 */
 
 /* 「AI 接入」弹窗（菜单 AI 接入…；两卡结构对齐 ui-demo /agents） */
 .aiax-modal { width: 520px; }
