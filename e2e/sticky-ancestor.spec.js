@@ -77,7 +77,7 @@ test.beforeEach(async () => {
   await fs.mkdir(wsDir, { recursive: true });
   await seedWorkspace(wsDir);
   ({ a: app, p: page } = await launch());
-  await page.click('#home-open-folder');
+  await page.click('#nt-open-folder');
   await expect(page.locator('#sidebar.sb-on')).toBeVisible();
   // 展开深链：归档compact → 华东区 → 明细
   await clickDir(DEEP);
