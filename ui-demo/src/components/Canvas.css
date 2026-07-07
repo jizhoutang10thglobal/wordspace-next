@@ -412,13 +412,12 @@
 .ws-aisoon-btn {
   height: 34px; padding: 0 18px; border-radius: var(--r-pill);
   background: var(--c-ink); color: var(--c-text-invert); font-size: var(--fs-base);
-  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
-.ws-aisoon-btn:hover { background: var(--c-ink-hover); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
-.ws-aisoon-btn:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
+.ws-aisoon-btn:hover { background: var(--c-ink-hover); }
+.ws-aisoon-btn:active { transform: scale(0.97); }
 .ws-aisoon-x {
   position: absolute; top: 12px; right: 12px;
   width: 26px; height: 26px; border-radius: var(--r-pill);

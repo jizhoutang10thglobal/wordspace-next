@@ -111,13 +111,12 @@
   font-size: var(--fs-base);
   font-weight: var(--fw-medium);
   border-radius: var(--r-pill);
-  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
-.ag-primary:hover { background: var(--c-ink-hover); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
-.ag-primary:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
+.ag-primary:hover { background: var(--c-ink-hover); }
+.ag-primary:active { transform: scale(0.97); }
 
 /* 次按钮（复制命令） */
 .ag-copy {
@@ -133,14 +132,13 @@
   color: var(--c-text-2);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
-  box-shadow: 0 2px 0 var(--c-border-strong);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease);
 }
-.ag-copy:hover { background: var(--c-bg-chrome); color: var(--c-text); transform: translateY(-1px); box-shadow: 0 3px 0 var(--c-border-strong); }
-.ag-copy:active { transform: translateY(1px); box-shadow: 0 0 0 var(--c-border-strong); }
+.ag-copy:hover { background: var(--c-bg-chrome); color: var(--c-text); }
+.ag-copy:active { transform: scale(0.97); }
 
 /* 步骤列表 */
 .ag-steps {
@@ -291,7 +289,6 @@
   border: 1px solid var(--c-border-strong);
   border-radius: var(--r-pill);
   cursor: pointer;
-  box-shadow: 0 2px 0 var(--c-border-strong);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease),
@@ -375,13 +372,12 @@
   border-radius: var(--r-pill);
   cursor: pointer;
   margin-bottom: 14px;
-  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
-.ag-sim:hover { background: var(--c-ink-hover); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
-.ag-sim:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
+.ag-sim:hover { background: var(--c-ink-hover); }
+.ag-sim:active { transform: scale(0.97); }
 
 /* events */
 .ag-events {

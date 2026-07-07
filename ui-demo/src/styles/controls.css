@@ -16,34 +16,31 @@
   color: var(--c-text);
   background: var(--c-surface);
   border: 1px solid var(--c-border-strong);
-  box-shadow: 0 2px 0 var(--c-border-strong);
   white-space: nowrap;
-  transition: transform var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease),
-    background-color var(--dur-fast) var(--ease);
+  transition: background-color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-instant) var(--ease);
 }
-.ws-btn:hover { background: var(--c-bg-chrome); transform: translateY(-1px); box-shadow: 0 3px 0 var(--c-border-strong); }
-.ws-btn:active { transform: translateY(1px); box-shadow: 0 0 0 var(--c-border-strong); }
-.ws-btn:disabled { opacity: 0.6; cursor: default; transform: none; box-shadow: 0 2px 0 var(--c-border-strong); }
+.ws-btn:hover { background: var(--c-bg-chrome); }
+.ws-btn:active { transform: scale(0.97); }
+.ws-btn:disabled { opacity: 0.6; cursor: default; transform: none; }
 
 .ws-btn-primary {
   background: var(--c-ink);
   border-color: transparent;
   color: var(--c-text-invert);
-  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
 }
-.ws-btn-primary:hover { background: var(--c-ink-hover); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
-.ws-btn-primary:active { box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
-.ws-btn-primary:disabled { background: var(--c-ink); box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35); }
+.ws-btn-primary:hover { background: var(--c-ink-hover); }
+.ws-btn-primary:active { transform: scale(0.97); }
+.ws-btn-primary:disabled { background: var(--c-ink); }
 
 .ws-btn-danger {
   background: var(--c-danger);
   border-color: transparent;
   color: #fff;
-  box-shadow: 0 2px 0 #7f1d1d;
 }
-.ws-btn-danger:hover { box-shadow: 0 3px 0 #7f1d1d; }
-.ws-btn-danger:active { box-shadow: 0 0 0 #7f1d1d; }
+.ws-btn-danger:hover { background: #a11717; }
+.ws-btn-danger:active { transform: scale(0.97); }
 
 /* 文字钮:底色从左滑入 */
 .ws-btn-ghost {

@@ -41,14 +41,13 @@
   color: var(--c-text-2);
   font-size: var(--fs-sm);
   cursor: pointer;
-  box-shadow: 0 2px 0 var(--c-border-strong);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease);
 }
-.webview-strip-open:hover { background: var(--c-bg-chrome); color: var(--c-text); transform: translateY(-1px); box-shadow: 0 3px 0 var(--c-border-strong); }
-.webview-strip-open:active { transform: translateY(1px); box-shadow: 0 0 0 var(--c-border-strong); }
+.webview-strip-open:hover { background: var(--c-bg-chrome); color: var(--c-text); }
+.webview-strip-open:active { transform: scale(0.97); }
 
 .webview-frame {
   flex: 1;
