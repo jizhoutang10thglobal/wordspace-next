@@ -178,11 +178,19 @@
 .arc-folder-head {
   width: 100%;
   display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px; border-radius: var(--r-sm);
+  height: 30px; padding: 0 8px; border-radius: var(--r-sm);
   color: var(--c-text-2); text-align: left;
   font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  /* sticky ancestor（祖先文件夹钉顶）：嵌套 DOM（.arc-tree-dir 包 children）下 position:sticky 原生成立，
+     top 按 depth 逐级设（内联）→ 滚到深处时祖先文件夹按层级堆叠吸顶、subtree 滚出后原生释放。
+     实底色遮住下方滚动内容；行高固定 30 让每级 top=depth*30 对齐。 */
+  position: sticky;
+  background: var(--c-bg-sunken);
 }
 .arc-folder-head:hover { background: var(--c-hover); color: var(--c-text); }
+/* 吸顶态：最深那条祖先加一道柔和阴影，把整叠吸顶行从下方滚动内容里托起来（VS Code sticky scroll 同款提示） */
+.arc-folder-head.is-stuck { color: var(--c-text); }
+.arc-folder-head.is-stuck-last { box-shadow: 0 5px 6px -6px rgba(28, 25, 23, 0.32); }
 .arc-caret {
   flex: none; color: var(--c-text-3);
   transition: transform var(--dur-fast) var(--ease);
@@ -207,7 +215,7 @@
 
 /* 缩进导引线（Obsidian/VS Code 同款）：每级祖先一条淡墨竖线，让小缩进也读得出层级。
    非 accent 色——层级线不和选中蓝抢（研究：cues 不能互相竞争）。行需 position:relative。 */
-.arc-folder-head, .arc-file { position: relative; }
+.arc-file { position: relative; } /* .arc-folder-head 用 position:sticky（见上），同样是导引线的定位上下文 */
 .arc-guide {
   position: absolute;
   top: -1px; bottom: -1px; /* 略上下溢出，桥接行间缝，让相邻行的线段连成通线 */

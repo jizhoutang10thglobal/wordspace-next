@@ -434,7 +434,8 @@ function FileBranch({
         role="button"
         tabIndex={0}
         title={node.name}
-        style={{ paddingLeft: treeIndent(8, depth) }}
+        // sticky ancestor：每级祖先 top=depth*30 逐级吸顶堆叠；z 越浅越高（退出时浅层盖深层、干净）
+        style={{ paddingLeft: treeIndent(8, depth), top: depth * 30, zIndex: 20 - Math.min(depth, 15) }}
         onClick={() => toggle(`file:${rootId}:${path}`)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -894,6 +895,37 @@ export default function ArcSidebar() {
     }, 40)
     return () => window.clearTimeout(id)
   }, [activeTabId, activeTab?.url, activeTab?.fileName, activeTab?.rootId, revealFolders])
+
+  // sticky ancestor：滚动时给「当前正吸顶」的祖先文件夹标 is-stuck，最深那条标 is-stuck-last（加吸顶阴影）。
+  // 纯视觉区分——CSS 认不出「已吸顶」，靠这个轻量 scroll 监听（直接 toggle class，不触发 React 重渲）。
+  useEffect(() => {
+    const sc = scrollRef.current
+    if (!sc) return
+    let raf = 0
+    const paint = () => {
+      raf = 0
+      const scTop = sc.getBoundingClientRect().top
+      const padTop = parseFloat(getComputedStyle(sc).paddingTop) || 0
+      const heads = sc.querySelectorAll<HTMLElement>('.arc-folder-head')
+      let last: HTMLElement | null = null
+      heads.forEach((h) => {
+        const pinnedY = scTop + padTop + (parseFloat(getComputedStyle(h).top) || 0)
+        const stuck = h.getBoundingClientRect().top <= pinnedY + 0.5
+        h.classList.toggle('is-stuck', stuck)
+        if (stuck) last = h
+      })
+      heads.forEach((h) => h.classList.toggle('is-stuck-last', h === last))
+    }
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(paint)
+    }
+    sc.addEventListener('scroll', onScroll, { passive: true })
+    paint()
+    return () => {
+      sc.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  })
 
   const submitOmni = () => {
     const v = omni.trim()
