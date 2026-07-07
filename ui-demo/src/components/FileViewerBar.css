@@ -35,7 +35,6 @@
   border-radius: var(--r-pill);
   border: 1px solid var(--c-border-strong);
   background: var(--c-surface);
-  box-shadow: 0 2px 0 var(--c-border-strong);
   font-size: var(--fs-sm);
   color: var(--c-text-2);
   transition: transform var(--dur-fast) var(--ease),
@@ -46,12 +45,9 @@
 .fv-open:hover {
   background: var(--c-bg-chrome);
   color: var(--c-text);
-  transform: translateY(-1px);
-  box-shadow: 0 3px 0 var(--c-border-strong);
 }
 .fv-open:active {
-  transform: translateY(1px);
-  box-shadow: 0 0 0 var(--c-border-strong);
+  transform: scale(0.97);
 }
 
 /* 工具栏随查看器内容一起淡入落定(按钮 hover/letterpress 已在上方齐全,不重复) */
