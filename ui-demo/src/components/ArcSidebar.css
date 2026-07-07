@@ -51,7 +51,6 @@
   background-size: 0% 2px;
   border: none;
   border-radius: var(--r-md);
-  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04);
   color: var(--c-text-2);
   flex: none;
   transition: background-color var(--dur-fast) var(--ease),
@@ -61,7 +60,6 @@
 .arc-omni:focus-within {
   background-color: var(--c-surface);
   background-size: 100% 2px;
-  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04), var(--shadow-xs);
 }
 .arc-omni-url { font-size: var(--fs-sm); color: var(--c-text); flex: 1; min-width: 0; }
 .arc-omni-tag {
@@ -145,7 +143,7 @@
 .arc-tab.drop-before::before, .arc-mark.drop-before::before { top: -1px; }
 .arc-tab.drop-after::after, .arc-mark.drop-after::after { bottom: -1px; }
 .arc-tab:hover { background: var(--c-hover); }
-.arc-tab.is-active { background: var(--c-surface); color: var(--c-text); box-shadow: var(--shadow-sm); }
+.arc-tab.is-active { background: var(--c-surface); color: var(--c-text); }
 .arc-tab-ico { display: flex; flex: none; color: var(--c-text-3); }
 .arc-tab.is-active .arc-tab-ico { color: var(--c-accent); }
 .arc-tab-title { flex: 1; min-width: 0; font-size: var(--fs-base); }
@@ -262,7 +260,6 @@
   display: flex; align-items: center; gap: 6px;
   margin: 2px 0 2px; padding: 6px 8px; border-radius: var(--r-sm);
   background: var(--c-surface);
-  box-shadow: var(--shadow-xs);
   color: var(--c-text);
   font-size: var(--fs-sm); font-weight: var(--fw-semibold);
   cursor: pointer; user-select: none;
@@ -369,7 +366,6 @@
   background-size: 0% 2px;
   border: none;
   border-radius: var(--r-md);
-  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04);
   color: var(--c-text-3);
   transition: background-color var(--dur-fast) var(--ease),
     background-size var(--dur-slow) var(--ease-enter),
@@ -378,7 +374,6 @@
 .arc-filter:focus-within {
   background-color: var(--c-surface);
   background-size: 100% 2px;
-  box-shadow: inset 0 1px 2px rgba(28, 25, 23, 0.04), var(--shadow-xs);
 }
 .arc-filter-ico { flex: none; }
 .arc-filter-input {

@@ -52,7 +52,6 @@
 .cm-para.is-active {
   background: var(--c-surface);
   border-color: var(--c-border);
-  box-shadow: var(--shadow-sm);
 }
 .cm-para.is-soon { opacity: 0.6; }
 .cm-para.is-soon:hover { opacity: 0.82; }
@@ -153,7 +152,7 @@
   transition: border-color var(--dur-fast) var(--ease),
     background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
-.cm-card:hover { background: var(--c-hover); box-shadow: var(--shadow-sm); }
+.cm-card:hover { background: var(--c-hover); }
 
 .cm-card-ico {
   display: grid;
