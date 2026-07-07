@@ -26,6 +26,9 @@
     </button>
   </div>
   <div class="sb-body" id="sb-body">
+    <!-- sticky ancestor 吸顶浮层（扁平树无法用原生 CSS sticky 正确释放，VS Code 式 JS 浮层）：
+         滚动时 sidebar.js 往这里填当前路径的祖先文件夹行、绝对定位在可视区顶部。 -->
+    <div class="sb-sticky" id="sb-sticky" aria-hidden="true"></div>
     <div class="sb-empty" id="sb-empty">
       <div class="sb-empty-note">打开一个本地文件夹，把这里当工作区</div>
       <button id="sb-empty-open" class="sb-empty-btn">打开文件夹</button>
