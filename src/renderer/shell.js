@@ -70,7 +70,13 @@ let autoSaveTimer = null;
 // 用户确认「丢弃修改」/ 重载在飞时必须缴械 pending 自动保存：已到期的定时器会在随后的 await 让出期
 // 开火，把刚被丢弃（或将被磁盘版本替换）的编辑写回磁盘（对抗审计实证：外部版本被反杀/三态分叉）。
 function discardPendingAutoSave() { if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; } }
+// 修 SH-3：非阻塞 DOM 模态（侧栏关闭确认）打开期间必须挂起自动保存——否则弹窗背后 1.2s 定时器照常
+// 把编辑写盘，用户点「不保存直接关闭」时数据已落盘、弹窗文案成谎（且弹出条件就是 1.2s 内 dirty→几乎必现）。
+let autoSavePaused = false;
+function pauseAutoSave() { autoSavePaused = true; discardPendingAutoSave(); }
+function resumeAutoSave() { autoSavePaused = false; if (dirty && docPath && !tempDoc) scheduleAutoSave(); }
 function scheduleAutoSave() {
+  if (autoSavePaused) return; // 挂起期间不排新定时器
   if (autoSaveTimer) clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
     autoSaveTimer = null;
@@ -132,6 +138,7 @@ function setZoom(z) {
   applyZoom();
   if (blockEdit) blockEdit.reposition(); // 缩放后手柄/气泡按新内容尺寸重定位
   if (basicEdit) basicEdit.reposition();  // 基础编辑器的宿主浮层同理（Feature 3）
+  if (window.WS2Find) window.WS2Find.reposition(); // 查找条钉在 iframe 角，缩放不改 iframe 元素 rect，但保险重定位
 }
 
 // 分流判定（Feature 3，KD-e）：纯函数、不碰控制流——判「磁盘原始字节 reparse 出的 DOM」是否合规。
@@ -148,6 +155,7 @@ function routeDoc(rawHtml) {
 // undoMgr 一并清空——否则基础模式/空态下按 Cmd+Z 会去 undo 上一个文档的陈旧 manager
 //（改的是已换掉的 detached doc、还把当前文档标脏）。
 function detachEditors() {
+  if (window.WS2Find) window.WS2Find.close(); // 换/关文档：关查找条 + 清高亮，否则飘到下一个文档
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
   if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
@@ -528,9 +536,10 @@ function shellNewTemp(base, html) {
 }
 // 切回一个已存在的临时文档（点它的标签）。
 function shellReopenTemp(id) {
-  if (!tempStore.has(id)) return;
-  if (!canLeaveActive()) return;
+  if (!tempStore.has(id)) return false;
+  if (!canLeaveActive()) return false; // 切走守卫（活跃脏文档「丢弃?」）被用户取消 → 没切成
   renderTemp(id);
+  return true;
 }
 // 渲染某临时文档进编辑器（切走守卫由 canLeaveActive 处理过）。
 function renderTemp(id) {
@@ -677,10 +686,12 @@ window.__shellFinalizeTemp = shellFinalizeTemp;
 window.__shellDiscardTemp = shellDiscardTemp;
 window.__shellIsTemp = () => !!tempDoc; // 当前活跃的是不是临时文档
 window.__shellSaveActive = () => save(); // 「保存并关闭」里保存已落盘的脏文档用（返回 promise）
+window.__shellPauseAutosave = pauseAutoSave; // 修 SH-3：侧栏关闭确认弹窗开合时挂起/恢复自动保存
+window.__shellResumeAutosave = resumeAutoSave;
 // 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
-window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); };
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -782,7 +793,7 @@ if (openFolderMenuBtn) openFolderMenuBtn.onclick = () => { if (window.__sbHooks 
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = saveAs; // 菜单里的「另存为…」；Cmd+S / 菜单栏「保存」仍走 save()（真文件即存、临时弹 SaveModal）
-window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); }); // 窗口尺寸变 → 浮层跟上
+window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); }); // 窗口尺寸变 → 浮层跟上
 window.addEventListener('keydown', handleZoomKey); // 焦点在父层 shell（点过保存按钮/首页）时也能 Cmd± 缩放（iframe 内事件不冒泡到这）
 
 // 外部磁盘改动（Bug2）：是当前文档才处理；有未保存改动先问，免得静默覆盖用户的编辑。
@@ -933,26 +944,34 @@ window.ws2.onMenu((cmd) => {
     if (cmd === 'web-back') { if (window.__webBack) window.__webBack(); return; }
     if (cmd === 'web-forward') { if (window.__webForward) window.__webForward(); return; }
     if (cmd === 'web-reload' || cmd === 'reload') { if (window.__webReload) window.__webReload(); return; }
-    if (action === 'web-find' || (cmd === 'find-file' && vs === 'live')) { window.__focusMainFrame(); if (window.__webShowFind) window.__webShowFind(); return; }
+    if (action === 'web-find' || (cmd === 'find-in-doc' && vs === 'live')) { window.__focusMainFrame(); if (window.__webShowFind) window.__webShowFind(); return; }
     if (action === 'web-pdf') { window.ws2.webPdf(webKey); return; }
     if (action === 'web-undo') { window.ws2.webNav(webKey, 'undo'); return; }
     if (action === 'web-redo') { window.ws2.webNav(webKey, 'redo'); return; }
     if (action === 'noop' || action === 'disabled') {
       // 新标签页/占位态：save/export/undo/redo 无意义,吞掉（但 new-tab/close-tab/palette 仍要走下面通用路径）
-      if (cmd === 'save' || cmd === 'export-pdf' || cmd === 'undo' || cmd === 'redo' || cmd === 'find-file') return;
+      if (cmd === 'save' || cmd === 'export-pdf' || cmd === 'undo' || cmd === 'redo' || cmd === 'find-in-doc') return;
     }
     // 未被 web 拦截的命令（new-tab/close-tab/find-palette/open…）继续走下面通用分发
   }
   if (cmd === 'ai-access') openAiAccessModal();
   if (cmd === 'open-folder' && window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder();
-  if (cmd === 'open') pickAndOpen();
+  // 修 SH-5：弹层（SaveModal/关闭确认/命令面板）开着时 Cmd+O 加速器穿透会把活跃文档从弹层底下换走
+  // （最坏：SaveModal 点「保存到这里」时 activeTemp 已 null → 静默什么都不存）。有弹层就忽略「打开」。
+  if (cmd === 'open' && !document.querySelector('.sb-modal-overlay') && !document.getElementById('fp-overlay')) pickAndOpen();
   if (cmd === 'save') save();
   if (cmd === 'export-pdf') exportPdf(pdfExportMode()); // 基础模式=raw 直印源文件；md 一律 wordspace（KD-5）
   if (cmd === 'undo') runUndoRedo(false); // 菜单加速器（真实用户 Cmd+Z 走这，不走 doc keydown）
   if (cmd === 'redo') runUndoRedo(true);
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
   if (cmd === 'close-tab' && window.__sbHooks && window.__sbHooks.closeActiveTab) window.__sbHooks.closeActiveTab(); // Cmd+W
-  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F（无 web 激活时=侧栏筛选）
+  // Cmd+F = 文档内查找：块编辑器活跃（合规、已挂、非查看器/空态）→ 开查找条；否则回退聚焦侧栏文件筛选。
+  // （web 标签激活时 Cmd+F 已在上面的 web 拦截层转成页内查找,走不到这。）
+  if (cmd === 'find-in-doc') {
+    if (blockEdit && frame.contentDocument && window.WS2Find) window.WS2Find.open(frame);
+    else if (window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();
+  }
+  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+Shift+F
   if (cmd === 'find-palette' && window.__sbHooks && window.__sbHooks.findPalette) window.__sbHooks.findPalette();     // Cmd+P
 });
 

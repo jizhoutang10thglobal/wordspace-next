@@ -80,12 +80,13 @@ test('routeMenuCmd：(activeKind × viewState × cmd) 全表', () => {
   assert.equal(P.routeMenuCmd('web', 'live', 'export-pdf'), 'web-pdf');
   assert.equal(P.routeMenuCmd('web', 'live', 'undo'), 'web-undo'); // 转发 view,不能 no-op
   assert.equal(P.routeMenuCmd('web', 'live', 'redo'), 'web-redo');
-  assert.equal(P.routeMenuCmd('web', 'live', 'find-file'), 'web-find');
+  assert.equal(P.routeMenuCmd('web', 'live', 'find-in-doc'), 'web-find'); // Cmd+F 新名(main #124)
+  assert.equal(P.routeMenuCmd('web', 'live', 'find-file'), null);        // Cmd+Shift+F 筛选:web 不拦,放行侧栏
   assert.equal(P.routeMenuCmd('web', 'live', 'reload'), 'web-reload');
   // web placeholder（恢复未加载）
   assert.equal(P.routeMenuCmd('web', 'placeholder', 'reload'), 'web-first-load');
   assert.equal(P.routeMenuCmd('web', 'placeholder', 'export-pdf'), 'disabled');
-  assert.equal(P.routeMenuCmd('web', 'placeholder', 'find-file'), 'disabled');
+  assert.equal(P.routeMenuCmd('web', 'placeholder', 'find-in-doc'), 'disabled');
   // web newtab（url=null）
   assert.equal(P.routeMenuCmd('web', 'newtab', 'export-pdf'), 'noop');
   assert.equal(P.routeMenuCmd('web', 'newtab', 'reload'), 'noop');

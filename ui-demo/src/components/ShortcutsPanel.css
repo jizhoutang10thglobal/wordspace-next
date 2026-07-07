@@ -1,13 +1,13 @@
 /* 快捷键速查面板（Cmd+/） */
-.skp { width: 620px; max-width: calc(100vw - 48px); }
+.ws-modal.skp { width: 620px; max-width: calc(100vw - 48px); }
 .skp .ws-modal-title { display: flex; align-items: center; gap: 7px; }
 .skp-title-ico { color: var(--c-text-3); }
 .skp-platform {
   padding: 0 7px;
-  border: 1px solid var(--c-border, #e3e2de);
-  border-radius: 99px;
-  font-size: 10.5px; font-weight: 500; line-height: 17px;
-  color: var(--c-text-3, #9b9a97);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs); font-weight: var(--fw-medium); line-height: 17px;
+  color: var(--c-text-3);
 }
 
 .skp-body {
@@ -22,15 +22,15 @@
 .skp-group-title {
   margin: 12px 0 2px;
   font-size: 12px;
-  font-weight: var(--fw-semibold, 600);
-  color: var(--c-text-2, #555);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text-2);
 }
-.skp-group-hint { font-size: 11px; color: var(--c-text-3, #9b9a97); margin-bottom: 2px; }
+.skp-group-hint { font-size: 11px; color: var(--c-text-3); margin-bottom: 2px; }
 .skp-items { display: flex; flex-direction: column; }
 .skp-item {
   display: flex; align-items: center; gap: 10px;
   padding: 3px 0;
-  font-size: 12.5px; color: var(--c-text, #333);
+  font-size: var(--fs-base); color: var(--c-text);
 }
 .skp-label { flex: 1; min-width: 0; }
 .skp-keys { flex: none; display: inline-flex; gap: 3px; }
@@ -39,12 +39,12 @@
   min-width: 16px;
   padding: 0 5px;
   text-align: center;
-  font: 11px/1.7 ui-monospace, 'SF Mono', Menlo, monospace;
-  background: var(--c-bg-sunken, #f7f8fa);
-  border: 1px solid var(--c-border, #e3e2de);
+  font: 11px/1.7 var(--font-mono);
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border-strong);
   border-bottom-width: 2px;
-  border-radius: 4px;
-  color: var(--c-text-2, #555);
+  border-radius: var(--r-sm);
+  color: var(--c-text-2);
   white-space: nowrap;
 }
 
@@ -52,6 +52,15 @@
 .skp-doc-link {
   display: inline-flex; align-items: center; gap: 5px;
   margin-right: auto;
-  font-size: 12px; color: var(--c-accent, #1a73e8); text-decoration: none;
+  font-size: 12px; color: var(--c-accent); text-decoration: none;
 }
 .skp-doc-link:hover { text-decoration: underline; }
+
+/* 首次打开:整组淡入落定(条目太多不逐条,避免拖尾)。kbd 键帽保持静态。 */
+.skp-group { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.skp-group:nth-child(1) { animation-delay: 0ms; }
+.skp-group:nth-child(2) { animation-delay: 30ms; }
+.skp-group:nth-child(3) { animation-delay: 60ms; }
+.skp-group:nth-child(4) { animation-delay: 90ms; }
+.skp-group:nth-child(5) { animation-delay: 120ms; }
+.skp-group:nth-child(6) { animation-delay: 150ms; }

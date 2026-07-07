@@ -85,8 +85,7 @@ export interface Doc {
 export interface Folder {
   id: string
   name: string
-  scope: 'team' | 'personal' // 团队共享 / 我的私有, within one cloud space
-  spaceId: string // the cloud space this folder belongs to (spaces are isolated)
+  scope: 'team' | 'personal' // 团队共享 / 我的私有（都属于唯一的 Wordspace 云盘）
   order: number
 }
 
@@ -129,63 +128,20 @@ export interface Workspace {
   syncedAt: number
 }
 
-/** Where a space's files physically live. Orthogonal to the work scenario. */
-export type StorageKind = 'cloud' | 'local' | 'gdrive'
-
 /**
- * 工作区里挂载的一个根文件夹（Feature: 多文件夹空间）。
- * 一个连接空间可以同时打开多个根文件夹——每个根在侧栏是一棵独立的树。
- * 文件身份从 (spaceId, path) 升级为 (spaceId, rootId, path)：两个根里同名的
- * 相对路径不再互撞（VS Code multi-root 同款教训）。
+ * 侧栏顶层打开的一个根文件夹（多文件夹：同时打开多个、拖动排序、持久化）。
+ * 每个根在侧栏是一棵独立的树。文件身份 = (rootId, path)——两个根里同名的相对路径
+ * 不互撞（VS Code multi-root 同款教训）。没有「工作区/Space」外壳：打开几个文件夹
+ * 就是几个顶层根，全部常显。
  */
 export interface MountRoot {
   id: string
   name: string // 侧栏显示名，默认取路径末段（重名根可改名消歧）
   path: string // 完整挂载路径（demo 无真实文件系统，是假路径）
-}
-
-/**
- * 一个 .wsworkspace 工作区文件（Feature: 多文件夹空间）。「打包成工作区」的载体：
- * 记录一组文件夹，落成磁盘上的一个小文件（demo 里 mock）——可以双击打开、可以拷给
- * 同事、可以进版本库（VS Code .code-workspace 同款心智）。
- * 保存工作区 = 写这个文件；打开工作区 = 读它、把整组文件夹一次性挂载成一个空间。
- */
-export interface WorkspaceFile {
-  id: string
-  name: string
-  path: string // 文件本体位置，如 ~/Documents/品牌项目.wsworkspace
-  folders: { name: string; path: string }[] // 打包的文件夹组（真实现里路径相对文件位置存）
-  savedAt: number
-  spaceId?: string // 当前已作为空间打开时指向它（再次打开=切过去，不重复建）
-}
-
-/**
- * An Arc-style Space: a switchable context shown in the left sidebar.
- * A space is a work scenario (a company, a person, a project). `storage` is the
- * separate dimension of where that space's files actually live.
- *
- * 连接空间（storage 非 cloud）从第一天就是「恰好 N 个根的工作区」——单文件夹
- * 只是 roots.length === 1 的特例，不存在「单文件夹模式 / 工作区模式」两套心智
- * （VS Code 双模式是历史包袱，我们不背）。
- */
-export interface Space {
-  id: string
-  name: string
-  kind: 'team' | 'personal' | 'project' // the work scenario
-  storage: StorageKind // where the files live (cloud / local / gdrive)
-  badge: string // short label shown in the switcher
-  color: string
-  subtitle: string
-  roots?: MountRoot[] // connected spaces: the open folders (cloud spaces: undefined)
-  // 多根集合是否已被用户命名保存为「工作区」。false + roots>1 = 未保存的临时组合
-  // （VS Code untitled workspace 语义：先用后存，不打断）。
-  workspaceSaved?: boolean
-}
-
-/** The two real categories of space. Local and Google Drive are both connected
- *  folders; only the Wordspace cloud is the native, collaborative kind. */
-export function isCloudStorage(s: StorageKind): boolean {
-  return s === 'cloud'
+  origin?: 'local' | 'gdrive' // 来源：本地磁盘 / Google Drive（仅影响侧栏图标）。缺省 local
+  // 失联：底层文件夹不可达（被删 / 改名 / 外置盘拔出）。灰显 + 「重新定位 / 移除」，绝不静默丢
+  // （下面还挂着标签页 / 折叠状态）。
+  missing?: boolean
 }
 
 /** The OS app a non-HTML file hands off to, shown in the "open externally" panel.
@@ -208,7 +164,6 @@ export interface Presence {
 
 export interface Tab {
   id: string
-  spaceId: string // the space this tab belongs to; tabs are scoped per space
   docId?: string
   kind: 'doc' | 'web' | 'file' // 'file' = a non-HTML file opened from a connected folder
   title: string
@@ -225,8 +180,7 @@ export interface Tab {
 export type FileKind = 'html' | 'md' | 'word' | 'pdf' | 'image' | 'sheet' | 'slides' | 'other'
 
 export interface FileEntry {
-  spaceId: string
-  rootId: string // which mount root of the space this file lives under
+  rootId: string // which mount root this file lives under（身份 = (rootId, path)）
   path: string // path under that root, e.g. '品牌/官网首页.html'
   kind: FileKind
   docId?: string // set when kind === 'html' and it maps to an editable doc
@@ -268,34 +222,5 @@ export const VISIBILITY_META: Record<
     short: '公开',
     desc: '生成公开地址,任何人都能打开,等同一处对外站点。',
     color: 'var(--c-public)',
-  },
-}
-
-/**
- * The storage backing of a space. Picked when a space is created; it determines
- * the space's capabilities (only a cloud-backed space gets real-time
- * collaboration and live Agent access) but is independent of the work scenario.
- */
-export const STORAGE_META: Record<
-  StorageKind,
-  { label: string; short: string; desc: string; collab: boolean }
-> = {
-  cloud: {
-    label: 'Wordspace 网盘',
-    short: '网盘',
-    desc: '托管在 Wordspace,自带实时协作和 Agent 接入,文件可随时下载。',
-    collab: true,
-  },
-  local: {
-    label: '本地文件夹',
-    short: '本地',
-    desc: '存在你设备上的 ~/Wordspace,单人私有,离线可用。',
-    collab: false,
-  },
-  gdrive: {
-    label: 'Google Drive',
-    short: 'Drive',
-    desc: '存在你自己的 Google Drive,多设备同步,文件归你。',
-    collab: false,
   },
 }

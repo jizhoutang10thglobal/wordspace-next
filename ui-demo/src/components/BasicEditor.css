@@ -18,13 +18,15 @@
   gap: 8px;
   padding: 8px 20px;
   font-size: var(--fs-sm);
-  color: #8a6d1a;
-  background: #fdf6d8;
-  border-top: 1px solid #f0e4b0;
+  color: var(--c-warning);
+  background: var(--c-warning-tint);
+  border-top: 1px solid color-mix(in srgb, var(--c-warning) 22%, transparent);
+  /* 降级提示条出现时从下轻轻升入(它在文档下方) */
+  animation: ws-slide-up var(--dur-slow) var(--ease-enter) both;
 }
 .nce-notice svg {
   flex: none;
-  color: #b7943a;
+  color: var(--c-warning);
 }
 
 /* ---- 全保真渲染舞台 ---- */
@@ -54,7 +56,7 @@
   gap: 2px;
   padding: 3px;
   background: var(--c-bg-sunken);
-  border-radius: 9px;
+  border-radius: var(--r-pill);
 }
 .nce-modes button {
   border: 0;
@@ -63,10 +65,14 @@
   font-weight: var(--fw-semibold);
   color: var(--c-text-3);
   padding: 5px 14px;
-  border-radius: 6px;
+  border-radius: var(--r-pill);
   cursor: pointer;
+  /* 分段控件:选中项白纸浮起,box-shadow 走 spring 做一下微弹落定 */
+  transition: color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur) var(--ease-spring);
 }
-.nce-modes button.on { background: var(--c-surface); color: var(--c-accent); box-shadow: var(--shadow-sm); }
+.nce-modes button.on { background: var(--c-surface); color: var(--c-text); }
 .nce-frame {
   flex: 1;
   width: 100%;
@@ -100,7 +106,7 @@
   pointer-events: none;
   border: 2px solid var(--c-accent);
   border-radius: 6px;
-  box-shadow: 0 0 0 3px rgba(232, 101, 79, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent) 15%, transparent);
 }
 .nce-focus-del {
   position: absolute;
@@ -112,20 +118,21 @@
   gap: 4px;
   height: 26px;
   padding: 0 9px;
-  background: #1c1e21;
-  color: #fff;
-  border-radius: 7px;
+  background: var(--c-ink);
+  color: var(--c-text-invert);
+  border-radius: var(--r-pill);
   font-size: 12px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.25);
+  transition: background-color var(--dur-fast) var(--ease);
 }
-.nce-focus-del:hover { background: #33363b; }
+.nce-focus-del:hover { background: var(--c-ink-hover); }
 
 /* ---- 悬停某块 → 右上角 🗑（鼠标删除路径） ---- */
 .nce-hover {
   position: absolute;
   z-index: 50;
   pointer-events: none;
-  border: 1.5px dashed rgba(232, 101, 79, 0.55);
+  border: 1.5px dashed color-mix(in srgb, var(--c-accent) 55%, transparent);
   border-radius: 6px;
 }
 .nce-hover-del {
@@ -141,6 +148,7 @@
   background: var(--c-accent);
   color: #fff;
   border-radius: 50%;
-  box-shadow: 0 3px 10px rgba(232, 101, 79, 0.45);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--c-accent) 45%, transparent);
+  transition: background-color var(--dur-fast) var(--ease);
 }
 .nce-hover-del:hover { background: var(--c-accent-hover); }

@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { Copy, Check, ClipboardList, TerminalSquare, ShieldCheck, ChevronDown } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Copy, Check, ClipboardList, TerminalSquare, ShieldCheck, ChevronDown, X } from 'lucide-react'
 import { useStore } from '../mock/store'
+import { useUI } from '../mock/ui'
 import { relTime } from '../lib/format'
 import type { AgentEvent } from '../types'
 // AI 创作指南（= docs/schema-1-ai-authoring.md 的分发拷贝，test/skill-guide-sync.test.js 锁一致）
@@ -27,6 +27,8 @@ const CURL = `curl -X POST https://api.wordspace.app/v1/documents \\
 // AI 接入：上半 = 现在就能用的两条路（Tab 切换：复制 Prompt / 安装 Skill），
 // 下半 = Agent API 占位（Wendi 原稿，规划中）。产出不靠 AI 自觉：打开即过确定性校验器，不合规降级兜底。
 export default function Agents() {
+  const open = useUI((s) => s.agentsOpen)
+  const close = useUI((s) => s.closeAgents)
   const toast = useStore((s) => s.toast)
   const agentEvents = useStore((s) => s.agentEvents)
   const addAgentEvent = useStore((s) => s.addAgentEvent)
@@ -60,18 +62,32 @@ export default function Agents() {
     toast('市场 Agent 生成了《自动周报》', 'success')
   }
 
-  return (
-    <div className="ag-scroll">
-      <div className="ag-page">
-        <header className="ag-head">
-          <h1 className="ag-title">AI 接入</h1>
-          <p className="ag-intro">
-            让任何 AI 按 Wordspace Schema 生成、编辑文档。两种接入方式，产出的 .html
-            在 Wordspace 打开时都会经过确定性校验器把关——不合规会自动降级，AI 犯错也弄不坏你的文档。
-          </p>
-        </header>
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, close])
 
-        {/* 方式切换 Tab */}
+  if (!open) return null
+
+  return (
+    <div className="ws-modal-overlay" onMouseDown={close}>
+      <div className="ws-modal ag-modal" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="ws-modal-head">
+          <div className="ws-modal-head-text">
+            <div className="ws-modal-title">AI 接入</div>
+            <div className="ws-modal-sub">让任何 AI 按 Wordspace Schema 生成、编辑文档</div>
+          </div>
+          <button className="ws-modal-x" onClick={close} aria-label="关闭"><X size={18} /></button>
+        </div>
+        <div className="ws-modal-body ag-modal-body">
+          <p className="ag-intro">
+            两种接入方式，产出的 .html 在 Wordspace 打开时都会经过确定性校验器把关——
+            不合规会自动降级，AI 犯错也弄不坏你的文档。
+          </p>
+
+          {/* 方式切换 Tab */}
         <div className="ag-tabs" role="tablist" aria-label="接入方式">
           <button
             role="tab"
@@ -165,7 +181,7 @@ export default function Agents() {
             <ShieldCheck size={15} className="ag-note-ico" />
             <span>
               AI 不需要完美：每份文档在打开时都会被<b>确定性校验器</b>逐条检查，不合规自动降级为基础编辑，
-              内容永远不会被弄坏。想了解规则本身，见 <Link to="/schema">Schema 页</Link>。
+              内容永远不会被弄坏。
             </span>
           </div>
         </section>
@@ -259,6 +275,7 @@ export default function Agents() {
             )}
           </div>
         </section>
+        </div>
       </div>
     </div>
   )

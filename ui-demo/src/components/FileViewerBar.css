@@ -32,12 +32,23 @@
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-border-strong);
+  background: var(--c-surface);
   font-size: var(--fs-sm);
   color: var(--c-text-2);
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
 .fv-open:hover {
-  background: var(--c-hover);
+  background: var(--c-bg-chrome);
   color: var(--c-text);
 }
+.fv-open:active {
+  transform: scale(0.97);
+}
+
+/* 工具栏随查看器内容一起淡入落定(按钮 hover/letterpress 已在上方齐全,不重复) */
+.fv-bar { animation: ws-fade-in var(--dur) var(--ease-enter) both; }

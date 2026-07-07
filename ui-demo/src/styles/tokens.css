@@ -1,45 +1,51 @@
-/* Wordspace design tokens
-   Aesthetic: standard desktop application (Chrome / Arc / Outlook).
-   Neutral surfaces, one restrained blue accent, hairline borders, no gradients,
-   no glow, no oversized radii, no decorative shadows. Keep it plain. */
+/* Wordspace design tokens · 「纸感暖白」
+   canonical 规范见 docs/style.md（方案 A v2「纸方墨圆」,Colin 2026-07-05 拍板）。
+   基调:暖白纸面(stone 灰阶)、墨色控件、墨青蓝 accent。
+   纸方——承载内容的容器(卡片/菜单/弹窗)微圆角;
+   墨圆——可交互的控件(按钮/开关/分段)全圆丸;
+   按了会陷(letterpress)、焦点是批注圈不发光、动是有物理的反馈。 */
 :root {
-  /* ---- color ---- */
-  --c-bg: #ffffff;
-  --c-bg-sunken: #f7f8fa;     /* side panes */
-  --c-bg-rail: #ececef;       /* far-left icon rail */
-  --c-bg-chrome: #f2f3f5;     /* titlebar + tab strip */
+  /* ---- color:纸(stone 暖灰阶) ---- */
+  --c-bg: #ffffff;            /* 文档纸面 */
+  --c-bg-sunken: #f5f5f4;     /* side panes (stone-100) */
+  --c-bg-rail: #edeceb;       /* far-left icon rail */
+  --c-bg-chrome: #fafaf9;     /* titlebar + tab strip (stone-50) */
   --c-surface: #ffffff;
 
-  --c-border: #e4e6e9;
-  --c-border-strong: #d3d6db;
-  --c-divider: #eceef0;
+  --c-border: #e7e5e4;
+  --c-border-strong: #d6d3d1;
+  --c-divider: #efedeb;
 
-  --c-text: #1c1d1f;
-  --c-text-2: #5a5f66;        /* secondary */
-  --c-text-3: #8a8f96;        /* tertiary / placeholder */
-  --c-text-invert: #ffffff;
+  /* ---- color:墨(文字与墨色控件) ---- */
+  --c-text: #292524;
+  --c-text-2: #57534e;        /* secondary */
+  --c-text-3: #a8a29e;        /* tertiary / placeholder */
+  --c-text-invert: #fafaf9;
+  --c-ink: #1c1917;           /* 墨色控件底(primary 按钮/switch on/tooltip) */
+  --c-ink-hover: #292524;
 
-  --c-accent: #1a73e8;        /* restrained standard blue */
-  --c-accent-hover: #1765cc;
-  --c-accent-press: #145bb5;
-  --c-accent-tint: #e8f0fe;   /* selection / active tint */
-  --c-accent-tint-2: #d2e3fc;
+  --c-accent: #1d6fbf;        /* 墨青蓝:链接/选区/焦点圈,不做大面积底色 */
+  --c-accent-hover: #165ca0;
+  --c-accent-press: #124e88;
+  --c-accent-tint: #e8f1fa;   /* selection / active tint */
+  --c-accent-tint-2: #d2e5f5;
 
-  --c-hover: #f0f1f3;
-  --c-active: #e8e9ec;
-  --c-selected: #e8f0fe;
+  --c-hover: rgba(28, 25, 23, 0.05);
+  --c-active: rgba(28, 25, 23, 0.09);
+  --c-selected: #e8f1fa;
 
-  --c-success: #1e8e3e;
-  --c-success-tint: #e6f4ea;
-  --c-warning: #b06000;
-  --c-danger: #d93025;
-  --c-danger-tint: #fce8e6;
+  --c-success: #15803d;
+  --c-success-tint: #e9f3ec;
+  --c-warning: #b45309;
+  --c-warning-tint: #f9f1e5;
+  --c-danger: #b91c1c;
+  --c-danger-tint: #fbecec;
 
   /* visibility accents (subtle) */
-  --c-private: #8a8f96;
-  --c-invited: #1a73e8;
-  --c-internal: #b06000;
-  --c-public: #1e8e3e;
+  --c-private: #a8a29e;
+  --c-invited: #1d6fbf;
+  --c-internal: #b45309;
+  --c-public: #15803d;
 
   /* ---- type ---- */
   --font-ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto,
@@ -55,6 +61,10 @@
   --fs-lg: 15px;
   --fs-xl: 18px;
   --fs-2xl: 22px;
+  --fs-3xl: 28px;   /* editorial:内容页大标题(海报刊头感) */
+  --fs-4xl: 34px;   /* editorial:最重的页面标题 */
+  /* editorial 栏标字距(等宽 + 宽 tracking,像刊物的 "02 · SECTION") */
+  --tracking-label: 0.16em;
 
   --fw-regular: 400;
   --fw-medium: 500;
@@ -64,17 +74,20 @@
   --lh-base: 1.5;
   --lh-doc: 1.75;
 
-  /* ---- radius ---- */
+  /* ---- radius:纸方墨圆 ---- */
   --r-xs: 3px;
-  --r-sm: 5px;
-  --r-md: 7px;
-  --r-lg: 10px;
-  --r-pill: 999px;
+  --r-sm: 5px;    /* 列表行 / 菜单项 */
+  --r-md: 7px;    /* 输入框 / 菜单 */
+  --r-lg: 10px;   /* 弹窗 / 卡片 */
+  --r-pill: 999px; /* 一切可点的控件 */
 
-  /* ---- shadow (overlays only) ---- */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04);
-  --shadow-menu: 0 4px 14px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.06);
-  --shadow-modal: 0 14px 44px rgba(0,0,0,.20), 0 0 0 1px rgba(0,0,0,.06);
+  /* ---- shadow:保守口径(Wendi 2026-07-08)——装饰性阴影一律不要。
+     卡片/控件/选中态零阴影,层级靠 1px 细边 + 底色差。唯一例外:真浮层
+     (菜单/弹窗/toast)保留一层极淡阴影 + 细边做层分离,别加深、别加层。
+     --shadow-xs/--shadow-sm 已退役删除,别再引入。 ---- */
+  --shadow-menu: 0 4px 12px rgba(28, 25, 23, 0.07);
+  --shadow-pop: 0 8px 24px rgba(28, 25, 23, 0.08);
+  --shadow-modal: 0 12px 32px rgba(28, 25, 23, 0.12);
 
   /* ---- metrics ---- */
   --h-titlebar: 40px;
@@ -83,8 +96,16 @@
   --list-w: 268px;
   --maxdoc-w: 820px;
 
-  /* ---- motion ---- */
-  --ease: cubic-bezier(.2, .6, .2, 1);
-  --dur-fast: 120ms;
-  --dur: 200ms;
+  /* ---- motion:分工明确的时长阶梯 + 缓动曲线。
+     动是反馈不是装饰——每一档对应一种物理感,详见 docs/style.md §4。 ---- */
+  --dur-instant: 80ms;  /* 微反馈:按压、勾选、图标态 */
+  --dur-fast: 120ms;    /* 颜色变化、小位移、kbd 下沉 */
+  --dur: 200ms;         /* 背景滑入、墨条、tooltip、hover 抬起 */
+  --dur-slow: 320ms;    /* 墨线划过、浮层入场、抽屉滑出 */
+  --dur-page: 420ms;    /* 路由/视图切换的编排级动画 */
+  --ease: cubic-bezier(0.2, 0, 0, 1);               /* 标准(大多数状态变化) */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);      /* 入场:快起慢收,东西"落定" */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);          /* 退场:直接撤走 */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 回弹:switch 滑块、关闭钮、盖章式反馈 */
+  --ease-smooth: cubic-bezier(0.45, 0, 0.15, 1);    /* 平滑对称:折叠/展开、滑块拖动 */
 }

@@ -31,7 +31,10 @@ async function launch(env) {
 async function openWorkspace() {
   await page.click('#nt-open-folder');
   await expect(page.locator('#sidebar.sb-on')).toBeVisible();
-  await expect(page.locator('.sb-dir[data-rel="数据"]')).toBeVisible();
+  // 数据/ 只含 深层/（单子文件夹链）→ compact folders 合并成一行「数据/深层」，身份=最深 rel。
+  // 下面「深层文件外部打开→展开定位」两条测试因此变成验证「透过 compact 链的 reveal」（expandToFile 按
+  // full rel 逐级 un-collapse，compact 行 key=最深 full rel 在序列里 → 正确展开）。
+  await expect(page.locator('.sb-dir[data-rel="数据/深层"]')).toBeVisible();
 }
 const menu = (cmd) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0].webContents.send('menu', c), cmd);
 // 非 mac 分支等到进程退出后，把 app 换成惰性假对象让 afterEach 不碰死进程（两处平台分支共用）

@@ -87,7 +87,7 @@
     }
     if (viewState === 'placeholder') {
       if (cmd === 'reload') return 'web-first-load'; // 占位态 reload=触发首次加载
-      if (cmd === 'export-pdf' || cmd === 'find-file') return 'disabled';
+      if (cmd === 'export-pdf' || cmd === 'find-in-doc') return 'disabled';
       if (cmd === 'save' || cmd === 'undo' || cmd === 'redo') return 'noop';
       return 'noop';
     }
@@ -97,7 +97,7 @@
       case 'export-pdf': return 'web-pdf';
       case 'undo': return 'web-undo';
       case 'redo': return 'web-redo';
-      case 'find-file': return 'web-find';
+      case 'find-in-doc': return 'web-find'; // Cmd+F(main #124 改名 find-in-doc);find-file=Cmd+Shift+F 筛选,不拦、放行给侧栏
       case 'reload': return 'web-reload';
       default: return null;
     }

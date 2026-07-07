@@ -15,8 +15,8 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: #fff4e5;
-  color: #b26a00;
+  background: var(--c-warning-tint);
+  color: var(--c-warning);
 }
 .cc-title {
   font-size: var(--fs-md);
@@ -37,9 +37,11 @@
 }
 .cc-discard {
   color: var(--c-danger);
-  border-color: var(--c-border);
 }
 .cc-discard:hover {
-  background: var(--c-danger-tint, #fdecec);
+  background: var(--c-danger-tint);
   border-color: var(--c-danger);
 }
+
+/* 警示图标盖章式落定,把注意力引到「未保存」上(轻微 spring 微弹,不循环) */
+.cc-ico { animation: ws-pop-in var(--dur-slow) var(--ease-spring) both; }

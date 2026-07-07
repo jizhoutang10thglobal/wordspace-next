@@ -44,8 +44,7 @@ export default function CreateModal() {
   const createFromTemplate = useStore((s) => s.createFromTemplate)
   const newBrowserTab = useStore((s) => s.newBrowserTab)
   const templates = useStore((s) => s.templates)
-  const spaces = useStore((s) => s.spaces)
-  const activeSpaceId = useStore((s) => s.activeSpaceId)
+  const roots = useStore((s) => s.roots)
 
   const [paradigm, setParadigm] = useState('notion')
   const [url, setUrl] = useState('')
@@ -74,13 +73,13 @@ export default function CreateModal() {
 
   if (!createOpen) return null
 
-  const space = spaces.find((s) => s.id === activeSpaceId)
   const companyTemplates = templates.filter((t) => t.pool === 'private')
-  // 多根：定位「建到哪」的展示——目标根名 + 子目录；没指定就是空间默认（第一个根 / 我的草稿）
-  const targetRoot = target ? space?.roots?.find((r) => r.id === target.rootId) : undefined
+  // 定位「建到哪」的展示——目标根名 + 子目录；没指定就落第一个打开的文件夹（保存时可再选）。
+  const firstRoot = roots.find((r) => !r.missing)
+  const targetRoot = target ? roots.find((r) => r.id === target.rootId) : undefined
   const where = target
-    ? `${targetRoot?.name ?? space?.name}${target.dir ? ` / ${target.dir}` : ''}`
-    : (space?.name ?? '当前空间')
+    ? `${targetRoot?.name ?? firstRoot?.name ?? '文档'}${target.dir ? ` / ${target.dir}` : ''}`
+    : (firstRoot?.name ?? '文档')
   const active = PARADIGMS.find((p) => p.id === paradigm) ?? PARADIGMS[0]
 
   const done = () => {

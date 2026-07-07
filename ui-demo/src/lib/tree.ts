@@ -59,6 +59,28 @@ export function buildFileTree(files: FileEntry[], dirs: string[] = []): FileNode
   return sortFileNodes(root.children)
 }
 
+/**
+ * Compact folders（VS Code `explorer.compactFolders` / JetBrains「Compact Middle Packages」同款，
+ * 两家独立收敛 = 深层嵌套的主力解法）：把「只有一个子文件夹、且不含文件」的链合并成一行，
+ * name 用 '/' 连接（如 `外部导入/2026/Q3`）——省掉深层单子链的无谓缩进、把有效深度压下来。
+ * 合并后 name 含 '/'（文件/文件夹名本身不含 '/'，无歧义），路径拼接照旧正确（parentPath + '/' + name）。
+ * 身份/折叠 key/拖放目标/右键操作都落在**最深那级**（VS Code 同款；改名落最深段是它的已知边角，可接受）。
+ * 只在单根的子树上跑（RootSection 每根各调一次）→ 天然不跨根合并。
+ */
+export function compactTree(nodes: FileNode[]): FileNode[] {
+  return nodes.map((n) => {
+    if (n.file) return n // 文件叶子不动
+    let cur = n
+    let name = n.name
+    // 当前 dir 恰好 1 个子节点且该子是 dir（无 file）→ 并进来，继续往深探
+    while (cur.children.length === 1 && !cur.children[0].file) {
+      cur = cur.children[0]
+      name = name + '/' + cur.name
+    }
+    return { name, children: compactTree(cur.children) }
+  })
+}
+
 /** Build a filesystem-style tree from each doc's localPath (the "local repo" space). */
 export function buildLocalTree(docs: Doc[]): TreeNode[] {
   const root: TreeNode = { name: '', children: [] }
@@ -81,4 +103,33 @@ export function buildLocalTree(docs: Doc[]): TreeNode[] {
     })
   }
   return root.children
+}
+
+// ---- 多根文件夹：加根前的嵌套关系判定（调研裁决：禁止真嵌套 + 智能处理）----
+// canon：规范化路径用于比较（demo 是假路径，真 app 里还要 realpath 解符号链接）。
+// 去尾斜杠 + 折叠大小写（macOS 默认大小写不敏感）。
+export function canonPath(p: string): string {
+  return p.replace(/\/+$/, '').toLowerCase()
+}
+export type RootRelation =
+  | { rel: 'same'; other: string } // 完全相同路径
+  | { rel: 'child'; parent: string } // 新根是某已有根的子目录 → 别单独开，进它里面
+  | { rel: 'parent'; children: string[] } // 新根包住了一个或多个已有根 → 确认后吸收
+  | { rel: 'independent' } // 无重叠 → 正常加
+
+// 前缀判定必须带分隔符边界，否则 /foo/bar 会误判成 /foo/bar-baz 的父目录。
+function isUnder(childCanon: string, parentCanon: string): boolean {
+  return childCanon.startsWith(parentCanon + '/')
+}
+export function classifyRoot(newPath: string, existingPaths: string[]): RootRelation {
+  const a = canonPath(newPath)
+  for (const ex of existingPaths) {
+    if (canonPath(ex) === a) return { rel: 'same', other: ex }
+  }
+  for (const ex of existingPaths) {
+    if (isUnder(a, canonPath(ex))) return { rel: 'child', parent: ex } // 新根在已有根里
+  }
+  const contained = existingPaths.filter((ex) => isUnder(canonPath(ex), a)) // 已有根在新根里
+  if (contained.length) return { rel: 'parent', children: contained }
+  return { rel: 'independent' }
 }

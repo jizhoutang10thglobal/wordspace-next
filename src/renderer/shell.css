@@ -5,6 +5,9 @@
 
 /* ---------------------------------------------------------------- tokens */
 :root {
+  /* 修 VC-16（最低成本）：锁原生控件（confirm/alert、原生菜单、滚动条、文件框）为浅色，消除 mac 暗色模式下
+     浅色 UI + 深色系统框的混搭割裂。真正的暗色主题另议——这里只是不让系统把控件反色。 */
+  color-scheme: light;
   --c-bg: #ffffff;
   --c-bg-sunken: #f7f8fa;
   --c-bg-rail: #ececef;
@@ -99,7 +102,7 @@ input { font-family: inherit; font-size: inherit; color: inherit; }
 /* 修 VC-1：原来 input/button:focus 全局 outline:none 把键盘焦点环也杀了（鼠标点了不该有环，但键盘 Tab 必须有）。
    只对「非键盘聚焦」去环（:focus:not(:focus-visible)），键盘聚焦补一条 accent 焦点环——全仓原本 0 处 :focus-visible。 */
 input:focus:not(:focus-visible), button:focus:not(:focus-visible) { outline: none; }
-:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; border-radius: 3px; }
+:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
 /* opacity:0 的标签按钮（pin/×）键盘聚焦时要现形，否则焦点落在完全看不见的按钮上 */
 .sb-tab-pin:focus-visible, .sb-tab-close:focus-visible { opacity: 1; }
 ul { list-style: none; }
@@ -182,7 +185,23 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-filter-clear:hover { background: var(--c-hover); color: var(--c-text); }
 .sb-filter-clear[hidden] { display: none; }
 
-.sb-body { flex: 1; overflow-y: auto; padding: 4px 8px 14px; }
+/* overflow-x: hidden——去掉缩进封顶后，极深「未被 compact 的分叉树」缩进/导引线可能越过侧栏右缘；
+   横向裁掉（名字本就 ellipsis 截断）而不是长出水平滚动条，符合成熟做法（Notion/VS Code 无横滚）。
+   scrollbar-gutter: 常驻预留纵向滚动条的 11px——自定义 ::-webkit-scrollbar 是占位式,
+   不预留的话树长过临界时滚动条突现会把内容挤窄「跳一下」(Colin 2026-07-07)。
+   position: relative——承载 sticky ancestor 吸顶浮层（.sb-sticky 绝对定位在它里面）。 */
+.sb-body { flex: 1; position: relative; overflow-y: auto; overflow-x: hidden; padding: 4px 8px 14px; scrollbar-gutter: stable; }
+
+/* sticky ancestor 吸顶浮层：sidebar.js 滚动时填入当前路径的祖先文件夹克隆行，绝对定位在可视区顶部
+   （top 跟 scrollTop）。实底色遮住下方滚动内容；padding 对齐 .sb-body 横向 padding 让克隆行与真行对齐。 */
+.sb-sticky {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 6;
+  padding: 0 8px; background: var(--c-bg-sunken);
+  pointer-events: none;
+}
+.sb-sticky:empty { display: none; }
+.sb-sticky.has-pins { box-shadow: 0 5px 7px -6px rgba(0, 0, 0, 0.28); } /* 把吸顶叠层从下方内容托起 */
+.sb-sticky .sb-sticky-row { pointer-events: auto; cursor: pointer; }
 .sb-empty { padding: 16px 10px; text-align: center; }
 .sb-empty[hidden] { display: none; }
 .sb-empty-note { font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.5; margin-bottom: 10px; }
@@ -191,12 +210,21 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 .sb-tree[hidden] { display: none; }
 .sb-row {
+  position: relative; /* 承载缩进导引线（.sb-guide 绝对定位在行内） */
   width: 100%; display: flex; align-items: center; gap: 7px;
   height: 30px; padding-right: 8px; border-radius: var(--r-sm);
   color: var(--c-text); text-align: left; cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .sb-row:hover { background: var(--c-hover); }
+/* 缩进导引线（Obsidian/VS Code always-on 同款）：每级祖先一条淡墨竖线，让小缩进也读得出层级。
+   用中性 border-strong、非 accent——层级线不和选中蓝抢（研究：cues 不能互相竞争）。 */
+.sb-guide {
+  position: absolute; top: 0; bottom: 0; width: 1px;
+  background: var(--c-border-strong); pointer-events: none;
+}
+/* compact folders 合并链的段间「/」分隔符：淡墨、不抢眼 */
+.sb-seg-sep { color: var(--c-text-3); margin: 0 3px; opacity: 0.7; font-weight: var(--fw-regular); }
 .sb-dir { color: var(--c-text-2); font-weight: var(--fw-medium); }
 .sb-caret { flex: none; display: inline-flex; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
 .sb-caret.is-open { transform: rotate(90deg); }
@@ -260,26 +288,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* 缩进档（CSP 安全：不用 inline style）。每级 +14px，从 8px 起。 */
 /* T8：缩进步长 14→16 对齐 ui-demo；文件行比目录多缩 18px 补 caret 占位（目录有箭头、文件没有，
    同起点会让文件跟目录名左对齐、层级感弱——ui-demo 文件起点 26 vs 目录 8）。 */
-.sb-d0 { padding-left: 8px; }
-.sb-d1 { padding-left: 24px; }
-.sb-d2 { padding-left: 40px; }
-.sb-d3 { padding-left: 56px; }
-.sb-d4 { padding-left: 72px; }
-.sb-d5 { padding-left: 88px; }
-.sb-d6 { padding-left: 104px; }
-.sb-d7 { padding-left: 120px; }
-.sb-d8 { padding-left: 136px; }
-.sb-d9 { padding-left: 152px; }
-.sb-file.sb-d0 { padding-left: 26px; }
-.sb-file.sb-d1 { padding-left: 42px; }
-.sb-file.sb-d2 { padding-left: 58px; }
-.sb-file.sb-d3 { padding-left: 74px; }
-.sb-file.sb-d4 { padding-left: 90px; }
-.sb-file.sb-d5 { padding-left: 106px; }
-.sb-file.sb-d6 { padding-left: 122px; }
-.sb-file.sb-d7 { padding-left: 138px; }
-.sb-file.sb-d8 { padding-left: 154px; }
-.sb-file.sb-d9 { padding-left: 170px; }
+/* 缩进不再走 sb-d 定级 class（会封顶）——改为 sidebar.js applyIndent() 按 depth 算 .style.paddingLeft
+   （dir base 8 / file base 26，每级 +12px，无封顶），配合 compact folders + 导引线。 */
 
 /* 文件夹行 hover「+」（在此文件夹新建文档） */
 .sb-add { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--c-text-3); opacity: 0; }
@@ -533,3 +543,45 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .aiax-steps { margin: 12px 0 0 2px; padding-left: 18px; font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.7; }
 .aiax-steps ul { padding-left: 16px; margin: 2px 0; list-style: disc; }
 .aiax-steps code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--c-bg-sunken); padding: 1px 5px; border-radius: var(--r-xs); }
+
+/* ── 文档内查找条（Cmd+F）──────────────────────────────────────────────
+   父层浮层，position:fixed 由 find.js 钉在 doc-frame 右上角（top/left CSSOM 设，
+   避开右上角 ⋯ 菜单）。匹配高亮走 CSS Custom Highlight（::highlight 注在 iframe 内，
+   见 find.js），这里只管查找条本身。纸方墨圆：纸面卡片小圆角、控件墨圆、批注圈焦点。 */
+.ws-docfind {
+  position: fixed;
+  z-index: 60; /* 低于 .top-actions(65)，别盖住 ⋯ 菜单 */
+  display: flex; align-items: center; gap: 4px;
+  padding: 6px 8px 6px 12px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-menu);
+}
+.ws-docfind[hidden] { display: none; } /* display:flex 会盖过 UA hidden，得显式声明 */
+@media (prefers-reduced-motion: no-preference) {
+  .ws-docfind { animation: ws-docfind-in var(--dur) var(--ease) both; }
+  @keyframes ws-docfind-in { from { opacity: 0; transform: translateY(-6px); } }
+}
+.ws-docfind-input {
+  width: 190px; border: none; outline: none; background: transparent;
+  font: inherit; font-size: var(--fs-md); color: var(--c-text); padding: 2px 0;
+}
+.ws-docfind-input::placeholder { color: var(--c-text-3); }
+.ws-docfind-count {
+  font-size: var(--fs-sm); color: var(--c-text-3);
+  font-variant-numeric: tabular-nums; min-width: 46px; text-align: right; white-space: nowrap;
+}
+.ws-docfind-nav {
+  display: flex; gap: 2px; padding-left: 4px; margin-left: 2px;
+  border-left: 1px solid var(--c-divider);
+}
+.ws-docfind-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: none; border-radius: var(--r-pill);
+  background: transparent; color: var(--c-text-2); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ws-docfind-btn:hover:not(:disabled) { background: var(--c-hover); color: var(--c-text); }
+.ws-docfind-btn:disabled { color: var(--c-text-3); opacity: .6; cursor: default; }
+.ws-docfind-close { margin-left: 2px; }

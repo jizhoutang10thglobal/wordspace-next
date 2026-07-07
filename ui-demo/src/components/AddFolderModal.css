@@ -13,13 +13,13 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid var(--line, #e3e2de);
-  border-radius: 8px;
-  background: var(--bg-2, #fafaf8);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-bg-sunken);
   font-size: 13px;
-  color: var(--ink, #333);
+  color: var(--c-text);
 }
-.afm-path.is-empty { color: var(--ink-3, #9b9a97); }
+.afm-path.is-empty { color: var(--c-text-3); }
 .afm-browse {
   display: inline-flex;
   align-items: center;
@@ -29,5 +29,42 @@
 .afm-current {
   margin-top: 10px;
   font-size: 12px;
-  color: var(--ink-3, #9b9a97);
+  color: var(--c-text-3);
+}
+
+/* 无列表——正文两块轻轻落定(拾取器 + 已打开提示) */
+.afm-picker { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.afm-current { animation: ws-stagger-in var(--dur) var(--ease-enter) both; animation-delay: 45ms; }
+
+/* 嵌套关系通知横幅——纸方墨圆：纸面卡片微圆角，info 墨青蓝、warn 琥珀。 */
+.afm-notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 14px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.afm-notice-info {
+  background: var(--c-accent-tint, #e8f1fa);
+  color: var(--c-text, #1c1917);
+}
+.afm-notice-warn {
+  background: #faf1de;
+  color: #1c1917;
+}
+.afm-notice-ico {
+  flex: none;
+  margin-top: 1px;
+}
+.afm-notice-info .afm-notice-ico {
+  color: var(--c-accent, #1d6fbf);
+}
+.afm-notice-warn .afm-notice-ico {
+  color: #9a6a1a;
+}
+.afm-notice-text b {
+  font-weight: 650;
 }

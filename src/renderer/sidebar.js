@@ -1,7 +1,7 @@
 // 左侧本地文件栏（F06）。跑在父层 shell 作用域（classic script，shell.js 之后加载）→ 直接调
 // shell.js 的 openDoc / __shellRetargetDoc 等。所有 fs 经 window.ws2.ws*（主进程）。
-// CSP 约束：不用 setAttribute('style')/cssText（会被 style-src 拦）；缩进走 class（sb-d0..9），
-// 数据走 dataset（data-* 不受 CSP 限制）。样式全在 shell.css。
+// CSP 约束：不用 setAttribute('style')/cssText（会被 style-src 拦）；缩进/导引线走 .style.paddingLeft/.style.left
+// 单 CSSOM 属性（这类 property setter CSP 安全，同 menu.style.left），数据走 dataset（data-* 不受 CSP 限制）。样式其余在 shell.css。
 (function () {
   const rootNameEl = document.getElementById('sb-root-name');
   const filterWrap = document.getElementById('sb-filter');
@@ -9,6 +9,8 @@
   const filterInput = document.getElementById('sb-filter-input');
   const emptyEl = document.getElementById('sb-empty');
   const treeEl = document.getElementById('sb-tree');
+  const bodyEl = document.getElementById('sb-body'); // 滚动容器（sticky ancestor 挂它的 scroll）
+  const stickyEl = document.getElementById('sb-sticky'); // 吸顶浮层
   const openFolderBtn = document.getElementById('sb-open-folder');
   const emptyOpenBtn = document.getElementById('sb-empty-open');
   if (!treeEl) return;
@@ -57,7 +59,37 @@
     (KIND_PATH[kind] || '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>') +
     '</svg>';
 
-  const indentClass = (depth) => 'sb-d' + Math.min(depth, 9);
+  // 文件树缩进：每级 12px（研究：窄侧栏 12-16px + 导引线；导引线扛层级、缩进不用大）。**不再硬封顶**——
+  // 靠 compact folders 压有效深度 + 导引线读层级 + 名字省略号/tooltip 兜底（VS Code/Notion 同款）。
+  // 缩进走 .style.paddingLeft 单 CSSOM 属性（CSP 安全，同 menu.style.left；不是 setAttribute('style')/cssText）。
+  const INDENT_STEP = 12;
+  const GUIDE_X0 = 14; // 第 0 级导引线 x：对齐 dir caret 中心（base 8 + caret 半宽 ~6），第 i 级在 GUIDE_X0 + i*STEP
+  // 给行加缩进 + 每级祖先一条导引线（淡墨竖线、非 accent——层级线不和选中蓝抢）。导引线 position:absolute，
+  // 不进 flex 流；相邻行的线段连成通线。
+  function applyIndent(row, depth, isFile) {
+    row.style.paddingLeft = ((isFile ? 26 : 8) + depth * INDENT_STEP) + 'px';
+    for (let i = 0; i < depth; i++) {
+      const g = document.createElement('span');
+      g.className = 'sb-guide';
+      g.style.left = (GUIDE_X0 + i * INDENT_STEP) + 'px';
+      row.appendChild(g);
+    }
+  }
+  // Compact folders（VS Code explorer.compactFolders / JetBrains「Compact Middle Packages」同款，两家独立
+  // 收敛=主力解法）：把「只有一个子文件夹、无文件」的链合并成一行（`a/b/c` → 一行），身份（rel/abs/折叠/
+  // 拖放/右键）落**最深那级**（改名落最深段是 VS Code 已知边角、可接受）。render 时算、不动 current.tree
+  // ——其它消费方（collectDirRels/filterTree/allFiles/onTreeChanged）仍要看完整真 rel。
+  function compactChain(node) {
+    const names = [node.name];
+    const rels = [node.rel]; // 链上每级的真 rel（折叠状态按整条链一致处理，见下）
+    let cur = node;
+    while (cur.children && cur.children.length === 1 && cur.children[0].isDir) {
+      cur = cur.children[0];
+      names.push(cur.name);
+      rels.push(cur.rel);
+    }
+    return { names, rels, tail: cur };
+  }
 
   // ---- 打开 / 刷新 ----
   async function pickFolder() {
@@ -128,11 +160,82 @@
       e.className = 'sb-tree-empty';
       e.textContent = q ? '没有匹配的文件' : '这个文件夹还没有文件';
       treeEl.appendChild(e);
+      clearSticky(); // 空态/筛选无匹配：清掉吸顶浮层（否则旧克隆祖先会悬在「没有匹配」上）
       return;
     }
     for (const n of nodes) renderNode(n, 0, treeEl, !!q);
     highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
+    cacheStickyRows(); // 树变了 → 重算吸顶行缓存
+    if (stickyEl) stickyEl.dataset.key = ''; // 强制下次 rebuild（旧克隆引用已失效的行）
+    renderSticky();
   }
+
+  // ===== sticky ancestor（祖先文件夹吸顶）=====
+  // 扁平树没法用原生 CSS sticky 正确「释放」深层过时祖先（VS Code 也用独立浮层而非 sticky）→ JS 浮层：
+  // 滚动时算出当前可视区顶部那一行的祖先文件夹链，克隆成行填进 #sb-sticky、绝对定位在可视区顶。
+  // 性能：每次 render 缓存各行**在树内的相对 top**（= el.offsetTop − treeEl.offsetTop）。这样上方的置顶/标签区
+  // 增高（开标签/置顶，只 renderZones 不 render）时缓存不失效——滚动帧里折线也换算成树内坐标（scrollTop −
+  // treeEl.offsetTop），两边同参照，zone 高度变化自动抵消。每帧只多读一次 treeEl.offsetTop，不逐行读 layout。
+  const STICKY_H = 30;
+  let stickyRows = [];
+  let stickyRaf = 0;
+  function cacheStickyRows() {
+    if (!treeEl) return;
+    const base = treeEl.offsetTop; // 树顶相对 #sb-body；下面减掉它 → 存树内相对位置（与 zone 高度无关）
+    stickyRows = [...treeEl.querySelectorAll('.sb-row')].map((el) => ({
+      el,
+      top: el.offsetTop - base,
+      depth: Number(el.dataset.depth) || 0,
+      isDir: el.classList.contains('sb-dir'),
+    }));
+  }
+  function stickyPins(fold) {
+    // fold = 折线在树内坐标；anchor = 底边越过折线的第一行；其祖先 = 前面按 depth 递减的 dir 行
+    let ai = -1;
+    for (let i = 0; i < stickyRows.length; i++) {
+      if (stickyRows[i].top + STICKY_H > fold + 0.5) { ai = i; break; }
+    }
+    if (ai < 0) return [];
+    const pins = [];
+    let need = stickyRows[ai].depth - 1;
+    for (let j = ai - 1; j >= 0 && need >= 0; j--) {
+      if (stickyRows[j].depth === need && stickyRows[j].isDir) { pins.unshift(stickyRows[j]); need--; }
+    }
+    return pins;
+  }
+  function clearSticky() {
+    stickyRows = [];
+    if (stickyEl) { stickyEl.textContent = ''; stickyEl.dataset.key = ''; stickyEl.classList.remove('has-pins'); }
+  }
+  function renderSticky() {
+    stickyRaf = 0;
+    if (!bodyEl || !stickyEl || !treeEl) return;
+    const scrollTop = bodyEl.scrollTop;
+    const pins = stickyPins(scrollTop - treeEl.offsetTop); // 折线换成树内坐标（live 读 treeEl.offsetTop，zone 变高自动对）
+    const key = pins.map((p) => p.el.dataset.rel).join('|');
+    if (key !== stickyEl.dataset.key) {
+      stickyEl.dataset.key = key;
+      stickyEl.textContent = '';
+      for (const { el } of pins) {
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('.sb-add').forEach((n) => n.remove()); // 去掉 hover「+」钮；导引线保留（相对克隆行定位正确，跟树里连贯）
+        clone.removeAttribute('tabindex'); // a11y：浮层 aria-hidden，克隆不该可聚焦（否则 Tab 掉进隐藏子树）
+        clone.removeAttribute('role');
+        clone.classList.add('sb-sticky-row');
+        clone.onclick = () => bodyEl.scrollTo({ top: Math.max(0, el.offsetTop - 2), behavior: 'smooth' });
+        // 右键转发给真行的菜单（cloneNode 不复制 property 事件处理器，否则吸顶行右键是死区）
+        clone.oncontextmenu = (e) => {
+          e.preventDefault();
+          el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY }));
+        };
+        stickyEl.appendChild(clone);
+      }
+      stickyEl.classList.toggle('has-pins', pins.length > 0);
+    }
+    stickyEl.style.top = scrollTop + 'px'; // 浮层在 #sb-body 坐标系；单 CSSOM 属性，CSP 安全；跟住可视区顶
+  }
+  function onBodyScroll() { if (!stickyRaf) stickyRaf = requestAnimationFrame(renderSticky); }
+  if (bodyEl) bodyEl.addEventListener('scroll', onBodyScroll, { passive: true });
 
   // ===== 整理操作（U6）：右键菜单 / hover+ / 内联改名 / 拖拽移动 / 删除撤销 + 当前文件边界同步 =====
   let dragNode = null;
@@ -269,12 +372,16 @@
 
   function renderNode(node, depth, parent, forceOpen) {
     if (node.isDir) {
-      const open = forceOpen || !collapsed.has(node.rel);
+      // compact folders：单子文件夹链合并成一行，身份落最深那级 dir
+      const chain = compactChain(node);
+      const dir = chain.tail;
+      const open = forceOpen || !collapsed.has(dir.rel);
       const row = document.createElement('div');
-      row.className = 'sb-row sb-dir ' + indentClass(depth);
+      row.className = 'sb-row sb-dir';
       row.setAttribute('role', 'button');
       row.tabIndex = 0;
-      row.dataset.rel = node.rel;
+      row.dataset.rel = dir.rel;
+      row.dataset.depth = depth; // sticky ancestor：按 depth 算祖先链
       const caret = document.createElement('span');
       caret.className = 'sb-caret' + (open ? ' is-open' : '');
       caret.innerHTML = SVG.chevron;
@@ -283,33 +390,49 @@
       ico.innerHTML = SVG.folder;
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
-      name.textContent = node.name;
-      name.title = node.name; // 名字过长被截断时，悬停显示全名
+      if (chain.names.length > 1) {
+        // 合并链：各段用淡色「/」隔开显示
+        chain.names.forEach((seg, i) => {
+          if (i > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'sb-seg-sep';
+            sep.textContent = '/';
+            name.appendChild(sep);
+          }
+          name.appendChild(document.createTextNode(seg));
+        });
+      } else {
+        name.textContent = dir.name;
+      }
+      name.title = chain.names.join('/'); // 名字过长被截断时，悬停显示全名（含压缩链全路径）
       const add = document.createElement('button');
       add.className = 'sb-add';
       add.title = '在此文件夹新建文档';
       add.innerHTML = PLUS_SVG;
       add.onclick = (e) => {
         e.stopPropagation();
-        openCreateModal(node.rel);
+        openCreateModal(dir.rel);
       };
       row.append(caret, ico, name, add);
+      applyIndent(row, depth, false);
       row.onclick = () => {
-        if (collapsed.has(node.rel)) collapsed.delete(node.rel);
-        else collapsed.add(node.rel);
+        // 折叠状态按**整条 compact 链**一致处理（不只 tail）：展开=删掉链上每级 rel、收起=每级都加。
+        // 否则残留的祖先折叠键会在链日后断开（外部往中间级加文件）时命中新 tail、把已展开的链无声重折叠。
+        if (collapsed.has(dir.rel)) chain.rels.forEach((r) => collapsed.delete(r));
+        else chain.rels.forEach((r) => collapsed.add(r));
         render();
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
-          { label: '新建文档', run: () => openCreateModal(node.rel) },
-          { label: '新建子文件夹', run: () => newSubfolder(node.rel) },
-          { label: '重命名', run: () => startInlineRename(node, row) },
-          { label: '删除', danger: true, run: () => doDelete(node) },
+          { label: '新建文档', run: () => openCreateModal(dir.rel) },
+          { label: '新建子文件夹', run: () => newSubfolder(dir.rel) },
+          { label: '重命名', run: () => startInlineRename(dir, row) },
+          { label: '删除', danger: true, run: () => doDelete(dir) },
         ]);
       };
       row.ondragover = (e) => {
-        if (!dragNode || parentDirOf(dragNode.rel) === node.rel) return;
+        if (!dragNode || parentDirOf(dragNode.rel) === dir.rel) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         row.classList.add('sb-drop');
@@ -322,24 +445,26 @@
         e.preventDefault();
         e.stopPropagation();
         row.classList.remove('sb-drop');
-        doMove(dragNode, node.rel);
+        doMove(dragNode, dir.rel);
       };
       parent.appendChild(row);
       if (open) {
-        if (node.children.length) {
-          for (const c of node.children) renderNode(c, depth + 1, parent, forceOpen);
+        if (dir.children.length) {
+          for (const c of dir.children) renderNode(c, depth + 1, parent, forceOpen);
         } else {
           const e = document.createElement('div');
-          e.className = 'sb-tree-empty ' + indentClass(depth + 1);
+          e.className = 'sb-tree-empty';
+          e.style.paddingLeft = (26 + (depth + 1) * INDENT_STEP) + 'px';
           e.textContent = '空文件夹';
           parent.appendChild(e);
         }
       }
     } else {
       const row = document.createElement('button');
-      row.className = 'sb-row sb-file sb-kind-' + (node.kind || 'other') + ' ' + indentClass(depth);
+      row.className = 'sb-row sb-file sb-kind-' + (node.kind || 'other');
       row.dataset.rel = node.rel;
       row.dataset.abs = node.abs;
+      row.dataset.depth = depth;
       row.dataset.kind = node.kind || 'other';
       row.draggable = true;
       const ico = document.createElement('span');
@@ -350,6 +475,7 @@
       name.textContent = node.name;
       name.title = node.name; // 名字过长被截断时，悬停显示全名
       row.append(ico, name);
+      applyIndent(row, depth, true);
       row.onclick = () => openNode(node);
       row.ondragstart = (e) => {
         dragNode = node;
@@ -495,6 +621,8 @@
     // 「保存并关闭」会把别的文档存进去）。校验 shell 真切过去了才继续,否则保守放弃本次关闭。
     if (isTempEntry(entry) || dirtyActive) {
       if (isTempEntry(entry) && !wasActive) {
+        // 切到该 temp；若切走守卫（活跃脏文档丢弃确认）被取消，__shellReopenTemp 内部 no-op、活跃 temp 不变 →
+        // 校验切过去了才继续，否则保守放弃本次关闭（别让 tabState 标它激活而 shell 还停旧文档、状态分裂）。
         if (window.__shellReopenTemp) window.__shellReopenTemp(key);
         const now = window.__shellActiveTemp && window.__shellActiveTemp();
         if (!now || now.id !== key) return; // 切换被守卫取消 → 标签保留,可重试
@@ -560,8 +688,11 @@
     const name = entry ? entry.title : '这个文件';
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay';
+    if (window.__shellPauseAutosave) window.__shellPauseAutosave(); // 修 SH-3：弹窗期间挂起自动保存
     const onKey = (e) => { if (e.key === 'Escape') close(); };
-    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    // close() 里恢复自动保存：scheduleAutoSave 的落地回调有 dirty&&docPath&&!tempDoc 守卫，
+    // 丢弃/保存并关闭随后关掉文档也不会误存（docPath 变 null）。
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); if (window.__shellResumeAutosave) window.__shellResumeAutosave(); }
     const modal = document.createElement('div');
     modal.className = 'sb-modal sb-modal-confirm';
     const body = document.createElement('div');
@@ -667,7 +798,8 @@
     browse.title = '用系统保存框选任意位置（可存到工作区外）';
     browse.onclick = async () => {
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取最新内容
-      if (!cur) { close(); return; }
+      // 修 SH-5：防御——活跃临时文档若已不是打开这个 SaveModal 时的那个（加速器穿透切走），别静默存错/存空
+      if (!cur || cur.id !== t.id) { close(); showToast('文档已切换，未保存'); return; }
       let r;
       try { r = await window.ws2.wsSaveDocAs(pickedName(), cur.html); }
       catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
@@ -681,7 +813,8 @@
     ok.onclick = async () => {
       close();
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取一次最新内容
-      if (cur) await doSaveTemp(cur.id, pickedName(), cur.html, selectedDir, closeAfter);
+      if (!cur || cur.id !== t.id) { showToast('文档已切换，未保存'); return; } // 修 SH-5：防御，同 browse
+      await doSaveTemp(cur.id, pickedName(), cur.html, selectedDir, closeAfter);
     };
     const onKey = (e) => {
       if (e.key === 'Escape') close();
@@ -1147,6 +1280,7 @@
   // opts.temp：从「标签页 +」/ Cmd+T 来 → 建临时文档（不落盘，手动保存才进文件夹）；
   // 否则（文件夹 hover-+ / 右键新建）落点 dirRel、直接落盘。
   async function openCreateModal(dirRel, opts) {
+    if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：已有弹层（如 SaveModal）时不叠——Cmd+T 加速器穿透会走到这
     const temp = !!(opts && opts.temp);
     const omni = !!(opts && opts.omni); // Cmd+T：顶部加地址栏——输网址浏览、选模板建文档（对齐 ui-demo cm-omni）
     let templates = [];
@@ -1247,6 +1381,7 @@
   const SEARCH_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>';
   function openFindPalette() {
     if (document.getElementById('fp-overlay')) return; // 已开着，别叠一层
+    if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：SaveModal/关闭确认开着时 Cmd+P 加速器穿透不叠层
     // 不再要求工作区(U6 尾):没开文件夹也能搜浏览历史(历史是全局的,像 Chrome 地址栏)。
     const allFiles = [];
     if (current) (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(current.tree);

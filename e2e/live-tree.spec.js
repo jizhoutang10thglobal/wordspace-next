@@ -90,3 +90,20 @@ test('外部删除一个打开的文件 → 树更新 + 标签消失', async () 
   await expect(page.locator('#sb-tabs .sb-tab[data-rel="a.html"]')).toHaveCount(0, { timeout: W }); // 标签
   await expect(page.locator('#web-newtab')).toBeVisible({ timeout: W }); // 唯一打开的文档被删 → 编辑器回空态
 });
+
+// 滚动条不许挤跳内容(Colin 2026-07-07):自定义 ::-webkit-scrollbar 让滚动条变占位式,
+// 树变长跨过溢出临界时侧栏内容会被挤窄 11px「跳一下」。修法 = .sb-body 预留 scrollbar-gutter。
+// 这个门量的是行为不变式(有无滚动条 clientWidth 恒等),不是照抄 CSS 值——没修就红。
+test('侧栏滚动条出现/消失时内容宽度不跳', async () => {
+  await openWorkspace();
+  const widths = await page.locator('#sb-body').evaluate((el) => {
+    const out = {};
+    el.style.overflowY = 'hidden';  // 无滚动条
+    out.noBar = el.clientWidth;
+    el.style.overflowY = 'scroll';  // 强制滚动条
+    out.withBar = el.clientWidth;
+    el.style.overflowY = '';
+    return out;
+  });
+  expect(widths.withBar).toBe(widths.noBar);
+});

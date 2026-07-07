@@ -11,7 +11,7 @@
   flex-direction: column;
   background: var(--c-surface);
   border-left: 1px solid var(--c-border);
-  box-shadow: -8px 0 28px rgba(20, 22, 26, 0.08);
+  box-shadow: -8px 0 28px rgba(28, 25, 23, 0.08);
 }
 .mdsrc-head {
   flex: none;
@@ -44,12 +44,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-pill);
   color: var(--c-text-3);
+  transition: color var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease-spring);
 }
 .mdsrc-close:hover {
   background: var(--c-hover);
   color: var(--c-text);
+  transform: rotate(90deg);
 }
 .mdsrc-hint {
   flex: none;
@@ -66,10 +70,13 @@
   overflow: auto;
   margin: 0;
   padding: 16px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--c-text);
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* 源码抽屉从右滑入(此前无入场动画) */
+.mdsrc { animation: ws-slide-in-right var(--dur-slow) var(--ease-enter) both; }

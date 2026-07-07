@@ -35,18 +35,25 @@
   gap: 5px;
   height: 24px;
   padding: 0 10px;
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-pill);
   background: var(--c-surface);
   color: var(--c-text-2);
   font-size: var(--fs-sm);
   cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
 }
-.webview-strip-open:hover { background: var(--c-hover); color: var(--c-text); }
+.webview-strip-open:hover { background: var(--c-bg-chrome); color: var(--c-text); }
+.webview-strip-open:active { transform: scale(0.97); }
 
 .webview-frame {
   flex: 1;
   width: 100%;
   border: none;
   background: #fff;
+  /* iframe 内容载入淡入;打开按钮 hover 过渡本就齐全,不重复加 */
+  animation: ws-fade-in var(--dur-slow) var(--ease-enter) both;
 }

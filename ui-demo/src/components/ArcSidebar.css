@@ -29,9 +29,11 @@
 .arc-top-nav { display: flex; align-items: center; gap: 1px; margin-left: auto; }
 .arc-ico {
   display: flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: var(--r-sm); color: var(--c-text-2);
+  width: 28px; height: 28px; border-radius: var(--r-pill); color: var(--c-text-2);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
-.arc-ico:hover { background: rgba(0, 0, 0, 0.06); color: var(--c-text); }
+.arc-ico:hover { background-size: 100% 100%; color: var(--c-text); }
 .arc-ico-sm { width: 24px; height: 24px; }
 
 /* omnibox */
@@ -42,13 +44,23 @@
   align-items: center;
   gap: 8px;
   padding: 0 11px;
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
+  background-color: var(--c-bg-rail);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  border: none;
   border-radius: var(--r-md);
   color: var(--c-text-2);
   flex: none;
+  transition: background-color var(--dur-fast) var(--ease),
+    background-size var(--dur-slow) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease);
 }
-.arc-omni:hover { border-color: var(--c-border-strong); }
+.arc-omni:focus-within {
+  background-color: var(--c-surface);
+  background-size: 100% 2px;
+}
 .arc-omni-url { font-size: var(--fs-sm); color: var(--c-text); flex: 1; min-width: 0; }
 .arc-omni-tag {
   font-size: var(--fs-xs); font-weight: var(--fw-medium);
@@ -83,16 +95,19 @@
   text-align: center;
 }
 
-/* scroll body */
-.arc-scroll { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
+/* scroll body。scrollbar-gutter: 常驻预留滚动条的 11px——自定义 ::-webkit-scrollbar
+   是占位式,不预留的话树长过临界时滚动条突现会把内容挤窄「跳一下」(Colin 2026-07-07) */
+.arc-scroll { flex: 1; overflow-y: auto; padding: 2px 8px 10px; scrollbar-gutter: stable; }
 .arc-section-label,
 .arc-lib-head {
+  /* editorial:分区栏标改等宽 + 宽字距,像刊物的栏目标记(色板不变) */
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   color: var(--c-text-3);
   text-transform: uppercase;
-  padding: 10px 8px 4px;
+  padding: 12px 8px 5px;
 }
 .arc-lib-head {
   display: flex; align-items: center; gap: 6px;
@@ -109,6 +124,10 @@
   height: 32px; padding: 0 8px 0 10px; border-radius: var(--r-sm);
   color: var(--c-text-2);
   cursor: pointer;
+  /* 新标签打开时轻轻落定;hover/激活态平滑过渡 */
+  animation: ws-reveal-down var(--dur) var(--ease-enter);
+  transition: background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease);
 }
 
 /* drag-reorder insertion line (shared by tabs and bookmarks) */
@@ -124,7 +143,7 @@
 .arc-tab.drop-before::before, .arc-mark.drop-before::before { top: -1px; }
 .arc-tab.drop-after::after, .arc-mark.drop-after::after { bottom: -1px; }
 .arc-tab:hover { background: var(--c-hover); }
-.arc-tab.is-active { background: var(--c-surface); color: var(--c-text); box-shadow: var(--shadow-sm); }
+.arc-tab.is-active { background: var(--c-surface); color: var(--c-text); }
 .arc-tab-ico { display: flex; flex: none; color: var(--c-text-3); }
 .arc-tab.is-active .arc-tab-ico { color: var(--c-accent); }
 .arc-tab-title { flex: 1; min-width: 0; font-size: var(--fs-base); }
@@ -139,7 +158,7 @@
 }
 .arc-tab:hover .arc-tab-dot { display: none; }
 .arc-tab-act {
-  width: 18px; height: 18px; border-radius: var(--r-xs);
+  width: 18px; height: 18px; border-radius: var(--r-pill);
   display: flex; align-items: center; justify-content: center;
   color: var(--c-text-3); flex: none; opacity: 0;
 }
@@ -147,7 +166,7 @@
 .arc-tab-act:hover { background: var(--c-active); color: var(--c-text); }
 
 /* library */
-.arc-lib { animation: arc-space-in 240ms var(--ease); }
+.arc-lib { animation: arc-space-in var(--dur) var(--ease-enter); }
 @keyframes arc-space-in { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: none; } }
 .arc-lib-root {
   display: flex; align-items: center; gap: 6px;
@@ -158,14 +177,22 @@
 .arc-folder-head {
   width: 100%;
   display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px; border-radius: var(--r-sm);
+  height: 30px; padding: 0 8px; border-radius: var(--r-sm);
   color: var(--c-text-2); text-align: left;
   font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  /* sticky ancestor（祖先文件夹钉顶）：嵌套 DOM（.arc-tree-dir 包 children）下 position:sticky 原生成立，
+     top 按 depth 逐级设（内联）→ 滚到深处时祖先文件夹按层级堆叠吸顶、subtree 滚出后原生释放。
+     实底色遮住下方滚动内容；行高固定 30 让每级 top=depth*30 对齐。 */
+  position: sticky;
+  background: var(--c-bg-sunken);
 }
 .arc-folder-head:hover { background: var(--c-hover); color: var(--c-text); }
+/* 吸顶态：最深那条祖先加一道柔和阴影，把整叠吸顶行从下方滚动内容里托起来（VS Code sticky scroll 同款提示） */
+.arc-folder-head.is-stuck { color: var(--c-text); }
+.arc-folder-head.is-stuck-last { box-shadow: 0 5px 6px -6px rgba(28, 25, 23, 0.32); }
 .arc-caret {
   flex: none; color: var(--c-text-3);
-  transition: transform 140ms var(--ease);
+  transition: transform var(--dur-fast) var(--ease);
 }
 .arc-caret.is-open { transform: rotate(90deg); }
 .arc-doc, .arc-file {
@@ -173,6 +200,9 @@
   display: flex; align-items: center; gap: 8px;
   height: 30px; padding: 0 8px 0 24px; border-radius: var(--r-sm);
   color: var(--c-text); text-align: left;
+  /* 文件树:折叠展开 / 首次加载时逐行落定 */
+  animation: ws-reveal-down var(--dur) var(--ease-enter);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .arc-doc:hover, .arc-file:hover { background: var(--c-hover); }
 .arc-doc.is-active, .arc-file.is-active { background: var(--c-selected); color: var(--c-accent); }
@@ -182,15 +212,30 @@
 .arc-file > span.ws-truncate { flex: 1; min-width: 0; font-size: var(--fs-base); }
 .arc-file-ico { color: var(--c-text-3); flex: none; }
 
+/* 缩进导引线（Obsidian/VS Code 同款）：每级祖先一条淡墨竖线，让小缩进也读得出层级。
+   非 accent 色——层级线不和选中蓝抢（研究：cues 不能互相竞争）。行需 position:relative。 */
+.arc-file { position: relative; } /* .arc-folder-head 用 position:sticky（见上），同样是导引线的定位上下文 */
+.arc-guide {
+  position: absolute;
+  top: -1px; bottom: -1px; /* 略上下溢出，桥接行间缝，让相邻行的线段连成通线 */
+  width: 1px;
+  background: rgba(28, 25, 23, 0.12); /* 淡墨 ~12% */
+  pointer-events: none;
+}
+/* compact folders 合并的单子链，段间「/」分隔符：淡墨、不抢眼 */
+.arc-seg-sep { color: var(--c-text-3); margin: 0 3px; opacity: 0.7; font-weight: var(--fw-regular); }
+
 /* footer */
 .arc-foot { flex: none; border-top: 1px solid var(--c-border); padding: 8px; }
 .arc-util { display: flex; align-items: center; gap: 2px; padding: 0 2px; }
 .arc-util-btn {
   display: flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: var(--r-sm); color: var(--c-text-2);
+  width: 30px; height: 30px; border-radius: var(--r-pill); color: var(--c-text-2);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
-.arc-util-btn:hover { background: var(--c-hover); color: var(--c-text); }
-.arc-util-btn.is-active { background: var(--c-accent-tint); color: var(--c-accent); }
+.arc-util-btn:hover { background-size: 100% 100%; color: var(--c-text); }
+.arc-util-btn.is-active { background-color: var(--c-accent-tint); color: var(--c-accent); }
 .arc-util-spacer { flex: 1; }
 .arc-util-me {
   display: flex; align-items: center; justify-content: center;
@@ -198,76 +243,7 @@
 }
 .arc-util-me:hover { box-shadow: 0 0 0 2px var(--c-accent-tint); }
 
-/* top-level space bar: governs everything below it (favorites, tabs, library) */
-.arc-space-bar { flex: none; padding: 0 10px 6px; position: relative; z-index: 5; }
-
-/* space switcher: a flat name + dropdown of every space (scales to any count) */
-.arc-spaces { position: relative; flex: 1; min-width: 0; }
-.arc-space-trigger {
-  width: 100%;
-  display: flex; align-items: center; gap: 4px;
-  padding: 3px 6px 3px 2px; border-radius: var(--r-sm);
-  color: var(--c-text);
-}
-.arc-space-trigger:hover { background: var(--c-hover); }
-.arc-space-title {
-  flex: 1; min-width: 0; text-align: left;
-  font-size: var(--fs-sm); font-weight: var(--fw-semibold);
-}
-.arc-space-chev { flex: none; color: var(--c-text-3); transition: transform 140ms var(--ease); }
-.arc-space-chev.is-open { transform: rotate(180deg); }
-
-.arc-space-menu {
-  position: absolute; top: calc(100% + 4px); left: 0;
-  min-width: 248px; max-width: 280px; z-index: 20;
-  max-height: 320px; overflow-y: auto;
-  background: var(--c-surface);
-  border: 1px solid var(--c-border); border-radius: var(--r-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.04);
-  padding: 5px; display: flex; flex-direction: column; gap: 1px;
-}
-.arc-space-item {
-  width: 100%;
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 9px; border-radius: var(--r-sm); text-align: left;
-  color: var(--c-text);
-}
-.arc-space-item:hover { background: var(--c-hover); }
-.arc-space-item.is-active { background: var(--c-selected); }
-
-/* colored identity square — the space initial on its accent color */
-.arc-space-ic {
-  flex: none;
-  width: 24px; height: 24px; border-radius: 6px;
-  display: grid; place-items: center;
-  color: #fff; font-size: 11px; font-weight: var(--fw-semibold);
-  line-height: 1;
-}
-.arc-space-item-text {
-  flex: 1; min-width: 0;
-  display: flex; flex-direction: column; gap: 2px; line-height: 1.3;
-}
-.arc-space-item-name { font-size: var(--fs-sm); font-weight: var(--fw-medium); }
-.arc-space-item-sub {
-  display: flex; align-items: center; gap: 4px;
-  font-size: 11px; color: var(--c-text-3);
-}
-.arc-space-item-sub svg { flex: none; opacity: .9; }
-.arc-space-check { flex: none; color: var(--c-accent); }
-
-/* small muted storage hint on the always-visible trigger */
-.arc-space-trig-ic { flex: none; display: flex; color: var(--c-text-3); margin-right: 1px; }
-
-/* group headers inside the space menu (the two real categories) */
-.arc-space-group {
-  font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-  letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--c-text-3);
-  padding: 8px 8px 3px;
-}
-.arc-space-group:first-child { padding-top: 4px; }
-
-/* team / private section labels inside a cloud space library */
+/* team / private section labels inside the cloud library */
 .arc-sec-label {
   font-size: var(--fs-xs); font-weight: var(--fw-semibold);
   letter-spacing: 0.04em; text-transform: uppercase;
@@ -291,15 +267,14 @@
 .arc-root-head {
   display: flex; align-items: center; gap: 6px;
   margin: 2px 0 2px; padding: 6px 8px; border-radius: var(--r-sm);
-  background: var(--c-bg-sunken);
-  border: 1px solid var(--c-border);
+  background: var(--c-surface);
   color: var(--c-text);
   font-size: var(--fs-sm); font-weight: var(--fw-semibold);
   cursor: pointer; user-select: none;
 }
 .arc-root-head:hover { background: var(--c-hover); }
 .arc-root-head svg { flex: none; }
-.arc-root-ico { display: inline-flex; color: var(--c-accent); }
+.arc-root-ico { display: inline-flex; color: var(--c-text-2); }
 .arc-root-head .arc-caret { color: var(--c-text-3); }
 .arc-root-name { flex: none; max-width: 46%; }
 .arc-root-path {
@@ -307,7 +282,7 @@
   font-size: 11px; font-weight: var(--fw-regular);
   color: var(--c-text-3);
 }
-.arc-root-head.is-drop { background: var(--c-accent-tint-2, #e8f0fe); border-color: var(--c-accent); }
+.arc-root-head.is-drop { background: var(--c-accent-tint-2); border-color: var(--c-accent); }
 /* 根重排：拖另一个根经过时的上/下沿插入线 */
 .arc-root-head.is-insert-before { box-shadow: 0 -2px 0 0 var(--c-accent); }
 .arc-root-head.is-insert-after { box-shadow: 0 2px 0 0 var(--c-accent); }
@@ -317,20 +292,6 @@
   padding-left: 4px;
   border-left: 1px solid var(--c-border);
 }
-/* 「N 个文件夹 · 未保存为工作区」提示条（untitled workspace 语义） */
-.arc-ws-hint {
-  display: flex; align-items: center; gap: 8px;
-  margin: 2px 0 6px; padding: 4px 8px 4px 10px;
-  border: 1px dashed var(--c-border);
-  border-radius: var(--r-sm);
-  font-size: 11.5px; color: var(--c-text-3);
-}
-.arc-ws-hint .ws-truncate { flex: 1; min-width: 0; }
-.arc-ws-save {
-  flex: none; border: none; background: none; cursor: pointer;
-  font-size: 11.5px; color: var(--c-accent); padding: 2px 5px; border-radius: 4px;
-}
-.arc-ws-save:hover { background: var(--c-hover); }
 /* 「添加文件夹…」行 */
 .arc-add-root {
   display: flex; align-items: center; gap: 6px;
@@ -341,12 +302,6 @@
 }
 .arc-add-root:hover { background: var(--c-hover); color: var(--c-text-2); }
 .arc-add-root svg { flex: none; }
-/* 空间切换器里的「工作区」徽标 */
-.arc-space-ws-badge {
-  display: inline-block; margin-left: 6px; padding: 0 5px;
-  border: 1px solid var(--c-border); border-radius: 99px;
-  font-size: 10px; line-height: 15px; color: var(--c-text-3); vertical-align: 1px;
-}
 
 /* non-HTML files are browsable but not editable here — file-type icon colors */
 .arc-file.is-foreign { color: var(--c-text-2); }
@@ -359,16 +314,6 @@
 
 .arc-lib-empty { padding: 8px 12px; font-size: var(--fs-sm); color: var(--c-text-3); }
 
-/* new-space action pinned under the space list */
-.arc-space-new {
-  width: 100%;
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 8px; margin-top: 3px;
-  border-top: 1px solid var(--c-border);
-  color: var(--c-text-3); font-size: var(--fs-sm);
-}
-.arc-space-new:hover { background: var(--c-hover); color: var(--c-text); }
-
 /* Finder-style right-click menu for file-tree rows */
 .arc-ctx {
   position: fixed;
@@ -377,8 +322,10 @@
   padding: 4px;
   background: var(--c-surface);
   border: 1px solid var(--c-border);
-  border-radius: var(--r-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top left;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -390,10 +337,14 @@
   border-radius: var(--r-sm);
   font-size: var(--fs-sm);
   color: var(--c-text);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
 }
-.arc-ctx-item:hover { background: var(--c-hover); }
-.arc-ctx-item.is-danger { color: #d3353c; }
-.arc-ctx-item.is-danger:hover { background: rgba(211, 53, 60, 0.1); }
+.arc-ctx-item:hover { background-size: 100% 100%; }
+.arc-ctx-item.is-danger {
+  color: var(--c-danger);
+  background-image: linear-gradient(var(--c-danger-tint), var(--c-danger-tint));
+}
 
 /* inline rename input in the file tree */
 .arc-file-rename {
@@ -416,12 +367,22 @@
   margin: 0 8px 4px;
   padding: 0 8px;
   height: 28px;
-  background: var(--c-surface);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-sm);
+  background-color: var(--c-bg-rail);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  border: none;
+  border-radius: var(--r-md);
   color: var(--c-text-3);
+  transition: background-color var(--dur-fast) var(--ease),
+    background-size var(--dur-slow) var(--ease-enter),
+    box-shadow var(--dur-fast) var(--ease);
 }
-.arc-filter:focus-within { border-color: var(--c-border-strong); }
+.arc-filter:focus-within {
+  background-color: var(--c-surface);
+  background-size: 100% 2px;
+}
 .arc-filter-ico { flex: none; }
 .arc-filter-input {
   flex: 1;
@@ -440,7 +401,7 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-pill);
   color: var(--c-text-3);
 }
 .arc-filter-clear:hover { background: var(--c-active); color: var(--c-text); }
@@ -466,7 +427,7 @@
 .arc-folder-add {
   width: 18px;
   height: 18px;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-pill);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -476,6 +437,34 @@
 }
 .arc-folder-head:hover .arc-folder-add { opacity: 1; }
 .arc-folder-add:hover { background: var(--c-active); color: var(--c-text); }
+
+/* 失联根：底层文件夹不可达。灰显 header + 一行说明 + 「重新定位 / 移除」。 */
+.arc-root.is-missing .arc-root-head {
+  background: var(--c-bg-sunken);
+  box-shadow: none;
+  border: 1px dashed var(--c-border-strong);
+  color: var(--c-text-3);
+  cursor: default;
+}
+.arc-root-miss-ic { flex: none; color: var(--c-danger, #b3261e); opacity: 0.75; }
+.arc-root-miss-tag {
+  margin-left: auto; padding: 0 5px;
+  border: 1px solid var(--c-border-strong); border-radius: var(--r-pill);
+  font-size: 10px; line-height: 15px; font-weight: var(--fw-regular);
+  color: var(--c-text-3);
+}
+.arc-root-miss-note {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 8px 6px 26px;
+  font-size: 11px; color: var(--c-text-3);
+}
+.arc-root-miss-note > .ws-truncate { min-width: 0; }
+.arc-root-miss-acts { display: flex; gap: 8px; margin-left: auto; flex: none; }
+.arc-root-miss-act {
+  border: none; background: none; cursor: pointer; padding: 0;
+  font-size: 11px; font-weight: var(--fw-semibold); color: var(--c-accent);
+}
+.arc-root-miss-act:hover { text-decoration: underline; }
 
 /* collapsed sidebar: a thin strip with just the expand button (vertical icon
    rail removed per B2 — collapsed view no longer lists files/folders as icons). */
