@@ -186,8 +186,10 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-filter-clear[hidden] { display: none; }
 
 /* overflow-x: hidden——去掉缩进封顶后，极深「未被 compact 的分叉树」缩进/导引线可能越过侧栏右缘；
-   横向裁掉（名字本就 ellipsis 截断）而不是长出水平滚动条，符合成熟做法（Notion/VS Code 无横滚）。 */
-.sb-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 8px 14px; }
+   横向裁掉（名字本就 ellipsis 截断）而不是长出水平滚动条，符合成熟做法（Notion/VS Code 无横滚）。
+   scrollbar-gutter: 常驻预留纵向滚动条的 11px——自定义 ::-webkit-scrollbar 是占位式,
+   不预留的话树长过临界时滚动条突现会把内容挤窄「跳一下」(Colin 2026-07-07)。 */
+.sb-body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 4px 8px 14px; scrollbar-gutter: stable; }
 .sb-empty { padding: 16px 10px; text-align: center; }
 .sb-empty[hidden] { display: none; }
 .sb-empty-note { font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.5; margin-bottom: 10px; }

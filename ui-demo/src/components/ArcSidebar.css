@@ -97,8 +97,9 @@
   text-align: center;
 }
 
-/* scroll body */
-.arc-scroll { flex: 1; overflow-y: auto; padding: 2px 8px 10px; }
+/* scroll body。scrollbar-gutter: 常驻预留滚动条的 11px——自定义 ::-webkit-scrollbar
+   是占位式,不预留的话树长过临界时滚动条突现会把内容挤窄「跳一下」(Colin 2026-07-07) */
+.arc-scroll { flex: 1; overflow-y: auto; padding: 2px 8px 10px; scrollbar-gutter: stable; }
 .arc-section-label,
 .arc-lib-head {
   /* editorial:分区栏标改等宽 + 宽字距,像刊物的栏目标记(色板不变) */
