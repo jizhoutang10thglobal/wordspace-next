@@ -153,3 +153,25 @@ test('STICKY-4 点浮层里的祖先 → 真滚动把它带回可视区（可 cl
   }, `${DEEP}/华东区`);
   expect(eastTop).toBeLessThan(60);
 });
+
+test('STICKY-5 回归（缓存不失效）：树上方的区增高但没 render → 滚深层仍吸对祖先', async () => {
+  // 复现「置顶/标签区增高只走 renderZones、不 render 树」→ stickyRows 缓存不刷 的场景：直接往 #sb-tree 上方
+  // 插一个 150px 占位块（不触发 render()）。若缓存存的是 #sb-body 绝对 offsetTop（会因上方增高而 stale），
+  // stickyPins(scrollTop) 会用偏小的旧坐标找错 anchor、钉错祖先。tree-relative 修复：树内相对坐标 +
+  // 每帧 live 读 treeEl.offsetTop，上方增高自动抵消，仍钉对 归档/华东区/明细。
+  await page.evaluate(() => {
+    const body = document.getElementById('sb-body');
+    const tree = document.getElementById('sb-tree');
+    const sp = document.createElement('div');
+    sp.style.height = '150px';
+    sp.id = 'mut-spacer';
+    body.insertBefore(sp, tree); // 把树整体下移 150px，且不经过 render()/cacheStickyRows()
+  });
+  await scrollFileToTop(`${DEEP}/华东区/明细/6月.html`, 40);
+  await page.waitForTimeout(150);
+  const s = await stickyState();
+  expect(s.count).toBe(3);
+  expect(s.rows[0]).toContain('归档');
+  expect(s.rows[1]).toBe('华东区');
+  expect(s.rows[2]).toBe('明细'); // 缓存 stale 会把这钉成别的行（本门变异自检过：还原绝对坐标即翻红）
+});
