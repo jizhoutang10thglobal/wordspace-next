@@ -185,7 +185,9 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-filter-clear:hover { background: var(--c-hover); color: var(--c-text); }
 .sb-filter-clear[hidden] { display: none; }
 
-.sb-body { flex: 1; overflow-y: auto; padding: 4px 8px 14px; }
+/* scrollbar-gutter: 常驻预留滚动条的 11px——自定义 ::-webkit-scrollbar 是占位式,
+   不预留的话树长过临界时滚动条突现会把内容挤窄「跳一下」(Colin 2026-07-07) */
+.sb-body { flex: 1; overflow-y: auto; padding: 4px 8px 14px; scrollbar-gutter: stable; }
 .sb-empty { padding: 16px 10px; text-align: center; }
 .sb-empty[hidden] { display: none; }
 .sb-empty-note { font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.5; margin-bottom: 10px; }
