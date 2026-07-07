@@ -1,7 +1,7 @@
 // 左侧本地文件栏（F06）。跑在父层 shell 作用域（classic script，shell.js 之后加载）→ 直接调
 // shell.js 的 openDoc / __shellRetargetDoc 等。所有 fs 经 window.ws2.ws*（主进程）。
-// CSP 约束：不用 setAttribute('style')/cssText（会被 style-src 拦）；缩进走 class（sb-d0..9），
-// 数据走 dataset（data-* 不受 CSP 限制）。样式全在 shell.css。
+// CSP 约束：不用 setAttribute('style')/cssText（会被 style-src 拦）；缩进/导引线走 .style.paddingLeft/.style.left
+// 单 CSSOM 属性（这类 property setter CSP 安全，同 menu.style.left），数据走 dataset（data-* 不受 CSP 限制）。样式其余在 shell.css。
 (function () {
   const rootNameEl = document.getElementById('sb-root-name');
   const filterWrap = document.getElementById('sb-filter');
@@ -56,7 +56,35 @@
     (KIND_PATH[kind] || '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>') +
     '</svg>';
 
-  const indentClass = (depth) => 'sb-d' + Math.min(depth, 9);
+  // 文件树缩进：每级 12px（研究：窄侧栏 12-16px + 导引线；导引线扛层级、缩进不用大）。**不再硬封顶**——
+  // 靠 compact folders 压有效深度 + 导引线读层级 + 名字省略号/tooltip 兜底（VS Code/Notion 同款）。
+  // 缩进走 .style.paddingLeft 单 CSSOM 属性（CSP 安全，同 menu.style.left；不是 setAttribute('style')/cssText）。
+  const INDENT_STEP = 12;
+  const GUIDE_X0 = 14; // 第 0 级导引线 x：对齐 dir caret 中心（base 8 + caret 半宽 ~6），第 i 级在 GUIDE_X0 + i*STEP
+  // 给行加缩进 + 每级祖先一条导引线（淡墨竖线、非 accent——层级线不和选中蓝抢）。导引线 position:absolute，
+  // 不进 flex 流；相邻行的线段连成通线。
+  function applyIndent(row, depth, isFile) {
+    row.style.paddingLeft = ((isFile ? 26 : 8) + depth * INDENT_STEP) + 'px';
+    for (let i = 0; i < depth; i++) {
+      const g = document.createElement('span');
+      g.className = 'sb-guide';
+      g.style.left = (GUIDE_X0 + i * INDENT_STEP) + 'px';
+      row.appendChild(g);
+    }
+  }
+  // Compact folders（VS Code explorer.compactFolders / JetBrains「Compact Middle Packages」同款，两家独立
+  // 收敛=主力解法）：把「只有一个子文件夹、无文件」的链合并成一行（`a/b/c` → 一行），身份（rel/abs/折叠/
+  // 拖放/右键）落**最深那级**（改名落最深段是 VS Code 已知边角、可接受）。render 时算、不动 current.tree
+  // ——其它消费方（collectDirRels/filterTree/allFiles/onTreeChanged）仍要看完整真 rel。
+  function compactChain(node) {
+    const names = [node.name];
+    let cur = node;
+    while (cur.children && cur.children.length === 1 && cur.children[0].isDir) {
+      cur = cur.children[0];
+      names.push(cur.name);
+    }
+    return { names, tail: cur };
+  }
 
   // ---- 打开 / 刷新 ----
   async function pickFolder() {
@@ -265,12 +293,15 @@
 
   function renderNode(node, depth, parent, forceOpen) {
     if (node.isDir) {
-      const open = forceOpen || !collapsed.has(node.rel);
+      // compact folders：单子文件夹链合并成一行，身份落最深那级 dir
+      const chain = compactChain(node);
+      const dir = chain.tail;
+      const open = forceOpen || !collapsed.has(dir.rel);
       const row = document.createElement('div');
-      row.className = 'sb-row sb-dir ' + indentClass(depth);
+      row.className = 'sb-row sb-dir';
       row.setAttribute('role', 'button');
       row.tabIndex = 0;
-      row.dataset.rel = node.rel;
+      row.dataset.rel = dir.rel;
       const caret = document.createElement('span');
       caret.className = 'sb-caret' + (open ? ' is-open' : '');
       caret.innerHTML = SVG.chevron;
@@ -279,33 +310,47 @@
       ico.innerHTML = SVG.folder;
       const name = document.createElement('span');
       name.className = 'sb-name ws-truncate';
-      name.textContent = node.name;
-      name.title = node.name; // 名字过长被截断时，悬停显示全名
+      if (chain.names.length > 1) {
+        // 合并链：各段用淡色「/」隔开显示
+        chain.names.forEach((seg, i) => {
+          if (i > 0) {
+            const sep = document.createElement('span');
+            sep.className = 'sb-seg-sep';
+            sep.textContent = '/';
+            name.appendChild(sep);
+          }
+          name.appendChild(document.createTextNode(seg));
+        });
+      } else {
+        name.textContent = dir.name;
+      }
+      name.title = chain.names.join('/'); // 名字过长被截断时，悬停显示全名（含压缩链全路径）
       const add = document.createElement('button');
       add.className = 'sb-add';
       add.title = '在此文件夹新建文档';
       add.innerHTML = PLUS_SVG;
       add.onclick = (e) => {
         e.stopPropagation();
-        openCreateModal(node.rel);
+        openCreateModal(dir.rel);
       };
       row.append(caret, ico, name, add);
+      applyIndent(row, depth, false);
       row.onclick = () => {
-        if (collapsed.has(node.rel)) collapsed.delete(node.rel);
-        else collapsed.add(node.rel);
+        if (collapsed.has(dir.rel)) collapsed.delete(dir.rel);
+        else collapsed.add(dir.rel);
         render();
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
-          { label: '新建文档', run: () => openCreateModal(node.rel) },
-          { label: '新建子文件夹', run: () => newSubfolder(node.rel) },
-          { label: '重命名', run: () => startInlineRename(node, row) },
-          { label: '删除', danger: true, run: () => doDelete(node) },
+          { label: '新建文档', run: () => openCreateModal(dir.rel) },
+          { label: '新建子文件夹', run: () => newSubfolder(dir.rel) },
+          { label: '重命名', run: () => startInlineRename(dir, row) },
+          { label: '删除', danger: true, run: () => doDelete(dir) },
         ]);
       };
       row.ondragover = (e) => {
-        if (!dragNode || parentDirOf(dragNode.rel) === node.rel) return;
+        if (!dragNode || parentDirOf(dragNode.rel) === dir.rel) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         row.classList.add('sb-drop');
@@ -318,22 +363,23 @@
         e.preventDefault();
         e.stopPropagation();
         row.classList.remove('sb-drop');
-        doMove(dragNode, node.rel);
+        doMove(dragNode, dir.rel);
       };
       parent.appendChild(row);
       if (open) {
-        if (node.children.length) {
-          for (const c of node.children) renderNode(c, depth + 1, parent, forceOpen);
+        if (dir.children.length) {
+          for (const c of dir.children) renderNode(c, depth + 1, parent, forceOpen);
         } else {
           const e = document.createElement('div');
-          e.className = 'sb-tree-empty ' + indentClass(depth + 1);
+          e.className = 'sb-tree-empty';
+          e.style.paddingLeft = (26 + (depth + 1) * INDENT_STEP) + 'px';
           e.textContent = '空文件夹';
           parent.appendChild(e);
         }
       }
     } else {
       const row = document.createElement('button');
-      row.className = 'sb-row sb-file sb-kind-' + (node.kind || 'other') + ' ' + indentClass(depth);
+      row.className = 'sb-row sb-file sb-kind-' + (node.kind || 'other');
       row.dataset.rel = node.rel;
       row.dataset.abs = node.abs;
       row.dataset.kind = node.kind || 'other';
@@ -346,6 +392,7 @@
       name.textContent = node.name;
       name.title = node.name; // 名字过长被截断时，悬停显示全名
       row.append(ico, name);
+      applyIndent(row, depth, true);
       row.onclick = () => openNode(node);
       row.ondragstart = (e) => {
         dragNode = node;
