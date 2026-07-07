@@ -279,7 +279,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
   pointer-events: none;
 }
 .sb-sticky:empty { display: none; }
-.sb-sticky.has-pins { box-shadow: 0 5px 7px -6px rgba(0, 0, 0, 0.28); } /* 把吸顶叠层从下方内容托起 */
+.sb-sticky.has-pins { box-shadow: 0 5px 7px -6px rgba(28, 25, 23, 0.32); } /* 把吸顶叠层从下方内容托起（滚动 scrim=功能性提示非装饰；暖墨基底，对齐 ui-demo is-stuck-last） */
 .sb-sticky .sb-sticky-row { pointer-events: auto; cursor: pointer; }
 .sb-empty { padding: 16px 10px; text-align: center; }
 .sb-empty[hidden] { display: none; }
