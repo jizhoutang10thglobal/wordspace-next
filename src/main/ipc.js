@@ -302,6 +302,15 @@ function registerIpc() {
     return workspaceStore.setWebTabs(workspaceFile(), merged, activeKey);
   });
 
+  // 浏览历史（U6 尾:进 Cmd+P）。全局,启动载入 → 主进程导航事件维护权威副本 → 防抖落盘 + 退出同步 flush。
+  workspaceStore.getWebHistory(workspaceFile()).then((h) => webTabs.loadHistory(h)).catch(() => {});
+  let histTimer = null;
+  webTabs.setHistoryHook(() => {
+    clearTimeout(histTimer);
+    histTimer = setTimeout(() => { workspaceStore.setWebHistory(workspaceFile(), webTabs.getHistory()).catch(() => {}); }, 1000);
+  });
+  ipcMain.handle('ws-get-web-history', () => webTabs.getHistory());
+
   // ---- 网页标签 view 管理（U3）。全部只接受主 frame（web view 的 webContents 零 IPC 暴露,KD-4）----
   // renderer 的 activate 漏斗是唯一 attach 驱动:web-show 是唯一 attach 入口,主进程不自作主张 attach。
   ipcMain.handle('web-navigate', (_e, key, input) => webTabs.navigate(key, input));
@@ -344,11 +353,12 @@ function registerIpc() {
   workspace.sweepBackups(trashRoot()).catch(() => {});
 }
 
-// before-quit（KD-11）：把 web-tabs registry 的权威 url/title 同步合并进当前工作区桶落盘。
-// 放这里因为 activeRoot / workspaceFile 是 ipc 模块的私有真相。无工作区时安静跳过。
+// before-quit（KD-11）：把 web-tabs registry 的权威 url/title + 浏览历史同步合并落盘。
+// 放这里因为 activeRoot / workspaceFile 是 ipc 模块的私有真相。
+// ⚠ 不再 `if (!activeRoot) return`——网页标签/历史是全局的(workspaceFile 走 userData、不依赖工作区),
+// 原守卫会让「无工作区纯浏览」的退出丢掉这次会话的 url/title/历史(既有 bug,历史接入时一并修)。
 function flushWebTabsSync() {
-  if (!activeRoot) return;
-  workspaceStore.mergeTabsSync(workspaceFile(), activeRoot, webTabs.snapshot());
+  workspaceStore.mergeTabsSync(workspaceFile(), activeRoot, webTabs.snapshot(), webTabs.getHistory());
 }
 
 module.exports = { registerIpc, flushWebTabsSync };

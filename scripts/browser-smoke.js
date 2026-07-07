@@ -146,6 +146,24 @@ const ROOT = path.join(__dirname, '..');
   ok(/first substantial paragraph/.test(clipHtml), '剪藏抽到正文段落（Readability 生效,非空壳）');
   ok(/<img/i.test(clipHtml), '剪藏保留了图片');
 
+  // U6 尾:浏览历史进 Cmd+P——访问过的页面能在命令面板搜到,Enter 打开(复用/新建网页标签)
+  await page.evaluate(() => window.__sbHooks.findPalette());
+  await page.waitForSelector('#fp-overlay', { timeout: 5000 });
+  await page.fill('.fp-input', 'SMOKE');
+  await page.waitForTimeout(600); // 历史异步到货 + 重算
+  const histRow = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.fp-row')];
+    const hit = rows.find((r) => (r.querySelector('.fp-sub') || {}).textContent?.startsWith('http://127.0.0.1'));
+    return hit ? { name: hit.querySelector('.fp-name').textContent, sub: hit.querySelector('.fp-sub').textContent } : null;
+  });
+  ok(!!histRow && /SMOKE/i.test(histRow.name), '浏览历史进 Cmd+P：搜到访问过的页面（' + (histRow && histRow.name) + '）');
+  // 变异探针:搜一个不存在的词必须没有历史行(证明匹配不是恒真)
+  await page.fill('.fp-input', 'zzz不存在的词zzz');
+  await page.waitForTimeout(300);
+  const noHist = await page.evaluate(() => ![...document.querySelectorAll('.fp-row .fp-sub')].some((s) => (s.textContent || '').startsWith('http')));
+  ok(noHist, '历史搜索可证伪：乱词无历史命中（非哑门）');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+
   // 存文档后活跃变成了新文档 → 重启前先切回网页标签,验证网页态的重启恢复
   await page.click('.sb-tab.sb-tab-web'); await page.waitForTimeout(600);
 

@@ -1246,11 +1246,20 @@
   // ---- Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层，模糊搜文件名/路径，↑↓ 选、Enter 开、Esc 关。----
   const SEARCH_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>';
   function openFindPalette() {
-    if (!current) return; // 没工作区没得搜
     if (document.getElementById('fp-overlay')) return; // 已开着，别叠一层
+    // 不再要求工作区(U6 尾):没开文件夹也能搜浏览历史(历史是全局的,像 Chrome 地址栏)。
     const allFiles = [];
-    (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(current.tree);
+    if (current) (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(current.tree);
     let q = '', sel = 0, hits = [];
+    // 浏览历史(全局,主进程权威副本)。异步到货后重算——先渲染文件,历史晚一拍补进来。
+    let webHist = [];
+    if (window.ws2.wsGetWebHistory) {
+      window.ws2.wsGetWebHistory().then((h) => {
+        if (!document.getElementById('fp-overlay')) return; // 面板已关,别动 DOM
+        webHist = Array.isArray(h) ? h : [];
+        computeHits(); renderList();
+      }).catch(() => {});
+    }
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay fp-overlay';
     overlay.id = 'fp-overlay';
@@ -1262,7 +1271,7 @@
     bar.className = 'fp-bar';
     const ico = document.createElement('span'); ico.className = 'fp-bar-ico'; ico.innerHTML = SEARCH_SVG;
     const input = document.createElement('input');
-    input.className = 'fp-input'; input.type = 'text'; input.placeholder = '按文件名查找…'; input.spellcheck = false;
+    input.className = 'fp-input'; input.type = 'text'; input.placeholder = '搜索文件与浏览历史…'; input.spellcheck = false;
     const hint = document.createElement('span'); hint.className = 'fp-hint'; hint.textContent = '⏎ 打开';
     bar.append(ico, input, hint);
     const list = document.createElement('div');
@@ -1273,7 +1282,17 @@
     function computeHits() {
       const term = q.trim().toLowerCase();
       const matched = term ? allFiles.filter((n) => n.name.toLowerCase().includes(term) || n.rel.toLowerCase().includes(term)) : allFiles;
-      hits = matched.slice(0, 12);
+      // 历史混排:有词=文件优先(≤8)+历史命中(≤4);空词=文件照旧,没工作区时给最近历史打底(面板别空着)。
+      let webRows = [];
+      if (term) {
+        webRows = webHist
+          .filter((e) => e && ((e.title || '').toLowerCase().includes(term) || (e.url || '').toLowerCase().includes(term)))
+          .slice(0, 4)
+          .map((e) => ({ web: true, url: e.url, title: e.title || e.url }));
+      } else if (!allFiles.length) {
+        webRows = webHist.slice(0, 8).map((e) => ({ web: true, url: e.url, title: e.title || e.url }));
+      }
+      hits = [...matched.slice(0, term && webRows.length ? 8 : 12), ...webRows];
       if (sel >= hits.length) sel = Math.max(0, hits.length - 1);
     }
     function highlight() { [...list.querySelectorAll('.fp-row')].forEach((r, i) => r.classList.toggle('is-sel', i === sel)); }
@@ -1281,16 +1300,16 @@
     function renderList() {
       list.innerHTML = '';
       if (!hits.length) {
-        const empty = document.createElement('div'); empty.className = 'fp-empty'; empty.textContent = '没有匹配的文件';
+        const empty = document.createElement('div'); empty.className = 'fp-empty'; empty.textContent = '没有匹配的文件或历史';
         list.appendChild(empty);
         return;
       }
       hits.forEach((n, i) => {
         const row = document.createElement('button');
         row.className = 'fp-row' + (i === sel ? ' is-sel' : '');
-        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = kindSvg(n.kind); // T8：命令面板行也按类型换形状
-        const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.name;
-        const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.rel;
+        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = kindSvg(n.web ? 'web' : n.kind); // T8：命令面板行也按类型换形状;历史行=地球
+        const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.web ? n.title : n.name;
+        const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.web ? n.url : n.rel;
         row.append(ic, nm, sub);
         row.onmouseenter = () => { sel = i; highlight(); };
         row.onclick = () => choose(n);
@@ -1300,6 +1319,7 @@
     function choose(node) {
       if (!node) return;
       close();
+      if (node.web) { openWebTabUrl(node.url, false); return; } // 历史命中:开(或复用)网页标签浏览
       openNode(node);           // .html 进编辑器 / 其余进查看器（同点树节点）
       expandToFile(node.rel);   // 顺带在树里展开定位（F6）
     }

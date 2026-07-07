@@ -128,10 +128,24 @@ function setWebTabs(storeFile, entries, activeKey) {
   });
 }
 
+// 浏览历史（U6 尾:进 Cmd+P）:全局桶 raw.webHistory(跟 webTabs 一样不进 per-root)。
+// 清洗归 lib/web-history.sanitize(读端调),这里只管存取。
+async function getWebHistory(storeFile) {
+  const raw = await readRaw(storeFile);
+  return Array.isArray(raw.webHistory) ? raw.webHistory : [];
+}
+function setWebHistory(storeFile, entries) {
+  return rmw(async () => {
+    const raw = await readRaw(storeFile);
+    raw.webHistory = Array.isArray(entries) ? entries : [];
+    await writeRaw(storeFile, raw);
+  });
+}
+
 // before-quit 专用同步合并落盘（KD-11）：把主进程 web-tabs registry 的权威 url/title 合并进
 // 全局 raw.webTabs 再写盘。⚠ 必须同步——异步写不保证进程退出前落地。webSnapshot = { key: { url, title } }。
-// web 标签现在全局(raw.webTabs),不在 tabsByRoot 里。
-function mergeTabsSync(storeFile, root, webSnapshot) {
+// web 标签现在全局(raw.webTabs),不在 tabsByRoot 里。webHistorySnapshot(可选)= 浏览历史一并同步落盘。
+function mergeTabsSync(storeFile, root, webSnapshot, webHistorySnapshot) {
   let raw = {};
   try { raw = JSON.parse(fsSync.readFileSync(storeFile, 'utf8')) || {}; } catch { raw = {}; }
   const mergeOne = (e) => {
@@ -141,6 +155,7 @@ function mergeTabsSync(storeFile, root, webSnapshot) {
   };
   let dirty = false;
   if (Array.isArray(raw.webTabs)) { raw.webTabs = raw.webTabs.map(mergeOne).filter(validEntry); dirty = true; }
+  if (Array.isArray(webHistorySnapshot)) { raw.webHistory = webHistorySnapshot; dirty = true; } // 退出前防抖写可能还没触发
   // 兼容:旧数据里 web 曾在 per-root 桶,顺手也合一遍(现在应为空)
   if (root && raw.tabsByRoot && raw.tabsByRoot[root] && Array.isArray(raw.tabsByRoot[root].entries)) {
     raw.tabsByRoot[root].entries = raw.tabsByRoot[root].entries.map(mergeOne);
@@ -153,4 +168,4 @@ function mergeTabsSync(storeFile, root, webSnapshot) {
   } catch { /* 退出路径尽力而为 */ }
 }
 
-module.exports = { load, save, clear, getTabs, setTabs, getWebTabs, setWebTabs, mergeTabsSync };
+module.exports = { load, save, clear, getTabs, setTabs, getWebTabs, setWebTabs, getWebHistory, setWebHistory, mergeTabsSync };

@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsSetTabs: (state, root) => ipcRenderer.invoke('ws-set-tabs', state, root),
   wsGetWebTabs: () => ipcRenderer.invoke('ws-get-web-tabs'), // 全局网页标签(跟工作区无关):{entries, activeKey}
   wsSetWebTabs: (entries, activeKey) => ipcRenderer.invoke('ws-set-web-tabs', entries, activeKey),
+  wsGetWebHistory: () => ipcRenderer.invoke('ws-get-web-history'), // 浏览历史(全局,给 Cmd+P)
   wsTemplates: () => ipcRenderer.invoke('ws-templates'),
   aiGuide: () => ipcRenderer.invoke('ai-guide'),
 

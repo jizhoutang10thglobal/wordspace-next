@@ -12,10 +12,19 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const policy = require('../lib/web-tabs-policy');
+const webHistory = require('../lib/web-history');
 
 const PARTITION = 'persist:webtabs';
 const registry = new Map(); // key -> { view, url, title, favicon, loading, audible, canGoBack, canGoForward }
 let getWin = () => null;
+
+// 浏览历史（U6 尾）:权威副本在主进程(和 url/title 同源),ipc 注册持久化钩子(防抖写盘 + 退出同步 flush)。
+let history = [];
+let onHistoryChange = null;
+function historyChanged() { if (onHistoryChange) onHistoryChange(); }
+function getHistory() { return history; }
+function loadHistory(arr) { history = webHistory.sanitize(arr); }
+function setHistoryHook(fn) { onHistoryChange = fn; }
 let sess = null;
 let downloadDir = null;
 const activeDownloads = new Set();
@@ -123,13 +132,23 @@ function wireViewEvents(key, view) {
 
   wc.on('did-start-loading', () => { const r = registry.get(key); if (r) { r.loading = true; r.error = null; pushUpdate(key); } });
   wc.on('did-stop-loading', () => { const r = registry.get(key); if (r) { r.loading = false; syncNav(key); pushUpdate(key); } });
-  wc.on('page-title-updated', (_e, title) => { const r = registry.get(key); if (r) { r.title = title || r.url || '新标签页'; pushUpdate(key); } });
+  wc.on('page-title-updated', (_e, title) => {
+    const r = registry.get(key); if (!r) return;
+    r.title = title || r.url || '新标签页'; pushUpdate(key);
+    if (title && r.url) { history = webHistory.touchTitle(history, r.url, title); historyChanged(); } // 晚到的真标题补进历史
+  });
   wc.on('page-favicon-updated', (_e, favicons) => {
     const r = registry.get(key); if (!r) return;
     const pick = policy.pickFavicon(favicons, r._faviconSrc);
     if (pick) { r._faviconSrc = pick; fetchFavicon(key, pick); }
   });
-  const onNav = (url) => { const r = registry.get(key); if (r && url) { r.url = url; syncNav(key); pushUpdate(key); } };
+  const onNav = (url) => {
+    const r = registry.get(key); if (!r || !url) return;
+    r.url = url; syncNav(key); pushUpdate(key);
+    // 浏览历史(U6 尾:进 Cmd+P)。add 只认 http/https,错误页/about:blank 自动不进。
+    history = webHistory.add(history, { url, title: r.title, ts: Date.now() });
+    historyChanged();
+  };
   wc.on('did-navigate', (_e, url) => onNav(url));
   wc.on('did-navigate-in-page', (_e, url, isMainFrame) => { if (isMainFrame) onNav(url); });
   wc.on('did-fail-load', (_e, code, desc, validatedURL, isMainFrame) => {
@@ -295,5 +314,6 @@ function hasActiveDownloads() { return activeDownloads.size > 0; }
 module.exports = {
   init, setDownloadDir, createView, show, hide, setBounds, setVisible, destroy, destroyAll,
   navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setAudioMutedAll, printToPdf, extractReadable,
+  getHistory, loadHistory, setHistoryHook,
   snapshot, hasActiveDownloads, _registry: registry,
 };
