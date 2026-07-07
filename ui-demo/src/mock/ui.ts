@@ -145,6 +145,7 @@ export function anyOverlayOpen(s: UI): boolean {
     s.confirmCloseTab ||
     s.findOpen ||
     s.shortcutsOpen ||
+    s.agentsOpen || // 「AI 接入」是全屏 modal，开着时壳/编辑器快捷键不该穿透（docFindOpen 是非模态查找条，有意不加）
     s.publishDocId
   )
 }
