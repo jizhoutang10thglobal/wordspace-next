@@ -9,6 +9,8 @@
   const filterInput = document.getElementById('sb-filter-input');
   const emptyEl = document.getElementById('sb-empty');
   const treeEl = document.getElementById('sb-tree');
+  const bodyEl = document.getElementById('sb-body'); // 滚动容器（sticky ancestor 挂它的 scroll）
+  const stickyEl = document.getElementById('sb-sticky'); // 吸顶浮层
   const openFolderBtn = document.getElementById('sb-open-folder');
   const emptyOpenBtn = document.getElementById('sb-empty-open');
   if (!treeEl) return;
@@ -154,11 +156,82 @@
       e.className = 'sb-tree-empty';
       e.textContent = q ? '没有匹配的文件' : '这个文件夹还没有文件';
       treeEl.appendChild(e);
+      clearSticky(); // 空态/筛选无匹配：清掉吸顶浮层（否则旧克隆祖先会悬在「没有匹配」上）
       return;
     }
     for (const n of nodes) renderNode(n, 0, treeEl, !!q);
     highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
+    cacheStickyRows(); // 树变了 → 重算吸顶行缓存
+    if (stickyEl) stickyEl.dataset.key = ''; // 强制下次 rebuild（旧克隆引用已失效的行）
+    renderSticky();
   }
+
+  // ===== sticky ancestor（祖先文件夹吸顶）=====
+  // 扁平树没法用原生 CSS sticky 正确「释放」深层过时祖先（VS Code 也用独立浮层而非 sticky）→ JS 浮层：
+  // 滚动时算出当前可视区顶部那一行的祖先文件夹链，克隆成行填进 #sb-sticky、绝对定位在可视区顶。
+  // 性能：每次 render 缓存各行**在树内的相对 top**（= el.offsetTop − treeEl.offsetTop）。这样上方的置顶/标签区
+  // 增高（开标签/置顶，只 renderZones 不 render）时缓存不失效——滚动帧里折线也换算成树内坐标（scrollTop −
+  // treeEl.offsetTop），两边同参照，zone 高度变化自动抵消。每帧只多读一次 treeEl.offsetTop，不逐行读 layout。
+  const STICKY_H = 30;
+  let stickyRows = [];
+  let stickyRaf = 0;
+  function cacheStickyRows() {
+    if (!treeEl) return;
+    const base = treeEl.offsetTop; // 树顶相对 #sb-body；下面减掉它 → 存树内相对位置（与 zone 高度无关）
+    stickyRows = [...treeEl.querySelectorAll('.sb-row')].map((el) => ({
+      el,
+      top: el.offsetTop - base,
+      depth: Number(el.dataset.depth) || 0,
+      isDir: el.classList.contains('sb-dir'),
+    }));
+  }
+  function stickyPins(fold) {
+    // fold = 折线在树内坐标；anchor = 底边越过折线的第一行；其祖先 = 前面按 depth 递减的 dir 行
+    let ai = -1;
+    for (let i = 0; i < stickyRows.length; i++) {
+      if (stickyRows[i].top + STICKY_H > fold + 0.5) { ai = i; break; }
+    }
+    if (ai < 0) return [];
+    const pins = [];
+    let need = stickyRows[ai].depth - 1;
+    for (let j = ai - 1; j >= 0 && need >= 0; j--) {
+      if (stickyRows[j].depth === need && stickyRows[j].isDir) { pins.unshift(stickyRows[j]); need--; }
+    }
+    return pins;
+  }
+  function clearSticky() {
+    stickyRows = [];
+    if (stickyEl) { stickyEl.textContent = ''; stickyEl.dataset.key = ''; stickyEl.classList.remove('has-pins'); }
+  }
+  function renderSticky() {
+    stickyRaf = 0;
+    if (!bodyEl || !stickyEl || !treeEl) return;
+    const scrollTop = bodyEl.scrollTop;
+    const pins = stickyPins(scrollTop - treeEl.offsetTop); // 折线换成树内坐标（live 读 treeEl.offsetTop，zone 变高自动对）
+    const key = pins.map((p) => p.el.dataset.rel).join('|');
+    if (key !== stickyEl.dataset.key) {
+      stickyEl.dataset.key = key;
+      stickyEl.textContent = '';
+      for (const { el } of pins) {
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('.sb-add').forEach((n) => n.remove()); // 去掉 hover「+」钮；导引线保留（相对克隆行定位正确，跟树里连贯）
+        clone.removeAttribute('tabindex'); // a11y：浮层 aria-hidden，克隆不该可聚焦（否则 Tab 掉进隐藏子树）
+        clone.removeAttribute('role');
+        clone.classList.add('sb-sticky-row');
+        clone.onclick = () => bodyEl.scrollTo({ top: Math.max(0, el.offsetTop - 2), behavior: 'smooth' });
+        // 右键转发给真行的菜单（cloneNode 不复制 property 事件处理器，否则吸顶行右键是死区）
+        clone.oncontextmenu = (e) => {
+          e.preventDefault();
+          el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY }));
+        };
+        stickyEl.appendChild(clone);
+      }
+      stickyEl.classList.toggle('has-pins', pins.length > 0);
+    }
+    stickyEl.style.top = scrollTop + 'px'; // 浮层在 #sb-body 坐标系；单 CSSOM 属性，CSP 安全；跟住可视区顶
+  }
+  function onBodyScroll() { if (!stickyRaf) stickyRaf = requestAnimationFrame(renderSticky); }
+  if (bodyEl) bodyEl.addEventListener('scroll', onBodyScroll, { passive: true });
 
   // ===== 整理操作（U6）：右键菜单 / hover+ / 内联改名 / 拖拽移动 / 删除撤销 + 当前文件边界同步 =====
   let dragNode = null;
@@ -304,6 +377,7 @@
       row.setAttribute('role', 'button');
       row.tabIndex = 0;
       row.dataset.rel = dir.rel;
+      row.dataset.depth = depth; // sticky ancestor：按 depth 算祖先链
       const caret = document.createElement('span');
       caret.className = 'sb-caret' + (open ? ' is-open' : '');
       caret.innerHTML = SVG.chevron;
@@ -386,6 +460,7 @@
       row.className = 'sb-row sb-file sb-kind-' + (node.kind || 'other');
       row.dataset.rel = node.rel;
       row.dataset.abs = node.abs;
+      row.dataset.depth = depth;
       row.dataset.kind = node.kind || 'other';
       row.draggable = true;
       const ico = document.createElement('span');
