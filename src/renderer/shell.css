@@ -1,45 +1,55 @@
 /* Wordspace Next — app chrome
-   外观照搬 ui-demo（origin/main：Arc 式两栏 = 左文件栏门面 + 右编辑区）。
-   tokens / global reset 全量对齐 ui-demo（tokens.css + global.css）。
-   左栏只抄样式不抄功能（.sidebar-lock 吞交互 + 「开发中」）。工具栏为按需浮出的 Notion 气泡。 */
+   设计语言「纸方墨圆 · 保守版」（canonical：docs/style.md；token 权威值：ui-demo/src/styles/tokens.css）。
+   纸方——容器微圆角；墨圆——可点的控件全圆丸；primary 是墨不是蓝；层级=1px 细边+底色差，
+   装饰性阴影一律不要（唯一例外：真浮层 菜单/弹窗/toast 一层极淡阴影）；动是反馈不是装饰。
+   布局结构不动：左文件栏（F06）+ 右编辑区，类名体系保持 .sb-*/.top-*/.ws-*。 */
 
-/* ---------------------------------------------------------------- tokens */
+/* ---------------------------------------------------------------- tokens
+   色/圆角/阴影/动效值照抄 ui-demo tokens.css（stone 暖灰阶 + 墨 + 墨青蓝）。
+   app 特有 metrics（--top-actions-reserve 等）保留。 */
 :root {
   /* 修 VC-16（最低成本）：锁原生控件（confirm/alert、原生菜单、滚动条、文件框）为浅色，消除 mac 暗色模式下
      浅色 UI + 深色系统框的混搭割裂。真正的暗色主题另议——这里只是不让系统把控件反色。 */
   color-scheme: light;
-  --c-bg: #ffffff;
-  --c-bg-sunken: #f7f8fa;
-  --c-bg-rail: #ececef;
-  --c-bg-chrome: #f2f3f5;
+
+  /* ---- color：纸（stone 暖灰阶） ---- */
+  --c-bg: #ffffff;            /* 文档纸面 */
+  --c-bg-sunken: #f5f5f4;     /* side panes (stone-100) */
+  --c-bg-rail: #edeceb;       /* far-left icon rail */
+  --c-bg-chrome: #fafaf9;     /* titlebar + tab strip (stone-50) */
   --c-surface: #ffffff;
 
-  --c-border: #e4e6e9;
-  --c-border-strong: #d3d6db;
-  --c-divider: #eceef0;
+  --c-border: #e7e5e4;
+  --c-border-strong: #d6d3d1;
+  --c-divider: #efedeb;
 
-  --c-text: #1c1d1f;
-  --c-text-2: #5a5f66;
-  --c-text-3: #8a8f96;
-  --c-text-invert: #ffffff;
+  /* ---- color：墨（文字与墨色控件） ---- */
+  --c-text: #292524;
+  --c-text-2: #57534e;
+  --c-text-3: #a8a29e;
+  --c-text-invert: #fafaf9;
+  --c-ink: #1c1917;           /* 墨色控件底（primary 按钮/tooltip） */
+  --c-ink-hover: #292524;
 
-  --c-accent: #1a73e8;
-  --c-accent-hover: #1765cc;
-  --c-accent-press: #145bb5;
-  --c-accent-tint: #e8f0fe;
-  --c-accent-tint-2: #d2e3fc;
+  --c-accent: #1d6fbf;        /* 墨青蓝：链接/选区/焦点圈，不做大面积底色 */
+  --c-accent-hover: #165ca0;
+  --c-accent-press: #124e88;
+  --c-accent-tint: #e8f1fa;   /* selection / active tint */
+  --c-accent-tint-2: #d2e5f5;
 
-  --c-hover: #f0f1f3;
-  --c-active: #e8e9ec;
-  --c-selected: #e8f0fe;
+  --c-hover: rgba(28, 25, 23, 0.05);   /* hover/按下底色 = 墨的透明度，不是灰 */
+  --c-active: rgba(28, 25, 23, 0.09);
+  --c-selected: #e8f1fa;
 
-  --c-success: #1e8e3e;
-  --c-warning: #b06000;
-  --c-danger: #d93025;
-  --c-danger-tint: #fce8e6;
+  --c-success: #15803d;
+  --c-success-tint: #e9f3ec;
+  --c-warning: #b45309;
+  --c-warning-tint: #f9f1e5;
+  --c-danger: #b91c1c;
+  --c-danger-tint: #fbecec;
 
-  --c-public: #1e8e3e;
-  --c-internal: #b06000;
+  --c-public: #15803d;
+  --c-internal: #b45309;
 
   --font-ui: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto,
     "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
@@ -51,6 +61,9 @@
   --fs-md: 14px;
   --fs-lg: 15px;
   --fs-xl: 18px;
+  --fs-2xl: 22px;
+  /* editorial 栏标字距（等宽 + 宽 tracking，像刊物的 "02 · SECTION"） */
+  --tracking-label: 0.16em;
 
   --fw-regular: 400;
   --fw-medium: 500;
@@ -59,16 +72,22 @@
   --lh-tight: 1.3;
   --lh-base: 1.5;
 
-  --r-xs: 4px;
-  --r-sm: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
-  --r-pill: 999px;
+  /* ---- radius：纸方墨圆 ---- */
+  --r-xs: 3px;
+  --r-sm: 5px;    /* 列表行 / 菜单项 */
+  --r-md: 7px;    /* 输入框 / 菜单 */
+  --r-lg: 10px;   /* 弹窗 / 卡片 */
+  --r-pill: 999px; /* 一切可点的控件 */
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.04);
-  --shadow-menu: 0 4px 14px rgba(0,0,0,.12), 0 0 0 1px rgba(0,0,0,.06);
-  --shadow-modal: 0 14px 44px rgba(0,0,0,.20), 0 0 0 1px rgba(0,0,0,.06); /* 对齐 ui-demo tokens.css */
+  /* ---- shadow：保守口径（Wendi 2026-07-08）——装饰性阴影一律不要。
+     卡片/控件/选中态零阴影，层级靠 1px 细边 + 底色差。唯一例外：真浮层
+     （菜单/弹窗/toast）保留一层极淡阴影 + 细边做层分离。投影一律暖墨基底
+     rgba(28,25,23,·)，禁止冷黑 rgba(0,0,0,·)。 ---- */
+  --shadow-menu: 0 4px 12px rgba(28, 25, 23, 0.07);
+  --shadow-pop: 0 8px 24px rgba(28, 25, 23, 0.08);
+  --shadow-modal: 0 12px 32px rgba(28, 25, 23, 0.12);
 
+  /* ---- metrics（app 特有，保留） ---- */
   --h-titlebar: 40px;
   --maxdoc-w: 820px;
   /* 右上角浮动 .top-actions（现在只剩一颗 30px ⋯ 菜单钮，含 right:22px 共 ~52px）。
@@ -76,9 +95,17 @@
      （文档头面包屑、查看器顶栏都用它）。改按钮数量要同步核这个值（有 e2e 防重叠门兜底）。 */
   --top-actions-reserve: 72px;
 
-  --ease: cubic-bezier(.2, .6, .2, 1);
-  --dur-fast: 120ms;
-  --dur: 200ms;
+  /* ---- motion：分工明确的时长阶梯 + 缓动曲线（docs/style.md §4） ---- */
+  --dur-instant: 80ms;  /* 微反馈：按压、勾选、图标态 */
+  --dur-fast: 120ms;    /* 颜色变化、小位移、kbd 下沉 */
+  --dur: 200ms;         /* 背景滑入、墨条、tooltip、hover 抬起 */
+  --dur-slow: 320ms;    /* 墨线划过、浮层入场、抽屉滑出 */
+  --dur-page: 420ms;    /* 路由/视图切换的编排级动画 */
+  --ease: cubic-bezier(0.2, 0, 0, 1);               /* 标准（大多数状态变化） */
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);      /* 入场：快起慢收，东西"落定" */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);          /* 退场：直接撤走 */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 回弹：关闭钮、盖章式反馈 */
+  --ease-smooth: cubic-bezier(0.45, 0, 0.15, 1);    /* 平滑对称：折叠/展开、拖动 */
 }
 
 /* ---------------------------------------------------------------- global */
@@ -100,21 +127,60 @@ button { font-family: inherit; font-size: inherit; color: inherit; cursor: point
 button:disabled { cursor: default; }
 input { font-family: inherit; font-size: inherit; color: inherit; }
 /* 修 VC-1：原来 input/button:focus 全局 outline:none 把键盘焦点环也杀了（鼠标点了不该有环，但键盘 Tab 必须有）。
-   只对「非键盘聚焦」去环（:focus:not(:focus-visible)），键盘聚焦补一条 accent 焦点环——全仓原本 0 处 :focus-visible。 */
+   只对「非键盘聚焦」去环（:focus:not(:focus-visible)）。 */
 input:focus:not(:focus-visible), button:focus:not(:focus-visible) { outline: none; }
-:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+/* 全站键盘焦点 = 批注圈（2px 墨青蓝 + 3px offset，圈一下落定，不发光）；
+   输入框例外——焦点表达 = 墨线从左划过（见各输入框配方）。 */
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+  animation: ws-ring-pop var(--dur-fast) var(--ease-enter);
+}
+input:focus-visible, textarea:focus-visible { outline: none; animation: none; }
 /* opacity:0 的标签按钮（pin/×）键盘聚焦时要现形，否则焦点落在完全看不见的按钮上 */
 .sb-tab-pin:focus-visible, .sb-tab-close:focus-visible { opacity: 1; }
 ul { list-style: none; }
 
+/* thin desktop-style scrollbars（暖墨） */
 ::-webkit-scrollbar { width: 11px; height: 11px; }
-::-webkit-scrollbar-thumb { background: rgba(0,0,0,.18); border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.30); background-clip: content-box; }
+::-webkit-scrollbar-thumb { background: rgba(28, 25, 23, 0.16); border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(28, 25, 23, 0.28); background-clip: content-box; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 ::selection { background: var(--c-accent-tint-2); }
 
 .ws-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-muted { color: var(--c-text-3); }
+
+/* ============================================================ 动效库 · keyframes
+   照抄 ui-demo styles/global.css（命名 ws-<动作>；时长/缓动由调用点用 token 指定）。 */
+@keyframes ws-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ws-fade-out { from { opacity: 1; } to { opacity: 0; } }
+/* 浮层入场：落定感（轻微上移+缩放，配 --ease-enter） */
+@keyframes ws-pop-in { from { opacity: 0; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes ws-pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(4px) scale(.99); } }
+/* 从下往上滑入（toast / 底部抽屉） */
+@keyframes ws-slide-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+/* 从右滑入（右侧抽屉 / 面板） */
+@keyframes ws-slide-in-right { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+/* toast 侧滑入（带一点回弹） */
+@keyframes ws-toast-in { 0% { opacity: 0; transform: translateX(24px) scale(.97); } 60% { opacity: 1; } 100% { opacity: 1; transform: none; } }
+@keyframes ws-toast-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(16px) scale(.98); } }
+/* 列表项 stagger：每项延迟入场 */
+@keyframes ws-stagger-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+/* 树节点展开：给内容一个淡入下沉 */
+@keyframes ws-reveal-down { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+/* 遮罩淡入 */
+@keyframes ws-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+/* 焦点批注圈：圈一下（offset 从外收到定位，只动 outline 不动元素） */
+@keyframes ws-ring-pop { from { outline-offset: 7px; } to { outline-offset: 3px; } }
+/* 骨架微光扫过 */
+@keyframes ws-shimmer { from { background-position: -180% 0; } to { background-position: 180% 0; } }
+/* 保存脉冲（状态点） */
+@keyframes ws-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes ws-spin { to { transform: rotate(360deg); } }
+/* 页面/视图入场：整块内容轻轻上浮落定 */
+@keyframes ws-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* ============================================================ 左侧本地文件栏（F06，对齐 ui-demo ArcSidebar）
    默认隐藏：没打开工作区时单文件编辑保持全宽（与原行为一致）；打开文件夹后 .sb-on 才显示。 */
@@ -143,25 +209,32 @@ ul { list-style: none; }
   padding: 0 8px 0 14px;
 }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+/* 图标钮 = 墨圆 + hover 墨条滑入（对齐 ui-demo .arc-ico） */
 .sb-icobtn {
   flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
-  border-radius: var(--r-sm); color: var(--c-text-2);
+  border-radius: var(--r-pill); color: var(--c-text-2);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
-.sb-icobtn:hover { background: var(--c-hover); color: var(--c-text); }
+.sb-icobtn:hover { background-size: 100% 100%; color: var(--c-text); }
 
 /* 收起态：真收起（全隐藏，不留细条；图标轨 + hover 气泡早已删）。侧栏整个滑没，编辑区靠悬浮
    .sb-reopen / Cmd+\ 重开。（ui-demo 留 48px 细条放展开钮；这里按 Colin「收起就是真收起」全隐藏。）*/
 .sb.is-collapsed { width: 0; min-width: 0; overflow: hidden; border-right: none; }
 
-/* 编辑区左上角悬浮「展开侧栏」入口：仅全收起时显示（顶栏左内边距 56px 给它让位，不压面包屑）。 */
+/* 编辑区左上角悬浮「展开侧栏」入口：仅全收起时显示（顶栏左内边距 56px 给它让位，不压面包屑）。
+   扁平控件：细边 + 纸底，零阴影（保守口径）。 */
 .sb-reopen {
   position: absolute; top: 11px; left: 14px; z-index: 40;
   width: 30px; height: 30px; display: none;
   align-items: center; justify-content: center;
-  border: 1px solid var(--c-border); border-radius: var(--r-md);
-  background: var(--c-surface); color: var(--c-text-2); box-shadow: var(--shadow-sm);
+  border: 1px solid var(--c-border-strong); border-radius: var(--r-pill);
+  background: var(--c-surface); color: var(--c-text-2);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    transform var(--dur-instant) var(--ease);
 }
-.sb-reopen:hover { background: var(--c-hover); color: var(--c-text); }
+.sb-reopen:hover { background: var(--c-bg-chrome); color: var(--c-text); }
+.sb-reopen:active { transform: scale(0.97); }
 body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 /* 品牌页脚：wordspace.ai logo + 版本号，钉在左侧栏底部（不在编辑区）。 */
@@ -170,19 +243,25 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-foot-ver { margin-left: auto; font-size: var(--fs-xs); color: var(--c-text-3); font-variant-numeric: tabular-nums; }
 .sb.is-collapsed .sb-foot { display: none; }
 
-/* T8 尺寸对齐 ui-demo .arc-filter（28 高 / r-sm / 下边距 4）；focus 光圈是 app 略优处、保留 */
+/* 筛选框 = 凹进纸里的输入（sunken 底、无边框），focus 墨线从左划过（对齐 ui-demo .arc-filter）。 */
 .sb-filter {
   flex: none; display: flex; align-items: center; gap: 6px;
   margin: 0 6px 4px; padding: 0 8px; height: 28px;
-  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-sm); color: var(--c-text-3);
-  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  background-color: var(--c-bg-rail);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  border: none; border-radius: var(--r-md); color: var(--c-text-3);
+  transition: background-color var(--dur-fast) var(--ease),
+    background-size var(--dur-slow) var(--ease-enter);
 }
 .sb-filter[hidden] { display: none; }
-.sb-filter:focus-within { border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-tint); }
+.sb-filter:focus-within { background-color: var(--c-surface); background-size: 100% 2px; }
 .sb-filter input { flex: 1; min-width: 0; border: none; background: none; outline: none; font-size: var(--fs-sm); color: var(--c-text); }
 .sb-filter input::placeholder { color: var(--c-text-3); }
-.sb-filter-clear { flex: none; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--c-text-3); }
-.sb-filter-clear:hover { background: var(--c-hover); color: var(--c-text); }
+.sb-filter-clear { flex: none; width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-pill); color: var(--c-text-3); }
+.sb-filter-clear:hover { background: var(--c-active); color: var(--c-text); }
 .sb-filter-clear[hidden] { display: none; }
 
 /* overflow-x: hidden——去掉缩进封顶后，极深「未被 compact 的分叉树」缩进/导引线可能越过侧栏右缘；
@@ -205,8 +284,14 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-empty { padding: 16px 10px; text-align: center; }
 .sb-empty[hidden] { display: none; }
 .sb-empty-note { font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.5; margin-bottom: 10px; }
-.sb-empty-btn { height: 30px; padding: 0 14px; border-radius: var(--r-sm); background: var(--c-accent); color: #fff; font-size: var(--fs-base); font-weight: var(--fw-medium); }
-.sb-empty-btn:hover { background: var(--c-accent-hover); }
+/* primary 是墨不是蓝：墨底圆丸 + 按压微陷 */
+.sb-empty-btn {
+  height: 30px; padding: 0 14px; border-radius: var(--r-pill);
+  background: var(--c-ink); color: var(--c-text-invert); font-size: var(--fs-base); font-weight: var(--fw-medium);
+  transition: background-color var(--dur-fast) var(--ease), transform var(--dur-instant) var(--ease);
+}
+.sb-empty-btn:hover { background: var(--c-ink-hover); }
+.sb-empty-btn:active { transform: scale(0.97); }
 
 .sb-tree[hidden] { display: none; }
 .sb-row {
@@ -214,14 +299,16 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
   width: 100%; display: flex; align-items: center; gap: 7px;
   height: 30px; padding-right: 8px; border-radius: var(--r-sm);
   color: var(--c-text); text-align: left; cursor: pointer;
+  /* 树行展开/首次渲染逐行落定（对齐 ui-demo arc-file） */
+  animation: ws-reveal-down var(--dur) var(--ease-enter);
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .sb-row:hover { background: var(--c-hover); }
 /* 缩进导引线（Obsidian/VS Code always-on 同款）：每级祖先一条淡墨竖线，让小缩进也读得出层级。
-   用中性 border-strong、非 accent——层级线不和选中蓝抢（研究：cues 不能互相竞争）。 */
+   淡墨 ~12%、非 accent——层级线不和选中蓝抢（研究：cues 不能互相竞争）。 */
 .sb-guide {
   position: absolute; top: 0; bottom: 0; width: 1px;
-  background: var(--c-border-strong); pointer-events: none;
+  background: rgba(28, 25, 23, 0.12); pointer-events: none;
 }
 /* compact folders 合并链的段间「/」分隔符：淡墨、不抢眼 */
 .sb-seg-sep { color: var(--c-text-3); margin: 0 3px; opacity: 0.7; font-weight: var(--fw-regular); }
@@ -234,7 +321,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-file.is-active { background: var(--c-selected); color: var(--c-accent); }
 .sb-file.is-active .sb-ico { color: var(--c-accent); }
 
-/* 文件类型图标上色（对齐 ui-demo） */
+/* 文件类型图标上色（对齐 ui-demo；品牌语义色，非 UI accent） */
 .sb-kind-html .sb-ico { color: var(--c-text-2); }
 .sb-kind-md .sb-ico { color: var(--c-text-2); } /* md 同 html：可编辑文档，中性色 */
 .sb-kind-image .sb-ico { color: #8a3ffc; }
@@ -252,8 +339,9 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-zone-head { display: flex; align-items: center; }
 /* 「文件」段标（独立于 .sb-zone，跟在标签页区之后）：复用段标样式，提供文件区上方留白。 */
 .sb-files-label[hidden] { display: none; }
-.sb-sec-label { flex: 1; padding: 10px 8px 5px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-3); letter-spacing: .04em; text-transform: uppercase; /* 对齐 ui-demo 段标规则（中文无感，英文标题一致） */ }
-.sb-zone-add { flex: none; width: 24px; height: 24px; margin-right: 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--c-text-3); }
+/* editorial 分区栏标（docs/style.md §7）：等宽 + 宽字距，像刊物的栏目标记（对齐 ui-demo arc-section-label） */
+.sb-sec-label { flex: 1; padding: 10px 8px 5px; font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-3); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+.sb-zone-add { flex: none; width: 24px; height: 24px; margin-right: 6px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-pill); color: var(--c-text-3); }
 .sb-zone-add:hover { background: var(--c-hover); color: var(--c-text); }
 .sb-zone-list { display: flex; flex-direction: column; gap: 1px; min-height: 6px; border-radius: var(--r-sm); }
 .sb-zone-list.sb-drop { background: var(--c-accent-tint); box-shadow: inset 0 0 0 1px var(--c-accent); }
@@ -262,13 +350,13 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-zone-hint-drop { border: 1px dashed var(--c-border-strong); border-radius: var(--r-sm); padding: 10px 8px; margin: 0 2px; text-align: center; font-size: var(--fs-sm); font-style: normal; }
 /* 标签行：图标 + 名 + 📌 + ×（× 仅标签页区） */
 .sb-tab { position: relative; height: 32px; padding-left: 8px; } /* 行高 32（比树行略高）+ 承载插入线伪元素 */
-.sb-tab-pin, .sb-tab-close { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--c-text-3); opacity: 0; }
+.sb-tab-pin, .sb-tab-close { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-pill); color: var(--c-text-3); opacity: 0; }
 .sb-tab:hover .sb-tab-pin, .sb-tab:hover .sb-tab-close { opacity: 1; }
 .sb-tab-pin.is-pinned { opacity: 1; color: var(--c-accent); } /* 已钉的常显（在置顶区） */
 .sb-tab-pin:hover, .sb-tab-close:hover { background: var(--c-active); color: var(--c-text); }
-/* 激活态 = 白卡浮起（surface + shadow-sm + 图标 accent，对齐 ui-demo arc-tab.is-active），
-   跟文件树的蓝底 selection（.sb-file.is-active 不动）区分开——之前两者混同。 */
-.sb-tab.is-active { background: var(--c-surface); color: var(--c-text); box-shadow: var(--shadow-sm); }
+/* 激活态 = 白纸 puck 落在 sunken 槽上（对齐 ui-demo arc-tab.is-active）——纯底色对比，零阴影（保守口径）。
+   跟文件树的蓝底 selection（.sb-file.is-active 不动）区分开。 */
+.sb-tab.is-active { background: var(--c-surface); color: var(--c-text); }
 .sb-tab.is-active .sb-ico { color: var(--c-accent); }
 /* 未保存点（arc-tab-dot）：行尾 7px accent 圆点；hover 出 pin/close 时让位 */
 .sb-tab-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c-accent); }
@@ -292,7 +380,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
    （dir base 8 / file base 26，每级 +12px，无封顶），配合 compact folders + 导引线。 */
 
 /* 文件夹行 hover「+」（在此文件夹新建文档） */
-.sb-add { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-xs); color: var(--c-text-3); opacity: 0; }
+.sb-add { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-pill); color: var(--c-text-3); opacity: 0; }
 .sb-row:hover .sb-add { opacity: 1; }
 .sb-add:hover { background: var(--c-active); color: var(--c-text); }
 
@@ -302,89 +390,164 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* 内联改名输入 */
 .sb-rename { flex: 1; min-width: 0; font-size: var(--fs-base); color: var(--c-text); background: var(--c-surface); border: 1px solid var(--c-accent); border-radius: var(--r-xs); padding: 1px 4px; }
 
-/* 右键菜单 */
-.sb-ctx { position: fixed; z-index: 200; min-width: 160px; padding: 4px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); box-shadow: var(--shadow-menu); display: flex; flex-direction: column; gap: 1px; }
-.sb-ctx-item { width: 100%; text-align: left; padding: 6px 10px; border-radius: var(--r-sm); font-size: var(--fs-base); color: var(--c-text); }
-.sb-ctx-item:hover { background: var(--c-hover); }
-.sb-ctx-item.is-danger { color: var(--c-danger); }
-.sb-ctx-item.is-danger:hover { background: var(--c-danger-tint); }
+/* 右键菜单：白纸圆角 + 1px 细边 + 极淡浮层阴影；入场 pop-in；菜单项 hover 墨条滑入 */
+.sb-ctx {
+  position: fixed; z-index: 200; min-width: 160px; padding: 4px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu);
+  transform-origin: top left;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.sb-ctx-item {
+  width: 100%; text-align: left; padding: 6px 10px; border-radius: var(--r-sm); font-size: var(--fs-base); color: var(--c-text);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
+}
+.sb-ctx-item:hover { background-size: 100% 100%; }
+.sb-ctx-item.is-danger { color: var(--c-danger); background-image: linear-gradient(var(--c-danger-tint), var(--c-danger-tint)); }
 
-/* 删除「撤销」toast */
-/* 修 VC-6：toast 提到模态遮罩（400）之上——否则删除撤销 toast 被弹出的模态盖住、6.5s 撤销窗口白流失。 */
+/* 删除「撤销」toast：书签纸条（纸底墨字 + 左侧 4px 语义色条），从下带回弹升入。
+   修 VC-6：toast 提到模态遮罩（400）之上——否则删除撤销 toast 被弹出的模态盖住、6.5s 撤销窗口白流失。 */
 .sb-toast-host { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.sb-toast { display: flex; align-items: center; gap: 10px; background: #23262b; color: #fff; font-size: var(--fs-md); padding: 9px 15px; border-radius: var(--r-md); box-shadow: var(--shadow-menu); }
-.sb-toast-action { color: #8ab4ff; font-weight: var(--fw-semibold); font-size: var(--fs-md); padding: 2px 7px; border-radius: var(--r-sm); }
-.sb-toast-action:hover { background: rgba(255,255,255,.12); }
+.sb-toast {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--c-surface); color: var(--c-text);
+  font-size: var(--fs-md); padding: 9px 15px 9px 19px;
+  border: 1px solid var(--c-border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  animation: ws-slide-up var(--dur-slow) var(--ease-spring);
+}
+.sb-toast::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c-ink); }
+.sb-toast-action {
+  color: var(--c-accent); font-weight: var(--fw-semibold); font-size: var(--fs-md);
+  padding: 2px 7px; border-radius: var(--r-pill);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
+}
+.sb-toast-action:hover { background-size: 100% 100%; }
 
-/* 统一模态壳（T1，对齐 ui-demo CreateModal.css 的 ws-modal 系）：
-   fade+pop 动画 / shadow-modal / head flex + 分隔线 + 关闭 X / body 内滚 / foot 分隔线。
+/* 统一模态壳（T1，对齐 ui-demo controls.css 的 ws-modal 系）：
+   fade+pop 动画（落定感）/ shadow-modal / head flex + 分隔线 + 关闭 X / body 内滚 / foot 分隔线。
    新建、保存、关闭确认、（后续新页面）都复用这一套，别再各写各的。 */
 @keyframes ws-modal-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes ws-modal-pop { from { opacity: 0; transform: translateY(6px) scale(.99); } to { opacity: 1; transform: none; } }
-.sb-modal-overlay { position: fixed; inset: 0; z-index: 400; background: rgba(20,22,26,.32); display: flex; align-items: center; justify-content: center; padding: 24px; animation: ws-modal-fade var(--dur-fast) var(--ease); }
-.sb-modal { width: 520px; max-width: calc(100vw - 32px); background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); display: flex; flex-direction: column; max-height: calc(100vh - 48px); overflow: hidden; animation: ws-modal-pop var(--dur) var(--ease); }
+/* 弹窗入场：轻轻落定（上移+缩放），不垫假纸 */
+@keyframes ws-modal-pop { from { opacity: 0; transform: translateY(10px) scale(0.975); } to { opacity: 1; transform: none; } }
+.sb-modal-overlay { position: fixed; inset: 0; z-index: 400; background: rgba(28, 25, 23, 0.32); display: flex; align-items: center; justify-content: center; padding: 24px; animation: ws-modal-fade var(--dur-fast) var(--ease-enter); }
+.sb-modal { width: 520px; max-width: calc(100vw - 32px); background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); display: flex; flex-direction: column; max-height: calc(100vh - 48px); overflow: hidden; transform-origin: center 40%; animation: ws-modal-pop var(--dur-slow) var(--ease-enter); }
 .sb-modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 14px; border-bottom: 1px solid var(--c-divider); }
 .sb-modal-head-text { min-width: 0; flex: 1; }
 .sb-modal-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--c-text); line-height: var(--lh-tight, 1.3); }
 .sb-modal-where { margin-top: 3px; font-size: var(--fs-sm); color: var(--c-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-modal-x { flex: none; width: 26px; height: 26px; margin: -2px -4px 0 0; display: flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--c-text-3); }
-.sb-modal-x:hover { background: var(--c-hover); color: var(--c-text); }
+/* × 钮 hover 旋转 90°（spring）——对齐 ui-demo ws-modal-x */
+.sb-modal-x {
+  flex: none; width: 26px; height: 26px; margin: -2px -4px 0 0; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill); color: var(--c-text-3);
+  transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease-spring);
+}
+.sb-modal-x:hover { background: var(--c-hover); color: var(--c-text); transform: rotate(90deg); }
 .sb-modal-body { padding: 14px 18px; overflow-y: auto; }
 .sb-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 64px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); }
-.sb-card:hover { background: var(--c-hover); box-shadow: var(--shadow-sm); }
+/* 卡片零阴影（保守口径）：层级 = 1px 细边 + hover 底色差 */
+.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 64px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.sb-card:hover { background: var(--c-bg-chrome); border-color: var(--c-border-strong); border-top-color: var(--c-border-strong); }
 .sb-card-blank { border-top-color: var(--c-accent); }
+.sb-card-blank:hover { border-top-color: var(--c-accent); }
 .sb-card-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
 .sb-card-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.45; }
 
 /* SaveModal「保存到哪里」+ CloseConfirmModal（未保存关闭确认）。复用 .sb-modal 壳（对齐 ui-demo）。 */
 .sb-modal-save { width: 460px; }
 .sb-modal-confirm { width: 430px; }
-/* 关闭确认：橙色圆形警告图标 + 右侧标题/说明（对齐 ui-demo cc-body/cc-ico） */
+/* 关闭确认：警告图标盖章式落定（spring 微弹，不循环），语义色走 warning token */
 .sb-cc-body { display: flex; gap: 12px; padding: 20px 20px 14px; }
-.sb-cc-ico { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: #fff4e5; color: #b26a00; }
+.sb-cc-ico { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; background: var(--c-warning-tint); color: var(--c-warning); animation: ws-pop-in var(--dur-slow) var(--ease-spring) both; }
 /* 修 VC-9：长无空格文件名（ASCII）不换行会撑破模态被 overflow:hidden 从字中间切断、无省略。允许任意处断行。 */
 .sb-cc-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); margin-bottom: 4px; overflow-wrap: anywhere; }
 .sb-modal-desc { font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.55; }
-/* SaveModal 文件名输入行（Colin：保存时可改名，后缀 .html 固定显示） */
+/* SaveModal 文件名输入行（Colin：保存时可改名，后缀 .html 固定显示）。
+   输入框凹进纸里：sunken 底、无边框，focus 底变白 + 墨线从左划过（对齐 ui-demo .ws-input）。 */
 .sb-save-namerow { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; }
-.sb-save-name { flex: 1; min-width: 0; height: 32px; padding: 0 11px; border: 1px solid var(--c-border-strong); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); font-size: var(--fs-base); }
-.sb-save-name:focus { outline: none; border-color: var(--c-accent); box-shadow: 0 0 0 2px var(--c-accent-tint, #eef4ff); }
+.sb-save-name {
+  flex: 1; min-width: 0; height: 32px; padding: 0 12px;
+  border: none; border-radius: var(--r-md);
+  background-color: var(--c-bg-sunken);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat; background-position: left bottom; background-size: 0% 2px;
+  color: var(--c-text); font-size: var(--fs-base);
+  transition: background-color var(--dur-fast) var(--ease), background-size var(--dur-slow) var(--ease-enter);
+}
+.sb-save-name::placeholder { color: var(--c-text-3); }
+.sb-save-name:hover { background-color: #f0efed; }
+.sb-save-name:focus { outline: none; background-color: var(--c-surface); background-size: 100% 2px; }
 .sb-save-ext { flex: none; color: var(--c-text-3); font-size: var(--fs-base); }
 .sb-save-list { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow: auto; margin: 4px 0 0; }
 .sb-save-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; text-align: left; border: 1px solid transparent; border-radius: var(--r-md); background: transparent; color: var(--c-text); font-size: var(--fs-md); transition: background var(--dur-fast) var(--ease); }
 .sb-save-row:hover { background: var(--c-hover); }
-.sb-save-row.is-on { background: var(--c-accent-tint, #eef4ff); border-color: var(--c-accent); }
+.sb-save-row.is-on { background: var(--c-accent-tint); border-color: var(--c-accent); }
 .sb-save-row .sb-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
 .sb-modal-foot { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--c-divider); }
 .sb-modal-spacer { flex: 1; }
-/* 按钮对齐 ui-demo .ws-btn（32px 高 / r-sm / border-strong / hover c-hover / active c-active） */
-.sb-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 14px; border: 1px solid var(--c-border-strong); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); font-size: var(--fs-base); font-weight: var(--fw-medium); white-space: nowrap; transition: background var(--dur-fast) var(--ease); }
-.sb-btn:hover { background: var(--c-hover); }
-.sb-btn:active { background: var(--c-active); }
-.sb-btn:disabled { opacity: .6; cursor: default; }
+/* 按钮对齐 ui-demo .ws-btn：扁平圆丸、纸底强边，hover 底色变化，active scale(0.97)，零阴影零位移 */
+.sb-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px; padding: 0 16px;
+  border: 1px solid var(--c-border-strong); border-radius: var(--r-pill);
+  background: var(--c-surface); color: var(--c-text);
+  font-size: var(--fs-base); font-weight: var(--fw-medium); white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    transform var(--dur-instant) var(--ease);
+}
+.sb-btn:hover { background: var(--c-bg-chrome); }
+.sb-btn:active { transform: scale(0.97); }
+.sb-btn:disabled { opacity: .6; cursor: default; transform: none; }
 .sb-btn:disabled:hover { background: var(--c-surface); } /* 修 VC-11：disabled 时不给 hover 高亮（如「✓ 已复制」态，别看着像还能点） */
-.sb-btn-primary { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
-.sb-btn-primary:hover { background: var(--c-accent-hover); }
-.sb-btn-primary:active { background: var(--c-accent-press); }
-.sb-btn-danger { color: var(--c-danger, #d93025); border-color: var(--c-border); }
-.sb-btn-danger:hover { background: var(--c-danger-tint, #fdecec); border-color: var(--c-danger, #d93025); }
+.sb-btn-primary { background: var(--c-ink); border-color: transparent; color: var(--c-text-invert); }
+.sb-btn-primary:hover { background: var(--c-ink-hover); }
+.sb-btn-primary:disabled { background: var(--c-ink); }
+.sb-btn-danger { color: var(--c-danger); border-color: var(--c-border-strong); }
+.sb-btn-danger:hover { background: var(--c-danger-tint); border-color: var(--c-danger); }
 /* 临时（未保存）标签：标题前一个小圆点提示未保存。 */
 /* （旧「名字前橙点」已被行尾 .sb-tab-dot 取代——T2 对齐 ui-demo arc-tab-dot） */
 
-/* Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层 + 模糊搜结果列表。 */
-/* T7 对齐 ui-demo FindPalette：shadow-modal + pop 动画 + 键帽药丸 hint + 选中行 accent 图标 + 右对齐子路径 */
+/* Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层 + 模糊搜结果列表。
+   浮层族：细边 + shadow-pop + pop-in 落定；搜索行聚焦墨线。 */
 .fp-overlay { align-items: flex-start; padding-top: 12vh; } /* 覆盖 .sb-modal-overlay 的居中，改顶部锚定 */
-.fp { width: 560px; max-width: calc(100vw - 32px); background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); overflow: hidden; display: flex; flex-direction: column; animation: ws-modal-pop var(--dur) var(--ease); }
-.fp-bar { display: flex; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--c-divider); }
+.fp {
+  width: 560px; max-width: calc(100vw - 32px);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden; display: flex; flex-direction: column;
+  transform-origin: top center;
+  animation: ws-pop-in var(--dur-slow) var(--ease-enter);
+}
+.fp-bar {
+  display: flex; align-items: center; gap: 10px; padding: 13px 14px;
+  border-bottom: 1px solid var(--c-divider);
+  /* 签名动作：聚焦时墨线从左划过 */
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat; background-position: left bottom; background-size: 0% 2px;
+  transition: background-size var(--dur-slow) var(--ease-enter);
+}
+.fp-bar:focus-within { background-size: 100% 2px; }
 .fp-bar-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
 .fp-input { flex: 1; min-width: 0; height: 28px; border: none; background: none; outline: none; font-size: var(--fs-lg); color: var(--c-text); }
 .fp-input::placeholder { color: var(--c-text-3); }
-.fp-hint { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: var(--r-sm); background: var(--c-bg-sunken); color: var(--c-text-3); font-size: var(--fs-xs); white-space: nowrap; }
+/* 键帽药丸 hint：kbd 键帽语汇（border-bottom 2px 是键帽不是按钮投影，保留） */
+.fp-hint { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border: 1px solid var(--c-border-strong); border-bottom-width: 2px; border-radius: var(--r-sm); background: var(--c-bg-sunken); color: var(--c-text-3); font-family: var(--font-mono); font-size: var(--fs-xs); white-space: nowrap; }
 .fp-list { max-height: 340px; overflow-y: auto; padding: 6px; }
 .fp-empty { padding: 22px 12px; text-align: center; color: var(--c-text-3); font-size: var(--fs-sm); }
-.fp-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; text-align: left; border: none; border-radius: var(--r-sm); background: transparent; color: var(--c-text); }
-.fp-row.is-sel { background: var(--c-accent-tint, #eef4ff); }
+.fp-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; text-align: left;
+  border: none; border-radius: var(--r-sm); color: var(--c-text);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
+}
+.fp-row:hover { background-size: 100% 100%; }
+.fp-row.is-sel { background: var(--c-accent-tint); }
 .fp-row-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
 .fp-row.is-sel .fp-row-ico { color: var(--c-accent); }
 .fp-name { flex: none; max-width: 55%; font-size: var(--fs-md); }
@@ -421,7 +584,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-bc-sep { color: var(--c-border-strong); flex: none; }
 /* 文件名过长时截断省略，不换行、不撑高、不溢出顶到按钮 */
 .ws-doc-crumb { color: var(--c-text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-dirty { color: var(--c-warning); font-size: var(--fs-xs); flex: none; white-space: nowrap; transition: opacity .3s ease; }
+.ws-dirty { color: var(--c-warning); font-size: var(--fs-xs); flex: none; white-space: nowrap; transition: opacity var(--dur-slow) var(--ease); }
 .ws-dirty.ws-saved { color: var(--c-success); } /* 保存成功：✓ 已保存（绿） */
 .ws-dirty.ws-fade { opacity: 0; }               /* 淡出 */
 .ws-dirty[hidden] { display: none; }
@@ -433,16 +596,23 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-viewer { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--c-bg); }
 .ws-viewer[hidden] { display: none; }
 
-/* 外部打开卡片（Word/表格/演示/其他，或 PDF 兜底）。对齐 ui-demo ExternalFilePanel。 */
+/* 外部打开卡片（Word/表格/演示/其他，或 PDF 兜底）。对齐 ui-demo ExternalFilePanel。
+   卡片零阴影：1px 细边就是层级；载入时轻轻落定（上浮不缩放，不夸张）。 */
 .efp { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.efp-card { width: 420px; max-width: 100%; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 32px 28px; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface); box-shadow: var(--shadow-sm); }
-.efp-ico { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: var(--r-md); background: var(--c-accent-tint); color: var(--c-accent); margin-bottom: 14px; }
+.efp-card { width: 420px; max-width: 100%; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 32px 28px; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface); animation: ws-view-in var(--dur-slow) var(--ease-enter) both; }
+.efp-ico { display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: var(--r-md); background: var(--c-hover); color: var(--c-text-2); margin-bottom: 14px; }
 .efp-name { font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--c-text); max-width: 100%; }
 .efp-meta { margin-top: 4px; font-size: var(--fs-sm); color: var(--c-text-3); max-width: 100%; }
 .efp-note { font-size: var(--fs-base); color: var(--c-text-2); line-height: 1.6; margin: 12px 0 18px; }
-.efp-open { display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 20px; border-radius: var(--r-sm); background: var(--c-accent); color: #fff; font-size: var(--fs-md); font-weight: var(--fw-medium); }
-.efp-open:hover { background: var(--c-accent-hover); }
-.efp-open:active { background: var(--c-accent-press); }
+/* 打开按钮 = primary 墨丸 */
+.efp-open {
+  display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 20px;
+  border-radius: var(--r-pill); background: var(--c-ink); color: var(--c-text-invert);
+  font-size: var(--fs-md); font-weight: var(--fw-medium);
+  transition: background-color var(--dur-fast) var(--ease), transform var(--dur-instant) var(--ease);
+}
+.efp-open:hover { background: var(--c-ink-hover); }
+.efp-open:active { transform: scale(0.97); }
 
 /* 图片/PDF 内置查看器共用顶条（文件名 + 只读标 + 用默认程序打开）。对齐 ui-demo FileViewerBar。
    高度对齐文档头 52px：右上角浮动 .top-actions 的 top:11px 是按 52px 条居中算的（中线 y=26）。查看器顶栏
@@ -451,14 +621,22 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .fv-name { min-width: 0; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-md); font-weight: var(--fw-medium); color: var(--c-text); }
 .fv-tag { flex: none; display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--r-pill); background: var(--c-hover); color: var(--c-text-2); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
 .fv-sp { flex: 1; }
-/* 外链按钮 = 描边按钮（对齐 ui-demo outline button，之前无边框像纯文字） */
-.fv-open { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--c-border); border-radius: var(--r-sm); color: var(--c-text-2); font-size: var(--fs-base); }
-.fv-open:hover { background: var(--c-hover); color: var(--c-text); }
+/* 外链按钮 = secondary 圆丸（纸底强边，对齐 ui-demo .fv-open） */
+.fv-open {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px;
+  border: 1px solid var(--c-border-strong); border-radius: var(--r-pill);
+  background: var(--c-surface); color: var(--c-text-2); font-size: var(--fs-base);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    transform var(--dur-instant) var(--ease);
+}
+.fv-open:hover { background: var(--c-bg-chrome); color: var(--c-text); }
+.fv-open:active { transform: scale(0.97); }
 
 /* 图片：浏览器原生渲染真实文件（file://），只读。T3 对齐 ui-demo ImageViewer：
-   深色影院背景 + 圆角画框 + 大投影 + 文件名标题。safe center：超大图不把上/左缘滚丢。 */
+   深色影院背景 + 圆角画框 + 大投影 + 文件名标题（影院画框是内容呈现、非 UI chrome，
+   投影与 ui-demo ImageViewer 逐字一致、不归保守口径管）。safe center：超大图不把上/左缘滚丢。 */
 .imgv-scroll { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: safe center; padding: 32px; background: #2b2d31; }
-.imgv-frame { margin: 0; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.imgv-frame { margin: 0; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; animation: ws-fade-in var(--dur-slow) var(--ease-enter) both; }
 .imgv-img { max-width: min(900px, 100%); height: auto; border-radius: 10px; box-shadow: 0 12px 44px rgba(0,0,0,.45); }
 .imgv-cap { font-size: var(--fs-sm); color: rgba(255,255,255,.7); }
 
@@ -466,26 +644,29 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* PDF.js viewer（替代 Chromium 内置 iframe，B7 一行工具栏 / B8 无预览栏）：连续滚动 canvas。 */
 /* safe center：放大超过舞台宽时靠左起排（纯 center 会两侧溢出、左半滚不到）。
    .pdfv-page 不设 max-width——fit 模式 scale 已按可用宽算、cap 从不生效；缩放模式反被它
-   封在 100% 不再变大（且 height 不跟着缩、还会把页面拉变形）。 */
+   封在 100% 不再变大（且 height 不跟着缩、还会把页面拉变形）。
+   页面投影与 ui-demo PdfViewer 逐字一致（白纸页在灰舞台上，内容呈现、非 UI chrome）。 */
 .pdfv-stage { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: safe center; gap: 14px; padding: 24px; background: #e6e7ea; /* 中性灰更衬白纸（T4 对齐 ui-demo） */ }
-.pdfv-page { flex: none; border-radius: 2px; box-shadow: 0 2px 10px rgba(0,0,0,.12); background: #fff; }
+.pdfv-page { flex: none; border-radius: 2px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); background: #fff; }
 .pdfv-pageinfo { font-size: var(--fs-sm); color: var(--c-text-2); white-space: nowrap; }
-.pdfv-zbtn { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: 15px; }
-.pdfv-zbtn:hover { background: var(--c-hover); }
+.pdfv-zbtn { flex: none; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-border-strong); border-radius: var(--r-pill); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: 15px; transition: background-color var(--dur-fast) var(--ease), transform var(--dur-instant) var(--ease); }
+.pdfv-zbtn:hover { background: var(--c-bg-chrome); }
+.pdfv-zbtn:active { transform: scale(0.97); }
 .pdfv-zlabel { font-size: var(--fs-xs); color: var(--c-text-2); min-width: 38px; text-align: center; }
-.pdfv-fit { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--c-border); border-radius: var(--r-sm); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: var(--fs-xs); }
-.pdfv-fit:hover { background: var(--c-hover); }
+.pdfv-fit { flex: none; height: 26px; padding: 0 10px; border: 1px solid var(--c-border-strong); border-radius: var(--r-pill); background: var(--c-surface); color: var(--c-text); cursor: pointer; font-size: var(--fs-xs); transition: background-color var(--dur-fast) var(--ease), transform var(--dur-instant) var(--ease); }
+.pdfv-fit:hover { background: var(--c-bg-chrome); }
+.pdfv-fit:active { transform: scale(0.97); }
 .pdfv-err { margin: 40px; color: var(--c-text-3); }
 
 /* 空态 */
 /* 修 VC-8：最小窗高（520）下空态标题+提示+两按钮+10 条最近文档 ≈500px、flex 居中会上下同时裁切且无滚动。允许竖向滚。 */
 .ws-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; overflow-y: auto; }
 .ws-empty-wrap[hidden] { display: none; }
-.ws-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 520px; padding: 0 40px; text-align: center; }
+.ws-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 520px; padding: 0 40px; text-align: center; animation: ws-view-in var(--dur-page) var(--ease-enter) both; }
 .ws-empty-title { font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--c-text); }
 .ws-empty-note { font-size: var(--fs-md); color: var(--c-text-3); margin-bottom: 10px; }
 .ws-empty-actions { display: flex; align-items: center; gap: 10px; }
-.ws-empty-ghost { border: 1px solid var(--c-border-strong); border-radius: var(--r-sm); }
+.ws-empty-ghost { border: 1px solid var(--c-border-strong); border-radius: var(--r-pill); }
 #recent-list { width: 100%; margin-top: 18px; text-align: left; }
 #recent-list li { padding: 9px 12px; border-radius: var(--r-sm); cursor: pointer; color: var(--c-text-2); font-size: var(--fs-base); transition: background var(--dur-fast) var(--ease); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #recent-list li:hover { background: var(--c-hover); color: var(--c-text); }
@@ -494,25 +675,48 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* 修 VC-5：z-index 提到基础编辑浮层（格式条 z60 / 焦点框 z55 / hover 框 z50，挂 body 顶层）之上——
    否则 .top-actions 建的 z:30 stacking context 把 ⋯ 下拉（z:200）困在 30、被基础编辑浮层盖住。仍在模态(400)/toast(500)之下。 */
 .top-actions { position: absolute; top: 11px; right: 22px; z-index: 65; display: flex; align-items: center; gap: 8px; }
-.ta-more { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--c-text-2); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-.ta-more:hover { background: var(--c-hover); color: var(--c-text); }
-.ta-more:active { background: var(--c-active); }
-/* ⋯ 下拉：挂在 .top-actions 内右对齐（菜单壳同 .sb-ctx 一族） */
-.ws-docmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 200; min-width: 168px; padding: 4px; background: var(--c-surface); border-radius: var(--r-md); box-shadow: var(--shadow-menu); display: flex; flex-direction: column; gap: 1px; animation: ws-modal-pop var(--dur-fast) var(--ease); }
+/* ⋯ 图标钮 = 墨圆 + hover 墨条滑入 */
+.ta-more {
+  width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill); color: var(--c-text-2);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ta-more:hover { background-size: 100% 100%; color: var(--c-text); }
+.ta-more:active { transform: translateY(1px); }
+/* ⋯ 下拉：挂在 .top-actions 内右对齐（菜单壳同 .sb-ctx 一族：细边 + shadow-menu + pop-in） */
+.ws-docmenu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 200; min-width: 168px; padding: 4px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md); box-shadow: var(--shadow-menu); display: flex; flex-direction: column; gap: 1px; transform-origin: top right; animation: ws-pop-in var(--dur-fast) var(--ease-enter); }
 .ws-docmenu[hidden] { display: none; }
-.ws-docmenu-item { display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 10px; border-radius: 5px; font-size: var(--fs-base); color: var(--c-text); text-align: left; white-space: nowrap; }
+.ws-docmenu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 10px;
+  border-radius: var(--r-sm); font-size: var(--fs-base); color: var(--c-text); text-align: left; white-space: nowrap;
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
+}
 .ws-docmenu-item svg { color: var(--c-text-3); flex: none; }
-.ws-docmenu-item:hover { background: var(--c-hover); }
-.ws-docmenu-item:disabled { opacity: .45; background: transparent; }
+.ws-docmenu-item:hover { background-size: 100% 100%; }
+.ws-docmenu-item:disabled { opacity: .45; background-size: 0% 100%; }
 .ws-docmenu-sep { height: 1px; background: var(--c-divider); margin: 3px 6px; }
-.ta-ghost { height: 30px; padding: 0 12px; border-radius: var(--r-sm); color: var(--c-text-2); font-size: var(--fs-base); display: inline-flex; align-items: center; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-.ta-ghost:hover { background: var(--c-hover); color: var(--c-text); }
-.ta-ghost:active { background: var(--c-active); }
-.ta-ghost:disabled { opacity: .4; background: transparent; }
-.top-share { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; background: var(--c-accent); color: #fff; font-size: var(--fs-base); font-weight: var(--fw-medium); border-radius: var(--r-sm); box-shadow: var(--shadow-sm); }
-.top-share:hover { background: var(--c-accent-hover); }
-.top-share:active { background: var(--c-accent-press); }
-.top-share:disabled { background: var(--c-border-strong); box-shadow: none; cursor: default; }
+/* 文字钮：墨条滑入 */
+.ta-ghost {
+  height: 30px; padding: 0 12px; border-radius: var(--r-pill); color: var(--c-text-2); font-size: var(--fs-base);
+  display: inline-flex; align-items: center;
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ta-ghost:hover { background-size: 100% 100%; color: var(--c-text); }
+.ta-ghost:active { transform: translateY(1px); }
+.ta-ghost:disabled { opacity: .4; background-size: 0% 100%; }
+/* primary 是墨不是蓝：墨底圆丸，扁平零阴影，按压微陷 */
+.top-share {
+  display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px;
+  background: var(--c-ink); color: var(--c-text-invert); font-size: var(--fs-base); font-weight: var(--fw-medium);
+  border-radius: var(--r-pill);
+  transition: background-color var(--dur-fast) var(--ease), transform var(--dur-instant) var(--ease);
+}
+.top-share:hover { background: var(--c-ink-hover); }
+.top-share:active { transform: scale(0.97); }
+.top-share:disabled { background: var(--c-border-strong); cursor: default; transform: none; }
 
 /* 导出 PDF：保存右侧的 ghost 按钮（单按钮，直接导出 Wordspace 样式） */
 #export-btn { gap: 6px; }
@@ -528,7 +732,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .aiax-way-desc { font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.55; margin-bottom: 10px; }
 .aiax-way-desc code { font-family: var(--font-mono); font-size: var(--fs-xs); background: var(--c-bg-sunken); padding: 1px 5px; border-radius: var(--r-xs); }
 .aiax-cmd { display: flex; align-items: center; gap: 8px; }
-.aiax-cmd code { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-sm); background: #23262b; color: #e8eaed; padding: 8px 12px; border-radius: var(--r-sm); overflow-x: auto; white-space: nowrap; }
+.aiax-cmd code { flex: 1; min-width: 0; font-family: var(--font-mono); font-size: var(--fs-sm); background: var(--c-ink); color: var(--c-text-invert); padding: 8px 12px; border-radius: var(--r-sm); overflow-x: auto; white-space: nowrap; }
 .aiax-note { margin-top: 12px; font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.5; }
 
 /* 侧栏页脚 AI 接入钮（左下角，对齐 ui-demo arc-foot 位置） */
@@ -536,7 +740,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 /* AI 接入弹窗 · Tab 版（skill 为方式一/推荐；步骤分页避免一屏塞满） */
 .aiax-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--c-divider); }
-.aiax-tab { padding: 6px 12px 8px; font-size: var(--fs-base); color: var(--c-text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.aiax-tab { padding: 6px 12px 8px; font-size: var(--fs-base); color: var(--c-text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
 .aiax-tab:hover { color: var(--c-text); }
 .aiax-tab.is-active { color: var(--c-text); font-weight: var(--fw-semibold); border-bottom-color: var(--c-accent); }
 .aiax-badge { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: var(--r-pill); background: var(--c-accent-tint); color: var(--c-accent); font-size: var(--fs-xs); font-weight: var(--fw-medium); }
@@ -547,7 +751,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 /* ── 文档内查找条（Cmd+F）──────────────────────────────────────────────
    父层浮层，position:fixed 由 find.js 钉在 doc-frame 右上角（top/left CSSOM 设，
    避开右上角 ⋯ 菜单）。匹配高亮走 CSS Custom Highlight（::highlight 注在 iframe 内，
-   见 find.js），这里只管查找条本身。纸方墨圆：纸面卡片小圆角、控件墨圆、批注圈焦点。 */
+   见 find.js），这里只管查找条本身。纸方墨圆：纸面浮层细边+极淡阴影、控件墨圆、批注圈焦点。 */
 .ws-docfind {
   position: fixed;
   z-index: 60; /* 低于 .top-actions(65)，别盖住 ⋯ 菜单 */
@@ -560,7 +764,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 }
 .ws-docfind[hidden] { display: none; } /* display:flex 会盖过 UA hidden，得显式声明 */
 @media (prefers-reduced-motion: no-preference) {
-  .ws-docfind { animation: ws-docfind-in var(--dur) var(--ease) both; }
+  .ws-docfind { animation: ws-docfind-in var(--dur) var(--ease-enter) both; }
   @keyframes ws-docfind-in { from { opacity: 0; transform: translateY(-6px); } }
 }
 .ws-docfind-input {
@@ -585,3 +789,14 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-docfind-btn:hover:not(:disabled) { background: var(--c-hover); color: var(--c-text); }
 .ws-docfind-btn:disabled { color: var(--c-text-3); opacity: .6; cursor: default; }
 .ws-docfind-close { margin-left: 2px; }
+
+/* ============================================================ 可访问性：尊重「减少动态效果」。
+   关掉位移/缩放这类前庭刺激，保留极短的透明度过渡（不致于让界面跳变）。对齐 ui-demo global.css。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
