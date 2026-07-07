@@ -106,18 +106,41 @@ test('TN-3 强断言：缩进导引线真被 CSS 画出来（查 computed width/
   const guides = await deepFile.evaluate((el) =>
     [...el.querySelectorAll('.sb-guide')].map((g) => {
       const cs = getComputedStyle(g);
-      return { w: cs.width, bg: cs.backgroundColor, left: parseFloat(cs.left), pos: cs.position };
+      const r = g.getBoundingClientRect(); // 真实 rendered 几何，非 JS 设的 inline 值
+      return { w: cs.width, bg: cs.backgroundColor, pos: cs.position, h: r.height, x: r.left };
     }),
   );
   expect(guides.length).toBe(2); // depth 2 → 2 级祖先导引线
   for (const g of guides) {
     expect(g.pos).toBe('absolute');
     expect(g.w).toBe('1px');
-    // 背景真被上色（CSS 全废/被 CSP 拦时这里翻红——S4 强断言）
+    // 背景真被上色（CSS 全废/被 CSP 拦时这里翻红）
     expect(g.bg).not.toBe('rgba(0, 0, 0, 0)');
     expect(g.bg).not.toBe('transparent');
+    // 竖线真有高度（top:0/bottom:0 撑满行高 30px）——高度塌成 0（top/bottom 被删、或父行丢 position:relative）时翻红
+    expect(g.h).toBeGreaterThan(20);
   }
-  expect(guides[1].left).toBeGreaterThan(guides[0].left); // 两条线 x 递增、不重叠
+  // 用真实 rendered x（getBoundingClientRect，反映 position:absolute+left 真被应用；position 若坏两线会挤在 flex 流里）
+  expect(guides[1].x).toBeGreaterThan(guides[0].x + 6);
+});
+
+test('TN-5 回归：把文件拖到 compact 行 → 落进**最深那级**目录（不是顶段），真实 fs 生效', async () => {
+  await openWorkspace();
+  await page.locator(`.sb-dir[data-rel="${DEEP}"]`).click(); // 展开 compact 链
+  await page.locator(`.sb-dir[data-rel="${HUADONG}"]`).click(); // 展开华东区，让最深文件可拖
+  await expect(page.locator(`.sb-file[data-rel="${DEEP_FILE}"]`)).toBeVisible();
+  // 把 华东区/门店复盘.html 拖到 compact 行「归档/2025/Q4/复盘」上。ondrop→doMove(dragNode, dir.rel=最深段)。
+  await page.evaluate(({ src, dst }) => {
+    const s = document.querySelector(`.sb-file[data-rel="${src}"]`);
+    const d = document.querySelector(`.sb-dir[data-rel="${dst}"]`);
+    const dt = new DataTransfer();
+    const ev = (t, el) => el.dispatchEvent(new DragEvent(t, { bubbles: true, cancelable: true, dataTransfer: dt }));
+    ev('dragstart', s); ev('dragover', d); ev('drop', d); ev('dragend', s);
+  }, { src: DEEP_FILE, dst: DEEP });
+  // 落进最深段「复盘」根 = 归档/2025/Q4/复盘/门店复盘.html（真实 fs rename）
+  await expect(page.locator(`.sb-file[data-rel="${DEEP}/门店复盘.html"]`)).toBeVisible({ timeout: 8000 });
+  // 关键变异断言：若 drop 误用顶段 rel（node.rel=归档），文件会落到 归档/门店复盘.html——必须没有
+  await expect(page.locator('.sb-file[data-rel="归档/门店复盘.html"]')).toHaveCount(0);
 });
 
 test('TN-4 回归：透过 compact 链打开最深文件 → 真实路径正确加载进编辑器', async () => {

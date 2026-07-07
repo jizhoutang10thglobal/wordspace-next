@@ -78,12 +78,14 @@
   // ——其它消费方（collectDirRels/filterTree/allFiles/onTreeChanged）仍要看完整真 rel。
   function compactChain(node) {
     const names = [node.name];
+    const rels = [node.rel]; // 链上每级的真 rel（折叠状态按整条链一致处理，见下）
     let cur = node;
     while (cur.children && cur.children.length === 1 && cur.children[0].isDir) {
       cur = cur.children[0];
       names.push(cur.name);
+      rels.push(cur.rel);
     }
-    return { names, tail: cur };
+    return { names, rels, tail: cur };
   }
 
   // ---- 打开 / 刷新 ----
@@ -336,8 +338,10 @@
       row.append(caret, ico, name, add);
       applyIndent(row, depth, false);
       row.onclick = () => {
-        if (collapsed.has(dir.rel)) collapsed.delete(dir.rel);
-        else collapsed.add(dir.rel);
+        // 折叠状态按**整条 compact 链**一致处理（不只 tail）：展开=删掉链上每级 rel、收起=每级都加。
+        // 否则残留的祖先折叠键会在链日后断开（外部往中间级加文件）时命中新 tail、把已展开的链无声重折叠。
+        if (collapsed.has(dir.rel)) chain.rels.forEach((r) => collapsed.delete(r));
+        else chain.rels.forEach((r) => collapsed.add(r));
         render();
       };
       row.oncontextmenu = (e) => {
