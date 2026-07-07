@@ -766,22 +766,22 @@
     try { st = await window.ws2.wsGetTabs(); } catch (e) { st = { entries: [], activeRel: null }; }
     try { web = (await window.ws2.wsGetWebTabs()) || web; } catch (e) { /* keep default */ }
     if (!current || current.root !== rootBefore) return;
-    // ⚠ 在 await 之后抓内存里的 web:loadTabs 在飞期间(IPC 往返)用户可能刚建了个网页标签(omnibox),
-    // 若不 union 进来会被这次 loadTabs 的 tabState 覆盖没(开工作区后立刻上网就丢标签的竞态)。
-    const inMemWeb = tabState.entries.filter(isWebEntry);
-    // 合并:全局网页标签 ∪ 内存里的 web + 本工作区文档标签(root 桶里理论无 web,防御性过滤)。
-    const loadedWeb = web.entries || [];
-    const loadedKeys = new Set(loadedWeb.map((e) => keyOf(e)));
-    const mergedWeb = [...loadedWeb, ...inMemWeb.filter((e) => !loadedKeys.has(keyOf(e)))];
-    const raw = [...mergedWeb, ...(st.entries || []).filter((e) => !isWebKey(keyOf(e)))];
+    // 合并:全局网页标签 + 本工作区文档标签(root 桶里理论无 web,防御性过滤)。
+    const raw = [...(web.entries || []), ...(st.entries || []).filter((e) => !isWebKey(keyOf(e)))];
     // 存在性校验三分流：网页标签(web:)恒有效(不做 fs 检查——store 已校验 url);内部看树;外部问 fs.stat。
     const checks = await Promise.all(raw.map((e) =>
       isWebKey(keyOf(e)) ? Promise.resolve(true) : e.rel ? Promise.resolve(!!findNode(e.rel)) : window.ws2.pathExists(e.abs).catch(() => false),
     ));
     if (!current || current.root !== rootBefore) return;
-    const entries = raw.filter((_e, i) => checks[i]);
-    // 激活种子:root 桶 activeRel(工作区上下文)优先;没有则用全局 web 激活键(上次看的网页)。
-    const activeRel = window.WS2Tabs.resolveActive(entries, st.activeRel || web.activeKey);
+    const entries0 = raw.filter((_e, i) => checks[i]);
+    // ⚠ 最后一刻才 union 内存里的 web 标签:从进 loadTabs 到这里隔着**三个 await**(getTabs/getWebTabs/
+    // pathExists 批),期间用户新建的网页标签(开文件夹后立刻输网址)若不补进来会被这次赋值 clobber。
+    // 早抓(第 2 个 await 后)不够——checks 那批 IPC 往返窗口更宽,e2e 套件负载下必现 flake,真用户也可能踩。
+    const liveWeb = tabState.entries.filter(isWebEntry).filter((e) => !entries0.some((x) => keyOf(x) === keyOf(e)));
+    const entries = [...liveWeb, ...entries0];
+    // 激活:内存里的当前激活优先(可能正是 loadTabs 飞行期间刚建的 web 标签,别把用户视图抢走);
+    // 其次 root 桶 activeRel(工作区上下文);最后全局 web 激活键(上次看的网页)。
+    const activeRel = window.WS2Tabs.resolveActive(entries, tabState.activeRel || st.activeRel || web.activeKey);
     const changed = entries.length !== raw.length || activeRel !== st.activeRel;
     tabState = { entries, activeRel };
     if (changed) persistTabs();

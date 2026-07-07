@@ -99,7 +99,14 @@
     focusNewtab(); // 焦点落在中间大搜索框(主 CTA),不是侧栏那个(审计 P1.2)
   };
 
-  function focusNewtab() { setTimeout(function () { if (newtabAddr) { newtabAddr.focus(); newtabAddr.select(); } }, 0); }
+  function focusNewtab() { setTimeout(function () {
+    if (!newtabAddr) return;
+    // ⚠ 用户正在别的输入框打字(典型:开文件夹后立刻在侧栏 omnibox 输网址,loadTabs 迟到才渲染空态)——
+    // 别抢焦点:抢会 blur 掉侧栏地址栏、把正输入的值清空(e2e 套件顺序依赖抓出的真竞态)。
+    var ae = document.activeElement;
+    if (ae && ae !== newtabAddr && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+    newtabAddr.focus(); newtabAddr.select();
+  }, 0); }
 
   // ---- omnibox 上下文（web=地球+URL；doc/空=文件夹图标+空,占位提示浏览） ----
   function setOmniContext(entry) {

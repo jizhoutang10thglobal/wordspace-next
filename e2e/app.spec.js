@@ -1106,10 +1106,11 @@ test('AI 接入弹窗：菜单打开 + 复制 Prompt/命令 真进剪贴板', as
 });
 
 // Colin 2026-07-03：单文件模式（没开工作区）此前没有任何「打开文件夹」入口 → 集成进 ⋯ 菜单。
-test('单文件模式：⋯ 菜单「打开文件夹…」→ 装载工作区（侧栏出现）', async () => {
+test('单文件模式：⋯ 菜单「打开文件夹…」→ 装载工作区（文件树出现）', async () => {
   await launch();
-  await openDoc(SIMPLE); // 单文件打开，无工作区、无侧栏
-  await expect(page.locator('#sidebar.sb-on')).toHaveCount(0);
+  await openDoc(SIMPLE); // 单文件打开，无工作区（browser UX 重做后侧栏常驻，改验「没有文件树」）
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-file')).toHaveCount(0);
   // 环境 seam 指一个工作区目录（原生对话框 e2e 点不了）——launch 的 env 已带 WS2_USERDATA；这里另启带 seam 的实例
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
   await app.close().catch(() => {});
@@ -1126,7 +1127,7 @@ test('单文件模式：⋯ 菜单「打开文件夹…」→ 装载工作区（
   await app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('open-file', p), docPath);
   frame = page.frameLocator('#doc-frame');
   await expect(frame.locator('h1')).toHaveText('单文件');
-  await expect(page.locator('#sidebar.sb-on')).toHaveCount(0); // 单文件模式确实没侧栏
+  await expect(page.locator('.sb-file')).toHaveCount(0); // 单文件模式：侧栏常驻但没有文件树（无工作区）
   await page.click('#doc-menu-btn');
   await page.click('#open-folder-btn'); // → pickFolder（seam 直给 wsDir）
   await expect(page.locator('#sidebar.sb-on')).toBeVisible();  // 工作区装载、侧栏出现

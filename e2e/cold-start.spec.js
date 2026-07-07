@@ -46,7 +46,7 @@ test.beforeEach(async () => {
   await fs.writeFile(path.join(outsideDir, 'outside.html'), HTML('OUT'), 'utf8');
   // 先持久化一个工作区，让下次冷启动 ws-get-root 有「上次工作区」要恢复（= restore 在飞，制造竞态）。
   const { p } = await launch({ WS2_USERDATA: userData, WS2_FOLDER_IN: wsDir });
-  await p.click('#home-open-folder');
+  await p.click('#nt-open-folder');
   await expect(p.locator('#sidebar.sb-on')).toBeVisible();
   await app.close(); // launch 已把它赋给模块级 app
   app = null; // seed 已关，afterEach 不重复关（接下来测试自己的 launch 会重新赋值）

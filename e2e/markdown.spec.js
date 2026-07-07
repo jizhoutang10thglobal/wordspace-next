@@ -57,7 +57,7 @@ async function launch(env) {
   return { a, p };
 }
 async function openWorkspace() {
-  await page.click('#home-open-folder');
+  await page.click('#nt-open-folder');
   await expect(page.locator('#sidebar.sb-on')).toBeVisible();
   await expect(page.locator('.sb-file[data-rel="笔记.md"]')).toBeVisible();
 }

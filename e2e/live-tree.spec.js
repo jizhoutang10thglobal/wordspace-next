@@ -21,7 +21,7 @@ async function launch(env) {
   return { a, p };
 }
 async function openWorkspace() {
-  await page.click('#home-open-folder');
+  await page.click('#nt-open-folder');
   await expect(page.locator('#sidebar.sb-on')).toBeVisible();
   await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
 }
@@ -88,5 +88,5 @@ test('外部删除一个打开的文件 → 树更新 + 标签消失', async () 
   await nudge();
   await expect(page.locator('.sb-file[data-rel="a.html"]')).toHaveCount(0, { timeout: W }); // 树
   await expect(page.locator('#sb-tabs .sb-tab[data-rel="a.html"]')).toHaveCount(0, { timeout: W }); // 标签
-  await expect(page.locator('#home')).toBeVisible({ timeout: W }); // 唯一打开的文档被删 → 编辑器回空态
+  await expect(page.locator('#web-newtab')).toBeVisible({ timeout: W }); // 唯一打开的文档被删 → 编辑器回空态
 });

@@ -24,7 +24,7 @@ test.beforeEach(async () => {
 test.afterEach(async () => { await app.close().catch(() => {}); await fs.rm(tmp, { recursive: true, force: true }).catch(() => {}); });
 
 test('PDF.js viewer：canvas 渲染 + 一行工具栏（页码/缩放/适应宽度）+ 无 Chromium iframe', async () => {
-  await page.click('#home-open-folder');
+  await page.click('#nt-open-folder');
   await expect(page.locator('.sb-file[data-rel="test.pdf"]')).toBeVisible();
   await page.click('.sb-file[data-rel="test.pdf"]');
   // PDF.js 渲染出 canvas（连续滚动舞台里）
@@ -42,7 +42,7 @@ test('PDF.js viewer：canvas 渲染 + 一行工具栏（页码/缩放/适应宽�
 });
 
 test('PDF.js viewer：放大按钮改变缩放比 + 画布真变大（不被 CSS 封顶、可横向滚、左缘可达）', async () => {
-  await page.click('#home-open-folder');
+  await page.click('#nt-open-folder');
   await page.click('.sb-file[data-rel="test.pdf"]');
   await expect(page.locator('.pdfv-stage canvas.pdfv-page')).toHaveCount(1, { timeout: 12000 });
   const z0 = await page.locator('.pdfv-zlabel').textContent();

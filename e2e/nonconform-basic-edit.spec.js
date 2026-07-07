@@ -193,21 +193,21 @@ test('回归：关掉最后一个非合规标签 / 文件被外部删 → 空白
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });
   await page.evaluate(() => { window.confirm = () => true; window.alert = () => {}; });
-  await page.click('#home-open-folder');
+  await page.click('#nt-open-folder');
   await page.click('.sb-file[data-rel="wild.html"]');
   await expect(page.locator('#ws-degrade-notice')).toBeVisible(); // 开着野文件：条在
   // ① 关掉唯一标签 → 空白页无条
   const tab = page.locator('#sb-tabs .sb-tab[data-rel="wild.html"]');
   await tab.hover();
   await tab.locator('.sb-tab-close').click();
-  await expect(page.locator('#home')).toBeVisible();
+  await expect(page.locator('#web-newtab')).toBeVisible();
   await page.waitForTimeout(600); // 给陈旧 onload 晚到的窗口（修前正是它把条挂回来）
   await expect(page.locator('#ws-degrade-notice'), '空白页残留降级条（关标签路）').toBeHidden();
   // ② 再开 → 外部删除 → 回空态无条
   await page.click('.sb-file[data-rel="wild.html"]');
   await expect(page.locator('#ws-degrade-notice')).toBeVisible();
   await fs.rm(path.join(tmpWs, 'wild.html'));
-  await expect(page.locator('#home')).toBeVisible({ timeout: 8000 });
+  await expect(page.locator('#web-newtab')).toBeVisible({ timeout: 8000 });
   await page.waitForTimeout(600);
   await expect(page.locator('#ws-degrade-notice'), '空白页残留降级条（外部删除路）').toBeHidden();
 });
