@@ -32,7 +32,7 @@ import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
 import { Avatar } from '../ui/primitives'
-import { buildFileTree, type FileNode } from '../lib/tree'
+import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
 import { IS_MAC } from '../lib/platform'
 import type { FileEntry, FileKind, MountRoot, Tab } from '../types'
 import './ArcSidebar.css'
@@ -60,13 +60,25 @@ function parentDir(p: string): string {
   return i >= 0 ? p.slice(0, i) : ''
 }
 
-// 文件树缩进:每级 14px,但**封顶**——层级再深也不会把行文字挤出侧栏。
-// 到第 8 级后缩进就不再增长(更深的层级共用同一缩进),靠 caret 展开/折叠 +
-// 文件名 ellipsis 保证深树始终可用,而不是无限往右扩展。
-const INDENT_STEP = 14
-const INDENT_MAX_LEVEL = 8
+// 文件树缩进:每级 12px(研究:窄侧栏 12-16px,导引线扛层级、缩进就不用大)。
+// **不再硬封顶**——封顶会让深层各级挤成同一缩进、层级信息丢失(Wendi 反馈的根因)。深层靠
+// compact folders 压有效深度 + 导引线读层级 + 名字省略号/tooltip + 折叠 兜底(VS Code/Notion 同款)。
+const INDENT_STEP = 12
+// 导引线起点 x:对齐第 0 级 caret 中心(dir base 8 + caret 半宽 ~6)。第 i 级导引线在 GUIDE_X0 + i*STEP。
+const GUIDE_X0 = 14
 function treeIndent(base: number, depth: number): number {
-  return base + Math.min(depth, INDENT_MAX_LEVEL) * INDENT_STEP
+  return base + depth * INDENT_STEP
+}
+
+// 缩进导引线(Obsidian/VS Code 同款):每级祖先一条淡墨竖线,让小缩进也能读出层级。绝对定位在行内
+// (行 position:relative),相邻行的线段自然连成通线。颜色=淡墨、非 accent(accent 留给选中,层级/选中提示不打架)。
+function IndentGuides({ depth }: { depth: number }) {
+  if (depth <= 0) return null
+  const lines = []
+  for (let i = 0; i < depth; i++) {
+    lines.push(<span key={i} className="arc-guide" style={{ left: GUIDE_X0 + i * INDENT_STEP }} aria-hidden />)
+  }
+  return <>{lines}</>
 }
 
 type InsertPos = 'before' | 'after'
@@ -367,6 +379,7 @@ function FileBranch({
             setMenu({ x: e.clientX, y: e.clientY })
           }}
         >
+          <IndentGuides depth={depth} />
           <FileIcon kind={f.kind} />
           <span className="ws-truncate">{node.name}</span>
         </button>
@@ -453,9 +466,17 @@ function FileBranch({
           moveFile(dragFile, path)
         }}
       >
+        <IndentGuides depth={depth} />
         <ChevronRight size={12} className={`arc-caret ${open ? 'is-open' : ''}`} />
         <FolderClosed size={13} />
-        <span className="ws-truncate arc-folder-name">{node.name}</span>
+        <span className="ws-truncate arc-folder-name">
+          {node.name.split('/').map((seg, i) => (
+            <span key={i}>
+              {i > 0 && <span className="arc-seg-sep">/</span>}
+              {seg}
+            </span>
+          ))}
+        </span>
         <button
           className="arc-folder-add"
           title="在此文件夹新建文档"
@@ -570,7 +591,7 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
   const mine = files.filter((f) => f.rootId === root.id)
   const shown = q ? mine.filter((f) => f.path.toLowerCase().includes(q)) : mine
   const rootDirs = q ? [] : dirs.filter((d) => d.rootId === root.id).map((d) => d.path)
-  const tree = buildFileTree(shown, rootDirs)
+  const tree = compactTree(buildFileTree(shown, rootDirs)) // 压缩单子文件夹链（省深层无谓缩进）
   if (q && !shown.length) return null // while filtering, drop roots with no matches
   const drive = root.origin === 'gdrive'
   return (

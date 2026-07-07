@@ -205,6 +205,19 @@
 .arc-file > span.ws-truncate { flex: 1; min-width: 0; font-size: var(--fs-base); }
 .arc-file-ico { color: var(--c-text-3); flex: none; }
 
+/* 缩进导引线（Obsidian/VS Code 同款）：每级祖先一条淡墨竖线，让小缩进也读得出层级。
+   非 accent 色——层级线不和选中蓝抢（研究：cues 不能互相竞争）。行需 position:relative。 */
+.arc-folder-head, .arc-file { position: relative; }
+.arc-guide {
+  position: absolute;
+  top: -1px; bottom: -1px; /* 略上下溢出，桥接行间缝，让相邻行的线段连成通线 */
+  width: 1px;
+  background: rgba(28, 25, 23, 0.12); /* 淡墨 ~12% */
+  pointer-events: none;
+}
+/* compact folders 合并的单子链，段间「/」分隔符：淡墨、不抢眼 */
+.arc-seg-sep { color: var(--c-text-3); margin: 0 3px; opacity: 0.7; font-weight: var(--fw-regular); }
+
 /* footer */
 .arc-foot { flex: none; border-top: 1px solid var(--c-border); padding: 8px; }
 .arc-util { display: flex; align-items: center; gap: 2px; padding: 0 2px; }
