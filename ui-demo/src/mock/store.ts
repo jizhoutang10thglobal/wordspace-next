@@ -130,7 +130,7 @@ interface State {
 
   // tabs
   openDoc: (docId: string) => void
-  openWebTab: (url: string, title: string) => void
+  openWebTab: (url: string, title: string, background?: boolean) => void
   openFileTab: (file: FileEntry) => void
   renameFile: (file: FileEntry, newBase: string) => void
   deleteFileWithUndo: (file: FileEntry) => void
@@ -393,9 +393,9 @@ export const useStore = create<State>()(
         set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
       },
 
-      openWebTab: (url, title) => {
+      openWebTab: (url, title, background) => {
         const tab: Tab = { id: uid('tab'), kind: 'web', title, url }
-        set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
+        set((s) => ({ tabs: [...s.tabs, tab], activeTabId: background ? s.activeTabId : tab.id }))
       },
 
       // 网页存成本地文档（融合桥）：剪藏出来的块 → 一份真文档 → 打开。
