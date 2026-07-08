@@ -112,7 +112,11 @@ ul, ol { padding: 0; list-style: none; }
 @keyframes ws-view-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* 可复用动画工具类 */
-.ws-anim-view { animation: ws-view-in var(--dur-page) var(--ease-enter) both; }
+/* fill-mode 用 backwards 不用 both：both 会让动画永久保持「应用态」，带 transform 的动画即使终值是
+   none 也会一直把这个容器变成 fixed 后代的包含块（Chrome 算成 identity matrix）——路由容器一劫持，
+   里面所有 position:fixed 浮层（斜杠菜单/@菜单/预览卡）全体偏移 +侧栏宽。backwards 的结束态 = 自然态，
+   视觉完全一样，但动画结束即释放包含块。 */
+.ws-anim-view { animation: ws-view-in var(--dur-page) var(--ease-enter) backwards; }
 .ws-anim-pop { animation: ws-pop-in var(--dur-slow) var(--ease-enter) both; }
 .ws-skeleton {
   background: linear-gradient(100deg, var(--c-bg-sunken) 30%, var(--c-hover) 50%, var(--c-bg-sunken) 70%);

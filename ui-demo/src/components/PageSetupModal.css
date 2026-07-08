@@ -1,0 +1,112 @@
+/* 页面设置弹窗（分页文档）。弹窗骨架走 controls.css 的 .ws-modal 族，
+   这里只写布局与组件特有样式（style.md §6 约束）。 */
+
+/* 双类提权：.ws-modal 基座有 width:100%，跟 SaveModal 同款用 .ws-modal.pg-modal 收窄 */
+.ws-modal.pg-modal { width: 480px; max-width: calc(100vw - 32px); }
+
+.pg-body { padding: 6px 20px 14px; }
+
+/* 行（开关行） */
+.pg-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+}
+.pg-row-master { border-bottom: 1px solid var(--c-divider); margin-bottom: 6px; }
+.pg-row-text { flex: 1; min-width: 0; }
+.pg-row-label { font-size: var(--fs-md); color: var(--c-text); }
+.pg-row-note { font-size: var(--fs-sm); color: var(--c-text-3); margin-top: 2px; }
+
+/* 关闭时其余设置整体退后（仍可见，读得出「开了会怎样」） */
+.pg-settings { transition: opacity var(--dur) var(--ease); }
+.pg-settings.is-off { opacity: 0.45; }
+
+/* 字段 */
+.pg-field { padding: 10px 0; }
+.pg-field-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--c-text-3);
+  margin-bottom: 8px;
+}
+
+/* segmented：sunken 圆丸槽 + 选中项白纸 puck（零阴影，style.md §5） */
+.pg-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--c-bg-sunken);
+  border-radius: var(--r-pill);
+}
+.pg-seg-item {
+  padding: 5px 14px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-base);
+  color: var(--c-text-2);
+  background: transparent;
+  transition:
+    background var(--dur) var(--ease-spring),
+    color var(--dur-fast) var(--ease);
+}
+.pg-seg-item:not(:disabled):hover { color: var(--c-text); }
+.pg-seg-item:not(:disabled):active { transform: scale(0.97); }
+.pg-seg-item.is-on {
+  background: var(--c-surface);
+  color: var(--c-text);
+  border: 1px solid var(--c-border);
+  padding: 4px 13px; /* 补回 1px 边框占位，避免选中态跳动 */
+}
+/* 「自定义」是状态展示不是按钮：数值一改就自动落到它 */
+.pg-seg-ghost { cursor: default; }
+
+/* 自定义边距 mm 四值 */
+.pg-margins {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.pg-mm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+}
+.pg-mm-input { width: 62px; padding: 5px 8px; text-align: right; font-family: var(--font-mono); }
+/* 隐藏 number spinner，保持纸面干净 */
+.pg-mm-input::-webkit-outer-spin-button,
+.pg-mm-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pg-mm-input { -moz-appearance: textfield; appearance: textfield; }
+.pg-mm-unit { color: var(--c-text-3); font-size: var(--fs-xs); }
+
+/* switch：track 圆丸，on = 墨底；滑块 spring 滑动（style.md §5） */
+.pg-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: var(--r-pill);
+  background: var(--c-border-strong);
+  transition: background var(--dur) var(--ease);
+  flex: none;
+}
+.pg-switch.is-on { background: var(--c-ink); }
+.pg-switch:disabled { opacity: 0.5; }
+.pg-switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: #fff;
+  transition: transform var(--dur) var(--ease-spring), width var(--dur-fast) var(--ease);
+}
+.pg-switch.is-on .pg-switch-knob { transform: translateX(16px); }
+/* 按住时滑块拉宽（蓄力感） */
+.pg-switch:not(:disabled):active .pg-switch-knob { width: 19px; }
+.pg-switch.is-on:not(:disabled):active .pg-switch-knob { transform: translateX(13px); }
