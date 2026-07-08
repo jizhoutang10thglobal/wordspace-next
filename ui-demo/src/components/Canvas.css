@@ -32,6 +32,73 @@
 .ws-doc.ws-fmt-a5 { max-width: 559px; padding: 44px 48px 72px; }
 .ws-doc.ws-fmt-letter { max-width: 816px; }
 
+/* ===== 分页文档（可视分页线）=====
+   页外灰底（sunken 槽）+ 内容列白纸。纸方：方角 + 1px 细边 + 一层极淡阴影
+   （任务口径的「轻阴影」，取 --shadow-menu 档，绝不堆叠假纸）。
+   纸宽/边距由 Canvas.tsx 按 mm→px 内联，CSS 只管观感。 */
+.ws-canvas-scroll.is-paged { background: var(--c-bg-sunken); overflow-x: auto; }
+.ws-doc-paged {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: 0; /* 纸=方角 */
+  box-shadow: var(--shadow-menu);
+  margin: 28px auto 56px;
+  box-sizing: border-box;
+}
+
+/* 分页线覆盖层：横贯纸面的虚线 + 右侧页码 chip。不占布局、不响应鼠标。 */
+.ws-page-marks { position: absolute; inset: 0; pointer-events: none; }
+.ws-page-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--c-border-strong); /* 淡墨导引，非 accent */
+}
+.ws-page-chip {
+  position: absolute;
+  right: 8px;
+  top: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  color: var(--c-text-3);
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill); /* chip 是 UI 不是纸 → 墨圆 */
+  padding: 1px 8px;
+}
+
+/* 分页符块：虚线 + 居中「分页符」小标签（同 divider 交互：可选中可删除可拖拽） */
+.ws-pagebreak {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  margin: 6px 0;
+}
+.ws-pagebreak::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px dashed var(--c-border-strong);
+}
+.ws-pagebreak-label {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-label);
+  color: var(--c-text-3);
+  background: var(--c-bg); /* 盖住中段虚线 */
+  padding: 0 10px;
+  user-select: none;
+}
+/* 纸上（分页视图）标签底色跟纸走 */
+.ws-doc-paged .ws-pagebreak-label { background: #fff; }
+
 /* header */
 .ws-doc-header { margin-bottom: 26px; }
 .ws-breadcrumb {

@@ -29,6 +29,8 @@ import LinkPreview from './canvas/LinkPreview'
 import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
 import { resolveHref, relHref, dirOf, baseOf, splitHrefSuffix } from '../lib/links'
+import { usePageConfig } from '../mock/paged'
+import { computeBoundaries, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
 import './Canvas.css'
@@ -55,14 +57,18 @@ const SLASH_ITEMS: {
   { key: 'quote', label: '引用', kw: 'quote yinyong', type: 'quote' },
   { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
   { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
+  // 分页符：仅分页文档开启时出现在菜单（filterSlash 按 pagedOn 过滤）
+  { key: 'pagebreak', label: '分页符', kw: 'pagebreak page break fenye fenyefu', type: 'pagebreak' },
   { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
   // 互链的可发现入口①：斜杠菜单（@/[[ 手势藏得深，得有看得见的路）。只能 append（上面下标引用警告）。
   { key: 'doclink', label: '🔗 链接到文档', kw: 'link doclink lianjie wendang mention at @', type: 'doclink' },
 ]
-const filterSlash = (q: string) => {
+const filterSlash = (q: string, pagedOn: boolean) => {
   const s = q.toLowerCase()
   return SLASH_ITEMS.filter(
-    (it) => !s || it.label.toLowerCase().includes(s) || it.kw.includes(s),
+    (it) =>
+      (pagedOn || it.type !== 'pagebreak') &&
+      (!s || it.label.toLowerCase().includes(s) || it.kw.includes(s)),
   )
 }
 
@@ -270,6 +276,17 @@ function BlockRow({
         ref={(el) => registerEl(block.id, el)}
         dangerouslySetInnerHTML={{ __html: block.html }}
       />
+    )
+  } else if (block.type === 'pagebreak') {
+    // 分页符：虚线 + 居中小标签。不可编辑（同 divider 交互：单击块选中、Delete 删除、可拖拽）。
+    inner = (
+      <div
+        className="ws-pagebreak"
+        ref={(el) => registerEl(block.id, el)}
+        contentEditable={false}
+      >
+        <span className="ws-pagebreak-label">分页符</span>
+      </div>
     )
   } else if (block.type === 'divider') {
     inner = <hr className="ws-hr" ref={(el) => registerEl(block.id, el)} />
@@ -490,12 +507,58 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const curRootId = linkingOn && tab?.fileName ? tab.rootId : undefined
   const curPath = linkingOn && tab?.fileName && tab.rootId ? tab.url : undefined
 
+  // ===== 分页文档（可视分页线路线，不做真物理切页）=====
+  const pageCfg = usePageConfig(doc?.id)
+  const paged = !!doc && pageCfg.on
+  const pageBox = useMemo(() => pageBoxPx(pageCfg), [pageCfg])
+  const articleRef = useRef<HTMLElement | null>(null)
+  const [pageBounds, setPageBounds] = useState<number[]>([])
+
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
   const focusedBlockId = useRef<string | null>(null)
+
+  // 分页点重算：内容 / 窗口变化（ResizeObserver）→ rAF 合帧 → computeBoundaries。
+  // 显式分页符处强制切页、并从该点重新累计页高（语义在 lib/page.ts，纯函数）。
+  useEffect(() => {
+    if (!paged || !doc) {
+      setPageBounds([])
+      return
+    }
+    const el = articleRef.current
+    if (!el) return
+    let raf = 0
+    const recalc = () => {
+      raf = 0
+      const rect = el.getBoundingClientRect()
+      // 纸的 padding 即页边距 → 内容总高 = padding 盒高度 - 上下边距
+      const totalH = el.clientHeight - pageBox.margin.top - pageBox.margin.bottom
+      const breakTops: number[] = []
+      for (const b of doc.blocks) {
+        if (b.type !== 'pagebreak') continue
+        const be = blockEls.current.get(b.id)
+        const host = (be?.closest('.ws-block') as HTMLElement | null) ?? be
+        if (host)
+          breakTops.push(
+            host.getBoundingClientRect().top - rect.top - pageBox.margin.top,
+          )
+      }
+      setPageBounds(computeBoundaries(totalH, pageBox.contentH, breakTops))
+    }
+    const schedule = () => {
+      if (!raf) raf = requestAnimationFrame(recalc)
+    }
+    schedule()
+    const ro = new ResizeObserver(schedule)
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [paged, doc, pageBox])
 
   const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -663,7 +726,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       checkpoint()
       const el = blockEls.current.get(slash.blockId)
       const empty = !el || (el.textContent ?? '').trim() === ''
-      if (it.type === 'divider' || it.type === 'image') {
+      if (it.type === 'divider' || it.type === 'image' || it.type === 'pagebreak') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
       } else if (it.type === 'list' && empty) {
         // 空块插列表：不在聚焦块上 setBlockType（p→ul 交换会触发 blur 把空 innerHTML 回写、
@@ -1597,7 +1660,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        const it = filterSlash(slash.query)[slash.active]
+        const it = filterSlash(slash.query, paged)[slash.active]
         if (it) applySlash(it.key)
         else setSlash(null)
         return
@@ -1610,7 +1673,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                 ...s,
                 active: Math.max(
                   0,
-                  Math.min(s.active + 1, filterSlash(s.query).length - 1),
+                  Math.min(s.active + 1, filterSlash(s.query, paged).length - 1),
                 ),
               }
             : s,
@@ -1638,7 +1701,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [slash, mention, editingId, doc?.id, applySlash])
+  }, [slash, mention, editingId, doc?.id, applySlash, paged])
 
   // persist the block the toolbar just edited
   const persistFocused = useCallback(() => {
@@ -1833,14 +1896,27 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       )}
       {/* 点空白处（非任何块）取消选中——块的 onClick 会 stopPropagation，故此处只接到空白点击 */}
       <div
-        className="ws-canvas-scroll"
+        className={'ws-canvas-scroll' + (paged ? ' is-paged' : '')}
         ref={scrollRef}
         onClick={deselect}
       >
         <article
+          ref={articleRef}
           className={
             `ws-doc ws-doc-${doc.kind}` +
-            (doc.pageFormat ? ` ws-fmt ws-fmt-${doc.pageFormat}` : '')
+            (doc.pageFormat ? ` ws-fmt ws-fmt-${doc.pageFormat}` : '') +
+            (paged ? ' ws-doc-paged' : '')
+          }
+          // 分页视图：纸宽 = 纸张 px 宽，padding = 页边距（内容列自然收窄为页内容宽）
+          style={
+            paged
+              ? {
+                  width: pageBox.paperW,
+                  maxWidth: 'none',
+                  minHeight: pageBox.paperH,
+                  padding: `${pageBox.margin.top}px ${pageBox.margin.right}px ${pageBox.margin.bottom}px ${pageBox.margin.left}px`,
+                }
+              : undefined
           }
         >
           {!embedded && <DocHeader doc={doc} />}
@@ -1900,6 +1976,21 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               }
             }}
           />
+          {/* 分页线覆盖层：每个分页点一条横贯纸面的虚线 + 右侧「第 N 页」chip。
+              绝对定位不占布局；相对纸张 padding 盒定位（top = 上边距 + 分页点 y）。 */}
+          {paged && pageBounds.length > 0 && (
+            <div className="ws-page-marks" aria-hidden contentEditable={false}>
+              {pageBounds.map((y, i) => (
+                <div
+                  key={i}
+                  className="ws-page-mark"
+                  style={{ top: pageBox.margin.top + y }}
+                >
+                  <span className="ws-page-chip">第 {i + 2} 页</span>
+                </div>
+              ))}
+            </div>
+          )}
           {!embedded && (
             <div className="ws-doc-end ws-muted">
               {doc.unsaved
@@ -1949,7 +2040,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       {slash && (
         <SlashMenu
           pos={slash.pos}
-          items={filterSlash(slash.query).map((it) => ({
+          items={filterSlash(slash.query, paged).map((it) => ({
             key: it.key,
             label: it.label,
           }))}
