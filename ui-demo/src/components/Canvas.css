@@ -527,7 +527,8 @@
 
 /* 斜杠 / 插入菜单 */
 .ws-slashmenu {
-  z-index: 80; min-width: 184px; max-height: 290px; overflow-y: auto;
+  /* max-height 放到 12 项全显（12×32+8=392）——菜单折叠会把尾部条目藏成「不存在」 */
+  z-index: 80; min-width: 184px; max-height: 396px; overflow-y: auto;
   padding: 4px; background: var(--c-surface); border-radius: 8px;
   box-shadow: var(--shadow-menu);
   transform-origin: top left;
