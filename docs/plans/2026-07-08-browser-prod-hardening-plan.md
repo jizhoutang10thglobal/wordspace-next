@@ -170,8 +170,9 @@ wc.on('context-menu', (e, params))            [src/main/web-tabs.js wireViewEven
 **解法 = 改名冒烟产物**:productName「Wordspace Smoke」→ userData/锁/LaunchServices 全部天然隔离;去掉 publish 配置 → 打包产物里没有 `app-update.yml` → 启动的 checkForUpdates 抛错被 `.catch(() => {})`(main.js:210)静默吞掉 → 更新风险消除;`identity: null` → 明确不签名(本地构建没 quarantine 属性,Gatekeeper 不拦);去掉 fileAssociations → 不污染 Colin 的「打开方式」菜单。**生产代码零改动**——冒烟测的就是同一份 src/** 在 asar 里的行为,只有品牌不同。
 
 **硬性安全门(违反即 abort)**:
-- 冒烟构建配置里 `productName` 必须是 `Wordspace Smoke`,脚本开跑前校验配置文件这个字段,不是就拒绝跑。
-- 冒烟脚本第一条断言(A0):launch 后 `app.evaluate(({ app }) => app.getPath('userData'))` 必须以 `Wordspace Smoke` 结尾——若是 `Wordspace Next` **立即 close + 报错退出**(说明改名失效,正在碰生产数据)。
+- 冒烟构建配置里 `productName` 必须是 `Wordspace Smoke` **且带 `extraMetadata.name/productName`**(见 B.1 踩坑框——没有 extraMetadata 运行时会落到生产 userData)。
+- **启动前静态身份闸(最关键,别只靠运行时 A0 兜底)**:脚本 launch 前先读打包产物 asar 内 package.json,`productName||name` 必须精确等于 `Wordspace Smoke`,否则**拒绝启动**——因为若身份错,app 一启动就碰生产 userData,而它会撞锁秒退、A0 根本来不及跑。用 `require('@electron/asar').extractFile(asar,'package.json')` 静态读。
+- 冒烟脚本运行时 A0:launch 后 `path.basename(app.getPath('userData'))` 必须精确等于 `Wordspace Smoke`——否则 **立即 close + 报错退出**。
 - 全程不 pkill / 不 open / 不以任何方式触碰名字含 "Wordspace Next" 的进程或目录。
 - 构建时带 `CSC_IDENTITY_AUTO_DISCOVERY=false`(双保险,防 keychain 弹窗)。若仍出现任何钥匙串/签名弹窗 → 停,报告。
 - **本 Part 只能在宿主 macOS 跑**(要真 Electron 二进制 + 真显示器),容器里不要试。
@@ -184,17 +185,21 @@ wc.on('context-menu', (e, params))            [src/main/web-tabs.js wireViewEven
   {
     "appId": "com.tenthglobal.wordspace-next.smoke",
     "productName": "Wordspace Smoke",
+    "extraMetadata": { "name": "wordspace-smoke", "productName": "Wordspace Smoke" },
     "directories": { "output": "release-smoke" },
     "files": ["src/**", "package.json"],
     "asar": true,
     "mac": {
       "target": [{ "target": "dir", "arch": ["arm64"] }],
       "icon": "build-resources/icon.png",
-      "identity": null
+      "identity": null,
+      "hardenedRuntime": false
     }
   }
   ```
   (显式 `asar: true` 是为了锁死「测的就是 asar 形态」——生产配置走 electron-builder 默认 true,别让默认值漂移把门测歪。无 publish、无 notarize、无 dmg、无 fileAssociations、无 win——都是故意的,见 B.0。)
+
+  > **⚠ 实现踩坑(2026-07-08 实测,原 plan 漏了这条——差点碰生产数据)**:`build.productName` 只设 Info.plist 的 CFBundleName,**不改运行时 `app.getName()`**。Electron 运行时 `app.getName()` 读 asar 内 package.json 的 `productName`(缺则 `name`)——本仓 package.json `name="wordspace-next"` 且无顶层 `productName`,所以不加 `extraMetadata` 的话打包 app 的 userData 会解析成 `~/Library/Application Support/wordspace-next`,**正是生产版 Wordspace Next 用的目录**(lsof 实证:生产版 userData 就是小写 `wordspace-next`)→ 撞生产单实例锁 whenReady 前秒退(表现为 exitCode 0 + 零输出 + Playwright socket hang up),且共用生产真实数据。**必须靠 `extraMetadata` 把 `name`/`productName` 一起写进 asar 的 package.json**,运行时 `app.getName()` 才解析成 "Wordspace Smoke" → userData 真隔离。实测修后运行时探针报 `userData=…/Wordspace Smoke`、拿到自己的 SingletonLock、稳定存活。(所幸撞锁反而挡住了 smoke 走到写真实数据这步,取证确认 Colin 的 workspace.json/recents/history 全未改。)
 - `.gitignore`:确认 `release/` 已忽略,追加 `release-smoke/`。
 
 **Approach**:构建命令(宿主,worktree 根):
