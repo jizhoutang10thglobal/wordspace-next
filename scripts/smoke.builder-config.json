@@ -1,10 +1,7 @@
 {
   "appId": "com.tenthglobal.wordspace-next.smoke",
   "productName": "Wordspace Smoke",
-  "extraMetadata": {
-    "name": "wordspace-smoke",
-    "productName": "Wordspace Smoke"
-  },
+  "afterPack": "scripts/smoke-afterpack.js",
   "directories": { "output": "release-smoke" },
   "files": ["src/**", "package.json"],
   "asar": true,

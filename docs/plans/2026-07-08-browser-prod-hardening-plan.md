@@ -185,7 +185,7 @@ wc.on('context-menu', (e, params))            [src/main/web-tabs.js wireViewEven
   {
     "appId": "com.tenthglobal.wordspace-next.smoke",
     "productName": "Wordspace Smoke",
-    "extraMetadata": { "name": "wordspace-smoke", "productName": "Wordspace Smoke" },
+    "afterPack": "scripts/smoke-afterpack.js",
     "directories": { "output": "release-smoke" },
     "files": ["src/**", "package.json"],
     "asar": true,
@@ -198,8 +198,13 @@ wc.on('context-menu', (e, params))            [src/main/web-tabs.js wireViewEven
   }
   ```
   (显式 `asar: true` 是为了锁死「测的就是 asar 形态」——生产配置走 electron-builder 默认 true,别让默认值漂移把门测歪。无 publish、无 notarize、无 dmg、无 fileAssociations、无 win——都是故意的,见 B.0。)
+- 新建 `scripts/smoke-afterpack.js`:electron-builder 的 afterPack 钩子,打包后把**产物 asar 内** package.json 的 `name`/`productName` 改成 `Wordspace Smoke`(`@electron/asar` 解包→改一行→重打包)。**这一步是 userData 隔离的关键,不能省。**
 
-  > **⚠ 实现踩坑(2026-07-08 实测,原 plan 漏了这条——差点碰生产数据)**:`build.productName` 只设 Info.plist 的 CFBundleName,**不改运行时 `app.getName()`**。Electron 运行时 `app.getName()` 读 asar 内 package.json 的 `productName`(缺则 `name`)——本仓 package.json `name="wordspace-next"` 且无顶层 `productName`,所以不加 `extraMetadata` 的话打包 app 的 userData 会解析成 `~/Library/Application Support/wordspace-next`,**正是生产版 Wordspace Next 用的目录**(lsof 实证:生产版 userData 就是小写 `wordspace-next`)→ 撞生产单实例锁 whenReady 前秒退(表现为 exitCode 0 + 零输出 + Playwright socket hang up),且共用生产真实数据。**必须靠 `extraMetadata` 把 `name`/`productName` 一起写进 asar 的 package.json**,运行时 `app.getName()` 才解析成 "Wordspace Smoke" → userData 真隔离。实测修后运行时探针报 `userData=…/Wordspace Smoke`、拿到自己的 SingletonLock、稳定存活。(所幸撞锁反而挡住了 smoke 走到写真实数据这步,取证确认 Colin 的 workspace.json/recents/history 全未改。)
+  > **⚠⚠ 实现踩坑(2026-07-08 实测,两个坑连环,原 plan 全漏了——差点碰生产数据)**:
+  > **坑1:userData 撞生产。** `build.productName` 只设 Info.plist 的 CFBundleName,**不改运行时 `app.getName()`**——它读 asar 内 package.json 的 `productName`(缺则 `name`)。本仓 package.json `name="wordspace-next"` 且无顶层 `productName`,所以裸打包的 smoke app 运行时 userData 落到 `~/Library/Application Support/wordspace-next`,**正是生产版 Wordspace Next 用的目录**(lsof 实证:生产版 userData 就是小写 `wordspace-next`)→ 撞生产单实例锁、whenReady 前秒退(表现:exitCode 0 + 零输出 + Playwright socket hang up),且共用生产真实数据。
+  > **坑2:extraMetadata 会毁源文件。** 第一反应是用 electron-builder 的 `extraMetadata:{name,productName}` 注进 asar package.json——**别用**:实测它把合并后的精简 package.json **写回了源 `package.json`**,删掉 build/scripts/devDependencies(`test/file-associations.test.js` 因此变红)。
+  > **正解 = afterPack 钩子改产物 asar**(源文件零改动):`asar.extractAll → 改 package.json 的 name/productName → asar.createPackage` 回写同一路径。改 asar 安全(Electron dist 的 adhoc 签名 `Sealed Resources=none`,app.asar 不在封存范围,实测重打包后 app 照常启动)。实测修后运行时探针报 `userData=…/Wordspace Smoke`、拿到自己的 SingletonLock、稳定存活。
+  > **取证结论**:所幸坑1 的撞锁反而挡住了 smoke 走到写真实数据这步,mtime 取证确认 Colin 的 workspace.json/recents/history 全未改(只有可再生的 GPUCache 被碰)。**这就是为什么 U5 脚本要加「启动前静态读 asar package.json 核身份、身份错拒启动」的前置闸——运行时 A0 来不及跑。**
 - `.gitignore`:确认 `release/` 已忽略,追加 `release-smoke/`。
 
 **Approach**:构建命令(宿主,worktree 根):
