@@ -4,6 +4,7 @@ dist/
 out/
 build/
 release/
+release-smoke/
 test-results/
 playwright-report/
 *.log

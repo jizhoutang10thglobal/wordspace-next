@@ -1,0 +1,13 @@
+{
+  "appId": "com.tenthglobal.wordspace-next.smoke",
+  "productName": "Wordspace Smoke",
+  "directories": { "output": "release-smoke" },
+  "files": ["src/**", "package.json"],
+  "asar": true,
+  "mac": {
+    "target": [{ "target": "dir", "arch": ["arm64"] }],
+    "icon": "build-resources/icon.png",
+    "identity": null,
+    "hardenedRuntime": false
+  }
+}
