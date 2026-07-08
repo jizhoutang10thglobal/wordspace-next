@@ -33,6 +33,7 @@ import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
+import { computeBacklinks } from '../lib/links'
 import { IS_MAC } from '../lib/platform'
 import type { FileEntry, FileKind, MountRoot, Tab } from '../types'
 import './ArcSidebar.css'
@@ -391,7 +392,17 @@ function FileBranch({
             items={[
               { label: '打开', onClick: openIt },
               { label: '重命名', onClick: () => setRenaming(true) },
-              { label: '删除', danger: true, onClick: () => deleteFileWithUndo(f) },
+              {
+                label: '删除',
+                danger: true,
+                onClick: () => {
+                  // 互链守卫：有反链的文件删除前弹确认（列出谁链接到它），没有就直接删（保留 toast 撤销）
+                  const s = useStore.getState()
+                  const n = computeBacklinks(s.files, s.docs, f.rootId, f.path).length
+                  if (n > 0) useUI.getState().askDeleteFile(f.rootId, f.path, n)
+                  else deleteFileWithUndo(f)
+                },
+              },
             ]}
           />
         )}

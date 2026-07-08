@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -23,7 +24,12 @@ import FormatToolbar, { type FormatRect } from './canvas/FormatToolbar'
 import AiSoonModal from './canvas/AiSoonModal'
 import BlockActionMenu from './canvas/BlockActionMenu'
 import SlashMenu from './canvas/SlashMenu'
+import MentionMenu, { type MentionItem } from './canvas/MentionMenu'
+import LinkPreview from './canvas/LinkPreview'
+import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
+import { resolveHref, relHref, dirOf, baseOf } from '../lib/links'
+import type { FileEntry } from '../types'
 import './Canvas.css'
 
 const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout']
@@ -79,6 +85,21 @@ const unwrapListHtml = (html: string): string => {
     ? items.map((li) => li.replace(/<\/?li[^>]*>/gi, '')).join('<br>')
     : html.replace(/<\/?li[^>]*>/gi, '')
 }
+
+// caret 前 n 个字符（识别 '[['/'【【' 提及触发用）：块起点 → caret 的文本取尾 n 位
+function textBeforeCaret(el: HTMLElement, n: number): string {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return ''
+  const r = sel.getRangeAt(0)
+  if (!el.contains(r.startContainer)) return ''
+  const pre = document.createRange()
+  pre.selectNodeContents(el)
+  pre.setEnd(r.startContainer, r.startOffset)
+  return pre.toString().slice(-n)
+}
+// 插入互链 <a> 时的转义（title/href 来自用户输入/文件名）
+const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
+const escText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
 
 // 点击落点 → caret Range（Chrome/Safari/Edge: caretRangeFromPoint；Firefox: caretPositionFromPoint）
 function caretRangeAtPoint(x: number, y: number): Range | null {
@@ -330,6 +351,15 @@ function BlockRow({
 export function DocHeader({ doc }: { doc: Doc }) {
   const editor = useStore((s) => s.getMember(doc.updatedBy))
   const renameDoc = useStore((s) => s.renameDoc)
+  // 反链面板要的当前文件身份（rootId + 根内路径）。选字符串（不选对象）避免每次 store 更新都重渲。
+  const blRootId = useStore((s) => {
+    const t = s.tabs.find((x) => x.id === s.activeTabId)
+    return t?.fileName ? t.rootId : undefined
+  })
+  const blPath = useStore((s) => {
+    const t = s.tabs.find((x) => x.id === s.activeTabId)
+    return t?.fileName && t.rootId ? t.url : undefined
+  })
   // 面包屑：连接文件夹里的文档（文件标签页带 rootId）→ 根名 / 路径；未保存的临时文档 / 网页 → null。
   const folderCrumb = useStore((s) => {
     const t = s.tabs.find((x) => x.id === s.activeTabId)
@@ -405,6 +435,8 @@ export function DocHeader({ doc }: { doc: Doc }) {
           </span>
         )}
       </div>
+      {/* 反向链接（互链）：Notion 式标题区折叠计数。app chrome、不进文档字节。 */}
+      {blRootId && blPath && <Backlinks rootId={blRootId} path={blPath} />}
     </div>
   )
 }
@@ -427,9 +459,19 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const checkpoint = useStore((s) => s.checkpoint)
   const undo = useStore((s) => s.undo)
   const redo = useStore((s) => s.redo)
+  // 互链要的 store 面
+  const files = useStore((s) => s.files)
+  const docs = useStore((s) => s.docs)
+  const openFileTab = useStore((s) => s.openFileTab)
+  const openWebTab = useStore((s) => s.openWebTab)
+  const createLinkedDoc = useStore((s) => s.createLinkedDoc)
+  const toast = useStore((s) => s.toast)
 
   const tab = tabs.find((x) => x.id === activeTabId)
   const doc = docId ? getDoc(docId) : tab?.docId ? getDoc(tab.docId) : undefined
+  // 当前文档的文件身份（相对链接的解析基准）。未保存草稿/云端文档没有路径 → 互链功能不开。
+  const curRootId = tab?.fileName ? tab.rootId : undefined
+  const curPath = tab?.fileName && tab.rootId ? tab.url : undefined
 
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
@@ -453,6 +495,25 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     pos: { top: number; left: number }
     active: number
   } | null>(null)
+  // @ / [[ / 【【 文档提及菜单（互链）。trig = 触发符长度（@=1，[[/【【=2），apply 时连 query 一起删。
+  const [mention, setMention] = useState<{
+    blockId: string
+    query: string
+    pos: { top: number; left: number }
+    active: number
+    trig: number
+  } | null>(null)
+  // 链接悬停预览 / 断链修复卡。anchor 存 live DOM 引用（修复动作要改它所在的块）。
+  const [preview, setPreview] = useState<{
+    rect: { top: number; left: number; bottom: number }
+    href: string
+    target: string | null
+    rootId: string
+    broken: boolean
+    anchor: HTMLAnchorElement
+  } | null>(null)
+  const hoverTimer = useRef(0)
+  const closeTimer = useRef(0)
   // drag-to-reorder
   const dragFrom = useRef<number | null>(null)
   const [dropIndex, setDropIndex] = useState<number | null>(null)
@@ -589,6 +650,274 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     },
     [doc, slash, addBlock, deleteBlock, setBlockType, selectBlock, editBlock, checkpoint],
   )
+
+  // ===== 文档互链（@提及 / 链接点击 / 悬停预览 / 断链修复）=====
+
+  // @ 菜单候选：同根内可编辑文档（html/md，有 docId），标题+路径都参与模糊匹配；末尾追加「新建」。
+  const mentionItems = useMemo<MentionItem[]>(() => {
+    if (!mention || !curRootId || !curPath) return []
+    const q = mention.query.trim().toLowerCase()
+    const out: MentionItem[] = []
+    for (const f of files) {
+      if (f.rootId !== curRootId || !f.docId) continue
+      if (f.kind !== 'html' && f.kind !== 'md') continue
+      if (f.path === curPath) continue // 不列自己
+      const title = docs.find((d) => d.id === f.docId)?.title ?? baseOf(f.path)
+      if (q && !title.toLowerCase().includes(q) && !f.path.toLowerCase().includes(q)) continue
+      out.push({ key: `f:${f.path}`, title, path: f.path })
+      if (out.length >= 8) break
+    }
+    if (q) out.push({ key: 'create', title: `新建「${mention.query.trim()}」`, create: true })
+    return out
+  }, [mention, files, docs, curRootId, curPath])
+
+  // 选中提及项：删掉「触发符+query」，插入纯净相对路径 <a>（链接文字 = 目标标题快照——
+  // 改名不回写文字，靠 hover 卡看目标当前标题；这是方案定下的「快照 + 展示层跟随」）。
+  const applyMention = useCallback(
+    (key: string) => {
+      if (!doc || !mention || !curRootId || !curPath) return
+      const m = mention
+      setMention(null)
+      const el = blockEls.current.get(m.blockId)
+      if (!el) return
+      const sel = window.getSelection()
+      if (sel && sel.rangeCount > 0) {
+        for (let i = 0; i < m.query.length + m.trig; i++)
+          sel.modify('extend', 'backward', 'character')
+        document.execCommand('delete')
+      }
+      let targetPath: string | null = null
+      let title = ''
+      if (key === 'create') {
+        // 新建在当前文档同目录（Typora 式的文件原生答案）；不切走当前标签页（Notion 同款）
+        title = m.query.trim() || '无标题文档'
+        targetPath = createLinkedDoc(curRootId, dirOf(curPath), title)
+        if (targetPath) toast(`已新建「${title}」`, 'success')
+      } else {
+        const it = mentionItems.find((x) => x.key === key)
+        if (!it?.path) return
+        targetPath = it.path
+        title = it.title
+      }
+      if (!targetPath) return
+      checkpoint()
+      const href = relHref(curPath, targetPath)
+      // contenteditable=false = 原子提及（光标越过它、退格整体删——Notion mention 同款手感）。
+      // 尾随 &nbsp; 保证插入后 caret 有落点（原子行内元素后无文本时 caret 会丢）。
+      document.execCommand(
+        'insertHTML',
+        false,
+        `<a class="ws-doclink" href="${escAttr(href)}" contenteditable="false">${escText(title)}</a>&nbsp;`,
+      )
+      updateBlockHtml(doc.id, m.blockId, el.innerHTML)
+    },
+    [doc, mention, curRootId, curPath, mentionItems, createLinkedDoc, toast, checkpoint, updateBlockHtml],
+  )
+
+  // 提及触发 + 菜单键盘导航。触发：@（IME 中文态 shift+2 也直出半角，天然稳）；[[；【【（中文标点态
+  // 直接支持——Obsidian 要装插件）。组字保护：菜单开着时 e.isComposing 的按键全部归输入法
+  // （拼音候选的 Enter/方向键不能被当成选菜单）；组好的字从 compositionend 进 query。
+  useEffect(() => {
+    const caretRect = () => {
+      const sel = window.getSelection()
+      if (!sel || sel.rangeCount === 0) return null
+      const r = sel.getRangeAt(0).cloneRange()
+      const rects = r.getClientRects()
+      const rect = rects.length
+        ? rects[0]
+        : r.startContainer.parentElement?.getBoundingClientRect()
+      if (!rect) return null
+      return { top: rect.bottom + 6, left: rect.left }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (!mention) {
+        if (!editingId || slash || e.metaKey || e.ctrlKey) return
+        if (!curRootId || !curPath) return // 没有文件身份（未保存草稿）→ 相对链接无从谈起
+        if (e.key === '@') {
+          const bid = editingId
+          window.setTimeout(() => {
+            const rect = caretRect()
+            if (rect) setMention({ blockId: bid, query: '', pos: rect, active: 0, trig: 1 })
+          }, 0)
+        } else if (e.key === '[' || e.key === '【') {
+          // 等字符落进 DOM 再看 caret 前两位是不是 [[ / 【【（全半角都认）
+          const bid = editingId
+          window.setTimeout(() => {
+            const el = blockEls.current.get(bid)
+            if (!el) return
+            const two = textBeforeCaret(el, 2)
+            if (two === '[[' || two === '【【') {
+              const rect = caretRect()
+              if (rect) setMention({ blockId: bid, query: '', pos: rect, active: 0, trig: 2 })
+            }
+          }, 0)
+        }
+        return
+      }
+      if (e.isComposing) return // IME 组字中：Enter=选字、↑↓=换候选，全归输入法
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setMention(null)
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const it = mentionItems[mention.active]
+        if (it) applyMention(it.key)
+        else setMention(null)
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMention((m) =>
+          m ? { ...m, active: Math.max(0, Math.min(m.active + 1, mentionItems.length - 1)) } : m,
+        )
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMention((m) => (m ? { ...m, active: Math.max(0, m.active - 1) } : m))
+        return
+      }
+      if (e.key === 'Backspace') {
+        setMention((m) =>
+          m ? (m.query.length === 0 ? null : { ...m, query: m.query.slice(0, -1), active: 0 }) : m,
+        )
+        return
+      }
+      if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+        setMention((m) => (m ? { ...m, query: m.query + e.key, active: 0 } : m))
+      }
+    }
+    const onComp = (e: CompositionEvent) => {
+      if (!mention || !e.data) return
+      setMention((m) => (m ? { ...m, query: m.query + e.data, active: 0 } : m))
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('compositionend', onComp)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('compositionend', onComp)
+    }
+  }, [mention, editingId, slash, curRootId, curPath, mentionItems, applyMention])
+
+  // 断链装饰：块渲染后把解析不到目标的互链标 is-broken（红虚线）。
+  // 注：demo 直接 toggle class（blur 落库会带上、下轮装饰自愈）；真 app 用非 DOM 装饰
+  // （CSS Highlight 一类），绝不让装饰进磁盘字节。
+  useEffect(() => {
+    if (!doc || !curRootId || !curPath) return
+    for (const [, el] of blockEls.current) {
+      for (const a of el.querySelectorAll('a[href]')) {
+        const target = resolveHref(curPath, a.getAttribute('href') || '')
+        if (!target) {
+          a.classList.remove('is-broken')
+          continue
+        }
+        const ok = files.some((f) => f.rootId === curRootId && f.path === target)
+        a.classList.toggle('is-broken', !ok)
+        a.classList.add('ws-doclink') // 手写/粘贴的相对链接也吃互链样式与行为
+      }
+    }
+  }, [doc, doc?.blocks, files, curRootId, curPath])
+
+  // 链接点击（capture，先于块的进入编辑）：互链 → 应用内打开；断链 → 修复卡；http(s) → 网页标签页。
+  const onBlocksClickCapture = useCallback(
+    (e: React.MouseEvent) => {
+      const a = (e.target as HTMLElement).closest?.('a') as HTMLAnchorElement | null
+      if (!a) return
+      const href = a.getAttribute('href') || ''
+      if (/^https?:/i.test(href)) {
+        e.preventDefault()
+        e.stopPropagation()
+        openWebTab(href, a.textContent || href)
+        return
+      }
+      if (!curRootId || !curPath) return
+      const target = resolveHref(curPath, href)
+      if (!target) return // 锚点/mailto 等：不接管
+      e.preventDefault()
+      e.stopPropagation()
+      const file = files.find((f) => f.rootId === curRootId && f.path === target)
+      if (file) {
+        openFileTab(file)
+      } else {
+        const r = a.getBoundingClientRect()
+        window.clearTimeout(closeTimer.current)
+        setPreview({
+          rect: { top: r.top, left: r.left, bottom: r.bottom },
+          href,
+          target,
+          rootId: curRootId,
+          broken: true,
+          anchor: a,
+        })
+      }
+    },
+    [curRootId, curPath, files, openFileTab, openWebTab],
+  )
+
+  // 悬停预览（350ms 延迟开、250ms 宽限关——允许把鼠标移进卡片）
+  const onBlocksMouseOver = useCallback(
+    (e: React.MouseEvent) => {
+      const a = (e.target as HTMLElement).closest?.('a') as HTMLAnchorElement | null
+      if (!a || !curRootId || !curPath) return
+      const href = a.getAttribute('href') || ''
+      const target = resolveHref(curPath, href)
+      if (!target) return
+      window.clearTimeout(closeTimer.current)
+      if (preview?.anchor === a) return
+      window.clearTimeout(hoverTimer.current)
+      hoverTimer.current = window.setTimeout(() => {
+        const fresh = useStore.getState().files
+        const r = a.getBoundingClientRect()
+        setPreview({
+          rect: { top: r.top, left: r.left, bottom: r.bottom },
+          href,
+          target,
+          rootId: curRootId,
+          broken: !fresh.some((f) => f.rootId === curRootId && f.path === target),
+          anchor: a,
+        })
+      }, 350)
+    },
+    [curRootId, curPath, preview],
+  )
+  const onBlocksMouseOut = useCallback((e: React.MouseEvent) => {
+    const a = (e.target as HTMLElement).closest?.('a')
+    if (!a) return
+    window.clearTimeout(hoverTimer.current)
+    window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => setPreview(null), 250)
+  }, [])
+  const keepPreview = useCallback(() => window.clearTimeout(closeTimer.current), [])
+  const leavePreview = useCallback(() => {
+    window.clearTimeout(closeTimer.current)
+    closeTimer.current = window.setTimeout(() => setPreview(null), 200)
+  }, [])
+
+  // 断链修复①：重新指向候选文件（改这一条链接的 href，落库该块）
+  const rebindLink = useCallback(
+    (candidate: FileEntry) => {
+      if (!doc || !preview || !curPath) return
+      checkpoint()
+      preview.anchor.setAttribute('href', relHref(curPath, candidate.path))
+      preview.anchor.classList.remove('is-broken')
+      const blockEl = preview.anchor.closest('[data-block]') as HTMLElement | null
+      const bid = blockEl?.dataset.block
+      if (blockEl && bid) updateBlockHtml(doc.id, bid, blockEl.innerHTML)
+      toast(`已重新指向 ${candidate.path}`, 'success')
+      setPreview(null)
+    },
+    [doc, preview, curPath, checkpoint, updateBlockHtml, toast],
+  )
+  // 断链修复②：按断链路径原地新建目标文档（建完链接自然解析通、红虚线自愈）
+  const createAtBroken = useCallback(() => {
+    if (!preview?.target || !curRootId) return
+    const title = baseOf(preview.target).replace(/\.(html|md)$/i, '')
+    const p = createLinkedDoc(curRootId, dirOf(preview.target), title)
+    if (p) toast(`已新建「${title}」`, 'success')
+    setPreview(null)
+  }, [preview, curRootId, createLinkedDoc, toast])
 
   // 行首 markdown 触发：正文块里打 `- `/`1. `/`[] `/`> `/`# ` 自动转成对应块、清掉前缀。
   const tryMarkdown = useCallback(
@@ -1067,6 +1396,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       return { top: rect.bottom + 6, left: rect.left }
     }
     const onKey = (e: KeyboardEvent) => {
+      if (mention) return // @提及菜单开着：按键归它（两菜单互斥）
       if (!slash) {
         if (e.key === '/' && editingId && !e.metaKey && !e.ctrlKey) {
           const bid = editingId
@@ -1125,7 +1455,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [slash, editingId, doc?.id, applySlash])
+  }, [slash, mention, editingId, doc?.id, applySlash])
 
   // persist the block the toolbar just edited
   const persistFocused = useCallback(() => {
@@ -1306,7 +1636,12 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           }
         >
           {!embedded && <DocHeader doc={doc} />}
-          <div className="ws-blocks">
+          <div
+            className="ws-blocks"
+            onClickCapture={onBlocksClickCapture}
+            onMouseOver={onBlocksMouseOver}
+            onMouseOut={onBlocksMouseOut}
+          >
             {doc.blocks.map((b, i) => {
               let edge: 'top' | 'bottom' | null = null
               if (dropIndex === i && dragFrom.current !== null) {
@@ -1410,6 +1745,27 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           }))}
           activeIndex={slash.active}
           onPick={applySlash}
+        />
+      )}
+
+      {mention && (
+        <MentionMenu
+          pos={mention.pos}
+          items={mentionItems}
+          activeIndex={mention.active}
+          query={mention.query}
+          onPick={applyMention}
+        />
+      )}
+
+      {preview && (
+        <LinkPreview
+          state={preview}
+          onKeep={keepPreview}
+          onLeave={leavePreview}
+          onClose={() => setPreview(null)}
+          onRebind={rebindLink}
+          onCreate={createAtBroken}
         />
       )}
     </main>
