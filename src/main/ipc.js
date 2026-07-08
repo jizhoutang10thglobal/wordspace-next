@@ -14,26 +14,76 @@ const mdAdapter = require('./md-adapter');
 const { pathInfo } = require('../lib/path-url');
 const { assertInsideWorkspace, kindOf } = require('../lib/file-tree');
 const { TEMPLATES } = require('../lib/doc-templates');
+const rootsLib = require('../lib/roots');
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recentsFile = () => path.join(app.getPath('userData'), 'recents.json');
 const workspaceFile = () => path.join(app.getPath('userData'), 'workspace.json');
 const trashRoot = () => path.join(app.getPath('userData'), '.ws2-trash');
 
-// 当前工作区根：服务端唯一真相。pick-folder / ws-set-root 校验后设置；所有文件操作只收 relPath、
-// 用这个根（渲染层不传根——防篡改 workspace.json 注入任意根越权）。
-let activeRoot = null;
-function requireRoot() {
-  if (!activeRoot) throw new Error('没有打开的工作区');
-  return activeRoot;
+// 根注册表（多根）：服务端唯一真相。所有文件操作只收 (rootId, relPath)、路径由注册表解析——
+// 渲染层永远不发根路径（防篡改 workspace.json / IPC 注入任意根越权），只能用 rootId 引用已注册的根。
+// roots 有序 = 侧栏显示序。missing = 路径不可达（外置盘拔了/被删），操作被拒但注册不丢、可重新定位。
+// r.real = 注册时的 realpath（软链归一化，给 classify-file / classifyRoot 用；失败回落 r.path）。
+let roots = []; // [{ id, path, real, missing }]
+let nextRootId = 1;
+let rootsRestorePromise = null; // 首次 ws-get-roots 从 store 恢复（幂等）
+const MAX_ROOTS = 8; // 每根一个递归 watcher，封顶控资源（JetBrains 官方警告 attach 多了拖性能）
+const pendingAbsorb = new Map(); // token → { path, real } 等确认的「父目录吸收」
+const removedStash = new Map(); // token → { root, index } 可撤销的「移除根」
+let stashSeq = 1;
+
+function rootById(rootId) {
+  const r = roots.find((x) => x.id === rootId);
+  if (!r) throw new Error('未知的工作区根: ' + rootId);
+  if (r.missing) throw new Error('工作区文件夹失联: ' + rootId);
+  return r.path;
 }
-// 起对工作区根的递归监听：外部增删改 → 通知 renderer 重读树 + reconcile 标签。换根时重指向（watch 内部先 close）。
-function startWorkspaceWatch(root) {
-  workspaceWatcher.watch(root, () => {
+function rootInfo(r) {
+  return { id: r.id, path: r.path, name: path.basename(r.path) || r.path, missing: !!r.missing };
+}
+function classifyRoots() {
+  // classify 用 realpath 归一化后的路径（软链两侧都归一才可比）
+  return roots.map((r) => ({ id: r.id, path: r.real || r.path }));
+}
+async function persistRoots() {
+  await workspaceStore.saveRoots(
+    workspaceFile(),
+    roots.map((r) => ({ id: r.id, path: r.path })),
+    nextRootId,
+  );
+}
+async function canonReal(p) {
+  const resolved = path.resolve(p);
+  try {
+    return await fsp.realpath(resolved);
+  } catch {
+    return resolved;
+  }
+}
+// 起对某根的递归监听：外部增删改 → 通知 renderer 重读该根的树 + reconcile 标签（事件带 rootId）。
+function startRootWatch(root) {
+  workspaceWatcher.watch(root.id, root.path, () => {
     for (const w of BrowserWindow.getAllWindows()) {
-      if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed');
+      if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id);
     }
   });
+}
+// 启动恢复（幂等，首次 ws-get-roots 触发）：store 里的每个根检查可达性，失联的标 missing 不悄悄丢。
+async function restoreRoots() {
+  if (!rootsRestorePromise) {
+    rootsRestorePromise = (async () => {
+      const saved = await workspaceStore.loadState(workspaceFile());
+      nextRootId = saved.nextRootId;
+      for (const r of saved.roots) {
+        const missing = !(await dirExists(r.path));
+        const root = { id: r.id, path: r.path, real: missing ? r.path : await canonReal(r.path), missing };
+        roots.push(root);
+        if (!missing) startRootWatch(root);
+      }
+    })();
+  }
+  return rootsRestorePromise;
 }
 async function dirExists(p) {
   try {
@@ -63,24 +113,24 @@ function registerIpc() {
     });
     return r.canceled ? null : r.filePaths[0];
   });
-  // 给「打开」按钮选到的任意绝对路径分类：kind（按扩展名）+ 文件名 + 若在当前工作区内则算出 rel（否则 null）。
-  // rel 用 realpath 归一化 root 与 abs 再 path.relative——macOS 上 /tmp→/private/tmp 这类软链会让原始 abs
-  // 跟 path.join(root, rel) 算出的 abs 字符串对不上，不归一化的话「工作区内文件」也会被判成工作区外、建不出标签。
+  // 给「打开」按钮选到的任意绝对路径分类：kind（按扩展名）+ 文件名 + 若在某个已打开的根内则算出
+  // (rootId, rel)（否则 null=工作区外）。abs 用 realpath 归一化后跟各根的 realpath 比——macOS 上
+  // /tmp→/private/tmp 这类软链会让原始 abs 对不上，不归一化的话「根内文件」也会被判成外部、建不出树标签。
   ipcMain.handle('classify-file', async (_e, abs) => {
     const name = path.basename(abs);
     const kind = kindOf(name);
     let rel = null;
-    if (activeRoot) {
-      try {
-        const real = await fsp.realpath(abs);
-        const rootReal = await fsp.realpath(activeRoot);
-        const r = path.relative(rootReal, real);
-        if (r && r !== '..' && !r.startsWith('..' + path.sep) && !path.isAbsolute(r)) {
-          rel = r.split(path.sep).join('/'); // 统一成 / 分隔，跟文件树 rel 一致（Windows path.sep 是 \）
-        }
-      } catch { /* abs 不存在 / 无法 realpath：rel 留 null（当作工作区外处理） */ }
-    }
-    return { name, kind, rel };
+    let rootId = null;
+    try {
+      const real = await fsp.realpath(abs);
+      const live = roots.filter((r) => !r.missing).map((r) => ({ id: r.id, path: r.real || r.path }));
+      const owner = rootsLib.ownerOf(real, live);
+      if (owner && owner.rel) {
+        rel = owner.rel;
+        rootId = owner.rootId;
+      }
+    } catch { /* abs 不存在 / 无法 realpath：rel 留 null（当作工作区外处理） */ }
+    return { name, kind, rel, rootId };
   });
   // 工作区外文件（「打开」按钮自由选择）的 file:// URL / 默认程序打开。不经 assertInsideWorkspace：这些 abs
   // 不是 workspace-relative、也不来自可被篡改的 recents/workspace.json，而是用户当场在原生 showOpenDialog
@@ -181,10 +231,12 @@ function registerIpc() {
   // 必须先过 mdAdapter.mdToHtml，否则会把裸 markdown 当 HTML 渲染、保存还会二次转义损坏内容。
   ipcMain.handle('history-read', (_e, p, id) => history.read(historyRoot(), p, id));
 
-  // ---- 本地文件夹工作区 (F06) ----
-  // 选文件夹当工作区。WS2_FOLDER_IN 测试 seam（仅非打包态）：设了就跳过原生目录对话框
-  // （e2e 点不了原生对话框），照 WS2_PDF_OUT 先例。
-  ipcMain.handle('pick-folder', async () => {
+  // ---- 本地文件夹工作区 (F06 → 多根) ----
+  // 添加文件夹（原 pick-folder）：选文件夹 → classifyRoot 嵌套智能判定 → 按关系分流。
+  // WS2_FOLDER_IN 测试 seam（仅非打包态）：设了就跳过原生目录对话框（e2e 点不了原生对话框），
+  // 照 WS2_PDF_OUT 先例；e2e 可经 electronApp.evaluate 改 process.env 换目标。
+  ipcMain.handle('ws-add-folder', async () => {
+    await restoreRoots(); // 空启动直接点添加时注册表也要先就位
     const seam = !app.isPackaged ? process.env.WS2_FOLDER_IN : null;
     let dir = seam;
     if (!dir) {
@@ -192,31 +244,137 @@ function registerIpc() {
       if (r.canceled || !r.filePaths[0]) return null;
       dir = r.filePaths[0];
     }
-    activeRoot = path.resolve(dir);
-    await workspaceStore.save(workspaceFile(), activeRoot);
-    startWorkspaceWatch(activeRoot);
-    return workspace.readTree(activeRoot);
-  });
-  // 启动恢复：返回上次工作区根（仍存在才认），renderer 据此自动渲染。
-  ipcMain.handle('ws-get-root', async () => {
-    if (activeRoot) return activeRoot;
-    const saved = await workspaceStore.load(workspaceFile());
-    if (saved && (await dirExists(saved.root))) {
-      activeRoot = path.resolve(saved.root);
-      startWorkspaceWatch(activeRoot);
-      return activeRoot;
+    const real = await canonReal(dir);
+    const cls = rootsLib.classifyRoot(real, classifyRoots());
+    if (cls.rel === 'same') {
+      const r = roots.find((x) => x.id === cls.rootId);
+      // 选的是一个失联根的路径且现在可达了（外置盘插回来）→ 顺手复活，不报「已打开」
+      if (r.missing && (await dirExists(r.path))) {
+        r.missing = false;
+        r.real = await canonReal(r.path);
+        startRootWatch(r);
+        return { status: 'revived', root: rootInfo(r), tree: await workspace.readTree(r.path) };
+      }
+      return { status: 'same', root: rootInfo(r) };
     }
-    return null;
+    if (cls.rel === 'child') {
+      const parent = roots.find((x) => x.id === cls.parentId);
+      return { status: 'child', name: path.basename(real), parent: rootInfo(parent) };
+    }
+    if (cls.rel === 'parent') {
+      // 新根包住已有根 → 不静默动用户的树，出确认；确认走 ws-absorb-confirm(token)
+      const children = cls.childIds.map((id) => roots.find((x) => x.id === id));
+      const token = 'absorb-' + stashSeq++;
+      pendingAbsorb.set(token, { path: path.resolve(dir), real });
+      return { status: 'parent', token, name: path.basename(real), children: children.map(rootInfo) };
+    }
+    if (roots.length >= MAX_ROOTS) return { status: 'limit', max: MAX_ROOTS };
+    const root = { id: 'r' + nextRootId++, path: path.resolve(dir), real, missing: false };
+    roots.push(root);
+    await persistRoots();
+    startRootWatch(root);
+    return { status: 'added', root: rootInfo(root), tree: await workspace.readTree(root.path) };
   });
-  ipcMain.handle('ws-read-tree', async () => {
+  // 「并入并添加」确认：吸收子根（子根注销、标签 rebase 进新父根——文件都还在磁盘原处，只换归属）。
+  ipcMain.handle('ws-absorb-confirm', async (_e, token) => {
+    const pend = pendingAbsorb.get(token);
+    pendingAbsorb.delete(token);
+    if (!pend) return { status: 'stale' };
+    // token 挂起期间注册表可能变了（并行又加了根/移除了根）→ 重新分类，不再是 parent 就放弃
+    const cls = rootsLib.classifyRoot(pend.real, classifyRoots());
+    if (cls.rel !== 'parent') return { status: 'stale' };
+    const newRoot = { id: 'r' + nextRootId++, path: pend.path, real: pend.real, missing: false };
+    const rebases = [];
+    for (const id of cls.childIds) {
+      const child = roots.find((x) => x.id === id);
+      rebases.push({ fromRootId: id, toRootId: newRoot.id, prefix: rootsLib.prefixUnder(newRoot.path, child.path) });
+      workspaceWatcher.unwatch(id);
+    }
+    roots = roots.filter((x) => !cls.childIds.includes(x.id));
+    roots.push(newRoot); // 照 ui-demo：子根去掉、父根追加到末尾
+    await persistRoots();
+    startRootWatch(newRoot);
+    return { status: 'added', root: rootInfo(newRoot), tree: await workspace.readTree(newRoot.path), rebases };
+  });
+  // 移除根（磁盘文件不动）：注销 + 关 watcher；返回 token 供撤销原位放回。
+  ipcMain.handle('ws-remove-root', async (_e, rootId) => {
+    const idx = roots.findIndex((x) => x.id === rootId);
+    if (idx < 0) return null;
+    const [root] = roots.splice(idx, 1);
+    workspaceWatcher.unwatch(rootId);
+    await persistRoots();
+    const token = 'rmroot-' + stashSeq++;
+    removedStash.set(token, { root, index: idx });
+    if (removedStash.size > 20) removedStash.delete(removedStash.keys().next().value); // 防囤积
+    return { token, root: rootInfo(root) };
+  });
+  ipcMain.handle('ws-undo-remove-root', async (_e, token) => {
+    const st = removedStash.get(token);
+    removedStash.delete(token);
+    if (!st) return { status: 'stale' };
+    // 撤销窗口期注册表可能变了：加了个跟它重叠的根 → 拒绝复活（嵌套禁令优先于撤销）；满员也拒。
+    const cls = rootsLib.classifyRoot(st.root.real || st.root.path, classifyRoots());
+    if (cls.rel !== 'independent') return { status: 'overlap' };
+    if (roots.length >= MAX_ROOTS) return { status: 'limit', max: MAX_ROOTS };
+    const root = { ...st.root, missing: !(await dirExists(st.root.path)) };
+    const index = Math.min(st.index, roots.length);
+    roots.splice(index, 0, root); // 放回原来的位置（照 ui-demo）
+    await persistRoots();
+    if (!root.missing) startRootWatch(root);
+    return {
+      status: 'ok',
+      root: rootInfo(root),
+      index,
+      tree: root.missing ? null : await workspace.readTree(root.path),
+    };
+  });
+  // 失联根重新定位：只对 missing 根开放；新路径不得与其他根重叠（嵌套禁令同 ws-add-folder）。
+  // rootId 不变 → 标签/置顶身份（rootId:rel）原样复活。WS2_RELOCATE_IN 测试 seam 同 WS2_FOLDER_IN。
+  ipcMain.handle('ws-relocate-root', async (_e, rootId) => {
+    const r = roots.find((x) => x.id === rootId);
+    if (!r || !r.missing) return null;
+    const seam = !app.isPackaged ? process.env.WS2_RELOCATE_IN : null;
+    let dir = seam;
+    if (!dir) {
+      const picked = await dialog.showOpenDialog({ properties: ['openDirectory'], title: '重新定位文件夹' });
+      if (picked.canceled || !picked.filePaths[0]) return null;
+      dir = picked.filePaths[0];
+    }
+    const real = await canonReal(dir);
+    const others = classifyRoots().filter((x) => x.id !== rootId);
+    const cls = rootsLib.classifyRoot(real, others);
+    if (cls.rel !== 'independent') return { status: 'overlap' };
+    r.path = path.resolve(dir);
+    r.real = real;
+    r.missing = false;
+    await persistRoots();
+    startRootWatch(r);
+    return { status: 'ok', root: rootInfo(r), tree: await workspace.readTree(r.path) };
+  });
+  // 根重排（拖拽/「移到最上面」）：renderer 只发 id 顺序；必须与注册表同集合才接受。
+  ipcMain.handle('ws-reorder-roots', async (_e, ids) => {
+    if (!Array.isArray(ids)) return null;
+    const byId = new Map(roots.map((r) => [r.id, r]));
+    if (ids.length !== roots.length || !ids.every((id) => byId.has(id))) return null;
+    roots = ids.map((id) => byId.get(id));
+    await persistRoots();
+    return roots.map(rootInfo);
+  });
+  // 启动恢复：返回全部根（含失联的，renderer 渲染灰态），renderer 据此逐根读树。
+  ipcMain.handle('ws-get-roots', async () => {
+    await restoreRoots();
+    return roots.map(rootInfo);
+  });
+  ipcMain.handle('ws-read-tree', async (_e, rootId) => {
     // 测试 seam（仅非打包态）：模拟真机大目录读树慢（逐文件 stat 取 inode），让「恢复工作区」确定性
     // 落后于冷启动 open-file，复现并守住「冷启动建标签」竞态——读树快的干净小工作区测不出这个 bug。
     const slow = !app.isPackaged ? +process.env.WS2_SLOW_TREE_MS || 0 : 0;
     if (slow) await new Promise((r) => setTimeout(r, slow));
-    return activeRoot ? workspace.readTree(activeRoot) : null;
+    const r = roots.find((x) => x.id === rootId);
+    return r && !r.missing ? workspace.readTree(r.path) : null;
   });
-  ipcMain.handle('ws-new-doc', (_e, dirRel, base, html) =>
-    workspace.newDoc(requireRoot(), dirRel, base, html),
+  ipcMain.handle('ws-new-doc', (_e, rootId, dirRel, base, html) =>
+    workspace.newDoc(rootById(rootId), dirRel, base, html),
   );
   // 「浏览…」把临时文档存到任意位置（可在工作区外）：主进程自己弹原生保存框、只写对话框返回的
   // 路径——renderer 不传 abs（信任模型同 pick-file：路径是用户当场在原生对话框亲手选的）。
@@ -230,7 +388,8 @@ function registerIpc() {
     let out = !app.isPackaged ? process.env.WS2_SAVE_AS_OUT : null;
     const seamUsed = !!out;
     if (!out) {
-      let defDir = activeRoot;
+      const firstLive = roots.find((r) => !r.missing);
+      let defDir = firstLive ? firstLive.path : null;
       if (!defDir) { try { defDir = app.getPath('documents'); } catch { defDir = app.getPath('home'); } }
       const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
         title: '保存文档',
@@ -254,28 +413,30 @@ function registerIpc() {
     if (opts && opts.reveal && !seamUsed) shell.showItemInFolder(out);
     return { ok: true, abs: out };
   });
-  ipcMain.handle('ws-make-dir', (_e, dirRel, name) => workspace.makeDir(requireRoot(), dirRel, name));
-  ipcMain.handle('ws-rename', (_e, relPath, newLeaf) =>
-    workspace.renamePath(requireRoot(), relPath, newLeaf),
+  ipcMain.handle('ws-make-dir', (_e, rootId, dirRel, name) => workspace.makeDir(rootById(rootId), dirRel, name));
+  ipcMain.handle('ws-rename', (_e, rootId, relPath, newLeaf) =>
+    workspace.renamePath(rootById(rootId), relPath, newLeaf),
   );
-  ipcMain.handle('ws-move', (_e, relPath, destDirRel) =>
-    workspace.movePath(requireRoot(), relPath, destDirRel),
+  ipcMain.handle('ws-move', (_e, rootId, relPath, destDirRel) =>
+    workspace.movePath(rootById(rootId), relPath, destDirRel),
   );
-  ipcMain.handle('ws-delete', (_e, relPath) =>
-    workspace.deletePath(requireRoot(), relPath, trashRoot(), { trashItem: (p) => shell.trashItem(p) }),
+  ipcMain.handle('ws-delete', (_e, rootId, relPath) =>
+    workspace.deletePath(rootById(rootId), relPath, trashRoot(), { trashItem: (p) => shell.trashItem(p) }),
   );
-  ipcMain.handle('ws-undo-delete', (_e, token) =>
-    workspace.undoDelete(requireRoot(), token, trashRoot()),
+  ipcMain.handle('ws-undo-delete', (_e, rootId, token) =>
+    workspace.undoDelete(rootById(rootId), token, trashRoot()),
   );
-  // 标签/置顶状态（按当前工作区根存进 workspace.json，换工作区各自保留、重启恢复）。
-  ipcMain.handle('ws-get-tabs', () => workspaceStore.getTabs(workspaceFile(), requireRoot()));
-  // renderer 传 root（它当时的 current.root）：persist 是 fire-and-forget，若 A 的写在用户已切到 B、
-  // activeRoot 已变后才到达，盲信 requireRoot() 会把 A 的标签（含外部标签的绝对路径）写进 B 桶、在 B 里
-  // 点开错文件。这里校验 root===activeRoot 不符就丢弃（也顺带硬化老的跨工作区竞态）。
-  ipcMain.handle('ws-set-tabs', (_e, state, root) => {
-    const active = requireRoot();
-    if (root && path.resolve(root) !== active) return null;
-    return workspaceStore.setTabs(workspaceFile(), active, state);
+  // 标签/置顶状态（全局单一集合存进 workspace.json，重启恢复）。
+  ipcMain.handle('ws-get-tabs', () => workspaceStore.getTabs(workspaceFile()));
+  // 写盘前把「rootId 已不在注册表」的 rel entries 滤掉：persist 是 fire-and-forget，若移除根的动作
+  // 和一次在飞的 persist 交错，盲写会把已移除根的标签复活进磁盘。失联(missing)根的 entries 保留——
+  // 重新定位后要原样回来。
+  ipcMain.handle('ws-set-tabs', (_e, state) => {
+    const known = new Set(roots.map((r) => r.id));
+    const entries = Array.isArray(state && state.entries)
+      ? state.entries.filter((e) => !(e && typeof e.rel === 'string') || known.has(e.rootId))
+      : [];
+    return workspaceStore.setTabs(workspaceFile(), { entries, activeRel: state && state.activeRel });
   });
   // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
   ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
@@ -284,15 +445,15 @@ function registerIpc() {
   // 「AI 接入」弹窗的 Prompt 正文（打包进 app 的指南拷贝；防漂移测试锁它与 docs/ 正本逐字节一致）
   ipcMain.handle('ai-guide', () => fsp.readFile(path.join(__dirname, '..', 'renderer', 'ai-guide.md'), 'utf8'));
   // 非 .html 文件 → 系统默认程序打开（编辑器只认 html）。
-  ipcMain.handle('ws-open-external', async (_e, relPath) => {
-    const abs = assertInsideWorkspace(requireRoot(), relPath);
+  ipcMain.handle('ws-open-external', async (_e, rootId, relPath) => {
+    const abs = assertInsideWorkspace(rootById(rootId), relPath);
     const err = await shell.openPath(abs); // 修 MP-6：失败 resolve 错误串，surface 给 renderer
     return err ? { error: err } : { ok: true };
   });
-  // 工作区内任意文件的 file:// URL（给图片/PDF 内置查看器；assertInsideWorkspace 约束在根内防越权）。
+  // 根内任意文件的 file:// URL（给图片/PDF 内置查看器；assertInsideWorkspace 约束在根内防越权）。
   // pathInfo 那条只放 .html，这条放任意类型，所以单独开一个。
-  ipcMain.handle('ws-file-url', (_e, relPath) => {
-    const abs = assertInsideWorkspace(requireRoot(), relPath);
+  ipcMain.handle('ws-file-url', (_e, rootId, relPath) => {
+    const abs = assertInsideWorkspace(rootById(rootId), relPath);
     return pathToFileURL(abs).href;
   });
 
