@@ -11,9 +11,11 @@
   }
 
   // 选中文字进搜索菜单 label：折叠空白 + 截断到 20 字，超出补 …。
+  // 按码点(Array.from)截断,不按 UTF-16 code unit——否则 emoji/星平面字符会被从 surrogate pair 中间切断、留孤立代理码渲染成□。
   function truncForLabel(text) {
     var s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
-    return s.length > 20 ? s.slice(0, 20) + '…' : s;
+    var cps = Array.from(s);
+    return cps.length > 20 ? cps.slice(0, 20).join('') + '…' : s;
   }
 
   // 把「分节数组」拼成菜单 template：空节丢弃，节与节之间恰一条分隔符，无前导/尾随/连续分隔符。
