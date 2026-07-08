@@ -78,28 +78,30 @@ test('filter narrows the tree to matching files', async () => {
 
 test('fs ops via IPC truly change disk (new/rename/move/delete+undo)', async () => {
   await page.click('#home-open-folder');
+  // 多根后文件操作一律 (rootId, relPath)：从根标题行取当前唯一根的 id
+  const rootId = await page.locator('.sb-root-head').getAttribute('data-root');
 
   // 新建文档
-  const created = await page.evaluate((html) => window.ws2.wsNewDoc('', '新文档', html), HTML('NEW'));
+  const created = await page.evaluate((a) => window.ws2.wsNewDoc(a.rootId, '', '新文档', a.html), { rootId, html: HTML('NEW') });
   expect(created.rel).toBe('新文档.html');
   expect(await exists(path.join(wsDir, '新文档.html'))).toBe(true);
 
   // 改名（保留扩展名）
-  const renamed = await page.evaluate(() => window.ws2.wsRename('新文档.html', '改名后'));
+  const renamed = await page.evaluate((id) => window.ws2.wsRename(id, '新文档.html', '改名后'), rootId);
   expect(renamed.rel).toBe('改名后.html');
   expect(await exists(path.join(wsDir, '改名后.html'))).toBe(true);
   expect(await exists(path.join(wsDir, '新文档.html'))).toBe(false);
 
   // 移动到 数据/
-  const moved = await page.evaluate(() => window.ws2.wsMove('改名后.html', '数据'));
+  const moved = await page.evaluate((id) => window.ws2.wsMove(id, '改名后.html', '数据'), rootId);
   expect(moved.rel).toBe('数据/改名后.html');
   expect(await exists(path.join(wsDir, '数据', '改名后.html'))).toBe(true);
   expect(await exists(path.join(wsDir, '改名后.html'))).toBe(false);
 
   // 删除 + 撤销
-  const del = await page.evaluate(() => window.ws2.wsDelete('a.html'));
+  const del = await page.evaluate((id) => window.ws2.wsDelete(id, 'a.html'), rootId);
   expect(await exists(path.join(wsDir, 'a.html'))).toBe(false);
-  await page.evaluate((tok) => window.ws2.wsUndoDelete(tok), del.token);
+  await page.evaluate((a) => window.ws2.wsUndoDelete(a.rootId, a.tok), { rootId, tok: del.token });
   expect(await exists(path.join(wsDir, 'a.html'))).toBe(true);
 });
 
@@ -108,13 +110,14 @@ test('fs ops via IPC truly change disk (new/rename/move/delete+undo)', async () 
 // 证明「在 Wordspace 新建文档 → 产出合法 Schema 文档」端到端成立。
 test('新建文档端到端：每个内置模板落盘后符合 Schema #1', async () => {
   await page.click('#home-open-folder');
+  const rootId = await page.locator('.sb-root-head').getAttribute('data-root');
   const { TEMPLATES } = require('../src/lib/doc-templates.js');
   const { validate } = require('../src/lib/schema-validate.js');
   const { JSDOM } = require('jsdom');
   for (const t of TEMPLATES) {
     const created = await page.evaluate(
-      (a) => window.ws2.wsNewDoc('', a.name, a.html),
-      { name: 'sc-' + t.id, html: t.html },
+      (a) => window.ws2.wsNewDoc(a.rootId, '', a.name, a.html),
+      { rootId, name: 'sc-' + t.id, html: t.html },
     );
     expect(await exists(path.join(wsDir, created.rel)), `${t.id} 没落盘`).toBe(true);
     const onDisk = await fs.readFile(path.join(wsDir, created.rel), 'utf8'); // 读磁盘真实字节，不是内存
@@ -125,7 +128,8 @@ test('新建文档端到端：每个内置模板落盘后符合 Schema #1', asyn
 
 test('makeDir creates a real directory on disk', async () => {
   await page.click('#home-open-folder');
-  const r = await page.evaluate(() => window.ws2.wsMakeDir('', '素材'));
+  const rootId = await page.locator('.sb-root-head').getAttribute('data-root');
+  const r = await page.evaluate((id) => window.ws2.wsMakeDir(id, '', '素材'), rootId);
   expect(r.rel).toBe('素材');
   expect(await exists(path.join(wsDir, '素材'))).toBe(true);
 });

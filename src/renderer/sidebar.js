@@ -1794,9 +1794,10 @@
   // 主进程把 abs 归一化、跨全部根算归属 (rootId, rel)（kindOf 只在主进程有）。在某根内 → 建 rel 标签；
   // 根外 rel=null → 建 abs 身份的外部标签（像浏览器开标签页）。竞态守卫放 rel 判定之前，对两条分支都生效。
   async function openTabFromAbs(abs) {
+    if (!rootsState.length) return; // 单文件模式（没打开任何文件夹）：侧栏藏着，不建看不见的幽灵标签
     let meta = null;
     try { meta = await window.ws2.classifyFile(abs); } catch (e) { return; }
-    if (!meta) return;
+    if (!meta || !rootsState.length) return;
     if (meta.rel && meta.rootId && rootOf(meta.rootId)) { // await 期间该根可能被移除 → 校验还在才建 rel 标签
       openTabEntry({ rootId: meta.rootId, rel: meta.rel, kind: meta.kind || 'other', title: meta.name || meta.rel.split('/').pop() });
     } else {

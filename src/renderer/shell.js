@@ -679,11 +679,12 @@ async function pickAndOpen() {
   if (!p) return;
   let meta;
   try { meta = await window.ws2.classifyFile(p); }
-  catch (e) { meta = { kind: 'other', name: baseName(p), rel: null }; }
+  catch (e) { meta = { kind: 'other', name: baseName(p), rel: null, rootId: null }; }
   if (meta.kind === 'html' || meta.kind === 'md') {
     openDoc(p);
   } else {
-    showViewer({ abs: p, rel: meta.rel, name: meta.name || baseName(p), kind: meta.kind });
+    // rootId 跟着 rel 走：根内文件查看器走 wsFileUrl(rootId, rel)（assertInsideWorkspace 守卫那条）
+    showViewer({ abs: p, rel: meta.rel, rootId: meta.rootId, name: meta.name || baseName(p), kind: meta.kind });
   }
 }
 
