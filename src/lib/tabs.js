@@ -214,6 +214,41 @@
     return s;
   }
 
+  // 跨根移动文件/目录：把 fromRootId 里的 oldRel（isDir 时含整棵子树的文件标签）搬到 toRootId 的 newRel 位置——
+  // 换 rootId + rel 前缀替换。newRel = movePathAcross 落盘后返回的目标 rel（目标撞名去重后，可能是 'a 2.html'）。
+  // 撞 key（目标位置已有 entry）→ open/pinned 取并集合并（守去重不变式）。激活项跟随换 key。title 恒取新 leaf。
+  // 只碰这一支：外部标签(无 rel)、临时文档、别的根、同根别的文件全程不动（rootId + 前缀过滤天然隔离）。
+  // fromRootId ≠ toRootId（跨根移动的前提），故 oldKey 恒 ≠ targetKey，合并/remap 两分支不会互撞。
+  // 结构镜像 rebaseRoot（同款「遍历原 state、累加进 s、撞 key 找 existing」），只是 rel 换成前缀替换、title 重算。
+  function retargetSubtreeAcross(state, fromRootId, oldRel, toRootId, newRel, isDir) {
+    const inSubtree = (e) =>
+      e.rootId === fromRootId && e.rel && (e.rel === oldRel || (isDir && e.rel.indexOf(oldRel + '/') === 0));
+    let s = state;
+    for (const e of state.entries.filter(inSubtree)) {
+      const nr = e.rel === oldRel ? newRel : newRel + e.rel.slice(oldRel.length);
+      const oldKey = keyOf(e);
+      const targetKey = keyOf({ rootId: toRootId, rel: nr });
+      const existing = s.entries.find((x) => keyOf(x) === targetKey);
+      let entries;
+      if (existing) {
+        entries = s.entries
+          .map((x) => {
+            if (keyOf(x) === targetKey) return { ...x, open: x.open || e.open, pinned: x.pinned || e.pinned };
+            if (keyOf(x) === oldKey) return null;
+            return x;
+          })
+          .filter(Boolean);
+      } else {
+        entries = s.entries.map((x) =>
+          keyOf(x) === oldKey ? { ...x, rootId: toRootId, rel: nr, title: nr.split('/').pop() } : x,
+        );
+      }
+      const activeRel = s.activeRel === oldKey ? targetKey : s.activeRel;
+      s = { entries, activeRel };
+    }
+    return s;
+  }
+
   const API = {
     keyOf,
     reconcileTree,
@@ -228,6 +263,7 @@
     dropRootEntries,
     undoDropRoot,
     rebaseRoot,
+    retargetSubtreeAcross,
     pinnedEntries,
     tabEntries,
     displayOrder,

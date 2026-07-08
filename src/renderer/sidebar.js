@@ -470,8 +470,8 @@
         head.classList.toggle('sb-insert-after', !before);
         return;
       }
-      // 跨根拖文件 = 禁（跨设备 EXDEV 语义另立项）；同根且不已在顶层才接
-      if (!dragNode || dragNode.rootId !== root.id || parentDirOf(dragNode.rel) === '') return;
+      // 拖文件到根标题 = 移到该根顶层。跨根已放开;只挡「同根且已在顶层」的 no-op。
+      if (!dragNode || (dragNode.rootId === root.id && parentDirOf(dragNode.rel) === '')) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       head.classList.add('sb-drop');
@@ -493,10 +493,11 @@
         dragRootId = null;
         return;
       }
-      if (!dragNode || dragNode.rootId !== root.id) return;
+      if (!dragNode) return;
       e.preventDefault();
       head.classList.remove('sb-drop');
-      doMove(dragNode, '');
+      if (dragNode.rootId === root.id) doMove(dragNode, '');
+      else doMoveAcross(dragNode, root.id, ''); // 跨根移到该根顶层
     };
     treeEl.appendChild(head);
     if (!open) return true;
@@ -712,6 +713,42 @@
     if (r.rel !== node.rel) retargetTabsUnder(node.rootId, node.rel, r.rel, node.isDir); // 标签跟随移动
     await refreshRoot(node.rootId);
   }
+  // 跨根移动（node 从它自己的根搬到 toRootId 的 destDirRel）：v1 便宜档同盘 rename；跨盘 toast 提示不搬。
+  // 标签换根跟随、collapsed 键换根迁移、打开中文档/其祖先目录重指向、两根树都刷。
+  async function doMoveAcross(node, toRootId, destDirRel) {
+    const op = openPath();
+    const wasOpen = !node.isDir && op === node.abs;
+    const openUnderDir = node.isDir && isUnder(op, node.abs); // 移动的目录含当前打开文档
+    let r;
+    try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel); }
+    catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
+    if (r && r.crossDevice) { // 真跨盘：不搬，明确告知
+      showToast('这两个文件夹在不同的磁盘上，暂不支持直接拖动移动——先在访达里复制过去');
+      return;
+    }
+    // 标签换根跟随（含撞名去重后的新 rel/title）
+    tabState = window.WS2Tabs.retargetSubtreeAcross(tabState, node.rootId, node.rel, toRootId, r.rel, node.isDir);
+    persistTabs();
+    // collapsed 键换根迁移（照 commitRenameOp 的 SB-12，多换一个 rootId）：目录移动才有子树折叠状态
+    if (node.isDir) {
+      const oldK = colKey(node.rootId, node.rel);
+      const newK = colKey(toRootId, r.rel);
+      for (const key of [...collapsed]) {
+        if (key === oldK || key.indexOf(oldK + '/') === 0) { collapsed.delete(key); collapsed.add(newK + key.slice(oldK.length)); }
+      }
+    }
+    // 打开中文档重指向（否则 docPath 仍指旧根旧路径，后续保存 ENOENT）
+    if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
+    else if (openUnderDir && window.__shellRetargetDoc) {
+      const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 确认 op 以 node.abs+分隔符 开头）
+      window.__shellRetargetDoc(newAbs, newAbs.split(/[\\/]/).pop());
+    }
+    await refreshRoot(node.rootId); // 源根：文件走了
+    await refreshRoot(toRootId); // 目标根：文件来了
+    // 移动的正是激活标签对应文件 → 在目标根树里展开定位
+    const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+    if (act && act.rootId === toRootId && act.rel) expandToFile(toRootId, act.rel);
+  }
   async function doDelete(node) {
     const op = openPath();
     const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
@@ -869,8 +906,8 @@
         ]);
       };
       row.ondragover = (e) => {
-        // 跨根拖 = 禁（真实后端是跨设备 EXDEV 语义，另立项）；同根且不已在此文件夹才接
-        if (!dragNode || dragNode.rootId !== dir.rootId || parentDirOf(dragNode.rel) === dir.rel) return;
+        // 跨根移动已放开（v1 便宜档：同盘 rename、跨盘 toast）。只挡「同根且已在此文件夹」的 no-op。
+        if (!dragNode || (dragNode.rootId === dir.rootId && parentDirOf(dragNode.rel) === dir.rel)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         row.classList.add('sb-drop');
@@ -879,11 +916,13 @@
         if (!row.contains(e.relatedTarget)) row.classList.remove('sb-drop');
       };
       row.ondrop = (e) => {
-        if (!dragNode || dragNode.rootId !== dir.rootId) return; // 跨根禁（ondragover 已不给 dropEffect，双保险）
+        if (!dragNode) return;
         e.preventDefault();
         e.stopPropagation();
         row.classList.remove('sb-drop');
-        doMove(dragNode, dir.rel);
+        // 同根→doMove(rename)；跨根→doMoveAcross(换根)
+        if (dragNode.rootId === dir.rootId) doMove(dragNode, dir.rel);
+        else doMoveAcross(dragNode, dir.rootId, dir.rel);
       };
       parent.appendChild(row);
       if (open) {

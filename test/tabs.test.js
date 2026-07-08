@@ -384,6 +384,71 @@ test('rebaseRoot 不动外部 abs entries 和别的根', () => {
   invariant(s);
 });
 
+// ===== retargetSubtreeAcross（跨根移动文件/目录：标签换根+rel 前缀替换）=====
+test('retargetSubtreeAcross 文件：换 rootId+rel，open/pinned/激活/title 跟随', () => {
+  let s = T.pinEntry(T.openEntry(empty(), f('a.html', 'html', 'r1')), f('a.html', 'html', 'r1')); // r1:a.html 开+钉+激活
+  s = T.retargetSubtreeAcross(s, 'r1', 'a.html', 'r2', '素材/a.html', false);
+  assert.ok(!s.entries.some((e) => e.rootId === 'r1')); // r1 那条走了
+  const e = s.entries.find((x) => x.rootId === 'r2' && x.rel === '素材/a.html');
+  assert.ok(e);
+  assert.equal(e.open, true);
+  assert.equal(e.pinned, true);
+  assert.equal(e.title, 'a.html'); // 叶名（跨目录不变）
+  assert.equal(s.activeRel, 'r2:素材/a.html'); // 激活跟随换 key
+  invariant(s);
+});
+
+test('retargetSubtreeAcross 目标撞名去重：title 取去重后的新叶名', () => {
+  // 目标根 r2 已有 a.html；把 r1:a.html 移到 r2 根目录，movePathAcross 去重成 'a 2.html'
+  let s = T.openEntry(empty(), f('a.html', 'html', 'r2'));
+  s = T.openEntry(s, f('a.html', 'html', 'r1')); // active=r1:a.html
+  s = T.retargetSubtreeAcross(s, 'r1', 'a.html', 'r2', 'a 2.html', false);
+  const moved = s.entries.find((x) => x.rootId === 'r2' && x.rel === 'a 2.html');
+  assert.ok(moved && moved.title === 'a 2.html'); // 去重后的叶名
+  assert.ok(s.entries.some((x) => x.rootId === 'r2' && x.rel === 'a.html')); // 原来的 r2:a.html 没被动
+  assert.equal(s.activeRel, 'r2:a 2.html');
+  invariant(s);
+});
+
+test('retargetSubtreeAcross 目录：整棵子树换根+前缀替换，各文件叶名不变', () => {
+  let s = T.openEntry(empty(), f('docs/a.html', 'html', 'r1'));
+  s = T.pinEntry(s, f('docs/图/封面.png', 'image', 'r1')); // 深层置顶
+  s = T.openEntry(s, f('别的.html', 'html', 'r1')); // 不在 docs 下 → 不该动
+  s = T.retargetSubtreeAcross(s, 'r1', 'docs', 'r2', '归档/docs', true);
+  assert.ok(s.entries.some((e) => e.rootId === 'r2' && e.rel === '归档/docs/a.html'));
+  const cover = s.entries.find((e) => e.rootId === 'r2' && e.rel === '归档/docs/图/封面.png');
+  assert.ok(cover && cover.pinned && cover.title === '封面.png');
+  assert.ok(s.entries.some((e) => e.rootId === 'r1' && e.rel === '别的.html')); // docs 外的没动
+  assert.ok(!s.entries.some((e) => e.rootId === 'r1' && e.rel.indexOf('docs') === 0)); // docs 子树全走了
+  invariant(s);
+});
+
+test('retargetSubtreeAcross 撞 key 合并：目标已有同位置 entry → open/pinned 并集、唯一', () => {
+  // r2 已开着 sub/a.html；把 r1:a.html 移到 r2 的 sub 下（同名 → movePathAcross 本应去重，但测纯逻辑撞 key 合并）
+  let s = T.pinEntry(empty(), f('sub/a.html', 'html', 'r2')); // r2 钉着
+  s = T.openEntry(s, f('a.html', 'html', 'r1')); // r1 开着
+  s = T.retargetSubtreeAcross(s, 'r1', 'a.html', 'r2', 'sub/a.html', false);
+  const hits = s.entries.filter((e) => T.keyOf(e) === 'r2:sub/a.html');
+  assert.equal(hits.length, 1); // 合并成一条
+  assert.equal(hits[0].open, true); // r1 带来的
+  assert.equal(hits[0].pinned, true); // r2 原有的
+  invariant(s);
+});
+
+test('retargetSubtreeAcross 不动外部 abs / 临时文档 / 别的根', () => {
+  let s = T.openEntry(empty(), ext('/tmp/out.html'));
+  s = T.openEntry(s, { rootId: undefined, abs: 'temp:1', kind: 'html', title: '未命名', open: true }); // 临时(temp: 前缀 abs)
+  s = T.openEntry(s, f('a.html', 'html', 'r1'));
+  s = T.openEntry(s, f('a.html', 'html', 'r3')); // 第三个根同 rel
+  s = T.retargetSubtreeAcross(s, 'r1', 'a.html', 'r2', 'a.html', false);
+  assert.ok(s.entries.some((e) => e.abs === '/tmp/out.html' && !e.rel)); // 外部标签不动
+  assert.ok(s.entries.some((e) => e.abs === 'temp:1')); // 临时文档不动
+  assert.ok(s.entries.some((e) => e.rootId === 'r3' && e.rel === 'a.html')); // 第三个根不动
+  assert.ok(s.entries.some((e) => e.rootId === 'r2' && e.rel === 'a.html')); // 只有 r1 那条搬到 r2
+  assert.ok(!s.entries.some((e) => e.rootId === 'r1')); // r1 空了
+  invariant(s);
+});
+
 // ===== reconcileTree（外部磁盘变化对账：inode 匹配做改名/移动跟随）=====
 test('reconcileTree：文件原位→保留；ino 匹配新位置→改名/移动跟随；无匹配→删除；外部标签不动', () => {
   let s = T.openEntry(empty(), f('a.html'));

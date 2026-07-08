@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsMakeDir: (rootId, dirRel, name) => ipcRenderer.invoke('ws-make-dir', rootId, dirRel, name),
   wsRename: (rootId, relPath, newLeaf) => ipcRenderer.invoke('ws-rename', rootId, relPath, newLeaf),
   wsMove: (rootId, relPath, destDirRel) => ipcRenderer.invoke('ws-move', rootId, relPath, destDirRel),
+  wsMoveAcross: (fromRootId, relPath, toRootId, destDirRel) => ipcRenderer.invoke('ws-move-across', fromRootId, relPath, toRootId, destDirRel),
   wsDelete: (rootId, relPath) => ipcRenderer.invoke('ws-delete', rootId, relPath),
   wsUndoDelete: (rootId, token) => ipcRenderer.invoke('ws-undo-delete', rootId, token),
   wsOpenExternal: (rootId, relPath) => ipcRenderer.invoke('ws-open-external', rootId, relPath),
