@@ -28,7 +28,7 @@ import MentionMenu, { type MentionItem } from './canvas/MentionMenu'
 import LinkPreview from './canvas/LinkPreview'
 import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
-import { resolveHref, relHref, dirOf, baseOf } from '../lib/links'
+import { resolveHref, relHref, dirOf, baseOf, splitHrefSuffix } from '../lib/links'
 import type { FileEntry } from '../types'
 import './Canvas.css'
 
@@ -470,8 +470,11 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const tab = tabs.find((x) => x.id === activeTabId)
   const doc = docId ? getDoc(docId) : tab?.docId ? getDoc(tab.docId) : undefined
   // 当前文档的文件身份（相对链接的解析基准）。未保存草稿/云端文档没有路径 → 互链功能不开。
-  const curRootId = tab?.fileName ? tab.rootId : undefined
-  const curPath = tab?.fileName && tab.rootId ? tab.url : undefined
+  // docId prop / embedded（Schema 演示页内嵌编辑器）也不开：那时 activeTab 指的是别的文档，
+  // 用它做解析基准整套错位（对抗审查抓到的潜伏坑）。
+  const linkingOn = !docId && !embedded
+  const curRootId = linkingOn && tab?.fileName ? tab.rootId : undefined
+  const curPath = linkingOn && tab?.fileName && tab.rootId ? tab.url : undefined
 
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
@@ -680,19 +683,13 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       setMention(null)
       const el = blockEls.current.get(m.blockId)
       if (!el) return
-      const sel = window.getSelection()
-      if (sel && sel.rangeCount > 0) {
-        for (let i = 0; i < m.query.length + m.trig; i++)
-          sel.modify('extend', 'backward', 'character')
-        document.execCommand('delete')
-      }
+      // ① 先定目标（校验/新建都放在删除**之前**——任何失败分支都不动正文，用户输入不凭空蒸发）
       let targetPath: string | null = null
       let title = ''
       if (key === 'create') {
         // 新建在当前文档同目录（Typora 式的文件原生答案）；不切走当前标签页（Notion 同款）
         title = m.query.trim() || '无标题文档'
         targetPath = createLinkedDoc(curRootId, dirOf(curPath), title)
-        if (targetPath) toast(`已新建「${title}」`, 'success')
       } else {
         const it = mentionItems.find((x) => x.key === key)
         if (!it?.path) return
@@ -700,16 +697,66 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         title = it.title
       }
       if (!targetPath) return
+      // ② 用 **DOM 真相**定位「触发符+query」整段删除——不按计数回删（IME 组字/移动光标/粘贴
+      //    都会让 query 计数与 DOM 失同步，按计数删会误删正文或吞掉相邻旧提及；对抗审查抓到的坑）。
+      const sel = window.getSelection()
+      if (!sel || sel.rangeCount === 0 || !el.contains(sel.getRangeAt(0).startContainer)) return
+      const caret = sel.getRangeAt(0)
+      const scan = document.createRange()
+      scan.selectNodeContents(el)
+      scan.setEnd(caret.startContainer, caret.startOffset)
+      const before = scan.toString()
+      const trigs = m.trig === 1 ? ['@', '＠'] : ['[[', '【【']
+      let idx = -1
+      let tlen = m.trig
+      for (const t of trigs) {
+        const i = before.lastIndexOf(t)
+        if (i > idx) {
+          idx = i
+          tlen = t.length
+        }
+      }
       checkpoint()
+      // 只认「caret 附近」的触发符（防误伤：更早的 @ 可能是正文里的邮箱）。找不到就不删、只插入。
+      if (idx >= 0 && before.length - (idx + tlen) <= Math.max(m.query.length + 8, 24)) {
+        let acc = 0
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+        let node: Node | null
+        while ((node = walker.nextNode())) {
+          const len = (node.textContent || '').length
+          if (acc + len > idx) {
+            const del = document.createRange()
+            del.setStart(node, idx - acc)
+            del.setEnd(caret.startContainer, caret.startOffset)
+            del.deleteContents()
+            sel.removeAllRanges()
+            sel.addRange(del) // deleteContents 后已折叠在删除起点 = 插入点
+            break
+          }
+          acc += len
+        }
+      }
       const href = relHref(curPath, targetPath)
       // contenteditable=false = 原子提及（光标越过它、退格整体删——Notion mention 同款手感）。
-      // 尾随 &nbsp; 保证插入后 caret 有落点（原子行内元素后无文本时 caret 会丢）。
+      // 尾随 &nbsp; 保证插入后 caret 有落点（原子行内元素后无文本时 caret 会丢；已知 wrinkle：
+      // 这个 &nbsp; 会留在文档字节里，真 app 移植时用 Range/Selection API 插入并另行处理落点）。
       document.execCommand(
         'insertHTML',
         false,
         `<a class="ws-doclink" href="${escAttr(href)}" contenteditable="false">${escText(title)}</a>&nbsp;`,
       )
       updateBlockHtml(doc.id, m.blockId, el.innerHTML)
+      if (key === 'create') {
+        const p = targetPath
+        const rid = curRootId
+        toast(`已新建「${title}」`, 'success', {
+          label: '打开',
+          run: () => {
+            const f = useStore.getState().files.find((x) => x.rootId === rid && x.path === p)
+            if (f) useStore.getState().openFileTab(f)
+          },
+        })
+      }
     },
     [doc, mention, curRootId, curPath, mentionItems, createLinkedDoc, toast, checkpoint, updateBlockHtml],
   )
@@ -729,32 +776,28 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       if (!rect) return null
       return { top: rect.bottom + 6, left: rect.left }
     }
+    // 触发检测走 **input/compositionend**（不靠 keydown 的 e.key）：Windows 中文 IME 下 keydown
+    // 只给 'Process'，keydown 方案三个触发器全灭；input 事件看的是真正落进 DOM 的字符，
+    // 半角 @ / 全角 ＠ / [[ / 【【 一网打尽（对抗审查抓到的 IME 形态缺口）。
+    const maybeTrigger = (target: EventTarget | null) => {
+      if (mention || !editingId || slash || !curRootId || !curPath) return
+      const el = blockEls.current.get(editingId)
+      if (!el || !(target instanceof Node) || !el.contains(target)) return
+      const two = textBeforeCaret(el, 2)
+      const one = two.slice(-1)
+      let trig = 0
+      if (two === '[[' || two === '【【') trig = 2
+      else if (one === '@' || one === '＠') trig = 1
+      if (!trig) return
+      const rect = caretRect()
+      if (rect) setMention({ blockId: editingId, query: '', pos: rect, active: 0, trig })
+    }
+    const onInput = (e: Event) => maybeTrigger(e.target)
     const onKey = (e: KeyboardEvent) => {
-      if (!mention) {
-        if (!editingId || slash || e.metaKey || e.ctrlKey) return
-        if (!curRootId || !curPath) return // 没有文件身份（未保存草稿）→ 相对链接无从谈起
-        if (e.key === '@') {
-          const bid = editingId
-          window.setTimeout(() => {
-            const rect = caretRect()
-            if (rect) setMention({ blockId: bid, query: '', pos: rect, active: 0, trig: 1 })
-          }, 0)
-        } else if (e.key === '[' || e.key === '【') {
-          // 等字符落进 DOM 再看 caret 前两位是不是 [[ / 【【（全半角都认）
-          const bid = editingId
-          window.setTimeout(() => {
-            const el = blockEls.current.get(bid)
-            if (!el) return
-            const two = textBeforeCaret(el, 2)
-            if (two === '[[' || two === '【【') {
-              const rect = caretRect()
-              if (rect) setMention({ blockId: bid, query: '', pos: rect, active: 0, trig: 2 })
-            }
-          }, 0)
-        }
-        return
-      }
-      if (e.isComposing) return // IME 组字中：Enter=选字、↑↓=换候选，全归输入法
+      if (!mention) return // 触发交给 input 事件；这里只管菜单开着时的键盘导航
+      // IME 组字中：Enter=选字、↑↓=换候选、首个 keydown 是 229/'Process'——全归输入法，
+      // 组好的字走 compositionend 进 query（keydown 直接计入会把拼音字母混进 query）。
+      if (e.isComposing || e.keyCode === 229) return
       if (e.key === 'Escape') {
         e.preventDefault()
         setMention(null)
@@ -790,12 +833,17 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
     }
     const onComp = (e: CompositionEvent) => {
-      if (!mention || !e.data) return
-      setMention((m) => (m ? { ...m, query: m.query + e.data, active: 0 } : m))
+      if (!mention) {
+        maybeTrigger(e.target) // 组字提交的 ＠/【【 在 compositionend 才落定
+        return
+      }
+      if (e.data) setMention((m) => (m ? { ...m, query: m.query + e.data, active: 0 } : m))
     }
+    document.addEventListener('input', onInput, true)
     document.addEventListener('keydown', onKey)
     document.addEventListener('compositionend', onComp)
     return () => {
+      document.removeEventListener('input', onInput, true)
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('compositionend', onComp)
     }
@@ -820,29 +868,42 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     }
   }, [doc, doc?.blocks, files, curRootId, curPath])
 
-  // 链接点击（capture，先于块的进入编辑）：互链 → 应用内打开；断链 → 修复卡；http(s) → 网页标签页。
+  // 链接点击（capture，先于块的进入编辑）：互链 → 应用内打开；断链 → 修复卡；http(s) → 网页标签页；
+  // 其余一律 preventDefault——非编辑态块里的 <a> 是活链接，mailto:/相对路径的默认导航会把 SPA 整页打飞。
   const onBlocksClickCapture = useCallback(
     (e: React.MouseEvent) => {
       const a = (e.target as HTMLElement).closest?.('a') as HTMLAnchorElement | null
       if (!a) return
       const href = a.getAttribute('href') || ''
+      const blockId = (a.closest('[data-block]') as HTMLElement | null)?.dataset.block
       if (/^https?:/i.test(href)) {
+        // 正在编辑这个块时放行默认行为：用户是想把 caret 放进链接文字改字
+        // （contenteditable 里点击本就不导航）；非编辑态才当"打开网页"。
+        if (blockId && blockId === editingId) return
         e.preventDefault()
         e.stopPropagation()
         openWebTab(href, a.textContent || href)
         return
       }
-      if (!curRootId || !curPath) return
+      if (!curRootId || !curPath) {
+        e.preventDefault() // 没有文件身份也不能让相对 href 裸导航
+        return
+      }
       const target = resolveHref(curPath, href)
-      if (!target) return // 锚点/mailto 等：不接管
+      if (!target) {
+        e.preventDefault() // 锚点/mailto/解析不了：拦下导航，不接管行为
+        return
+      }
       e.preventDefault()
       e.stopPropagation()
+      window.clearTimeout(hoverTimer.current) // 350ms 悬停计时器还挂着的话，跳转后会对 detach 的 anchor 弹幽灵卡
+      window.clearTimeout(closeTimer.current)
       const file = files.find((f) => f.rootId === curRootId && f.path === target)
       if (file) {
+        setPreview(null)
         openFileTab(file)
       } else {
         const r = a.getBoundingClientRect()
-        window.clearTimeout(closeTimer.current)
         setPreview({
           rect: { top: r.top, left: r.left, bottom: r.bottom },
           href,
@@ -853,7 +914,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         })
       }
     },
-    [curRootId, curPath, files, openFileTab, openWebTab],
+    [curRootId, curPath, files, openFileTab, openWebTab, editingId],
   )
 
   // 悬停预览（350ms 延迟开、250ms 宽限关——允许把鼠标移进卡片）
@@ -895,12 +956,32 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     closeTimer.current = window.setTimeout(() => setPreview(null), 200)
   }, [])
 
+  // 切文档/标签：提及菜单、预览卡、悬停计时器全部失效清掉——preview.anchor 是上一篇的 DOM 引用，
+  // 留着会让修复卡跨文档存活、rebind 写到 detach 的节点上（对抗审查抓到的坑）。卸载同理。
+  useEffect(() => {
+    setMention(null)
+    setPreview(null)
+    window.clearTimeout(hoverTimer.current)
+    window.clearTimeout(closeTimer.current)
+    return () => {
+      window.clearTimeout(hoverTimer.current)
+      window.clearTimeout(closeTimer.current)
+    }
+  }, [doc?.id])
+
   // 断链修复①：重新指向候选文件（改这一条链接的 href，落库该块）
   const rebindLink = useCallback(
     (candidate: FileEntry) => {
       if (!doc || !preview || !curPath) return
+      if (!document.contains(preview.anchor)) {
+        // anchor 已 detach（文档切换/块重渲）——别对着空气改还报成功
+        toast('链接已不在当前文档，未能重新指向', 'danger')
+        setPreview(null)
+        return
+      }
       checkpoint()
-      preview.anchor.setAttribute('href', relHref(curPath, candidate.path))
+      const suffix = splitHrefSuffix(preview.anchor.getAttribute('href') || '')[1]
+      preview.anchor.setAttribute('href', relHref(curPath, candidate.path) + suffix)
       preview.anchor.classList.remove('is-broken')
       const blockEl = preview.anchor.closest('[data-block]') as HTMLElement | null
       const bid = blockEl?.dataset.block
@@ -910,12 +991,14 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     },
     [doc, preview, curPath, checkpoint, updateBlockHtml, toast],
   )
-  // 断链修复②：按断链路径原地新建目标文档（建完链接自然解析通、红虚线自愈）
+  // 断链修复②：按断链路径原地新建目标文档（建完链接自然解析通、红虚线自愈）。
+  // 尊重断链的扩展名——.md 断链就建 .md（建 .html 接不上链接，红着还谎报成功）。
   const createAtBroken = useCallback(() => {
     if (!preview?.target || !curRootId) return
+    const isMd = /\.md$/i.test(preview.target)
     const title = baseOf(preview.target).replace(/\.(html|md)$/i, '')
-    const p = createLinkedDoc(curRootId, dirOf(preview.target), title)
-    if (p) toast(`已新建「${title}」`, 'success')
+    const p = createLinkedDoc(curRootId, dirOf(preview.target), title, isMd ? '.md' : '.html')
+    if (p) toast(`已新建「${title}${isMd ? '.md' : ''}」`, 'success')
     setPreview(null)
   }, [preview, curRootId, createLinkedDoc, toast])
 

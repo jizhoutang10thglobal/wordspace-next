@@ -8,6 +8,8 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useStore } from '../../mock/store'
+import { useUI } from '../../mock/ui'
+import { computeBacklinks } from '../../lib/links'
 import type { Doc } from '../../types'
 
 /**
@@ -93,7 +95,21 @@ export default function DocMenu({
       <button
         className="ws-docmenu-item ws-docmenu-danger"
         role="menuitem"
-        onClick={() => run(() => deleteDoc(doc.id))}
+        onClick={() =>
+          run(() => {
+            // 文件文档走与侧栏同一条删除路：互链守卫 + deleteFileWithUndo 的可撤销删除。
+            // 直接 deleteDoc 会绕过守卫、且按 docId 级联删掉共享此 doc 的所有文件（对抗审查抓到的旁路）。
+            const s = useStore.getState()
+            const file = s.files.find((f) => f.docId === doc.id)
+            if (file) {
+              const n = computeBacklinks(s.files, s.docs, file.rootId, file.path).length
+              if (n > 0) useUI.getState().askDeleteFile('file', file.rootId, file.path, n)
+              else s.deleteFileWithUndo(file)
+            } else {
+              deleteDoc(doc.id) // 非文件文档（未保存草稿等）维持原语义
+            }
+          })
+        }
       >
         <Trash2 size={15} strokeWidth={1.8} />
         删除

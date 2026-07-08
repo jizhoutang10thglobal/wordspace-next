@@ -19,7 +19,7 @@ import type {
   Workspace,
 } from '../types'
 import { useUI } from './ui'
-import { rewriteDocsForMoves, dirOf } from '../lib/links'
+import { rewriteDocsForMoves, invertMoves, dirOf } from '../lib/links'
 import {
   ME_ID,
   seedAgentEvents,
@@ -185,8 +185,9 @@ interface State {
   // documents. target (optional) = a {rootId, dir} inside a connected space;
   // ignored for cloud spaces (those land in 我的草稿). 缺省 = 第一个根的根目录。
   createDoc: (folderId: string, kind?: DocKind, title?: string, target?: { rootId: string; dir: string } | null, unsaved?: boolean) => string
-  // @提及里选「新建」：在 dir 下静默建一份 .html（不切走当前标签页——Notion 同款，链接插完人还在原文档），返回新文件根内路径。
-  createLinkedDoc: (rootId: string, dir: string, title: string) => string | null
+  // @提及里选「新建」：在 dir 下静默建一份文档（不切走当前标签页——Notion 同款，链接插完人还在原文档），
+  // 返回新文件根内路径。ext 缺省 .html；断链修复的「原地新建」对 .md 断链传 .md（建出来的才接得上）。
+  createLinkedDoc: (rootId: string, dir: string, title: string, ext?: '.html' | '.md') => string | null
   createFromTemplate: (templateId: string, folderId: string, target?: { rootId: string; dir: string } | null, unsaved?: boolean) => string
   // Cmd+S / 保存：临时文档弹「保存到哪里」modal；已保存的只提示
   saveActiveDoc: () => void
@@ -464,22 +465,30 @@ export const useStore = create<State>()(
         if (rewrite.changed.length) {
           get().toast(`已更新 ${rewrite.changed.length} 篇文档里的链接`, 'success', {
             label: '撤销',
-            run: () =>
-              set((s) => ({
-                // 撤销 = 名字改回 + 引用方旧块恢复（一体撤销，不留半套状态）
-                files: s.files.map((f) =>
+            // 撤销 = 名字改回 + **反向再重写一遍**（只动 href，不回滚用户内容——存 blocks 快照整体
+            // 回滚会把撤销窗口内用户的编辑一起吞掉，对抗审查抓到的坑）。执行前校验前提：文件还在
+            // 新路径、旧路径没被占——否则已被后续操作覆盖，放弃并明说，不做半套撤销。
+            run: () => {
+              const s = get()
+              const still = s.files.some((f) => f.rootId === file.rootId && f.path === newPath)
+              const occupied = s.files.some((f) => f.rootId === file.rootId && f.path === file.path)
+              if (!still || occupied) {
+                s.toast('文件已被后续操作改动，无法撤销这次链接更新', 'neutral')
+                return
+              }
+              const back = rewriteDocsForMoves(s.docs, s.files, file.rootId, invertMoves(moved))
+              set((st) => ({
+                files: st.files.map((f) =>
                   f.rootId === file.rootId && f.path === newPath ? { ...f, path: file.path } : f,
                 ),
-                tabs: s.tabs.map((t) =>
+                tabs: st.tabs.map((t) =>
                   t.fileName && t.rootId === file.rootId && t.url === newPath
                     ? { ...t, url: file.path, fileName: baseOfPath(file.path), title: baseOfPath(file.path) }
                     : t,
                 ),
-                docs: s.docs.map((d) => {
-                  const c = rewrite.changed.find((x) => x.docId === d.id)
-                  return c ? { ...d, blocks: c.oldBlocks } : d
-                }),
-              })),
+                docs: back.docs,
+              }))
+            },
           })
         }
       },
@@ -661,7 +670,8 @@ export const useStore = create<State>()(
         if (newPath === file.path) return // dropped onto its own folder — no-op
         // 互链：移动 = 指向它的链接要改 + **它自己的出链要按新位置 rebase**（Obsidian 的著名缺口就漏了后半）
         const pre = get()
-        const rewrite = rewriteDocsForMoves(pre.docs, pre.files, file.rootId, new Map([[file.path, newPath]]))
+        const moved = new Map([[file.path, newPath]])
+        const rewrite = rewriteDocsForMoves(pre.docs, pre.files, file.rootId, moved)
         set((s) => ({
           files: s.files.map((f) =>
             f.rootId === file.rootId && f.path === file.path ? { ...f, path: newPath } : f,
@@ -673,10 +683,33 @@ export const useStore = create<State>()(
           ),
           docs: rewrite.changed.length ? rewrite.docs : s.docs,
         }))
+        // 撤销 = 移回去 + 反向重写（与 renameFile 同一套语义——同一个承诺同一种兑现）
         get().toast(
           `已移动「${leaf}」到 ${destDir || '根目录'}` +
             (rewrite.changed.length ? ` · 已更新 ${rewrite.changed.length} 篇文档里的链接` : ''),
           'neutral',
+          {
+            label: '撤销',
+            run: () => {
+              const s = get()
+              const still = s.files.some((f) => f.rootId === file.rootId && f.path === newPath)
+              const occupied = s.files.some((f) => f.rootId === file.rootId && f.path === file.path)
+              if (!still || occupied) {
+                s.toast('文件已被后续操作改动，无法撤销移动', 'neutral')
+                return
+              }
+              const back = rewriteDocsForMoves(s.docs, s.files, file.rootId, invertMoves(moved))
+              set((st) => ({
+                files: st.files.map((f) =>
+                  f.rootId === file.rootId && f.path === newPath ? { ...f, path: file.path } : f,
+                ),
+                tabs: st.tabs.map((t) =>
+                  t.fileName && t.rootId === file.rootId && t.url === newPath ? { ...t, url: file.path } : t,
+                ),
+                docs: back.docs,
+              }))
+            },
+          },
         )
       },
 
@@ -1021,11 +1054,11 @@ export const useStore = create<State>()(
         return id
       },
 
-      createLinkedDoc: (rootId, dir, title) => {
+      createLinkedDoc: (rootId, dir, title, ext = '.html') => {
         const root = get().roots.find((r) => r.id === rootId && !r.missing)
         if (!root) return null
         const clean = cleanName(title) || '无标题文档'
-        const path = uniqueFileInDir(get().files, rootId, dir, clean, '.html')
+        const path = uniqueFileInDir(get().files, rootId, dir, clean, ext)
         const id = uid('d')
         const doc: Doc = {
           id,
@@ -1040,7 +1073,8 @@ export const useStore = create<State>()(
           updatedBy: get().meId,
           collaborators: [get().meId],
         }
-        const file: FileEntry = { rootId, path, kind: 'html', docId: id }
+        if (ext === '.md') doc.format = 'markdown'
+        const file: FileEntry = { rootId, path, kind: ext === '.md' ? 'md' : 'html', docId: id }
         set((s) => ({ docs: [doc, ...s.docs], files: [...s.files, file] }))
         return path
       },
