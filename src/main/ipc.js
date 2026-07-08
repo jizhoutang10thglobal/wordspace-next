@@ -170,28 +170,33 @@ function registerIpc() {
   // 供 U0 点击收口 + 后续 U4 点击导航/断链判定共用。
   ipcMain.handle('ws-resolve-doc-link', async (_e, fromAbs, href) => {
     if (typeof fromAbs !== 'string' || typeof href !== 'string') return { error: 'bad args' };
+    let url;
+    try { url = new URL(href, pathToFileURL(fromAbs)); }
+    catch (e) { return { error: 'unresolvable' }; }
+    // 安全闸（在任何 fs 调用之前）：只认本机 file:// 且 host 为空。非 file:（漏网 scheme）或 host 非空
+    //（'\\host\share' 被 WHATWG 规范成 file://host/… → Windows 上 realpath/stat 会出站 SMB、泄漏 NTLM 哈希）
+    // 一律拒，绝不对远程/UNC 路径做 realpath/stat。
+    if (url.protocol !== 'file:' || url.host) return { error: 'unresolvable' };
     let abs;
-    try { abs = fileURLToPath(new URL(href, pathToFileURL(fromAbs))); }
+    try { abs = fileURLToPath(url); }
     catch (e) { return { error: 'unresolvable' }; }
     const name = path.basename(abs);
     const kind = kindOf(name);
     let rel = null;
-    if (activeRoot) {
-      try {
-        // 目标文件可能不存在（断链）→ 不能 realpath abs 本身。realpath 它的**父目录**（链接在工作区内时父目录存在）
-        // 再拼 basename，得到与 realpath(root) 同一符号链接归一的 abs（macOS /var→/private/var 会让不归一的路径误判工作区外）。
-        const dirReal = await fsp.realpath(path.dirname(abs)).catch(() => path.dirname(abs));
-        const real = path.join(dirReal, name);
-        const rootReal = await fsp.realpath(activeRoot);
-        const r = path.relative(rootReal, real);
-        if (r && r !== '..' && !r.startsWith('..' + path.sep) && !path.isAbsolute(r)) {
-          rel = r.split(path.sep).join('/');
-        }
-      } catch { /* 算不出 rel → 当工作区外 */ }
-    }
+    let rootId = null;
+    try {
+      // 目标可能不存在（断链）→ 不能 realpath abs 本身。realpath 它的**父目录**（链接在根内时父目录存在）
+      // 再拼 basename，得到与各根 realpath 同一软链归一的路径，交 ownerOf 判归属（多根：命中哪个根就返回那个 rootId+rel）。
+      const dirReal = await fsp.realpath(path.dirname(abs)).catch(() => path.dirname(abs));
+      const real = path.join(dirReal, name);
+      const live = roots.filter((r) => !r.missing).map((r) => ({ id: r.id, path: r.real || r.path }));
+      const owner = rootsLib.ownerOf(real, live);
+      if (owner && owner.rel) { rel = owner.rel; rootId = owner.rootId; }
+    } catch { /* 算不出归属 → 当工作区外 */ }
+    // 只对根内目标探测存在性——不 stat 越界路径（否则文档字节可借链接点击嗅探磁盘任意路径是否存在）。
     let exists = false;
-    try { exists = (await fsp.stat(abs)).isFile(); } catch { /* 不存在 → 断链 */ }
-    return { abs, rel, kind, name, exists, insideRoot: rel != null };
+    if (rel != null) { try { exists = (await fsp.stat(abs)).isFile(); } catch { /* 根内但不存在 → 断链 */ } }
+    return { abs, rel, rootId, kind, name, exists, insideRoot: rel != null };
   });
   ipcMain.handle('read-doc', async (_e, p) => {
     assertDocPath(p);

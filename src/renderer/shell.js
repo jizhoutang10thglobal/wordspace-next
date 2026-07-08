@@ -271,14 +271,20 @@ function wireEditor() {
 // 非合规 basic-edit）都在 wireEditor/attachBasic 里装它，全覆盖。
 function toastLite(msg) { if (window.__wsToast) window.__wsToast(msg); } // U4 前的占位提示（断链等）
 async function onDocLinkClick(e) {
-  const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+  // 匹配 <a>/<area>（图片热区）/SVG <a>——任何能让 sandbox iframe 自导航的锚点都要收口（不止 HTML <a>）。
+  // href 从普通属性或 xlink:href（老 SVG）取，两者都可能触发导航。
+  const a = e.target && e.target.closest ? e.target.closest('a, area') : null;
   if (!a) return;
-  const href = a.getAttribute('href') || '';
+  const href = a.getAttribute('href') || a.getAttribute('xlink:href') || '';
+  if (!href) return; // 无 href 的 a/area 不导航，交给正常编辑
   const kind = (window.WS2Links && window.WS2Links.classifyScheme(href)) || 'ignore';
   if (kind === 'anchor') return; // #foo：同文档滚动、不导航——放行，不接管
   e.preventDefault(); // 其余一律阻止 iframe 裸导航（P0 根治：相对/web/file:/其它都不许）
   // 编辑态下点链接文字：浏览器本就不导航，让它放光标改字、别打开（对齐 ui-demo「editing→不 open」）
   if (a.isContentEditable) return;
+  // 接管这次点击前，先清掉块编辑器的瞬态 UI（灰选中/块菜单/手柄）——否则 stopPropagation 跳过它的
+  // bubble onClick 清理，会留下幽灵灰选中（审查 #1）。deselect 幂等，无选中时无副作用。
+  if (blockEdit && blockEdit.deselect) blockEdit.deselect();
   e.stopPropagation(); // 非编辑态：接管这次点击，别让块编辑器当「进入编辑」
   if (kind === 'ignore') return; // 空/根绝对/file:/其它 scheme：拦下不动作
   if (kind === 'web') { try { window.ws2.openExternalUrl(href); } catch (err) {} return; } // http/mailto/tel → 系统程序
@@ -289,7 +295,7 @@ async function onDocLinkClick(e) {
   if (!r.insideRoot) { toastLite('链接指向工作区外，未打开'); return; }
   if (!r.exists) { toastLite('链接目标不存在：' + (r.rel || href)); return; } // U4 升级成断链修复卡
   if (r.kind === 'html' || r.kind === 'md') openDoc(r.abs);
-  else showViewer({ abs: r.abs, rel: r.rel, name: r.name, kind: r.kind });
+  else showViewer({ abs: r.abs, rel: r.rel, rootId: r.rootId, name: r.name, kind: r.kind }); // 多根：查看器/外部打开按 rootId+rel
 }
 function installLinkGuard(doc) {
   if (doc) doc.addEventListener('click', onDocLinkClick, true); // capture：先于块编辑器进入编辑
@@ -435,13 +441,16 @@ function loadFromFile(opts) {
   frame.src = docInfo.fileUrl;
   prepFrame(opts && opts.asDirty);
 }
-// U0 硬化：onload 时校验 iframe 真的停在预期文档上（比对 decode 后的 file:// pathname，容错编码差异）。
-// 导航到了别的 file:// 文件 → false（不接线，防「编辑器挂错页 + 自动保存写错文件」）。about:blank / 非
-// file:（reload 中转、srcdoc）→ true（不误挡正常路径）。读不到 location（不该发生）→ 保守 true。
+// U0 硬化：onload 时校验 iframe 真的停在预期文档上，防「被漏网导航（表单/meta-refresh/未覆盖的锚点）打飞后，
+// 晚到的 load 把编辑器挂错页 + 自动保存写错文件」。三条渲染路径都接（file:// 直载 / srcdoc / reload），别只护一条。
+//   wantUrl 给了（file:// 直载 / reload 落地）：比对 decode 后 pathname，导航去别的 file:// 文件 → false。
+//   wantUrl 省略（srcdoc：.md / 临时 / 历史恢复，预期停在 about:srcdoc）：一旦变成 file:// 就是被导航走 → false。
+// about:blank（reload 中转）→ true；读不到 location（不该发生）→ 保守 true，不误挡正常载入。
 function loadedIsExpected(wantUrl) {
   try {
     const cur = new URL(frame.contentWindow.location.href);
-    if (cur.protocol !== 'file:') return true;
+    if (!wantUrl) return cur.protocol !== 'file:'; // srcdoc 路径：跑到 file:// = 被导航走
+    if (cur.protocol !== 'file:') return true; // about:blank 中转 / 尚未落地
     const want = new URL(wantUrl);
     return decodeURIComponent(cur.pathname) === decodeURIComponent(want.pathname);
   } catch (e) { return true; }
@@ -468,9 +477,10 @@ async function reloadDoc() {
   if (isMdPath(p)) { if (raw != null) loadFromHtml(raw); return; }
   detachEditors();
   const gen = ++loadGen;
+  const wantUrl = docInfo.fileUrl;
   frame.onload = () => {
     if (gen !== loadGen) return; // 被更晚的载入抢占
-    frame.onload = () => { if (gen !== loadGen) return; docConform ? wireEditor() : attachBasic(); setDirty(false); };
+    frame.onload = () => { if (gen !== loadGen) return; if (!loadedIsExpected(wantUrl)) return; docConform ? wireEditor() : attachBasic(); setDirty(false); };
     frame.src = docInfo.fileUrl;
   };
   frame.removeAttribute('srcdoc');
@@ -535,6 +545,7 @@ function loadFromHtml(html, opts) {
   // 历史恢复走同一文档既有 docConform；临时文档由 openTempDoc 先设好 docConform。injectBase 守 docInfo（临时文档无 docInfo/dirUrl）。
   frame.onload = () => {
     if (gen !== loadGen) return;
+    if (!loadedIsExpected()) return; // U0 硬化：srcdoc 被导航去 file:// → 不接线（防编辑器挂错页 + 自动保存写错 .md/临时文档）
     if (docInfo && docInfo.dirUrl) injectBase(frame.contentDocument, docInfo.dirUrl);
     mirrorSrcdocStyles(frame.contentDocument); // 只在 srcdoc 路径镜像（file:// 不需要，也别去规范化真文件的 style 属性）
     docConform ? wireEditor() : attachBasic();
