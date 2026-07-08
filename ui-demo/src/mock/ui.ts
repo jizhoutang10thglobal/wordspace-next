@@ -75,6 +75,11 @@ interface UI {
 
   aiPrompt: string
   setAiPrompt: (v: string) => void
+
+  // 「页面设置…」modal（分页文档）：值 = 正在设置的 doc id
+  pageSetupFor: string | null
+  openPageSetup: (docId: string) => void
+  closePageSetup: () => void
 }
 
 export const useUI = create<UI>((set) => ({
@@ -141,6 +146,10 @@ export const useUI = create<UI>((set) => ({
 
   aiPrompt: '',
   setAiPrompt: (v) => set({ aiPrompt: v }),
+
+  pageSetupFor: null,
+  openPageSetup: (docId) => set({ pageSetupFor: docId }),
+  closePageSetup: () => set({ pageSetupFor: null }),
 }))
 
 /**
@@ -158,6 +167,7 @@ export function anyOverlayOpen(s: UI): boolean {
     s.findOpen ||
     s.shortcutsOpen ||
     s.agentsOpen || // 「AI 接入」是全屏 modal，开着时壳/编辑器快捷键不该穿透（docFindOpen 是非模态查找条，有意不加）
-    s.publishDocId
+    s.publishDocId ||
+    s.pageSetupFor
   )
 }

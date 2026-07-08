@@ -346,6 +346,7 @@ const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
     divider: { html: '' },
     callout: { html: '提示内容' },
     embed: { html: '' },
+    pagebreak: { html: '' },
   }
   const block = { id: uid('b'), type, ...base[type] } as Block
   if (type === 'list') block.listStyle = listStyle ?? 'bulleted'

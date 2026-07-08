@@ -6,10 +6,13 @@ import {
   Link2,
   PenLine,
   Trash2,
+  BookOpen,
 } from 'lucide-react'
 import { useStore } from '../../mock/store'
 import { useUI } from '../../mock/ui'
+import { usePaged } from '../../mock/paged'
 import { computeBacklinks } from '../../lib/links'
+import { printPagedDoc } from '../../lib/printExport'
 import type { Doc } from '../../types'
 
 /**
@@ -27,6 +30,8 @@ export default function DocMenu({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const exportDoc = useStore((s) => s.exportDoc)
+  const openPageSetup = useUI((s) => s.openPageSetup)
+  const pagedCfg = usePaged((s) => s.configs[doc.id])
   const toast = useStore((s) => s.toast)
   const deleteDoc = useStore((s) => s.deleteDoc)
 
@@ -53,7 +58,14 @@ export default function DocMenu({
       <button
         className="ws-docmenu-item"
         role="menuitem"
-        onClick={() => run(() => exportDoc(doc.id, 'pdf'))}
+        onClick={() =>
+          run(() => {
+            // 分页文档：走浏览器打印做真分页导出（@page 纸张/边距/页码，打印预览即所见分页）；
+            // 普通文档维持原 mock 导出。
+            if (pagedCfg?.on) printPagedDoc(doc, pagedCfg)
+            else exportDoc(doc.id, 'pdf')
+          })
+        }
       >
         <FileText size={15} strokeWidth={1.8} />
         导出为 PDF
@@ -75,6 +87,14 @@ export default function DocMenu({
         导出为演示文稿(.pptx)
       </button>
       <div className="ws-docmenu-sep" />
+      <button
+        className="ws-docmenu-item"
+        role="menuitem"
+        onClick={() => run(() => openPageSetup(doc.id))}
+      >
+        <BookOpen size={15} strokeWidth={1.8} />
+        页面设置…
+      </button>
       <button
         className="ws-docmenu-item"
         role="menuitem"
