@@ -1,7 +1,8 @@
 /* 页面设置弹窗（分页文档）。弹窗骨架走 controls.css 的 .ws-modal 族，
    这里只写布局与组件特有样式（style.md §6 约束）。 */
 
-.pg-modal { width: 460px; }
+/* 双类提权：.ws-modal 基座有 width:100%，跟 SaveModal 同款用 .ws-modal.pg-modal 收窄 */
+.ws-modal.pg-modal { width: 480px; max-width: calc(100vw - 32px); }
 
 .pg-body { padding: 6px 20px 14px; }
 
