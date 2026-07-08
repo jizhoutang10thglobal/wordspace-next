@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('ws2', {
   classifyFile: (abs) => ipcRenderer.invoke('classify-file', abs),
   fileUrlAbs: (abs) => ipcRenderer.invoke('file-url-abs', abs),
   openExternalAbs: (abs) => ipcRenderer.invoke('open-external-abs', abs),
+  openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url), // 文档内 web 链接 → 系统浏览器/邮件
+  resolveDocLink: (fromAbs, href) => ipcRenderer.invoke('ws-resolve-doc-link', fromAbs, href), // 相对链接解析（abs/rel/kind/exists）
   pathExists: (abs) => ipcRenderer.invoke('path-exists', abs),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),

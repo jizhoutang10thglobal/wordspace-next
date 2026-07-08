@@ -212,6 +212,7 @@ function attachBasic() {
     setZoom(zoomFactor * (1 - d * 0.01));
   }, { passive: false });
   zoomSheet = null; applyZoom();
+  installLinkGuard(doc); // U0：非合规文档同样收口链接点击
 }
 
 // 块编辑内核（WS2BlockEdit）跑在父层、操作 iframe 的 contentDocument（iframe sandbox 不跑脚本）。
@@ -260,6 +261,38 @@ function wireEditor() {
   // 新 contentDocument → 旧缩放样式表失效，按当前 zoomFactor 重挂（外部重载保留缩放；openDoc 已先复位 100%）
   zoomSheet = null;
   applyZoom();
+  installLinkGuard(doc); // U0：文档内 <a> 点击收口（见下）
+}
+
+// ---- U0：文档内 <a> 点击收口 ----
+// 修 P0：文档里点链接 → iframe 自导航到目标页 → 晚到的 onload 把块编辑器挂上新页、docPath 仍指旧文件
+// → 1.2s 自动保存把 B 页内容写进 A 的路径（跨文件数据覆盖）。这里 capture 阶段拦下所有会导致 iframe
+// 导航的点击、改走 openDoc 漏斗；同时是互链「点击打开」的地基。三条渲染路径（file:// 直载 / md srcdoc /
+// 非合规 basic-edit）都在 wireEditor/attachBasic 里装它，全覆盖。
+function toastLite(msg) { if (window.__wsToast) window.__wsToast(msg); } // U4 前的占位提示（断链等）
+async function onDocLinkClick(e) {
+  const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+  if (!a) return;
+  const href = a.getAttribute('href') || '';
+  const kind = (window.WS2Links && window.WS2Links.classifyScheme(href)) || 'ignore';
+  if (kind === 'anchor') return; // #foo：同文档滚动、不导航——放行，不接管
+  e.preventDefault(); // 其余一律阻止 iframe 裸导航（P0 根治：相对/web/file:/其它都不许）
+  // 编辑态下点链接文字：浏览器本就不导航，让它放光标改字、别打开（对齐 ui-demo「editing→不 open」）
+  if (a.isContentEditable) return;
+  e.stopPropagation(); // 非编辑态：接管这次点击，别让块编辑器当「进入编辑」
+  if (kind === 'ignore') return; // 空/根绝对/file:/其它 scheme：拦下不动作
+  if (kind === 'web') { try { window.ws2.openExternalUrl(href); } catch (err) {} return; } // http/mailto/tel → 系统程序
+  if (!docPath) return; // 临时文档无磁盘路径：相对链接无从解析
+  let r;
+  try { r = await window.ws2.resolveDocLink(docPath, href); } catch (err) { return; }
+  if (!r || r.error) return;
+  if (!r.insideRoot) { toastLite('链接指向工作区外，未打开'); return; }
+  if (!r.exists) { toastLite('链接目标不存在：' + (r.rel || href)); return; } // U4 升级成断链修复卡
+  if (r.kind === 'html' || r.kind === 'md') openDoc(r.abs);
+  else showViewer({ abs: r.abs, rel: r.rel, name: r.name, kind: r.kind });
+}
+function installLinkGuard(doc) {
+  if (doc) doc.addEventListener('click', onDocLinkClick, true); // capture：先于块编辑器进入编辑
 }
 
 function prepFrame(asDirty) {
@@ -391,11 +424,27 @@ window.__shellShowViewer = showViewer;
 function loadFromFile(opts) {
   detachEditors();
   const gen = ++loadGen;
+  const wantUrl = docInfo.fileUrl;
   // 分流（Feature 3）：docConform 由 openDoc/reloadDoc 先判好。合规→完整块编辑；不合规→基础编辑 + 降级条。
-  frame.onload = () => { if (gen !== loadGen) return; docConform ? wireEditor() : attachBasic(); };
+  frame.onload = () => {
+    if (gen !== loadGen) return;
+    if (!loadedIsExpected(wantUrl)) return; // U0 硬化：iframe 若被导航到别的文件（漏网的表单/meta-refresh），绝不把编辑器挂错页
+    docConform ? wireEditor() : attachBasic();
+  };
   frame.removeAttribute('srcdoc');
   frame.src = docInfo.fileUrl;
   prepFrame(opts && opts.asDirty);
+}
+// U0 硬化：onload 时校验 iframe 真的停在预期文档上（比对 decode 后的 file:// pathname，容错编码差异）。
+// 导航到了别的 file:// 文件 → false（不接线，防「编辑器挂错页 + 自动保存写错文件」）。about:blank / 非
+// file:（reload 中转、srcdoc）→ true（不误挡正常路径）。读不到 location（不该发生）→ 保守 true。
+function loadedIsExpected(wantUrl) {
+  try {
+    const cur = new URL(frame.contentWindow.location.href);
+    if (cur.protocol !== 'file:') return true;
+    const want = new URL(wantUrl);
+    return decodeURIComponent(cur.pathname) === decodeURIComponent(want.pathname);
+  } catch (e) { return true; }
 }
 
 // 外部磁盘改动后重新载入磁盘版本（Bug2：用 Claude 等外部工具改完，自动刷新渲染）。
