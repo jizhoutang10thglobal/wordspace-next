@@ -29,6 +29,7 @@ import LinkPreview from './canvas/LinkPreview'
 import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
 import { resolveHref, relHref, dirOf, baseOf, splitHrefSuffix } from '../lib/links'
+import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
 import './Canvas.css'
 
@@ -40,7 +41,7 @@ const SLASH_ITEMS: {
   key: string
   label: string
   kw: string
-  type: BlockType | 'ai'
+  type: BlockType | 'ai' | 'doclink'
   level?: 1 | 2 | 3
   listStyle?: ListStyle
 }[] = [
@@ -55,6 +56,8 @@ const SLASH_ITEMS: {
   { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
   { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
   { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
+  // 互链的可发现入口①：斜杠菜单（@/[[ 手势藏得深，得有看得见的路）。只能 append（上面下标引用警告）。
+  { key: 'doclink', label: '🔗 链接到文档', kw: 'link doclink lianjie wendang mention at @', type: 'doclink' },
 ]
 const filterSlash = (q: string) => {
   const s = q.toLowerCase()
@@ -100,6 +103,17 @@ function textBeforeCaret(el: HTMLElement, n: number): string {
 // 插入互链 <a> 时的转义（title/href 来自用户输入/文件名）
 const escAttr = (s: string) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 const escText = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+
+// 当前 caret 的视口坐标（菜单锚点）。选区折叠时 getClientRects 可能为空 → 退父元素盒。
+function caretRectViewport(): { top: number; left: number } | null {
+  const sel = window.getSelection()
+  if (!sel || sel.rangeCount === 0) return null
+  const r = sel.getRangeAt(0).cloneRange()
+  const rects = r.getClientRects()
+  const rect = rects.length ? rects[0] : r.startContainer.parentElement?.getBoundingClientRect()
+  if (!rect) return null
+  return { top: rect.bottom + 6, left: rect.left }
+}
 
 // 点击落点 → caret Range（Chrome/Safari/Edge: caretRangeFromPoint；Firefox: caretPositionFromPoint）
 function caretRangeAtPoint(x: number, y: number): Range | null {
@@ -498,13 +512,17 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     pos: { top: number; left: number }
     active: number
   } | null>(null)
-  // @ / [[ / 【【 文档提及菜单（互链）。trig = 触发符长度（@=1，[[/【【=2），apply 时连 query 一起删。
+  // @ / [[ / 【【 / 斜杠菜单 / 工具栏 文档提及菜单（互链）。trig = 触发符长度（@=1，[[/【【=2，
+  // 斜杠/工具栏入口=0 不删正文）。mode 'wrap' = 工具栏「链接」按钮：把 savedRange 的选中文字变成链接
+  // （保留用户文字），而不是插入目标标题。
   const [mention, setMention] = useState<{
     blockId: string
     query: string
     pos: { top: number; left: number }
     active: number
     trig: number
+    mode?: 'insert' | 'wrap'
+    savedRange?: Range
   } | null>(null)
   // 链接悬停预览 / 断链修复卡。anchor 存 live DOM 引用（修复动作要改它所在的块）。
   const [preview, setPreview] = useState<{
@@ -633,6 +651,15 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         setAiSoonOpen(true)
         return
       }
+      if (it.type === 'doclink') {
+        // 互链入口①（可发现路径）：斜杠删掉 '/query' 后原地弹文档选择菜单（trig=0：正文里没有触发符要删）
+        const bid = slash.blockId
+        window.setTimeout(() => {
+          const rect = caretRectViewport()
+          if (rect) setMention({ blockId: bid, query: '', pos: rect, active: 0, trig: 0, mode: 'insert' })
+        }, 0)
+        return
+      }
       checkpoint()
       const el = blockEls.current.get(slash.blockId)
       const empty = !el || (el.textContent ?? '').trim() === ''
@@ -656,26 +683,31 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   // ===== 文档互链（@提及 / 链接点击 / 悬停预览 / 断链修复）=====
 
-  // @ 菜单候选：同根内可编辑文档（html/md，有 docId），标题+路径都参与模糊匹配；末尾追加「新建」。
+  // @ 菜单候选：同根内**所有文件**（文档在前、pdf/表格/图片等其它文件在后——链接任何文件都合法，
+  // 点击时非文档走系统程序面板），标题+路径都参与模糊匹配；末尾「新建」+「网址链接」。
   const mentionItems = useMemo<MentionItem[]>(() => {
     if (!mention || !curRootId || !curPath) return []
     const q = mention.query.trim().toLowerCase()
-    const out: MentionItem[] = []
+    const docsFirst: MentionItem[] = []
+    const rest: MentionItem[] = []
     for (const f of files) {
-      if (f.rootId !== curRootId || !f.docId) continue
-      if (f.kind !== 'html' && f.kind !== 'md') continue
+      if (f.rootId !== curRootId) continue
       if (f.path === curPath) continue // 不列自己
-      const title = docs.find((d) => d.id === f.docId)?.title ?? baseOf(f.path)
+      const isDoc = !!f.docId && (f.kind === 'html' || f.kind === 'md')
+      const title = isDoc
+        ? (docs.find((d) => d.id === f.docId)?.title ?? baseOf(f.path))
+        : baseOf(f.path)
       if (q && !title.toLowerCase().includes(q) && !f.path.toLowerCase().includes(q)) continue
-      out.push({ key: `f:${f.path}`, title, path: f.path })
-      if (out.length >= 8) break
+      ;(isDoc ? docsFirst : rest).push({ key: `f:${f.path}`, title, path: f.path, kind: f.kind })
     }
+    const out = [...docsFirst, ...rest].slice(0, 8)
     if (q) out.push({ key: 'create', title: `新建「${mention.query.trim()}」`, create: true })
+    out.push({ key: 'url', title: '网址链接…', url: true })
     return out
   }, [mention, files, docs, curRootId, curPath])
 
-  // 选中提及项：删掉「触发符+query」，插入纯净相对路径 <a>（链接文字 = 目标标题快照——
-  // 改名不回写文字，靠 hover 卡看目标当前标题；这是方案定下的「快照 + 展示层跟随」）。
+  // 选中提及项：三种收尾——insert（@/[[/斜杠：插入目标标题快照的 <a>）、wrap（工具栏：把选中文字
+  // 变成链接、保留用户文字）、url（外部网址）。链接文字=快照，改名不回写文字，靠 hover 卡看目标当前标题。
   const applyMention = useCallback(
     (key: string) => {
       if (!doc || !mention || !curRootId || !curPath) return
@@ -683,67 +715,90 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       setMention(null)
       const el = blockEls.current.get(m.blockId)
       if (!el) return
-      // ① 先定目标（校验/新建都放在删除**之前**——任何失败分支都不动正文，用户输入不凭空蒸发）
+      // ① 先定目标（校验/新建/网址都放在动正文**之前**——任何失败分支都不动正文，用户输入不凭空蒸发）
       let targetPath: string | null = null
       let title = ''
-      if (key === 'create') {
+      let externalUrl: string | null = null
+      if (key === 'url') {
+        const url = window.prompt('链接地址', 'https://')
+        if (!url) return
+        externalUrl = url
+        title = url
+      } else if (key === 'create') {
         // 新建在当前文档同目录（Typora 式的文件原生答案）；不切走当前标签页（Notion 同款）
         title = m.query.trim() || '无标题文档'
         targetPath = createLinkedDoc(curRootId, dirOf(curPath), title)
+        if (!targetPath) return
       } else {
         const it = mentionItems.find((x) => x.key === key)
         if (!it?.path) return
         targetPath = it.path
         title = it.title
       }
-      if (!targetPath) return
-      // ② 用 **DOM 真相**定位「触发符+query」整段删除——不按计数回删（IME 组字/移动光标/粘贴
-      //    都会让 query 计数与 DOM 失同步，按计数删会误删正文或吞掉相邻旧提及；对抗审查抓到的坑）。
+      const href = externalUrl ?? relHref(curPath, targetPath!)
+      // ② wrap 模式（工具栏「链接」）：恢复保存的选区，把选中文字整体变成链接
+      if (m.mode === 'wrap' && m.savedRange) {
+        checkpoint()
+        const sel0 = window.getSelection()
+        sel0?.removeAllRanges()
+        sel0?.addRange(m.savedRange)
+        document.execCommand('createLink', false, href)
+        updateBlockHtml(doc.id, m.blockId, el.innerHTML)
+        if (key === 'create') toast(`已新建「${title}」并链接`, 'success')
+        return
+      }
+      // ③ insert 模式：trig>0（@/[[ 手势）先用 **DOM 真相**定位「触发符+query」整段删除——不按计数
+      //    回删（IME 组字/移动光标/粘贴都会让 query 计数与 DOM 失同步，按计数删会误删正文或吞掉相邻
+      //    旧提及）；trig=0（斜杠/工具栏入口）没有触发符在正文里，caret 已就位，直接插。
       const sel = window.getSelection()
       if (!sel || sel.rangeCount === 0 || !el.contains(sel.getRangeAt(0).startContainer)) return
-      const caret = sel.getRangeAt(0)
-      const scan = document.createRange()
-      scan.selectNodeContents(el)
-      scan.setEnd(caret.startContainer, caret.startOffset)
-      const before = scan.toString()
-      const trigs = m.trig === 1 ? ['@', '＠'] : ['[[', '【【']
-      let idx = -1
-      let tlen = m.trig
-      for (const t of trigs) {
-        const i = before.lastIndexOf(t)
-        if (i > idx) {
-          idx = i
-          tlen = t.length
-        }
-      }
       checkpoint()
-      // 只认「caret 附近」的触发符（防误伤：更早的 @ 可能是正文里的邮箱）。找不到就不删、只插入。
-      if (idx >= 0 && before.length - (idx + tlen) <= Math.max(m.query.length + 8, 24)) {
-        let acc = 0
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-        let node: Node | null
-        while ((node = walker.nextNode())) {
-          const len = (node.textContent || '').length
-          if (acc + len > idx) {
-            const del = document.createRange()
-            del.setStart(node, idx - acc)
-            del.setEnd(caret.startContainer, caret.startOffset)
-            del.deleteContents()
-            sel.removeAllRanges()
-            sel.addRange(del) // deleteContents 后已折叠在删除起点 = 插入点
-            break
+      if (m.trig > 0) {
+        const caret = sel.getRangeAt(0)
+        const scan = document.createRange()
+        scan.selectNodeContents(el)
+        scan.setEnd(caret.startContainer, caret.startOffset)
+        const before = scan.toString()
+        const trigs = m.trig === 1 ? ['@', '＠'] : ['[[', '【【']
+        let idx = -1
+        let tlen = m.trig
+        for (const t of trigs) {
+          const i = before.lastIndexOf(t)
+          if (i > idx) {
+            idx = i
+            tlen = t.length
           }
-          acc += len
+        }
+        // 只认「caret 附近」的触发符（防误伤：更早的 @ 可能是正文里的邮箱）。找不到就不删、只插入。
+        if (idx >= 0 && before.length - (idx + tlen) <= Math.max(m.query.length + 8, 24)) {
+          let acc = 0
+          const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+          let node: Node | null
+          while ((node = walker.nextNode())) {
+            const len = (node.textContent || '').length
+            if (acc + len > idx) {
+              const del = document.createRange()
+              del.setStart(node, idx - acc)
+              del.setEnd(caret.startContainer, caret.startOffset)
+              del.deleteContents()
+              sel.removeAllRanges()
+              sel.addRange(del) // deleteContents 后已折叠在删除起点 = 插入点
+              break
+            }
+            acc += len
+          }
         }
       }
-      const href = relHref(curPath, targetPath)
       // contenteditable=false = 原子提及（光标越过它、退格整体删——Notion mention 同款手感）。
       // 尾随 &nbsp; 保证插入后 caret 有落点（原子行内元素后无文本时 caret 会丢；已知 wrinkle：
       // 这个 &nbsp; 会留在文档字节里，真 app 移植时用 Range/Selection API 插入并另行处理落点）。
+      // 网址链接不带 ws-doclink（外链语义：点击开网页标签页、不参与互链解析/重写）。
       document.execCommand(
         'insertHTML',
         false,
-        `<a class="ws-doclink" href="${escAttr(href)}" contenteditable="false">${escText(title)}</a>&nbsp;`,
+        externalUrl
+          ? `<a href="${escAttr(href)}">${escText(title)}</a>&nbsp;`
+          : `<a class="ws-doclink" href="${escAttr(href)}" contenteditable="false">${escText(title)}</a>&nbsp;`,
       )
       updateBlockHtml(doc.id, m.blockId, el.innerHTML)
       if (key === 'create') {
@@ -823,12 +878,14 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         return
       }
       if (e.key === 'Backspace') {
+        if (mention.trig === 0) e.preventDefault() // 斜杠/工具栏入口：query 是纯虚拟的，别删正文/选区
         setMention((m) =>
           m ? (m.query.length === 0 ? null : { ...m, query: m.query.slice(0, -1), active: 0 }) : m,
         )
         return
       }
       if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+        if (mention.trig === 0) e.preventDefault() // 同上：查询字符不落进正文（wrap 模式落进去会毁掉选区）
         setMention((m) => (m ? { ...m, query: m.query + e.key, active: 0 } : m))
       }
     }
@@ -968,6 +1025,49 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       window.clearTimeout(closeTimer.current)
     }
   }, [doc?.id])
+
+  // 互链入口③：把侧栏文件拖进正文 → 在落点插入指向它的链接（对文件系产品这是最自然的手势，
+  // Obsidian 同款）。同根才收（跨根 v1 不支持）；用 Range.insertNode 直插——不依赖 execCommand，
+  // 非编辑态的块也能收（contenteditable 关着 execCommand 不干活）。
+  const onBlocksDragOver = useCallback(
+    (e: React.DragEvent) => {
+      const f = getDragFile()
+      if (!f || !curRootId || !curPath || f.rootId !== curRootId) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'link'
+    },
+    [curRootId, curPath],
+  )
+  const onBlocksDrop = useCallback(
+    (e: React.DragEvent) => {
+      const f = getDragFile()
+      if (!f || !doc || !curRootId || !curPath || f.rootId !== curRootId) return
+      const range = caretRangeAtPoint(e.clientX, e.clientY)
+      const host =
+        range &&
+        ((range.startContainer instanceof Element
+          ? range.startContainer
+          : range.startContainer.parentElement
+        )?.closest?.('[data-block]') as HTMLElement | null)
+      const bid = host?.dataset.block
+      const blk = bid ? doc.blocks.find((b) => b.id === bid) : undefined
+      if (!range || !bid || !blk || !isEditable(blk)) return // 落在分隔线/图片/空白上就不插
+      e.preventDefault()
+      e.stopPropagation()
+      checkpoint()
+      const title = (f.docId && docs.find((d) => d.id === f.docId)?.title) || baseOf(f.path)
+      const a = document.createElement('a')
+      a.className = 'ws-doclink'
+      a.setAttribute('href', relHref(curPath, f.path))
+      a.setAttribute('contenteditable', 'false')
+      a.textContent = title
+      range.insertNode(a)
+      a.insertAdjacentText('afterend', ' ')
+      const el = blockEls.current.get(bid)
+      if (el) updateBlockHtml(doc.id, bid, el.innerHTML)
+    },
+    [doc, curRootId, curPath, docs, checkpoint, updateBlockHtml],
+  )
 
   // 断链修复①：重新指向候选文件（改这一条链接的 href，落库该块）
   const rebindLink = useCallback(
@@ -1600,7 +1700,32 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       !!editingId && !!sel && !sel.isCollapsed && sel.rangeCount > 0
 
     if (command === 'createLink') {
+      // 互链入口②（可发现路径）：工具栏「链接」不再是裸网址 prompt，而是弹文档选择菜单——
+      // 选中文字 → wrap 模式（选中文字变链接，保留用户文字）；菜单里也有「网址链接…」兜底外链。
       const saved = hasText ? sel!.getRangeAt(0).cloneRange() : null
+      const bid = editingId ?? selectedId
+      if (curRootId && curPath && bid && saved) {
+        const r = saved.getBoundingClientRect()
+        setMention({
+          blockId: bid,
+          query: '',
+          pos: { top: r.bottom + 8, left: r.left },
+          active: 0,
+          trig: 0,
+          mode: 'wrap',
+          savedRange: saved,
+        })
+        return
+      }
+      if (curRootId && curPath && editingId) {
+        // 无选区但在编辑态：caret 处插入提及（insert 模式）
+        const rect = caretRectViewport()
+        if (rect) {
+          setMention({ blockId: editingId, query: '', pos: rect, active: 0, trig: 0, mode: 'insert' })
+          return
+        }
+      }
+      // 兜底（无文件身份的临时文档 / 块选中态整块加链）：维持原网址 prompt 行为
       const url = window.prompt('链接地址', 'https://')
       if (!url) return
       if (saved) {
@@ -1724,6 +1849,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             onClickCapture={onBlocksClickCapture}
             onMouseOver={onBlocksMouseOver}
             onMouseOut={onBlocksMouseOut}
+            onDragOver={onBlocksDragOver}
+            onDrop={onBlocksDrop}
           >
             {doc.blocks.map((b, i) => {
               let edge: 'top' | 'bottom' | null = null

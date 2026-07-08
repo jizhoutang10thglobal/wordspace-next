@@ -50,6 +50,8 @@ let dragTabId: string | null = null
 // (preserving docId/kind). Same-space moves only. getData() is blocked during
 // dragover, so we stash it module-side, mirroring dragTabId.
 let dragFile: FileEntry | null = null
+// 互链入口③：把侧栏文件拖进编辑器正文 = 在落点插入指向它的链接（Canvas 消费）。
+export const getDragFile = (): FileEntry | null => dragFile
 // A root header being dragged to reorder the roots（多文件夹：根的上下顺序自由调整）。
 let dragRootId: string | null = null
 // The most-recently-hovered drop target's highlight-clear fn, so a cancelled
