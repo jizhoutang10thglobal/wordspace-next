@@ -21,6 +21,7 @@
   color: var(--c-text);
   font-size: var(--fs-md);
   padding: 9px 15px;
+  border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-pop);
   /* 从下方带一点回弹地弹上来 */
