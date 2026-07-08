@@ -7,12 +7,13 @@
 //  - webContents 永不自动销毁（官方明示会泄漏）→ 关闭路径显式 webContents.close()。
 //  - url/title/favicon 权威副本在这（registry）,renderer 只做 UI 镜像;before-quit 从这合并落盘。
 //  - 主进程永不直接 attach view：show() 是唯一 attach 入口,由 renderer 的 activate 漏斗驱动（KD-5）。
-const { WebContentsView, session, net, shell, dialog } = require('electron');
+const { WebContentsView, session, net, shell, dialog, Menu, clipboard, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const policy = require('../lib/web-tabs-policy');
 const webHistory = require('../lib/web-history');
+const ctxMenu = require('../lib/web-context-menu');
 
 const PARTITION = 'persist:webtabs';
 const registry = new Map(); // key -> { view, url, title, favicon, loading, audible, canGoBack, canGoForward }
@@ -66,6 +67,7 @@ function ensureSession() {
 function init(winGetter) {
   getWin = winGetter;
   ensureSession();
+  if (ctxProbeOn()) global.__ws2CtxAction = executeCtxAction; // e2e 探针：右键前也能直接调动作出口
 }
 function setDownloadDir(dir) { downloadDir = dir; } // WS2_DL_DIR seam（e2e）
 
@@ -173,6 +175,9 @@ function wireViewEvents(key, view) {
     }
     return { action: 'deny' };
   });
+
+  // 右键菜单（U-hardening）：原生 Menu.popup（DOM 菜单会被 native view 盖住，看不见）。
+  wc.on('context-menu', (_e, params) => openCtxMenu(key, params));
 }
 
 function syncNav(key) {
@@ -259,6 +264,51 @@ async function printToPdf(key) {
   return out;
 }
 
+// ---- 右键菜单（U-hardening）----
+// 挂钩点 wireViewEvents 的 context-menu 事件 → 纯逻辑 builder 算 template → 原生 Menu.popup。
+// 每个条目的动作都收敛到 executeCtxAction 这唯一出口（e2e 直接调它，与菜单 click 同一路径）。
+function ctxProbeOn() { try { return !!process.env.WS2_CTXMENU_PROBE && !app.isPackaged; } catch { return false; } }
+function openCtxMenu(key, params) {
+  const rec = registry.get(key); if (!rec) return;
+  const p = params || {};
+  const sub = { linkURL: p.linkURL, srcURL: p.srcURL, mediaType: p.mediaType, selectionText: p.selectionText, isEditable: p.isEditable, x: p.x, y: p.y };
+  const ctx = { canGoBack: rec.canGoBack, canGoForward: rec.canGoForward, pageUrl: rec.url, isAllowedUrl: policy.isAllowedNavUrl };
+  const template = ctxMenu.buildCtxTemplate(sub, ctx);
+  if (ctxProbeOn()) { global.__ws2LastCtxMenu = { key, params: sub, template }; global.__ws2CtxAction = executeCtxAction; return; } // e2e 探针：不弹菜单，存捕获
+  const win = getWin(); if (!win || win.isDestroyed()) return;
+  const items = template.map((it) => it.type === 'separator'
+    ? { type: 'separator' }
+    : { label: it.label, enabled: it.enabled !== false, click: () => executeCtxAction(key, it.id, it.args) });
+  try { Menu.buildFromTemplate(items).popup({ window: win }); } catch { /* 窗口销毁中 */ } // 不传 x/y = 弹在鼠标处
+}
+// 唯一动作出口。open/download/search 类动作内部重校验 URL（防御纵深，不信 template 回传的 args）。未知 id 静默 no-op。
+function executeCtxAction(key, id, args) {
+  const rec = registry.get(key); if (!rec) return;
+  const wc = rec.view && rec.view.webContents; if (!wc || wc.isDestroyed()) return;
+  const a = args || {};
+  switch (id) {
+    case 'open-link': if (policy.isAllowedNavUrl(a.url)) sendToRenderer('web-open-request', { url: a.url, background: false }); break;
+    case 'open-link-bg': if (policy.isAllowedNavUrl(a.url)) sendToRenderer('web-open-request', { url: a.url, background: true }); break;
+    case 'copy-link': clipboard.writeText(urlInput.cleanShareUrl(a.url || '')); break;
+    case 'copy-image': wc.copyImageAt(a.x, a.y); break;
+    case 'copy-image-url': if (policy.isAllowedNavUrl(a.url)) clipboard.writeText(a.url); break;
+    case 'save-image': if (policy.isAllowedNavUrl(a.url)) wc.downloadURL(a.url); break; // 走 will-download 清洗
+    case 'copy-selection': wc.copy(); break;
+    case 'search-selection': { const u = urlInput.searchUrl(String(a.text || '')); if (policy.isAllowedNavUrl(u)) sendToRenderer('web-open-request', { url: u, background: false }); break; }
+    case 'cut': wc.cut(); break;
+    case 'copy': wc.copy(); break;
+    case 'paste': wc.paste(); break;
+    case 'select-all': wc.selectAll(); break;
+    case 'nav-back': nav(key, 'back'); break;
+    case 'nav-forward': nav(key, 'forward'); break;
+    case 'reload': nav(key, 'reload'); break;
+    case 'copy-page-url': clipboard.writeText(urlInput.cleanShareUrl(rec.url || '')); break;
+    case 'clip-page': sendToRenderer('web-clip-request', { key }); break;
+    case 'export-pdf': printToPdf(key); break;
+    default: break;
+  }
+}
+
 // 宽页自动缩放适配（Colin 2026-07-08:固定宽度老站(如 baidu 桌面版)比网页区宽会出横滚,嵌在编辑器里
 // 该像手机浏览器 shrink-to-fit）。只缩不放:zoom' = min(1, zoom * 视口宽/内容宽),下限 0.65(再小没法读,
 // 宁可留横滚),溢出 <2% 不动(别为一像素抖)。did-finish-load + 视口变宽窄(setBounds)都重算,收敛稳定。
@@ -340,6 +390,7 @@ function hasActiveDownloads() { return activeDownloads.size > 0; }
 module.exports = {
   init, setDownloadDir, createView, show, hide, setBounds, setVisible, destroy, destroyAll,
   navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setAudioMutedAll, printToPdf, extractReadable,
+  openCtxMenu, executeCtxAction,
   getHistory, loadHistory, setHistoryHook,
   snapshot, hasActiveDownloads, _registry: registry,
 };
