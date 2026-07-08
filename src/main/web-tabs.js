@@ -132,6 +132,7 @@ function wireViewEvents(key, view) {
 
   wc.on('did-start-loading', () => { const r = registry.get(key); if (r) { r.loading = true; r.error = null; pushUpdate(key); } });
   wc.on('did-stop-loading', () => { const r = registry.get(key); if (r) { r.loading = false; syncNav(key); pushUpdate(key); } });
+  wc.on('did-finish-load', () => { fitToWidth(key); }); // 宽页自动缩放适配(Colin:别让用户横滚)
   wc.on('page-title-updated', (_e, title) => {
     const r = registry.get(key); if (!r) return;
     r.title = title || r.url || '新标签页'; pushUpdate(key);
@@ -188,10 +189,10 @@ function show(key, bounds) {
   for (const [k, r] of registry) { if (k !== key && children.indexOf(r.view) !== -1) win.contentView.removeChildView(r.view); }
   // re-add 已存在的 view = 提到最顶（官方 z-order）;不存在则新挂。
   win.contentView.addChildView(rec.view);
-  if (bounds) rec.view.setBounds(bounds);
+  if (bounds) { rec.view.setBounds(bounds); scheduleRefit(key); } // attach 时视口宽度可能变了(侧栏收展/换窗口尺寸)
   rec.view.setVisible(true);
 }
-function setBounds(key, bounds) { const r = registry.get(key); if (r && bounds) { try { r.view.setBounds(bounds); } catch { /* view 已销毁 */ } } }
+function setBounds(key, bounds) { const r = registry.get(key); if (r && bounds) { try { r.view.setBounds(bounds); scheduleRefit(key); } catch { /* view 已销毁 */ } } }
 function setVisible(key, visible) { const r = registry.get(key); if (r) { try { r.view.setVisible(visible); } catch { /* view 已销毁 */ } } }
 function hide(key) {
   const win = getWin(); const rec = registry.get(key); if (!win || !rec) return;
@@ -255,6 +256,29 @@ async function printToPdf(key) {
   sendToRenderer('web-download', { state: 'completed', name: path.basename(out), savePath: out, received: buf.length, total: buf.length });
   return out;
 }
+
+// 宽页自动缩放适配（Colin 2026-07-08:固定宽度老站(如 baidu 桌面版)比网页区宽会出横滚,嵌在编辑器里
+// 该像手机浏览器 shrink-to-fit）。只缩不放:zoom' = min(1, zoom * 视口宽/内容宽),下限 0.65(再小没法读,
+// 宁可留横滚),溢出 <2% 不动(别为一像素抖)。did-finish-load + 视口变宽窄(setBounds)都重算,收敛稳定。
+async function fitToWidth(key) {
+  const r = registry.get(key); if (!r) return;
+  const wc = r.view && r.view.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  try {
+    // 先回 zoom 1 量**自然宽度**——zoom 在 session 里按 origin 延续,若在缩小态下量,流式页永远
+    // 报告 dw≈vw、算不出「其实 1x 就放得下」,会被钉死在缩小态(e2e 抓的:宽页→窄页不回弹)。
+    if ((wc.getZoomFactor() || 1) !== 1) wc.setZoomFactor(1);
+    const m = await wc.executeJavaScript(
+      'new Promise((res) => requestAnimationFrame(() => res({ vw: window.innerWidth, dw: Math.max(document.documentElement ? document.documentElement.scrollWidth : 0, document.body ? document.body.scrollWidth : 0) })))',
+      true,
+    );
+    if (!m || !m.vw || !m.dw) return;
+    if (m.dw <= m.vw * 1.02) return;                    // 自然宽度放得下 → 保持 1(溢出 <2% 不为一像素抖)
+    wc.setZoomFactor(Math.max(0.65, m.vw / m.dw));      // 缩到正好放下;下限 0.65(再小没法读,宁可留横滚)
+  } catch { /* 页面导航中/被销毁,下个 load 再算 */ }
+}
+let fitTimer = null;
+function scheduleRefit(key) { clearTimeout(fitTimer); fitTimer = setTimeout(() => fitToWidth(key), 250); }
 
 // 网页存成本地文档（融合核心桥,Colin 拍板「正经剪藏」）：用 Mozilla Readability(Firefox 阅读模式那套)
 // 抽正文——保留图片(绝对 URL)/行内链接/标题层级,产出干净可读可编辑的文章。抽取跑在不可信页面上下文;

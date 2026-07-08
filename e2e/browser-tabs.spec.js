@@ -21,6 +21,7 @@ test.beforeAll(async () => {
   server = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html; charset=utf-8');
     if (req.url === '/2') { res.end(ARTICLE); return; }
+    if (req.url === '/wide') { res.end('<!doctype html><title>WIDE</title><body style="margin:0"><div style="min-width:1400px;background:#eee">固定宽 1400px 的老式桌面布局(baidu 量级;3000px 那种极端页按设计撞 0.65 下限保留横滚)</div></body>'); return; }
     res.end('<!doctype html><title>E2E SMOKE</title><h1>hello</h1><a id=lnk href="/2">next</a>');
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -113,6 +114,29 @@ test('浏览核心闭环 + 剪藏 + 历史 + 重启恢复(含变异自检)', asy
   const clipFile = (await fs.readdir(wsDir)).find((f) => f.endsWith('.html') && f !== 'doc.html');
   const clipHtml = await fs.readFile(path.join(wsDir, clipFile), 'utf8');
   expect(clipHtml).toMatch(/Readable paragraph/);
+
+  // 宽页自动缩放适配(Colin 2026-07-08):1400px 固定宽的页面 → zoom 自动缩到内容不横向溢出
+  await page.fill('#bc-addr', url + 'wide');
+  await page.press('#bc-addr', 'Enter');
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => {
+    const v = BrowserWindow.getAllWindows()[0].contentView.children.find((c) => c.webContents);
+    if (!v) return null;
+    const z = v.webContents.getZoomFactor();
+    return v.webContents.executeJavaScript('({vw: window.innerWidth, dw: document.documentElement.scrollWidth})', true)
+      .then((m) => ({ zoom: z, overflow: m.dw > m.vw * 1.05 }));
+  }), { timeout: 15000 }).toMatchObject({ overflow: false });
+  const fitZoom = await app.evaluate(({ BrowserWindow }) => {
+    const v = BrowserWindow.getAllWindows()[0].contentView.children.find((c) => c.webContents);
+    return v ? v.webContents.getZoomFactor() : null;
+  });
+  expect(fitZoom, '1400px 宽页必须触发缩放(zoom<1),否则 fit 是哑的').toBeLessThan(1);
+  // 回到窄内容页 → 恢复正常(不永久钉在缩小态)
+  await page.fill('#bc-addr', url);
+  await page.press('#bc-addr', 'Enter');
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => {
+    const v = BrowserWindow.getAllWindows()[0].contentView.children.find((c) => c.webContents);
+    return v ? v.webContents.getZoomFactor() : null;
+  }), { timeout: 15000 }).toBeGreaterThan(0.95);
 
   // 浏览历史进 Cmd+P:搜到访问过的页面。变异自检②:乱词必须无历史命中(匹配非恒真)
   await page.evaluate(() => window.__sbHooks.findPalette());
