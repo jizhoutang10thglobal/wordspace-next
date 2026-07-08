@@ -199,15 +199,17 @@
   var clipBtn = document.getElementById('web-clip-btn');
   function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
   function safeFileName(t) { return (String(t || '网页').replace(/[/\\:*?"<>|\n\r\t]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60)) || '网页'; }
-  if (clipBtn) clipBtn.onclick = function () {
-    var k = window.__webActiveKey(); if (!k) return;
+  // 剪藏一个网页标签成本地文档。web 头「＋存为文档」按钮 和 右键「存为文档」都调它。
+  function clipTab(k) {
+    if (!k) return;
     if (!window.__sbHasWorkspace || !window.__sbHasWorkspace()) { // 存进文档库需要一个工作区
       if (window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder();
       return;
     }
-    clipBtn.disabled = true; clipBtn.textContent = '正在保存…';
+    if (clipBtn) { clipBtn.disabled = true; clipBtn.textContent = '正在保存…'; }
+    function restoreBtn() { if (clipBtn) { clipBtn.disabled = false; clipBtn.textContent = '＋ 存为文档'; } }
     window.ws2.webClip(k).then(function (clip) {
-      clipBtn.disabled = false; clipBtn.textContent = '＋ 存为文档';
+      restoreBtn();
       if (!clip || clip.error) { if (window.__sbToast) window.__sbToast('这个页面读不出内容'); return; }
       var head = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(clip.title) + '</title></head><body>\n' +
         '<h1>' + esc(clip.title) + '</h1>\n' +
@@ -224,8 +226,13 @@
         note = '已把网页存成文档：';
       }
       if (window.__sbClipToDoc) window.__sbClipToDoc(safeFileName(clip.title), html, note);
-    }).catch(function () { clipBtn.disabled = false; clipBtn.textContent = '＋ 存为文档'; if (window.__sbToast) window.__sbToast('保存失败'); });
-  };
+    }).catch(function () { restoreBtn(); if (window.__sbToast) window.__sbToast('保存失败'); });
+  }
+  if (clipBtn) clipBtn.onclick = function () { clipTab(window.__webActiveKey()); };
+  // 右键「存为文档」→ 主进程 web-clip-request（带 key）；只对当前激活的 web tab 执行,防非激活 view 的迟到请求剪错页。
+  if (window.ws2.onWebClipRequest) window.ws2.onWebClipRequest(function (r) {
+    if (r && r.key && r.key === window.__webActiveKey()) clipTab(r.key);
+  });
 
   // ---- 导航按钮 ----
   if (backBtn) backBtn.onclick = function () { var k = window.__webActiveKey(); if (k) window.ws2.webNav(k, 'back'); };
