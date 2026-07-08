@@ -52,12 +52,14 @@ const SLASH_ITEMS: {
   { key: 'list', label: '无序列表', kw: 'list liebiao ul bulleted wuxu', type: 'list', listStyle: 'bulleted' },
   { key: 'numbered', label: '编号列表', kw: 'numbered ordered ol bianhao youxu 1', type: 'list', listStyle: 'numbered' },
   { key: 'todo', label: '待办列表', kw: 'todo task checkbox daiban checklist', type: 'list', listStyle: 'todo' },
+  // 互链的可发现入口①：斜杠菜单。位置放在列表之后（第 8 项）——放最后会掉出菜单可视区、
+  // 用户根本看不见（Colin 实测「没找到」的直接原因）。历史注释说「下标引用只能 append」已核实过时：
+  // 全仓只有 .filter / .find(key)，无下标引用，重排安全。
+  { key: 'doclink', label: '🔗 链接到文档', kw: 'link doclink lianjie wendang mention at @', type: 'doclink' },
   { key: 'quote', label: '引用', kw: 'quote yinyong', type: 'quote' },
   { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
   { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
   { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
-  // 互链的可发现入口①：斜杠菜单（@/[[ 手势藏得深，得有看得见的路）。只能 append（上面下标引用警告）。
-  { key: 'doclink', label: '🔗 链接到文档', kw: 'link doclink lianjie wendang mention at @', type: 'doclink' },
 ]
 const filterSlash = (q: string) => {
   const s = q.toLowerCase()
@@ -1041,17 +1043,49 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const onBlocksDrop = useCallback(
     (e: React.DragEvent) => {
       const f = getDragFile()
-      if (!f || !doc || !curRootId || !curPath || f.rootId !== curRootId) return
-      const range = caretRangeAtPoint(e.clientX, e.clientY)
-      const host =
-        range &&
-        ((range.startContainer instanceof Element
-          ? range.startContainer
-          : range.startContainer.parentElement
-        )?.closest?.('[data-block]') as HTMLElement | null)
-      const bid = host?.dataset.block
-      const blk = bid ? doc.blocks.find((b) => b.id === bid) : undefined
-      if (!range || !bid || !blk || !isEditable(blk)) return // 落在分隔线/图片/空白上就不插
+      if (!f || !doc) return
+      if (!curRootId || !curPath) return
+      if (f.rootId !== curRootId) {
+        // 跨根不支持（相对路径算不出来）——但要**说出来**，静默没反应会让人以为功能不存在
+        e.preventDefault()
+        e.stopPropagation()
+        toast('跨文件夹的链接暂不支持——把文件拖进同一个文件夹的文档里', 'neutral')
+        return
+      }
+      // 精确落点：落在文字上就插在那；落在装饰块/空白/边距上 → 兜底找 Y 方向最近的可编辑块，
+      // 插到它末尾（静默失败 = 用户以为「没做出来」，Colin 实测踩过）。
+      let range = caretRangeAtPoint(e.clientX, e.clientY)
+      let host =
+        (range &&
+          ((range.startContainer instanceof Element
+            ? range.startContainer
+            : range.startContainer.parentElement
+          )?.closest?.('[data-block]') as HTMLElement | null)) ||
+        null
+      let bid = host?.dataset.block
+      let blk = bid ? doc.blocks.find((b) => b.id === bid) : undefined
+      if (!bid || !blk || !isEditable(blk)) {
+        let best: { bid: string; dist: number; el: HTMLElement } | null = null
+        for (const [id, el] of blockEls.current) {
+          const bb = doc.blocks.find((b) => b.id === id)
+          if (!bb || !isEditable(bb) || !document.contains(el)) continue
+          const r = el.getBoundingClientRect()
+          const dist = e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0
+          if (!best || dist < best.dist) best = { bid: id, dist, el }
+        }
+        if (!best) {
+          e.preventDefault()
+          e.stopPropagation()
+          toast('这篇文档没有可放链接的文字块', 'neutral')
+          return
+        }
+        bid = best.bid
+        blk = doc.blocks.find((b) => b.id === bid)
+        range = document.createRange()
+        range.selectNodeContents(best.el)
+        range.collapse(false) // 插到该块末尾
+      }
+      if (!range || !bid || !blk) return
       e.preventDefault()
       e.stopPropagation()
       checkpoint()
@@ -1062,11 +1096,11 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       a.setAttribute('contenteditable', 'false')
       a.textContent = title
       range.insertNode(a)
-      a.insertAdjacentText('afterend', ' ')
+      a.insertAdjacentText('afterend', ' ')
       const el = blockEls.current.get(bid)
       if (el) updateBlockHtml(doc.id, bid, el.innerHTML)
     },
-    [doc, curRootId, curPath, docs, checkpoint, updateBlockHtml],
+    [doc, curRootId, curPath, docs, checkpoint, updateBlockHtml, toast],
   )
 
   // 断链修复①：重新指向候选文件（改这一条链接的 href，落库该块）

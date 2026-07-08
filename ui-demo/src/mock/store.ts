@@ -368,8 +368,9 @@ export const useStore = create<State>()(
         { id: 'tab-flow', kind: 'web', pinned: true, title: 'FlowDesk', url: 'https://flowdesk.app' },
         // 标签页 (transient)
         { id: 'tab-web', kind: 'web', title: 'Designer News · 行业动态', url: 'https://news.design/today' },
-        // 开局落在一篇本地 .html 文档上，直接进编辑器
-        { id: 'tab-local', kind: 'doc', docId: 'd-recruit', title: '落地页.html', url: '落地页.html', fileName: '落地页.html', fileKind: 'html', rootId: 'r-brand' },
+        // 开局落在互链演示文档上（含「怎么创建链接」教学块）——落地页.html 几乎全是 designed 装饰块，
+        // 不可编辑，用户在上面试 @/工具栏/拖拽会全体没反应（Colin 实测）
+        { id: 'tab-local', kind: 'doc', docId: 'd-r2-plan', title: '产品规划.html', url: '产品规划.html', fileName: '产品规划.html', fileKind: 'html', rootId: 'r-docs' },
       ],
       activeTabId: 'tab-local',
       toasts: [],
