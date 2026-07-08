@@ -10,10 +10,13 @@ function defaultFold() {
   return process.platform === 'darwin' || process.platform === 'win32';
 }
 
-// 规范化用于比较：resolve + 去尾分隔符（根目录 '/' 保留）+ 按需折叠大小写。
+// 规范化用于比较：resolve + 去尾分隔符（根目录 '/' 保留）+ Unicode NFC 归一 + 按需折叠大小写。
+// NFC 归一：macOS 磁盘名走 NFD（「资料库」的 Finder 拖拽与对话框选择可能给出不同分解形态），
+// 不归一的话同一目录两种形态折成不同串 → same/嵌套判定漏判（安全审查抓的）。
 function canonPath(p, opts) {
   let c = path.resolve(p).replace(/[\\/]+$/, '');
   if (!c) c = path.sep;
+  c = c.normalize('NFC');
   const fold = opts && 'fold' in opts ? opts.fold : defaultFold();
   return fold ? c.toLowerCase() : c;
 }

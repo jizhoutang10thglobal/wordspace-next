@@ -40,6 +40,14 @@ test('前缀判定带分隔符边界：/foo/bar 不是 /foo/bar-baz 的父目录
   assert.deepEqual(R.classifyRoot('/foo/bar/x', rs, NOFOLD), { rel: 'child', parentId: 'r1' });
 });
 
+test('Unicode NFC/NFD 归一：同一目录的两种分解形态判 same（macOS 磁盘名走 NFD）', () => {
+  const nfc = '/Users/me/café'; // é 预组合
+  const nfd = '/Users/me/café'; // e + 组合重音
+  assert.equal(R.canonPath(nfc, NOFOLD), R.canonPath(nfd, NOFOLD));
+  assert.deepEqual(R.classifyRoot(nfd, [{ id: 'r1', path: nfc }], NOFOLD), { rel: 'same', rootId: 'r1' });
+  assert.deepEqual(R.classifyRoot(nfd + '/sub', [{ id: 'r1', path: nfc }], NOFOLD), { rel: 'child', parentId: 'r1' });
+});
+
 test('fold=true：大小写不同视为相同（mac/win 文件系统语义）', () => {
   const rs = [{ id: 'r1', path: '/Users/Me/Docs' }];
   assert.deepEqual(R.classifyRoot('/users/me/docs', rs, FOLD), { rel: 'same', rootId: 'r1' });
