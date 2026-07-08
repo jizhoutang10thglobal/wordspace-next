@@ -467,7 +467,12 @@ function registerIpc() {
     const to = rootById(toRootId);
     if (!app.isPackaged && process.env.WS2_FORCE_EXDEV) return { crossDevice: true };
     try {
-      return await workspace.movePathAcross(from, relPath, to, destDirRel);
+      const r = await workspace.movePathAcross(from, relPath, to, destDirRel);
+      // 测试 seam（仅非打包）：落盘后、reply 前拖延，给 renderer 一个窗口触发 onTreeChanged——确定性复现
+      // 「源根 watcher 抢在标签 retarget 之前 reconcile」的竞态，验证 crossMoveGuard 挡住误清（对抗审查 P2）。
+      const slow = !app.isPackaged ? +process.env.WS2_SLOW_MOVE_MS || 0 : 0;
+      if (slow) await new Promise((res) => setTimeout(res, slow));
+      return r;
     } catch (err) {
       if (err && err.code === 'EXDEV') return { crossDevice: true };
       throw err;

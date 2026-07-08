@@ -713,41 +713,56 @@
     if (r.rel !== node.rel) retargetTabsUnder(node.rootId, node.rel, r.rel, node.isDir); // 标签跟随移动
     await refreshRoot(node.rootId);
   }
+  // 跨根移动进行中的根（引用计数，支持并发移动同根参与）：onTreeChanged 对这些根跳过 reconcile。
+  // 见 onTreeChanged 里的说明（对抗审查 P2 竞态）。
+  const crossMoveGuard = new Map();
+  const guardRoot = (id) => crossMoveGuard.set(id, (crossMoveGuard.get(id) || 0) + 1);
+  const unguardRoot = (id) => { const n = (crossMoveGuard.get(id) || 0) - 1; if (n <= 0) crossMoveGuard.delete(id); else crossMoveGuard.set(id, n); };
+
   // 跨根移动（node 从它自己的根搬到 toRootId 的 destDirRel）：v1 便宜档同盘 rename；跨盘 toast 提示不搬。
   // 标签换根跟随、collapsed 键换根迁移、打开中文档/其祖先目录重指向、两根树都刷。
+  // 全程守卫两根的 reconcile（crossMoveGuard）：移动落盘到标签 retarget 之间有 IPC 往返窗口，期间
+  // watcher 事件不能抢跑 reconcile（否则源根找不到已搬走文件的 inode → 误删标签）。
   async function doMoveAcross(node, toRootId, destDirRel) {
     const op = openPath();
     const wasOpen = !node.isDir && op === node.abs;
     const openUnderDir = node.isDir && isUnder(op, node.abs); // 移动的目录含当前打开文档
-    let r;
-    try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel); }
-    catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
-    if (r && r.crossDevice) { // 真跨盘：不搬，明确告知
-      showToast('这两个文件夹在不同的磁盘上，暂不支持直接拖动移动——先在访达里复制过去');
-      return;
-    }
-    // 标签换根跟随（含撞名去重后的新 rel/title）
-    tabState = window.WS2Tabs.retargetSubtreeAcross(tabState, node.rootId, node.rel, toRootId, r.rel, node.isDir);
-    persistTabs();
-    // collapsed 键换根迁移（照 commitRenameOp 的 SB-12，多换一个 rootId）：目录移动才有子树折叠状态
-    if (node.isDir) {
-      const oldK = colKey(node.rootId, node.rel);
-      const newK = colKey(toRootId, r.rel);
-      for (const key of [...collapsed]) {
-        if (key === oldK || key.indexOf(oldK + '/') === 0) { collapsed.delete(key); collapsed.add(newK + key.slice(oldK.length)); }
+    guardRoot(node.rootId);
+    guardRoot(toRootId);
+    try {
+      let r;
+      try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel); }
+      catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
+      if (r && r.crossDevice) { // 真跨盘：不搬，明确告知（此前没动任何状态）
+        showToast('这两个文件夹在不同的磁盘上，暂不支持直接拖动移动——先在访达里复制过去');
+        return;
       }
+      // 标签换根跟随（含撞名去重后的新 rel/title）
+      tabState = window.WS2Tabs.retargetSubtreeAcross(tabState, node.rootId, node.rel, toRootId, r.rel, node.isDir);
+      persistTabs();
+      // collapsed 键换根迁移（照 commitRenameOp 的 SB-12，多换一个 rootId）：目录移动才有子树折叠状态
+      if (node.isDir) {
+        const oldK = colKey(node.rootId, node.rel);
+        const newK = colKey(toRootId, r.rel);
+        for (const key of [...collapsed]) {
+          if (key === oldK || key.indexOf(oldK + '/') === 0) { collapsed.delete(key); collapsed.add(newK + key.slice(oldK.length)); }
+        }
+      }
+      // 打开中文档重指向（否则 docPath 仍指旧根旧路径，后续保存 ENOENT）
+      if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
+      else if (openUnderDir && window.__shellRetargetDoc) {
+        const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 确认 op 以 node.abs+分隔符 开头）
+        window.__shellRetargetDoc(newAbs, newAbs.split(/[\\/]/).pop());
+      }
+      await refreshRoot(node.rootId); // 源根：文件走了
+      await refreshRoot(toRootId); // 目标根：文件来了
+      // 移动的正是激活标签对应文件 → 在目标根树里展开定位
+      const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+      if (act && act.rootId === toRootId && act.rel) expandToFile(toRootId, act.rel);
+    } finally {
+      unguardRoot(node.rootId);
+      unguardRoot(toRootId);
     }
-    // 打开中文档重指向（否则 docPath 仍指旧根旧路径，后续保存 ENOENT）
-    if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
-    else if (openUnderDir && window.__shellRetargetDoc) {
-      const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 确认 op 以 node.abs+分隔符 开头）
-      window.__shellRetargetDoc(newAbs, newAbs.split(/[\\/]/).pop());
-    }
-    await refreshRoot(node.rootId); // 源根：文件走了
-    await refreshRoot(toRootId); // 目标根：文件来了
-    // 移动的正是激活标签对应文件 → 在目标根树里展开定位
-    const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
-    if (act && act.rootId === toRootId && act.rel) expandToFile(toRootId, act.rel);
   }
   async function doDelete(node) {
     const op = openPath();
@@ -1896,6 +1911,11 @@
   async function onTreeChanged(rootId) {
     const st = rootOf(rootId);
     if (!st || st.missing || !st.tree) return;
+    // 跨根移动在飞（对抗审查 P2）：跳过 reconcile。跨根移动把文件的 inode 从源根移到目标根——若源根的
+    // watcher 事件抢在 doMoveAcross 的 retargetSubtreeAcross 之前跑，reconcile 在源根树里找不到该 inode
+    // → 当成「被删」removeEntry，把用户正在编辑/置顶的标签无声清掉（文件其实已好好搬到目标根）。
+    // doMoveAcross 收尾自己 refreshRoot 两根，移动完成后再来的事件正常 reconcile（标签已属目标根、安全）。
+    if (crossMoveGuard.has(rootId)) return;
     for (const e of tabState.entries) {
       if (e.rel && e.rootId === rootId) { const n = findNode(rootId, e.rel); if (n && n.ino != null) e.ino = n.ino; }
     }
