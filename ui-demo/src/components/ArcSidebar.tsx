@@ -33,6 +33,7 @@ import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
+import { computeBacklinks, computeDirBacklinks } from '../lib/links'
 import { IS_MAC } from '../lib/platform'
 import type { FileEntry, FileKind, MountRoot, Tab } from '../types'
 import './ArcSidebar.css'
@@ -49,6 +50,8 @@ let dragTabId: string | null = null
 // (preserving docId/kind). Same-space moves only. getData() is blocked during
 // dragover, so we stash it module-side, mirroring dragTabId.
 let dragFile: FileEntry | null = null
+// 互链入口③：把侧栏文件拖进编辑器正文 = 在落点插入指向它的链接（Canvas 消费）。
+export const getDragFile = (): FileEntry | null => dragFile
 // A root header being dragged to reorder the roots（多文件夹：根的上下顺序自由调整）。
 let dragRootId: string | null = null
 // The most-recently-hovered drop target's highlight-clear fn, so a cancelled
@@ -365,7 +368,10 @@ function FileBranch({
           draggable
           onDragStart={(e) => {
             dragFile = f
-            e.dataTransfer.effectAllowed = 'move'
+            // 'all' 不是 'move'：文件既可拖进文件夹（move）也可拖进正文变链接（link）。
+            // effectAllowed 与落点 dropEffect 不兼容时浏览器会**直接禁掉 drop**（事件都不发）——
+            // 之前声明 move、画布落点要 link，真实拖拽全灭（合成事件测试测不出这层，Colin 实测抓到）。
+            e.dataTransfer.effectAllowed = 'all'
             e.dataTransfer.setData('text/plain', f.path)
           }}
           onDragEnd={() => {
@@ -391,7 +397,17 @@ function FileBranch({
             items={[
               { label: '打开', onClick: openIt },
               { label: '重命名', onClick: () => setRenaming(true) },
-              { label: '删除', danger: true, onClick: () => deleteFileWithUndo(f) },
+              {
+                label: '删除',
+                danger: true,
+                onClick: () => {
+                  // 互链守卫：有反链的文件删除前弹确认（列出谁链接到它），没有就直接删（保留 toast 撤销）
+                  const s = useStore.getState()
+                  const n = computeBacklinks(s.files, s.docs, f.rootId, f.path).length
+                  if (n > 0) useUI.getState().askDeleteFile('file', f.rootId, f.path, n)
+                  else deleteFileWithUndo(f)
+                },
+              },
             ]}
           />
         )}
@@ -498,7 +514,17 @@ function FileBranch({
             { label: '新建文档', onClick: newDocHere },
             { label: '新建子文件夹', onClick: () => createSubfolder(rootId, path) },
             { label: '重命名', onClick: () => setRenaming(true) },
-            { label: '删除', danger: true, onClick: () => deleteDirWithUndo(rootId, path) },
+            {
+              label: '删除',
+              danger: true,
+              onClick: () => {
+                // 互链守卫（文件夹版）：夹外文档链接着夹内文件时先确认（夹内互链一起删、不算断链）
+                const s = useStore.getState()
+                const n = computeDirBacklinks(s.files, s.docs, rootId, path).length
+                if (n > 0) useUI.getState().askDeleteFile('dir', rootId, path, n)
+                else deleteDirWithUndo(rootId, path)
+              },
+            },
           ]}
         />
       )}
