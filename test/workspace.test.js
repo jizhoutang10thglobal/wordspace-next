@@ -109,6 +109,50 @@ test('movePath rejects moving a folder into its own subtree', async () => {
   await assert.rejects(() => ws.movePath(root, '数据', '数据/sub'));
 });
 
+// ===== movePathAcross（跨根移动，v1 便宜档）=====
+test('movePathAcross 真移动文件到另一个根（fs.rename）', async () => {
+  const { root: src } = await seed();
+  const { root: dst } = await seed();
+  const r = await ws.movePathAcross(src, 'a.html', dst, '数据');
+  assert.equal(r.rel, '数据/a.html');
+  assert.ok(await isFile(path.join(dst, '数据', 'a.html'))); // 目标有了
+  assert.ok(!(await isFile(path.join(src, 'a.html')))); // 源没了
+});
+
+test('movePathAcross 移动整个目录到另一个根', async () => {
+  const { root: src } = await seed();
+  const { root: dst } = await seed();
+  const r = await ws.movePathAcross(src, '数据', dst, '');
+  assert.equal(r.rel, '数据 2'); // dst 已有 数据/ → 去重
+  assert.ok(await isFile(path.join(dst, '数据 2', 'b.html'))); // 子文件跟着搬
+  assert.ok(!(await isDir(path.join(src, '数据')))); // 源目录没了
+});
+
+test('movePathAcross 目标撞名去重，绝不覆盖占位', async () => {
+  const { root: src } = await seed();
+  const { root: dst } = await seed(); // dst 根目录已有 a.html
+  const r = await ws.movePathAcross(src, 'a.html', dst, '');
+  assert.equal(r.rel, 'a 2.html');
+  assert.ok(await isFile(path.join(dst, 'a 2.html')));
+  assert.equal(await fs.readFile(path.join(dst, 'a.html'), 'utf8'), HTML); // 原占位内容不变
+});
+
+test('movePathAcross 注入 EXDEV → 原样抛，源文件纹丝不动', async () => {
+  const { root: src } = await seed();
+  const { root: dst } = await seed(); // dst 的 数据/ 里没有 a.html（seed 只放 b.html/c.png）→ 目标无冲突
+  const exdev = () => { const e = new Error('cross-device link not permitted'); e.code = 'EXDEV'; throw e; };
+  await assert.rejects(() => ws.movePathAcross(src, 'a.html', dst, '数据', { renameFn: exdev }), /EXDEV|cross-device/);
+  assert.ok(await isFile(path.join(src, 'a.html'))); // 源还在
+  assert.ok(!(await isFile(path.join(dst, '数据', 'a.html')))); // 目标没被创建（rename 抛了，没落地）
+});
+
+test('movePathAcross 双侧 assertInsideWorkspace：越界 relPath 被拒', async () => {
+  const { root: src } = await seed();
+  const { root: dst } = await seed();
+  await assert.rejects(() => ws.movePathAcross(src, '../逃逸.html', dst, ''));
+  await assert.rejects(() => ws.movePathAcross(src, 'a.html', dst, '../外面'));
+});
+
 test('deletePath + undoDelete round-trips a file', async () => {
   const { root, backup } = await seed();
   const { token } = await ws.deletePath(root, 'a.html', backup);

@@ -458,6 +458,26 @@ function registerIpc() {
   ipcMain.handle('ws-move', (_e, rootId, relPath, destDirRel) =>
     workspace.movePath(rootById(rootId), relPath, destDirRel),
   );
+  // 跨根移动（v1 便宜档）：同文件系统 rename 快路径成功即返回新 rel；真跨盘 EXDEV → 结构化 {crossDevice:true}
+  // 让 renderer 出 toast（不做复制回退，Colin 2026-07-08 拍板）。其他错误（EACCES/ENOENT）原样抛，renderer 有 catch。
+  // WS2_FORCE_EXDEV 测试 seam（仅非打包态，同 WS2_FOLDER_IN/WS2_PDF_OUT 先例）：真 tmp 造不出跨文件系统，
+  // 设了就直接走 EXDEV 分支，e2e 才测得到 toast。打包态忽略（生产进程继承到也不改行为）。
+  ipcMain.handle('ws-move-across', async (_e, fromRootId, relPath, toRootId, destDirRel) => {
+    const from = rootById(fromRootId); // 未注册/失联根抛错（树都不渲染、拖不出节点，正常到不了）
+    const to = rootById(toRootId);
+    if (!app.isPackaged && process.env.WS2_FORCE_EXDEV) return { crossDevice: true };
+    try {
+      const r = await workspace.movePathAcross(from, relPath, to, destDirRel);
+      // 测试 seam（仅非打包）：落盘后、reply 前拖延，给 renderer 一个窗口触发 onTreeChanged——确定性复现
+      // 「源根 watcher 抢在标签 retarget 之前 reconcile」的竞态，验证 crossMoveGuard 挡住误清（对抗审查 P2）。
+      const slow = !app.isPackaged ? +process.env.WS2_SLOW_MOVE_MS || 0 : 0;
+      if (slow) await new Promise((res) => setTimeout(res, slow));
+      return r;
+    } catch (err) {
+      if (err && err.code === 'EXDEV') return { crossDevice: true };
+      throw err;
+    }
+  });
   ipcMain.handle('ws-delete', (_e, rootId, relPath) =>
     workspace.deletePath(rootById(rootId), relPath, trashRoot(), { trashItem: (p) => shell.trashItem(p) }),
   );
