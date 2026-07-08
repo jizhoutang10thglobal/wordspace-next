@@ -289,8 +289,8 @@ function openExternalBtn(node, cls) {
   const b = document.createElement('button');
   b.className = cls;
   b.innerHTML = EXT_SVG + '<span>用默认程序打开</span>';
-  // 工作区内走 rel（assertInsideWorkspace 守卫）；工作区外（「打开」按钮选的）没 rel，走吃 abs 的那条。
-  b.onclick = () => (node.rel ? window.ws2.wsOpenExternal(node.rel) : window.ws2.openExternalAbs(node.abs));
+  // 根内走 (rootId, rel)（assertInsideWorkspace 守卫）；根外（「打开」按钮选的）没 rel，走吃 abs 的那条。
+  b.onclick = () => (node.rel ? window.ws2.wsOpenExternal(node.rootId, node.rel) : window.ws2.openExternalAbs(node.abs));
   return b;
 }
 // node = { name, rel, abs, kind } —— rel 来自侧栏文件树；「打开」按钮选的工作区外文件 rel 为 null、走 abs
@@ -321,8 +321,8 @@ async function showViewer(node) {
   viewer.innerHTML = '';
   if (kind === 'image' || kind === 'pdf') {
     let url = null;
-    // 工作区内走 rel，工作区外走 abs（「打开」按钮选的）；取不到就退化成外部打开卡片。
-    try { url = node.rel ? await window.ws2.wsFileUrl(node.rel) : await window.ws2.fileUrlAbs(node.abs); } catch (e) { /* 退化成卡片 */ }
+    // 根内走 (rootId, rel)，根外走 abs（「打开」按钮选的）；取不到就退化成外部打开卡片。
+    try { url = node.rel ? await window.ws2.wsFileUrl(node.rootId, node.rel) : await window.ws2.fileUrlAbs(node.abs); } catch (e) { /* 退化成卡片 */ }
     if (url) {
       if (kind === 'pdf') {
         // PDF.js 渲染（连续滚动 canvas + 自己的一行工具栏）；替代 Chromium 内置 viewer（B7 合并工具栏 / B8 无预览栏）
