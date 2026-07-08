@@ -7,14 +7,16 @@
 // 双模：node:test 走 module.exports；渲染层（classic script，无 require）走 window.WS2Tabs，
 // 跟 editor 的 WS2Serialize/WS2BlockEdit 同款（IIFE + 双导出）。语义镜像 ui-demo/src/mock/store.ts。
 //
-// state = { entries: [{ rel, abs, kind, title, open, pinned }], activeRel: string|null }
-// 身份键 keyOf = rel || abs：工作区内文件用相对路径 rel（无前导 /）作身份；工作区外文件（「打开」按钮选的、
-// 不在当前工作区文件夹内）没有 rel，用绝对路径 abs 作身份。rel 相对、abs 绝对，二者永不相等 → 单字段
-// keyOf 不跨类型撞键，且对现有 rel 标签完全向后兼容（rel 标签 abs=undefined，keyOf 恒等于 rel）。
-// activeRel = 当前编辑器/查看器里那个文件的 keyOf（内部=rel、外部=abs）。
+// state = { entries: [{ rootId, rel, abs, kind, title, open, pinned }], activeRel: string|null }
+// 身份键 keyOf（多根版）：工作区内文件 = `rootId:rel`（多个根里可以有相同 rel，必须带根限定才唯一）；
+// 工作区外文件（「打开」按钮选的、不在任何根内）没有 rel，用绝对路径 abs 作身份。
+// rootId 形如 r1/r2（见 workspace-store），abs 是绝对路径（mac 以 / 开头、win 形如 C:\…），
+// 两种格式永不相等 → 单字段 keyOf 不跨类型撞键。无 rootId 的 rel entry 只在迁移途中短暂存在，
+// keyOf 回落成裸 rel（迁移完成后不会出现）。
+// activeRel = 当前编辑器/查看器里那个文件的 keyOf（内部=rootId:rel、外部=abs）。
 (function () {
   function keyOf(e) {
-    return e.rel || e.abs;
+    return e.rel ? (e.rootId ? e.rootId + ':' + e.rel : e.rel) : e.abs;
   }
   function pinnedEntries(entries) {
     return entries.filter((e) => e.pinned);
@@ -34,7 +36,8 @@
     return open.length ? keyOf(open[open.length - 1]) : null;
   }
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-  const mkEntry = ({ rel, abs, kind, title }, open, pinned) => ({
+  const mkEntry = ({ rootId, rel, abs, kind, title }, open, pinned) => ({
+    rootId,
     rel,
     abs,
     kind: kind || 'other',
@@ -102,19 +105,23 @@
   }
 
   // 改名/移动被跟踪文件：换 rel/title/kind，open/pinned/激活保持（补 v0.4.0「置顶文件改名后丢失」遗留坑）。
-  // 只对工作区内（有 rel）文件触发，oldRel/newRel 都是 rel；外部 entry（key=abs）的 rel=undefined，
-  // `e.rel === oldRel` 永不命中，天然不被波及。若 newRel 撞名 → 合并（open/pinned 取并集）守去重不变式。
-  function retargetEntry(state, oldRel, newRel, newTitle, newKind) {
-    const old = state.entries.find((e) => e.rel === oldRel);
+  // 多根版：匹配限定在 rootId 内（别的根里同 rel 的文件是不同文件，不许误伤）。外部 entry（key=abs）
+  // 的 rel=undefined，永不命中，天然不被波及。若 newRel 在同根内撞名 → 合并（open/pinned 取并集）守去重不变式。
+  function retargetEntry(state, rootId, oldRel, newRel, newTitle, newKind) {
+    const hit = (e) => e.rootId === rootId && e.rel === oldRel;
+    const old = state.entries.find(hit);
     if (!old) return state;
+    const oldKey = keyOf(old);
     let entries = state.entries.map((e) =>
-      e.rel === oldRel
+      hit(e)
         ? { ...e, rel: newRel, title: newTitle != null ? newTitle : e.title, kind: newKind || e.kind }
         : e,
     );
-    if (entries.filter((e) => e.rel === newRel).length > 1) {
-      const dupes = entries.filter((e) => e.rel === newRel);
+    const atNew = (e) => e.rootId === rootId && e.rel === newRel;
+    if (entries.filter(atNew).length > 1) {
+      const dupes = entries.filter(atNew);
       const merged = {
+        rootId,
         rel: newRel,
         kind: newKind || old.kind,
         title: newTitle != null ? newTitle : old.title,
@@ -124,14 +131,15 @@
       let placed = false;
       entries = entries
         .map((e) => {
-          if (e.rel !== newRel) return e;
+          if (!atNew(e)) return e;
           if (placed) return null;
           placed = true;
           return merged;
         })
         .filter(Boolean);
     }
-    const activeRel = state.activeRel === oldRel ? newRel : state.activeRel;
+    const newKey = keyOf({ rootId, rel: newRel });
+    const activeRel = state.activeRel === oldKey ? newKey : state.activeRel;
     return { entries, activeRel };
   }
 
@@ -145,14 +153,63 @@
 
   // 外部磁盘变化对账（workspace 监听到增删改后调）：内部标签的文件若从新树消失，按 inode 找它的新位置——
   // 找到 = 改名/移动 → retargetEntry 跟随；找不到 = 真删了 → removeEntry。外部标签（无 rel、不在工作区树里）
-  // 不处理。relSet = 新树所有文件 rel 的集合；inoToRel = 新树 inode(字符串)→rel 的映射。
+  // 不处理。多根版：一次只对账一个根（watcher 事件带 rootId、树也按根读），别的根的 entries 原样跳过。
+  // relSet = 该根新树所有文件 rel 的集合；inoToRel = 该根新树 inode(字符串)→rel 的映射。
   // 安全性：撞名（renamed-to 的路径已有标签）由 retargetEntry 的合并逻辑兜住，不会留重复项。
-  function reconcileTree(state, relSet, inoToRel) {
+  function reconcileTree(state, rootId, relSet, inoToRel) {
     let s = state;
-    for (const e of state.entries.filter((x) => x.rel)) {
+    for (const e of state.entries.filter((x) => x.rel && x.rootId === rootId)) {
       if (relSet.has(e.rel)) continue; // 文件还在原位
       const newRel = e.ino != null ? inoToRel.get(String(e.ino)) : undefined;
-      s = newRel ? retargetEntry(s, e.rel, newRel, newRel.split('/').pop()) : removeEntry(s, e.rel);
+      s = newRel
+        ? retargetEntry(s, rootId, e.rel, newRel, newRel.split('/').pop())
+        : removeEntry(s, keyOf(e));
+    }
+    return s;
+  }
+
+  // 移除一个根：撤走它的全部 entries（磁盘不动），返回 { state, removed }——removed 原序保留，
+  // 供「撤销移除」原样放回（undoDropRoot）。激活项若被撤走 → 回落。
+  function dropRootEntries(state, rootId) {
+    const removed = state.entries.filter((e) => e.rootId === rootId);
+    const entries = state.entries.filter((e) => e.rootId !== rootId);
+    const seed = removed.some((e) => keyOf(e) === state.activeRel) ? null : state.activeRel;
+    return { state: { entries, activeRel: resolveActive(entries, seed) }, removed };
+  }
+
+  // 撤销移除根：把 dropRootEntries 撤走的 entries 追加回来（去重：期间若同 key 又被打开则保留现有），
+  // activeRel 恢复为撤销前的激活项（若它已回来）。
+  function undoDropRoot(state, removed, prevActive) {
+    const have = new Set(state.entries.map(keyOf));
+    const entries = [...state.entries, ...removed.filter((e) => !have.has(keyOf(e)))];
+    const active = prevActive && entries.some((e) => keyOf(e) === prevActive && e.open) ? prevActive : state.activeRel;
+    return { entries, activeRel: resolveActive(entries, active) };
+  }
+
+  // 吸收：fromRootId 的根被并入 toRootId 的根（新根是它的父目录），entries 不关闭、整体 rebase——
+  // 文件还在磁盘原处，只是归属换了根、rel 前面多了父到子的前缀（prefix 形如 '子/孙'，'' 表同目录）。
+  // 撞 key（新根里已有同 rel 的 entry）→ open/pinned 取并集合并。激活项跟随换 key。
+  function rebaseRoot(state, fromRootId, toRootId, prefix) {
+    let s = state;
+    for (const e of state.entries.filter((x) => x.rel && x.rootId === fromRootId)) {
+      const newRel = prefix ? prefix + '/' + e.rel : e.rel;
+      const oldKey = keyOf(e);
+      const target = { rootId: toRootId, rel: newRel };
+      const existing = s.entries.find((x) => keyOf(x) === keyOf(target));
+      let entries;
+      if (existing) {
+        entries = s.entries
+          .map((x) => {
+            if (keyOf(x) === keyOf(target)) return { ...x, open: x.open || e.open, pinned: x.pinned || e.pinned };
+            if (keyOf(x) === oldKey) return null;
+            return x;
+          })
+          .filter(Boolean);
+      } else {
+        entries = s.entries.map((x) => (keyOf(x) === oldKey ? { ...x, rootId: toRootId, rel: newRel } : x));
+      }
+      const activeRel = s.activeRel === oldKey ? keyOf(target) : s.activeRel;
+      s = { entries, activeRel };
     }
     return s;
   }
@@ -168,6 +225,9 @@
     dropEntry,
     retargetEntry,
     removeEntry,
+    dropRootEntries,
+    undoDropRoot,
+    rebaseRoot,
     pinnedEntries,
     tabEntries,
     displayOrder,

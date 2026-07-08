@@ -42,6 +42,18 @@ test('readTree returns sorted nested tree of the workspace', async () => {
   assert.equal(d.children.find((n) => n.name === 'c.png').kind, 'image');
 });
 
+test('readTree：根「可 stat 不可 readdir」（EACCES 半失联）返回 null，不当空树（防标签被 reconcile 清光）', async (t) => {
+  if (process.getuid && process.getuid() === 0) return t.skip('root 用户无视 mode，测不出'); // CI 容器兜底
+  const { root } = await seed();
+  await fs.chmod(root, 0o000);
+  try {
+    assert.equal(await ws.readTree(root), null); // 修 MR-ADV-3 前这里返回空树 {tree:[]}
+  } finally {
+    await fs.chmod(root, 0o755); // 恢复，别让 tmp 清理失败
+  }
+  assert.ok((await ws.readTree(root)).tree.length > 0); // 权限恢复后树回来（对照：确实是权限导致的 null）
+});
+
 test('newDoc creates a real .html on disk, uniquifies on collision', async () => {
   const { root } = await seed();
   const a = await ws.newDoc(root, '', '无标题文档', HTML);
