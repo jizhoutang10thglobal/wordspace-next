@@ -133,6 +133,8 @@ function wireViewEvents(key, view) {
   wc.on('did-start-loading', () => { const r = registry.get(key); if (r) { r.loading = true; r.error = null; pushUpdate(key); } });
   wc.on('did-stop-loading', () => { const r = registry.get(key); if (r) { r.loading = false; syncNav(key); pushUpdate(key); } });
   wc.on('did-finish-load', () => { fitToWidth(key); }); // 宽页自动缩放适配(Colin:别让用户横滚)
+  // MRU 切换器(Ctrl+Tab)落定信号:web view 聚焦时 renderer DOM keyup 全死(KD-8)→ 主进程转发松 Ctrl。
+  wc.on('before-input-event', (_e, input) => { if (input && input.type === 'keyUp' && input.key === 'Control') sendToRenderer('web-ctrl-up'); });
   wc.on('page-title-updated', (_e, title) => {
     const r = registry.get(key); if (!r) return;
     r.title = title || r.url || '新标签页'; pushUpdate(key);

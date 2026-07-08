@@ -188,6 +188,26 @@
     return s;
   }
 
+  // —— Arc 润滑①:最近关闭栈(Cmd+Shift+T 重开误关标签)。纯数据、内存态、重启即清(文件都在树里丢不了)。
+  // 同 key 去重(反复关同一个只留最新一条),封顶防无限涨。
+  function pushClosed(stack, entry, cap) {
+    if (!entry) return stack || [];
+    const key = keyOf(entry);
+    const rest = (stack || []).filter((e) => keyOf(e) !== key);
+    rest.unshift({ ...entry });
+    return rest.slice(0, cap || 20);
+  }
+  function popClosed(stack) {
+    const s = stack || [];
+    return { entry: s[0] || null, rest: s.slice(1) };
+  }
+
+  // —— Arc 润滑③:MRU(最近使用)序,Ctrl+Tab 切换器用。激活即置顶,去重。
+  function mruBump(list, key) {
+    if (!key) return list || [];
+    return [key, ...(list || []).filter((k) => k !== key)];
+  }
+
   const API = {
     keyOf,
     isWebKey,
@@ -207,6 +227,9 @@
     tabEntries,
     displayOrder,
     resolveActive,
+    pushClosed,
+    popClosed,
+    mruBump,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (typeof window !== 'undefined') window.WS2Tabs = API;

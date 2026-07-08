@@ -18,6 +18,8 @@
   let current = null; // { root, name, tree }
   let query = '';
   let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，按根持久化）
+  let closedStack = []; // Arc 润滑①:最近关闭栈(Cmd+Shift+T 重开)。内存态,重启即清。
+  let mruList = [];     // Arc 润滑③:标签 MRU 序(Ctrl+Tab 切换器)。激活即置顶。
   // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复上次工作区 + 标签」
   // 整条跑完才做，否则会被 loadTabs 整体覆盖 / 被 openTabFromAbs 的过期根守卫中止（Colin 报的「文档开了没标签」）。
   // 一旦 resolve 永久 resolved：app 已开着时再 open（热路径）不阻塞，立即建标签。
@@ -589,6 +591,9 @@
     window.ws2.wsSetTabs(clean, current.root).catch(() => {});
   }
   function applyTabs(next) {
+    // Arc 润滑③:MRU 收口在这——所有激活变更(树点开/标签点击/关闭回落/拖拽)都过 applyTabs,
+    // 挂单一路径别挂散点(openTabRow 只覆盖标签行点击,树点开走 openTabEntry 不经过它,探针实证)。
+    if (next.activeRel && next.activeRel !== tabState.activeRel) mruList = window.WS2Tabs.mruBump(mruList, next.activeRel);
     tabState = next;
     persistTabs();
     renderZones();
@@ -638,6 +643,8 @@
     const wasActive = tabState.activeRel === key;
     const entry = tabState.entries.find((e) => keyOf(e) === key);
     const wasWeb = entry && isWebEntry(entry);
+    // Arc 润滑①:进最近关闭栈(Cmd+Shift+T 可重开)。临时文档除外——内容随关即丢,重开只会是空壳骗人。
+    if (entry && !isTempEntry(entry)) closedStack = window.WS2Tabs.pushClosed(closedStack, entry);
     if (entry && isTempEntry(entry)) { if (window.__shellDiscardTemp) window.__shellDiscardTemp(key); }
     else if (wasWeb) { /* 网页标签无脏文档概念,下面统一销毁 view */ }
     else if (wasActive && window.__shellDiscard) window.__shellDiscard();
@@ -954,6 +961,7 @@
   // 非 web 分支先 __webDetach 摘掉任何 attach 的 view（否则原生 view 永久盖住编辑器 = blocker #1）,再走原路。
   function openTabRow(entry) {
     const key = keyOf(entry);
+    mruList = window.WS2Tabs.mruBump(mruList, key); // MRU:兜 openTabRow 里不改 activeRel 的分支(applyTabs 是主收口)
     const tracked = tabState.entries.some((e) => keyOf(e) === key);
     if (isWebEntry(entry)) { // 网页标签：交给 browser-chrome 漏斗（显示 chrome + attach/show view 或新标签页）
       // P1#2:统一设激活态。web/temp/no-op 分支原来不设 activeRel → 高亮错标签、Cmd+W 关错标签。
@@ -1406,7 +1414,7 @@
     bar.className = 'fp-bar';
     const ico = document.createElement('span'); ico.className = 'fp-bar-ico'; ico.innerHTML = SEARCH_SVG;
     const input = document.createElement('input');
-    input.className = 'fp-input'; input.type = 'text'; input.placeholder = '搜索文件与浏览历史…'; input.spellcheck = false;
+    input.className = 'fp-input'; input.type = 'text'; input.placeholder = '搜索文件与浏览历史，「>」执行命令…'; input.spellcheck = false;
     const hint = document.createElement('span'); hint.className = 'fp-hint'; hint.textContent = '⏎ 打开';
     bar.append(ico, input, hint);
     const list = document.createElement('div');
@@ -1414,9 +1422,35 @@
     panel.append(bar, list);
     overlay.appendChild(panel);
     overlay.onmousedown = (e) => { if (e.target === overlay) close(); };
+    // Arc 润滑④:「>」前缀=命令模式。第一批只放高频动作(≤10 条,别学 Arc 挖几十条的深井);
+    // shell 侧动作走 __menuDispatch 复用菜单路由(含 web 拦截层),面板点和按快捷键完全同路径。
+    const COMMANDS = [
+      { id: 'new-doc', label: '新建文档', run: () => { if (current) openCreateModal('', { temp: true }); else openNewWebTab(); } },
+      { id: 'new-tab', label: '新建标签页（上网 / 模板）', run: () => openNewWebTab() },
+      { id: 'open-file', label: '打开文件…', run: () => window.__menuDispatch && window.__menuDispatch('open') },
+      { id: 'open-folder', label: '打开文件夹…', run: () => pickFolder() },
+      { id: 'save', label: '保存', run: () => window.__menuDispatch && window.__menuDispatch('save') },
+      { id: 'export-pdf', label: '导出 PDF…', run: () => window.__menuDispatch && window.__menuDispatch('export-pdf') },
+      { id: 'toggle-sidebar', label: '收起 / 展开侧栏', run: () => toggleCollapsed() },
+      { id: 'reopen-tab', label: '重新打开关闭的标签页', run: () => reopenClosedTab() },
+      { id: 'copy-path', label: '拷贝路径 / 链接', run: () => copyActivePath() },
+      { id: 'ai-access', label: 'AI 接入…', run: () => window.__menuDispatch && window.__menuDispatch('ai-access') },
+    ];
+    const openKeys = () => new Set(tabState.entries.filter((e) => e.open).map((e) => keyOf(e)));
     function computeHits() {
-      const term = q.trim().toLowerCase();
-      const matched = term ? allFiles.filter((n) => n.name.toLowerCase().includes(term) || n.rel.toLowerCase().includes(term)) : allFiles;
+      const rawQ = q.trim();
+      if (rawQ.startsWith('>')) { // 命令模式
+        const term = rawQ.slice(1).trim().toLowerCase();
+        hits = COMMANDS.filter((c) => !term || c.label.toLowerCase().includes(term)).map((c) => ({ cmd: true, ...c }));
+        if (sel >= hits.length) sel = Math.max(0, hits.length - 1);
+        return;
+      }
+      const term = rawQ.toLowerCase();
+      let matched = term ? allFiles.filter((n) => n.name.toLowerCase().includes(term) || n.rel.toLowerCase().includes(term)) : allFiles;
+      if (term) { // 已打开的排前(Arc:已开标签优先于新开)
+        const ok = openKeys();
+        matched = [...matched.filter((n) => ok.has(n.rel)), ...matched.filter((n) => !ok.has(n.rel))];
+      }
       // 历史混排:有词=文件优先(≤8)+历史命中(≤4);空词=文件照旧,没工作区时给最近历史打底(面板别空着)。
       let webRows = [];
       if (term) {
@@ -1435,17 +1469,21 @@
     function renderList() {
       list.innerHTML = '';
       if (!hits.length) {
-        const empty = document.createElement('div'); empty.className = 'fp-empty'; empty.textContent = '没有匹配的文件或历史';
+        const empty = document.createElement('div'); empty.className = 'fp-empty';
+        empty.textContent = q.trim().startsWith('>') ? '没有匹配的命令' : '没有匹配的文件或历史';
         list.appendChild(empty);
         return;
       }
+      const CMD_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
+      const ok = openKeys();
       hits.forEach((n, i) => {
         const row = document.createElement('button');
         row.className = 'fp-row' + (i === sel ? ' is-sel' : '');
-        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = kindSvg(n.web ? 'web' : n.kind); // T8：命令面板行也按类型换形状;历史行=地球
-        const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.web ? n.title : n.name;
-        const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.web ? n.url : n.rel;
-        row.append(ic, nm, sub);
+        const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = n.cmd ? CMD_SVG : kindSvg(n.web ? 'web' : n.kind); // T8：按类型换形状;历史=地球;命令=终端
+        const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.cmd ? n.label : (n.web ? n.title : n.name);
+        row.append(ic, nm);
+        if (!n.cmd && !n.web && ok.has(n.rel)) { const b = document.createElement('span'); b.className = 'fp-badge'; b.textContent = '已打开'; row.appendChild(b); }
+        if (!n.cmd) { const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.web ? n.url : n.rel; row.appendChild(sub); }
         row.onmouseenter = () => { sel = i; highlight(); };
         row.onclick = () => choose(n);
         list.appendChild(row);
@@ -1454,6 +1492,7 @@
     function choose(node) {
       if (!node) return;
       close();
+      if (node.cmd) { node.run(); return; }                     // 命令模式:执行动作
       if (node.web) { openWebTabUrl(node.url, false); return; } // 历史命中:开(或复用)网页标签浏览
       openNode(node);           // .html 进编辑器 / 其余进查看器（同点树节点）
       expandToFile(node.rel);   // 顺带在树里展开定位（F6）
@@ -1523,10 +1562,7 @@
   })();
 
   function openTabEntry(entry) {
-    tabState = window.WS2Tabs.openEntry(tabState, entry);
-    persistTabs();
-    renderZones();
-    renderRail();
+    applyTabs(window.WS2Tabs.openEntry(tabState, entry)); // 走 applyTabs 收口(MRU 记录也在那)——别手抄它的四行
   }
   // abs 不在当前树里（从「打开」按钮选的、macOS /private 软链让 abs 字符串对不上、或刚建还没 refresh）：
   // 主进程把 abs 归一化算 workspace 内 rel（kindOf 只在主进程有）。是工作区内 → 建 rel 标签；
@@ -1591,6 +1627,105 @@
     }
   }
 
+  // —— Arc 润滑①:重开最近关闭的标签(Cmd+Shift+T)。存在性校验:树内看树、外部问 fs、web 直通;
+  // 不在了静默跳过继续弹下一条(文件被删的标签重开只会撞空)。置顶态一并还原。
+  async function reopenClosedTab() {
+    for (;;) {
+      const popped = window.WS2Tabs.popClosed(closedStack);
+      closedStack = popped.rest;
+      const entry = popped.entry;
+      if (!entry) { showToast('没有可重开的标签'); return; }
+      if (entry.rel && !findNode(entry.rel)) continue;
+      if (!entry.rel && !isWebEntry(entry) && entry.abs) {
+        const ok = await window.ws2.pathExists(entry.abs).catch(() => false);
+        if (!ok) continue;
+      }
+      if (entry.pinned) applyTabs(window.WS2Tabs.pinEntry(tabState, entry));
+      applyTabs(window.WS2Tabs.openEntry(tabState, entry));
+      openTabRow(entry);
+      return;
+    }
+  }
+
+  // —— Arc 润滑②:拷贝当前路径/链接(Cmd+Shift+C)。文档=绝对路径,网页=清洗掉追踪参数的 URL,
+  // 临时文档没路径老实说。将来 web-publish 上线后升级成「已发布优先拷公开链接」。
+  function copyActivePath() {
+    const key = tabState.activeRel;
+    const entry = key ? tabState.entries.find((e) => keyOf(e) === key) : null;
+    let text = null, label = '已拷贝路径';
+    if (entry && isWebEntry(entry)) {
+      const url = (window.__webActiveUrl && window.__webActiveUrl()) || entry.url;
+      if (!url) { showToast('新标签页还没有网址'); return; }
+      text = window.WS2UrlInput && window.WS2UrlInput.cleanShareUrl ? window.WS2UrlInput.cleanShareUrl(url) : url;
+      label = '已拷贝链接';
+    } else if (entry && isTempEntry(entry)) {
+      showToast('临时文档还没有路径，先保存（⌘S）'); return;
+    } else if (entry && entry.rel && current) {
+      text = current.root + '/' + entry.rel;
+    } else if (entry && entry.abs) {
+      text = entry.abs;
+    } else {
+      const p = window.__shellDocPath && window.__shellDocPath(); // 单文件模式:无标签但有文档
+      if (p) text = p; else { showToast('没有可拷贝的路径'); return; }
+    }
+    navigator.clipboard.writeText(text).then(() => showToast(label)).catch(() => showToast('拷贝失败'));
+  }
+
+  // —— Arc 润滑③:Ctrl+Tab MRU 切换器。快按=直接跳上一个,按住 Ctrl 连按=沿最近使用序轮换,
+  // 松 Ctrl 落定(三路捕获:chrome window / 编辑器 iframe / web view before-input-event)。
+  // 纯文字白卡(纸方墨圆),列全部不设上限——Arc 被骂的 5 个上限/花哨缩略图不抄。
+  let mruOverlay = null, mruSel = 0, mruItems = [];
+  function mruSwitch(dir) {
+    if (document.querySelector('.sb-modal-overlay') || document.getElementById('fp-overlay')) return; // 弹层优先(SH-5 同款)
+    if (!mruOverlay) {
+      const byKey = new Map(tabState.entries.map((e) => [keyOf(e), e]));
+      mruItems = mruList.map((k) => byKey.get(k)).filter(Boolean);
+      for (const e of tabState.entries) if (!mruItems.includes(e)) mruItems.push(e); // 没进过 MRU 的排后
+      if (mruItems.length < 2) return;
+      mruSel = dir > 0 ? 1 : mruItems.length - 1; // 首按:下一个=上一次用的那个
+    } else {
+      mruSel = (mruSel + (dir > 0 ? 1 : -1) + mruItems.length) % mruItems.length;
+    }
+    renderMruOverlay();
+  }
+  function renderMruOverlay() {
+    if (!mruOverlay) {
+      mruOverlay = document.createElement('div');
+      mruOverlay.className = 'mru-overlay';
+      mruOverlay.id = 'mru-overlay';
+      document.body.appendChild(mruOverlay);
+    }
+    mruOverlay.innerHTML = '';
+    const card = document.createElement('div'); card.className = 'mru-card';
+    mruItems.forEach((e, i) => {
+      const row = document.createElement('div');
+      row.className = 'mru-row' + (i === mruSel ? ' is-sel' : '');
+      const ic = document.createElement('span'); ic.className = 'mru-ico'; ic.innerHTML = kindSvg(isWebEntry(e) ? 'web' : (e.kind || 'html'));
+      const nm = document.createElement('span'); nm.className = 'mru-name ws-truncate'; nm.textContent = e.title || e.rel || e.abs || '';
+      const sub = document.createElement('span'); sub.className = 'mru-sub ws-truncate'; sub.textContent = isWebEntry(e) ? (e.url || '新标签页') : (e.rel || e.abs || '');
+      row.append(ic, nm, sub);
+      row.onclick = () => { mruSel = i; commitMruSwitch(); };
+      card.appendChild(row);
+    });
+    mruOverlay.appendChild(card);
+  }
+  function commitMruSwitch() {
+    if (!mruOverlay) return;
+    const target = mruItems[mruSel];
+    mruOverlay.remove(); mruOverlay = null; mruItems = [];
+    if (target) openTabRow(target);
+  }
+  function cancelMruSwitch() { if (mruOverlay) { mruOverlay.remove(); mruOverlay = null; mruItems = []; } }
+  window.addEventListener('keyup', (e) => { if (e.key === 'Control') commitMruSwitch(); });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && mruOverlay) { e.preventDefault(); e.stopPropagation(); cancelMruSwitch(); } }, true);
+  // 编辑器 iframe 里松 Ctrl 也要落定(焦点在文档里时 window 收不到 keyup)——每次 load 挂进 contentDocument
+  const docFrameForMru = document.getElementById('doc-frame');
+  if (docFrameForMru) docFrameForMru.addEventListener('load', () => {
+    try { docFrameForMru.contentDocument.addEventListener('keyup', (e) => { if (e.key === 'Control') commitMruSwitch(); }); } catch { /* 跨源/未就绪,web 路径有主进程兜底 */ }
+  });
+  // web view 聚焦时 DOM 全死(KD-8)——主进程 before-input-event 转发 Ctrl keyup
+  if (window.ws2.onWebCtrlUp) window.ws2.onWebCtrlUp(() => commitMruSwitch());
+
   window.__sbHooks = {
     // shell 脏态变化 → 同步活跃真文件标签的未保存点（T2 arc-tab-dot；临时文档的点常显、不经这里）
     onDirtyChange: (d) => {
@@ -1629,6 +1764,11 @@
     refresh,
     // Cmd+T：新建网页标签（KD-9,传统浏览器习惯）——新标签页 surface 地址栏聚焦,下方留「新建文档」入口。
     newTab: () => openNewWebTab(),
+    // —— Arc 润滑批(2026-07-08 Colin 拍板)——
+    reopenClosedTab: () => reopenClosedTab(),  // Cmd+Shift+T
+    copyActivePath: () => copyActivePath(),    // Cmd+Shift+C
+    mruSwitch: (dir) => mruSwitch(dir),        // Ctrl+Tab / Ctrl+Shift+Tab
+    _debugMru: () => mruList.slice(),          // e2e 只读探针
     // Cmd+W：有活跃标签关标签；无标签但还有内容（工作区外查看器 / 单文件模式的文档）先关内容回空态；
     // 真·空态 → 关窗口（Wendi 2026-07-03：macOS=隐藏驻留、后台开着；Windows/Linux 按平台惯例退出）。
     closeActiveTab: () => {

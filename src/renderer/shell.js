@@ -934,7 +934,11 @@ function openAiAccessModal() {
 }
 
 window.__focusMainFrame = () => { if (window.ws2.webFocusChrome) window.ws2.webFocusChrome(); }; // KD-8:view 聚焦时 DOM input.focus() 静默失败,先让主进程把焦点拉回主 frame
-window.ws2.onMenu((cmd) => {
+// 菜单命令分发。抽成具名函数并暴露 window.__menuDispatch:Cmd+P 的「>」命令模式复用同一套路由
+// (含 web 拦截层),保证「面板里点导出 PDF」和「按 Cmd+E」走完全相同的路径。
+window.__menuDispatch = dispatchMenuCmd;
+window.ws2.onMenu(dispatchMenuCmd);
+function dispatchMenuCmd(cmd) {
   // KD-7/KD-8：web 标签激活时,可路由的菜单命令交给 browser-chrome，按 (viewState × cmd) 分派（policy.routeMenuCmd）。
   const webKey = window.__webActiveKey && window.__webActiveKey();
   if (webKey) {
@@ -973,7 +977,12 @@ window.ws2.onMenu((cmd) => {
   }
   if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+Shift+F
   if (cmd === 'find-palette' && window.__sbHooks && window.__sbHooks.findPalette) window.__sbHooks.findPalette();     // Cmd+P
-});
+  // —— Arc 润滑批(2026-07-08 Colin 拍板)——
+  if (cmd === 'reopen-tab' && window.__sbHooks && window.__sbHooks.reopenClosedTab) window.__sbHooks.reopenClosedTab();   // Cmd+Shift+T
+  if (cmd === 'copy-path' && window.__sbHooks && window.__sbHooks.copyActivePath) window.__sbHooks.copyActivePath();      // Cmd+Shift+C(doc=路径/web=清洗 URL)
+  if (cmd === 'mru-next' && window.__sbHooks && window.__sbHooks.mruSwitch) window.__sbHooks.mruSwitch(1);                // Ctrl+Tab
+  if (cmd === 'mru-prev' && window.__sbHooks && window.__sbHooks.mruSwitch) window.__sbHooks.mruSwitch(-1);               // Ctrl+Shift+Tab
+}
 
 // 导出 PDF。两条内部路径（单按钮、无 UI 菜单）：
 //   'wordspace'（合规文档默认）= 把当前文档 + 编辑器排版烤成静态 HTML 再印，跟 app 里看到的一致；

@@ -116,6 +116,10 @@ function buildMenu() {
         { label: '打开文件夹…', accelerator: 'CmdOrCtrl+Shift+O', click: () => sendMenu('open-folder') },
         { label: '快速打开…', accelerator: 'CmdOrCtrl+P', click: () => sendMenu('find-palette') },
         { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
+        { label: '重新打开关闭的标签页', accelerator: 'CmdOrCtrl+Shift+T', click: () => sendMenu('reopen-tab') }, // Arc 润滑①
+        { label: '下一个标签页（最近使用）', accelerator: 'Ctrl+Tab', click: () => sendMenu('mru-next') },          // Arc 润滑③:菜单加速器=web view 聚焦也生效(KD-8)
+        { label: '上一个标签页（最近使用）', accelerator: 'Ctrl+Shift+Tab', click: () => sendMenu('mru-prev') },
+        { label: '拷贝路径 / 链接', accelerator: 'CmdOrCtrl+Shift+C', click: () => sendMenu('copy-path') },        // Arc 润滑②
         { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
         { type: 'separator' },
         { label: '导出 PDF…', accelerator: 'CmdOrCtrl+E', click: () => sendMenu('export-pdf') }

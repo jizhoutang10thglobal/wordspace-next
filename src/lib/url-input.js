@@ -88,7 +88,21 @@
     return s;
   }
 
-  var API = { parse: parse, pretty: pretty, searchUrl: searchUrl, isNavigableHost: isNavigableHost };
+  // Arc 润滑②(Cmd+Shift+C 拷链接):清洗追踪参数——拷出去分享的链接干净,不带 utm/点击指纹。
+  // 只删已知追踪键,别的 query 一律不动(有些站点 ?id= 是功能参数)。解析失败原样返回。
+  var TRACKING_PARAM = /^(utm_.+|fbclid|gclid|dclid|yclid|msclkid|mc_eid|igshid|spm|ref_src)$/i;
+  function cleanShareUrl(raw) {
+    if (typeof raw !== 'string' || !raw) return raw;
+    try {
+      var u = new URL(raw);
+      var del = [];
+      u.searchParams.forEach(function (_v, k) { if (TRACKING_PARAM.test(k)) del.push(k); });
+      for (var i = 0; i < del.length; i++) u.searchParams.delete(del[i]);
+      return u.toString();
+    } catch (e) { return raw; }
+  }
+
+  var API = { parse: parse, pretty: pretty, searchUrl: searchUrl, isNavigableHost: isNavigableHost, cleanShareUrl: cleanShareUrl };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   if (typeof window !== 'undefined') window.WS2UrlInput = API;
 })();

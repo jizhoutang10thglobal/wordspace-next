@@ -81,6 +81,12 @@
   window.__webCloseView = function (key) { window.ws2.webClose(key); delete recs[key]; if (attachedKey === key) attachedKey = null; syncWebActiveClass(); };
   window.__webDestroyAll = function () { window.ws2.webDestroyAll(); recs = Object.create(null); attachedKey = null; activeWebEntry = null; setOmniContext(null); syncWebActiveClass(); }; // 清空 omnibox,别留幽灵 URL(审计 P1.3)
   window.__webActiveKey = function () { return activeWebEntry ? (activeWebEntry.rel || activeWebEntry.abs) : null; };
+  // 当前网页的权威 URL(registry 镜像优先,entry.url 兜底)——Cmd+Shift+C 拷链接用。
+  window.__webActiveUrl = function () {
+    if (!activeWebEntry) return null;
+    var k = activeWebEntry.rel || activeWebEntry.abs;
+    return (recs[k] && recs[k].url) || activeWebEntry.url || null;
+  };
   window.__webViewState = function () {
     if (!activeWebEntry) return null;
     if (activeWebEntry.url == null) return 'newtab';

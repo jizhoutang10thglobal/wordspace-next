@@ -65,5 +65,6 @@ contextBridge.exposeInMainWorld('ws2', {
   onWebOpenRequest: (cb) => ipcRenderer.on('web-open-request', (_e, r) => cb(r)),
   onWebFound: (cb) => ipcRenderer.on('web-found', (_e, r) => cb(r)),
   onWebDownload: (cb) => ipcRenderer.on('web-download', (_e, r) => cb(r)),
+  onWebCtrlUp: (cb) => ipcRenderer.on('web-ctrl-up', () => cb()), // web view 里松 Ctrl(MRU 切换器落定,KD-8 转发)
   onWebRebound: (cb) => ipcRenderer.on('web-rebound', () => cb()) // 唤回后主进程要 renderer 重发 view bounds
 });
