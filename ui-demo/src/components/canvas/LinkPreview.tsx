@@ -112,6 +112,27 @@ export default function LinkPreview({
             </button>
           </div>
         </>
+      ) : file ? (
+        <>
+          {/* 非文档文件（pdf/表格/图片…）：没有内容摘要可预览，给类型说明 + 打开（转交系统程序面板） */}
+          <div className="ws-linkpreview-title">
+            <FileText size={14} />
+            <span className="ws-truncate">{baseOf(file.path)}</span>
+          </div>
+          <div className="ws-linkpreview-hint">非文档文件，打开后转交系统对应程序。</div>
+          <div className="ws-linkpreview-foot">
+            <span className="ws-linkpreview-path ws-truncate">{file.path}</span>
+            <button
+              className="ws-linkpreview-open"
+              onClick={() => {
+                onClose()
+                openFileTab(file)
+              }}
+            >
+              打开
+            </button>
+          </div>
+        </>
       ) : null}
     </div>,
     document.body,
