@@ -358,29 +358,29 @@ test('T1 统一模态壳：shadow-modal + head 分隔线 + pop 动画 + 关闭X 
       anim: getComputedStyle(m).animationName,
     };
   });
-  expect(geo.shadow, '模态阴影没换 shadow-modal（44px 模糊）').toContain('44px');
+  expect(geo.shadow, '模态阴影没换 shadow-modal（32px 模糊，纸方墨圆保守版暖墨浮层影）').toContain('32px');
   expect(geo.headBorder, 'head 缺分隔线').toBe('1px');
   expect(geo.anim, '缺 ws-modal-pop 动画').toBe('ws-modal-pop');
   await page.locator('.sb-modal-save .sb-modal-x').click(); // X 真能关
   await expect(page.locator('.sb-modal-save')).toHaveCount(0);
-  // 关闭确认：橙色圆形警告图标（#fff4e5 底）
+  // 关闭确认：橙色圆形警告图标（--c-warning-tint #f9f1e5 底）
   const tempTab = page.locator('#sb-tabs .sb-tab.sb-tab-temp');
   await tempTab.hover();
   await tempTab.locator('.sb-tab-close').click();
   await expect(page.locator('.sb-modal-confirm .sb-cc-ico')).toBeVisible();
-  expect(await page.locator('.sb-modal-confirm .sb-cc-ico').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(255, 244, 229)');
+  expect(await page.locator('.sb-modal-confirm .sb-cc-ico').evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(249, 241, 229)');
   await page.locator('.sb-modal-confirm .sb-btn-danger').click(); // 收尾：丢弃临时文档
   await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(0);
 });
 
-test('T2 标签栏：激活态白卡浮起（真 computed style）+ 未保存点（临时常显 / 真文件脏窗显示、自动保存后消失）', async () => {
+test('T2 标签栏：激活态白纸 puck（真 computed style）+ 未保存点（临时常显 / 真文件脏窗显示、自动保存后消失）', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');
   const tab = page.locator('#sb-tabs .sb-tab[data-rel="a.html"]');
   await expect(tab).toHaveClass(/is-active/);
   const st = await tab.evaluate((el) => { const cs = getComputedStyle(el); return { bg: cs.backgroundColor, shadow: cs.boxShadow, h: el.getBoundingClientRect().height }; });
-  expect(st.bg, '激活标签应是白卡（surface），不是蓝底 selection').toBe('rgb(255, 255, 255)');
-  expect(st.shadow, '激活标签缺浮起阴影').not.toBe('none');
+  expect(st.bg, '激活标签应是白纸 puck（surface），不是蓝底 selection').toBe('rgb(255, 255, 255)');
+  expect(st.shadow, '保守口径（Wendi 2026-07-08）：卡片/控件零装饰阴影，激活标签靠底色差').toBe('none');
   expect(Math.round(st.h), '标签行高应为 32').toBe(32);
   await expect(tab.locator('.sb-tab-dot')).toBeHidden(); // 干净真文件无点
   // 编辑 → 点出现（脏窗口）→ 自动保存落盘 → 点消失
@@ -400,13 +400,13 @@ test('T2 标签栏：激活态白卡浮起（真 computed style）+ 未保存点
   await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(0);
 });
 
-test('T7 查找入口钮 + 面板 polish：#sb-find 点开命令面板（shadow-modal + pop 动画，真 computed style）', async () => {
+test('T7 查找入口钮 + 面板 polish：#sb-find 点开命令面板（shadow-pop + pop-in 动画，真 computed style）', async () => {
   await openWorkspace();
   await page.click('#sb-find'); // 界面可见入口（此前只有 Cmd+P 快捷键）
   await expect(page.locator('.fp')).toBeVisible();
   const st = await page.locator('.fp').evaluate((el) => { const cs = getComputedStyle(el); return { shadow: cs.boxShadow, anim: cs.animationName }; });
-  expect(st.shadow, '面板阴影没换 shadow-modal').toContain('44px');
-  expect(st.anim, '面板缺 pop 动画').toBe('ws-modal-pop');
+  expect(st.shadow, '面板阴影没走 shadow-pop（24px 模糊暖墨浮层影）').toContain('24px');
+  expect(st.anim, '面板缺 pop 动画').toBe('ws-pop-in');
   await page.keyboard.press('Escape');
   await expect(page.locator('.fp')).toHaveCount(0);
 });

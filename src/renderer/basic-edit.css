@@ -1,7 +1,7 @@
 /* 非合规基础编辑器（Feature 3）的样式。降级提示条 + 宿主浮层（格式条/焦点框/悬停删除/🔒）。
    浮层类 .nce-* 移植自 ui-demo BasicEditor.css（真 app 无这些类，是移植不是复用）。U2/U3 续填。 */
 
-/* ---- 降级提示条（U1）：doc-header 与 iframe 之间的一条轻提示 ---- */
+/* ---- 降级提示条（U1）：doc-header 与 iframe 之间的一条轻提示（语义色走 warning token，对齐 ui-demo nce-notice） ---- */
 .ws-degrade-notice {
   display: flex;
   align-items: center;
@@ -9,13 +9,13 @@
   padding: 8px 20px;
   font-size: var(--fs-sm); /* T5 对齐 ui-demo nce-notice（12px；位置留顶部=#102 待拍板，只对齐观感） */
   line-height: 1.5;
-  color: #8a6d1a;
-  background: #fdf6d8;
-  border-bottom: 1px solid #f0e4b0;
+  color: var(--c-warning);
+  background: var(--c-warning-tint);
+  border-bottom: 1px solid color-mix(in srgb, var(--c-warning) 22%, transparent);
   flex: 0 0 auto;
 }
 .ws-degrade-notice[hidden] { display: none; } /* 类选择器 display:flex 会盖过 [hidden] 默认的 display:none，须显式复位 */
-.ws-degrade-notice svg { flex: 0 0 auto; color: #b7943a; }
+.ws-degrade-notice svg { flex: 0 0 auto; color: var(--c-warning); }
 .ws-degrade-notice strong { font-weight: 600; }
 
 /* ---- 富文字格式条（U2）：宿主浮层，append 到 document.body、position:fixed、JS 给坐标 ---- */
@@ -32,6 +32,8 @@
   box-shadow: var(--shadow-menu);
   font-size: var(--fs-sm);
   color: var(--c-text-2);
+  /* 选区上方浮出的气泡工具条：轻微上浮淡入落定（对齐 ui-demo ws-fmtbar；无 translateX 居中，可直接用 pop-in） */
+  animation: ws-pop-in var(--dur) var(--ease-enter);
 }
 .ws-fmtbar[hidden] { display: none; }
 .ws-fmtbar-btn {
@@ -41,14 +43,16 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  background: none;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-pill);
   color: var(--c-text-2);
   font-weight: var(--fw-medium);
   cursor: pointer;
   padding: 0 5px;
+  /* hover 墨条滑入 */
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
-.ws-fmtbar-btn:hover { background: var(--c-hover); color: var(--c-text); }
+.ws-fmtbar-btn:hover { background-size: 100% 100%; color: var(--c-text); }
 .ws-fmtbar-aglyph { font-weight: 700; font-size: 14px; text-decoration: underline; text-decoration-color: var(--c-accent); text-underline-offset: 2px; }
 .ws-fmtbar-sep { width: 1px; height: 16px; background: var(--c-divider); margin: 0 3px; align-self: center; }
 .ws-fmtbar-holder { position: relative; display: inline-flex; }
@@ -79,9 +83,10 @@
   position: fixed;
   z-index: 55;
   pointer-events: none;
-  border: 2px solid var(--c-accent); /* T5：ui-demo nce-focus 用 accent（珊瑚只留虚线 hover 框与光晕） */
+  border: 2px solid var(--c-accent); /* T5：ui-demo nce-focus 用 accent */
   border-radius: 6px;
-  box-shadow: 0 0 0 3px rgba(232, 101, 79, 0.15);
+  /* 焦点光晕跟 accent 同源（功能性焦点表达，非装饰阴影；对齐 ui-demo nce-focus） */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent) 15%, transparent);
 }
 .nce-focus[hidden] { display: none; }
 .nce-focus-del {
@@ -94,22 +99,23 @@
   gap: 4px;
   height: 26px;
   padding: 0 9px;
-  background: #1c1e21;
-  color: #fff;
+  background: var(--c-ink);
+  color: var(--c-text-invert);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   font-size: 12px;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  /* 浮在内容上的操作 chip（真浮层）：暖墨投影，对齐 ui-demo nce-focus-del */
+  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.25);
 }
-.nce-focus-del:hover { background: #33363b; }
+.nce-focus-del:hover { background: var(--c-ink-hover); }
 
 /* ---- 悬停某块 → 右上角 🗑（鼠标删除路径）+ 只读 🔒 ---- */
 .nce-hover {
   position: fixed;
   z-index: 50;
   pointer-events: none;
-  border: 1.5px dashed rgba(232, 101, 79, 0.55);
+  border: 1.5px dashed color-mix(in srgb, var(--c-accent) 55%, transparent);
   border-radius: 6px;
 }
 .nce-hover[hidden] { display: none; }
@@ -128,7 +134,8 @@
   border: 0;
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 3px 10px rgba(232, 101, 79, 0.45);
+  /* 浮在内容上的操作 chip（真浮层）：accent 同源投影，对齐 ui-demo nce-hover-del */
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--c-accent) 45%, transparent);
 }
 .nce-hover-del:hover { background: var(--c-accent-hover); }
 .nce-lock {
@@ -138,5 +145,5 @@
   pointer-events: none;
   font-size: 13px;
   line-height: 1;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 1px 2px rgba(28, 25, 23, 0.3));
 }
