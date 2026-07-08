@@ -368,7 +368,10 @@ function FileBranch({
           draggable
           onDragStart={(e) => {
             dragFile = f
-            e.dataTransfer.effectAllowed = 'move'
+            // 'all' 不是 'move'：文件既可拖进文件夹（move）也可拖进正文变链接（link）。
+            // effectAllowed 与落点 dropEffect 不兼容时浏览器会**直接禁掉 drop**（事件都不发）——
+            // 之前声明 move、画布落点要 link，真实拖拽全灭（合成事件测试测不出这层，Colin 实测抓到）。
+            e.dataTransfer.effectAllowed = 'all'
             e.dataTransfer.setData('text/plain', f.path)
           }}
           onDragEnd={() => {
