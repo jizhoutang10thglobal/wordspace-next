@@ -15,6 +15,7 @@ const { pathInfo } = require('../lib/path-url');
 const { assertInsideWorkspace, kindOf } = require('../lib/file-tree');
 const { TEMPLATES } = require('../lib/doc-templates');
 const rootsLib = require('../lib/roots');
+const tabsLib = require('../lib/tabs'); // 吸收时把持久化标签同步 rebase（双导出 IIFE，主进程可 require）
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recentsFile = () => path.join(app.getPath('userData'), 'recents.json');
@@ -62,12 +63,30 @@ async function canonReal(p) {
   }
 }
 // 起对某根的递归监听：外部增删改 → 通知 renderer 重读该根的树 + reconcile 标签（事件带 rootId）。
+// watcher 挂了（拔盘/根被删）→ 复查可达性：真没了标 missing + 广播（renderer 重拉根列表渲染失联态）；
+// 还在（瞬时错误）→ 重新挂监听。没有这步，运行中拔盘的根会「树冻结在旧状态、永不转失联」（MR-ADV-4）。
 function startRootWatch(root) {
-  workspaceWatcher.watch(root.id, root.path, () => {
-    for (const w of BrowserWindow.getAllWindows()) {
-      if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id);
-    }
-  });
+  workspaceWatcher.watch(
+    root.id,
+    root.path,
+    () => {
+      for (const w of BrowserWindow.getAllWindows()) {
+        if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id);
+      }
+    },
+    async () => {
+      if (await dirExists(root.path)) { startRootWatch(root); return; }
+      markRootMissing(root);
+    },
+  );
+}
+// 运行时转失联（幂等）：标 missing + 广播根列表变化。missing 不持久化（重启时 restoreRoots 重新判定）。
+function markRootMissing(root) {
+  if (root.missing || !roots.includes(root)) return;
+  root.missing = true;
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.webContents.isDestroyed()) w.webContents.send('ws-roots-changed');
+  }
 }
 // 启动恢复（幂等，首次 ws-get-roots 触发）：store 里的每个根检查可达性，失联的标 missing 不悄悄丢。
 async function restoreRoots() {
@@ -262,10 +281,12 @@ function registerIpc() {
       return { status: 'child', name: path.basename(real), parent: rootInfo(parent) };
     }
     if (cls.rel === 'parent') {
-      // 新根包住已有根 → 不静默动用户的树，出确认；确认走 ws-absorb-confirm(token)
+      // 新根包住已有根 → 不静默动用户的树，出确认；确认走 ws-absorb-confirm(token)。
+      // childIds 钉死在弹窗时刻：确认框列的是哪几个，吸收的就只能是哪几个（防挂起期间新加的根被连带吸收）。
       const children = cls.childIds.map((id) => roots.find((x) => x.id === id));
       const token = 'absorb-' + stashSeq++;
-      pendingAbsorb.set(token, { path: path.resolve(dir), real });
+      pendingAbsorb.set(token, { path: path.resolve(dir), real, childIds: cls.childIds });
+      if (pendingAbsorb.size > 8) pendingAbsorb.delete(pendingAbsorb.keys().next().value); // 取消不通知主进程，防囤积
       return { status: 'parent', token, name: path.basename(real), children: children.map(rootInfo) };
     }
     if (roots.length >= MAX_ROOTS) return { status: 'limit', max: MAX_ROOTS };
@@ -280,19 +301,32 @@ function registerIpc() {
     const pend = pendingAbsorb.get(token);
     pendingAbsorb.delete(token);
     if (!pend) return { status: 'stale' };
-    // token 挂起期间注册表可能变了（并行又加了根/移除了根）→ 重新分类，不再是 parent 就放弃
+    // token 挂起期间注册表可能变了（并行又加了根/移除了根）→ 重新分类；不再是 parent、或子根集合
+    // 跟弹窗时刻不一致（多了用户没确认过的根）都放弃，让用户重走确认。
     const cls = rootsLib.classifyRoot(pend.real, classifyRoots());
     if (cls.rel !== 'parent') return { status: 'stale' };
+    const promised = new Set(pend.childIds);
+    if (cls.childIds.length !== promised.size || !cls.childIds.every((id) => promised.has(id))) return { status: 'stale' };
     const newRoot = { id: 'r' + nextRootId++, path: pend.path, real: pend.real, missing: false };
     const rebases = [];
     for (const id of cls.childIds) {
       const child = roots.find((x) => x.id === id);
-      rebases.push({ fromRootId: id, toRootId: newRoot.id, prefix: rootsLib.prefixUnder(newRoot.path, child.path) });
+      // 前缀两侧统一用 realpath（对抗审查 MR-ADV-1）：classify 用 real 判定、前缀却拿字面 path 切会在
+      // 软链形态不一致（/tmp vs /private/tmp）时算出空串/乱串 → 标签 rebase 到不存在的 rel、随后被
+      // reconcile 静默清光。ownerOf 顺带做防御——真不在前缀下（理论到不了）返回 null 就整个放弃。
+      const own = rootsLib.ownerOf(child.real || child.path, [{ id: 'p', path: pend.real }]);
+      if (!own || !own.rel) return { status: 'stale' };
+      rebases.push({ fromRootId: id, toRootId: newRoot.id, prefix: own.rel });
       workspaceWatcher.unwatch(id);
     }
     roots = roots.filter((x) => !cls.childIds.includes(x.id));
     roots.push(newRoot); // 照 ui-demo：子根去掉、父根追加到末尾
     await persistRoots();
+    // rebase 同步写进持久化（缩小两段式窗口）：renderer 崩在自己 rebase 之前，store 里根已换新、
+    // 标签还挂旧 rootId → 下次启动全丢。主进程这里先把持久化标签 rebase 好，renderer 那份只是内存镜像。
+    let storedTabs = await workspaceStore.getTabs(workspaceFile());
+    for (const rb of rebases) storedTabs = tabsLib.rebaseRoot(storedTabs, rb.fromRootId, rb.toRootId, rb.prefix);
+    await workspaceStore.setTabs(workspaceFile(), storedTabs);
     startRootWatch(newRoot);
     return { status: 'added', root: rootInfo(newRoot), tree: await workspace.readTree(newRoot.path), rebases };
   });
@@ -371,7 +405,11 @@ function registerIpc() {
     const slow = !app.isPackaged ? +process.env.WS2_SLOW_TREE_MS || 0 : 0;
     if (slow) await new Promise((r) => setTimeout(r, slow));
     const r = roots.find((x) => x.id === rootId);
-    return r && !r.missing ? workspace.readTree(r.path) : null;
+    if (!r || r.missing) return null;
+    const tree = await workspace.readTree(r.path);
+    // 读不出树且路径确实不可达 → 顺手转失联（watcher error 之外的第二个运行时判定点，如网络盘断连）
+    if (!tree && !(await dirExists(r.path))) markRootMissing(r);
+    return tree;
   });
   ipcMain.handle('ws-new-doc', (_e, rootId, dirRel, base, html) =>
     workspace.newDoc(rootById(rootId), dirRel, base, html),

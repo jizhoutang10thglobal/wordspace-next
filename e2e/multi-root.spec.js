@@ -223,6 +223,65 @@ test('MR-7 冷启动 open-file 归属第二根：标签建在正确的根下', a
   await expect(fileRow('r2', 'b.html')).toHaveClass(/is-active/); // 树里也定位到 B 根下高亮
 });
 
+test('MR-9 根全移除后外部标签保留 + 0 根重启仍恢复（MR-ADV-2 回归门）', async () => {
+  await launch({ WS2_FOLDER_IN: wsA });
+  await page.click('#home-open-folder');
+  await expect(rootHeads()).toHaveCount(1);
+  // 开一个任何根之外的文件 → 外部标签（abs 身份、↗）
+  const outside = path.join(tmp, '外部.html');
+  await fs.writeFile(outside, HTML('OUT'), 'utf8');
+  await app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('open-file', p), outside);
+  const extTab = page.locator(`#sb-tabs .sb-tab.sb-tab-ext[data-rel="${outside}"]`);
+  await expect(extTab).toBeVisible();
+  // 移除唯一的根 → 外部标签仍在（不随根撤走）
+  await page.click('.sb-root-head', { button: 'right' });
+  await page.locator('#sb-ctx .sb-ctx-item.is-danger').click();
+  await expect(rootHeads()).toHaveCount(0);
+  await expect(extTab).toBeVisible();
+  // 等 persist 落盘再重启 → 0 根启动也要恢复外部标签（修复前 loadTabs 只在有根分支跑 → 重启即丢 + 被后续 persist 抹盘）
+  await expect.poll(async () => {
+    try { return (await fs.readFile(path.join(userData, 'workspace.json'), 'utf8')).includes('外部.html'); } catch { return false; }
+  }, { timeout: 4000 }).toBe(true);
+  await app.close();
+  await launch({});
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible({ timeout: 8000 }); // 外部标签点亮侧栏
+  await expect(page.locator(`#sb-tabs .sb-tab.sb-tab-ext[data-rel="${outside}"]`)).toBeVisible();
+});
+
+test('MR-10 软链形态吸收：根用软链路径打开、父目录用真路径 → rebase 前缀仍正确（MR-ADV-1 回归门）', async () => {
+  // real/proj 是真目录，lk → real 是软链。根以 lk/proj（字面软链形态）打开，父目录以 real（真形态）添加。
+  // classify 用 realpath 判出 parent；修复前 rebase 前缀却拿字面 path 切 → 空串/乱串 → 标签指向不存在的 rel。
+  // ⚠ 软链名必须和真名不同长度（'lk' 2 字符 vs 'real' 4 字符）：同长度时字面切片会碰巧切出正确前缀，
+  // 这道门就成了哑门（变异自检实测抓的——第一版用 'link' 恰好 4 字符，变异照绿）。
+  const realDir = path.join(tmp, 'real');
+  await fs.mkdir(path.join(realDir, 'proj'), { recursive: true });
+  await fs.writeFile(path.join(realDir, 'proj', 'doc.html'), HTML('DOC'), 'utf8');
+  const link = path.join(tmp, 'lk');
+  await fs.symlink(realDir, link);
+  await launch({ WS2_FOLDER_IN: path.join(link, 'proj') });
+  await page.click('#home-open-folder');
+  await expect(rootHeads()).toHaveCount(1);
+  const projId = await page.locator('.sb-root-head').getAttribute('data-root');
+  await fileRow(projId, 'doc.html').click();
+  await expect(tabRow(projId, 'doc.html')).toBeVisible();
+  // 添加 real（真形态父目录）→ 确认并入
+  await setFolderSeam(realDir);
+  await page.click('#sb-add-root');
+  await expect(page.locator('.sb-modal-confirm')).toContainText('并入');
+  await page.click('.sb-modal-confirm .sb-btn-primary');
+  await expect(rootHeads()).toHaveCount(1);
+  const parentId = await page.locator('.sb-root-head').getAttribute('data-root');
+  // 标签 rebase 到正确前缀 proj/doc.html（修复前是 '' 或乱串 → 这条选择器找不到）
+  const rebased = tabRow(parentId, 'proj/doc.html');
+  await expect(rebased).toBeVisible();
+  await rebased.click();
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('DOC');
+  // 触发一次树同步（watcher/聚焦路径）：rebase 后的标签不能被 reconcile 误清（修复前的终局症状）
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForTimeout(400);
+  await expect(tabRow(parentId, 'proj/doc.html')).toBeVisible();
+});
+
 test('MR-8 per-root watcher：外部往 B 加文件 → B 树跟随；A 的展开状态不被打扰', async () => {
   const [ra, rb] = await openTwoRoots();
   await page.click(`.sb-dir[data-root="${ra}"][data-rel="素材"]`); // 展开 A/素材

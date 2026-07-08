@@ -232,6 +232,13 @@
   }
   // 移除根（磁盘文件不动）：整节撤走 + 该根标签撤走，toast 可撤销原位放回（对齐 ui-demo removeRoot）。
   async function removeRootUI(rootId) {
+    // 激活文档属于该根且还脏（1.2s 自动保存窗内/上次保存失败）→ 先冲一次保存（照 Cmd+W 的 flush 先例），
+    // 别让「磁盘文件不受影响」的 toast 变谎话（MR-ADV-6）。保存失败就不移除，文档留在原地。
+    const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+    if (act && act.rel && act.rootId === rootId && window.__shellIsDirty && window.__shellIsDirty()) {
+      if (window.__shellSaveActive) await window.__shellSaveActive();
+      if (window.__shellIsDirty && window.__shellIsDirty()) { showToast('这个文件夹里有没保存成功的修改，先处理再移除'); return; }
+    }
     let r;
     try { r = await window.ws2.wsRemoveRoot(rootId); } catch (e) { return; }
     if (!r) return;
@@ -261,6 +268,7 @@
       }
       adoptRoot(u.root, u.tree, u.index);
       tabState = window.WS2Tabs.undoDropRoot(tabState, dropped.removed, prevActive);
+      mergeExternalDupes(rootId); // 撤销窗口期用「打开」按钮开过同根文件建的外部标签 → 并回 rel 身份
       persistTabs();
       renderZones();
       // 激活项恢复了 → 重新打开它（编辑器可能已回落/空态）
@@ -293,10 +301,35 @@
     const st = rootOf(rootId);
     if (!st || !st.tree) return;
     const gone = tabState.entries.filter((e) => e.rootId === rootId && e.rel && !findNode(rootId, e.rel));
-    if (!gone.length) return;
     for (const e of gone) tabState = window.WS2Tabs.removeEntry(tabState, keyOf(e));
-    persistTabs();
-    renderZones();
+    mergeExternalDupes(rootId);
+    if (gone.length) { persistTabs(); renderZones(); }
+  }
+  // 根失联/被移除期间用「打开」按钮开过它里面的文件 → 建的是 abs 外部标签；复活/撤销后 rel 身份回来，
+  // 同一磁盘文件出现两条标签（MR-ADV-5）。按树节点的 abs 归一：外部标签命中该根内节点 → 并进 rel 身份
+  // （open/pinned 取并集、激活跟随），外部那条销毁。
+  function mergeExternalDupes(rootId) {
+    let changed = false;
+    for (const ext of tabState.entries.filter((e) => !e.rel && !isTempEntry(e))) {
+      const node = findNodeByAbs(ext.abs);
+      if (!node || node.rootId !== rootId) continue;
+      const key = colKey(rootId, node.rel);
+      const relEntry = tabState.entries.find((e) => keyOf(e) === key);
+      let entries;
+      if (relEntry) {
+        entries = tabState.entries
+          .map((e) => (keyOf(e) === key ? { ...e, open: e.open || ext.open, pinned: e.pinned || ext.pinned } : e))
+          .filter((e) => keyOf(e) !== ext.abs);
+      } else {
+        entries = tabState.entries.map((e) =>
+          keyOf(e) === ext.abs ? { rootId, rel: node.rel, kind: e.kind, title: node.name, open: e.open, pinned: e.pinned } : e,
+        );
+      }
+      const activeRel = tabState.activeRel === ext.abs ? key : tabState.activeRel;
+      tabState = { entries, activeRel };
+      changed = true;
+    }
+    if (changed) { persistTabs(); renderZones(); }
   }
   // 单根重读树（文件操作后/watcher 事件）：只刷新该根，别的根纹丝不动。
   async function refreshRoot(rootId) {
@@ -647,7 +680,9 @@
     // 修 SB-1：改的是「包含当前打开文档的文件夹」时也要给编辑器重指向——否则 docPath 仍指旧路径，
     // 此后每次（自动）保存都 ENOENT 失败、弹 alert 风暴（doDelete 早有 isUnder 处理，rename 漏了）。
     const openUnderDir = node.isDir && isUnder(op, node.abs);
-    const r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf);
+    let r;
+    try { r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf); }
+    catch (e) { showToast('重命名失败：' + shortErr(e)); await refreshRoot(node.rootId); return; } // 根刚失联/文件没了：别未捕获 rejection 把改名框晾在原地
     if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     else if (openUnderDir && window.__shellRetargetDoc) {
       const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 已确认 op 以 node.abs+分隔符 开头）
@@ -668,7 +703,9 @@
   }
   async function doMove(node, destDirRel) {
     const wasOpen = !node.isDir && openPath() === node.abs;
-    const r = await window.ws2.wsMove(node.rootId, node.rel, destDirRel);
+    let r;
+    try { r = await window.ws2.wsMove(node.rootId, node.rel, destDirRel); }
+    catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
     if (wasOpen && window.__shellRetargetDoc && r.abs !== node.abs) {
       window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     }
@@ -678,7 +715,9 @@
   async function doDelete(node) {
     const op = openPath();
     const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
-    const r = await window.ws2.wsDelete(node.rootId, node.rel);
+    let r;
+    try { r = await window.ws2.wsDelete(node.rootId, node.rel); }
+    catch (e) { showToast('删除失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
     removeTabsUnder(node); // 移除被删文件的标签
     await refreshRoot(node.rootId);
     if (affectsOpen) { // 删了当前打开的 → 切到下一个标签 / 回空态
@@ -693,8 +732,14 @@
     });
   }
   async function newSubfolder(rootId, dirRel) {
-    await window.ws2.wsMakeDir(rootId, dirRel, '新建文件夹');
+    try { await window.ws2.wsMakeDir(rootId, dirRel, '新建文件夹'); }
+    catch (e) { showToast('新建文件夹失败：' + shortErr(e)); return; }
     await refreshRoot(rootId);
+  }
+  // IPC 错误串裁短（Electron 会包一层 "Error invoking remote method 'ws-x': Error: ..."，只留最后一段）
+  function shortErr(e) {
+    const s = String((e && e.message) || e);
+    return s.split('Error: ').pop().slice(0, 80);
   }
 
   function closeContextMenu() {
@@ -1009,6 +1054,7 @@
   function closeOrRemove(key, op) {
     const wasActive = tabState.activeRel === key;
     const entry = tabState.entries.find((e) => keyOf(e) === key);
+    if (!entry) return; // 双击 × 第二下打在已 detach 的旧行上：key 已不存在，别让 keyOf(undefined) 抛 TypeError
     const dirtyActive = wasActive && window.__shellIsDirty && window.__shellIsDirty();
     // 修 SB-4（bug-sweep #111 与本 PR 撞车,两家合一）：临时文档永远是未保存内容 → 无论激活
     // 与否都要确认,别让非激活 temp 的 × 零确认直接销毁。非激活 temp 先切到前台（编辑器渲染它 +
@@ -1310,7 +1356,7 @@
     const genBefore = rootsGen;
     let st;
     try { st = await window.ws2.wsGetTabs(); } catch (e) { st = { entries: [], activeRel: null }; }
-    if (rootsGen !== genBefore) return;
+    if (rootsGen !== genBefore) return loadTabs(); // 作废后按新根集合重跑（集合稳定即终止），别让标签永不恢复
     const raw = st.entries || [];
     const checks = await Promise.all(raw.map((e) => {
       if (e.rel) {
@@ -1321,7 +1367,7 @@
       }
       return window.ws2.pathExists(e.abs).catch(() => false);
     }));
-    if (rootsGen !== genBefore) return;
+    if (rootsGen !== genBefore) return loadTabs();
     const entries = raw.filter((_e, i) => checks[i]);
     const activeRel = window.WS2Tabs.resolveActive(entries, st.activeRel);
     const changed = entries.length !== raw.length || activeRel !== st.activeRel;
@@ -1918,6 +1964,8 @@
   // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
   // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。
   if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
+  // 运行时根状态变化（拔盘/根被删 → 主进程转失联并广播）：重拉根列表，失联节灰态即刻可见。
+  if (window.ws2.onWsRootsChanged) window.ws2.onWsRootsChanged(() => resyncRoots());
   window.addEventListener('focus', () => { for (const st of rootsState) { if (!st.missing) onTreeChanged(st.id); } });
 
   // 启动恢复上次打开的全部根（含失联的灰态）+ 全局标签。整条跑完才 resolveRestore，
@@ -1932,8 +1980,11 @@
         if (filterInput) filterInput.value = '';
         syncChrome();
         render();
-        await loadTabs(); // 全局标签/置顶恢复 + 上次激活进编辑器（冷启动 open-file 在路上则不抢 viewer）
       }
+      // loadTabs 在无根时也要跑（对抗审查 MR-ADV-2）：根全移除后外部标签（abs 身份）仍持久化着，
+      // 只走「有根才恢复」的分支会让它们重启即丢、还被下一次 persist 从盘上抹掉。
+      await loadTabs(); // 全局标签/置顶恢复 + 上次激活进编辑器（冷启动 open-file 在路上则不抢 viewer）
+      syncChrome(); // 恢复出的外部标签要点亮侧栏（sb-on 依赖 tabState.entries）
     } catch (e) {
       /* 无根 / 已不存在：保持空态 */
     } finally {

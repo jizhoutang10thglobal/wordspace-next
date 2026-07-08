@@ -88,6 +88,10 @@ async function readTree(root) {
   // 否则 walk 对读不到的根静默返回空树 → renderer 把它当「文件夹空了」，reconcile 清空全部标签+置顶并持久化，
   // 盘回来也回不来。onTreeChanged 对 null 现成 return（不 reconcile 不写盘），保持现状。
   try { const st = await fs.stat(r); if (!st.isDirectory()) return null; } catch { return null; }
+  // 「可 stat 不可 readdir」（EACCES 权限收回 / EIO / TCC 拒授权）同样算不可达（对抗审查 MR-ADV-3）：
+  // stat 只要祖先的 execute 位就能过，walk 对 readdir 失败又静默吞成空树 → 半失联的根被当成「空了」，
+  // 标签+置顶全被 reconcile 清光。根层 readdir 探一次，抛错即 null；子目录级失败维持吞掉（局部问题局部退化）。
+  try { await fs.readdir(r); } catch { return null; }
   const { files: fl, dirs } = await walk(r);
   await Promise.all(
     fl.map(async (f) => {

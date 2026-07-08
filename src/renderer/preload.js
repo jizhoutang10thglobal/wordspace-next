@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('ws2', {
   unwatchDoc: () => ipcRenderer.send('unwatch-doc'),
   onDocChanged: (cb) => ipcRenderer.on('doc-changed', (_e, p) => cb(p)),
   onWsTreeChanged: (cb) => ipcRenderer.on('ws-tree-changed', (_e, rootId) => cb(rootId)),
+  onWsRootsChanged: (cb) => ipcRenderer.on('ws-roots-changed', () => cb()), // 运行时根状态变化（如拔盘转失联）→ 重拉根列表
   onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, p) => cb(p)),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
 
