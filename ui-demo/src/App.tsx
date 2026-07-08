@@ -18,6 +18,7 @@ import ShortcutsPanel from './components/ShortcutsPanel'
 import FindPalette from './components/FindPalette'
 import SaveModal from './components/SaveModal'
 import CloseConfirmModal from './components/CloseConfirmModal'
+import DeleteLinkedModal from './components/DeleteLinkedModal'
 import MarkdownSourcePanel from './components/MarkdownSourcePanel'
 import { useStore } from './mock/store'
 import { checkSchema } from './lib/schemaCheck'
@@ -91,6 +92,7 @@ export default function App() {
       <FindPalette />
       <SaveModal />
       <CloseConfirmModal />
+      <DeleteLinkedModal />
       <MarkdownSourcePanel />
     </div>
   )

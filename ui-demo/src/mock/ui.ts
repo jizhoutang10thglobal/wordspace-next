@@ -34,6 +34,13 @@ interface UI {
   askCloseTab: (tabId: string) => void
   cancelCloseTab: () => void
 
+  // 删除被引用文档/文件夹的守卫（互链）：有反链时删除前弹确认——文件系统删除是即时的，不像
+  // Notion 有 Trash 里的对象兜底；断链要在删**之前**让用户知道（共享文档删除守卫同款教训）。
+  // kind='dir' = 删文件夹且「文件夹外的文档」链接着夹内文件（夹内互链跟着一起删，不算）。
+  confirmDeleteFile: { kind: 'file' | 'dir'; rootId: string; path: string; count: number } | null
+  askDeleteFile: (kind: 'file' | 'dir', rootId: string, path: string, count: number) => void
+  cancelDeleteFile: () => void
+
   // 查找文件面板（Cmd+P）
   findOpen: boolean
   openFind: () => void
@@ -95,6 +102,10 @@ export const useUI = create<UI>((set) => ({
   askCloseTab: (tabId) => set({ confirmCloseTab: tabId }),
   cancelCloseTab: () => set({ confirmCloseTab: null }),
 
+  confirmDeleteFile: null,
+  askDeleteFile: (kind, rootId, path, count) => set({ confirmDeleteFile: { kind, rootId, path, count } }),
+  cancelDeleteFile: () => set({ confirmDeleteFile: null }),
+
   findOpen: false,
   openFind: () => set({ findOpen: true }),
   closeFind: () => set({ findOpen: false }),
@@ -143,6 +154,7 @@ export function anyOverlayOpen(s: UI): boolean {
     s.addFolderOpen ||
     s.saveDocId ||
     s.confirmCloseTab ||
+    s.confirmDeleteFile ||
     s.findOpen ||
     s.shortcutsOpen ||
     s.agentsOpen || // 「AI 接入」是全屏 modal，开着时壳/编辑器快捷键不该穿透（docFindOpen 是非模态查找条，有意不加）
