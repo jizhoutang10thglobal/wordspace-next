@@ -1,7 +1,7 @@
 const { ipcMain, dialog, app, BrowserWindow, shell } = require('electron');
 const fsp = require('fs/promises');
 const path = require('path');
-const { pathToFileURL } = require('url');
+const { pathToFileURL, fileURLToPath } = require('url');
 const files = require('./files');
 const history = require('./history');
 const recents = require('./recents');
@@ -158,6 +158,46 @@ function registerIpc() {
   // 修 MP-6：shell.openPath 失败不抛、resolve 一个错误串（无关联程序/文件刚被删）。原来无条件 {ok:true} →
   // 「用默认程序打开」失败时用户完全无感。检查返回串，非空转 {error} 让 renderer 弹提示。
   ipcMain.handle('open-external-abs', async (_e, abs) => { const err = await shell.openPath(abs); return err ? { error: err } : { ok: true }; });
+  // 文档里的 web 链接（http/https/mailto/tel）→ 系统默认程序（浏览器/邮件）。**白名单 scheme**——
+  // 绝不把任意串交给 shell.openExternal（file:/javascript: 等可越权/危险）；renderer 已先 classifyScheme='web'，这里二次设防。
+  ipcMain.handle('open-external-url', async (_e, url) => {
+    if (typeof url !== 'string' || !/^(https?|mailto|tel):/i.test(url)) return { error: 'blocked scheme' };
+    try { await shell.openExternal(url); return { ok: true }; }
+    catch (e) { return { error: String((e && e.message) || e) }; }
+  });
+  // 文档内相对链接（renderer 已判定 kind='relative'）解析：按浏览器 URL 语义把 href 相对文档目录解析成绝对路径
+  //（自动处理 ../ / 百分号解码，与「浏览器裸开可跳」一致），再算 root 内 rel（realpath 防软链越界）、kind、是否存在。
+  // 供 U0 点击收口 + 后续 U4 点击导航/断链判定共用。
+  ipcMain.handle('ws-resolve-doc-link', async (_e, fromAbs, href) => {
+    if (typeof fromAbs !== 'string' || typeof href !== 'string') return { error: 'bad args' };
+    let url;
+    try { url = new URL(href, pathToFileURL(fromAbs)); }
+    catch (e) { return { error: 'unresolvable' }; }
+    // 安全闸（在任何 fs 调用之前）：只认本机 file:// 且 host 为空。非 file:（漏网 scheme）或 host 非空
+    //（'\\host\share' 被 WHATWG 规范成 file://host/… → Windows 上 realpath/stat 会出站 SMB、泄漏 NTLM 哈希）
+    // 一律拒，绝不对远程/UNC 路径做 realpath/stat。
+    if (url.protocol !== 'file:' || url.host) return { error: 'unresolvable' };
+    let abs;
+    try { abs = fileURLToPath(url); }
+    catch (e) { return { error: 'unresolvable' }; }
+    const name = path.basename(abs);
+    const kind = kindOf(name);
+    let rel = null;
+    let rootId = null;
+    try {
+      // 目标可能不存在（断链）→ 不能 realpath abs 本身。realpath 它的**父目录**（链接在根内时父目录存在）
+      // 再拼 basename，得到与各根 realpath 同一软链归一的路径，交 ownerOf 判归属（多根：命中哪个根就返回那个 rootId+rel）。
+      const dirReal = await fsp.realpath(path.dirname(abs)).catch(() => path.dirname(abs));
+      const real = path.join(dirReal, name);
+      const live = roots.filter((r) => !r.missing).map((r) => ({ id: r.id, path: r.real || r.path }));
+      const owner = rootsLib.ownerOf(real, live);
+      if (owner && owner.rel) { rel = owner.rel; rootId = owner.rootId; }
+    } catch { /* 算不出归属 → 当工作区外 */ }
+    // 只对根内目标探测存在性——不 stat 越界路径（否则文档字节可借链接点击嗅探磁盘任意路径是否存在）。
+    let exists = false;
+    if (rel != null) { try { exists = (await fsp.stat(abs)).isFile(); } catch { /* 根内但不存在 → 断链 */ } }
+    return { abs, rel, rootId, kind, name, exists, insideRoot: rel != null };
+  });
   ipcMain.handle('read-doc', async (_e, p) => {
     assertDocPath(p);
     const buf = await files.readDocBuffer(p);

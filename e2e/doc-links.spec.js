@@ -1,0 +1,136 @@
+// 文档互链 e2e。当前覆盖 U0（文档内 <a> 导航收口）——核心是 P0 回归门：
+// 点文档里的相对链接绝不能让 iframe 自导航、把自动保存写进错误文件。
+// 强断言锚真实 fs 字节（不查 DOM class）；WS2_FOLDER_IN 测试 seam 直接喂 seed 目录。
+const { test, expect, _electron: electron } = require('@playwright/test');
+const fs = require('fs/promises');
+const path = require('path');
+const os = require('os');
+
+const ROOT = path.join(__dirname, '..');
+// 合规文档（进块编辑器——P0 就发生在这）：标题 + 一段带相对链接的正文。
+const DOC = (title, body) =>
+  `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>${title}</h1>${body}</body></html>`;
+
+let app, page, tmp, wsDir;
+
+test.beforeEach(async () => {
+  tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-doclink-'));
+  wsDir = path.join(tmp, 'workspace');
+  await fs.mkdir(wsDir, { recursive: true });
+  await fs.writeFile(path.join(wsDir, 'A.html'), DOC('文档A', '<p>正文 AAA-KEEP <a href="B.html">去B</a> 结束。</p>'), 'utf8');
+  await fs.writeFile(path.join(wsDir, 'B.html'), DOC('文档B', '<p>正文 BBB-MARK 这里。</p>'), 'utf8');
+  // 一篇指向不存在文件的断链文档
+  await fs.writeFile(path.join(wsDir, 'C.html'), DOC('文档C', '<p>断链 <a href="缺失.html">找不到</a> 结束。</p><p>外链 <a href="https://example.com/">站点</a>。</p>'), 'utf8');
+  // .md（srcdoc 渲染路径）+ 非合规 HTML（基础编辑路径）——覆盖另外两条渲染路径的链接点击 P0
+  await fs.writeFile(path.join(wsDir, 'M.md'), '# 文档M\n\n正文 MMM-KEEP [去B](B.html) 结束。\n', 'utf8');
+  await fs.writeFile(path.join(wsDir, 'N.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body><div><h1>文档N</h1><p>正文 NNN-KEEP <a href="B.html">去B</a></p></div></body></html>', 'utf8');
+  app = await electron.launch({
+    args: ['--no-sandbox', ROOT],
+    env: { ...process.env, WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir },
+  });
+  page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.evaluate(() => { window.confirm = () => true; window.alert = () => {}; });
+  await page.click('#home-open-folder');
+  await expect(page.locator('.sb-file[data-rel="A.html"]')).toBeVisible();
+});
+
+test.afterEach(async () => {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
+  await app.close().catch(() => {});
+  await fs.rm(tmp, { recursive: true, force: true }).catch(() => {});
+});
+
+test('U0-P0：点文档内相对链接 → openDoc 切到目标；旧文件字节不被自动保存污染', async () => {
+  await page.click('.sb-file[data-rel="A.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档A');
+
+  // 点文档里的「去B」链接 → 应用内切到 B（openDoc 漏斗），iframe 不裸导航
+  await frame.locator('a[href="B.html"]').click();
+  await expect(frame.locator('h1')).toHaveText('文档B', { timeout: 6000 });
+  const dp = await page.evaluate(() => window.__shellDocPath());
+  expect(dp.endsWith('B.html')).toBe(true); // docPath 真切到 B（不是停在 A）
+
+  // 在当前文档（B）编辑 + 等自动保存（1.2s）落盘
+  await frame.locator('p').first().click();
+  await page.keyboard.type('EDIT-B');
+  await page.waitForTimeout(1700);
+
+  // 关键回归：A.html 磁盘字节仍是原样，B 的内容绝不能出现在 A 里（P0 = 编辑器挂错页 + 自动保存写错文件）
+  const aBytes = await fs.readFile(path.join(wsDir, 'A.html'), 'utf8');
+  expect(aBytes).toContain('AAA-KEEP');
+  expect(aBytes).not.toContain('BBB-MARK');
+  expect(aBytes).not.toContain('EDIT-B');
+  // B.html 收到了编辑（自动保存写对了目标）
+  const bBytes = await fs.readFile(path.join(wsDir, 'B.html'), 'utf8');
+  expect(bBytes).toContain('EDIT-B');
+});
+
+test('U0-P0(.md srcdoc)：.md 文档里点相对链接 → 切到目标；.md 源字节不被污染', async () => {
+  await page.click('.sb-file[data-rel="M.md"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档M');
+  await frame.locator('a[href="B.html"]').click();
+  await expect(frame.locator('h1')).toHaveText('文档B', { timeout: 6000 });
+  const dp = await page.evaluate(() => window.__shellDocPath());
+  expect(dp.endsWith('B.html')).toBe(true);
+  await frame.locator('p').first().click();
+  await page.keyboard.type('EDIT-FROM-MD');
+  await page.waitForTimeout(1700);
+  // .md 源文件字节原样（srcdoc 路径的 onload 硬化 + 点击收口双保险）
+  const mBytes = await fs.readFile(path.join(wsDir, 'M.md'), 'utf8');
+  expect(mBytes).toContain('MMM-KEEP');
+  expect(mBytes).not.toContain('EDIT-FROM-MD');
+  expect(mBytes).not.toContain('BBB-MARK');
+});
+
+test('U0(基础编辑)：非合规文档里点相对链接 → 不导航、不污染源文件', async () => {
+  await page.click('.sb-file[data-rel="N.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档N');
+  // 基础编辑整 body contenteditable：点链接放光标、不导航（P0 = 绝不让 iframe 跳走污染源文件）
+  await frame.locator('a[href="B.html"]').click();
+  await page.waitForTimeout(400);
+  await expect(frame.locator('h1')).toHaveText('文档N'); // 仍在 N，没被导航走
+  const dp = await page.evaluate(() => window.__shellDocPath());
+  expect(dp.endsWith('N.html')).toBe(true);
+  const nBytes = await fs.readFile(path.join(wsDir, 'N.html'), 'utf8');
+  expect(nBytes).toContain('NNN-KEEP');
+  expect(nBytes).not.toContain('BBB-MARK');
+});
+
+test('U0：文档内 http 外链 → 走系统程序（openExternalUrl），iframe 不导航', async () => {
+  // spy shell.openExternal（主进程）
+  await app.evaluate(({ shell }) => {
+    globalThis.__extCalls = [];
+    const orig = shell.openExternal;
+    shell.openExternal = (u) => { globalThis.__extCalls.push(u); return Promise.resolve(); };
+    globalThis.__restoreExt = () => { shell.openExternal = orig; };
+  });
+  await page.click('.sb-file[data-rel="C.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档C');
+  await frame.locator('a[href="https://example.com/"]').click();
+  await page.waitForTimeout(300);
+  const calls = await app.evaluate(() => globalThis.__extCalls || []);
+  expect(calls).toContain('https://example.com/');
+  // iframe 没被导航走：还停在 C
+  await expect(frame.locator('h1')).toHaveText('文档C');
+  await app.evaluate(() => globalThis.__restoreExt && globalThis.__restoreExt());
+});
+
+test('U0：断链（目标不存在）→ 提示且不导航、不切文档', async () => {
+  await page.click('.sb-file[data-rel="C.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档C');
+  await frame.locator('a[href="缺失.html"]').click();
+  await page.waitForTimeout(400);
+  // 提示条出现（占位；U4 升级成修复卡）
+  await expect(page.locator('.sb-toast')).toContainText('不存在');
+  // 没切文档：仍是 C
+  await expect(frame.locator('h1')).toHaveText('文档C');
+  const dp = await page.evaluate(() => window.__shellDocPath());
+  expect(dp.endsWith('C.html')).toBe(true);
+});

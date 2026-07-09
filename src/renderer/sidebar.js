@@ -1658,6 +1658,8 @@
 
   // ---- 轻量 toast（删除「撤销」用）。CSP 安全：classes，无 inline style。----
   let toastTimer = null;
+  // shell.js（先加载、无自己的 toast）复用这个：U0 断链/工作区外等占位提示，及后续互链 toast。
+  window.__wsToast = (message, actionLabel, onAction) => showToast(message, actionLabel, onAction);
   function showToast(message, actionLabel, onAction) {
     let host = document.getElementById('sb-toast-host');
     if (!host) {
