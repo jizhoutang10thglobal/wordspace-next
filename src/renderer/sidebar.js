@@ -19,6 +19,7 @@
   let rootsState = []; // [{ id, path, name, missing, tree }] 有序 = 侧栏显示序；missing 根 tree=null
   let query = '';
   let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，全局单一集合持久化）
+  let suppressRevealOnce = false; // 一次性:关标签回落时置真,onOpen 消费它抑制树定位（Colin：关标签不滚树）
   // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复根 + 标签」
   // 整条跑完才做，否则会被 loadTabs 整体覆盖 / 被 openTabFromAbs 的过期根守卫中止（Colin 报的「文档开了没标签」）。
   // 一旦 resolve 永久 resolved：app 已开着时再 open（热路径）不阻塞，立即建标签。
@@ -400,10 +401,7 @@
       add.onclick = pickFolder;
       treeEl.appendChild(add);
     }
-    highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
-    cacheStickyRows(); // 树变了 → 重算吸顶行缓存
-    if (stickyEl) stickyEl.dataset.key = ''; // 强制下次 rebuild（旧克隆引用已失效的行）
-    renderSticky();
+    afterRender(); // 收尾（高亮 + sticky 缓存重算 + 强制浮层重建），与增量 renderRoot 共用一条出口
   }
 
   // 单根增量重渲染（性能：多根下每次展开/折叠/watcher 结构变化只重建这一个根的 DOM，不碰别的根）。
@@ -426,13 +424,27 @@
     if (!endEl) endEl = document.getElementById('sb-add-root');
     const frag = document.createDocumentFragment();
     renderRootSection(st, idx, '', frag);
-    // 删掉 [startEl .. endEl) 的旧节点，在 endEl 前插入新内容
-    let node = startEl;
-    while (node && node !== endEl) { const next = node.nextSibling; treeEl.removeChild(node); node = next; }
-    treeEl.insertBefore(frag, endEl);
+    // 删掉本根的旧节点（startEl 起，到 endEl 为止）。**边界守卫**（对抗/前端-竞态/可维护三家都点的
+    // footgun）：本根的 DOM 是 head + 它自己的行（file/dir/空态/失联 note），下一节以别的根的 sb-root-head
+    // 或 #sb-add-root 起头。除了撞 endEl，遇到「别的根的 head」或 add-root 按钮也必停——这样即便 endEl
+    // 因状态/DOM 顺序漂移而算错，也绝不会删穿到别的根或删掉 add-root（robust-by-construction）。
+    let node = startEl.nextSibling;
+    treeEl.removeChild(startEl); // 先删本根 head（它自己就是 sb-root-head，不能被下面的守卫拦住）
+    while (node && node !== endEl && !node.classList.contains('sb-root-head') && node.id !== 'sb-add-root') {
+      const next = node.nextSibling;
+      treeEl.removeChild(node);
+      node = next;
+    }
+    treeEl.insertBefore(frag, node); // 插到停下来的位置（endEl / 下一根 head / add-root），不再盲信 endEl
+    afterRender();
+  }
+
+  // 渲染收尾（全量 render() 与增量 renderRoot() 共用，防两条路径尾部逻辑漂移——可维护性 review）：
+  // 高亮当前打开文件 + 全量重算 sticky 吸顶行缓存（只读 layout 遍历，便宜）+ 强制吸顶浮层下一帧重建。
+  function afterRender() {
     highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
-    cacheStickyRows(); // 缓存是只读 layout 遍历（便宜），不重建 DOM；保持全量准确
-    if (stickyEl) stickyEl.dataset.key = '';
+    cacheStickyRows();
+    if (stickyEl) stickyEl.dataset.key = STICKY_FORCE; // 哨兵值：任何真 key（含空 pins 的 ''）都 ≠ 它 → 必重建
     renderSticky();
   }
 
@@ -629,6 +641,10 @@
   // 增高（开标签/置顶，只 renderZones 不 render）时缓存不失效——滚动帧里折线也换算成树内坐标（scrollTop −
   // treeEl.offsetTop），两边同参照，zone 高度变化自动抵消。每帧只多读一次 treeEl.offsetTop，不逐行读 layout。
   const STICKY_H = 30;
+  // 强制吸顶浮层下一帧重建的哨兵：renderSticky 用 `key !== stickyEl.dataset.key` 判要不要重建，
+  // 而空 pins 的真 key 是 ''——若用 '' 当强制值就撞成 no-op、残留旧克隆（对抗审查抓的）。用一个真 key
+  // 永不产生的值（含 ，rootId/rel 都不含）当哨兵，任何真 key 都 ≠ 它 → 必重建。
+  const STICKY_FORCE = '\u0000force';
   let stickyRows = [];
   let stickyRaf = 0;
   function cacheStickyRows() {
@@ -1169,8 +1185,17 @@
     else if (wasActive && window.__shellDiscard) window.__shellDiscard();
     applyTabs(op(tabState, key));
     if (wasActive) {
-      const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
-      if (e) openTabRow(e, false); // 回落到相邻标签：切编辑器+高亮，但不滚树（Colin：关标签不该让树跳到别处）
+      let e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+      // 相邻回落项若落在失联根 → 它打不开（openTabRow 只弹 toast、不切编辑器），会把编辑器留在刚关掉的
+      // 文档上=状态分裂（对抗审查抓的）。改沿显示序回落到最后一个「可开」的标签（跳过失联根的），都不可
+      // 开则关文档回空态。（相邻回落仍是浏览器式，只是失联标签不配当落点。）
+      const unopenable = (x) => x.rel && (rootOf(x.rootId) || {}).missing;
+      if (e && unopenable(e)) {
+        const openable = window.WS2Tabs.displayOrder(tabState.entries).filter((x) => x.open && !unopenable(x));
+        e = openable[openable.length - 1] || null;
+        applyTabs({ entries: tabState.entries, activeRel: e ? keyOf(e) : null });
+      }
+      if (e) openTabRow(e, false); // 回落到相邻可开标签：切编辑器+高亮，但不滚树（Colin：关标签不该让树跳到别处）
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
   }
@@ -1490,6 +1515,9 @@
   }
   // reveal=true（默认，点标签）：把文件树展开到该文件并滚动定位。reveal=false（关标签后回落到相邻标签）：
   // 只切编辑器 + 高亮，不滚树——Colin 2026-07-09：关一个标签不该让文件树跳到相邻文件所在的文件夹。
+  // ⚠ 树定位有两条路：①这里自己 expandToFile——覆盖「点的正是已载入文档的标签」时 openDoc 短路、
+  // onOpen 不触发的情形；②openNode→openDoc→onOpen 里那次 expandToFile——覆盖真重载的情形。reveal=true 时
+  // 两条都跑（幂等、无害）；reveal=false 时这里跳过 + suppressRevealOnce 让 onOpen 那次也跳过，两条都不定位。
   function openTabRow(entry, reveal = true) {
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
       if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry));
@@ -1499,7 +1527,11 @@
       const root = rootOf(entry.rootId);
       if (root && root.missing) { showToast('「' + root.name + '」失联了，重新定位后才能打开'); return; }
       const n = findNode(entry.rootId, entry.rel);
-      if (n) { openNode(n); if (reveal) expandToFile(entry.rootId, entry.rel); } // reveal 时才展开+滚动定位
+      if (n) {
+        if (!reveal) suppressRevealOnce = true; // 抑制 onOpen 里那次 expandToFile（真重载路径）
+        openNode(n);
+        if (reveal) expandToFile(entry.rootId, entry.rel); // 已载入文档点标签时 onOpen 不触发，靠这句定位
+      }
       return;
     }
     if (entry.kind === 'html' || entry.kind === 'md') openDoc(entry.abs); // 外部标签的可编辑文档（含 md）
@@ -2004,10 +2036,15 @@
       // 已经先载入了，这里只补标签，不影响打开速度。
       await restoreReady;
       const node = abs ? findNodeByAbs(abs) : null;
+      // reveal 一次性开关：关标签回落走 openTabRow(e,false) 会置 suppressRevealOnce，这里消费它——
+      // 抑制「展开到所在文件夹 + 滚动定位」（Colin：关标签不该让树跳走）。其余入口（点标签/命令面板/
+      // 「打开」按钮/Finder 双击）不置标记 → reveal 恒 true，行为不变。
+      const reveal = !suppressRevealOnce;
+      suppressRevealOnce = false;
       // Wendi 2026-07-03：外部（Finder 双击等）打开根内文件 → 树展开到所在文件夹并滚动定位。
       // 树默认全收起，不展开的话文件在树里根本不可见、也高亮不上（is-active 行没渲染出来）。
       // 先展开（内部会 render 重建行）再高亮，顺序不能反。命令面板/「打开」按钮同走此路，行为一致。
-      if (node) {
+      if (node && reveal) {
         // 筛选词挡住目标文件时先清筛选（外部打开是显式意图，优先于残留筛选词）——否则过滤树里
         // 该行根本不渲染，展开/滚动/高亮三个动作全部静默落空（审计发现）
         if (query && !treeEl.querySelector('.sb-file[data-rel="' + cssAttr(node.rel) + '"][data-root="' + cssAttr(node.rootId) + '"]')) {

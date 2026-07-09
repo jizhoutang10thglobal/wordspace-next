@@ -204,6 +204,24 @@ test('关激活的中间标签 → 激活相邻的下一个（不是最后一个
   await expect(tabRow('数据/d.html')).not.toHaveClass(/is-active/);
 });
 
+test('关标签不滚树/不展开到相邻文件所在的文件夹（reveal=false；Colin 报的树跳走本体，变异敏感）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]'); // tab a（根目录）
+  await page.locator('.sb-dir[data-rel="数据"]').click(); // 展开 数据
+  await page.click('.sb-file[data-rel="数据/b.html"]'); // tab b
+  await page.click('.sb-file[data-rel="数据/d.html"]'); // tab d，标签序 [a, b, d]
+  await page.locator('.sb-dir[data-rel="数据"]').click(); // 折叠 数据 → 里面的行不再可见
+  await expect(page.locator('.sb-file[data-rel="数据/d.html"]')).toHaveCount(0);
+  await page.click(`#sb-tabs .sb-tab[data-rel="a.html"]`); // 激活根目录的 a
+  await tabRow('a.html').hover();
+  await tabRow('a.html').locator('.sb-tab-close').click(); // 关激活 a → 相邻回落到 数据 里的 b
+  await expect(tabRow('数据/b.html')).toHaveClass(/is-active/); // 确实回落到了 b（相邻）
+  // 关键:回落激活了 数据 里的标签,但树不该因此展开 数据/滚过去（reveal=false）。
+  // 变异:把 openTabRow(e,false) 改回 openTabRow(e) → expandToFile 会展开 数据 → 这两条翻红。
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toHaveCount(0); // 仍不可见=没展开
+  await expect(page.locator('.sb-file[data-rel="数据/d.html"]')).toHaveCount(0);
+});
+
 test('非 html（c.png）也进标签页 + 查看器；关闭正常', async () => {
   await openWorkspace();
   await page.locator('.sb-dir[data-rel="数据"]').click();
