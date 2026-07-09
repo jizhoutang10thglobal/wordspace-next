@@ -99,10 +99,45 @@ export interface BlockPagination {
 }
 
 /**
+ * 超高块的「块内切分点」：沿块内后代元素边界（li/tr/代码行…）把超页高的块切成多页。
+ * - atomTops：候选切分后代的 top（相对块顶、未被推挤的原始坐标；内部会排序）；
+ * - blockH：块总高；pageContentH：页内容高；startOffset：块顶在起始页已用高度
+ *   （超高块按 paginateBlocks 规则总从新页顶开始 → 通常 0）。
+ * 返回升序切分序列：atom = 下一页首元素在排序后 atomTops 的下标，top = 其原始坐标，
+ * fill = 切点上方当前页收尾的剩余留白。语义 = Word：每页装到「最后一个还装得下的边界」；
+ * 某段内部再无边界（单张超页高图）→ 停止，剩余部分拉长纸面兜底。
+ */
+export function computeInnerSplits(
+  atomTops: number[],
+  blockH: number,
+  pageContentH: number,
+  startOffset = 0,
+): { atom: number; top: number; fill: number }[] {
+  if (!(pageContentH > 0)) return []
+  const tops = [...atomTops].sort((a, b) => a - b)
+  const cuts: { atom: number; top: number; fill: number }[] = []
+  let lastCut = 0
+  let pageEnd = pageContentH - Math.max(0, startOffset)
+  while (pageEnd < blockH) {
+    let pick = -1
+    for (let i = 0; i < tops.length; i++) {
+      // 切点必须严格推进（>1px 防同点重切死循环）且落在当前页内
+      if (tops[i] > lastCut + 1 && tops[i] <= pageEnd) pick = i
+    }
+    if (pick < 0) break
+    cuts.push({ atom: pick, top: tops[pick], fill: pageEnd - tops[pick] })
+    lastCut = tops[pick]
+    pageEnd = lastCut + pageContentH
+  }
+  return cuts
+}
+
+/**
  * 块级分页：从页顶累计块高（含块间距，由调用方计入 blockHeights），
  * 下一块放不下（累计 + 块高 > pageContentH）→ 整块推到下一页，块永不被劈开。
- * - 超页高的单块（巨图/长代码）例外：起点仍从新页开始，允许跨 ceil(h/页高) 页，
- *   下一块从它结束处所在页继续累计；
+ * - 超页高的单块例外：起点仍从新页开始。给了 innerCutTops[i]（块内切分点 top 序列，
+ *   来自 computeInnerSplits）→ 每个切点占一页、块尾从最后切点起算；没给/切不动 →
+ *   跨 ceil(h/页高) 页拉长纸面，下一块从它结束处所在页继续累计；
  * - breakAfter[i] = true（显式分页符）→ 块 i 之后强制结束当前页；
  * - 恰好填满一页（累计 == 页高）不切，下一块自然落到新页（gap = 0）。
  */
@@ -110,6 +145,7 @@ export function paginateBlocks(
   blockHeights: number[],
   pageContentH: number,
   breakAfter: boolean[] = [],
+  innerCutTops: (number[] | null | undefined)[] = [],
 ): BlockPagination {
   const n = blockHeights.length
   const pageOfBlock: number[] = new Array(n).fill(0)
@@ -140,11 +176,19 @@ export function paginateBlocks(
     }
     pageOfBlock[i] = page
     if (h > pageContentH) {
-      // 跨页大块：占 ceil(h/页高) 页，占的后续页顶仍是它自己
-      const span = Math.ceil(h / pageContentH)
-      for (let s = 1; s < span; s++) pageStartBlocks.push(i)
-      page += span - 1
-      y = h - (span - 1) * pageContentH
+      const cuts = innerCutTops[i]
+      if (cuts && cuts.length) {
+        // 块内切分：每个切点开一页，块尾 = 总高 - 最后切点（尾段仍超页高 = 不可切拉长 → 视为整页满）
+        for (let s = 0; s < cuts.length; s++) pageStartBlocks.push(i)
+        page += cuts.length
+        y = Math.min(h - cuts[cuts.length - 1], pageContentH)
+      } else {
+        // 无切分点（单张超页高图等）：跨页拉长纸面，占 ceil(h/页高) 页
+        const span = Math.ceil(h / pageContentH)
+        for (let s = 1; s < span; s++) pageStartBlocks.push(i)
+        page += span - 1
+        y = h - (span - 1) * pageContentH
+      }
     } else {
       y += h
     }
@@ -179,8 +223,11 @@ export function buildPrintCss(cfg: PageConfig): string {
   return [
     `@page{size:${pageSizeCss(cfg)};margin:${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm;${footer}}`,
     `.ws-page-break{break-after:page;visibility:hidden;height:0;margin:0;border:none;padding:0}`,
-    // 顶层块整块换页（与屏显块级分页同一决策口径）；超页高的块浏览器会自动放行跨页
+    // 顶层块整块换页（与屏显块级分页同一决策口径）；超页高的块 avoid 不可满足时浏览器
+    // 会自动放行、在内部找行级断点——配合下面 tr/li 的 avoid，断点落在行/项边界
+    // （与屏显块内切分同口径），行自身不被劈开
     `body>:not(.ws-page-break){break-inside:avoid}`,
+    `tr,li{break-inside:avoid}`,
     // 与屏显同口径的横向约束：无空格长串必须在纸内折行（pre 同理），不许把打印页横向顶破
     `body{overflow-wrap:anywhere}`,
     `pre{white-space:pre-wrap;overflow-wrap:anywhere}`,

@@ -58,6 +58,16 @@
    把整条白纸切成一页页——灰缝上下 1px 边线 = 上一页纸底缘 / 下一页纸顶缘，
    配一层极淡 inset 阴影露出纸边（纸方口径：细边 + 轻阴影，不叠假纸）。 */
 .ws-page-gap { pointer-events: none; user-select: none; }
+/* 超高块「块内切分」的覆盖层：绝对定位在块内被腾出的空档上（.ws-block 是定位上下文），
+   白底 = 当页纸面收尾 + 新页上边距，顺带盖住被拉长的块背景/侧边框；中段复用 .ws-page-gutter。 */
+.ws-inner-gap {
+  position: absolute;
+  background: #fff;
+  pointer-events: none;
+  user-select: none;
+}
+/* 块内切分的推挤 spacer（表格 spacer 行 / pre 行首块级 span）：纯占位 */
+.ws-inner-split { pointer-events: none; user-select: none; }
 .ws-page-gutter {
   position: relative;
   background: var(--c-bg-sunken);
