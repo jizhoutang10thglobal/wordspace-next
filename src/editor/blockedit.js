@@ -881,17 +881,35 @@
       return { top: r.bottom + 6, left: r.left, above: r.top }; // iframe 内坐标；父层加 frame offset
     }
     // 打开提及菜单：blockEl=作用块，trig（0=斜杠/气泡入口，1=@，2=[[），mode insert|wrap，savedRange（wrap 用）
+    // caret 在 blockEl 内的字符偏移（块起点→caret 的文本长度）。给提及菜单钉死 query 锚点。
+    function caretOffset(el) {
+      const sel = doc.getSelection();
+      if (!sel || !sel.rangeCount) return 0;
+      const caret = sel.getRangeAt(0);
+      if (!el.contains(caret.startContainer)) return 0;
+      const r = doc.createRange(); r.selectNodeContents(el);
+      try { r.setEnd(caret.startContainer, caret.startOffset); } catch (e) { return 0; }
+      return r.toString().length;
+    }
     function openMention(blockEl, trig, mode, savedRange) {
       const M = mentionApi(); if (!M) return;
+      const rect = caretRectInFrame(blockEl); if (!rect) return; // 先抓 caret rect + 锚偏移（await 后可能变）
+      const trigLen = trig || 0; // @=1、[[=2、斜杠/气泡=0
+      const anchorOff = Math.max(0, caretOffset(blockEl) - trigLen); // 提及区起点：insert 时 = 触发符起点；trig=0 = 当前 caret
+      const doOpen = (ctx) => {
+        if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast('临时 / 工作区外文档暂不支持文档互链'); return; }
+        M.open({
+          frame: win.frameElement, doc, win, blockEl,
+          caretRect: rect, rootId: ctx.rootId, fromRel: ctx.rel,
+          mode: mode || 'insert', trig: trig || 0, trigLen, anchorOff, savedRange: savedRange || null,
+          onDone: () => { markDirty(); if (undoMgr) undoMgr.checkpoint(); },
+        });
+      };
       const ctx = docCtx();
-      if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast('临时 / 工作区外文档暂不支持文档互链'); return; }
-      const rect = caretRectInFrame(blockEl); if (!rect) return;
-      M.open({
-        frame: win.frameElement, doc, win, blockEl,
-        caretRect: rect, rootId: ctx.rootId, fromRel: ctx.rel,
-        mode: mode || 'insert', trig: trig || 0, savedRange: savedRange || null,
-        onDone: () => { markDirty(); if (undoMgr) undoMgr.checkpoint(); },
-      });
+      if (ctx && ctx.rootId != null) { doOpen(ctx); return; }
+      // docContext 还没算好（刚打开文档就 @）：等一次异步就绪再开，别误报「工作区外」（审查 D）
+      const ready = (typeof global !== 'undefined' && global.__wsDocContextReady) ? global.__wsDocContextReady() : Promise.resolve(null);
+      Promise.resolve(ready).then(() => doOpen(docCtx()));
     }
     // @ / [[ / 【【 触发（走 input/compositionend，不靠 keydown 的 e.key——Windows 中文 IME 只给 'Process'）。
     function maybeMentionTrigger() {
@@ -1251,7 +1269,12 @@
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
     }
 
-    function onInput() { markDirty(); tryMarkdown(); maybeMentionTrigger(); }
+    function onInput() {
+      markDirty(); tryMarkdown();
+      const M = mentionApi();
+      if (M && M.isOpen()) { M.syncFromDom(); return; } // 菜单开着：从 DOM 真相重算 query（捕获任何输入法），别再触发新菜单
+      maybeMentionTrigger();
+    }
     // 组字提交（IME 的 ＠/【【 在 compositionend 才落定；菜单开着时组好的字进 query）
     function onCompEnd(e) {
       const M = mentionApi();
@@ -1315,7 +1338,7 @@
     }
     function onDrop(e) {
       const f = draggingFile();
-      if (!dragFrom && f) { e.preventDefault(); dropFileLink(e, f); return; } // U3-B6：插链接
+      if (!dragFrom && f) { e.preventDefault(); dropFileLink(e, f); if (typeof global !== 'undefined') global.__wsDragFile = null; return; } // U3-B6：插链接，用完清全局
       if (!dragFrom) { e.preventDefault(); return; }
       e.preventDefault(); const el = blockOf(e.target); if (el && el !== dragFrom) { const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING; if (before) el.after(dragFrom); else el.before(dragFrom); if (undoMgr) undoMgr.checkpoint(); markDirty(); } clearDrop(); dragFrom = null;
     }
@@ -1340,6 +1363,13 @@
         if (!best) { if (global.__wsToast) global.__wsToast('这篇文档没有可放链接的文字块'); return; }
         blk = best.b;
         range = doc.createRange(); range.selectNodeContents(blk); range.collapse(false); // 落到块末
+      }
+      // 别把 <a> 插成 <ul>/<ol> 直接子级（= 非合规结构 → 整篇降级基础编辑，审查 #4）：落点直接落在列表层时收敛到最后一个 <li> 末尾。
+      const startEl = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+      if (startEl && (startEl.tagName === 'UL' || startEl.tagName === 'OL')) {
+        const lis = startEl.querySelectorAll(':scope > li');
+        const li = lis.length ? lis[lis.length - 1] : null;
+        if (li) { range = doc.createRange(); range.selectNodeContents(li); range.collapse(false); }
       }
       const href = global.WS2Links.relHref(ctx.rel, file.rel);
       const a = doc.createElement('a');

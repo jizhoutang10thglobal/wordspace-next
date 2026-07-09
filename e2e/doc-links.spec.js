@@ -132,8 +132,8 @@ test('U3：@ 提及 → 选文档 → 插入纯净 <a href>（磁盘零 class/co
   await page.keyboard.press('End');
   await page.keyboard.type('@');            // 触发提及菜单（父层浮层）
   await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
-  await page.keyboard.type('文档B');         // 筛
-  await expect(page.locator('.ws-mention-item', { hasText: '文档B' })).toBeVisible();
+  await page.keyboard.type('文档B');         // 中文筛（DOM 真相 query：insertText 走 input→syncFromDom，验证中文能筛）
+  await expect(page.locator('.ws-mention-item.is-active')).toContainText('文档B'); // 文档在前，active=0=文档B（含「新建」项时用 active 消歧）
   await page.keyboard.press('Enter');       // 选中
   await expect(page.locator('.ws-mention-menu')).toBeHidden();
   await expect(frame.locator('a', { hasText: '文档B' })).toHaveAttribute('href', 'B.html');
@@ -158,13 +158,15 @@ test('U3：斜杠菜单「🔗 链接到文档」→ 提及菜单 → 插入', a
   await page.keyboard.press('Enter');        // 选「链接到文档」→ 弹提及菜单
   await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
   await page.keyboard.type('文档C');
-  await expect(page.locator('.ws-mention-item', { hasText: '文档C' })).toBeVisible();
+  await expect(page.locator('.ws-mention-item.is-active')).toContainText('文档C');
   await page.keyboard.press('Enter');
   await expect(frame.locator('a', { hasText: '文档C' })).toHaveAttribute('href', 'C.html');
   await page.waitForTimeout(1700);
   const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
   expect(d).toMatch(/<a href="C\.html">文档C<\/a>/);
   expect(d).not.toContain('ws-doclink');
+  // 审查 #1 回归：斜杠(trig=0)插入时中文 IME 筛选文字不能残留在正文里——「文档C」只应作为链接文字出现一次
+  expect((d.match(/文档C/g) || []).length).toBe(1);
 });
 
 test('U3-B6：从侧栏拖文件进正文 → 插入纯净链接（真实拖拽管线）', async () => {
@@ -208,8 +210,8 @@ test('U3-B2：@菜单也列非文档文件（pdf）', async () => {
   await page.keyboard.press('End');
   await page.keyboard.type('@');
   await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
-  await page.keyboard.type('pdf'); // ASCII 筛（rel 报告.pdf 含 pdf）——Playwright 打中文走 insertText 不触发 compositionend，真 app 里中文 IME 走 composition 正常
-  await expect(page.locator('.ws-mention-item', { hasText: '报告' })).toBeVisible();
+  await page.keyboard.type('报告'); // 中文筛（DOM 真相 query 现在能捕获）；docs 无匹配 → 非文档 报告.pdf 排 active=0
+  await expect(page.locator('.ws-mention-item.is-active')).toContainText('报告');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(1700);
   const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');

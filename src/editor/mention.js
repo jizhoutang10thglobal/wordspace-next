@@ -117,13 +117,14 @@
   }
 
   // ---- 打开 ----
-  // ctx: { frame, doc(contentDocument), win, blockEl, caretRect{top,left,bottomAbove}, rootId, fromRel,
-  //        mode:'insert'|'wrap', trig(0|1|2), savedRange?, onDone?(result) }
+  // ctx: { frame, doc(contentDocument), win, blockEl, caretRect{top,left,above}, rootId, fromRel,
+  //        mode:'insert'|'wrap', trig(0|1|2), anchorOff(块内字符偏移=提及区起点), trigLen(触发符长度), savedRange?, onDone? }
   function open(ctx) {
     ensureMenu();
     st = {
       frame: ctx.frame, doc: ctx.doc, win: ctx.win, blockEl: ctx.blockEl,
       rootId: ctx.rootId, fromRel: ctx.fromRel, mode: ctx.mode || 'insert', trig: ctx.trig || 0,
+      anchorOff: ctx.anchorOff || 0, trigLen: ctx.trigLen || 0, // insert：从 anchorOff 起、跳过 trigLen 即 query
       savedRange: ctx.savedRange || null, onDone: ctx.onDone || null,
       query: '', active: 0, items: [], loading: true, reqSeq: 0,
     };
@@ -148,21 +149,47 @@
     if (k === 'Enter') { e.preventDefault(); if (st.items[st.active]) pick(st.items[st.active]); else close(); return true; }
     if (k === 'ArrowDown') { e.preventDefault(); st.active = Math.min(st.active + 1, st.items.length - 1); render(); return true; }
     if (k === 'ArrowUp') { e.preventDefault(); st.active = Math.max(0, st.active - 1); render(); return true; }
-    if (k === 'Backspace') {
-      if (st.trig === 0) e.preventDefault(); // 斜杠/气泡入口：query 纯虚拟，别删正文/选区
-      if (st.query.length === 0) { close(); return true; } // 删到触发符 → 关（trig>0 时触发符本身交给正文默认删）
-      st.query = st.query.slice(0, -1); st.active = 0; applyFilter();
-      return true;
+    // 移动光标的键：关菜单、交原生（caret 移出 query 锚区后 query 就失锚，别硬留着菜单让 query 与 DOM 漂移，审查 #5）
+    if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'Home' || k === 'End' || k === 'PageUp' || k === 'PageDown') { close(); return false; }
+    if (st.mode === 'wrap') {
+      // wrap（气泡「链接」）：选中文字才是链接文字，query 是**虚拟**的不落正文——字符/Backspace 拦下、自己维护。
+      // ⚠已知限制：中文 IME 组字会绕过 preventDefault、替换掉选中文字（wrap 场景 ASCII 筛可用、中文筛会毁选区）。
+      if (k === 'Backspace') { e.preventDefault(); if (st.query.length === 0) { close(); return true; } st.query = st.query.slice(0, -1); st.active = 0; applyFilter(); return true; }
+      if (k && k.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); st.query = st.query + k; st.active = 0; applyFilter(); return true; }
+      return false;
     }
-    if (k && k.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      if (st.trig === 0) e.preventDefault(); // 斜杠/气泡：查询字符不落进正文（wrap 会毁选区）
-      st.query = st.query + k; st.active = 0; applyFilter();
-      return true;
-    }
+    // insert 模式：字符/Backspace 交给正文默认（落进 @后面），onInput → syncFromDom 从 **DOM 真相** 派生 query，
+    // 删到触发符之前时 syncFromDom 自动 close。任何输入法（keydown/组字/insertText/粘贴）都被 DOM 派生统一捕获。
     return false;
   }
-  // IME 组好的字（compositionend）→ 进 query（trig>0 时这些字也已落进正文，插入时按 DOM 真相删掉）。
-  function handleComposition(data) { if (st && data) { st.query = st.query + data; st.active = 0; applyFilter(); } }
+  // wrap 用虚拟 query 才需要组字回调；insert 由 onInput 的 syncFromDom 统一从 DOM 派生（不重复计入）。
+  function handleComposition(data) { if (st && st.mode === 'wrap' && data) { st.query = st.query + data; st.active = 0; applyFilter(); } }
+
+  // insert 模式：菜单开着时每次输入都从 **DOM 真相** 重算 query（blockEl 里 anchor 到 caret 的文本，去掉触发符）。
+  function syncFromDom() {
+    if (!st || st.mode === 'wrap') return;
+    var before = beforeCaretStr();
+    if (before == null || before.length < st.anchorOff) { close(); return; } // 读不到 / caret 移到锚点之前
+    if (st.trigLen > 0) {
+      var trig = before.substr(st.anchorOff, st.trigLen);
+      var oks = st.trig === 1 ? ['@', '＠'] : ['[[', '【【'];
+      if (oks.indexOf(trig) < 0) { close(); return; } // 触发符被删/改 → 关
+    }
+    var q = before.slice(st.anchorOff + st.trigLen);
+    if (q.indexOf('\n') >= 0 || q.length > 60) { close(); return; } // 跨行/太长 = 不是真提及
+    st.query = q; st.active = 0; applyFilter();
+  }
+  function beforeCaretStr() {
+    if (!st) return null;
+    var sel = st.doc.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    var caret = sel.getRangeAt(0);
+    if (!st.blockEl.contains(caret.startContainer)) return null;
+    var r = st.doc.createRange();
+    r.selectNodeContents(st.blockEl);
+    try { r.setEnd(caret.startContainer, caret.startOffset); } catch (e) { return null; }
+    return r.toString();
+  }
 
   // ---- 选中 → 落地 ----
   function pick(it) {
@@ -173,7 +200,10 @@
     if (it.kind === 'url') {
       var url = window.prompt ? window.prompt('链接地址', 'https://') : null;
       if (!url) return;
-      finish(ctx, url, url, /*external*/true);
+      // 过 safeHref（与气泡链接路径一致）：挡 javascript:/data:/file: 等危险 scheme 写进磁盘 href（审查 #3/#6）。
+      var safe = (window.WS2Format && window.WS2Format.safeHref) ? window.WS2Format.safeHref(url) : url;
+      if (!safe) { if (window.alert) window.alert('不允许的链接地址'); return; }
+      finish(ctx, safe, safe, /*external*/true);
       return;
     }
     if (it.kind === 'create') {
@@ -206,9 +236,9 @@
       afterInsert(ctx, extra, title);
       return;
     }
-    // insert 模式：trig>0 先用 DOM 真相删掉「触发符+query」，再插；trig=0 caret 已就位直接插。
+    // insert 模式：先删掉 anchor→caret 之间的内容（触发符+query，或 trig=0 时 IME 泄漏进正文的 query 文本），再插。
     if (!sel || sel.rangeCount === 0 || !blockEl.contains(sel.getRangeAt(0).startContainer)) return;
-    if (ctx.trig > 0) deleteTrigger(ctx, sel);
+    deleteFromAnchor(ctx, sel);
     var range = sel.getRangeAt(0);
     var a = doc.createElement('a');
     a.setAttribute('href', href); // 纯净：只有 href
@@ -223,34 +253,33 @@
     afterInsert(ctx, extra, title);
   }
 
-  // DOM 真相定位「触发符+query」整段删除（不按计数回删——IME/移光标/粘贴会让计数与 DOM 失同步）。
-  function deleteTrigger(ctx, sel) {
+  // 删掉 blockEl 里 [anchorOff, caret) 的内容：触发符+query（trig>0），或 trig=0 时 IME 泄漏进正文的 query 文本。
+  // 锚在 openMention 时刻钉死的字符偏移（不用 lastIndexOf 每次重找——query 里含 @、caret 被移走都不会删错，审查 #1/#2）。
+  function deleteFromAnchor(ctx, sel) {
     var doc = ctx.doc, el = ctx.blockEl;
     var caret = sel.getRangeAt(0);
-    var scan = doc.createRange();
-    scan.selectNodeContents(el);
-    try { scan.setEnd(caret.startContainer, caret.startOffset); } catch (e) { return; }
-    var before = scan.toString();
-    var trigs = ctx.trig === 1 ? ['@', '＠'] : ['[[', '【【'];
-    var idx = -1, tlen = ctx.trig;
-    for (var ti = 0; ti < trigs.length; ti++) { var i = before.lastIndexOf(trigs[ti]); if (i > idx) { idx = i; tlen = trigs[ti].length; } }
-    if (idx < 0) return;
-    if (before.length - (idx + tlen) > Math.max(ctx.query.length + 8, 24)) return; // 只认 caret 附近的触发符
+    var pos = charOffsetToPos(ctx, ctx.anchorOff);
+    if (!pos) return;
+    var del = doc.createRange();
+    try { del.setStart(pos.node, pos.offset); del.setEnd(caret.startContainer, caret.startOffset); }
+    catch (e) { return; }
+    if (del.collapsed) return; // anchor 就在 caret 处（trig=0 无泄漏）：无需删
+    del.deleteContents();
+    sel.removeAllRanges(); sel.addRange(del); // 折叠在删除起点 = 插入点
+  }
+  // 块内字符偏移 off → (textNode, offsetInNode)。
+  function charOffsetToPos(ctx, off) {
+    var doc = ctx.doc, el = ctx.blockEl;
     var acc = 0;
-    var walker = doc.createTreeWalker(el, (ctx.win && ctx.win.NodeFilter ? ctx.win.NodeFilter.SHOW_TEXT : 4));
+    var NF = (ctx.win && ctx.win.NodeFilter) ? ctx.win.NodeFilter.SHOW_TEXT : 4;
+    var walker = doc.createTreeWalker(el, NF);
     var node;
     while ((node = walker.nextNode())) {
       var len = (node.textContent || '').length;
-      if (acc + len > idx) {
-        var del = doc.createRange();
-        del.setStart(node, idx - acc);
-        del.setEnd(caret.startContainer, caret.startOffset);
-        del.deleteContents();
-        sel.removeAllRanges(); sel.addRange(del); // 折叠在删除起点 = 插入点
-        return;
-      }
+      if (acc + len >= off) return { node: node, offset: off - acc };
       acc += len;
     }
+    return { node: el, offset: el.childNodes.length };
   }
 
   function afterInsert(ctx, extra, title) {
@@ -264,6 +293,6 @@
 
   root.WS2Mention = {
     open: open, close: close, isOpen: isOpen, handleKey: handleKey,
-    handleComposition: handleComposition, reposition: reposition,
+    handleComposition: handleComposition, syncFromDom: syncFromDom, reposition: reposition,
   };
 })(typeof window !== 'undefined' ? window : this);

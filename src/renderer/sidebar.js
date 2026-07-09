@@ -1733,6 +1733,10 @@
   // 「拖文件到根顶层」的落点改在各根标题行（renderRootSection 里，带同根校验）——多根后侧栏头
   // 不再是唯一根的化身，不能当 drop 目标（不知道该落哪个根）。
 
+  // U3-B6 兜底：任何拖拽结束都清 __wsDragFile（源文件行若在拖拽中被树重渲染销毁，它自己的 ondragend 可能不触发 → 泄漏，
+  // 下次正文内原生拖拽会被误当插链接）。document 级捕获一次，与源行 ondragend 双保险。
+  document.addEventListener('dragend', () => { window.__wsDragFile = null; }, true);
+
   // ---- 轻量 toast（删除「撤销」用）。CSP 安全：classes，无 inline style。----
   let toastTimer = null;
   // shell.js（先加载、无自己的 toast）复用这个：U0 断链/工作区外等占位提示，及后续互链 toast。

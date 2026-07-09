@@ -2,11 +2,17 @@ let docPath = null;
 let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name }，主进程算（见 window.ws2.pathInfo）
 let docContext = null; // 当前文档的互链身份 { rootId, rel }（classify-file 算）；临时/工作区外 = null（不支持互链）
 // 换文档时算当前文档的 rootId+rel（给 U3 提及菜单 / U4 断链判定用）。async best-effort，用 docPath 守陈旧。
-async function refreshDocContext(p) {
-  try { const m = await window.ws2.classifyFile(p); if (docPath === p) docContext = (m && m.rootId != null) ? { rootId: m.rootId, rel: m.rel } : null; }
-  catch (e) { if (docPath === p) docContext = null; }
+let docContextPromise = null;
+function refreshDocContext(p) {
+  docContextPromise = (async () => {
+    try { const m = await window.ws2.classifyFile(p); if (docPath === p) docContext = (m && m.rootId != null) ? { rootId: m.rootId, rel: m.rel } : null; }
+    catch (e) { if (docPath === p) docContext = null; }
+  })();
+  return docContextPromise;
 }
 window.__wsDocContext = () => docContext;
+// 就绪 promise：刚打开文档 docContext 还在异步算（classify-file），@ 触发时可等它一下再开菜单（审查 D）。
+window.__wsDocContextReady = () => docContextPromise || Promise.resolve(docContext);
 // U3 @新建：在当前文档同目录建一篇新文档（不切走标签页），返回其根内 rel（给提及菜单算 href）。null=失败。
 window.__wsCreateLinkedDoc = async (rootId, fromRel, title) => {
   const dir = fromRel && fromRel.indexOf('/') >= 0 ? fromRel.slice(0, fromRel.lastIndexOf('/')) : '';
