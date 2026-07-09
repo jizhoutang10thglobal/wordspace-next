@@ -1,12 +1,53 @@
 /* 网页态外壳：顶上一条 Wordspace 网页头（安全 + 标题 + 域名 + 存为文档），下面是内容
    （mock 站点 / 真 iframe）。对齐真 app 的 #web-header 罩在 WebContentsView 上。 */
 .webpage {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
+/* 网页内查找条（Cmd+F）：浮在网页右上角，同真浏览器 */
+.web-find {
+  position: absolute; top: 8px; right: 16px; z-index: 20;
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 6px 5px 10px; background: var(--c-surface);
+  border: 1px solid var(--c-border); border-radius: var(--r-pill); box-shadow: var(--shadow-pop);
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
+}
+.web-find-ico { color: var(--c-text-3); flex: none; }
+.web-find-input { width: 180px; border: none; outline: none; background: none; font-size: var(--fs-sm); color: var(--c-text); }
+.web-find-input::placeholder { color: var(--c-text-3); }
+.web-find-btn {
+  display: flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border-radius: var(--r-pill); color: var(--c-text-2);
+}
+.web-find-btn:hover { background: var(--c-hover); color: var(--c-text); }
+/* window.find 用原生 selection 高亮，无需额外样式 */
+/* 缩放包裹层：填满内容区，zoom 作用于内部整页 */
+.webpage-zoom { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+
+/* 只读阅读模式：把当前页收进居中的阅读列、放大字号、去掉装饰图。纯显示，不落盘。 */
+.webpage-zoom.is-reader { display: block; overflow-y: auto; background: var(--c-surface); }
+.webpage-zoom.is-reader .ms { max-width: 720px; margin: 0 auto; padding: 48px 28px 80px; background: none; }
+.webpage-zoom.is-reader .ms * { font-size: revert; line-height: 1.75; }
+.webpage-zoom.is-reader .ms h1, .webpage-zoom.is-reader .ms .nw-card-title, .webpage-zoom.is-reader .ms .co-hero h1 { font-size: 26px; line-height: 1.3; }
+.webpage-zoom.is-reader .ms img,
+.webpage-zoom.is-reader .ms .nw-thumb,
+.webpage-zoom.is-reader .ms .nw-hero-media,
+.webpage-zoom.is-reader .ms .nw-nav,
+.webpage-zoom.is-reader .ms .nw-foot,
+.webpage-zoom.is-reader .ms [class*='-nav'],
+.webpage-zoom.is-reader .ms [class*='-cta'] { display: none; }
+
+/* 阅读模式开关 */
+.web-reader-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: var(--r-pill); color: var(--c-text-2);
+}
+.web-reader-btn:hover { background: var(--c-hover); color: var(--c-text); }
+.web-reader-btn.is-on { background: var(--c-accent-tint); color: var(--c-accent); }
 .web-chrome {
   flex: none;
   display: flex;

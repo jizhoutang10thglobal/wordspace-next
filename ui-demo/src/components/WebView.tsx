@@ -1,6 +1,6 @@
-import { useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink, Lock, Globe } from 'lucide-react'
+import { ExternalLink, Lock, Globe, Search, ChevronUp, ChevronDown, X, BookOpen } from 'lucide-react'
 import type { Tab } from '../types'
 import { resolve, useBrowser, type Resolved } from '../mock/browser'
 import { useStore } from '../mock/store'
@@ -23,7 +23,26 @@ export default function WebView({ tab }: { tab: Tab }) {
   const openWebTab = useStore((s) => s.openWebTab)
   const toast = useStore((s) => s.toast)
   const navigate = useNavigate()
+  const zoom = useBrowser((s) => s.zoom)
   const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; info: CtxInfo } | null>(null)
+  const [reader, setReader] = useState(false) // 只读阅读模式（纯显示，不落盘）
+  useEffect(() => { setReader(false) }, [tab.url]) // 换页退出阅读模式
+
+  // 网页内查找（Cmd+F）：mock 站是同文档 DOM，用 window.find 定位+高亮+滚动（演示够用）。
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQ, setFindQ] = useState('')
+  const findInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const onFind = () => { setFindOpen(true); setTimeout(() => { findInputRef.current?.focus(); findInputRef.current?.select() }, 0) }
+    window.addEventListener('ws-web-find', onFind)
+    return () => window.removeEventListener('ws-web-find', onFind)
+  }, [])
+  const doFind = (backwards = false) => {
+    const q = findQ.trim()
+    if (!q) return
+    ;(window as unknown as { find?: (s: string, cs: boolean, bw: boolean, wrap: boolean) => boolean }).find?.(q, false, backwards, true)
+  }
+  const closeFind = () => { setFindOpen(false); window.getSelection()?.removeAllRanges() }
 
   // 右键：真读光标下的 DOM（链接/图片/选中文字/编辑框），据此算菜单分节——和真 app 一样按上下文变。
   const onContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -100,8 +119,28 @@ export default function WebView({ tab }: { tab: Tab }) {
 
   return (
     <div className="webpage" onContextMenu={onContextMenu}>
-      <WebChrome tab={tab} resolved={r} />
-      {content}
+      <WebChrome tab={tab} resolved={r} reader={reader} onToggleReader={() => setReader((v) => !v)} />
+      {findOpen && (
+        <div className="web-find">
+          <Search size={13} className="web-find-ico" />
+          <input
+            ref={findInputRef}
+            className="web-find-input"
+            value={findQ}
+            onChange={(e) => setFindQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); doFind(e.shiftKey) }
+              else if (e.key === 'Escape') { e.preventDefault(); closeFind() }
+            }}
+            placeholder="在页面中查找"
+            spellCheck={false}
+          />
+          <button className="web-find-btn" title="上一个" onClick={() => doFind(true)}><ChevronUp size={14} /></button>
+          <button className="web-find-btn" title="下一个" onClick={() => doFind(false)}><ChevronDown size={14} /></button>
+          <button className="web-find-btn" title="关闭（Esc）" onClick={closeFind}><X size={14} /></button>
+        </div>
+      )}
+      <div className={`webpage-zoom ${reader ? 'is-reader' : ''}`} style={zoom !== 1 ? { zoom } : undefined}>{content}</div>
       {menu && (
         <WebContextMenu
           x={menu.x}
@@ -115,8 +154,8 @@ export default function WebView({ tab }: { tab: Tab }) {
   )
 }
 
-// 网页头：安全指示（锁 / 非安全）+ 标题 + 域名。与文档面包屑同壳。
-function WebChrome({ tab, resolved }: { tab: Tab; resolved: Resolved }) {
+// 网页头：安全指示（锁 / 非安全）+ 标题 + 域名 + 阅读模式。与文档面包屑同壳。
+function WebChrome({ tab, resolved, reader, onToggleReader }: { tab: Tab; resolved: Resolved; reader: boolean; onToggleReader: () => void }) {
   const url = tab.url
   const secure = /^https:/i.test(url) || url.startsWith('glass://') || url.startsWith('wordspace://')
   let host = ''
@@ -135,6 +174,13 @@ function WebChrome({ tab, resolved }: { tab: Tab; resolved: Resolved }) {
         <span className="web-chrome-title">{resolved.title}</span>
         {host && <span className="web-chrome-host">{host}</span>}
       </div>
+      <button
+        className={`web-reader-btn ${reader ? 'is-on' : ''}`}
+        onClick={onToggleReader}
+        title={reader ? '退出阅读模式' : '阅读模式（只显示正文，不保存）'}
+      >
+        <BookOpen size={14} />
+      </button>
     </div>
   )
 }

@@ -115,3 +115,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 浏览器设置控件 */
+.st-select, .st-input {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  padding: 6px 10px;
+  outline: none;
+}
+.st-select { cursor: pointer; }
+.st-input { min-width: 240px; }
+.st-input:focus, .st-select:focus { border-color: var(--c-accent); }

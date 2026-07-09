@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Search, ArrowRight, Check } from 'lucide-react'
-import { useBrowser, type SiteKey } from '../mock/browser'
+import { useBrowser, resolve, type SiteKey } from '../mock/browser'
+import { useStore } from '../mock/store'
+import { useHistory } from '../mock/history'
 import './MockSites.css'
 
 // Polished MOCK websites. The app chrome is plain, but these are meant to read
@@ -8,7 +10,19 @@ import './MockSites.css'
 // and restrained palette. Internal links call useBrowser.navigate(...), so the
 // demo can hop between mock sites and real URLs from inside a page.
 
-const nav = (url: string) => useBrowser.getState().navigate(url)
+// 点链接 = 当前标签导航；⌘/Ctrl+点击 = 后台新标签打开（对齐真浏览器）。
+// 读 window.event 拿修饰键,免得改遍每个 onClick 的签名。
+const nav = (url: string) => {
+  const e = window.event as MouseEvent | undefined
+  if (e && (e.metaKey || e.ctrlKey)) {
+    const title = resolve(url).title
+    useStore.getState().openWebTab(url, title, true)
+    useHistory.getState().record(url, title)
+    useStore.getState().toast('已在后台标签页打开', 'neutral')
+    return
+  }
+  useBrowser.getState().navigate(url)
+}
 
 // ===========================================================================
 // Glass 搜索 — a clean search-engine results page

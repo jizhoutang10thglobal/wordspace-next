@@ -119,6 +119,7 @@ interface State {
   // transient ui (not persisted)
   meId: string
   tabs: Tab[]
+  closedTabs: Tab[] // 刚关闭的标签栈，供 ⌘⇧T 重开
   activeTabId: string
   toasts: Toast[]
   presence: Presence[]
@@ -142,6 +143,7 @@ interface State {
   newBrowserTab: () => void
   setTabUrl: (tabId: string, url: string, title?: string) => void
   closeTab: (tabId: string) => void
+  reopenClosedTab: () => void
   setActiveTab: (tabId: string) => void
   dropTab: (tabId: string, pinned: boolean, toIndex: number) => void
   togglePin: (tabId: string) => void
@@ -366,6 +368,7 @@ export const useStore = create<State>()(
         { id: 'tab-local', kind: 'doc', docId: 'd-recruit', title: '落地页.html', url: '落地页.html', fileName: '落地页.html', fileKind: 'html', rootId: 'r-brand' },
       ],
       activeTabId: 'tab-local',
+      closedTabs: [],
       toasts: [],
       presence: [],
       aiBusy: false,
@@ -777,10 +780,21 @@ export const useStore = create<State>()(
 
       closeTab: (tabId) =>
         set((s) => {
+          const closing = s.tabs.find((t) => t.id === tabId)
           const tabs = s.tabs.filter((t) => t.id !== tabId)
           let activeTabId = s.activeTabId
           if (s.activeTabId === tabId) activeTabId = tabs[tabs.length - 1]?.id ?? ''
-          return { tabs, activeTabId }
+          // 记进「刚关闭」栈，供 ⌘⇧T 重开（临时未保存文档不记，重开也没内容）
+          const closedTabs = closing && !closing.docId ? [closing, ...s.closedTabs].slice(0, 15) : s.closedTabs
+          return { tabs, activeTabId, closedTabs }
+        }),
+
+      reopenClosedTab: () =>
+        set((s) => {
+          const [last, ...rest] = s.closedTabs
+          if (!last) return {}
+          const tab: Tab = { ...last, id: uid('tab') }
+          return { tabs: [...s.tabs, tab], activeTabId: tab.id, closedTabs: rest }
         }),
 
       setActiveTab: (tabId) => set({ activeTabId: tabId }),
@@ -1238,6 +1252,9 @@ export const useStore = create<State>()(
         roots: s.roots,
         files: s.files,
         dirs: s.dirs,
+        // 会话恢复：重开 app（刷新）后恢复上次开着的标签与激活标签。
+        tabs: s.tabs,
+        activeTabId: s.activeTabId,
       }),
       migrate: () => ({ ...freshData() }) as never,
     },
