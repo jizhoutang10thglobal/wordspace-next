@@ -756,6 +756,12 @@ export default function ArcSidebar() {
   const doc = activeTab?.docId ? getDoc(activeTab.docId) : undefined
   const isLocal = !doc?.publishedUrl || doc.visibility === 'private' || doc.visibility === 'invited'
 
+  // 后退/前进按钮响应式启用态：无历史可退时置灰（否则「能点但没反应」= 手感坏）。
+  const browserHistory = useBrowser((s) => s.history)
+  const curHist = activeTab?.kind === 'web' ? browserHistory[activeTabId] : undefined
+  const canBack = !!curHist && curHist.index > 0
+  const canFwd = !!curHist && curHist.index < curHist.stack.length - 1
+
   const [omni, setOmni] = useState(activeTab?.url ?? '')
   useEffect(() => {
     setOmni(activeTab?.url ?? '')
@@ -925,8 +931,8 @@ export default function ArcSidebar() {
         </div>
         <div className="arc-top-nav">
           <button className="arc-ico" title="收起侧栏" onClick={toggleSidebar}><PanelLeft size={15} /></button>
-          <button className="arc-ico" title="后退" onClick={goBack}><ChevronLeft size={16} /></button>
-          <button className="arc-ico" title="前进" onClick={goForward}><ChevronRight size={16} /></button>
+          <button className="arc-ico" title="后退" onClick={goBack} disabled={!canBack}><ChevronLeft size={16} /></button>
+          <button className="arc-ico" title="前进" onClick={goForward} disabled={!canFwd}><ChevronRight size={16} /></button>
           <button className="arc-ico" title="刷新" onClick={reload}><RotateCw size={13} /></button>
           <button className="arc-ico" title={IS_MAC ? '查找文件 ⌘P' : '查找文件 Ctrl+P'} onClick={openFind}><Search size={14} /></button>
         </div>

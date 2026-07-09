@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { CtxItem } from '../lib/webCtxMenu'
 import './WebContextMenu.css'
 
@@ -20,13 +21,14 @@ export default function WebContextMenu({
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ x, y })
 
-  // 夹进视口：菜单右/下缘超出时向左/上翻，别被裁掉。
+  // 定位：默认左上角贴光标（往右下展开）；贴不下就翻转——右缘溢出→右缘贴光标（往左开）、
+  // 下缘溢出→下缘贴光标（往上开）。这是标准右键菜单手感，始终紧贴光标。
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
     const { width, height } = el.getBoundingClientRect()
-    const nx = x + width > window.innerWidth - 8 ? Math.max(8, window.innerWidth - width - 8) : x
-    const ny = y + height > window.innerHeight - 8 ? Math.max(8, window.innerHeight - height - 8) : y
+    const nx = x + width > window.innerWidth - 8 ? Math.max(8, x - width) : x
+    const ny = y + height > window.innerHeight - 8 ? Math.max(8, y - height) : y
     setPos({ x: nx, y: ny })
   }, [x, y])
 
@@ -49,7 +51,8 @@ export default function WebContextMenu({
     }
   }, [onClose])
 
-  return (
+  // Portal 到 body：菜单绝不嵌在有 transform 的祖先里（否则 position:fixed 会以祖先为基准 → 偏离光标很远）。
+  return createPortal(
     <div ref={ref} className="web-ctx" style={{ left: pos.x, top: pos.y }} role="menu">
       {items.map((it, i) =>
         'sep' in it ? (
@@ -68,6 +71,7 @@ export default function WebContextMenu({
           </button>
         ),
       )}
-    </div>
+    </div>,
+    document.body,
   )
 }

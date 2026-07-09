@@ -154,7 +154,12 @@ export const useBrowser = create<BrowserState>()((set, get) => ({
     if (!tabId) return
 
     set((s) => {
-      const prev = s.history[tabId] ?? { stack: [], index: -1 }
+      let prev = s.history[tabId] ?? { stack: [], index: -1 }
+      // 首次导航前：把标签当前页作为历史起点，否则点链接跳走后 back 无处可退（原来那页从没进过栈）。
+      if (prev.index < 0) {
+        const cur = useStore.getState().tabs.find((t) => t.id === tabId)?.url
+        if (cur && cur !== url) prev = { stack: [cur], index: 0 }
+      }
       // Drop any forward entries, then push the new url.
       const stack = prev.stack.slice(0, prev.index + 1)
       // Avoid stacking the exact same url twice in a row.

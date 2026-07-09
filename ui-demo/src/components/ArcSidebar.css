@@ -33,7 +33,8 @@
   background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
   transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
 }
-.arc-ico:hover { background-size: 100% 100%; color: var(--c-text); }
+.arc-ico:hover:not(:disabled) { background-size: 100% 100%; color: var(--c-text); }
+.arc-ico:disabled { color: var(--c-text-3); opacity: 0.55; cursor: default; }
 .arc-ico-sm { width: 24px; height: 24px; }
 
 /* omnibox */
