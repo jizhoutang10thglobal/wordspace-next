@@ -28,14 +28,13 @@ import {
   Search,
   AlertCircle,
   Star,
-  Bookmark,
   History as HistoryIcon,
   ChevronDown,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
-import { useBookmarks, BM_BAR } from '../mock/bookmarks'
+import { useBookmarks } from '../mock/bookmarks'
 import { useHistory } from '../mock/history'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, type FileNode } from '../lib/tree'
@@ -770,7 +769,6 @@ export default function ArcSidebar() {
 
   // 收藏夹：网页标签才显示星标；点击/⌘D 加入或移出收藏。
   const bmList = useBookmarks((s) => s.bookmarks)
-  const bmFolders = useBookmarks((s) => s.folders)
   const isWebTab = activeTab?.kind === 'web' && !!activeTab.url && activeTab.url !== 'wordspace://newtab'
   const bookmarked = !!isWebTab && bmList.some((b) => b.url === activeTab!.url)
   const toggleBookmark = () => {
@@ -779,12 +777,6 @@ export default function ArcSidebar() {
     if (bm.isBookmarked(activeTab.url)) { bm.removeByUrl(activeTab.url); useStore.getState().toast('已移出收藏') }
     else { bm.add({ title: activeTab.title || activeTab.url, url: activeTab.url }); useStore.getState().toast('已加入收藏', 'success') }
   }
-  const openBookmark = (url: string, title: string) => {
-    useStore.getState().openWebTab(url, title)
-    useHistory.getState().record(url, title)
-    navigate('/docs')
-  }
-
   const [omni, setOmni] = useState(activeTab?.url ?? '')
   useEffect(() => {
     setOmni(activeTab?.url ?? '')
@@ -1079,31 +1071,6 @@ export default function ArcSidebar() {
           </button>
         </div>
         <TabStrip pinned={false} />
-
-        <div className="arc-section-label arc-tabs-label">
-          <span>收藏</span>
-          <button className="arc-ico arc-ico-sm" title="管理收藏 · 导入导出" onClick={() => navigate('/bookmarks')}>
-            <Bookmark size={13} />
-          </button>
-        </div>
-        <div className="arc-bm">
-          {bmFolders.map((f) => {
-            const items = bmList.filter((b) => b.folderId === f.id)
-            if (!items.length) return null
-            return (
-              <div key={f.id} className="arc-bm-folder">
-                {f.id !== BM_BAR && <div className="arc-bm-folder-name">{f.name}</div>}
-                {items.map((b) => (
-                  <button key={b.id} className="arc-bm-item" title={b.url} onClick={() => openBookmark(b.url, b.title)}>
-                    <Globe2 size={12} className="arc-bm-ico" />
-                    <span className="arc-bm-title">{b.title}</span>
-                  </button>
-                ))}
-              </div>
-            )
-          })}
-          {!bmList.length && <div className="arc-bm-empty">点地址栏的 ☆ 收藏网页</div>}
-        </div>
 
         <div className="arc-section-label">文档</div>
         <div className="arc-filter">

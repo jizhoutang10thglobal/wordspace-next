@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink, Lock, Globe, Search, ChevronUp, ChevronDown, X, BookOpen } from 'lucide-react'
+import { ExternalLink, Lock, Globe, Search, ChevronUp, ChevronDown, X, BookOpen, Folder, Bookmark } from 'lucide-react'
 import type { Tab } from '../types'
 import { resolve, useBrowser, type Resolved } from '../mock/browser'
 import { useStore } from '../mock/store'
+import { useBookmarks, BM_BAR } from '../mock/bookmarks'
 import { buildWebCtx, cleanShareUrl, type CtxInfo, type CtxItem } from '../lib/webCtxMenu'
 import NewTab from './NewTab'
 import MockSite from './MockSites'
@@ -120,6 +121,7 @@ export default function WebView({ tab }: { tab: Tab }) {
   return (
     <div className="webpage" onContextMenu={onContextMenu}>
       <WebChrome tab={tab} resolved={r} reader={reader} onToggleReader={() => setReader((v) => !v)} />
+      <BookmarkBar />
       {findOpen && (
         <div className="web-find">
           <Search size={13} className="web-find-ico" />
@@ -182,5 +184,94 @@ function WebChrome({ tab, resolved, reader, onToggleReader }: { tab: Tab; resolv
         <BookOpen size={14} />
       </button>
     </div>
+  )
+}
+
+// 网页态书签栏：只在浏览网页时出现在网页头下方（回到文档就不在了）。
+// 平铺「书签栏」文件夹的收藏，其余文件夹收成带 ▾ 的下拉；右侧一个入口进收藏管理页。
+// 收藏 = 地址栏 ☆ / ⌘D（默认落书签栏文件夹），所以星标的东西会直接出现在这条上。
+function BookmarkBar() {
+  const folders = useBookmarks((s) => s.folders)
+  const bookmarks = useBookmarks((s) => s.bookmarks)
+  const navigate = useNavigate()
+  const [openFolder, setOpenFolder] = useState<string | null>(null)
+  const barRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!openFolder) return
+    const onDown = (e: globalThis.MouseEvent) => {
+      if (!barRef.current?.contains(e.target as Node)) setOpenFolder(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [openFolder])
+
+  // 左键 = 在当前标签打开（不堆标签）；⌘/Ctrl 点 = 后台新标签，同浏览器惯例。
+  const go = (url: string, title: string, e?: ReactMouseEvent) => {
+    if (e && (e.metaKey || e.ctrlKey)) {
+      useStore.getState().openWebTab(url, title, true)
+      useStore.getState().toast('已在后台标签页打开', 'neutral')
+    } else {
+      useBrowser.getState().navigate(url)
+    }
+    setOpenFolder(null)
+  }
+
+  const barItems = bookmarks.filter((b) => b.folderId === BM_BAR)
+  const otherFolders = folders.filter((f) => f.id !== BM_BAR && bookmarks.some((b) => b.folderId === f.id))
+  const empty = !barItems.length && !otherFolders.length
+
+  return (
+    <div className="web-bmbar" ref={barRef}>
+      {barItems.map((b) => (
+        <button key={b.id} className="web-bmbar-item" title={b.url} onClick={(e) => go(b.url, b.title, e)}>
+          <BmFavicon label={b.title || b.url} seed={b.url} />
+          <span className="web-bmbar-title">{b.title}</span>
+        </button>
+      ))}
+      {otherFolders.map((f) => {
+        const items = bookmarks.filter((b) => b.folderId === f.id)
+        const isOpen = openFolder === f.id
+        return (
+          <div key={f.id} className="web-bmbar-folder">
+            <button
+              className={`web-bmbar-item web-bmbar-folder-btn ${isOpen ? 'is-open' : ''}`}
+              onClick={() => setOpenFolder(isOpen ? null : f.id)}
+            >
+              <Folder size={13} className="web-bmbar-folder-ico" />
+              <span className="web-bmbar-title">{f.name}</span>
+              <ChevronDown size={12} className="web-bmbar-caret" />
+            </button>
+            {isOpen && (
+              <div className="web-bmbar-pop">
+                {items.map((b) => (
+                  <button key={b.id} className="web-bmbar-pop-item" title={b.url} onClick={(e) => go(b.url, b.title, e)}>
+                    <BmFavicon label={b.title || b.url} seed={b.url} />
+                    <span className="web-bmbar-title">{b.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {empty && <span className="web-bmbar-empty">还没有收藏 · 点地址栏的 ☆ 收藏当前页</span>}
+      <div className="web-bmbar-spacer" />
+      <button className="web-bmbar-manage" title="管理收藏 · 导入导出" onClick={() => navigate('/bookmarks')}>
+        <Bookmark size={13} />
+      </button>
+    </div>
+  )
+}
+
+// 书签没有真 favicon，用标题首字（去重 hash 到一个稳定色）当小图标，比灰地球更好认。
+function BmFavicon({ label, seed }: { label: string; seed: string }) {
+  const ch = label.trim().charAt(0).toUpperCase() || '·'
+  let h = 0
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) % 360
+  return (
+    <span className="web-bmbar-fav" style={{ background: `hsl(${h} 55% 92%)`, color: `hsl(${h} 42% 40%)` }}>
+      {ch}
+    </span>
   )
 }
