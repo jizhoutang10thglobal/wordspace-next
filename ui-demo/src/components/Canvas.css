@@ -45,7 +45,13 @@
   box-shadow: var(--shadow-menu);
   margin: 28px auto 56px;
   box-sizing: border-box;
+  /* 纸宽是物理约束：无空格长串（URL/长单词/行内代码）必须在纸内折行，不许横向顶破纸面。
+     anywhere 只在无软换行点时才介入，正常文本排版不受影响。min-width:0 防 flex/grid 子项撑破。 */
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
+/* 代码块等 pre 场景：保留换行的同时允许长行折行（否则 white-space:pre 一行顶破纸宽） */
+.ws-doc-paged pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* 页间隙 spacer：块级分页的真实间隙（占布局、不进文档数据）。
    上段留白透明走纸面白底；中段灰缝用负 margin 盖过纸的 1px 边框，

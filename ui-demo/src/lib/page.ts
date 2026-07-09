@@ -181,5 +181,8 @@ export function buildPrintCss(cfg: PageConfig): string {
     `.ws-page-break{break-after:page;visibility:hidden;height:0;margin:0;border:none;padding:0}`,
     // 顶层块整块换页（与屏显块级分页同一决策口径）；超页高的块浏览器会自动放行跨页
     `body>:not(.ws-page-break){break-inside:avoid}`,
+    // 与屏显同口径的横向约束：无空格长串必须在纸内折行（pre 同理），不许把打印页横向顶破
+    `body{overflow-wrap:anywhere}`,
+    `pre{white-space:pre-wrap;overflow-wrap:anywhere}`,
   ].join('\n')
 }
