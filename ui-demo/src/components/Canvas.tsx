@@ -691,8 +691,22 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           bands.push({ top: hostTop + cutTop, page: startPage + k + 2 })
         })
       })
+      // 末页补白 = 末页剩余留白 − 文末 chrome（ws-canvas-tail + ws-doc-end 也在 article 里、
+      // 会占掉末页尾部）→ 让纸面正好收在整页底、不因文末 chrome 溢出成半张纸。
+      const chromeH = (sel: string) => {
+        const c = el.querySelector(sel)
+        if (!c) return 0
+        const cs = getComputedStyle(c)
+        return (
+          c.getBoundingClientRect().height +
+          (parseFloat(cs.marginTop) || 0) +
+          (parseFloat(cs.marginBottom) || 0)
+        )
+      }
+      const chrome = chromeH('.ws-canvas-tail') + chromeH('.ws-doc-end')
+      const tailFill = Math.max(0, r.lastFill - chrome)
       setPag((prev) => {
-        const next = { gaps, bands, tailFill: r.lastFill, pageCount: r.pageCount }
+        const next = { gaps, bands, tailFill, pageCount: r.pageCount }
         const same =
           prev &&
           prev.pageCount === next.pageCount &&
