@@ -27,9 +27,10 @@
     { key: 'h4', label: '标题 4', tag: 'h4' },
     { key: 'list', label: '无序列表', tag: 'ul' },
     { key: 'quote', label: '引用', tag: 'blockquote' },
-    // 编号/待办加在 quote 之后：块菜单按下标引用 SLASH_ITEMS[0/2/5]（正文/标题/引用），别插在它们之前打乱下标。
+    // 下标引用已全改成 itemByKey('text')（U3 重构），重排/加项安全。
     { key: 'numbered', label: '编号列表', tag: 'ol' },
     { key: 'todo', label: '待办列表', tag: 'ul', cls: 'ws-todo' },
+    { key: 'doclink', label: '🔗 链接到文档', tag: null, doclink: true }, // 互链可发现入口①（放列表组后=可视区内，别放最后掉出去）
     { key: 'callout', label: '提示', tag: 'div', cls: 'ws-callout' },
     { key: 'divider', label: '分隔线', tag: 'hr' },
     { key: 'ai', label: '✦ AI 生成（开发中）', tag: null, ai: true },
@@ -654,8 +655,16 @@
       if (fmt.wrapInlineStyle(doc, prop, value)) { markDirty(); persistEditing(); }
     }
     function addLink() {
-      // 不再跨块拒绝：链接作用于当前编辑块的选区部分（链接本就不该横跨块）；execCommand 不会写坏文档。
-      // iframe sandbox 无 allow-modals → iframe window 的 prompt/alert 被禁；用父窗口（global）
+      // U3 气泡「链接」：有文件身份 + 有选区 → 文档选择菜单（wrap 模式：选中文字整体变链接、保留用户文字）；
+      // 无身份（临时/工作区外）或无选区 → 退回网址 prompt（iframe sandbox 无 allow-modals，用父窗口 global.prompt）。
+      const ctx = docCtx();
+      const sel = doc.getSelection();
+      const hasSel = sel && sel.rangeCount && !sel.isCollapsed && selWithinOneBlock();
+      if (mentionApi() && ctx && ctx.rootId != null && hasSel) {
+        const blk = editingEl || blockOf(sel.getRangeAt(0).startContainer);
+        openMention(blk, 0, 'wrap', sel.getRangeAt(0).cloneRange());
+        return;
+      }
       const url = global.prompt ? global.prompt('链接地址', 'https://') : null;
       if (!url) return;
       const href = fmt.safeHref(url);
@@ -785,7 +794,7 @@
         sub('转为正文', itemByKey('text'), 'text'); sub('转为标题', itemByKey('h2'), 'heading'); sub('转为引用', itemByKey('quote'), 'quote');
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       }
-      add('在下方插入', () => { const nx = insertAfter(el, SLASH_ITEMS[0]); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); }, false, 'plus');
+      add('在下方插入', () => { const nx = insertAfter(el, itemByKey('text')); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); }, false, 'plus');
       add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); }, false, 'copy');
       add('删除', () => { closeBlockMenu(); removeBlock(el); }, true, 'trash');
       // 颜色行（#85：前面补分隔线，对齐 ui-demo 删除与色板之间的 sep）
@@ -837,9 +846,64 @@
       if (it.ai) { onAiSoon(); return; }
       const el = cur.blockEl;
       const empty = !el || (el.textContent || '').trim() === '';
+      if (it.doclink) { openMention(cur.blockEl, 0, 'insert', null); return; } // 互链入口①：删掉 /query 后原地弹文档菜单（trig=0）
       if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
       else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
       else { const nx = insertAfter(el, it); enterEdit(nx, { mode: 'start' }); }
+    }
+
+    // ---- U3 文档互链「创建面」：提及菜单接线（菜单浮层在父层 WS2Mention，这里只做触发 + caret rect + 文档上下文）----
+    function mentionApi() { return (typeof global !== 'undefined' && global.WS2Mention) || null; }
+    function docCtx() { return (typeof global !== 'undefined' && global.__wsDocContext) ? global.__wsDocContext() : null; }
+    // caret 之前 el 内的最后 n 个字符（识别 @ / [[ 触发）
+    function textBeforeCaret(el, n) {
+      const sel = doc.getSelection();
+      if (!sel || !sel.rangeCount) return '';
+      const caret = sel.getRangeAt(0);
+      if (!el.contains(caret.startContainer)) return '';
+      const scan = doc.createRange();
+      scan.selectNodeContents(el);
+      try { scan.setEnd(caret.startContainer, caret.startOffset); } catch (e) { return ''; }
+      return scan.toString().slice(-n);
+    }
+    function caretRectInFrame(fallbackBlock) {
+      const sel = doc.getSelection();
+      let r = null;
+      if (sel && sel.rangeCount) {
+        const r0 = sel.getRangeAt(0);
+        const rr = r0.getClientRects();
+        r = rr.length ? rr[0] : (r0.startContainer && r0.startContainer.parentElement && r0.startContainer.parentElement.getBoundingClientRect());
+        if (r && r.width === 0 && r.height === 0) r = null; // 折叠选区可能给零矩形（execCommand delete 后）
+      }
+      // 兜底：拿不到 caret 矩形（删完 /query 后折叠选区无矩形）→ 用作用块矩形，菜单落块下方
+      if (!r && fallbackBlock) { const br = fallbackBlock.getBoundingClientRect(); r = { bottom: br.bottom, top: br.top, left: br.left, width: 1, height: br.height }; }
+      if (!r) return null;
+      return { top: r.bottom + 6, left: r.left, above: r.top }; // iframe 内坐标；父层加 frame offset
+    }
+    // 打开提及菜单：blockEl=作用块，trig（0=斜杠/气泡入口，1=@，2=[[），mode insert|wrap，savedRange（wrap 用）
+    function openMention(blockEl, trig, mode, savedRange) {
+      const M = mentionApi(); if (!M) return;
+      const ctx = docCtx();
+      if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast('临时 / 工作区外文档暂不支持文档互链'); return; }
+      const rect = caretRectInFrame(blockEl); if (!rect) return;
+      M.open({
+        frame: win.frameElement, doc, win, blockEl,
+        caretRect: rect, rootId: ctx.rootId, fromRel: ctx.rel,
+        mode: mode || 'insert', trig: trig || 0, savedRange: savedRange || null,
+        onDone: () => { markDirty(); if (undoMgr) undoMgr.checkpoint(); },
+      });
+    }
+    // @ / [[ / 【【 触发（走 input/compositionend，不靠 keydown 的 e.key——Windows 中文 IME 只给 'Process'）。
+    function maybeMentionTrigger() {
+      const M = mentionApi();
+      if (!M || M.isOpen() || slash || !editingEl) return;
+      const two = textBeforeCaret(editingEl, 2);
+      const one = two.slice(-1);
+      let trig = 0;
+      if (two === '[[' || two === '【【') trig = 2;
+      else if (one === '@' || one === '＠') trig = 1;
+      if (!trig) return;
+      openMention(editingEl, trig, 'insert', null);
     }
 
     // ---- 监听器（父层挂到 iframe doc）----
@@ -925,7 +989,7 @@
         const br = blockRoot.getBoundingClientRect();
         if (last && e.clientY > last.getBoundingClientRect().bottom && e.clientX >= br.left && e.clientX <= br.right) {
           if (isEditableEl(last) && (last.textContent || '').trim() === '') enterEdit(last, { mode: 'end' });
-          else { const nx = insertAfter(last, SLASH_ITEMS[0]); enterEdit(nx, { mode: 'start' }); }
+          else { const nx = insertAfter(last, itemByKey('text')); enterEdit(nx, { mode: 'start' }); }
           return;
         }
         deselect(); return;
@@ -937,6 +1001,8 @@
       } else { selectBlock(el); positionGrip(el); }
     }
     function onKeyDown(e) {
+      // 提及菜单开着时：导航键（↑↓Enter/Esc/Backspace/query 字符）先给它，消费了就不再走块编辑（IME 组字键它会放行）
+      { const M = mentionApi(); if (M && M.isOpen() && M.handleKey(e)) return; }
       // 斜杠菜单开启时：导航
       if (slash) {
         if (e.isComposing || e.keyCode === 229) return; // IME 组词中：交原生（compositionstart 已关菜单兜底），别把组词键当 query
@@ -985,8 +1051,8 @@
           if (li && (li.textContent || '').trim() === '' && !li.nextElementSibling) {
             e.preventDefault();
             const ul = editingEl; li.remove();
-            if (ul.querySelector('li')) { const nx = insertAfter(ul, SLASH_ITEMS[0]); enterEdit(nx, { mode: 'start' }); }
-            else { const p = turnInto(ul, SLASH_ITEMS[0]); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
+            if (ul.querySelector('li')) { const nx = insertAfter(ul, itemByKey('text')); enterEdit(nx, { mode: 'start' }); }
+            else { const p = turnInto(ul, itemByKey('text')); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
             return;
           }
           return; // 非空/非末项 → 交原生（新建 <li>）
@@ -997,9 +1063,9 @@
           if (splitBlock()) { e.preventDefault(); return; }
           return;
         }
-        // 段末回车 → 新建空正文块（标题/引用末尾回车也续为正文，对齐 Notion；故用 SLASH_ITEMS[0] 而非劈块）
+        // 段末回车 → 新建空正文块（标题/引用末尾回车也续为正文，对齐 Notion；故用 itemByKey('text') 而非劈块）
         e.preventDefault();
-        const nx = insertAfter(editingEl, SLASH_ITEMS[0]);
+        const nx = insertAfter(editingEl, itemByKey('text'));
         enterEdit(nx, { mode: 'start' });
         return;
       }
@@ -1007,7 +1073,7 @@
       if (e.key === 'Enter' && selectedEl && !editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
-        const nx = insertAfter(selectedEl, SLASH_ITEMS[0]);
+        const nx = insertAfter(selectedEl, itemByKey('text'));
         enterEdit(nx, { mode: 'start' });
         return;
       }
@@ -1185,7 +1251,13 @@
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
     }
 
-    function onInput() { markDirty(); tryMarkdown(); }
+    function onInput() { markDirty(); tryMarkdown(); maybeMentionTrigger(); }
+    // 组字提交（IME 的 ＠/【【 在 compositionend 才落定；菜单开着时组好的字进 query）
+    function onCompEnd(e) {
+      const M = mentionApi();
+      if (M && M.isOpen()) { M.handleComposition(e.data); return; }
+      maybeMentionTrigger();
+    }
     // 行首 markdown：正文块里输入「marker + 空格」→ 转成对应块、清掉 marker。app 改真实 DOM、
     // 存盘读 live DOM，故可原地 turnInto（不像 ui-demo 受控编辑会被 blur 回写打架）。
     function tryMarkdown() {
@@ -1247,6 +1319,7 @@
     doc.addEventListener('input', onInput);
     doc.addEventListener('selectionchange', onSelectionChange);
     doc.addEventListener('compositionstart', onCompStart);
+    doc.addEventListener('compositionend', onCompEnd);
     doc.addEventListener('scroll', onScroll, true);
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);

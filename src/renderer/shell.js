@@ -1,5 +1,12 @@
 let docPath = null;
 let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name }，主进程算（见 window.ws2.pathInfo）
+let docContext = null; // 当前文档的互链身份 { rootId, rel }（classify-file 算）；临时/工作区外 = null（不支持互链）
+// 换文档时算当前文档的 rootId+rel（给 U3 提及菜单 / U4 断链判定用）。async best-effort，用 docPath 守陈旧。
+async function refreshDocContext(p) {
+  try { const m = await window.ws2.classifyFile(p); if (docPath === p) docContext = (m && m.rootId != null) ? { rootId: m.rootId, rel: m.rel } : null; }
+  catch (e) { if (docPath === p) docContext = null; }
+}
+window.__wsDocContext = () => docContext;
 let dirty = false;
 let undoMgr = null;
 let blockEdit = null; // 当前文档的块编辑内核（WS2BlockEdit.attach 返回）；换文档前 detach 防堆叠
@@ -156,6 +163,7 @@ function routeDoc(rawHtml) {
 //（改的是已换掉的 detached doc、还把当前文档标脏）。
 function detachEditors() {
   if (window.WS2Find) window.WS2Find.close(); // 换/关文档：关查找条 + 清高亮，否则飘到下一个文档
+  if (window.WS2Mention) window.WS2Mention.close(); // 同理关提及菜单（跨文档持有的 DOM 引用必失效）
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
   if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
@@ -343,7 +351,7 @@ async function showViewer(node) {
   window.ws2.unwatchDoc();
   detachEditors();
   loadGen++; frame.onload = null; // 对称 #94 shellCloseDoc：作废在飞导航，否则晚到的 load 把块编辑器挂上查看器底下的隐藏 iframe（幽灵脏态）
-  docPath = null;
+  docPath = null; docContext = null;
   docInfo = null;
   setDirty(false);
   frame.hidden = true;
@@ -586,7 +594,7 @@ function renderTemp(id) {
   const rec = tempStore.get(id);
   if (!rec) return;
   window.ws2.unwatchDoc(); // 临时文档没有磁盘监听目标
-  docPath = null;
+  docPath = null; docContext = null;
   docInfo = { name: rec.base };
   tempDoc = { id, base: rec.base };
   zoomFactor = 1;
@@ -666,6 +674,7 @@ async function openDoc(p) {
   if (seq !== openSeq) return; // 修 SH-1：await 期间用户又开了别的文档 → 这次陈旧 open 作废，别灌进新文档身份
   docPath = p;
   docInfo = info;
+  docContext = null; refreshDocContext(p); // U3：算当前文档 rootId+rel（提及菜单/断链判定用）
   docConform = routeDoc(raw); // 合规→完整编辑 / 不合规→基础编辑（判磁盘原始字节 reparse，§4.3 铁律③）
   zoomFactor = 1; // 新文档从 100% 开始（wireEditor 会按这个重挂缩放）
   // .md 走 srcdoc（KD-1）：iframe file:// 直载 .md 会被 Chromium 当纯文本渲染；readDoc 返回的 raw
@@ -686,6 +695,7 @@ async function openDoc(p) {
 function shellRetargetDoc(newAbs, newName) {
   docPath = newAbs;
   docInfo = Object.assign({}, docInfo, { name: newName });
+  docContext = null; refreshDocContext(newAbs); // 改名/移动 → rel 变，重算互链身份
   docName.textContent = newName;
   docName.title = newName; // 名字过长被截断时，悬停显示全名
   window.ws2.watchDoc(newAbs);
@@ -697,7 +707,7 @@ function shellCloseDoc() {
   openSeq++; // 修 SH-1：关文档也作废在飞的 openDoc（await 期间关掉 → 落地时不该把内容挂回来）
   frame.onload = null;
   detachEditors();
-  docPath = null;
+  docPath = null; docContext = null;
   docInfo = null;
   tempDoc = null;
   setDirty(false);
@@ -729,7 +739,7 @@ window.__shellResumeAutosave = resumeAutoSave;
 // 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
-window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); };
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); if (window.WS2Mention) window.WS2Mention.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
