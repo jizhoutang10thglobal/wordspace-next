@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('ws2', {
   openExternalAbs: (abs) => ipcRenderer.invoke('open-external-abs', abs),
   openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url), // 文档内 web 链接 → 系统浏览器/邮件
   resolveDocLink: (fromAbs, href) => ipcRenderer.invoke('ws-resolve-doc-link', fromAbs, href), // 相对链接解析（abs/rel/kind/exists）
+  linksQuery: (rootId) => ipcRenderer.invoke('ws-links-query', rootId), // U2：@菜单候选（全部文档 rel/title/kind）
+  linksBacklinks: (rootId, rel) => ipcRenderer.invoke('ws-links-backlinks', rootId, rel), // U2：反链来源
+  linksRebuild: (rootId) => ipcRenderer.invoke('ws-links-rebuild', rootId), // U2：索引重建逃生门
   pathExists: (abs) => ipcRenderer.invoke('path-exists', abs),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),
@@ -25,6 +28,7 @@ contextBridge.exposeInMainWorld('ws2', {
   unwatchDoc: () => ipcRenderer.send('unwatch-doc'),
   onDocChanged: (cb) => ipcRenderer.on('doc-changed', (_e, p) => cb(p)),
   onWsTreeChanged: (cb) => ipcRenderer.on('ws-tree-changed', (_e, rootId) => cb(rootId)),
+  onLinksUpdated: (cb) => ipcRenderer.on('links-index-updated', (_e, rootId) => cb(rootId)), // U2：索引刷新 → 反链面板/断链装饰刷新
   onWsRootsChanged: (cb) => ipcRenderer.on('ws-roots-changed', () => cb()), // 运行时根状态变化（如拔盘转失联）→ 重拉根列表
   onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, p) => cb(p)),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),

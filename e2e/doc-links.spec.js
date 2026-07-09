@@ -121,6 +121,29 @@ test('U0：文档内 http 外链 → 走系统程序（openExternalUrl），ifra
   await app.evaluate(() => globalThis.__restoreExt && globalThis.__restoreExt());
 });
 
+test('U2：链接索引 IPC —— query 列全部文档 + backlinks 根内反查', async () => {
+  const res = await page.evaluate(async () => {
+    const roots = await window.ws2.wsGetRoots();
+    const rootId = roots[0].id;
+    const q = await window.ws2.linksQuery(rootId);           // 懒建索引 + 返回候选
+    const bl = await window.ws2.linksBacklinks(rootId, 'B.html');
+    return {
+      rels: q.map((d) => d.rel).sort(),
+      titleA: (q.find((d) => d.rel === 'A.html') || {}).title,
+      titleMd: (q.find((d) => d.rel === 'M.md') || {}).title,
+      backlinksOfB: bl.map((e) => e.rel).sort(),
+      snippetA: (bl.find((e) => e.rel === 'A.html') || {}).snippet,
+    };
+  });
+  // A/B/C/M.md/N.html 全在索引
+  expect(res.rels).toEqual(['A.html', 'B.html', 'C.html', 'M.md', 'N.html']);
+  expect(res.titleA).toBe('文档A');
+  expect(res.titleMd).toBe('文档M'); // md 的 h1 也抽到
+  // A、M.md、N.html 都链到 B → 都是 B 的反链（索引不看合规性，非合规 N 的链接也算）
+  expect(res.backlinksOfB).toEqual(['A.html', 'M.md', 'N.html']);
+  expect(res.snippetA).toContain('去B'); // 反链带上下文摘句
+});
+
 test('U0：断链（目标不存在）→ 提示且不导航、不切文档', async () => {
   await page.click('.sb-file[data-rel="C.html"]');
   const frame = page.frameLocator('#doc-frame');
