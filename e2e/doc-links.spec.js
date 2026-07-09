@@ -26,6 +26,7 @@ test.beforeEach(async () => {
   await fs.writeFile(path.join(wsDir, 'N.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body><div><h1>文档N</h1><p>正文 NNN-KEEP <a href="B.html">去B</a></p></div></body></html>', 'utf8');
   // D.html：干净可编辑正文（无既有链接），给 U3 @ 提及测试用（点它不会误点到已有链接触发 U0 打开）
   await fs.writeFile(path.join(wsDir, 'D.html'), DOC('文档D', '<p>草稿一段文字 </p>'), 'utf8');
+  await fs.writeFile(path.join(wsDir, '报告.pdf'), '%PDF-1.4 fake', 'utf8'); // 非文档文件（B2：@菜单也列它）
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
     env: { ...process.env, WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir },
@@ -164,6 +165,55 @@ test('U3：斜杠菜单「🔗 链接到文档」→ 提及菜单 → 插入', a
   const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
   expect(d).toMatch(/<a href="C\.html">文档C<\/a>/);
   expect(d).not.toContain('ws-doclink');
+});
+
+test('U3-B6：从侧栏拖文件进正文 → 插入纯净链接（真实拖拽管线）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  // 真实拖拽：Playwright dragTo 走 mousedown/move/up → 浏览器生成真 dragstart/dragover/drop（非合成事件，L10）
+  await page.locator('.sb-file[data-rel="B.html"]').dragTo(frame.locator('p').first());
+  await expect(frame.locator('a[href="B.html"]')).toBeVisible({ timeout: 4000 });
+  await page.waitForTimeout(1700);
+  const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect(d).toMatch(/<a href="B\.html">/);
+  expect(d).not.toContain('ws-doclink');
+  expect(d).not.toContain('contenteditable');
+});
+
+test('U3-B5：选中文字 → 气泡「链接」→ 选文档 → 选中文字变链接（wrap 保留文字）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await frame.locator('p').first().click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+ArrowRight'); await page.keyboard.press('Shift+ArrowRight'); // 选中「草稿」
+  await frame.locator('button[title="链接"]').click(); // 气泡链接按钮
+  await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
+  await page.keyboard.type('b');                 // ASCII 筛（rel b.html）——wrap 模式下中文 IME 会替换掉选中的「草稿」
+  await expect(page.locator('.ws-mention-item', { hasText: '文档B' })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(frame.locator('a[href="B.html"]')).toHaveText('草稿'); // 选中文字变链接、保留文字（wrap）
+  await page.waitForTimeout(1700);
+  const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect(d).toMatch(/<a href="B\.html">草稿<\/a>/);
+  expect(d).not.toContain('ws-doclink');
+});
+
+test('U3-B2：@菜单也列非文档文件（pdf）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await frame.locator('p').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('@');
+  await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
+  await page.keyboard.type('pdf'); // ASCII 筛（rel 报告.pdf 含 pdf）——Playwright 打中文走 insertText 不触发 compositionend，真 app 里中文 IME 走 composition 正常
+  await expect(page.locator('.ws-mention-item', { hasText: '报告' })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1700);
+  const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect(d).toMatch(/<a href="[^"]*报告[^"]*\.pdf">报告<\/a>/); // 链到 pdf（href 可能百分号转义）
 });
 
 test('U2：链接索引 IPC —— query 列全部文档 + backlinks 根内反查', async () => {

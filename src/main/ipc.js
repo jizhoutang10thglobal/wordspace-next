@@ -256,6 +256,13 @@ function registerIpc() {
   });
   // U2 链接索引查询面（@菜单候选 / 反链 / 逃生门重建）。懒建：首次访问才建该根索引。
   ipcMain.handle('ws-links-query', async (_e, rootId) => { await ensureLinkIndex(rootId); return linkIndex.query(rootId); });
+  // @菜单候选：文档（索引，带标题）+ 非文档文件（pdf/图片等，文件名）。docs 在前、others 在后。
+  ipcMain.handle('ws-links-candidates', async (_e, rootId) => {
+    await ensureLinkIndex(rootId);
+    const root = liveRoot(rootId);
+    const others = root ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
+    return { docs: linkIndex.query(rootId), others };
+  });
   ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureLinkIndex(rootId); return linkIndex.backlinks(rootId, rel); });
   ipcMain.handle('ws-links-rebuild', async (_e, rootId) => {
     await queueLink(rootId, async () => {

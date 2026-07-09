@@ -1307,8 +1307,50 @@
       if (undoMgr) undoMgr.checkpoint();
       markDirty();
     }
-    function onDragOver(e) { if (!dragFrom) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; } e.preventDefault(); const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop(); el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top'); }
-    function onDrop(e) { if (!dragFrom) { e.preventDefault(); return; } e.preventDefault(); const el = blockOf(e.target); if (el && el !== dragFrom) { const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING; if (before) el.after(dragFrom); else el.before(dragFrom); if (undoMgr) undoMgr.checkpoint(); markDirty(); } clearDrop(); dragFrom = null; }
+    function draggingFile() { return (typeof global !== 'undefined' && global.__wsDragFile) || null; }
+    function onDragOver(e) {
+      if (!dragFrom && draggingFile()) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'link'; return; } // U3-B6：侧栏文件拖进来 → 接受、dropEffect link
+      if (!dragFrom) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
+      e.preventDefault(); const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop(); el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top');
+    }
+    function onDrop(e) {
+      const f = draggingFile();
+      if (!dragFrom && f) { e.preventDefault(); dropFileLink(e, f); return; } // U3-B6：插链接
+      if (!dragFrom) { e.preventDefault(); return; }
+      e.preventDefault(); const el = blockOf(e.target); if (el && el !== dragFrom) { const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING; if (before) el.after(dragFrom); else el.before(dragFrom); if (undoMgr) undoMgr.checkpoint(); markDirty(); } clearDrop(); dragFrom = null;
+    }
+    // U3-B6：把侧栏拖来的文件插成链接。落点=drop 处 caret；落在装饰/空白/边距 → 最近可编辑块末尾兜底
+    //（静默失败 = 用户以为没做出来，L8）；跨根/无身份/自链 → 明确 toast，绝不静默。
+    function dropFileLink(e, file) {
+      const ctx = docCtx();
+      if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast('临时 / 工作区外文档暂不支持拖入链接'); return; }
+      if (file.rootId !== ctx.rootId) { if (global.__wsToast) global.__wsToast('跨文件夹的链接暂不支持——把文件拖进同一个文件夹的文档里'); return; }
+      if (file.rel === ctx.rel) { if (global.__wsToast) global.__wsToast('不能链接到文档自己'); return; }
+      let range = caretRangeAtPoint(doc, e.clientX, e.clientY);
+      let host = range && (range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement);
+      let blk = host ? blockOf(host) : null;
+      if (!blk || !isEditableEl(blk)) {
+        let best = null;
+        for (const b of topBlocks()) {
+          if (!isEditableEl(b)) continue;
+          const r = b.getBoundingClientRect();
+          const dist = e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0;
+          if (!best || dist < best.dist) best = { b, dist };
+        }
+        if (!best) { if (global.__wsToast) global.__wsToast('这篇文档没有可放链接的文字块'); return; }
+        blk = best.b;
+        range = doc.createRange(); range.selectNodeContents(blk); range.collapse(false); // 落到块末
+      }
+      const href = global.WS2Links.relHref(ctx.rel, file.rel);
+      const a = doc.createElement('a');
+      a.setAttribute('href', href); // 纯净：只有 href
+      a.textContent = (file.title || file.rel).replace(/\.[^.]+$/, ''); // 文件名去扩展当链接文字
+      range.insertNode(a);
+      const space = doc.createTextNode(' '); a.parentNode.insertBefore(space, a.nextSibling);
+      const after = doc.createRange(); after.setStartAfter(space); after.collapse(true);
+      const sel = doc.getSelection(); if (sel) { sel.removeAllRanges(); sel.addRange(after); }
+      markDirty(); if (undoMgr) undoMgr.checkpoint();
+    }
 
     buildFmtbar();
     doc.addEventListener('mousedown', onMouseDown, true);

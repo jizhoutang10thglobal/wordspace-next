@@ -7,6 +7,15 @@ async function refreshDocContext(p) {
   catch (e) { if (docPath === p) docContext = null; }
 }
 window.__wsDocContext = () => docContext;
+// U3 @新建：在当前文档同目录建一篇新文档（不切走标签页），返回其根内 rel（给提及菜单算 href）。null=失败。
+window.__wsCreateLinkedDoc = async (rootId, fromRel, title) => {
+  const dir = fromRel && fromRel.indexOf('/') >= 0 ? fromRel.slice(0, fromRel.lastIndexOf('/')) : '';
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n<title>'
+    + esc(title) + '</title>\n</head>\n<body>\n<h1>' + esc(title) + '</h1>\n<p></p>\n</body>\n</html>\n';
+  try { const r = await window.ws2.wsNewDoc(rootId, dir, title, html); return r && r.rel || null; }
+  catch (e) { return null; }
+};
 let dirty = false;
 let undoMgr = null;
 let blockEdit = null; // 当前文档的块编辑内核（WS2BlockEdit.attach 返回）；换文档前 detach 防堆叠

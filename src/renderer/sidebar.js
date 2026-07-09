@@ -1027,11 +1027,15 @@
       row.onclick = () => openNode(node);
       row.ondragstart = (e) => {
         dragNode = node;
-        e.dataTransfer.effectAllowed = 'move';
+        // effectAllowed 'all'（不是 'move'）：正文 drop 想要 dropEffect 'link'，源声明 'move' 会让浏览器直接禁 drop（L9）。
+        e.dataTransfer.effectAllowed = 'all';
         e.dataTransfer.setData('text/plain', node.rel);
+        // 跨 iframe 拖拽 dataTransfer 不可靠 → 用全局传递被拖文件（对齐 ui-demo getDragFile）；正文 drop 读它插链接。
+        window.__wsDragFile = { rootId: node.rootId, rel: node.rel, kind: node.kind, title: node.name };
       };
       row.ondragend = () => {
         dragNode = null;
+        window.__wsDragFile = null;
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();

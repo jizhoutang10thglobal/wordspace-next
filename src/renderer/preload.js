@@ -7,7 +7,8 @@ contextBridge.exposeInMainWorld('ws2', {
   openExternalAbs: (abs) => ipcRenderer.invoke('open-external-abs', abs),
   openExternalUrl: (url) => ipcRenderer.invoke('open-external-url', url), // 文档内 web 链接 → 系统浏览器/邮件
   resolveDocLink: (fromAbs, href) => ipcRenderer.invoke('ws-resolve-doc-link', fromAbs, href), // 相对链接解析（abs/rel/kind/exists）
-  linksQuery: (rootId) => ipcRenderer.invoke('ws-links-query', rootId), // U2：@菜单候选（全部文档 rel/title/kind）
+  linksQuery: (rootId) => ipcRenderer.invoke('ws-links-query', rootId), // U2：全部文档 rel/title/kind
+  linksCandidates: (rootId) => ipcRenderer.invoke('ws-links-candidates', rootId), // U3：@菜单候选（文档 + 非文档文件）
   linksBacklinks: (rootId, rel) => ipcRenderer.invoke('ws-links-backlinks', rootId, rel), // U2：反链来源
   linksRebuild: (rootId) => ipcRenderer.invoke('ws-links-rebuild', rootId), // U2：索引重建逃生门
   pathExists: (abs) => ipcRenderer.invoke('path-exists', abs),

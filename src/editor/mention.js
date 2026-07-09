@@ -86,26 +86,34 @@
   }
 
   // 拉候选（U2 索引）：同根文档，标题/路径模糊匹配；末尾「新建 query」（有 query 时）+「网址链接…」。
-  function refreshItems() {
-    if (!st) return Promise.resolve();
-    var rootId = st.rootId, fromRel = st.fromRel, query = st.query.trim().toLowerCase();
+  function matches(title, rel, q) { return !q || title.toLowerCase().indexOf(q) >= 0 || rel.toLowerCase().indexOf(q) >= 0; }
+  // 候选**一次会话拉一次**（打开菜单时；菜单开着这几百毫秒里根内文件不会变）→ 缓存进 st.allDocs/allOthers；
+  // 每次打字在缓存上**同步**筛（applyFilter），不再每键发 ipc——根除「并发 linksCandidates 乱序返回、空 query 旧响应盖掉筛过列表」的竞态。
+  function fetchCandidates() {
+    if (!st) return;
+    var rootId = st.rootId;
     st.loading = true; render();
-    return Promise.resolve(window.ws2.linksQuery(rootId)).then(function (docs) {
+    Promise.resolve(window.ws2.linksCandidates(rootId)).then(function (res) {
       if (!st || st.rootId !== rootId) return; // 会话已变
-      var out = [];
-      (docs || []).forEach(function (d) {
-        if (d.rel === fromRel) return; // 不列自己
-        if (query && d.title.toLowerCase().indexOf(query) < 0 && d.rel.toLowerCase().indexOf(query) < 0) return;
-        out.push({ kind: 'doc', rel: d.rel, title: d.title, fileKind: d.kind });
-      });
-      out = out.slice(0, 8);
-      if (st.query.trim() && window.__wsCreateLinkedDoc) out.push({ kind: 'create', title: '新建「' + st.query.trim() + '」' });
-      out.push({ kind: 'url', title: '网址链接…' });
-      st.items = out; st.loading = false;
-      if (st.active > out.length - 1) st.active = out.length - 1;
-      if (st.active < 0) st.active = 0;
-      render();
-    }).catch(function () { if (st) { st.items = []; st.loading = false; render(); } });
+      res = res || { docs: [], others: [] };
+      st.allDocs = (res.docs || []).filter(function (d) { return d.rel !== st.fromRel; });
+      st.allOthers = (res.others || []).filter(function (o) { return o.rel !== st.fromRel; });
+      st.loading = false;
+      applyFilter();
+    }).catch(function () { if (st) { st.allDocs = []; st.allOthers = []; st.loading = false; applyFilter(); } });
+  }
+  function applyFilter() {
+    if (!st) return;
+    var q = st.query.trim().toLowerCase();
+    var docs = (st.allDocs || []).filter(function (d) { return matches(d.title, d.rel, q); }).map(function (d) { return { kind: 'doc', rel: d.rel, title: d.title, fileKind: d.kind }; });
+    var others = (st.allOthers || []).filter(function (o) { return matches(o.title, o.rel, q); }).map(function (o) { return { kind: 'doc', rel: o.rel, title: o.title, fileKind: o.kind }; });
+    var out = docs.concat(others).slice(0, 8); // 文档在前、其它文件在后
+    if (st.query.trim() && window.__wsCreateLinkedDoc) out.push({ kind: 'create', title: '新建「' + st.query.trim() + '」' });
+    out.push({ kind: 'url', title: '网址链接…' });
+    st.items = out;
+    if (st.active > out.length - 1) st.active = out.length - 1;
+    if (st.active < 0) st.active = 0;
+    render();
   }
 
   // ---- 打开 ----
@@ -117,11 +125,11 @@
       frame: ctx.frame, doc: ctx.doc, win: ctx.win, blockEl: ctx.blockEl,
       rootId: ctx.rootId, fromRel: ctx.fromRel, mode: ctx.mode || 'insert', trig: ctx.trig || 0,
       savedRange: ctx.savedRange || null, onDone: ctx.onDone || null,
-      query: '', active: 0, items: [], loading: true,
+      query: '', active: 0, items: [], loading: true, reqSeq: 0,
     };
     positionAt(ctx.caretRect);
     render();
-    refreshItems();
+    fetchCandidates(); // 拉一次候选，之后打字同步筛
   }
 
   function close() {
@@ -129,7 +137,7 @@
     if (menuEl) menuEl.style.display = 'none';
   }
 
-  function updateQuery(q) { if (!st) return; st.query = q; st.active = 0; refreshItems(); }
+  function updateQuery(q) { if (!st) return; st.query = q; st.active = 0; applyFilter(); }
 
   // 菜单开着时 blockedit 把导航键转给这里；返回 true = 已消费（blockedit 不再处理）。
   function handleKey(e) {
@@ -143,18 +151,18 @@
     if (k === 'Backspace') {
       if (st.trig === 0) e.preventDefault(); // 斜杠/气泡入口：query 纯虚拟，别删正文/选区
       if (st.query.length === 0) { close(); return true; } // 删到触发符 → 关（trig>0 时触发符本身交给正文默认删）
-      st.query = st.query.slice(0, -1); st.active = 0; refreshItems();
+      st.query = st.query.slice(0, -1); st.active = 0; applyFilter();
       return true;
     }
     if (k && k.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
       if (st.trig === 0) e.preventDefault(); // 斜杠/气泡：查询字符不落进正文（wrap 会毁选区）
-      st.query = st.query + k; st.active = 0; refreshItems();
+      st.query = st.query + k; st.active = 0; applyFilter();
       return true;
     }
     return false;
   }
   // IME 组好的字（compositionend）→ 进 query（trig>0 时这些字也已落进正文，插入时按 DOM 真相删掉）。
-  function handleComposition(data) { if (st && data) { st.query = st.query + data; st.active = 0; refreshItems(); } }
+  function handleComposition(data) { if (st && data) { st.query = st.query + data; st.active = 0; applyFilter(); } }
 
   // ---- 选中 → 落地 ----
   function pick(it) {
@@ -176,6 +184,7 @@
         if (!rel) { if (window.__wsToast) window.__wsToast('新建失败'); return; }
         var href = window.WS2Links.relHref(ctx.fromRel, rel);
         finish(ctx, href, title, false, { created: rel });
+        if (window.__wsToast) window.__wsToast('已新建「' + title + '」并链接');
       });
       return;
     }

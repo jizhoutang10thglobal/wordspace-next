@@ -94,8 +94,8 @@ async function readDocMeta(abs, ownRel) {
 }
 function baseNoExt(p) { return path.basename(p).replace(DOC_RE, ''); }
 
-// ---- 递归列出一个根下的文档文件（.html/.md），返回 [{rel, abs}]（rel 用 / 分隔）----
-async function listDocs(rootPath) {
+// ---- 递归列出一个根下满足 predicate(name) 的文件，返回 [{rel, abs}]（rel 用 / 分隔）----
+async function listFilesMatching(rootPath, predicate) {
   const out = [];
   async function rec(dirAbs, relPrefix) {
     let ents;
@@ -106,11 +106,17 @@ async function listDocs(rootPath) {
       const abs = path.join(dirAbs, e.name);
       const rel = relPrefix ? relPrefix + '/' + e.name : e.name;
       if (e.isDirectory()) await rec(abs, rel);
-      else if (e.isFile() && DOC_RE.test(e.name)) out.push({ rel, abs });
+      else if (e.isFile() && predicate(e.name)) out.push({ rel, abs });
     }
   }
   await rec(rootPath, '');
   return out;
+}
+function listDocs(rootPath) { return listFilesMatching(rootPath, (n) => DOC_RE.test(n)); }
+// 非文档文件（pdf/图片/表格等）：@菜单里列在文档之后（链接任何文件都合法，点击时非文档走系统程序）。
+async function listNonDocFiles(rootPath) {
+  const files = await listFilesMatching(rootPath, (n) => !DOC_RE.test(n));
+  return files.map((f) => { const name = path.basename(f.rel); return { rel: f.rel, kind: kindOf(f.rel), title: name.replace(/\.[^.]+$/, '') || name }; }); // 去任意扩展名（baseNoExt 只去 .html/.md）
 }
 
 // ---- 索引状态：Map<rootId, { path, docs: Map<rel, entry> }> ----
@@ -214,7 +220,7 @@ async function hydrate(storeFile, rootId, rootPath) {
 }
 
 module.exports = {
-  extractDocMeta, readDocMeta, listDocs,
+  extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
   refreshRoot, rebuildRoot, removeRoot,
   query, backlinks, titleOf,
   save, hydrate,
