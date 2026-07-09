@@ -1139,7 +1139,7 @@
     applyTabs(op(tabState, key));
     if (wasActive) {
       const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
-      if (e) openTabRow(e); // 回落项可能是外部/临时标签 → 走统一分发
+      if (e) openTabRow(e, false); // 回落到相邻标签：切编辑器+高亮，但不滚树（Colin：关标签不该让树跳到别处）
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
   }
@@ -1457,7 +1457,9 @@
     const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel && el.dataset.root === rootId);
     if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   }
-  function openTabRow(entry) {
+  // reveal=true（默认，点标签）：把文件树展开到该文件并滚动定位。reveal=false（关标签后回落到相邻标签）：
+  // 只切编辑器 + 高亮，不滚树——Colin 2026-07-09：关一个标签不该让文件树跳到相邻文件所在的文件夹。
+  function openTabRow(entry, reveal = true) {
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
       if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry));
       return;
@@ -1466,7 +1468,7 @@
       const root = rootOf(entry.rootId);
       if (root && root.missing) { showToast('「' + root.name + '」失联了，重新定位后才能打开'); return; }
       const n = findNode(entry.rootId, entry.rel);
-      if (n) { openNode(n); expandToFile(entry.rootId, entry.rel); } // 点标签 → 文件树展开到该文件并滚动定位
+      if (n) { openNode(n); if (reveal) expandToFile(entry.rootId, entry.rel); } // reveal 时才展开+滚动定位
       return;
     }
     if (entry.kind === 'html' || entry.kind === 'md') openDoc(entry.abs); // 外部标签的可编辑文档（含 md）
