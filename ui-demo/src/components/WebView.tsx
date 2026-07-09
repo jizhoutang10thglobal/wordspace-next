@@ -55,7 +55,6 @@ export default function WebView({ tab }: { tab: Tab }) {
       case 'copy-link': navigator.clipboard?.writeText(cleanShareUrl(link)); toast('已拷贝链接', 'success'); break
       case 'copy-image': toast('已拷贝图片', 'success'); break
       case 'copy-image-url': navigator.clipboard?.writeText(info.imgUrl || ''); toast('已拷贝图片地址', 'success'); break
-      case 'save-image': toast('图片已存到下载', 'success'); break
       case 'copy-selection': navigator.clipboard?.writeText(sel); toast('已拷贝', 'success'); break
       case 'search-selection': openWebTab(`glass://search?q=${encodeURIComponent(sel)}`, `搜索:${sel.slice(0, 20)}`); navigate('/docs'); break
       case 'cut': case 'copy': case 'paste': case 'select-all': toast('（演示）编辑操作', 'neutral'); break

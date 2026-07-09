@@ -38,7 +38,7 @@ export function buildWebCtx(info: CtxInfo, ctx: CtxCtx): CtxItem[] {
 
   if (info.imgUrl) {
     const img: CtxItem[] = [{ id: 'copy-image', label: '拷贝图片' }]
-    if (isHttp(info.imgUrl)) img.push({ id: 'copy-image-url', label: '拷贝图片地址' }, { id: 'save-image', label: '图片存到下载' })
+    if (isHttp(info.imgUrl)) img.push({ id: 'copy-image-url', label: '拷贝图片地址' }) // 下载功能已砍(Colin 2026-07-09:不让下载,避免臃肿)
     sections.push(img)
   }
 
