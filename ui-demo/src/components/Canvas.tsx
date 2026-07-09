@@ -36,8 +36,12 @@ import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
 import './Canvas.css'
 
-const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout']
+const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout', 'table', 'code']
 const isEditable = (b: Block) => !b.designed && EDITABLE.includes(b.type)
+// 表格 / 代码是「原生编辑」块：单元格 / 代码行是 contentEditable，Enter/Backspace/方向键/Tab
+// 一律交给浏览器原生（新行、合行、行内导航），块编辑器的结构性快捷键（新建块、并块、跨块导航、
+// 斜杠、@提及）在这类块里全部让路。
+const isRawEditBlock = (b: Block | undefined) => !!b && (b.type === 'table' || b.type === 'code')
 
 // 斜杠 `/` 插入菜单的条目（插入块 / 转换块 / AI）。kw 供拼音/英文筛选。
 const SLASH_ITEMS: {
@@ -61,6 +65,8 @@ const SLASH_ITEMS: {
   { key: 'doclink', label: '🔗 链接到文档', kw: 'link doclink lianjie wendang mention at @', type: 'doclink' },
   { key: 'quote', label: '引用', kw: 'quote yinyong', type: 'quote' },
   { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
+  { key: 'table', label: '表格', kw: 'table biaoge grid', type: 'table' },
+  { key: 'code', label: '代码', kw: 'code daima pre snippet', type: 'code' },
   { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
   { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
 ]
@@ -256,6 +262,64 @@ function BlockRow({
     onFocusBlock(block.id)
   }
 
+  // 代码块输入：把 contentEditable 里新产生的直接子元素统一标成 .ws-code-line（浏览器 Enter
+  // 默认插入无 class 的 <div>），保证「每行 = 一个块级元素」结构稳定（Phase 2 按行推挤要用）。
+  // 只加 class、不重排 DOM，光标安全。
+  const normalizeCodeLines = () => {
+    const el = elRef.current
+    if (!el) return
+    for (const child of Array.from(el.children)) {
+      if (child.tagName === 'DIV' && !child.classList.contains('ws-code-line')) {
+        child.classList.add('ws-code-line')
+      }
+    }
+  }
+  const handleCodeInput = () => {
+    normalizeCodeLines()
+    handleInput()
+  }
+
+  // 表格加/删行（demo 级）：直接改 elRef 里的 <table> DOM 再回写 html。
+  // 加一行：克隆末行的单元格结构（保内联样式）、清空文字后追加。
+  const addTableRow = () => {
+    const el = elRef.current
+    const tbody = el?.querySelector('tbody')
+    if (!el || !tbody) return
+    checkpoint()
+    const last = tbody.querySelector('tr:last-child')
+    const tr = document.createElement('tr')
+    const cells = last ? Array.from(last.children) : []
+    const n = cells.length || 1
+    for (let i = 0; i < n; i++) {
+      const td = document.createElement('td')
+      td.setAttribute('style', cells[i]?.getAttribute('style') || '')
+      td.innerHTML = '<br>'
+      tr.appendChild(td)
+    }
+    tbody.appendChild(tr)
+    persist()
+  }
+  // 删除此行：删光标所在的 tbody 行；取不到 / 不在表内则删末行。至少保留一行。
+  const deleteTableRow = () => {
+    const el = elRef.current
+    const tbody = el?.querySelector('tbody')
+    if (!el || !tbody) return
+    const rows = Array.from(tbody.querySelectorAll('tr'))
+    if (rows.length <= 1) return
+    let target: Element | null = null
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount) {
+      const n = sel.getRangeAt(0).startContainer
+      const en = n.nodeType === 1 ? (n as Element) : n.parentElement
+      const tr = en?.closest('tr')
+      if (tr && tbody.contains(tr)) target = tr
+    }
+    if (!target) target = rows[rows.length - 1]
+    checkpoint()
+    target.remove()
+    persist()
+  }
+
   const editProps = {
     ref: setNode as never,
     contentEditable: editableNow,
@@ -310,6 +374,38 @@ function BlockRow({
       persist()
     }
     inner = <Tag className={cls} {...editProps} onMouseDown={onToggleCheck} />
+  } else if (block.type === 'table') {
+    // 可编辑表格：wrapper div 为 contentEditable 根，block.html 是完整 <table>，
+    // 单元格（td/th）随 contentEditable 一起可编辑；加/删行按钮仅编辑态出现。
+    inner = (
+      <div className="ws-table-block">
+        <div className="ws-table" {...editProps} />
+        {editableNow && (
+          <div className="ws-table-tools" contentEditable={false}>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={addTableRow}
+            >
+              + 加一行
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={deleteTableRow}
+            >
+              删除此行
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  } else if (block.type === 'code') {
+    // 可编辑代码：<pre> 为 contentEditable 根，block.html 是若干 <div class="ws-code-line">。
+    // 每行独立块级元素（Enter 新增、Backspace 合行走浏览器原生），输入后归一化行 class。
+    inner = (
+      <pre className="ws-code" {...editProps} onInput={handleCodeInput} />
+    )
   } else if (block.type === 'quote') {
     inner = <blockquote className="ws-quote" {...editProps} />
   } else {
@@ -958,6 +1054,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       const empty = !el || (el.textContent ?? '').trim() === ''
       if (it.type === 'divider' || it.type === 'image') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
+      } else if (it.type === 'table' || it.type === 'code') {
+        // 表格/代码：插入带默认内容的新块并进编辑（单元格/代码行随即可点改）
+        editBlock(addBlock(doc.id, slash.blockId, it.type))
       } else if (it.type === 'list' && empty) {
         // 空块插列表：不在聚焦块上 setBlockType（p→ul 交换会触发 blur 把空 innerHTML 回写、
         // 得到没有 <li> 的空 <ul>）。改成 addBlock 一个带 <li> seed 的新列表块（挂载时同步进
@@ -1129,6 +1228,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     // 半角 @ / 全角 ＠ / [[ / 【【 一网打尽（对抗审查抓到的 IME 形态缺口）。
     const maybeTrigger = (target: EventTarget | null) => {
       if (mention || !editingId || slash || !curRootId || !curPath) return
+      // 表格/代码里 @ 、[[ 是普通字符，不触发文档提及
+      if (isRawEditBlock(doc?.blocks.find((b) => b.id === editingId))) return
       const el = blockEls.current.get(editingId)
       if (!el || !(target instanceof Node) || !el.contains(target)) return
       const two = textBeforeCaret(el, 2)
@@ -1491,6 +1592,11 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       // 当前块 = 光标所在块或灰选中块（两个态的键位统一从这里解析,Notion 双态模型）
       const curId = editingId ?? selectedId
+      // 正在编辑表格/代码这类原生编辑块时，结构性按键（Enter 建块 / Backspace 并块 / Tab / 跨块方向键）
+      // 全部让给浏览器原生，别把新行当成新块、别把光标弹出编辑区。
+      const rawEdit = isRawEditBlock(
+        editingId ? doc?.blocks.find((b) => b.id === editingId) : undefined,
+      )
       // 把「编辑中的活内容」先写回 store,让复制/移动拿到最新文字（不打 checkpoint）
       const commitLive = () => {
         if (!doc || !editingId) return
@@ -1659,7 +1765,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         }
       }
       // Enter：可编辑块末尾 → 新建正文块（IME 组词 / Shift 软换行 / 中间 各自交还原生）
-      if (e.key === 'Enter' && editingId && doc) {
+      if (e.key === 'Enter' && editingId && doc && !rawEdit) {
         if (e.isComposing || e.keyCode === 229) return // 中文/日文输入法组词中 = 确认候选词
         if (e.shiftKey) return // 软换行
         const el = blockEls.current.get(editingId)
@@ -1703,7 +1809,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       // Tab / Shift-Tab：仅在列表内做缩进/反缩进（嵌套子列表，沿用本块的 ul/ol + 样式 class）；
       // 其他块也吞掉 Tab，避免它把光标跳出编辑区。
-      if (e.key === 'Tab' && editingId && doc) {
+      if (e.key === 'Tab' && editingId && doc && !rawEdit) {
         const el = blockEls.current.get(editingId)
         const blk = doc.blocks.find((b) => b.id === editingId)
         e.preventDefault()
@@ -1744,7 +1850,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       // Backspace 在可编辑块最前端：空块→删块、光标落上一块末；非空→并入上一块。
       // 这是「空行删不掉 / Enter 刷出一堆空块」问题的解药。
-      if (e.key === 'Backspace' && editingId && doc) {
+      if (e.key === 'Backspace' && editingId && doc && !rawEdit) {
         if (e.isComposing || e.keyCode === 229) return
         const el = blockEls.current.get(editingId)
         if (!el || !isCaretAtBlockStart(el)) return // 非块首 → 原生删字符
@@ -1769,7 +1875,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         return
       }
       // 跨块方向键：末行↓→下一块、首行↑→上一块（尽量保持列位置）；块中间交还原生。
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editingId && doc) {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editingId && doc && !rawEdit) {
         if (e.isComposing || e.keyCode === 229) return
         const el = blockEls.current.get(editingId)
         const sel = window.getSelection()
@@ -1907,6 +2013,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       if (mention) return // @提及菜单开着：按键归它（两菜单互斥）
       if (!slash) {
         if (e.key === '/' && editingId && !e.metaKey && !e.ctrlKey) {
+          // 表格/代码里的 '/' 是普通字符，不弹斜杠菜单
+          if (isRawEditBlock(doc?.blocks.find((b) => b.id === editingId))) return
           const bid = editingId
           window.setTimeout(() => {
             const rect = caretRect()

@@ -85,12 +85,12 @@ const tableHtml = (body: string) =>
   `<table style="border-collapse:collapse;width:100%;font-size:14px;"><thead><tr><th style="border:1px solid #e4e6e9;padding:6px 10px;background:#f5f5f4;text-align:left;">#</th><th style="border:1px solid #e4e6e9;padding:6px 10px;background:#f5f5f4;text-align:left;">项目</th><th style="border:1px solid #e4e6e9;padding:6px 10px;background:#f5f5f4;text-align:left;">状态</th><th style="border:1px solid #e4e6e9;padding:6px 10px;background:#f5f5f4;text-align:left;">备注</th></tr></thead><tbody>${body}</tbody></table>`
 const longTable: Block[] = [
   h('lt-h', 1, '长表格'),
-  para('lt-p1', '先来一个短表（4 行），应该整表推页、不被劈：'),
-  { id: 'lt-t1', type: 'embed', designed: true, html: tableHtml(rows.slice(0, 4).join('')) },
+  para('lt-p1', '先来一个短表（4 行）——单元格可点进去改文字，行尾按钮加/删行：'),
+  { id: 'lt-t1', type: 'table', html: tableHtml(rows.slice(0, 4).join('')) },
   para('lt-p2', '下面是 44 行的长表——单块超一页高，按规则从新页起、允许跨页（纸面拉长，中间无缝）。导出 PDF 时浏览器会按行自然分页：'),
-  { id: 'lt-t2', type: 'embed', designed: true, html: tableHtml(rows.join('')) },
+  { id: 'lt-t2', type: 'table', html: tableHtml(rows.join('')) },
   para('lt-p3', '长表之后的段落，从表格结束处所在页继续。'),
-  { id: 'lt-t3', type: 'embed', designed: true, html: tableHtml(rows.slice(0, 6).join('')) },
+  { id: 'lt-t3', type: 'table', html: tableHtml(rows.slice(0, 6).join('')) },
 ]
 
 // 5)「代码瀑布」——超长代码块(单块超页高) + 短代码块混排
@@ -98,16 +98,18 @@ const codeLines: string[] = []
 for (let i = 1; i <= 90; i++) {
   codeLines.push(`// line ${String(i).padStart(2, '0')}: paginateBlocks 累计 y += h，放不下整块推下页`)
 }
-const preHtml = (lines: string[]) =>
-  `<pre style="background:#f5f5f4;border:1px solid #e4e6e9;border-radius:6px;padding:14px 16px;font-size:12.5px;line-height:1.6;overflow-x:auto;margin:0;">${lines.join('\n')}</pre>`
+// 可编辑代码块的内容：每行一个 <div class="ws-code-line">（Phase 2 可对行加 margin 推挤）
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const codeInner = (lines: string[]) =>
+  lines.map((l) => `<div class="ws-code-line">${esc(l)}</div>`).join('')
 const codeFall: Block[] = [
   h('cf-h', 1, '代码瀑布'),
-  para('cf-p1', '短代码块（8 行），应整块推页：'),
-  { id: 'cf-c1', type: 'embed', designed: true, html: preHtml(codeLines.slice(0, 8)) },
+  para('cf-p1', '短代码块（8 行）——点某行可改文字，Enter 新增一行：'),
+  { id: 'cf-c1', type: 'code', html: codeInner(codeLines.slice(0, 8)) },
   para('cf-p2', '90 行的超长代码块——单块超一页高，从新页起、跨页拉长纸面：'),
-  { id: 'cf-c2', type: 'embed', designed: true, html: preHtml(codeLines) },
+  { id: 'cf-c2', type: 'code', html: codeInner(codeLines) },
   para('cf-p3', '代码之后的正文接着排。再来一个中等的（20 行）：'),
-  { id: 'cf-c3', type: 'embed', designed: true, html: preHtml(codeLines.slice(0, 20)) },
+  { id: 'cf-c3', type: 'code', html: codeInner(codeLines.slice(0, 20)) },
 ]
 
 // 6)「混合大杂烩」——todo/callout/quote/嵌套列表/分隔线/图/表全混
@@ -122,7 +124,7 @@ const mixed: Block[] = [
   { id: 'mx-num', type: 'list', listStyle: 'numbered', html: '<li>编号列表一</li><li>编号列表二</li><li>编号列表三</li>' },
   { id: 'mx-div', type: 'divider', html: '' },
   { id: 'mx-img', type: 'embed', designed: true, html: svgImg(700, 420, '#5a5f66', '杂烩中图') },
-  { id: 'mx-t', type: 'embed', designed: true, html: tableHtml(rows.slice(0, 5).join('')) },
+  { id: 'mx-t', type: 'table', html: tableHtml(rows.slice(0, 5).join('')) },
   h('mx-h3', 2, '结尾'),
   para('mx-p2', '结尾段落。块级分页处的页尾留白 + 灰缝 + 新页上边距应与自然分页完全同款。'),
 ]

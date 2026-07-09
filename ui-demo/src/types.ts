@@ -38,6 +38,8 @@ export type BlockType =
   | 'divider'
   | 'callout'
   | 'embed'
+  | 'table' // 可编辑表格：block.html 存完整 <table>（thead+tbody+tr+td），单元格 contentEditable
+  | 'code' // 可编辑代码：block.html 存若干 <div class="ws-code-line"> 行（每行一个块级元素）
 
 /** 列表三态：type 仍是 'list'，listStyle 区分无序 / 编号 / 待办。缺省按 bulleted。 */
 export type ListStyle = 'bulleted' | 'numbered' | 'todo'

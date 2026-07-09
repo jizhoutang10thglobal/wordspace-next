@@ -306,6 +306,36 @@
 .ws-block-static .ws-embed { margin: 14px 0; }
 .ws-embed { font-family: var(--font-doc); }
 
+/* ------------------------------------------------------------------ */
+/* 可编辑表格块 / 可编辑代码块                                          */
+/* ------------------------------------------------------------------ */
+.ws-table-block { margin: 12px 0; }
+.ws-table { overflow-x: auto; }
+.ws-table table { border-collapse: collapse; width: 100%; }
+.ws-table td, .ws-table th { min-width: 40px; }
+.ws-table td:focus, .ws-table th:focus { outline: none; }
+.ws-table-tools {
+  display: flex; gap: 8px; margin-top: 6px;
+}
+.ws-table-tools button {
+  font-size: var(--fs-sm); color: var(--c-text-2);
+  background: var(--c-bg-sunken); border: 1px solid var(--c-border);
+  border-radius: var(--r-sm); padding: 3px 10px; cursor: pointer;
+}
+.ws-table-tools button:hover { background: var(--c-bg-hover); color: var(--c-text-1); }
+
+.ws-code {
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: 14px 16px; margin: 12px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.6;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ws-code:focus { outline: none; }
+.ws-code-line { min-height: 1.6em; }
+
 .ws-doc-end {
   margin-top: 40px; padding-top: 16px;
   border-top: 1px solid var(--c-divider);
