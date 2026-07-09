@@ -13,14 +13,20 @@ function refreshDocContext(p) {
 window.__wsDocContext = () => docContext;
 // 就绪 promise：刚打开文档 docContext 还在异步算（classify-file），@ 触发时可等它一下再开菜单（审查 D）。
 window.__wsDocContextReady = () => docContextPromise || Promise.resolve(docContext);
-// U3 @新建：在当前文档同目录建一篇新文档（不切走标签页），返回其根内 rel（给提及菜单算 href）。null=失败。
+// U3 @新建：在当前文档同目录建一篇新文档，返回 { rel（给提及菜单算 href）, abs（建完插链接后跳去编辑它） }。null=失败。
 window.__wsCreateLinkedDoc = async (rootId, fromRel, title) => {
   const dir = fromRel && fromRel.indexOf('/') >= 0 ? fromRel.slice(0, fromRel.lastIndexOf('/')) : '';
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n<title>'
     + esc(title) + '</title>\n</head>\n<body>\n<h1>' + esc(title) + '</h1>\n<p></p>\n</body>\n</html>\n';
-  try { const r = await window.ws2.wsNewDoc(rootId, dir, title, html); return r && r.rel || null; }
+  try { const r = await window.ws2.wsNewDoc(rootId, dir, title, html); return r && r.rel ? { rel: r.rel, abs: r.abs } : null; }
   catch (e) { return null; }
+};
+// U3 @新建收尾：链接已插进当前文档 → 先存当前文档（别让脏守卫吞掉刚插的链接）→ 跳去编辑新文档（Colin 2026-07-09）。
+window.__wsOpenCreatedDoc = async (abs) => {
+  if (!abs) return;
+  if (dirty && docPath && !tempDoc) { try { await save(); } catch (e) { /* 存失败也照跳，openDoc 的脏守卫会兜 */ } }
+  openDoc(abs);
 };
 let dirty = false;
 let undoMgr = null;

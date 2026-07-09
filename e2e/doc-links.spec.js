@@ -146,27 +146,29 @@ test('U3：@ 提及 → 选文档 → 插入纯净 <a href>（磁盘零 class/co
   expect(d).not.toContain('\u00a0'); // 零 nbsp（用普通空格落 caret）
 });
 
-test('U3：斜杠菜单「🔗 链接到文档」→ 提及菜单 → 插入', async () => {
+test('U3-E：@新建 → 当前文档插链接 + 跳去编辑新文档（Colin 2026-07-09）', async () => {
   await page.click('.sb-file[data-rel="D.html"]');
   const frame = page.frameLocator('#doc-frame');
   await expect(frame.locator('h1')).toHaveText('文档D');
   await frame.locator('p').first().click();
   await page.keyboard.press('End');
-  await page.keyboard.type('/');             // 先开斜杠菜单（openSlash 是 setTimeout(0)，跟连打抢跑）
-  await expect(frame.locator('.ws-slashmenu')).toBeVisible();
-  await page.keyboard.type('link');          // 再筛到「链接到文档」（ASCII 关键词 = key 'doclink'；中文会触发 IME 组字关掉斜杠菜单）
-  await page.keyboard.press('Enter');        // 选「链接到文档」→ 弹提及菜单
+  await page.keyboard.type('@');
   await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
-  await page.keyboard.type('文档C');
-  await expect(page.locator('.ws-mention-item.is-active')).toContainText('文档C');
-  await page.keyboard.press('Enter');
-  await expect(frame.locator('a', { hasText: '文档C' })).toHaveAttribute('href', 'C.html');
-  await page.waitForTimeout(1700);
+  await page.keyboard.type('新章节');            // 不存在的名字 → 菜单出「新建「新章节」」项（active=0）
+  await expect(page.locator('.ws-mention-item.is-active')).toContainText('新建「新章节」');
+  await page.keyboard.press('Enter');           // 选新建 → 建文档 + 插链接 + 跳去编辑新文档
+  // 跳转到新文档：编辑器 h1 变成「新章节」（是 E 的核心——不再留在老文档）
+  await expect(frame.locator('h1')).toHaveText('新章节', { timeout: 6000 });
+  // 新文档真落盘
+  const nu = await fs.readFile(path.join(wsDir, '新章节.html'), 'utf8');
+  expect(nu).toContain('<h1>新章节</h1>');
+  // 老文档 D.html 存了纯净链接（跳转前已 save）
   const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
-  expect(d).toMatch(/<a href="C\.html">文档C<\/a>/);
+  expect(d).toMatch(/<a href="新章节\.html">新章节<\/a>/);
   expect(d).not.toContain('ws-doclink');
-  // 审查 #1 回归：斜杠(trig=0)插入时中文 IME 筛选文字不能残留在正文里——「文档C」只应作为链接文字出现一次
-  expect((d.match(/文档C/g) || []).length).toBe(1);
+  expect(d).not.toContain('@新章节'); // 触发符+query 不残留正文
+  // 去掉正确的链接后不应再有「新章节」残留（href+文字都在链接里，别有漏进正文的裸文字）
+  expect(d.replace(/<a href="新章节\.html">新章节<\/a>/g, '')).not.toContain('新章节');
 });
 
 test('U3-B6：从侧栏拖文件进正文 → 插入纯净链接（真实拖拽管线）', async () => {

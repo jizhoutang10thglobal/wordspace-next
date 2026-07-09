@@ -30,7 +30,6 @@
     // 下标引用已全改成 itemByKey('text')（U3 重构），重排/加项安全。
     { key: 'numbered', label: '编号列表', tag: 'ol' },
     { key: 'todo', label: '待办列表', tag: 'ul', cls: 'ws-todo' },
-    { key: 'doclink', label: '🔗 链接到文档', tag: null, doclink: true }, // 互链可发现入口①（放列表组后=可视区内，别放最后掉出去）
     { key: 'callout', label: '提示', tag: 'div', cls: 'ws-callout' },
     { key: 'divider', label: '分隔线', tag: 'hr' },
     { key: 'ai', label: '✦ AI 生成（开发中）', tag: null, ai: true },
@@ -662,7 +661,12 @@
       const hasSel = sel && sel.rangeCount && !sel.isCollapsed && selWithinOneBlock();
       if (mentionApi() && ctx && ctx.rootId != null && hasSel) {
         const blk = editingEl || blockOf(sel.getRangeAt(0).startContainer);
-        openMention(blk, 0, 'wrap', sel.getRangeAt(0).cloneRange());
+        // 气泡链接：菜单锚到「链接」按钮正下方（用户点这里，菜单像从按钮掉下来）——
+        // 而不是选区下方（Colin 2026-07-09：点上方按钮、菜单落在选区下隔着一整行=手感很远）。
+        const linkBtn = fmtbar.querySelector('button[title="链接"]');
+        let anchor = null;
+        if (linkBtn) { const b = linkBtn.getBoundingClientRect(); if (b.height) anchor = { top: b.bottom + 6, left: b.left, above: b.top }; }
+        openMention(blk, 0, 'wrap', sel.getRangeAt(0).cloneRange(), anchor);
         return;
       }
       const url = global.prompt ? global.prompt('链接地址', 'https://') : null;
@@ -846,7 +850,6 @@
       if (it.ai) { onAiSoon(); return; }
       const el = cur.blockEl;
       const empty = !el || (el.textContent || '').trim() === '';
-      if (it.doclink) { openMention(cur.blockEl, 0, 'insert', null); return; } // 互链入口①：删掉 /query 后原地弹文档菜单（trig=0）
       if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
       else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
       else { const nx = insertAfter(el, it); enterEdit(nx, { mode: 'start' }); }
@@ -891,9 +894,9 @@
       try { r.setEnd(caret.startContainer, caret.startOffset); } catch (e) { return 0; }
       return r.toString().length;
     }
-    function openMention(blockEl, trig, mode, savedRange) {
+    function openMention(blockEl, trig, mode, savedRange, anchorRect) {
       const M = mentionApi(); if (!M) return;
-      const rect = caretRectInFrame(blockEl); if (!rect) return; // 先抓 caret rect + 锚偏移（await 后可能变）
+      const rect = anchorRect || caretRectInFrame(blockEl); if (!rect) return; // wrap 传按钮锚点；否则抓 caret rect（await 后可能变）
       const trigLen = trig || 0; // @=1、[[=2、斜杠/气泡=0
       const anchorOff = Math.max(0, caretOffset(blockEl) - trigLen); // 提及区起点：insert 时 = 触发符起点；trig=0 = 当前 caret
       const doOpen = (ctx) => {
@@ -902,7 +905,11 @@
           frame: win.frameElement, doc, win, blockEl,
           caretRect: rect, rootId: ctx.rootId, fromRel: ctx.rel,
           mode: mode || 'insert', trig: trig || 0, trigLen, anchorOff, savedRange: savedRange || null,
-          onDone: () => { markDirty(); if (undoMgr) undoMgr.checkpoint(); },
+          onDone: (res) => {
+            markDirty(); if (undoMgr) undoMgr.checkpoint();
+            // @新建：链接已插进当前文档 → 跳去编辑新文档（先存当前文档，shell 里做）。
+            if (res && res.createdAbs && global.__wsOpenCreatedDoc) global.__wsOpenCreatedDoc(res.createdAbs);
+          },
         });
       };
       const ctx = docCtx();

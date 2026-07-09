@@ -207,13 +207,13 @@
       return;
     }
     if (it.kind === 'create') {
-      // 新建在当前文档同目录、不切走标签页；标题=query。走既有新建 ipc（渲染层 sidebar 钩子）。
+      // 新建在当前文档同目录、插链接进当前文档、随后跳去编辑新文档（Colin 2026-07-09）。标题=query。
       var title = ctx.query.trim() || '未命名文档';
       var mk = (window.__wsCreateLinkedDoc ? window.__wsCreateLinkedDoc(ctx.rootId, ctx.fromRel, title) : Promise.resolve(null));
-      Promise.resolve(mk).then(function (rel) {
-        if (!rel) { if (window.__wsToast) window.__wsToast('新建失败'); return; }
-        var href = window.WS2Links.relHref(ctx.fromRel, rel);
-        finish(ctx, href, title, false, { created: rel });
+      Promise.resolve(mk).then(function (res) {
+        if (!res || !res.rel) { if (window.__wsToast) window.__wsToast('新建失败'); return; }
+        var href = window.WS2Links.relHref(ctx.fromRel, res.rel);
+        finish(ctx, href, title, false, { created: res.rel, createdAbs: res.abs });
         if (window.__wsToast) window.__wsToast('已新建「' + title + '」并链接');
       });
       return;
@@ -283,7 +283,7 @@
   }
 
   function afterInsert(ctx, extra, title) {
-    if (ctx.onDone) { try { ctx.onDone({ inserted: true, created: extra && extra.created, title: title }); } catch (e) {} }
+    if (ctx.onDone) { try { ctx.onDone({ inserted: true, created: extra && extra.created, createdAbs: extra && extra.createdAbs, title: title }); } catch (e) {} }
   }
 
   function reposition() {
