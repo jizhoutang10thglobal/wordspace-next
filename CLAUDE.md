@@ -90,3 +90,36 @@ WCAG 亮度断言（暗态 < 0.2 且 < 亮态、文档两态恒等），不查 c
 容器无显示器 / 装不了 xvfb；宿主 macOS 有真显示器能真开 app。`scripts/host-verify.js`：宿主真启动 app、
 按 VA 判可见效果 + 变异探针 + 截图存证 + 用宿主 token（有 repo scope）`gh pr checks` 确认 CI e2e 真绿
 （破「容器内 token 缺 Actions:read、读不到 CI」的约束）。由独立 agent 在 merge 前跑，任务是证伪、不是盖章。
+
+## 开发时的测试纪律 — 2026-07-09（省 token / 省时间；不削弱门）
+
+**⚠ 更正上面 S4 那条「main 无 branch protection」：现在有了。**
+实测（2026-07-08 合 #136/#141）：main 已设 branch protection，required check = `test` + `e2e`，且要求分支对
+「合并后状态」通过——PR 落后 main（BEHIND）时 merge 会被拒（`2 of 2 required status checks are expected`），
+得先 `gh pr update-branch <PR>` 把 main 合进来重跑 CI 才能合。上面 S4 说「CI 红了照样能点合并」已过期。
+
+**先分清两笔账：CI 不花 Claude token，开发时本地跑测试才花。**
+CI（`.github/workflows/ci.yml` 的 `test`+`e2e`）在 GitHub 服务器上跑，e2e 231 条真开 Electron ~6 分钟——那是
+服务器时间，跟 token 无关。**烧 token 的是开发循环里 agent 本地反复 `npm run test:e2e` 跑全套**（每轮阻塞
+~6 分钟 + 231 行结果读回上下文）。所以「CI 慢」和「开发耗 token」是两个问题：CI 慢归缓存/并行，本地耗 token
+归「该不该每次都跑全套」。这条纪律只管后者。
+
+**开发迭代只跑受影响的 spec 文件，全套 231 条 e2e 是 CI 的活。**
+改一个功能通常只碰 1-3 个 spec（`npx playwright test e2e/<spec>.spec.js` 或 `-g "<用例名>"`，30秒-1分钟），
+别每轮 `npm run test:e2e` 重放全套。全套交给 CI——它每个 PR 照跑 231 条、零 token。**门一点没削弱**：CI 仍是
+权威全量门，required check 挡合并。这跟「自测绿≠正确」不冲突——那条针对的是**新写的门要不要有牙（变异
+自检管这个，且变异自检本就只跑那一道门）**，不是「每次都得把 231 条重放一遍」。这两件事以前被捆一起了，拆开。
+
+**唯一要本地全跑的例外：动到共享核心。**
+改 `src/renderer/shell.js` / `sidebar.js` / `src/lib/tabs.js` / `src/main/ipc.js` 这类被大量 spec 共用的核心
+（影响半径大、跨文件回归藏得深）时，推 PR 前本地跑一次 `npm run test:e2e:dot` 兜底。改孤立功能（只碰自己那
+几个文件）不需要——让 CI 抓跨文件回归，极少数中招也就一次 CI 往返（6 分钟），比每轮本地全套省得多。
+
+**读结果收窄输出：`--reporter=dot` 或 grep 成计数，别把 231 行灌进上下文。**
+`npm run test:e2e:dot`（dot reporter，每条测试一个字符 vs 一行）省输出 token；或 `... 2>&1 | grep -E
+"passed|failed"` / `| tail` 只取结论。定向跑 + dot + grep 三件叠起来，一轮迭代的 token 砍到零头。
+
+**变异自检的两条铁律（血换的，别再踩）：**
+① **先 commit 再变异**——变异后 `git checkout --` 还原会把未提交的修复一起冲掉（已实踩两次）。
+② **fixture 的字符串长度也是测试变量**——同长度巧合会让门变哑门（软链名与真名同长度、字面切片碰巧算对，
+MR-10 栽过）。变异翻红 + 还原翻绿，才算门有牙。
