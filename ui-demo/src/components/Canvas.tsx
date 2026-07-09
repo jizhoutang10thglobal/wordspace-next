@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -30,7 +31,7 @@ import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
 import { resolveHref, relHref, dirOf, baseOf, splitHrefSuffix } from '../lib/links'
 import { usePageConfig } from '../mock/paged'
-import { computeBoundaries, pageBoxPx } from '../lib/page'
+import { PAGE_GAP_PX, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
 import './Canvas.css'
@@ -379,6 +380,45 @@ function BlockRow({
 }
 
 // ---------------------------------------------------------------------------
+// 页间隙 spacer（仅屏显视觉，不进文档数据、不可编辑）：
+// 上段 = 当前页剩余留白 fill + 页底边距（白，纸面自然收尾）；
+// 中段 = 页间灰缝（负 margin 盖过纸边框，把整条白纸切成一页页，内含「第 N 页」chip）；
+// 下段 = 下一页顶边距（白）。
+// ---------------------------------------------------------------------------
+function PageGap({
+  fill,
+  nextPage,
+  box,
+}: {
+  fill: number
+  nextPage: number // 1-based 下一页页码（chip 文案）
+  box: ReturnType<typeof pageBoxPx>
+}) {
+  return (
+    <div
+      className="ws-page-gap"
+      contentEditable={false}
+      aria-hidden
+      style={{
+        height: fill + box.margin.bottom + PAGE_GAP_PX + box.margin.top,
+      }}
+    >
+      <div
+        className="ws-page-gutter"
+        style={{
+          height: PAGE_GAP_PX,
+          marginTop: fill + box.margin.bottom,
+          marginLeft: -(box.margin.left + 1),
+          marginRight: -(box.margin.right + 1),
+        }}
+      >
+        <span className="ws-page-chip">第 {nextPage} 页</span>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Header: breadcrumb, meta, and the "…" menu (export / link / rename / delete)
 // ---------------------------------------------------------------------------
 export function DocHeader({ doc }: { doc: Doc }) {
@@ -509,12 +549,17 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const curRootId = linkingOn && tab?.fileName ? tab.rootId : undefined
   const curPath = linkingOn && tab?.fileName && tab.rootId ? tab.url : undefined
 
-  // ===== 分页文档（可视分页线路线，不做真物理切页）=====
+  // ===== 分页文档（块级分页 + 真实页间隙 spacer）=====
   const pageCfg = usePageConfig(doc?.id)
   const paged = !!doc && pageCfg.on
   const pageBox = useMemo(() => pageBoxPx(pageCfg), [pageCfg])
   const articleRef = useRef<HTMLElement | null>(null)
-  const [pageBounds, setPageBounds] = useState<number[]>([])
+  // gaps[i] = 块 i 前的页间隙（null = 不切页）；tail = 末块后分页符带出的空尾页间隙
+  const [pag, setPag] = useState<{
+    gaps: ({ fill: number; nextPage: number } | null)[]
+    tail: { fill: number; nextPage: number } | null
+    pageCount: number
+  } | null>(null)
 
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
@@ -523,11 +568,12 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
   const focusedBlockId = useRef<string | null>(null)
 
-  // 分页点重算：内容 / 窗口变化（ResizeObserver）→ rAF 合帧 → computeBoundaries。
-  // 显式分页符处强制切页、并从该点重新累计页高（语义在 lib/page.ts，纯函数）。
+  // 块级分页重算：内容 / 窗口变化（ResizeObserver）→ rAF 合帧 → paginateBlocks（纯函数）。
+  // 量的是每个顶层块自身的高度（.ws-block 无 margin，border-box 即含块间距），
+  // 与 spacer 无关 → 结果一轮收敛；setState 前做值比较，避免 spacer 改高 → RO 再触发的死循环。
   useEffect(() => {
     if (!paged || !doc) {
-      setPageBounds([])
+      setPag(null)
       return
     }
     const el = articleRef.current
@@ -535,20 +581,53 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     let raf = 0
     const recalc = () => {
       raf = 0
-      const rect = el.getBoundingClientRect()
-      // 纸的 padding 即页边距 → 内容总高 = padding 盒高度 - 上下边距
-      const totalH = el.clientHeight - pageBox.margin.top - pageBox.margin.bottom
-      const breakTops: number[] = []
+      // 伪块 0 = DocHeader（标题区占第 1 页头部）；量自身 rect + 上下 margin，不受 spacer 影响
+      let headerH = 0
+      const headerEl = el.querySelector('.ws-doc-header')
+      if (headerEl) {
+        const cs = getComputedStyle(headerEl)
+        headerH =
+          headerEl.getBoundingClientRect().height +
+          (parseFloat(cs.marginTop) || 0) +
+          (parseFloat(cs.marginBottom) || 0)
+      }
+      const heights: number[] = [headerH]
+      const breakAfter: boolean[] = [false]
       for (const b of doc.blocks) {
-        if (b.type !== 'pagebreak') continue
         const be = blockEls.current.get(b.id)
         const host = (be?.closest('.ws-block') as HTMLElement | null) ?? be
-        if (host)
-          breakTops.push(
-            host.getBoundingClientRect().top - rect.top - pageBox.margin.top,
-          )
+        if (!host) return // 尚未挂全，等下一轮 RO
+        heights.push(host.getBoundingClientRect().height)
+        breakAfter.push(b.type === 'pagebreak')
       }
-      setPageBounds(computeBoundaries(totalH, pageBox.contentH, breakTops))
+      const r = paginateBlocks(heights, pageBox.contentH, breakAfter)
+      const gaps = doc.blocks.map((_, i) => {
+        const g = r.gapBefore[i + 1]
+        return g === null ? null : { fill: g, nextPage: r.pageOfBlock[i + 1] + 1 }
+      })
+      const tail =
+        r.trailingGap === null
+          ? null
+          : { fill: r.trailingGap, nextPage: r.pageCount }
+      setPag((prev) => {
+        const next = { gaps, tail, pageCount: r.pageCount }
+        if (
+          prev &&
+          prev.pageCount === next.pageCount &&
+          (prev.tail === null) === (next.tail === null) &&
+          (!prev.tail ||
+            (Math.abs(prev.tail.fill - next.tail!.fill) < 0.5 &&
+              prev.tail.nextPage === next.tail!.nextPage)) &&
+          prev.gaps.length === next.gaps.length &&
+          prev.gaps.every((g, i) => {
+            const ng = next.gaps[i]
+            if (g === null || ng === null) return g === ng
+            return Math.abs(g.fill - ng.fill) < 0.5 && g.nextPage === ng.nextPage
+          })
+        )
+          return prev
+        return next
+      })
     }
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(recalc)
@@ -556,6 +635,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     schedule()
     const ro = new ResizeObserver(schedule)
     ro.observe(el)
+    // minHeight 撑住纸时打字不改 article 高度 → 还要盯内容列本身
+    const blocksEl = el.querySelector('.ws-blocks')
+    if (blocksEl) ro.observe(blocksEl)
     return () => {
       ro.disconnect()
       if (raf) cancelAnimationFrame(raf)
@@ -1941,13 +2023,17 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             (doc.pageFormat ? ` ws-fmt ws-fmt-${doc.pageFormat}` : '') +
             (paged ? ' ws-doc-paged' : '')
           }
-          // 分页视图：纸宽 = 纸张 px 宽，padding = 页边距（内容列自然收窄为页内容宽）
+          // 分页视图：纸宽 = 纸张 px 宽，padding = 页边距（内容列自然收窄为页内容宽）。
+          // minHeight = 整页数总高（含页间灰缝），短文档/末页也撑成完整一张纸。
           style={
             paged
               ? {
                   width: pageBox.paperW,
                   maxWidth: 'none',
-                  minHeight: pageBox.paperH,
+                  minHeight: pag
+                    ? pag.pageCount * pageBox.paperH +
+                      (pag.pageCount - 1) * PAGE_GAP_PX
+                    : pageBox.paperH,
                   padding: `${pageBox.margin.top}px ${pageBox.margin.right}px ${pageBox.margin.bottom}px ${pageBox.margin.left}px`,
                 }
               : undefined
@@ -1967,9 +2053,13 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               if (dropIndex === i && dragFrom.current !== null) {
                 edge = dragFrom.current < i ? 'bottom' : 'top'
               }
+              const gap = paged ? pag?.gaps[i] : null
               return (
+                <Fragment key={b.id}>
+                  {gap && (
+                    <PageGap fill={gap.fill} nextPage={gap.nextPage} box={pageBox} />
+                  )}
                 <BlockRow
-                  key={b.id}
                   doc={doc}
                   block={b}
                   index={i}
@@ -1987,8 +2077,17 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                   onDragEnd={onDragEnd}
                   dropEdge={edge}
                 />
+                </Fragment>
               )
             })}
+            {/* 末块后跟分页符 → 收掉当前页、露出一张空尾页 */}
+            {paged && pag?.tail && (
+              <PageGap
+                fill={pag.tail.fill}
+                nextPage={pag.tail.nextPage}
+                box={pageBox}
+              />
+            )}
           </div>
           <div
             className="ws-canvas-tail"
@@ -2010,21 +2109,6 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               }
             }}
           />
-          {/* 分页线覆盖层：每个分页点一条横贯纸面的虚线 + 右侧「第 N 页」chip。
-              绝对定位不占布局；相对纸张 padding 盒定位（top = 上边距 + 分页点 y）。 */}
-          {paged && pageBounds.length > 0 && (
-            <div className="ws-page-marks" aria-hidden contentEditable={false}>
-              {pageBounds.map((y, i) => (
-                <div
-                  key={i}
-                  className="ws-page-mark"
-                  style={{ top: pageBox.margin.top + y }}
-                >
-                  <span className="ws-page-chip">第 {i + 2} 页</span>
-                </div>
-              ))}
-            </div>
-          )}
           {!embedded && (
             <div className="ws-doc-end ws-muted">
               {doc.unsaved

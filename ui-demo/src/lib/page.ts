@@ -77,31 +77,90 @@ export function pageBoxPx(cfg: PageConfig): {
   }
 }
 
+/** 页间灰缝高度（屏显视觉，打印不存在）。 */
+export const PAGE_GAP_PX = 24
+
+export interface BlockPagination {
+  /** 每块起始页号（0-based）。 */
+  pageOfBlock: number[]
+  /**
+   * 每块前的切页信息：块 i 开新页时 = 上一页收在块 i-1 后剩下的留白 px（≥0）；
+   * 不切页（含首块落在第 1 页顶）= null。
+   */
+  gapBefore: (number | null)[]
+  /** 总页数（≥1；末块后跟显式分页符会带出一张空尾页）。 */
+  pageCount: number
+  /** 每页顶部所在块的索引（跨页大块占的页也记它自己；空尾页记 blockHeights.length）。 */
+  pageStartBlocks: number[]
+  /** 最后一页尾部剩余留白 px（撑满末页用；空文档 = 整页内容高）。 */
+  lastFill: number
+  /** 末块后跟显式分页符时：末块所在页收尾的剩余留白 px（其后是空尾页）；否则 null。 */
+  trailingGap: number | null
+}
+
 /**
- * 分页点计算：内容总高 totalH、页内高 pageH、显式分页符的 top 位置 breakTops，
- * 返回各分页点的 y（相对内容顶部，升序）。
- * - 自然分页：每 pageH 一切；
- * - 分页符：在该位置强制切页，并从该位置重新累计页高；
- * - 0 / totalH 两端不出线；分页符乱序会排序、同位置合并、越界忽略。
+ * 块级分页：从页顶累计块高（含块间距，由调用方计入 blockHeights），
+ * 下一块放不下（累计 + 块高 > pageContentH）→ 整块推到下一页，块永不被劈开。
+ * - 超页高的单块（巨图/长代码）例外：起点仍从新页开始，允许跨 ceil(h/页高) 页，
+ *   下一块从它结束处所在页继续累计；
+ * - breakAfter[i] = true（显式分页符）→ 块 i 之后强制结束当前页；
+ * - 恰好填满一页（累计 == 页高）不切，下一块自然落到新页（gap = 0）。
  */
-export function computeBoundaries(
-  totalH: number,
-  pageH: number,
-  breakTops: number[] = [],
-): number[] {
-  if (!(pageH > 0) || !(totalH > 0)) return []
-  const breaks = [...new Set(breakTops.filter((t) => t > 0 && t < totalH))].sort(
-    (a, b) => a - b,
-  )
-  const out: number[] = []
-  let start = 0
-  for (const b of breaks) {
-    for (let y = start + pageH; y < b; y += pageH) out.push(y)
-    out.push(b)
-    start = b
+export function paginateBlocks(
+  blockHeights: number[],
+  pageContentH: number,
+  breakAfter: boolean[] = [],
+): BlockPagination {
+  const n = blockHeights.length
+  const pageOfBlock: number[] = new Array(n).fill(0)
+  const gapBefore: (number | null)[] = new Array(n).fill(null)
+  if (!(pageContentH > 0)) {
+    // 防御：页高非法 → 全落第 1 页
+    return {
+      pageOfBlock,
+      gapBefore,
+      pageCount: 1,
+      pageStartBlocks: [0],
+      lastFill: 0,
+      trailingGap: null,
+    }
   }
-  for (let y = start + pageH; y < totalH; y += pageH) out.push(y)
-  return out
+  const pageStartBlocks: number[] = [0]
+  let page = 0
+  let y = 0
+  let pendingBreak = false
+  for (let i = 0; i < n; i++) {
+    const h = Math.max(0, blockHeights[i])
+    if (pendingBreak || (y > 0 && y + h > pageContentH)) {
+      gapBefore[i] = Math.max(0, pageContentH - y)
+      page++
+      y = 0
+      pageStartBlocks.push(i)
+      pendingBreak = false
+    }
+    pageOfBlock[i] = page
+    if (h > pageContentH) {
+      // 跨页大块：占 ceil(h/页高) 页，占的后续页顶仍是它自己
+      const span = Math.ceil(h / pageContentH)
+      for (let s = 1; s < span; s++) pageStartBlocks.push(i)
+      page += span - 1
+      y = h - (span - 1) * pageContentH
+    } else {
+      y += h
+    }
+    if (breakAfter[i]) pendingBreak = true
+  }
+  let pageCount = page + 1
+  let lastFill = Math.max(0, pageContentH - y)
+  let trailingGap: number | null = null
+  if (pendingBreak) {
+    // 末块后的分页符：带出一张空尾页
+    trailingGap = lastFill
+    pageCount++
+    pageStartBlocks.push(n)
+    lastFill = pageContentH
+  }
+  return { pageOfBlock, gapBefore, pageCount, pageStartBlocks, lastFill, trailingGap }
 }
 
 /** @page 的 size 值（'A4 portrait' / 'Letter landscape'…）。Letter/Legal 是合法关键字。 */
@@ -120,5 +179,7 @@ export function buildPrintCss(cfg: PageConfig): string {
   return [
     `@page{size:${pageSizeCss(cfg)};margin:${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm;${footer}}`,
     `.ws-page-break{break-after:page;visibility:hidden;height:0;margin:0;border:none;padding:0}`,
+    // 顶层块整块换页（与屏显块级分页同一决策口径）；超页高的块浏览器会自动放行跨页
+    `body>:not(.ws-page-break){break-inside:avoid}`,
   ].join('\n')
 }

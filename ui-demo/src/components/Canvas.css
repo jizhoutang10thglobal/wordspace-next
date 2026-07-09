@@ -47,18 +47,28 @@
   box-sizing: border-box;
 }
 
-/* 分页线覆盖层：横贯纸面的虚线 + 右侧页码 chip。不占布局、不响应鼠标。 */
-.ws-page-marks { position: absolute; inset: 0; pointer-events: none; }
-.ws-page-mark {
+/* 页间隙 spacer：块级分页的真实间隙（占布局、不进文档数据）。
+   上段留白透明走纸面白底；中段灰缝用负 margin 盖过纸的 1px 边框，
+   把整条白纸切成一页页——灰缝上下 1px 边线 = 上一页纸底缘 / 下一页纸顶缘，
+   配一层极淡 inset 阴影露出纸边（纸方口径：细边 + 轻阴影，不叠假纸）。 */
+.ws-page-gap { pointer-events: none; user-select: none; }
+.ws-page-gutter {
+  position: relative;
+  background: var(--c-bg-sunken);
+  border-top: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border);
+  box-shadow:
+    inset 0 5px 5px -5px rgba(28, 25, 23, 0.1),
+    inset 0 -4px 4px -4px rgba(28, 25, 23, 0.06);
+}
+.ws-page-gutter .ws-page-chip {
   position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 1px dashed var(--c-border-strong); /* 淡墨导引，非 accent */
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--c-bg); /* 灰缝上提亮一档，别跟缝底同色糊掉 */
 }
 .ws-page-chip {
-  position: absolute;
-  right: 8px;
-  top: 4px;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: 0.04em;
