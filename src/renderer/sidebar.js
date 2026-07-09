@@ -406,11 +406,42 @@
     renderSticky();
   }
 
+  // 单根增量重渲染（性能：多根下每次展开/折叠/watcher 结构变化只重建这一个根的 DOM，不碰别的根）。
+  // 实测背景：两文件夹全展开 1382 行时，全量 render() 每次 ~43ms（把两个根的行全拆了重建）；改成只重建
+  // 受影响的根，另一个根的 DOM 原样不动，交互顿感大幅下降。做法=在扁平 treeEl 里定位该根的 DOM 区间
+  // （它的 sb-root-head 到下一个根的 head / add-root 按钮之间），整段替换成新渲染的 fragment。
+  // 保守兜底：筛选态（q 非空，筛选是全局的）、根节起点找不到（状态漂移）、根不在 → 退回全量 render()。
+  function renderRoot(rootId) {
+    const q = query.trim().toLowerCase();
+    const st = rootOf(rootId);
+    const idx = st ? rootsState.indexOf(st) : -1;
+    if (q || idx < 0) { render(); return; }
+    const startEl = treeEl.querySelector('.sb-root-head[data-root="' + cssAttr(rootId) + '"]');
+    if (!startEl) { render(); return; } // 该根还没渲染出来（首帧）→ 全量
+    // 终点 = 后面第一个存在的根 head；都没有 → add-root 按钮；再没有 → null（末尾）
+    let endEl = null;
+    for (let j = idx + 1; j < rootsState.length && !endEl; j++) {
+      endEl = treeEl.querySelector('.sb-root-head[data-root="' + cssAttr(rootsState[j].id) + '"]');
+    }
+    if (!endEl) endEl = document.getElementById('sb-add-root');
+    const frag = document.createDocumentFragment();
+    renderRootSection(st, idx, '', frag);
+    // 删掉 [startEl .. endEl) 的旧节点，在 endEl 前插入新内容
+    let node = startEl;
+    while (node && node !== endEl) { const next = node.nextSibling; treeEl.removeChild(node); node = next; }
+    treeEl.insertBefore(frag, endEl);
+    highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
+    cacheStickyRows(); // 缓存是只读 layout 遍历（便宜），不重建 DOM；保持全量准确
+    if (stickyEl) stickyEl.dataset.key = '';
+    renderSticky();
+  }
+
   // 一节 = 根标题行 + 该根的树。返回是否渲染了（筛选时无命中的根整节隐藏 → false）。
-  function renderRootSection(root, index, q) {
+  // parent = 追加目标（默认整棵 treeEl；renderRoot 单根增量时传一个 fragment，只重建这一节）。
+  function renderRootSection(root, index, q, parent = treeEl) {
     if (root.missing) {
       if (q) return false; // 失联根不参与筛选
-      renderMissingRoot(root);
+      renderMissingRoot(root, parent);
       return true;
     }
     const nodes = root.tree ? (q ? filterTree(root.tree, q) : root.tree) : [];
@@ -441,7 +472,7 @@
     head.onclick = () => {
       if (rootClosed.has(root.id)) rootClosed.delete(root.id);
       else rootClosed.add(root.id);
-      render();
+      renderRoot(root.id); // 只重建这个根（性能）
     };
     head.oncontextmenu = (e) => {
       e.preventDefault();
@@ -499,21 +530,21 @@
       if (dragNode.rootId === root.id) doMove(dragNode, '');
       else doMoveAcross(dragNode, root.id, ''); // 跨根移到该根顶层
     };
-    treeEl.appendChild(head);
+    parent.appendChild(head);
     if (!open) return true;
     if (!nodes.length) {
       const e = document.createElement('div');
       e.className = 'sb-tree-empty';
       e.textContent = '这个文件夹还没有文件';
-      treeEl.appendChild(e);
+      parent.appendChild(e);
       return true;
     }
-    for (const n of nodes) renderNode(n, 0, treeEl, !!q);
+    for (const n of nodes) renderNode(n, 0, parent, !!q);
     return true;
   }
 
   // 失联根：灰显标题 + 一行说明 +「重新定位 / 移除」（对齐 ui-demo is-missing；绝不静默丢——下面还挂着标签/折叠状态）。
-  function renderMissingRoot(root) {
+  function renderMissingRoot(root, parent = treeEl) {
     const head = document.createElement('div');
     head.className = 'sb-row sb-root-head sb-root-missing';
     head.dataset.root = root.id;
@@ -554,7 +585,7 @@
     rmBtn.onclick = () => removeRootUI(root.id);
     acts.append(relBtn, rmBtn);
     note.append(msg, acts);
-    treeEl.append(head, note);
+    parent.append(head, note);
   }
 
   // 应用新根顺序：本地立即生效（乐观），主进程校验持久化；被拒（集合不符=状态漂移）就按主进程真相重拉。
@@ -909,7 +940,7 @@
         // 否则残留的祖先折叠键会在链日后断开（外部往中间级加文件）时命中新 tail、把已展开的链无声重折叠。
         if (collapsed.has(colKey(dir.rootId, dir.rel))) chain.rels.forEach((r) => collapsed.delete(colKey(dir.rootId, r)));
         else chain.rels.forEach((r) => collapsed.add(colKey(dir.rootId, r)));
-        render();
+        renderRoot(dir.rootId); // 只重建该文件所在的根（性能）
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
@@ -1453,7 +1484,7 @@
       const key = colKey(rootId, acc);
       if (collapsed.has(key)) { collapsed.delete(key); changed = true; }
     }
-    if (changed) render();
+    if (changed) renderRoot(rootId); // 只重建该文件所在的根（性能）
     const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel && el.dataset.root === rootId);
     if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   }
@@ -1945,7 +1976,7 @@
     const activeIno = prevEntry && prevEntry.ino;
     tabState = window.WS2Tabs.reconcileTree(tabState, rootId, relSet, inoToRel);
     persistTabs();
-    render();
+    renderRoot(rootId); // 只重建变化的那个根（性能：watcher 事件不再全量重建两个根）
     renderZones();
     renderRail();
     if (activeRelGone) {

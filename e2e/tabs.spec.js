@@ -186,6 +186,24 @@ test('关激活标签→激活剩下最后一个；关到空→回空态', async
   await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(0);
 });
 
+test('关激活的中间标签 → 激活相邻的下一个（不是最后一个）(Colin 2026-07-09；变异敏感)', async () => {
+  await openWorkspace();
+  // 4 个标签 [a, b, c.png, d]，让「相邻 c.png」≠「最后一个 d」——旧 bug 会跳到 d，修后应到 c.png。
+  await page.click('.sb-file[data-rel="a.html"]');
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await page.click('.sb-file[data-rel="数据/b.html"]');
+  await page.click('.sb-file[data-rel="数据/c.png"]'); // 查看器也是标签
+  await page.click('.sb-file[data-rel="数据/d.html"]'); // active=d
+  await page.click(`#sb-tabs .sb-tab[data-rel="数据/b.html"]`); // 激活中间的 b
+  await expect(tabRow('数据/b.html')).toHaveClass(/is-active/);
+  await tabRow('数据/b.html').hover();
+  await tabRow('数据/b.html').locator('.sb-tab-close').click();
+  await expect(tabRow('数据/b.html')).toHaveCount(0);
+  // 相邻下一个 = c.png（关键:不是最后一个 d）。旧行为会让 d 激活 → 这条翻红。
+  await expect(tabRow('数据/c.png')).toHaveClass(/is-active/);
+  await expect(tabRow('数据/d.html')).not.toHaveClass(/is-active/);
+});
+
 test('非 html（c.png）也进标签页 + 查看器；关闭正常', async () => {
   await openWorkspace();
   await page.locator('.sb-dir[data-rel="数据"]').click();

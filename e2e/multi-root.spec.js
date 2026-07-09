@@ -300,6 +300,26 @@ async function dndTo(srcRootId, srcRel, destSelector) {
 }
 const onDisk = (p) => fs.stat(p).then(() => true, () => false);
 
+test('MR-16 增量渲染：展开 A 的文件夹不重建 B 的 DOM（性能修复回归门；变异敏感）', async () => {
+  const [ra, rb] = await openTwoRoots();
+  // 给 B 的 b.html 树行打一个 DOM 标记（重建会造新元素、标记丢失）
+  await expect(fileRow(rb, 'b.html')).toBeVisible();
+  await page.evaluate((id) => {
+    const row = document.querySelector(`.sb-file[data-root="${id}"][data-rel="b.html"]`);
+    row.dataset.probe = 'INTACT';
+  }, rb);
+  // 展开/折叠 A 的 素材 文件夹（触发 renderRoot(A)）
+  await page.locator(`.sb-dir[data-root="${ra}"][data-rel="素材"]`).click();
+  await expect(fileRow(ra, '素材/同名.html')).toBeVisible(); // A 的子树确实展开了（renderRoot 生效）
+  // 关键:B 的行还是同一个 DOM 元素（标记还在）→ 证明 renderRoot(A) 没碰 B 的 DOM
+  await expect(page.locator(`.sb-file[data-root="${rb}"][data-rel="b.html"][data-probe="INTACT"]`)).toHaveCount(1);
+  // 折叠回去也只碰 A
+  await page.evaluate((id) => { document.querySelector(`.sb-file[data-root="${id}"][data-rel="b.html"]`).dataset.probe2 = 'STILL'; }, rb);
+  await page.locator(`.sb-dir[data-root="${ra}"][data-rel="素材"]`).click();
+  await expect(fileRow(ra, '素材/同名.html')).toHaveCount(0); // A 折叠了
+  await expect(page.locator(`.sb-file[data-root="${rb}"][data-rel="b.html"][data-probe2="STILL"]`)).toHaveCount(1);
+});
+
 test('MR-11 跨根移动文件：同盘 rename、置顶标签换根保持、reconcile 不误清', async () => {
   const [ra, rb] = await openTwoRoots();
   // 在 A 里置顶 a.html（复活/换根后要原样跟过去 = 置顶身份也换根的收益）
