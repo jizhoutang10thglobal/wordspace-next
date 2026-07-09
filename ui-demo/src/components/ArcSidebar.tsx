@@ -27,10 +27,16 @@ import {
   PinOff,
   Search,
   AlertCircle,
+  Star,
+  Bookmark,
+  History as HistoryIcon,
+  ChevronDown,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
+import { useBookmarks, BM_BAR } from '../mock/bookmarks'
+import { useHistory } from '../mock/history'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, type FileNode } from '../lib/tree'
 import { IS_MAC } from '../lib/platform'
@@ -762,6 +768,23 @@ export default function ArcSidebar() {
   const canBack = !!curHist && curHist.index > 0
   const canFwd = !!curHist && curHist.index < curHist.stack.length - 1
 
+  // 收藏夹：网页标签才显示星标；点击/⌘D 加入或移出收藏。
+  const bmList = useBookmarks((s) => s.bookmarks)
+  const bmFolders = useBookmarks((s) => s.folders)
+  const isWebTab = activeTab?.kind === 'web' && !!activeTab.url && activeTab.url !== 'wordspace://newtab'
+  const bookmarked = !!isWebTab && bmList.some((b) => b.url === activeTab!.url)
+  const toggleBookmark = () => {
+    if (!isWebTab || !activeTab) return
+    const bm = useBookmarks.getState()
+    if (bm.isBookmarked(activeTab.url)) { bm.removeByUrl(activeTab.url); useStore.getState().toast('已移出收藏') }
+    else { bm.add({ title: activeTab.title || activeTab.url, url: activeTab.url }); useStore.getState().toast('已加入收藏', 'success') }
+  }
+  const openBookmark = (url: string, title: string) => {
+    useStore.getState().openWebTab(url, title)
+    useHistory.getState().record(url, title)
+    navigate('/docs')
+  }
+
   const [omni, setOmni] = useState(activeTab?.url ?? '')
   useEffect(() => {
     setOmni(activeTab?.url ?? '')
@@ -853,6 +876,23 @@ export default function ArcSidebar() {
         const doc = tab.docId ? st.getDoc(tab.docId) : undefined
         if (doc?.unsaved) ui.askCloseTab(tab.id)
         else st.closeTab(tab.id)
+      } else if (!e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        // Cmd+D 收藏 / 取消收藏当前网页
+        const st = useStore.getState()
+        const tab = st.tabs.find((t) => t.id === st.activeTabId)
+        if (!tab || tab.kind !== 'web' || !tab.url || tab.url === 'wordspace://newtab') return
+        e.preventDefault()
+        const b = useBookmarks.getState()
+        if (b.isBookmarked(tab.url)) { b.removeByUrl(tab.url); st.toast('已移出收藏') }
+        else { b.add({ title: tab.title || tab.url, url: tab.url }); st.toast('已加入收藏', 'success') }
+      } else if (!e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+        // Cmd+L 聚焦地址栏
+        e.preventDefault()
+        if (useUI.getState().sidebarCollapsed) toggleSidebar()
+        window.setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>('.arc-omni-input')
+          el?.focus(); el?.select()
+        }, 0)
       } else if (!e.shiftKey && /^[1-9]$/.test(e.key)) {
         // 直达第 N 个标签页；9 = 最后一个（浏览器语义）
         e.preventDefault()
@@ -934,6 +974,7 @@ export default function ArcSidebar() {
           <button className="arc-ico" title="后退" onClick={goBack} disabled={!canBack}><ChevronLeft size={16} /></button>
           <button className="arc-ico" title="前进" onClick={goForward} disabled={!canFwd}><ChevronRight size={16} /></button>
           <button className="arc-ico" title="刷新" onClick={reload}><RotateCw size={13} /></button>
+          <button className="arc-ico" title="历史记录" onClick={() => navigate('/history')}><HistoryIcon size={15} /></button>
           <button className="arc-ico" title={IS_MAC ? '查找文件 ⌘P' : '查找文件 Ctrl+P'} onClick={openFind}><Search size={14} /></button>
         </div>
       </div>
@@ -959,6 +1000,15 @@ export default function ArcSidebar() {
           placeholder="搜索,或输入网址"
           spellCheck={false}
         />
+        {isWebTab && (
+          <button
+            className={`arc-omni-star ${bookmarked ? 'is-on' : ''}`}
+            title={bookmarked ? '已收藏（⌘D 移出）' : '加入收藏 ⌘D'}
+            onClick={toggleBookmark}
+          >
+            <Star size={14} fill={bookmarked ? 'currentColor' : 'none'} />
+          </button>
+        )}
         {isLocal && activeTab?.kind !== 'web' && <span className="arc-omni-tag">本地</span>}
       </div>
 
@@ -973,6 +1023,31 @@ export default function ArcSidebar() {
           </button>
         </div>
         <TabStrip pinned={false} />
+
+        <div className="arc-section-label arc-tabs-label">
+          <span>收藏</span>
+          <button className="arc-ico arc-ico-sm" title="管理收藏 · 导入导出" onClick={() => navigate('/bookmarks')}>
+            <Bookmark size={13} />
+          </button>
+        </div>
+        <div className="arc-bm">
+          {bmFolders.map((f) => {
+            const items = bmList.filter((b) => b.folderId === f.id)
+            if (!items.length) return null
+            return (
+              <div key={f.id} className="arc-bm-folder">
+                {f.id !== BM_BAR && <div className="arc-bm-folder-name">{f.name}</div>}
+                {items.map((b) => (
+                  <button key={b.id} className="arc-bm-item" title={b.url} onClick={() => openBookmark(b.url, b.title)}>
+                    <Globe2 size={12} className="arc-bm-ico" />
+                    <span className="arc-bm-title">{b.title}</span>
+                  </button>
+                ))}
+              </div>
+            )
+          })}
+          {!bmList.length && <div className="arc-bm-empty">点地址栏的 ☆ 收藏网页</div>}
+        </div>
 
         <div className="arc-section-label">文档</div>
         <div className="arc-filter">

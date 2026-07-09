@@ -11,6 +11,8 @@ import TopActions from './components/TopActions'
 import ToastHost from './components/ToastHost'
 import Agents from './components/Agents'
 import Settings from './components/Settings'
+import HistoryPage from './components/HistoryPage'
+import BookmarksPage from './components/BookmarksPage'
 import PublishDialog from './components/PublishDialog'
 import CreateModal from './components/CreateModal'
 import AddFolderModal from './components/AddFolderModal'
@@ -54,6 +56,8 @@ function RoutedView() {
     <div className="ws-route ws-anim-view" key={seg}>
       <Routes location={location}>
         <Route path="/docs" element={<MainDocs />} />
+        <Route path="/history" element={<HistoryPage />} />
+        <Route path="/bookmarks" element={<BookmarksPage />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/docs" replace />} />
       </Routes>

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useStore } from './store'
+import { useHistory } from './history'
 
 // ---------------------------------------------------------------------------
 // Wordspace's browser side. Wordspace is also a real browser, so it needs the
@@ -168,6 +169,7 @@ export const useBrowser = create<BrowserState>()((set, get) => ({
     })
 
     commitToTab(tabId, url)
+    useHistory.getState().record(url, resolve(url).title) // 记浏览历史(back/forward 不记,只记主动导航)
   },
 
   back: () => {

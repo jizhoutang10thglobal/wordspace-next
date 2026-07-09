@@ -78,6 +78,31 @@
   font-size: var(--fs-sm); color: var(--c-text);
 }
 .arc-omni-input::placeholder { color: var(--c-text-3); }
+
+/* 地址栏收藏星标 */
+.arc-omni-star {
+  flex: none; display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: var(--r-pill); color: var(--c-text-3);
+}
+.arc-omni-star:hover { background: var(--c-hover); color: var(--c-text-2); }
+.arc-omni-star.is-on { color: var(--c-accent); }
+
+/* 收藏区 */
+.arc-bm { padding: 0 6px 4px; }
+.arc-bm-folder { margin-bottom: 4px; }
+.arc-bm-folder-name {
+  font-size: var(--fs-xs); color: var(--c-text-3); padding: 3px 8px 2px; letter-spacing: 0.02em;
+}
+.arc-bm-item {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: var(--r-sm); text-align: left; color: var(--c-text-2);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
+}
+.arc-bm-item:hover { background-size: 100% 100%; color: var(--c-text); }
+.arc-bm-ico { flex: none; color: var(--c-text-3); }
+.arc-bm-title { flex: 1; min-width: 0; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arc-bm-empty { font-size: var(--fs-xs); color: var(--c-text-3); padding: 4px 10px; }
 .arc-tabs-label {
   display: flex; align-items: center; justify-content: space-between;
 }
