@@ -19,7 +19,6 @@ const shortcuts: Shortcut[] = [
   { name: '招聘页', url: 'https://tenthglobal.com/careers', initial: '招', color: '#1a73e8' },
   { name: '公司官网', url: 'https://tenthglobal.com', initial: 'T', color: '#16307a' },
   { name: 'Designer News', url: 'https://news.design/today', initial: 'D', color: '#b8541d' },
-  { name: 'DailyBuzz 长文', url: 'https://www.dailybuzz.co/article', initial: 'B', color: '#ff5a3c' },
   { name: 'Glass 搜索', url: 'glass://home', initial: 'G', color: '#1e8e3e' },
   { name: 'FlowDesk', url: 'https://flowdesk.app', initial: 'F', color: '#6750c8' },
   { name: '维基百科', url: 'https://zh.wikipedia.org', initial: 'W', color: '#5a5f66' },

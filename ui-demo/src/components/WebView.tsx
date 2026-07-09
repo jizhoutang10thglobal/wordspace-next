@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ExternalLink, Lock, Globe, Search, ChevronUp, ChevronDown, X, BookOpen, Folder, Bookmark } from 'lucide-react'
+import { ExternalLink, Lock, Globe, Search, ChevronUp, ChevronDown, X, Folder, Bookmark } from 'lucide-react'
 import type { Tab } from '../types'
 import { resolve, useBrowser, type Resolved } from '../mock/browser'
 import { useStore } from '../mock/store'
@@ -26,8 +26,6 @@ export default function WebView({ tab }: { tab: Tab }) {
   const navigate = useNavigate()
   const zoom = useBrowser((s) => s.zoom)
   const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; info: CtxInfo } | null>(null)
-  const [reader, setReader] = useState(false) // 只读阅读模式（纯显示，不落盘）
-  useEffect(() => { setReader(false) }, [tab.url]) // 换页退出阅读模式
 
   // 网页内查找（Cmd+F）：mock 站是同文档 DOM，用 window.find 定位+高亮+滚动（演示够用）。
   const [findOpen, setFindOpen] = useState(false)
@@ -120,7 +118,7 @@ export default function WebView({ tab }: { tab: Tab }) {
 
   return (
     <div className="webpage" onContextMenu={onContextMenu}>
-      <WebChrome tab={tab} resolved={r} reader={reader} onToggleReader={() => setReader((v) => !v)} />
+      <WebChrome tab={tab} resolved={r} />
       <BookmarkBar />
       {findOpen && (
         <div className="web-find">
@@ -142,7 +140,7 @@ export default function WebView({ tab }: { tab: Tab }) {
           <button className="web-find-btn" title="关闭（Esc）" onClick={closeFind}><X size={14} /></button>
         </div>
       )}
-      <div className={`webpage-zoom ${reader ? 'is-reader' : ''}`} style={zoom !== 1 ? { zoom } : undefined}>{content}</div>
+      <div className="webpage-zoom" style={zoom !== 1 ? { zoom } : undefined}>{content}</div>
       {menu && (
         <WebContextMenu
           x={menu.x}
@@ -156,8 +154,8 @@ export default function WebView({ tab }: { tab: Tab }) {
   )
 }
 
-// 网页头：安全指示（锁 / 非安全）+ 标题 + 域名 + 阅读模式。与文档面包屑同壳。
-function WebChrome({ tab, resolved, reader, onToggleReader }: { tab: Tab; resolved: Resolved; reader: boolean; onToggleReader: () => void }) {
+// 网页头：安全指示（锁 / 非安全）+ 标题 + 域名。与文档面包屑同壳。
+function WebChrome({ tab, resolved }: { tab: Tab; resolved: Resolved }) {
   const url = tab.url
   const secure = /^https:/i.test(url) || url.startsWith('glass://') || url.startsWith('wordspace://')
   let host = ''
@@ -176,13 +174,6 @@ function WebChrome({ tab, resolved, reader, onToggleReader }: { tab: Tab; resolv
         <span className="web-chrome-title">{resolved.title}</span>
         {host && <span className="web-chrome-host">{host}</span>}
       </div>
-      <button
-        className={`web-reader-btn ${reader ? 'is-on' : ''}`}
-        onClick={onToggleReader}
-        title={reader ? '退出阅读模式' : '阅读模式（只显示正文，不保存）'}
-      >
-        <BookOpen size={14} />
-      </button>
     </div>
   )
 }

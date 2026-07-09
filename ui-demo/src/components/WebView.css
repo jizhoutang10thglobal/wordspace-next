@@ -28,33 +28,6 @@
 /* 缩放包裹层：填满内容区，zoom 作用于内部整页 */
 .webpage-zoom { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 
-/* 只读阅读模式：把当前页收进居中的阅读列、放大字号、去掉装饰图。纯显示，不落盘。 */
-.webpage-zoom.is-reader { display: block; overflow-y: auto; background: var(--c-surface); }
-.webpage-zoom.is-reader .ms { max-width: 720px; margin: 0 auto; padding: 48px 28px 80px; background: none; }
-.webpage-zoom.is-reader .ms * { font-size: revert; line-height: 1.75; }
-.webpage-zoom.is-reader .ms h1, .webpage-zoom.is-reader .ms .nw-card-title, .webpage-zoom.is-reader .ms .co-hero h1 { font-size: 26px; line-height: 1.3; }
-.webpage-zoom.is-reader .ms img,
-.webpage-zoom.is-reader .ms .nw-thumb,
-.webpage-zoom.is-reader .ms .nw-hero-media,
-.webpage-zoom.is-reader .ms .nw-nav,
-.webpage-zoom.is-reader .ms .nw-foot,
-.webpage-zoom.is-reader .ms [class*='-nav'],
-.webpage-zoom.is-reader .ms [class*='-cta'] { display: none; }
-/* 文章详情页（DailyBuzz .lr）：正文提取 —— 收掉 grid、只留 .lr-article，其余（横幅/
-   侧栏广告/推荐/页脚/订阅浮层/正文中插广告）全隐。这就是 Reader 的核心动作。 */
-.webpage-zoom.is-reader .ms.lr { display: block; background: none; }
-.webpage-zoom.is-reader .ms.lr > *:not(.lr-article) { display: none; }
-.webpage-zoom.is-reader .ms.lr .lr-inline-ad { display: none; }
-.webpage-zoom.is-reader .ms.lr .lr-fig { height: 200px; margin: 8px 0 24px; }
-.webpage-zoom.is-reader .ms.lr .lr-kicker { display: inline-block; }
-
-/* 阅读模式开关 */
-.web-reader-btn {
-  flex: none; display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; border-radius: var(--r-pill); color: var(--c-text-2);
-}
-.web-reader-btn:hover { background: var(--c-hover); color: var(--c-text); }
-.web-reader-btn.is-on { background: var(--c-accent-tint); color: var(--c-accent); }
 .web-chrome {
   flex: none;
   display: flex;
