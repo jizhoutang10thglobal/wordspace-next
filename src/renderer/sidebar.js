@@ -20,6 +20,8 @@
   let query = '';
   let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，全局单一集合持久化）
   let suppressRevealOnce = false; // 一次性:关标签回落时置真,onOpen 消费它抑制树定位（Colin：关标签不滚树）
+  let diagRenderStart = 0; // 诊断探针：一次 render/renderRoot 的起点，afterRender 里结算
+  const diagRender = { lastMs: 0, maxMs: 0, count: 0 }; // 诊断探针：renderer 渲染耗时（Cmd+Shift+D 看）
   // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复根 + 标签」
   // 整条跑完才做，否则会被 loadTabs 整体覆盖 / 被 openTabFromAbs 的过期根守卫中止（Colin 报的「文档开了没标签」）。
   // 一旦 resolve 永久 resolved：app 已开着时再 open（热路径）不阻塞，立即建标签。
@@ -367,6 +369,7 @@
   // ---- 渲染 ----
   let dragRootId = null; // 根标题行拖拽重排（模块级，跨 RootSection）
   function render() {
+    diagRenderStart = performance.now(); // 诊断探针
     treeEl.innerHTML = '';
     if (!rootsState.length) {
       renderZones(); // 标签区还可能有外部标签（根全移除后仍保留）
@@ -410,6 +413,7 @@
   // （它的 sb-root-head 到下一个根的 head / add-root 按钮之间），整段替换成新渲染的 fragment。
   // 保守兜底：筛选态（q 非空，筛选是全局的）、根节起点找不到（状态漂移）、根不在 → 退回全量 render()。
   function renderRoot(rootId) {
+    diagRenderStart = performance.now(); // 诊断探针
     const q = query.trim().toLowerCase();
     const st = rootOf(rootId);
     const idx = st ? rootsState.indexOf(st) : -1;
@@ -446,6 +450,10 @@
     cacheStickyRows();
     if (stickyEl) stickyEl.dataset.key = STICKY_FORCE; // 哨兵值：任何真 key（含空 pins 的 ''）都 ≠ 它 → 必重建
     renderSticky();
+    const ms = performance.now() - diagRenderStart; // 诊断探针：这次渲染（含 cacheStickyRows 全量 offsetTop）耗时
+    diagRender.lastMs = ms;
+    diagRender.maxMs = Math.max(diagRender.maxMs, ms);
+    diagRender.count++;
   }
 
   // 一节 = 根标题行 + 该根的树。返回是否渲染了（筛选时无命中的根整节隐藏 → false）。
@@ -2098,6 +2106,69 @@
   // 运行时根状态变化（拔盘/根被删 → 主进程转失联并广播）：重拉根列表，失联节灰态即刻可见。
   if (window.ws2.onWsRootsChanged) window.ws2.onWsRootsChanged(() => resyncRoots());
   window.addEventListener('focus', () => { for (const st of rootsState) { if (!st.missing) onTreeChanged(st.id); } });
+
+  // ── 性能诊断面板（Cmd/Ctrl+Shift+D）──────────────────────────────────────────────
+  // 最小探针：Wendi 报「两文件夹贼卡」，我们本地量不出她环境的真实规模/形状。复现卡顿时按这个快捷键，
+  // 读到每根的文件数 / readTree 耗时 / watcher 触发次数 / 是否云盘 + 渲染耗时，一键复制发回来定位。诊断用，非产品功能。
+  let diagOverlay = null;
+  async function buildDiagReport() {
+    let roots = [];
+    try { roots = (await window.ws2.wsDiag()) || []; } catch {}
+    let version = '';
+    try { version = await window.ws2.appVersion(); } catch {}
+    const domRows = treeEl ? treeEl.querySelectorAll('.sb-row').length : 0;
+    const L = [];
+    L.push('Wordspace 诊断  v' + version + '   ' + new Date().toLocaleString());
+    L.push('');
+    if (!roots.length) L.push('（还没打开任何文件夹，或还没读过树）');
+    roots.forEach((r, i) => {
+      const name = r.path.split('/').filter(Boolean).pop() || r.path;
+      L.push('根' + (i + 1) + '「' + name + '」  ' + (r.cloud ? '☁ ' + r.cloud + ' 云盘' : '本地'));
+      L.push('   ' + r.path);
+      L.push('   文件数 ' + r.fileCount.toLocaleString() +
+        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（读 ' + r.reads + ' 次）' +
+        '  ·  watcher 触发 ' + r.watchEvents + ' 次');
+    });
+    L.push('');
+    L.push('渲染：上次 ' + diagRender.lastMs.toFixed(0) + 'ms · 峰值 ' + diagRender.maxMs.toFixed(0) +
+      'ms · 共 ' + diagRender.count + ' 次    │    当前树 DOM 行数 ' + domRows);
+    return L.join('\n');
+  }
+  async function toggleDiag() {
+    if (diagOverlay) { diagOverlay.remove(); diagOverlay = null; return; }
+    const report = await buildDiagReport();
+    const ov = document.createElement('div');
+    ov.style.position = 'fixed'; ov.style.inset = '0'; ov.style.zIndex = '9999';
+    ov.style.background = 'rgba(0,0,0,0.45)'; ov.style.display = 'flex';
+    ov.style.alignItems = 'center'; ov.style.justifyContent = 'center';
+    const panel = document.createElement('div');
+    panel.style.background = '#1e1e1e'; panel.style.color = '#e6e6e6';
+    panel.style.font = '12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace';
+    panel.style.padding = '16px 18px'; panel.style.borderRadius = '10px';
+    panel.style.maxWidth = '82vw'; panel.style.maxHeight = '78vh'; panel.style.overflow = 'auto';
+    panel.style.boxShadow = '0 12px 48px rgba(0,0,0,.5)';
+    const pre = document.createElement('pre');
+    pre.textContent = report; pre.style.margin = '0 0 12px'; pre.style.whiteSpace = 'pre-wrap';
+    const bar = document.createElement('div');
+    bar.style.display = 'flex'; bar.style.gap = '8px'; bar.style.alignItems = 'center';
+    const copy = document.createElement('button');
+    copy.textContent = '复制诊断';
+    for (const b of [copy]) { b.style.font = 'inherit'; b.style.padding = '5px 12px'; b.style.borderRadius = '6px'; b.style.border = '1px solid #555'; b.style.background = '#2d2d2d'; b.style.color = '#e6e6e6'; b.style.cursor = 'pointer'; }
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(report); copy.textContent = '已复制 ✓'; } catch { copy.textContent = '复制失败'; } };
+    const hint = document.createElement('span');
+    hint.textContent = '复现卡顿时按 Cmd+Shift+D，把这些数字发回来定位  ·  Esc 关闭';
+    hint.style.opacity = '0.65'; hint.style.marginLeft = '4px';
+    bar.append(copy, hint);
+    panel.append(pre, bar);
+    ov.append(panel);
+    ov.onclick = (e) => { if (e.target === ov) toggleDiag(); };
+    document.body.appendChild(ov);
+    diagOverlay = ov;
+  }
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); toggleDiag(); }
+    else if (e.key === 'Escape' && diagOverlay) { diagOverlay.remove(); diagOverlay = null; }
+  });
 
   // 启动恢复上次打开的全部根（含失联的灰态）+ 全局标签。整条跑完才 resolveRestore，
   // 让冷启动的 open-file 建标签等在这后面（无根 / 出错也要 resolve，否则 onOpen 永久挂起）。

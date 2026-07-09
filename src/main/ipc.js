@@ -9,6 +9,7 @@ const docWatcher = require('./doc-watcher');
 const workspaceWatcher = require('./workspace-watcher');
 const workspace = require('./workspace');
 const workspaceStore = require('./workspace-store');
+const perfDiag = require('./perf-diag');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
 const mdAdapter = require('./md-adapter');
 const { pathInfo } = require('../lib/path-url');
@@ -70,6 +71,7 @@ function startRootWatch(root) {
     root.id,
     root.path,
     () => {
+      perfDiag.recordWatch(root.path); // 诊断探针：数这个根被 watcher 触发几次（云盘 churn 会很高）
       for (const w of BrowserWindow.getAllWindows()) {
         if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id);
       }
@@ -283,6 +285,7 @@ function registerIpc() {
     }
   });
   ipcMain.handle('app-version', () => app.getVersion());
+  ipcMain.handle('ws-diag', () => perfDiag.snapshot()); // 诊断面板：每根 readTree 耗时/文件数/watcher 次数/云盘
   ipcMain.handle('recents-list', () => recents.load(recentsFile()));
   ipcMain.handle('recents-add', (_e, p) => recents.add(recentsFile(), p));
   ipcMain.handle('history-list', (_e, p) => history.list(historyRoot(), p));

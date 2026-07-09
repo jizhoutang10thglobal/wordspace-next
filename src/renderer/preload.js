@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('ws2', {
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),
   appVersion: () => ipcRenderer.invoke('app-version'),
+  wsDiag: () => ipcRenderer.invoke('ws-diag'), // 诊断面板（Cmd+Shift+D）读主进程侧每根成本
   saveDoc: (p, c) => ipcRenderer.invoke('save-doc', p, c),
   exportPdf: (p, mode, html) => ipcRenderer.invoke('export-pdf', p, mode, html),
   recents: () => ipcRenderer.invoke('recents-list'),
