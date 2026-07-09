@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url'
 const dir = mkdtempSync(join(tmpdir(), 'page-test-'))
 const out = join(dir, 'page.mjs')
 await build({ entryPoints: [new URL('../src/lib/page.ts', import.meta.url).pathname], bundle: true, format: 'esm', outfile: out, platform: 'neutral' })
-const { paginateBlocks } = await import(pathToFileURL(out))
+const { paginateBlocks, computeInnerSplits } = await import(pathToFileURL(out))
 
 let fail = 0
 const eq = (a, b, msg) => {
@@ -54,6 +54,33 @@ eq([r.pageCount, r.trailingGap, r.lastFill, r.pageStartBlocks], [2, 680, P, [0, 
 // 页高非法：防御性全落第 1 页
 r = paginateBlocks([100, 200], 0)
 eq([r.pageCount, r.pageOfBlock], [1, [0, 0]], 'invalid pageContentH')
+
+// ---- computeInnerSplits：超高块沿块内边界切成多页 ----
+// 每页取「最后一个还装得下的边界」（Word 语义）；atom=切分后代下标、top=其原始坐标、fill=切点上方剩余留白。
+
+// 列表/表格式：块 2000 高，边界每 300px 一个 [0,300,600,900,1200,1500,1800]，P=800
+// → 第 1 页装到 600（超 800 的 900 装不下）、第 2 页从 600 起装到 1200，共 2 切
+let c = computeInnerSplits([0, 300, 600, 900, 1200, 1500, 1800], 2000, P)
+eq(c, [{ atom: 2, top: 600, fill: 200 }, { atom: 4, top: 1200, fill: 200 }], 'inner: 均匀边界多切分')
+
+// 边界恰落页界（每 100px）：块 1700、P=800 → 切在 800、1600
+c = computeInnerSplits([0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200, 1300, 1400, 1500, 1600], 1700, P)
+eq([c.map((x) => x.top)], [[800, 1600]], 'inner: 边界恰落页界 fill=0')
+
+// 不可切：唯一边界在块顶（top=0，不 >1），如单张超页高图 → 空（回退拉长纸面）
+eq(computeInnerSplits([0], 2000, P), [], 'inner: 无可切边界 → 空')
+
+// 首个可切边界已超一页（巨型首项）：第 1 页切不动 → 空，交回拉长兜底
+eq(computeInnerSplits([0, 850, 1600], 2400, P), [], 'inner: 首边界超页 → 空')
+
+// startOffset：块顶在起始页已用 200 → 首页只剩 600，边界含端点（<=）故切在 600（恰装满）
+c = computeInnerSplits([0, 300, 600, 900], 1000, P, 200)
+eq(c, [{ atom: 2, top: 600, fill: 0 }], 'inner: startOffset 缩短首页')
+
+// 乱序输入自排序：[600,0,1200,300] 排成 [0,300,600,1200]，块 1400/P800 → 首页切在 600（1200 落第 2 页尾内）
+eq(computeInnerSplits([600, 0, 1200, 300], 1400, P).map((x) => x.top), [600], 'inner: 乱序自排序')
+// 页高非法防御 → 空
+eq(computeInnerSplits([0, 300], 1000, 0), [], 'inner: 页高非法 → 空')
 
 if (fail) { console.log(`\n${fail} failure(s)`); process.exit(1) }
 console.log('test-page: all passed')
