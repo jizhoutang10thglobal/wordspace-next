@@ -15,28 +15,45 @@
   const emptyOpenBtn = document.getElementById('sb-empty-open');
   if (!treeEl) return;
 
-  let current = null; // { root, name, tree }
+  // 多根工作区：每根一节（根标题行 + 它自己的树）。「打开一个文件夹」= 恰好只有一个根，没有第二种模式。
+  let rootsState = []; // [{ id, path, name, missing, tree }] 有序 = 侧栏显示序；missing 根 tree=null
   let query = '';
-  let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，按根持久化）
-  // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复上次工作区 + 标签」
+  let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，全局单一集合持久化）
+  // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复根 + 标签」
   // 整条跑完才做，否则会被 loadTabs 整体覆盖 / 被 openTabFromAbs 的过期根守卫中止（Colin 报的「文档开了没标签」）。
   // 一旦 resolve 永久 resolved：app 已开着时再 open（热路径）不阻塞，立即建标签。
   let resolveRestore;
   const restoreReady = new Promise((r) => { resolveRestore = r; });
-  const collapsed = new Set(); // 收起的文件夹 rel（打开工作区时全部收起，只显示顶层）
+  // 收起的文件夹，键 = `rootId:rel`（多根里同 rel 是不同文件夹，必须带根限定；加根时该根全部收起，只显示顶层）
+  const collapsed = new Set();
+  const rootClosed = new Set(); // 收起的根（整节折叠，rootId）
+  const colKey = (rootId, rel) => rootId + ':' + rel;
+  const rootOf = (rootId) => rootsState.find((r) => r.id === rootId) || null;
+  const liveRootCount = () => rootsState.filter((r) => !r.missing).length;
 
-  // 收集树里所有文件夹的 rel（打开工作区时一次性塞进 collapsed → 默认全收起）。
-  function collectDirRels(nodes, acc) {
+  // 树节点出厂时不带根归属 → 装进 rootsState 前逐节点标 rootId（右键/拖拽/打开在任何深度都要知道归属根）。
+  function annotateTree(nodes, rootId) {
+    for (const n of nodes) {
+      n.rootId = rootId;
+      if (n.children && n.children.length) annotateTree(n.children, rootId);
+    }
+    return nodes;
+  }
+
+  // 收集某根树里所有文件夹的收起键（加根时一次性塞进 collapsed → 该根默认全收起）。
+  function collectDirRels(nodes, rootId, acc) {
     for (const n of nodes) {
       if (n.isDir) {
-        acc.add(n.rel);
-        collectDirRels(n.children, acc);
+        acc.add(colKey(rootId, n.rel));
+        collectDirRels(n.children, rootId, acc);
       }
     }
     return acc;
   }
 
   // ---- 内联 SVG 图标（CSP 允许 SVG 元素；用 innerHTML 注入，非脚本）----
+  // 根标题行的磁盘图标（lucide hard-drive，对齐 ui-demo 根节）。
+  const HDD_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>';
   const SVG = {
     chevron: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
     folder: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>',
@@ -76,7 +93,7 @@
   }
   // Compact folders（VS Code explorer.compactFolders / JetBrains「Compact Middle Packages」同款，两家独立
   // 收敛=主力解法）：把「只有一个子文件夹、无文件」的链合并成一行（`a/b/c` → 一行），身份（rel/abs/折叠/
-  // 拖放/右键）落**最深那级**（改名落最深段是 VS Code 已知边角、可接受）。render 时算、不动 current.tree
+  // 拖放/右键）落**最深那级**（改名落最深段是 VS Code 已知边角、可接受）。render 时算、不动各根的 tree
   // ——其它消费方（collectDirRels/filterTree/allFiles/onTreeChanged）仍要看完整真 rel。
   function compactChain(node) {
     const names = [node.name];
@@ -90,38 +107,244 @@
     return { names, rels, tail: cur };
   }
 
-  // ---- 打开 / 刷新 ----
-  async function pickFolder() {
-    const data = await window.ws2.pickFolder();
-    if (data) setWorkspace(data);
-  }
-  function setWorkspace(data) {
-    current = data;
-    query = '';
-    tabState = { entries: [], activeRel: null }; // 先清旧工作区的标签，loadTabs 再按新根拉回
-    collapsed.clear();
-    collectDirRels(current.tree, collapsed); // 默认全部收起：一打开只露顶层，要看哪层自己点开
-    if (filterInput) filterInput.value = '';
-    const fc = document.getElementById('sb-filter-clear');
-    if (fc) fc.hidden = true; // 换工作区清筛选 → 清除钮跟着藏
-    rootNameEl.textContent = data.name;
-    rootNameEl.title = data.root;
-    emptyEl.hidden = true;
-    treeEl.hidden = false;
-    filterWrap.hidden = false;
-    if (filesLabel) filesLabel.hidden = false;
+  // ---- 添加文件夹 / 根管理 ----
+  // 侧栏骨架显隐：有根才显示树/筛选；一个根都没有回到空态（侧栏仍在，提示打开文件夹）。
+  function syncChrome() {
+    const has = rootsState.length > 0;
+    emptyEl.hidden = has;
+    treeEl.hidden = !has;
+    filterWrap.hidden = !has;
+    if (filesLabel) filesLabel.hidden = !has;
+    if (rootNameEl) {
+      rootNameEl.textContent = '本地文件';
+      rootNameEl.title = rootsState.map((r) => r.path).join('\n');
+    }
     const sb = document.getElementById('sidebar');
-    if (sb) sb.classList.add('sb-on'); // 打开工作区才显示侧栏（单文件编辑保持全宽）
-    render();
-    return loadTabs(); // 异步按新根拉标签/置顶，到了再 render + 恢复上次激活（返回 promise 给启动恢复 await）
+    if (sb) sb.classList.toggle('sb-on', has || tabState.entries.length > 0);
   }
-  async function refresh() {
-    if (!current) return;
-    const data = await window.ws2.wsReadTree();
-    if (data) {
-      current = data;
+  // 把主进程返回的 { root:{id,path,name,missing}, tree:{tree:[…]} } 装进 rootsState（tree 标注 rootId + 默认全收起）。
+  function mkRootState(info, treeData) {
+    const tree = treeData && treeData.tree ? annotateTree(treeData.tree, info.id) : null;
+    if (tree) collectDirRels(tree, info.id, collapsed);
+    return { id: info.id, path: info.path, name: info.name, missing: !!info.missing, tree };
+  }
+  function adoptRoot(info, treeData, index) {
+    const st = mkRootState(info, treeData);
+    if (index != null) rootsState.splice(Math.min(index, rootsState.length), 0, st);
+    else rootsState.push(st);
+    rootsGen++; // 根集合变了：作废在飞的 loadTabs 结果
+    syncChrome();
+    render();
+    return st;
+  }
+  // 添加文件夹（头部按钮 / 空态按钮 / 树底常驻行 / ⋯ 菜单）：主进程弹框选目录 + classifyRoot 嵌套判定。
+  // same/child 不重复开（toast 解释）；parent 出「并入并添加」确认；independent 正常加。
+  async function pickFolder() {
+    let r;
+    try { r = await window.ws2.wsAddFolder(); } catch (e) { return; }
+    if (!r) return; // 用户取消了原生框
+    if (r.status === 'same') {
+      showToast('「' + r.root.name + '」已经打开了');
+    } else if (r.status === 'child') {
+      showToast('「' + r.name + '」已经在「' + r.parent.name + '」里了——不会重复打开，去那个文件夹里展开即可');
+    } else if (r.status === 'limit') {
+      showToast('最多同时打开 ' + r.max + ' 个文件夹');
+    } else if (r.status === 'parent') {
+      openAbsorbConfirm(r);
+    } else if (r.status === 'revived') {
+      // 选的是失联根的路径且现在可达 → 主进程顺手复活了它
+      const st = rootOf(r.root.id);
+      if (st) { st.missing = false; st.path = r.root.path; st.name = r.root.name; st.tree = annotateTree(r.tree.tree, st.id); collectDirRels(st.tree, st.id, collapsed); }
+      syncChrome();
+      render();
+      validateRootEntries(r.root.id);
+      showToast('「' + r.root.name + '」已重新连接');
+    } else if (r.status === 'added') {
+      adoptRoot(r.root, r.tree);
+      showToast('已打开文件夹「' + r.root.name + '」');
+    }
+  }
+  // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
+  // 吸收后子根的标签不关、整体 rebase 进新根（文件都在磁盘原处，只换归属）。
+  function openAbsorbConfirm(r) {
+    if (document.querySelector('.sb-modal-overlay')) return;
+    const childNames = r.children.map((c) => c.name).join('、');
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay';
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    const modal = document.createElement('div');
+    modal.className = 'sb-modal sb-modal-confirm';
+    const body = document.createElement('div');
+    body.className = 'sb-cc-body';
+    const ico = document.createElement('div');
+    ico.className = 'sb-cc-ico';
+    ico.innerHTML = WARN_SVG20;
+    const textWrap = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'sb-cc-title';
+    title.textContent = '「' + r.name + '」包含了已打开的文件夹';
+    const desc = document.createElement('div');
+    desc.className = 'sb-modal-desc';
+    desc.textContent = '「' + r.name + '」包含了已打开的「' + childNames + '」。添加后会把它' + (r.children.length > 1 ? '们' : '') + '并入「' + r.name + '」，避免同一批文件出现两次；打开的标签页会跟过去，不会关闭。';
+    textWrap.append(title, desc);
+    body.append(ico, textWrap);
+    const foot = document.createElement('div');
+    foot.className = 'sb-modal-foot';
+    const cancel = document.createElement('button');
+    cancel.className = 'sb-btn';
+    cancel.textContent = '取消';
+    cancel.onclick = close;
+    const spacer = document.createElement('span');
+    spacer.className = 'sb-modal-spacer';
+    const ok = document.createElement('button');
+    ok.className = 'sb-btn sb-btn-primary';
+    ok.textContent = '并入并添加';
+    ok.onclick = async () => {
+      close();
+      let res;
+      try { res = await window.ws2.wsAbsorbConfirm(r.token); } catch (e) { return; }
+      if (!res || res.status !== 'added') { showToast('文件夹状态已变化，没有并入'); return; }
+      // 标签 rebase：子根 entries 换归属到新根（key 变了但标签不关、激活跟随）
+      for (const rb of res.rebases || []) {
+        tabState = window.WS2Tabs.rebaseRoot(tabState, rb.fromRootId, rb.toRootId, rb.prefix);
+      }
+      // 子根从 rootsState 撤走（它们的 collapsed 键留着也无害，但清掉防泄漏）
+      const dropIds = new Set((res.rebases || []).map((rb) => rb.fromRootId));
+      for (const key of [...collapsed]) { if (dropIds.has(key.split(':')[0])) collapsed.delete(key); }
+      for (const id of dropIds) rootClosed.delete(id);
+      rootsState = rootsState.filter((x) => !dropIds.has(x.id));
+      rootsGen++;
+      adoptRoot(res.root, res.tree);
+      persistTabs();
+      renderZones();
+      // 激活标签跟着 rebase 换了 key → 树里重新定位高亮
+      const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+      if (act && act.rel) expandToFile(act.rootId, act.rel);
+      showToast('「' + res.root.name + '」已并入，含原来的子文件夹');
+    };
+    foot.append(cancel, spacer, ok);
+    modal.append(body, foot);
+    overlay.appendChild(modal);
+    wireOverlayClose(overlay, close);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  }
+  // 移除根（磁盘文件不动）：整节撤走 + 该根标签撤走，toast 可撤销原位放回（对齐 ui-demo removeRoot）。
+  async function removeRootUI(rootId) {
+    // 激活文档属于该根且还脏（1.2s 自动保存窗内/上次保存失败）→ 先冲一次保存（照 Cmd+W 的 flush 先例），
+    // 别让「磁盘文件不受影响」的 toast 变谎话（MR-ADV-6）。保存失败就不移除，文档留在原地。
+    const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+    if (act && act.rel && act.rootId === rootId && window.__shellIsDirty && window.__shellIsDirty()) {
+      if (window.__shellSaveActive) await window.__shellSaveActive();
+      if (window.__shellIsDirty && window.__shellIsDirty()) { showToast('这个文件夹里有没保存成功的修改，先处理再移除'); return; }
+    }
+    let r;
+    try { r = await window.ws2.wsRemoveRoot(rootId); } catch (e) { return; }
+    if (!r) return;
+    const idx = rootsState.findIndex((x) => x.id === rootId);
+    if (idx >= 0) rootsState.splice(idx, 1);
+    rootsGen++;
+    for (const key of [...collapsed]) { if (key.indexOf(rootId + ':') === 0) collapsed.delete(key); }
+    rootClosed.delete(rootId);
+    const prevActive = tabState.activeRel;
+    const dropped = window.WS2Tabs.dropRootEntries(tabState, rootId);
+    tabState = dropped.state;
+    persistTabs();
+    syncChrome();
+    render();
+    // 激活标签被撤走 → 编辑器跟随回落（同 finishClose 的回落路径）
+    if (prevActive !== tabState.activeRel && dropped.removed.some((e) => keyOf(e) === prevActive)) {
+      const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+      if (e) openTabRow(e);
+      else if (window.__shellCloseDoc) window.__shellCloseDoc();
+    }
+    showToast('已移除「' + r.root.name + '」（磁盘文件不受影响）', '撤销', async () => {
+      let u;
+      try { u = await window.ws2.wsUndoRemoveRoot(r.token); } catch (e) { return; }
+      if (!u || u.status !== 'ok') {
+        showToast(u && u.status === 'overlap' ? '无法撤销：它和现在打开的文件夹有重叠' : u && u.status === 'limit' ? '无法撤销：文件夹数量已满' : '无法撤销');
+        return;
+      }
+      adoptRoot(u.root, u.tree, u.index);
+      tabState = window.WS2Tabs.undoDropRoot(tabState, dropped.removed, prevActive);
+      mergeExternalDupes(rootId); // 撤销窗口期用「打开」按钮开过同根文件建的外部标签 → 并回 rel 身份
+      persistTabs();
+      renderZones();
+      // 激活项恢复了 → 重新打开它（编辑器可能已回落/空态）
+      const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+      if (e && keyOf(e) === prevActive) openTabRow(e);
+      render();
+    });
+  }
+  // 失联根重新定位：主进程弹框选新位置（rootId 不变 → 标签/置顶原样复活），随后按新树校验该根的标签。
+  async function relocateRootUI(rootId) {
+    let r;
+    try { r = await window.ws2.wsRelocateRoot(rootId); } catch (e) { return; }
+    if (!r) return; // 取消
+    if (r.status === 'overlap') { showToast('选的位置和已打开的文件夹重叠，换一个位置'); return; }
+    if (r.status !== 'ok') return;
+    const st = rootOf(rootId);
+    if (!st) return;
+    st.path = r.root.path;
+    st.name = r.root.name;
+    st.missing = false;
+    st.tree = annotateTree(r.tree.tree, rootId);
+    collectDirRels(st.tree, rootId, collapsed);
+    syncChrome();
+    render();
+    validateRootEntries(rootId);
+    showToast('「' + r.root.name + '」已重新连接');
+  }
+  // 根复活/重定位后校验它的标签：新树里没有的文件（换了位置的旧结构）静默丢，激活回落。
+  function validateRootEntries(rootId) {
+    const st = rootOf(rootId);
+    if (!st || !st.tree) return;
+    const gone = tabState.entries.filter((e) => e.rootId === rootId && e.rel && !findNode(rootId, e.rel));
+    for (const e of gone) tabState = window.WS2Tabs.removeEntry(tabState, keyOf(e));
+    mergeExternalDupes(rootId);
+    if (gone.length) { persistTabs(); renderZones(); }
+  }
+  // 根失联/被移除期间用「打开」按钮开过它里面的文件 → 建的是 abs 外部标签；复活/撤销后 rel 身份回来，
+  // 同一磁盘文件出现两条标签（MR-ADV-5）。按树节点的 abs 归一：外部标签命中该根内节点 → 并进 rel 身份
+  // （open/pinned 取并集、激活跟随），外部那条销毁。
+  function mergeExternalDupes(rootId) {
+    let changed = false;
+    for (const ext of tabState.entries.filter((e) => !e.rel && !isTempEntry(e))) {
+      const node = findNodeByAbs(ext.abs);
+      if (!node || node.rootId !== rootId) continue;
+      const key = colKey(rootId, node.rel);
+      const relEntry = tabState.entries.find((e) => keyOf(e) === key);
+      let entries;
+      if (relEntry) {
+        entries = tabState.entries
+          .map((e) => (keyOf(e) === key ? { ...e, open: e.open || ext.open, pinned: e.pinned || ext.pinned } : e))
+          .filter((e) => keyOf(e) !== ext.abs);
+      } else {
+        entries = tabState.entries.map((e) =>
+          keyOf(e) === ext.abs ? { rootId, rel: node.rel, kind: e.kind, title: node.name, open: e.open, pinned: e.pinned } : e,
+        );
+      }
+      const activeRel = tabState.activeRel === ext.abs ? key : tabState.activeRel;
+      tabState = { entries, activeRel };
+      changed = true;
+    }
+    if (changed) { persistTabs(); renderZones(); }
+  }
+  // 单根重读树（文件操作后/watcher 事件）：只刷新该根，别的根纹丝不动。
+  async function refreshRoot(rootId) {
+    const st = rootOf(rootId);
+    if (!st || st.missing) return;
+    const data = await window.ws2.wsReadTree(rootId);
+    if (data && rootOf(rootId) === st) {
+      st.tree = annotateTree(data.tree, rootId);
       render();
     }
+  }
+  // 兼容旧调用点：不带根的 refresh = 刷新全部活根（少数场景，如落盘新文件后不确定哪根）。
+  async function refresh(rootId) {
+    if (rootId) return refreshRoot(rootId);
+    await Promise.all(rootsState.filter((r) => !r.missing).map((r) => refreshRoot(r.id)));
   }
 
   // ---- 筛选：保留命中节点 + 其祖先 ----
@@ -141,29 +364,231 @@
   }
 
   // ---- 渲染 ----
+  let dragRootId = null; // 根标题行拖拽重排（模块级，跨 RootSection）
   function render() {
     treeEl.innerHTML = '';
-    if (!current) {
-      if (railEl) railEl.innerHTML = '';
+    if (!rootsState.length) {
+      renderZones(); // 标签区还可能有外部标签（根全移除后仍保留）
+      clearSticky();
       return;
     }
     renderRail(); // 收起态图标轨（#4），与主树同步刷新
     renderZones(); // 置顶区 + 标签页区
     const q = query.trim().toLowerCase();
-    const nodes = q ? filterTree(current.tree, q) : current.tree;
-    if (!nodes.length) {
+    let shown = 0;
+    for (let i = 0; i < rootsState.length; i++) {
+      if (renderRootSection(rootsState[i], i, q)) shown++;
+    }
+    if (!shown && q) {
       const e = document.createElement('div');
       e.className = 'sb-tree-empty';
-      e.textContent = q ? '没有匹配的文件' : '这个文件夹还没有文件';
+      e.textContent = '没有匹配的文件';
       treeEl.appendChild(e);
-      clearSticky(); // 空态/筛选无匹配：清掉吸顶浮层（否则旧克隆祖先会悬在「没有匹配」上）
-      return;
     }
-    for (const n of nodes) renderNode(n, 0, treeEl, !!q);
+    if (!q) {
+      // 树底常驻「添加文件夹…」行（对齐 ui-demo arc-add-root）
+      const add = document.createElement('button');
+      add.className = 'sb-add-root';
+      add.id = 'sb-add-root';
+      add.title = '再打开一个文件夹，和现有的并排显示';
+      const ico = document.createElement('span');
+      ico.className = 'sb-ico';
+      ico.innerHTML = SVG.folder;
+      const label = document.createElement('span');
+      label.textContent = '添加文件夹…';
+      add.append(ico, label);
+      add.onclick = pickFolder;
+      treeEl.appendChild(add);
+    }
     highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
     cacheStickyRows(); // 树变了 → 重算吸顶行缓存
     if (stickyEl) stickyEl.dataset.key = ''; // 强制下次 rebuild（旧克隆引用已失效的行）
     renderSticky();
+  }
+
+  // 一节 = 根标题行 + 该根的树。返回是否渲染了（筛选时无命中的根整节隐藏 → false）。
+  function renderRootSection(root, index, q) {
+    if (root.missing) {
+      if (q) return false; // 失联根不参与筛选
+      renderMissingRoot(root);
+      return true;
+    }
+    const nodes = root.tree ? (q ? filterTree(root.tree, q) : root.tree) : [];
+    if (q && !nodes.length) return false; // 筛选时无命中 → 整节隐藏
+    const open = q ? true : !rootClosed.has(root.id); // 筛选时自动展开
+    const head = document.createElement('div');
+    head.className = 'sb-row sb-root-head';
+    head.setAttribute('role', 'button');
+    head.tabIndex = 0;
+    head.dataset.root = root.id;
+    head.dataset.rel = '';
+    head.dataset.depth = -1; // sticky ancestor：根标题是最外层祖先
+    head.title = root.path + ' · 拖动可调整文件夹顺序';
+    head.draggable = true;
+    const caret = document.createElement('span');
+    caret.className = 'sb-caret' + (open ? ' is-open' : '');
+    caret.innerHTML = SVG.chevron;
+    const ico = document.createElement('span');
+    ico.className = 'sb-ico sb-root-ico';
+    ico.innerHTML = HDD_SVG;
+    const name = document.createElement('span');
+    name.className = 'sb-name sb-root-name ws-truncate';
+    name.textContent = root.name;
+    const pathEl = document.createElement('span');
+    pathEl.className = 'sb-root-path ws-truncate';
+    pathEl.textContent = root.path;
+    head.append(caret, ico, name, pathEl);
+    head.onclick = () => {
+      if (rootClosed.has(root.id)) rootClosed.delete(root.id);
+      else rootClosed.add(root.id);
+      render();
+    };
+    head.oncontextmenu = (e) => {
+      e.preventDefault();
+      const items = [{ label: '新建文档', run: () => openCreateModal(root.id, '') }];
+      if (index > 0) items.push({ label: '移到最上面', run: () => reorderRootTo(root.id, 0) });
+      items.push({ label: '移除（磁盘文件不动）', danger: true, run: () => removeRootUI(root.id) });
+      showContextMenu(e.clientX, e.clientY, items);
+    };
+    // 根标题行双职：①拖别的根经过 → 上/下沿插入线做重排；②拖文件过来 → 移到该根顶层（同根内）。
+    head.ondragstart = (e) => {
+      dragRootId = root.id;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', root.name);
+    };
+    head.ondragend = () => {
+      dragRootId = null;
+      head.classList.remove('sb-insert-before', 'sb-insert-after');
+    };
+    head.ondragover = (e) => {
+      if (dragRootId && dragRootId !== root.id) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        const r = head.getBoundingClientRect();
+        const before = e.clientY < r.top + r.height / 2;
+        head.classList.toggle('sb-insert-before', before);
+        head.classList.toggle('sb-insert-after', !before);
+        return;
+      }
+      // 拖文件到根标题 = 移到该根顶层。跨根已放开;只挡「同根且已在顶层」的 no-op。
+      if (!dragNode || (dragNode.rootId === root.id && parentDirOf(dragNode.rel) === '')) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      head.classList.add('sb-drop');
+    };
+    head.ondragleave = (e) => {
+      if (!head.contains(e.relatedTarget)) head.classList.remove('sb-drop', 'sb-insert-before', 'sb-insert-after');
+    };
+    head.ondrop = (e) => {
+      if (dragRootId && dragRootId !== root.id) {
+        e.preventDefault();
+        const r = head.getBoundingClientRect();
+        const before = e.clientY < r.top + r.height / 2;
+        head.classList.remove('sb-insert-before', 'sb-insert-after');
+        const ids = rootsState.map((x) => x.id).filter((id) => id !== dragRootId);
+        let at = ids.indexOf(root.id);
+        if (!before) at++;
+        ids.splice(at, 0, dragRootId);
+        applyRootOrder(ids);
+        dragRootId = null;
+        return;
+      }
+      if (!dragNode) return;
+      e.preventDefault();
+      head.classList.remove('sb-drop');
+      if (dragNode.rootId === root.id) doMove(dragNode, '');
+      else doMoveAcross(dragNode, root.id, ''); // 跨根移到该根顶层
+    };
+    treeEl.appendChild(head);
+    if (!open) return true;
+    if (!nodes.length) {
+      const e = document.createElement('div');
+      e.className = 'sb-tree-empty';
+      e.textContent = '这个文件夹还没有文件';
+      treeEl.appendChild(e);
+      return true;
+    }
+    for (const n of nodes) renderNode(n, 0, treeEl, !!q);
+    return true;
+  }
+
+  // 失联根：灰显标题 + 一行说明 +「重新定位 / 移除」（对齐 ui-demo is-missing；绝不静默丢——下面还挂着标签/折叠状态）。
+  function renderMissingRoot(root) {
+    const head = document.createElement('div');
+    head.className = 'sb-row sb-root-head sb-root-missing';
+    head.dataset.root = root.id;
+    head.dataset.rel = '';
+    head.dataset.depth = -1;
+    head.title = root.path + ' · 失联（文件夹不可达）';
+    const ico = document.createElement('span');
+    ico.className = 'sb-ico sb-root-miss-ic';
+    ico.innerHTML = WARN_SVG20;
+    const name = document.createElement('span');
+    name.className = 'sb-name sb-root-name ws-truncate';
+    name.textContent = root.name;
+    const tag = document.createElement('span');
+    tag.className = 'sb-root-miss-tag';
+    tag.textContent = '失联';
+    head.append(ico, name, tag);
+    head.oncontextmenu = (e) => {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, [
+        { label: '重新定位…', run: () => relocateRootUI(root.id) },
+        { label: '移除', danger: true, run: () => removeRootUI(root.id) },
+      ]);
+    };
+    const note = document.createElement('div');
+    note.className = 'sb-root-miss-note';
+    const msg = document.createElement('span');
+    msg.className = 'ws-truncate';
+    msg.textContent = '文件夹不可达（可能被移动、删除，或所在磁盘未连接）';
+    const acts = document.createElement('span');
+    acts.className = 'sb-root-miss-acts';
+    const relBtn = document.createElement('button');
+    relBtn.className = 'sb-root-miss-act';
+    relBtn.textContent = '重新定位';
+    relBtn.onclick = () => relocateRootUI(root.id);
+    const rmBtn = document.createElement('button');
+    rmBtn.className = 'sb-root-miss-act';
+    rmBtn.textContent = '移除';
+    rmBtn.onclick = () => removeRootUI(root.id);
+    acts.append(relBtn, rmBtn);
+    note.append(msg, acts);
+    treeEl.append(head, note);
+  }
+
+  // 应用新根顺序：本地立即生效（乐观），主进程校验持久化；被拒（集合不符=状态漂移）就按主进程真相重拉。
+  async function applyRootOrder(ids) {
+    const byId = new Map(rootsState.map((r) => [r.id, r]));
+    if (ids.length === rootsState.length && ids.every((id) => byId.has(id))) {
+      rootsState = ids.map((id) => byId.get(id));
+      render();
+    }
+    try {
+      const r = await window.ws2.wsReorderRoots(ids);
+      if (!r) await resyncRoots();
+    } catch (e) { /* 主进程拒绝：下次重启按 store 真相恢复 */ }
+  }
+  function reorderRootTo(rootId, toIndex) {
+    const ids = rootsState.map((x) => x.id).filter((id) => id !== rootId);
+    ids.splice(Math.max(0, Math.min(toIndex, ids.length)), 0, rootId);
+    applyRootOrder(ids);
+  }
+  // 与主进程注册表重对齐（乐观更新被拒时的兜底）：重拉根列表 + 各根树。
+  async function resyncRoots() {
+    try {
+      const infos = await window.ws2.wsGetRoots();
+      const trees = await Promise.all(infos.map((r) => (r.missing ? null : window.ws2.wsReadTree(r.id))));
+      rootsState = infos.map((r, i) => {
+        const prev = rootOf(r.id);
+        const st = prev || mkRootState(r, trees[i]);
+        if (prev && trees[i]) prev.tree = annotateTree(trees[i].tree, r.id);
+        if (prev) { prev.missing = !!r.missing; prev.path = r.path; prev.name = r.name; }
+        return st;
+      });
+      syncChrome();
+      render();
+    } catch (e) { /* ignore */ }
   }
 
   // ===== sticky ancestor（祖先文件夹吸顶）=====
@@ -181,12 +606,14 @@
     stickyRows = [...treeEl.querySelectorAll('.sb-row')].map((el) => ({
       el,
       top: el.offsetTop - base,
+      // 根标题行 depth=-1（最外层祖先；失联根的说明行不是 .sb-row 不进缓存）。'|| 0' 会把 '-1' 保住（Number('-1')=-1 truthy）。
       depth: Number(el.dataset.depth) || 0,
-      isDir: el.classList.contains('sb-dir'),
+      isDir: el.classList.contains('sb-dir') || el.classList.contains('sb-root-head'),
     }));
   }
   function stickyPins(fold) {
-    // fold = 折线在树内坐标；anchor = 底边越过折线的第一行；其祖先 = 前面按 depth 递减的 dir 行
+    // fold = 折线在树内坐标；anchor = 底边越过折线的第一行；其祖先 = 前面按 depth 递减的 dir 行，
+    // 一路收到该节的根标题行（depth=-1）为止——滚多深都看得见「我在哪个文件夹里」。
     let ai = -1;
     for (let i = 0; i < stickyRows.length; i++) {
       if (stickyRows[i].top + STICKY_H > fold + 0.5) { ai = i; break; }
@@ -194,7 +621,7 @@
     if (ai < 0) return [];
     const pins = [];
     let need = stickyRows[ai].depth - 1;
-    for (let j = ai - 1; j >= 0 && need >= 0; j--) {
+    for (let j = ai - 1; j >= 0 && need >= -1; j--) {
       if (stickyRows[j].depth === need && stickyRows[j].isDir) { pins.unshift(stickyRows[j]); need--; }
     }
     return pins;
@@ -208,7 +635,7 @@
     if (!bodyEl || !stickyEl || !treeEl) return;
     const scrollTop = bodyEl.scrollTop;
     const pins = stickyPins(scrollTop - treeEl.offsetTop); // 折线换成树内坐标（live 读 treeEl.offsetTop，zone 变高自动对）
-    const key = pins.map((p) => p.el.dataset.rel).join('|');
+    const key = pins.map((p) => (p.el.dataset.root || '') + ':' + (p.el.dataset.rel || '')).join('|'); // 键带根限定：不同根里同 rel 的祖先不算同一行
     if (key !== stickyEl.dataset.key) {
       stickyEl.dataset.key = key;
       stickyEl.textContent = '';
@@ -254,52 +681,117 @@
     // 修 SB-1：改的是「包含当前打开文档的文件夹」时也要给编辑器重指向——否则 docPath 仍指旧路径，
     // 此后每次（自动）保存都 ENOENT 失败、弹 alert 风暴（doDelete 早有 isUnder 处理，rename 漏了）。
     const openUnderDir = node.isDir && isUnder(op, node.abs);
-    const r = await window.ws2.wsRename(node.rel, newLeaf);
+    let r;
+    try { r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf); }
+    catch (e) { showToast('重命名失败：' + shortErr(e)); await refreshRoot(node.rootId); return; } // 根刚失联/文件没了：别未捕获 rejection 把改名框晾在原地
     if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     else if (openUnderDir && window.__shellRetargetDoc) {
       const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 已确认 op 以 node.abs+分隔符 开头）
       window.__shellRetargetDoc(newAbs, newAbs.split(/[\\/]/).pop());
     }
     if (r.rel !== node.rel) {
-      retargetTabsUnder(node.rel, r.rel, node.isDir); // 标签跟随改名
-      // 修 SB-12：collapsed 以 rel 为键，改目录名后旧键残留、新键不在集合 → 被改名的收起文件夹连同子树全展开。
-      // 把旧 rel 前缀的收起项迁到新 rel 前缀，保持展开/收起状态。
+      retargetTabsUnder(node.rootId, node.rel, r.rel, node.isDir); // 标签跟随改名（限定该根）
+      // 修 SB-12：collapsed 以 rootId:rel 为键，改目录名后旧键残留、新键不在集合 → 被改名的收起文件夹连同子树全展开。
+      // 把旧前缀的收起项迁到新前缀，保持展开/收起状态。
       if (node.isDir) {
-        for (const rel of [...collapsed]) {
-          if (rel === node.rel || rel.indexOf(node.rel + '/') === 0) { collapsed.delete(rel); collapsed.add(r.rel + rel.slice(node.rel.length)); }
+        const oldK = colKey(node.rootId, node.rel);
+        for (const key of [...collapsed]) {
+          if (key === oldK || key.indexOf(oldK + '/') === 0) { collapsed.delete(key); collapsed.add(colKey(node.rootId, r.rel) + key.slice(oldK.length)); }
         }
       }
     }
-    await refresh();
+    await refreshRoot(node.rootId);
   }
   async function doMove(node, destDirRel) {
     const wasOpen = !node.isDir && openPath() === node.abs;
-    const r = await window.ws2.wsMove(node.rel, destDirRel);
+    let r;
+    try { r = await window.ws2.wsMove(node.rootId, node.rel, destDirRel); }
+    catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
     if (wasOpen && window.__shellRetargetDoc && r.abs !== node.abs) {
       window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     }
-    if (r.rel !== node.rel) retargetTabsUnder(node.rel, r.rel, node.isDir); // 标签跟随移动
-    await refresh();
+    if (r.rel !== node.rel) retargetTabsUnder(node.rootId, node.rel, r.rel, node.isDir); // 标签跟随移动
+    await refreshRoot(node.rootId);
+  }
+  // 跨根移动进行中的根（引用计数，支持并发移动同根参与）：onTreeChanged 对这些根跳过 reconcile。
+  // 见 onTreeChanged 里的说明（对抗审查 P2 竞态）。
+  const crossMoveGuard = new Map();
+  const guardRoot = (id) => crossMoveGuard.set(id, (crossMoveGuard.get(id) || 0) + 1);
+  const unguardRoot = (id) => { const n = (crossMoveGuard.get(id) || 0) - 1; if (n <= 0) crossMoveGuard.delete(id); else crossMoveGuard.set(id, n); };
+
+  // 跨根移动（node 从它自己的根搬到 toRootId 的 destDirRel）：v1 便宜档同盘 rename；跨盘 toast 提示不搬。
+  // 标签换根跟随、collapsed 键换根迁移、打开中文档/其祖先目录重指向、两根树都刷。
+  // 全程守卫两根的 reconcile（crossMoveGuard）：移动落盘到标签 retarget 之间有 IPC 往返窗口，期间
+  // watcher 事件不能抢跑 reconcile（否则源根找不到已搬走文件的 inode → 误删标签）。
+  async function doMoveAcross(node, toRootId, destDirRel) {
+    const op = openPath();
+    const wasOpen = !node.isDir && op === node.abs;
+    const openUnderDir = node.isDir && isUnder(op, node.abs); // 移动的目录含当前打开文档
+    guardRoot(node.rootId);
+    guardRoot(toRootId);
+    try {
+      let r;
+      try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel); }
+      catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
+      if (r && r.crossDevice) { // 真跨盘：不搬，明确告知（此前没动任何状态）
+        showToast('这两个文件夹在不同的磁盘上，暂不支持直接拖动移动——先在访达里复制过去');
+        return;
+      }
+      // 标签换根跟随（含撞名去重后的新 rel/title）
+      tabState = window.WS2Tabs.retargetSubtreeAcross(tabState, node.rootId, node.rel, toRootId, r.rel, node.isDir);
+      persistTabs();
+      // collapsed 键换根迁移（照 commitRenameOp 的 SB-12，多换一个 rootId）：目录移动才有子树折叠状态
+      if (node.isDir) {
+        const oldK = colKey(node.rootId, node.rel);
+        const newK = colKey(toRootId, r.rel);
+        for (const key of [...collapsed]) {
+          if (key === oldK || key.indexOf(oldK + '/') === 0) { collapsed.delete(key); collapsed.add(newK + key.slice(oldK.length)); }
+        }
+      }
+      // 打开中文档重指向（否则 docPath 仍指旧根旧路径，后续保存 ENOENT）
+      if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
+      else if (openUnderDir && window.__shellRetargetDoc) {
+        const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 确认 op 以 node.abs+分隔符 开头）
+        window.__shellRetargetDoc(newAbs, newAbs.split(/[\\/]/).pop());
+      }
+      await refreshRoot(node.rootId); // 源根：文件走了
+      await refreshRoot(toRootId); // 目标根：文件来了
+      // 移动的正是激活标签对应文件 → 在目标根树里展开定位
+      const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+      if (act && act.rootId === toRootId && act.rel) expandToFile(toRootId, act.rel);
+    } finally {
+      unguardRoot(node.rootId);
+      unguardRoot(toRootId);
+    }
   }
   async function doDelete(node) {
     const op = openPath();
     const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
-    const r = await window.ws2.wsDelete(node.rel);
+    let r;
+    try { r = await window.ws2.wsDelete(node.rootId, node.rel); }
+    catch (e) { showToast('删除失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
     removeTabsUnder(node); // 移除被删文件的标签
-    await refresh();
+    await refreshRoot(node.rootId);
     if (affectsOpen) { // 删了当前打开的 → 切到下一个标签 / 回空态
-      const n = tabState.activeRel ? findNode(tabState.activeRel) : null;
+      const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+      const n = e && e.rel ? findNode(e.rootId, e.rel) : null;
       if (n) openNode(n);
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
     showToast('已删除「' + node.name + '」', '撤销', async () => {
-      await window.ws2.wsUndoDelete(r.token);
-      await refresh();
+      await window.ws2.wsUndoDelete(node.rootId, r.token);
+      await refreshRoot(node.rootId);
     });
   }
-  async function newSubfolder(dirRel) {
-    await window.ws2.wsMakeDir(dirRel, '新建文件夹');
-    await refresh();
+  async function newSubfolder(rootId, dirRel) {
+    try { await window.ws2.wsMakeDir(rootId, dirRel, '新建文件夹'); }
+    catch (e) { showToast('新建文件夹失败：' + shortErr(e)); return; }
+    await refreshRoot(rootId);
+  }
+  // IPC 错误串裁短（Electron 会包一层 "Error invoking remote method 'ws-x': Error: ..."，只留最后一段）
+  function shortErr(e) {
+    const s = String((e && e.message) || e);
+    return s.split('Error: ').pop().slice(0, 80);
   }
 
   function closeContextMenu() {
@@ -371,12 +863,13 @@
       // compact folders：单子文件夹链合并成一行，身份落最深那级 dir
       const chain = compactChain(node);
       const dir = chain.tail;
-      const open = forceOpen || !collapsed.has(dir.rel);
+      const open = forceOpen || !collapsed.has(colKey(dir.rootId, dir.rel));
       const row = document.createElement('div');
       row.className = 'sb-row sb-dir';
       row.setAttribute('role', 'button');
       row.tabIndex = 0;
       row.dataset.rel = dir.rel;
+      row.dataset.root = dir.rootId; // 多根：行归属哪个根（e2e/高亮/折叠都靠它限定）
       row.dataset.depth = depth; // sticky ancestor：按 depth 算祖先链
       const caret = document.createElement('span');
       caret.className = 'sb-caret' + (open ? ' is-open' : '');
@@ -407,28 +900,29 @@
       add.innerHTML = PLUS_SVG;
       add.onclick = (e) => {
         e.stopPropagation();
-        openCreateModal(dir.rel);
+        openCreateModal(dir.rootId, dir.rel);
       };
       row.append(caret, ico, name, add);
       applyIndent(row, depth, false);
       row.onclick = () => {
-        // 折叠状态按**整条 compact 链**一致处理（不只 tail）：展开=删掉链上每级 rel、收起=每级都加。
+        // 折叠状态按**整条 compact 链**一致处理（不只 tail）：展开=删掉链上每级键、收起=每级都加。
         // 否则残留的祖先折叠键会在链日后断开（外部往中间级加文件）时命中新 tail、把已展开的链无声重折叠。
-        if (collapsed.has(dir.rel)) chain.rels.forEach((r) => collapsed.delete(r));
-        else chain.rels.forEach((r) => collapsed.add(r));
+        if (collapsed.has(colKey(dir.rootId, dir.rel))) chain.rels.forEach((r) => collapsed.delete(colKey(dir.rootId, r)));
+        else chain.rels.forEach((r) => collapsed.add(colKey(dir.rootId, r)));
         render();
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
-          { label: '新建文档', run: () => openCreateModal(dir.rel) },
-          { label: '新建子文件夹', run: () => newSubfolder(dir.rel) },
+          { label: '新建文档', run: () => openCreateModal(dir.rootId, dir.rel) },
+          { label: '新建子文件夹', run: () => newSubfolder(dir.rootId, dir.rel) },
           { label: '重命名', run: () => startInlineRename(dir, row) },
           { label: '删除', danger: true, run: () => doDelete(dir) },
         ]);
       };
       row.ondragover = (e) => {
-        if (!dragNode || parentDirOf(dragNode.rel) === dir.rel) return;
+        // 跨根移动已放开（v1 便宜档：同盘 rename、跨盘 toast）。只挡「同根且已在此文件夹」的 no-op。
+        if (!dragNode || (dragNode.rootId === dir.rootId && parentDirOf(dragNode.rel) === dir.rel)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         row.classList.add('sb-drop');
@@ -441,7 +935,9 @@
         e.preventDefault();
         e.stopPropagation();
         row.classList.remove('sb-drop');
-        doMove(dragNode, dir.rel);
+        // 同根→doMove(rename)；跨根→doMoveAcross(换根)
+        if (dragNode.rootId === dir.rootId) doMove(dragNode, dir.rel);
+        else doMoveAcross(dragNode, dir.rootId, dir.rel);
       };
       parent.appendChild(row);
       if (open) {
@@ -459,6 +955,7 @@
       const row = document.createElement('button');
       row.className = 'sb-row sb-file sb-kind-' + (node.kind || 'other');
       row.dataset.rel = node.rel;
+      row.dataset.root = node.rootId;
       row.dataset.abs = node.abs;
       row.dataset.depth = depth;
       row.dataset.kind = node.kind || 'other';
@@ -483,9 +980,10 @@
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
+        const nodeKey = colKey(node.rootId, node.rel); // 标签身份键 = rootId:rel（与 WS2Tabs.keyOf 一致）
         showContextMenu(e.clientX, e.clientY, [
           { label: '打开', run: () => openNode(node) },
-          { label: isPinned(node.rel) ? '取消置顶' : '置顶', run: () => (isPinned(node.rel) ? unpinRel(node.rel) : pinFromTree(node)) },
+          { label: isPinned(nodeKey) ? '取消置顶' : '置顶', run: () => (isPinned(nodeKey) ? unpinRel(nodeKey) : pinFromTree(node)) },
           { label: '重命名', run: () => startInlineRename(node, row) },
           { label: '删除', danger: true, run: () => doDelete(node) },
         ]);
@@ -499,9 +997,9 @@
     if (node.kind === 'html' || node.kind === 'md') {
       openDoc(node.abs); // shell.js 的漏斗（脏检查/载入/watch/recents）
     } else if (window.__shellShowViewer) {
-      window.__shellShowViewer(node); // 编辑区出预览/卡片，不再直接外部打开
+      window.__shellShowViewer(node); // 编辑区出预览/卡片，不再直接外部打开（node 带 rootId，viewer 的 wsFileUrl 要用）
     } else {
-      window.ws2.wsOpenExternal(node.rel);
+      window.ws2.wsOpenExternal(node.rootId, node.rel);
     }
   }
 
@@ -527,8 +1025,8 @@
   const PIN_OFF_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M12 17v5"/><path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h9"/><path d="M15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H10"/></svg>';
   const X_SVG = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
   let dragTabRel = null;
-  // 身份键：工作区内用 rel、工作区外用 abs（跟 tabs.js 一致）。外部标签 = 没有 rel。
-  const keyOf = (e) => e.rel || e.abs;
+  // 身份键（跟 tabs.js 一致）：根内 = rootId:rel（多根里同 rel 不同根是不同文件）、外 = abs。外部标签 = 没有 rel。
+  const keyOf = (e) => (e.rel ? (e.rootId ? e.rootId + ':' + e.rel : e.rel) : e.abs);
   const isExternal = (e) => !e.rel;
   // 临时文档标签（从「标签页 +」/ Cmd+T 新建、未落盘）：身份键用 shell 生成的 'temp:…'（rel/abs 都没有 →
   // 塞进 abs 当身份，靠前缀识别，不用改 tabs.js）。不持久化、不进树，手动保存才落盘变真文件。
@@ -539,7 +1037,10 @@
   // 外部标签的「↗」轻标记图标（shell.js 的 EXT_SVG 是 script 作用域 const、跨不到这里，单独定义）。
   const EXT_ICO_SVG = '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg>';
 
-  function findNode(rel) {
+  // 在指定根的树里按 rel 找节点（多根里同 rel 是不同文件，必须带根限定）。
+  function findNode(rootId, rel) {
+    const st = rootOf(rootId);
+    if (!st || !st.tree) return null;
     let found = null;
     (function walk(nodes) {
       for (const n of nodes) {
@@ -547,32 +1048,41 @@
         if (n.rel === rel) { found = n; return; }
         if (n.children && n.children.length) walk(n.children);
       }
-    })(current ? current.tree : []);
+    })(st.tree);
     return found;
   }
+  // 按绝对路径跨全部根找（abs 全局唯一——嵌套根已被入口拦死，不会两个根同时命中）。
   function findNodeByAbs(abs) {
     let found = null;
-    (function walk(nodes) {
-      for (const n of nodes) {
-        if (found) return;
-        if (!n.isDir && n.abs === abs) { found = n; return; }
-        if (n.children && n.children.length) walk(n.children);
-      }
-    })(current ? current.tree : []);
+    for (const st of rootsState) {
+      if (found || !st.tree) continue;
+      (function walk(nodes) {
+        for (const n of nodes) {
+          if (found) return;
+          if (!n.isDir && n.abs === abs) { found = n; return; }
+          if (n.children && n.children.length) walk(n.children);
+        }
+      })(st.tree);
+    }
     return found;
+  }
+  // 按身份键找 entry 对应的树节点（key 可能是 rootId:rel 或 abs）。
+  function findEntryNode(entry) {
+    if (!entry) return null;
+    return entry.rel ? findNode(entry.rootId, entry.rel) : findNodeByAbs(entry.abs);
   }
   function isPinned(key) {
     return tabState.entries.some((e) => keyOf(e) === key && e.pinned);
   }
   function persistTabs() {
-    // 带上当前 root：主进程校验 === activeRoot，防 fire-and-forget 的写在切工作区后到达、把标签写错桶。
+    // 全局单一集合写盘（主进程滤掉已移除根的 entries，防在飞 persist 复活幽灵）。
     // 临时文档不落盘、重启无从恢复 → 从持久化副本里剔掉（内存里的 tabState 仍保留它们，只是不写盘）。
     if (!window.ws2.wsSetTabs) return;
     const clean = {
       entries: tabState.entries.filter((e) => !isTempEntry(e)),
       activeRel: isTempKey(tabState.activeRel) ? null : tabState.activeRel,
     };
-    window.ws2.wsSetTabs(clean, current && current.root).catch(() => {});
+    window.ws2.wsSetTabs(clean).catch(() => {});
   }
   function applyTabs(next) {
     tabState = next;
@@ -582,10 +1092,10 @@
   }
 
   function pinFromTree(node) {
-    applyTabs(window.WS2Tabs.pinEntry(tabState, { rel: node.rel, kind: node.kind || 'other', title: node.name }));
+    applyTabs(window.WS2Tabs.pinEntry(tabState, { rootId: node.rootId, rel: node.rel, kind: node.kind || 'other', title: node.name }));
   }
   function pinRel(entry) {
-    applyTabs(window.WS2Tabs.pinEntry(tabState, { rel: entry.rel, abs: entry.abs, kind: entry.kind, title: entry.title }));
+    applyTabs(window.WS2Tabs.pinEntry(tabState, { rootId: entry.rootId, rel: entry.rel, abs: entry.abs, kind: entry.kind, title: entry.title }));
   }
   function unpinRel(key) {
     applyTabs(window.WS2Tabs.unpinEntry(tabState, key));
@@ -598,6 +1108,7 @@
   function closeOrRemove(key, op) {
     const wasActive = tabState.activeRel === key;
     const entry = tabState.entries.find((e) => keyOf(e) === key);
+    if (!entry) return; // 双击 × 第二下打在已 detach 的旧行上：key 已不存在，别让 keyOf(undefined) 抛 TypeError
     const dirtyActive = wasActive && window.__shellIsDirty && window.__shellIsDirty();
     // 修 SB-4（bug-sweep #111 与本 PR 撞车,两家合一）：临时文档永远是未保存内容 → 无论激活
     // 与否都要确认,别让非激活 temp 的 × 零确认直接销毁。非激活 temp 先切到前台（编辑器渲染它 +
@@ -739,9 +1250,22 @@
     if (document.querySelector('.sb-modal-overlay')) return; // 单例守卫：别与关闭确认/另一个保存框叠层互踩
     const t = window.__shellActiveTemp && window.__shellActiveTemp();
     if (!t) return;
-    const dirs = ['']; // '' = 工作区根
-    (function walk(nodes) { for (const n of nodes) { if (n.isDir) { dirs.push(n.rel); walk(n.children || []); } } })(current ? current.tree : []);
-    let selectedDir = '';
+    // 落点候选按根分组：每个活根先根目录、再它的各子文件夹（多根时标签带根名消歧）。
+    const multi = liveRootCount() > 1;
+    const targets = []; // { rootId, dir, label }
+    for (const st of rootsState) {
+      if (st.missing || !st.tree) continue;
+      targets.push({ rootId: st.id, dir: '', label: st.name + '（根目录）' });
+      (function walk(nodes) {
+        for (const n of nodes) {
+          if (n.isDir) {
+            targets.push({ rootId: st.id, dir: n.rel, label: multi ? st.name + ' / ' + n.rel : n.rel });
+            walk(n.children || []);
+          }
+        }
+      })(st.tree);
+    }
+    let selected = targets[0] || null;
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay';
     const modal = document.createElement('div');
@@ -762,14 +1286,14 @@
     const list = document.createElement('div');
     list.className = 'sb-save-list';
     const rows = [];
-    dirs.forEach((d) => {
+    targets.forEach((tg) => {
       const row = document.createElement('button');
-      row.className = 'sb-save-row' + (d === selectedDir ? ' is-on' : '');
-      const ico = document.createElement('span'); ico.className = 'sb-ico'; ico.innerHTML = SVG.folder;
+      row.className = 'sb-save-row' + (tg === selected ? ' is-on' : '');
+      const ico = document.createElement('span'); ico.className = 'sb-ico'; ico.innerHTML = tg.dir ? SVG.folder : HDD_SVG;
       const label = document.createElement('span'); label.className = 'sb-name ws-truncate';
-      label.textContent = d || ((current ? current.name : '工作区') + '（根目录）');
+      label.textContent = tg.label;
       row.append(ico, label);
-      row.onclick = () => { selectedDir = d; rows.forEach((r, i) => r.classList.toggle('is-on', dirs[i] === selectedDir)); };
+      row.onclick = () => { selected = tg; rows.forEach((r, i) => r.classList.toggle('is-on', targets[i] === selected)); };
       rows.push(row);
       list.appendChild(row);
     });
@@ -793,10 +1317,11 @@
     const spacer = document.createElement('span'); spacer.className = 'sb-modal-spacer';
     const ok = document.createElement('button'); ok.className = 'sb-btn sb-btn-primary'; ok.textContent = '保存到这里';
     ok.onclick = async () => {
+      if (!selected) { browse.onclick(); return; } // 一个根都没有（全失联/全移除）→ 只能走「浏览…」
       close();
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取一次最新内容
       if (!cur || cur.id !== t.id) { showToast('文档已切换，未保存'); return; } // 修 SH-5：防御，同 browse
-      await doSaveTemp(cur.id, pickedName(), cur.html, selectedDir, closeAfter);
+      await doSaveTemp(cur.id, pickedName(), cur.html, selected.rootId, selected.dir, closeAfter);
     };
     const onKey = (e) => {
       if (e.key === 'Escape') close();
@@ -819,29 +1344,30 @@
   }
 
   // 把临时文档落盘（wsNewDoc）→ 去临时标签、建真 rel 标签、编辑器就地指向真文件（不重载）。closeAfter=存完即关。
-  async function doSaveTemp(tempId, base, html, dir, closeAfter) {
+  async function doSaveTemp(tempId, base, html, rootId, dir, closeAfter) {
     let r;
-    try { r = await window.ws2.wsNewDoc(dir || '', base, html); }
+    try { r = await window.ws2.wsNewDoc(rootId, dir || '', base, html); }
     catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
     if (!r || !r.abs) { showToast('保存失败'); return; }
-    await adoptSavedTemp(tempId, r.abs, closeAfter);
+    await adoptSavedTemp(tempId, r.abs, closeAfter, rootId);
   }
-  // 落盘后的收编（工作区内/外通用）：去临时标签 → 建真标签（区内 rel 身份 / 区外 abs 外部标签）→
+  // 落盘后的收编（根内/外通用）：去临时标签 → 建真标签（根内 rootId:rel 身份 / 根外 abs 外部标签）→
   // 编辑器就地指向真文件 → 成功 toast（对齐 ui-demo 保存正反馈）。
-  async function adoptSavedTemp(tempId, abs, closeAfter) {
-    await refresh(); // 树里出现新文件（工作区外保存则树不变，无妨）
+  async function adoptSavedTemp(tempId, abs, closeAfter, rootId) {
+    await refresh(rootId); // 树里出现新文件（rootId 未知=「浏览…」存的，全刷；根外保存树不变，无妨）
     const node = findNodeByAbs(abs);
     const leaf = abs.split('/').pop();
     applyTabs(window.WS2Tabs.removeEntry(tabState, tempId)); // 去掉临时标签
-    if (node) openTabEntry({ rel: node.rel, kind: node.kind || 'html', title: node.name }); // 区内：真 rel 标签
-    else openTabEntry({ abs, kind: 'html', title: leaf }); // 区外：abs 身份外部标签（↗），沿用外部文件标签模型
+    if (node) openTabEntry({ rootId: node.rootId, rel: node.rel, kind: node.kind || 'html', title: node.name }); // 根内：真 rel 标签
+    else openTabEntry({ abs, kind: 'html', title: leaf }); // 根外：abs 身份外部标签（↗），沿用外部文件标签模型
     if (window.__shellFinalizeTemp) await window.__shellFinalizeTemp(tempId, abs, node ? node.name : leaf);
-    if (node) { expandToFile(node.rel); highlightActive(abs); }
+    if (node) { expandToFile(node.rootId, node.rel); highlightActive(abs); }
+    const nodeRoot = node ? rootOf(node.rootId) : null;
     const place = node
-      ? (current ? current.name : '工作区') + (node.rel.indexOf('/') >= 0 ? ' / ' + node.rel.split('/').slice(0, -1).join('/') : '')
+      ? (nodeRoot ? nodeRoot.name : '工作区') + (node.rel.indexOf('/') >= 0 ? ' / ' + node.rel.split('/').slice(0, -1).join('/') : '')
       : abs.split('/').slice(0, -1).join('/');
     showToast('已保存到 ' + place);
-    if (closeAfter) closeTabRel(node ? node.rel : abs); // 「保存并关闭」
+    if (closeAfter) closeTabRel(node ? colKey(node.rootId, node.rel) : abs); // 「保存并关闭」
   }
 
   function closeTabRel(key) { closeOrRemove(key, window.WS2Tabs.closeEntry); } // 标签页区 ×
@@ -849,42 +1375,53 @@
   function dropTabRel(key, toPinned, toIndex) {
     applyTabs(window.WS2Tabs.dropEntry(tabState, key, toPinned, toIndex));
   }
-  // 删文件(或目录下所有文件) → 移除其标签；改名/移动 → 标签 rel 跟随。外部标签(无 rel)天然不被波及，
-  // 但前缀匹配里 e.rel 可能是 undefined，必须加 e.rel && 守卫，否则 undefined.indexOf 抛错整个回调崩。
+  // 删文件(或目录下所有文件) → 移除其标签；改名/移动 → 标签 rel 跟随。限定在 node 的根内——别的根里
+  // 同 rel 是不同文件。外部标签(无 rel)天然不被波及，但前缀匹配里 e.rel 可能是 undefined，必须加
+  // e.rel && 守卫，否则 undefined.indexOf 抛错整个回调崩。
   function removeTabsUnder(node) {
     const under = (rel) => rel === node.rel || rel.indexOf(node.rel + '/') === 0;
-    const targets = node.isDir ? tabState.entries.filter((e) => e.rel && under(e.rel)).map((e) => e.rel) : [node.rel];
-    for (const rel of targets) tabState = window.WS2Tabs.removeEntry(tabState, rel);
+    const targets = node.isDir
+      ? tabState.entries.filter((e) => e.rel && e.rootId === node.rootId && under(e.rel)).map((e) => keyOf(e))
+      : [colKey(node.rootId, node.rel)];
+    for (const key of targets) tabState = window.WS2Tabs.removeEntry(tabState, key);
     persistTabs();
   }
-  function retargetTabsUnder(oldRel, newRel, isDir) {
+  function retargetTabsUnder(rootId, oldRel, newRel, isDir) {
     if (!isDir) {
-      tabState = window.WS2Tabs.retargetEntry(tabState, oldRel, newRel, newRel.split('/').pop());
+      tabState = window.WS2Tabs.retargetEntry(tabState, rootId, oldRel, newRel, newRel.split('/').pop());
     } else {
       const affected = tabState.entries
-        .filter((e) => e.rel && (e.rel === oldRel || e.rel.indexOf(oldRel + '/') === 0))
+        .filter((e) => e.rel && e.rootId === rootId && (e.rel === oldRel || e.rel.indexOf(oldRel + '/') === 0))
         .map((e) => e.rel);
       for (const rel of affected) {
         const nr = newRel + rel.slice(oldRel.length);
-        tabState = window.WS2Tabs.retargetEntry(tabState, rel, nr, nr.split('/').pop());
+        tabState = window.WS2Tabs.retargetEntry(tabState, rootId, rel, nr, nr.split('/').pop());
       }
     }
     persistTabs();
   }
 
-  // 按根拉标签：清掉已不存在的文件、回落激活、恢复上次激活进编辑器。
-  // 存在性校验分流：内部 entry 看文件树里有没有；外部 entry(无 rel) 问主进程 fs.stat 文件还在不在
-  // （不在 = 静默丢，符合拍板①）。两处 await 都加「期间切了工作区就放弃」的竞态守卫。
+  // 启动拉标签（全局单一集合）：清掉已不存在的文件、回落激活、恢复上次激活进编辑器。
+  // 存在性校验分流：活根的内部 entry 看该根文件树里有没有；失联根的 entry 不校验、原样保留（磁盘不可达
+  // 没法验，重新定位后由 validateRootEntries 校验）；外部 entry(无 rel) 问主进程 fs.stat 文件还在不在
+  // （不在 = 静默丢，符合拍板①）。await 期间根集合可能变（快速手快移除）→ 用代数守卫放弃过期结果。
+  let rootsGen = 0; // 根集合代数：加根/移除/吸收都会 ++（onTreeChanged 树内容变不算）
   async function loadTabs() {
-    const rootBefore = current && current.root;
+    const genBefore = rootsGen;
     let st;
     try { st = await window.ws2.wsGetTabs(); } catch (e) { st = { entries: [], activeRel: null }; }
-    if (!current || current.root !== rootBefore) return;
+    if (rootsGen !== genBefore) return loadTabs(); // 作废后按新根集合重跑（集合稳定即终止），别让标签永不恢复
     const raw = st.entries || [];
-    const checks = await Promise.all(raw.map((e) =>
-      e.rel ? Promise.resolve(!!findNode(e.rel)) : window.ws2.pathExists(e.abs).catch(() => false),
-    ));
-    if (!current || current.root !== rootBefore) return;
+    const checks = await Promise.all(raw.map((e) => {
+      if (e.rel) {
+        const root = rootOf(e.rootId);
+        if (!root) return Promise.resolve(false); // 根都不在了（store 与注册表漂移）→ 丢
+        if (root.missing) return Promise.resolve(true); // 失联根：保留，等重新定位
+        return Promise.resolve(!!findNode(e.rootId, e.rel));
+      }
+      return window.ws2.pathExists(e.abs).catch(() => false);
+    }));
+    if (rootsGen !== genBefore) return loadTabs();
     const entries = raw.filter((_e, i) => checks[i]);
     const activeRel = window.WS2Tabs.resolveActive(entries, st.activeRel);
     const changed = entries.length !== raw.length || activeRel !== st.activeRel;
@@ -894,23 +1431,30 @@
     renderRail();
     // 有冷启动 open-file 在路上（用户刚双击的文件该占 viewer）→ 别把上次激活的标签开进 viewer 抢走它；
     // 标签状态仍恢复，只是不自动载入。onOpen 随后会把冷启动文件设为激活。
+    // 失联根的激活项也不自动载入（文件不可达，openTabRow 会空转）。
     if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
-      if (e) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发
+      const eRoot = e && e.rel ? rootOf(e.rootId) : null;
+      if (e && !(eRoot && eRoot.missing)) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发
     }
   }
 
   // ---- 渲染两区 ----
   // 点标签开它：内部文件走树节点 openNode；外部文件(无 rel)按 kind 分发 abs（跟「打开」按钮一条路，
   // shell.js 的 openDoc/showViewer 已支持纯 abs）。
-  // UX4（Wendi F6-①）：把文件树展开到 rel 指向的文件（逐级删父文件夹 collapsed）并滚动定位。
-  function expandToFile(rel) {
+  // UX4（Wendi F6-①）：把文件树展开到 (rootId, rel) 指向的文件（展开根节 + 逐级删父文件夹 collapsed）并滚动定位。
+  function expandToFile(rootId, rel) {
+    let changed = false;
+    if (rootClosed.has(rootId)) { rootClosed.delete(rootId); changed = true; } // 根节整个收着也要先展开
     const parts = rel.split('/'); parts.pop(); // 去掉文件名，只留父文件夹链
     let acc = '';
-    let changed = false;
-    for (const p of parts) { acc = acc ? acc + '/' + p : p; if (collapsed.has(acc)) { collapsed.delete(acc); changed = true; } }
+    for (const p of parts) {
+      acc = acc ? acc + '/' + p : p;
+      const key = colKey(rootId, acc);
+      if (collapsed.has(key)) { collapsed.delete(key); changed = true; }
+    }
     if (changed) render();
-    const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel);
+    const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel && el.dataset.root === rootId);
     if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   }
   function openTabRow(entry) {
@@ -919,8 +1463,10 @@
       return;
     }
     if (entry.rel) {
-      const n = findNode(entry.rel);
-      if (n) { openNode(n); expandToFile(entry.rel); } // 点标签 → 文件树展开到该文件并滚动定位
+      const root = rootOf(entry.rootId);
+      if (root && root.missing) { showToast('「' + root.name + '」失联了，重新定位后才能打开'); return; }
+      const n = findNode(entry.rootId, entry.rel);
+      if (n) { openNode(n); expandToFile(entry.rootId, entry.rel); } // 点标签 → 文件树展开到该文件并滚动定位
       return;
     }
     if (entry.kind === 'html' || entry.kind === 'md') openDoc(entry.abs); // 外部标签的可编辑文档（含 md）
@@ -930,9 +1476,12 @@
     const key = keyOf(entry);
     const temp = isTempEntry(entry);
     const external = isExternal(entry) && !temp; // 临时文档不算「工作区外」，不显示 ↗ 标记
+    const missing = !!(entry.rel && rootOf(entry.rootId) && rootOf(entry.rootId).missing); // 所在根失联 → 灰态
     const row = document.createElement('div');
-    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '') + (temp ? ' sb-tab-temp' : '');
-    row.dataset.rel = key; // 属性名沿用 data-rel（e2e 选择器靠它）；值=keyOf（内部=rel、外部=abs）
+    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '') + (temp ? ' sb-tab-temp' : '') + (missing ? ' sb-tab-missing' : '');
+    row.dataset.rel = entry.rel || entry.abs; // 属性名沿用 data-rel（e2e 选择器靠它）：内部=rel、外部=abs（根限定看 data-root）
+    row.dataset.root = entry.rootId || '';
+    row.dataset.key = key; // 完整身份键（rootId:rel || abs），拖拽/调试用
     row.setAttribute('role', 'button');
     row.draggable = true;
     if (external) row.title = entry.abs; // 外部标签悬停显完整绝对路径
@@ -1076,7 +1625,7 @@
 
     tabsEl.innerHTML = '';
     tabsEl.hidden = false;
-    tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal('', { temp: true })));
+    tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal(null, '', { temp: true })));
     const tlist = zoneList('tabs');
     if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
     else tlist.appendChild(zoneHint('没有打开的标签'));
@@ -1104,28 +1653,13 @@
   const homeOpenFolder = document.getElementById('home-open-folder'); // 首页空态的「打开文件夹」入口（无工作区时侧栏隐藏）
   if (homeOpenFolder) homeOpenFolder.onclick = pickFolder;
 
-  // 侧栏头作根目录 drop 目标：拖文件到这里 = 移到工作区根。
-  const headEl = document.querySelector('.sb-head');
-  if (headEl) {
-    headEl.ondragover = (e) => {
-      if (!dragNode || parentDirOf(dragNode.rel) === '') return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      headEl.classList.add('sb-drop');
-    };
-    headEl.ondragleave = (e) => {
-      if (!headEl.contains(e.relatedTarget)) headEl.classList.remove('sb-drop');
-    };
-    headEl.ondrop = (e) => {
-      if (!dragNode) return;
-      e.preventDefault();
-      headEl.classList.remove('sb-drop');
-      doMove(dragNode, '');
-    };
-  }
+  // 「拖文件到根顶层」的落点改在各根标题行（renderRootSection 里，带同根校验）——多根后侧栏头
+  // 不再是唯一根的化身，不能当 drop 目标（不知道该落哪个根）。
 
   // ---- 轻量 toast（删除「撤销」用）。CSP 安全：classes，无 inline style。----
   let toastTimer = null;
+  // shell.js（先加载、无自己的 toast）复用这个：U0 断链/工作区外等占位提示，及后续互链 toast。
+  window.__wsToast = (message, actionLabel, onAction) => showToast(message, actionLabel, onAction);
   function showToast(message, actionLabel, onAction) {
     let host = document.getElementById('sb-toast-host');
     if (!host) {
@@ -1161,9 +1695,10 @@
   // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。----
   // opts.temp：从「标签页 +」/ Cmd+T 来 → 建临时文档（不落盘，手动保存才进文件夹）；
   // 否则（文件夹 hover-+ / 右键新建）落点 dirRel、直接落盘。
-  async function openCreateModal(dirRel, opts) {
+  async function openCreateModal(rootId, dirRel, opts) {
     if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：已有弹层（如 SaveModal）时不叠——Cmd+T 加速器穿透会走到这
     const temp = !!(opts && opts.temp);
+    const targetRoot = temp ? null : rootOf(rootId);
     let templates = [];
     try {
       templates = await window.ws2.wsTemplates();
@@ -1183,7 +1718,7 @@
     modal.className = 'sb-modal';
     const head = modalHead('新建文档', temp
       ? '新建的是临时文档，编辑后保存时再选存到哪个文件夹'
-      : '在 ' + (current ? current.name : '') + (dirRel ? ' / ' + dirRel : ''), close);
+      : '在 ' + (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : ''), close);
     const grid = document.createElement('div');
     grid.className = 'sb-modal-grid';
     for (const t of templates) {
@@ -1207,8 +1742,8 @@
           if (id) openTabEntry({ abs: id, kind: 'html', title: '未命名' });
           return;
         }
-        const r = await window.ws2.wsNewDoc(dirRel || '', '未命名', t.html);
-        await refresh();
+        const r = await window.ws2.wsNewDoc(rootId, dirRel || '', '未命名', t.html);
+        await refreshRoot(rootId);
         if (r && r.abs) openDoc(r.abs);
       };
       grid.appendChild(card);
@@ -1225,11 +1760,15 @@
   // ---- Cmd+P 命令面板（对齐 ui-demo FindPalette）：顶部锚定浮层，模糊搜文件名/路径，↑↓ 选、Enter 开、Esc 关。----
   const SEARCH_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>';
   function openFindPalette() {
-    if (!current) return; // 没工作区没得搜
+    if (!rootsState.length) return; // 没打开文件夹没得搜
     if (document.getElementById('fp-overlay')) return; // 已开着，别叠一层
     if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：SaveModal/关闭确认开着时 Cmd+P 加速器穿透不叠层
-    const allFiles = [];
-    (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(current.tree);
+    const multi = liveRootCount() > 1;
+    const allFiles = []; // 跨全部活根（节点带 rootId；多根时行内路径带根名消歧）
+    for (const st of rootsState) {
+      if (st.missing || !st.tree) continue;
+      (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(st.tree);
+    }
     let q = '', sel = 0, hits = [];
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay fp-overlay';
@@ -1270,7 +1809,9 @@
         row.className = 'fp-row' + (i === sel ? ' is-sel' : '');
         const ic = document.createElement('span'); ic.className = 'fp-row-ico'; ic.innerHTML = kindSvg(n.kind); // T8：命令面板行也按类型换形状
         const nm = document.createElement('span'); nm.className = 'fp-name ws-truncate'; nm.textContent = n.name;
-        const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate'; sub.textContent = n.rel;
+        const sub = document.createElement('span'); sub.className = 'fp-sub ws-truncate';
+        const nRoot = multi ? rootOf(n.rootId) : null;
+        sub.textContent = nRoot ? nRoot.name + ' / ' + n.rel : n.rel; // 多根时带根名消歧（两根里可能有同名同 rel）
         row.append(ic, nm, sub);
         row.onmouseenter = () => { sel = i; highlight(); };
         row.onclick = () => choose(n);
@@ -1280,8 +1821,8 @@
     function choose(node) {
       if (!node) return;
       close();
-      openNode(node);           // .html 进编辑器 / 其余进查看器（同点树节点）
-      expandToFile(node.rel);   // 顺带在树里展开定位（F6）
+      openNode(node);                        // .html 进编辑器 / 其余进查看器（同点树节点）
+      expandToFile(node.rootId, node.rel);   // 顺带在树里展开定位（F6）
     }
     input.addEventListener('input', () => { q = input.value; sel = 0; computeHits(); renderList(); });
     input.addEventListener('keydown', (e) => {
@@ -1351,33 +1892,37 @@
     renderZones();
     renderRail();
   }
-  // abs 不在当前树里（从「打开」按钮选的、macOS /private 软链让 abs 字符串对不上、或刚建还没 refresh）：
-  // 主进程把 abs 归一化算 workspace 内 rel（kindOf 只在主进程有）。是工作区内 → 建 rel 标签；
-  // 工作区外 rel=null → 建 abs 身份的外部标签（像浏览器开标签页）。竞态守卫放 rel 判定之前，对两条分支都生效。
+  // abs 不在任何树里（从「打开」按钮选的、macOS /private 软链让 abs 字符串对不上、或刚建还没 refresh）：
+  // 主进程把 abs 归一化、跨全部根算归属 (rootId, rel)（kindOf 只在主进程有）。在某根内 → 建 rel 标签；
+  // 根外 rel=null → 建 abs 身份的外部标签（像浏览器开标签页）。竞态守卫放 rel 判定之前，对两条分支都生效。
   async function openTabFromAbs(abs) {
-    const rootBefore = current && current.root;
+    if (!rootsState.length) return; // 单文件模式（没打开任何文件夹）：侧栏藏着，不建看不见的幽灵标签
     let meta = null;
     try { meta = await window.ws2.classifyFile(abs); } catch (e) { return; }
-    if (!meta || !current || current.root !== rootBefore) return; // await 期间切了工作区 → 放弃
-    if (meta.rel) {
-      openTabEntry({ rel: meta.rel, kind: meta.kind || 'other', title: meta.name || meta.rel.split('/').pop() });
+    if (!meta || !rootsState.length) return;
+    if (meta.rel && meta.rootId && rootOf(meta.rootId)) { // await 期间该根可能被移除 → 校验还在才建 rel 标签
+      openTabEntry({ rootId: meta.rootId, rel: meta.rel, kind: meta.kind || 'other', title: meta.name || meta.rel.split('/').pop() });
     } else {
       openTabEntry({ rel: null, abs, kind: meta.kind || 'other', title: meta.name || baseName(abs) });
     }
   }
-  // shell.js 用的钩子：打开文件 → 树高亮 + 建/激活标签。命中树节点走同步快路；没命中（工作区内但 abs 对不上、
-  // 或工作区外）走 openTabFromAbs 异步兜底（工作区外不建标签）。
-  // 工作区根的外部磁盘变化（主进程 workspace-watcher 去抖后发 ws-tree-changed）：重读树 + reconcile 标签。
-  // 关键：先用「变化前的内存旧树」（current.tree，此刻磁盘已变但内存还列着消失的文件）给内部标签补 inode，
+  // 某根的外部磁盘变化（主进程 per-root watcher 去抖后发 ws-tree-changed 带 rootId）：重读该根的树 +
+  // reconcile 该根的标签，别的根纹丝不动。
+  // 关键：先用「变化前的内存旧树」（st.tree，此刻磁盘已变但内存还列着消失的文件）给该根内部标签补 inode，
   // 再读新树——这样不用在每处建标签时穿 ino，消失文件的 ino 也一定取得到，给「改名/移动→标签跟随」做匹配。
-  async function onTreeChanged() {
-    if (!current) return;
-    const rootBefore = current.root;
+  async function onTreeChanged(rootId) {
+    const st = rootOf(rootId);
+    if (!st || st.missing || !st.tree) return;
+    // 跨根移动在飞（对抗审查 P2）：跳过 reconcile。跨根移动把文件的 inode 从源根移到目标根——若源根的
+    // watcher 事件抢在 doMoveAcross 的 retargetSubtreeAcross 之前跑，reconcile 在源根树里找不到该 inode
+    // → 当成「被删」removeEntry，把用户正在编辑/置顶的标签无声清掉（文件其实已好好搬到目标根）。
+    // doMoveAcross 收尾自己 refreshRoot 两根，移动完成后再来的事件正常 reconcile（标签已属目标根、安全）。
+    if (crossMoveGuard.has(rootId)) return;
     for (const e of tabState.entries) {
-      if (e.rel) { const n = findNode(e.rel); if (n && n.ino != null) e.ino = n.ino; }
+      if (e.rel && e.rootId === rootId) { const n = findNode(rootId, e.rel); if (n && n.ino != null) e.ino = n.ino; }
     }
-    const data = await window.ws2.wsReadTree();
-    if (!data || !current || current.root !== rootBefore) return; // 期间切了工作区 → 放弃
+    const data = await window.ws2.wsReadTree(rootId);
+    if (!data || rootOf(rootId) !== st) return; // 期间该根被移除/重定位 → 放弃
     const relSet = new Set();
     const inoToRel = new Map();
     (function w(nodes) {
@@ -1388,15 +1933,15 @@
     })(data.tree);
     // 文件集合没变（只是某文件内容被改了，如保存）→ 不重渲染树：免得打断进行中的内联改名/拖拽，也省 DOM 重建。
     const oldRels = new Set();
-    (function w(nodes) { for (const n of nodes) { if (n.isDir) w(n.children || []); else oldRels.add(n.rel); } })(current.tree);
+    (function w(nodes) { for (const n of nodes) { if (n.isDir) w(n.children || []); else oldRels.add(n.rel); } })(st.tree);
     const sameStructure = oldRels.size === relSet.size && [...relSet].every((r) => oldRels.has(r));
-    current = data; // 总更新：保持树/ino 新鲜（即使不重渲染）
+    st.tree = annotateTree(data.tree, rootId); // 总更新：保持树/ino 新鲜（即使不重渲染）
     if (sameStructure) return;
-    // 结构变了（增/删/改名/移动）→ reconcile 标签 + 重渲染 + 同步编辑器
+    // 结构变了（增/删/改名/移动）→ reconcile 该根标签 + 重渲染 + 同步编辑器
     const prevEntry = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
-    const activeRelGone = prevEntry && prevEntry.rel && !relSet.has(prevEntry.rel);
+    const activeRelGone = prevEntry && prevEntry.rel && prevEntry.rootId === rootId && !relSet.has(prevEntry.rel);
     const activeIno = prevEntry && prevEntry.ino;
-    tabState = window.WS2Tabs.reconcileTree(tabState, relSet, inoToRel);
+    tabState = window.WS2Tabs.reconcileTree(tabState, rootId, relSet, inoToRel);
     persistTabs();
     render();
     renderZones();
@@ -1404,7 +1949,7 @@
     if (activeRelGone) {
       const newRel = activeIno != null ? inoToRel.get(String(activeIno)) : undefined;
       if (newRel) {
-        const n = findNode(newRel); // 激活文档被外部改名/移动 → 编辑器重指向（保内容/脏态），不重载
+        const n = findNode(rootId, newRel); // 激活文档被外部改名/移动 → 编辑器重指向（保内容/脏态），不重载
         if (n && window.__shellRetargetDoc) window.__shellRetargetDoc(n.abs, n.name);
       } else {
         const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
@@ -1419,38 +1964,38 @@
     onDirtyChange: (d) => {
       document.querySelectorAll('.sb-tab.is-active:not(.sb-tab-temp) .sb-tab-dot').forEach((el) => { el.hidden = !d; });
     },
-    pickFolder: () => pickFolder(), // ⋯ 菜单/菜单栏「打开文件夹…」（单文件模式也要有开工作区的入口）
+    pickFolder: () => pickFolder(), // ⋯ 菜单/菜单栏「打开文件夹…」= 添加根（单文件模式也要有开工作区的入口）
     onOpen: async (abs) => {
       // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc
       // 已经先载入了，这里只补标签，不影响打开速度。
       await restoreReady;
       const node = abs ? findNodeByAbs(abs) : null;
-      // Wendi 2026-07-03：外部（Finder 双击等）打开工作区内文件 → 树展开到所在文件夹并滚动定位。
+      // Wendi 2026-07-03：外部（Finder 双击等）打开根内文件 → 树展开到所在文件夹并滚动定位。
       // 树默认全收起，不展开的话文件在树里根本不可见、也高亮不上（is-active 行没渲染出来）。
       // 先展开（内部会 render 重建行）再高亮，顺序不能反。命令面板/「打开」按钮同走此路，行为一致。
       if (node) {
         // 筛选词挡住目标文件时先清筛选（外部打开是显式意图，优先于残留筛选词）——否则过滤树里
         // 该行根本不渲染，展开/滚动/高亮三个动作全部静默落空（审计发现）
-        if (query && !treeEl.querySelector('.sb-file[data-rel="' + cssAttr(node.rel) + '"]')) {
+        if (query && !treeEl.querySelector('.sb-file[data-rel="' + cssAttr(node.rel) + '"][data-root="' + cssAttr(node.rootId) + '"]')) {
           query = '';
           if (filterInput) filterInput.value = '';
           const fc = document.getElementById('sb-filter-clear');
           if (fc) fc.hidden = true;
           render();
         }
-        expandToFile(node.rel);
+        expandToFile(node.rootId, node.rel);
       }
       highlightActive(abs);
       if (node) {
-        openTabEntry({ rel: node.rel, kind: node.kind || 'other', title: node.name });
+        openTabEntry({ rootId: node.rootId, rel: node.rel, kind: node.kind || 'other', title: node.name });
       } else if (abs) {
         await openTabFromAbs(abs);
       }
       window.__pendingColdOpen = null; // 标签已建，撤销 loadTabs 的「别抢 viewer」抑制
     },
     refresh,
-    newTab: () => { if (current) openCreateModal('', { temp: true }); },              // Cmd+T：新建临时文档（无工作区时不建，没地方保存）
+    newTab: () => { if (rootsState.length) openCreateModal(null, '', { temp: true }); }, // Cmd+T：新建临时文档（没打开文件夹不建，没地方保存）
     // Cmd+W：有活跃标签关标签；无标签但还有内容（工作区外查看器 / 单文件模式的文档）先关内容回空态；
     // 真·空态 → 关窗口（Wendi 2026-07-03：macOS=隐藏驻留、后台开着；Windows/Linux 按平台惯例退出）。
     closeActiveTab: () => {
@@ -1480,19 +2025,29 @@
   // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
   // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。
   if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
-  window.addEventListener('focus', () => { if (current) onTreeChanged(); });
+  // 运行时根状态变化（拔盘/根被删 → 主进程转失联并广播）：重拉根列表，失联节灰态即刻可见。
+  if (window.ws2.onWsRootsChanged) window.ws2.onWsRootsChanged(() => resyncRoots());
+  window.addEventListener('focus', () => { for (const st of rootsState) { if (!st.missing) onTreeChanged(st.id); } });
 
-  // 启动恢复上次工作区。await setWorkspace（含 loadTabs）整条跑完才 resolveRestore，
-  // 让冷启动的 open-file 建标签等在这后面（无工作区 / 出错也要 resolve，否则 onOpen 永久挂起）。
+  // 启动恢复上次打开的全部根（含失联的灰态）+ 全局标签。整条跑完才 resolveRestore，
+  // 让冷启动的 open-file 建标签等在这后面（无根 / 出错也要 resolve，否则 onOpen 永久挂起）。
   (async () => {
     try {
-      const root = await window.ws2.wsGetRoot();
-      if (root) {
-        const data = await window.ws2.wsReadTree();
-        if (data) await setWorkspace(data);
+      const infos = await window.ws2.wsGetRoots();
+      if (infos && infos.length) {
+        const trees = await Promise.all(infos.map((r) => (r.missing ? Promise.resolve(null) : window.ws2.wsReadTree(r.id))));
+        rootsState = infos.map((r, i) => mkRootState(r, trees[i]));
+        rootsGen++;
+        if (filterInput) filterInput.value = '';
+        syncChrome();
+        render();
       }
+      // loadTabs 在无根时也要跑（对抗审查 MR-ADV-2）：根全移除后外部标签（abs 身份）仍持久化着，
+      // 只走「有根才恢复」的分支会让它们重启即丢、还被下一次 persist 从盘上抹掉。
+      await loadTabs(); // 全局标签/置顶恢复 + 上次激活进编辑器（冷启动 open-file 在路上则不抢 viewer）
+      syncChrome(); // 恢复出的外部标签要点亮侧栏（sb-on 依赖 tabState.entries）
     } catch (e) {
-      /* 无工作区 / 已不存在：保持空态 */
+      /* 无根 / 已不存在：保持空态 */
     } finally {
       resolveRestore();
     }

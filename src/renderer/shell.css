@@ -333,6 +333,66 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 .sb-tree-empty { font-size: var(--fs-sm); color: var(--c-text-3); font-style: italic; padding: 4px 8px; }
 
+/* ===== 多根：根标题行（每个打开的文件夹一节，对齐 ui-demo arc-root-head）=====
+   实底 + 粗体做「节」的视觉锚；层级靠底色差，无阴影（保守口径）。 */
+.sb-root-head {
+  padding-left: 8px;
+  margin-top: 2px;
+  background: var(--c-surface);
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+}
+.sb-root-head:hover { background: var(--c-hover); }
+.sb-root-head .sb-root-name { flex: none; max-width: 46%; font-size: var(--fs-sm); }
+.sb-root-ico { color: var(--c-text-2); }
+.sb-root-path {
+  flex: 1; min-width: 0; margin-left: auto; text-align: right;
+  font-size: 11px; font-weight: var(--fw-regular); color: var(--c-text-3);
+}
+/* 根重排：拖另一个根经过时的上/下沿插入线（accent，同标签拖拽 drop-before/after 语义） */
+.sb-root-head.sb-insert-before { box-shadow: 0 -2px 0 0 var(--c-accent); }
+.sb-root-head.sb-insert-after { box-shadow: 0 2px 0 0 var(--c-accent); }
+
+/* 失联根：灰显 + 虚线边（文件夹不可达——外置盘拔了/被移动删除），绝不静默丢 */
+.sb-root-missing {
+  background: var(--c-bg-sunken);
+  border: 1px dashed var(--c-border-strong);
+  color: var(--c-text-3);
+  cursor: default;
+}
+.sb-root-missing:hover { background: var(--c-bg-sunken); }
+.sb-root-miss-ic { color: var(--c-danger); opacity: 0.75; }
+.sb-root-miss-ic svg { width: 13px; height: 13px; }
+.sb-root-miss-tag {
+  flex: none; margin-left: auto; padding: 0 6px;
+  border: 1px solid var(--c-border-strong); border-radius: var(--r-pill);
+  font-size: 10px; line-height: 15px; font-weight: var(--fw-regular); color: var(--c-text-3);
+}
+.sb-root-miss-note {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 8px 6px 26px;
+  font-size: 11px; color: var(--c-text-3);
+}
+.sb-root-miss-note > .ws-truncate { min-width: 0; }
+.sb-root-miss-acts { display: flex; gap: 8px; margin-left: auto; flex: none; }
+.sb-root-miss-act {
+  border: none; background: none; cursor: pointer; padding: 0;
+  font-size: 11px; font-weight: var(--fw-semibold); color: var(--c-accent);
+}
+.sb-root-miss-act:hover { text-decoration: underline; }
+
+/* 树底常驻「添加文件夹…」行（对齐 ui-demo arc-add-root）：安静的次级入口 */
+.sb-add-root {
+  width: 100%; display: flex; align-items: center; gap: 7px;
+  height: 28px; margin-top: 4px; padding: 0 8px; border-radius: var(--r-sm);
+  color: var(--c-text-3); font-size: var(--fs-sm); text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.sb-add-root:hover { background: var(--c-hover); color: var(--c-text); }
+
+/* 所在根失联的标签：灰态（点它会 toast 提示重新定位） */
+.sb-tab-missing { opacity: 0.5; }
+
 /* 标签页 + 置顶两区（文件树上方）。置顶=钉住的，标签页=打开记录。 */
 .sb-zone[hidden] { display: none; }
 .sb-zone { margin: 0 0 4px; }

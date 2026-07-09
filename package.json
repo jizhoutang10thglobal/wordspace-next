@@ -10,6 +10,7 @@
     "start": "electron .",
     "test": "node --test test/*.test.js",
     "test:e2e": "playwright test",
+    "test:e2e:dot": "playwright test --reporter=dot",
     "dist": "electron-builder --mac"
   },
   "dependencies": {
