@@ -65,7 +65,6 @@ export function buildWebCtx(info: CtxInfo, ctx: CtxCtx): CtxItem[] {
   ])
   sections.push([
     { id: 'copy-page-url', label: '拷贝页面链接' },
-    { id: 'clip-page', label: '存为文档' },
     { id: 'export-pdf', label: '导出 PDF' },
   ])
 

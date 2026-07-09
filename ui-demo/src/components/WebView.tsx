@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { ExternalLink, Lock, Globe } from 'lucide-react'
 import type { Tab } from '../types'
 import { resolve, useBrowser, type Resolved } from '../mock/browser'
-import { clipPage } from '../mock/clip'
 import { useStore } from '../mock/store'
 import { buildWebCtx, cleanShareUrl, type CtxInfo, type CtxItem } from '../lib/webCtxMenu'
 import NewTab from './NewTab'
@@ -16,13 +15,12 @@ import './WebView.css'
 //   - the new-tab start page
 //   - one of our polished mock websites (the demo's "open web")
 //   - a real <iframe> for a genuine typed URL (best-effort; many sites block it)
-// Above the page sits a slim Wordspace chrome header (security + title + host +
-// 「存为文档」) — the same header the real app shows over a WebContentsView.
+// Above the page sits a slim Wordspace chrome header (security + title + host) —
+// the same header the real app shows over a WebContentsView.
 // 右键网页内容 → 原生风格 DOM 菜单（对齐真 app 的 WebContentsView 右键菜单）。
 export default function WebView({ tab }: { tab: Tab }) {
   const r = resolve(tab.url)
   const openWebTab = useStore((s) => s.openWebTab)
-  const clipToDoc = useStore((s) => s.clipToDoc)
   const toast = useStore((s) => s.toast)
   const navigate = useNavigate()
   const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; info: CtxInfo } | null>(null)
@@ -65,7 +63,6 @@ export default function WebView({ tab }: { tab: Tab }) {
       case 'nav-forward': useBrowser.getState().forward(); break
       case 'reload': toast('已刷新页面', 'neutral'); break
       case 'copy-page-url': navigator.clipboard?.writeText(cleanShareUrl(tab.url)); toast('已拷贝页面链接', 'success'); break
-      case 'clip-page': { const res = clipPage(tab.url); clipToDoc(res.title, res.blocks, res.note); break }
       case 'export-pdf': toast('正在导出 PDF…', 'neutral'); break
     }
   }
@@ -119,9 +116,8 @@ export default function WebView({ tab }: { tab: Tab }) {
   )
 }
 
-// 网页头：安全指示（锁 / 非安全）+ 标题 + 域名 + 「存为文档」。与文档面包屑同壳。
+// 网页头：安全指示（锁 / 非安全）+ 标题 + 域名。与文档面包屑同壳。
 function WebChrome({ tab, resolved }: { tab: Tab; resolved: Resolved }) {
-  const clipToDoc = useStore((s) => s.clipToDoc)
   const url = tab.url
   const secure = /^https:/i.test(url) || url.startsWith('glass://') || url.startsWith('wordspace://')
   let host = ''
@@ -129,11 +125,6 @@ function WebChrome({ tab, resolved }: { tab: Tab; resolved: Resolved }) {
     if (!url.startsWith('glass://') && !url.startsWith('wordspace://')) host = new URL(url).host
   } catch {
     host = ''
-  }
-
-  const clip = () => {
-    const res = clipPage(url)
-    clipToDoc(res.title, res.blocks, res.note)
   }
 
   return (
@@ -145,9 +136,6 @@ function WebChrome({ tab, resolved }: { tab: Tab; resolved: Resolved }) {
         <span className="web-chrome-title">{resolved.title}</span>
         {host && <span className="web-chrome-host">{host}</span>}
       </div>
-      <button className="web-clip-btn" onClick={clip} title="把这个网页存成一个可编辑的本地文档">
-        ＋ 存为文档
-      </button>
     </div>
   )
 }

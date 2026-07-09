@@ -140,8 +140,6 @@ interface State {
   deleteDirWithUndo: (rootId: string, dirPath: string) => void
   moveFile: (file: FileEntry, destDir: string) => void
   newBrowserTab: () => void
-  // 「存为文档」融合桥：把剪藏出来的正文块存成一份本地文档（落我的草稿）并打开。
-  clipToDoc: (title: string, blocks: Block[], note: string) => string
   setTabUrl: (tabId: string, url: string, title?: string) => void
   closeTab: (tabId: string) => void
   setActiveTab: (tabId: string) => void
@@ -396,45 +394,6 @@ export const useStore = create<State>()(
       openWebTab: (url, title, background) => {
         const tab: Tab = { id: uid('tab'), kind: 'web', title, url }
         set((s) => ({ tabs: [...s.tabs, tab], activeTabId: background ? s.activeTabId : tab.id }))
-      },
-
-      // 网页存成本地文档（融合桥）：剪藏出来的块 → 一份真文档 → 打开。
-      // ⚠ 云盘/「我的草稿」在 #119 被删掉后 seedFolders=[]、'f-drafts' 不存在——不能再往那放，
-      // 否则文档在侧栏零可见、关掉标签就永远找不回（静默丢文档）。落第一个打开的文件夹（真进树、真保存）；
-      // 一个文件夹都没开时退化成「未保存临时文档」——至少是个可见、能 ⌘S 保存、关闭有守卫的标签，不当孤儿。
-      clipToDoc: (title, blocks, note) => {
-        const id = uid('d')
-        const root = get().roots.find((r) => !r.missing)
-        const newBlocks = blocks.map((b) => ({ ...b, id: uid('b') }))
-        if (root) {
-          const fileName = uniqueFileInDir(get().files, root.id, '', title, '.html')
-          const doc: Doc = {
-            id, title, emoji: '🌐', kind: 'doc',
-            folderId: root.id,
-            blocks: newBlocks,
-            visibility: 'private',
-            localPath: `${root.path}/${fileName}`,
-            updatedAt: Date.now(), updatedBy: get().meId, collaborators: [get().meId],
-          }
-          const file: FileEntry = { rootId: root.id, path: fileName, kind: 'html', docId: id }
-          set((s) => ({ docs: [doc, ...s.docs], files: [...s.files, file] }))
-          get().openFileTab(file)
-          get().toast(`${note}${title} → ${root.name}`, 'success')
-        } else {
-          const doc: Doc = {
-            id, title, emoji: '🌐', kind: 'doc',
-            folderId: '',
-            blocks: newBlocks,
-            visibility: 'private',
-            localPath: `~/${title}.html`,
-            updatedAt: Date.now(), updatedBy: get().meId, collaborators: [get().meId],
-            unsaved: true,
-          }
-          set((s) => ({ docs: [doc, ...s.docs] }))
-          get().openDoc(id)
-          get().toast(`已把网页剪藏成文档（未保存，⌘S 存到文件夹）`, 'success')
-        }
-        return id
       },
 
       // Open a file from a connected folder. HTML opens in the editor (a 'doc'
