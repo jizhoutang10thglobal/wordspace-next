@@ -37,7 +37,8 @@ import { useBrowser } from '../mock/browser'
 import { useBookmarks } from '../mock/bookmarks'
 import { useHistory } from '../mock/history'
 import { Avatar } from '../ui/primitives'
-import { buildFileTree, type FileNode } from '../lib/tree'
+import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
+import { computeBacklinks, computeDirBacklinks } from '../lib/links'
 import { IS_MAC } from '../lib/platform'
 import type { FileEntry, FileKind, MountRoot, Tab } from '../types'
 import './ArcSidebar.css'
@@ -54,6 +55,8 @@ let dragTabId: string | null = null
 // (preserving docId/kind). Same-space moves only. getData() is blocked during
 // dragover, so we stash it module-side, mirroring dragTabId.
 let dragFile: FileEntry | null = null
+// 互链入口③：把侧栏文件拖进编辑器正文 = 在落点插入指向它的链接（Canvas 消费）。
+export const getDragFile = (): FileEntry | null => dragFile
 // A root header being dragged to reorder the roots（多文件夹：根的上下顺序自由调整）。
 let dragRootId: string | null = null
 // The most-recently-hovered drop target's highlight-clear fn, so a cancelled
@@ -65,13 +68,25 @@ function parentDir(p: string): string {
   return i >= 0 ? p.slice(0, i) : ''
 }
 
-// 文件树缩进:每级 14px,但**封顶**——层级再深也不会把行文字挤出侧栏。
-// 到第 8 级后缩进就不再增长(更深的层级共用同一缩进),靠 caret 展开/折叠 +
-// 文件名 ellipsis 保证深树始终可用,而不是无限往右扩展。
-const INDENT_STEP = 14
-const INDENT_MAX_LEVEL = 8
+// 文件树缩进:每级 12px(研究:窄侧栏 12-16px,导引线扛层级、缩进就不用大)。
+// **不再硬封顶**——封顶会让深层各级挤成同一缩进、层级信息丢失(Wendi 反馈的根因)。深层靠
+// compact folders 压有效深度 + 导引线读层级 + 名字省略号/tooltip + 折叠 兜底(VS Code/Notion 同款)。
+const INDENT_STEP = 12
+// 导引线起点 x:对齐第 0 级 caret 中心(dir base 8 + caret 半宽 ~6)。第 i 级导引线在 GUIDE_X0 + i*STEP。
+const GUIDE_X0 = 14
 function treeIndent(base: number, depth: number): number {
-  return base + Math.min(depth, INDENT_MAX_LEVEL) * INDENT_STEP
+  return base + depth * INDENT_STEP
+}
+
+// 缩进导引线(Obsidian/VS Code 同款):每级祖先一条淡墨竖线,让小缩进也能读出层级。绝对定位在行内
+// (行 position:relative),相邻行的线段自然连成通线。颜色=淡墨、非 accent(accent 留给选中,层级/选中提示不打架)。
+function IndentGuides({ depth }: { depth: number }) {
+  if (depth <= 0) return null
+  const lines = []
+  for (let i = 0; i < depth; i++) {
+    lines.push(<span key={i} className="arc-guide" style={{ left: GUIDE_X0 + i * INDENT_STEP }} aria-hidden />)
+  }
+  return <>{lines}</>
 }
 
 type InsertPos = 'before' | 'after'
@@ -358,7 +373,10 @@ function FileBranch({
           draggable
           onDragStart={(e) => {
             dragFile = f
-            e.dataTransfer.effectAllowed = 'move'
+            // 'all' 不是 'move'：文件既可拖进文件夹（move）也可拖进正文变链接（link）。
+            // effectAllowed 与落点 dropEffect 不兼容时浏览器会**直接禁掉 drop**（事件都不发）——
+            // 之前声明 move、画布落点要 link，真实拖拽全灭（合成事件测试测不出这层，Colin 实测抓到）。
+            e.dataTransfer.effectAllowed = 'all'
             e.dataTransfer.setData('text/plain', f.path)
           }}
           onDragEnd={() => {
@@ -372,6 +390,7 @@ function FileBranch({
             setMenu({ x: e.clientX, y: e.clientY })
           }}
         >
+          <IndentGuides depth={depth} />
           <FileIcon kind={f.kind} />
           <span className="ws-truncate">{node.name}</span>
         </button>
@@ -383,7 +402,17 @@ function FileBranch({
             items={[
               { label: '打开', onClick: openIt },
               { label: '重命名', onClick: () => setRenaming(true) },
-              { label: '删除', danger: true, onClick: () => deleteFileWithUndo(f) },
+              {
+                label: '删除',
+                danger: true,
+                onClick: () => {
+                  // 互链守卫：有反链的文件删除前弹确认（列出谁链接到它），没有就直接删（保留 toast 撤销）
+                  const s = useStore.getState()
+                  const n = computeBacklinks(s.files, s.docs, f.rootId, f.path).length
+                  if (n > 0) useUI.getState().askDeleteFile('file', f.rootId, f.path, n)
+                  else deleteFileWithUndo(f)
+                },
+              },
             ]}
           />
         )}
@@ -426,7 +455,8 @@ function FileBranch({
         role="button"
         tabIndex={0}
         title={node.name}
-        style={{ paddingLeft: treeIndent(8, depth) }}
+        // sticky ancestor：每级祖先 top=depth*30 逐级吸顶堆叠；z 越浅越高（退出时浅层盖深层、干净）
+        style={{ paddingLeft: treeIndent(8, depth), top: depth * 30, zIndex: 20 - Math.min(depth, 15) }}
         onClick={() => toggle(`file:${rootId}:${path}`)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -458,9 +488,17 @@ function FileBranch({
           moveFile(dragFile, path)
         }}
       >
+        <IndentGuides depth={depth} />
         <ChevronRight size={12} className={`arc-caret ${open ? 'is-open' : ''}`} />
         <FolderClosed size={13} />
-        <span className="ws-truncate arc-folder-name">{node.name}</span>
+        <span className="ws-truncate arc-folder-name">
+          {node.name.split('/').map((seg, i) => (
+            <span key={i}>
+              {i > 0 && <span className="arc-seg-sep">/</span>}
+              {seg}
+            </span>
+          ))}
+        </span>
         <button
           className="arc-folder-add"
           title="在此文件夹新建文档"
@@ -481,7 +519,17 @@ function FileBranch({
             { label: '新建文档', onClick: newDocHere },
             { label: '新建子文件夹', onClick: () => createSubfolder(rootId, path) },
             { label: '重命名', onClick: () => setRenaming(true) },
-            { label: '删除', danger: true, onClick: () => deleteDirWithUndo(rootId, path) },
+            {
+              label: '删除',
+              danger: true,
+              onClick: () => {
+                // 互链守卫（文件夹版）：夹外文档链接着夹内文件时先确认（夹内互链一起删、不算断链）
+                const s = useStore.getState()
+                const n = computeDirBacklinks(s.files, s.docs, rootId, path).length
+                if (n > 0) useUI.getState().askDeleteFile('dir', rootId, path, n)
+                else deleteDirWithUndo(rootId, path)
+              },
+            },
           ]}
         />
       )}
@@ -575,7 +623,7 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
   const mine = files.filter((f) => f.rootId === root.id)
   const shown = q ? mine.filter((f) => f.path.toLowerCase().includes(q)) : mine
   const rootDirs = q ? [] : dirs.filter((d) => d.rootId === root.id).map((d) => d.path)
-  const tree = buildFileTree(shown, rootDirs)
+  const tree = compactTree(buildFileTree(shown, rootDirs)) // 压缩单子文件夹链（省深层无谓缩进）
   if (q && !shown.length) return null // while filtering, drop roots with no matches
   const drive = root.origin === 'gdrive'
   return (
@@ -946,6 +994,37 @@ export default function ArcSidebar() {
     }, 40)
     return () => window.clearTimeout(id)
   }, [activeTabId, activeTab?.url, activeTab?.fileName, activeTab?.rootId, revealFolders])
+
+  // sticky ancestor：滚动时给「当前正吸顶」的祖先文件夹标 is-stuck，最深那条标 is-stuck-last（加吸顶阴影）。
+  // 纯视觉区分——CSS 认不出「已吸顶」，靠这个轻量 scroll 监听（直接 toggle class，不触发 React 重渲）。
+  useEffect(() => {
+    const sc = scrollRef.current
+    if (!sc) return
+    let raf = 0
+    const paint = () => {
+      raf = 0
+      const scTop = sc.getBoundingClientRect().top
+      const padTop = parseFloat(getComputedStyle(sc).paddingTop) || 0
+      const heads = sc.querySelectorAll<HTMLElement>('.arc-folder-head')
+      let last: HTMLElement | null = null
+      heads.forEach((h) => {
+        const pinnedY = scTop + padTop + (parseFloat(getComputedStyle(h).top) || 0)
+        const stuck = h.getBoundingClientRect().top <= pinnedY + 0.5
+        h.classList.toggle('is-stuck', stuck)
+        if (stuck) last = h
+      })
+      heads.forEach((h) => h.classList.toggle('is-stuck-last', h === last))
+    }
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(paint)
+    }
+    sc.addEventListener('scroll', onScroll, { passive: true })
+    paint()
+    return () => {
+      sc.removeEventListener('scroll', onScroll)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  })
 
   const submitOmni = (explicitUrl?: string) => {
     const v = (explicitUrl ?? omni).trim()

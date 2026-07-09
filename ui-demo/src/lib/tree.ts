@@ -59,6 +59,28 @@ export function buildFileTree(files: FileEntry[], dirs: string[] = []): FileNode
   return sortFileNodes(root.children)
 }
 
+/**
+ * Compact folders（VS Code `explorer.compactFolders` / JetBrains「Compact Middle Packages」同款，
+ * 两家独立收敛 = 深层嵌套的主力解法）：把「只有一个子文件夹、且不含文件」的链合并成一行，
+ * name 用 '/' 连接（如 `外部导入/2026/Q3`）——省掉深层单子链的无谓缩进、把有效深度压下来。
+ * 合并后 name 含 '/'（文件/文件夹名本身不含 '/'，无歧义），路径拼接照旧正确（parentPath + '/' + name）。
+ * 身份/折叠 key/拖放目标/右键操作都落在**最深那级**（VS Code 同款；改名落最深段是它的已知边角，可接受）。
+ * 只在单根的子树上跑（RootSection 每根各调一次）→ 天然不跨根合并。
+ */
+export function compactTree(nodes: FileNode[]): FileNode[] {
+  return nodes.map((n) => {
+    if (n.file) return n // 文件叶子不动
+    let cur = n
+    let name = n.name
+    // 当前 dir 恰好 1 个子节点且该子是 dir（无 file）→ 并进来，继续往深探
+    while (cur.children.length === 1 && !cur.children[0].file) {
+      cur = cur.children[0]
+      name = name + '/' + cur.name
+    }
+    return { name, children: compactTree(cur.children) }
+  })
+}
+
 /** Build a filesystem-style tree from each doc's localPath (the "local repo" space). */
 export function buildLocalTree(docs: Doc[]): TreeNode[] {
   const root: TreeNode = { name: '', children: [] }

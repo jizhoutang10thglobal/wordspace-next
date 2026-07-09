@@ -19,6 +19,7 @@ import type {
   Workspace,
 } from '../types'
 import { useUI } from './ui'
+import { rewriteDocsForMoves, invertMoves, dirOf } from '../lib/links'
 import {
   ME_ID,
   seedAgentEvents,
@@ -32,10 +33,12 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 20
+const SEED_VERSION = 23
 
 // A directory entry under one opened root. 身份 = (rootId, path)。
 type DirEntry = { rootId: string; path: string }
+
+const baseOfPath = (p: string) => p.split('/').pop() ?? p
 
 const uid = (p = 'id') =>
   `${p}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -184,6 +187,9 @@ interface State {
   // documents. target (optional) = a {rootId, dir} inside a connected space;
   // ignored for cloud spaces (those land in 我的草稿). 缺省 = 第一个根的根目录。
   createDoc: (folderId: string, kind?: DocKind, title?: string, target?: { rootId: string; dir: string } | null, unsaved?: boolean) => string
+  // @提及里选「新建」：在 dir 下静默建一份文档（不切走当前标签页——Notion 同款，链接插完人还在原文档），
+  // 返回新文件根内路径。ext 缺省 .html；断链修复的「原地新建」对 .md 断链传 .md（建出来的才接得上）。
+  createLinkedDoc: (rootId: string, dir: string, title: string, ext?: '.html' | '.md') => string | null
   createFromTemplate: (templateId: string, folderId: string, target?: { rootId: string; dir: string } | null, unsaved?: boolean) => string
   // Cmd+S / 保存：临时文档弹「保存到哪里」modal；已保存的只提示
   saveActiveDoc: () => void
@@ -342,6 +348,7 @@ const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
     divider: { html: '' },
     callout: { html: '提示内容' },
     embed: { html: '' },
+    pagebreak: { html: '' },
   }
   const block = { id: uid('b'), type, ...base[type] } as Block
   if (type === 'list') block.listStyle = listStyle ?? 'bulleted'
@@ -364,8 +371,9 @@ export const useStore = create<State>()(
         { id: 'tab-flow', kind: 'web', pinned: true, title: 'FlowDesk', url: 'https://flowdesk.app' },
         // 标签页 (transient)
         { id: 'tab-web', kind: 'web', title: 'Designer News · 行业动态', url: 'https://news.design/today' },
-        // 开局落在一篇本地 .html 文档上，直接进编辑器
-        { id: 'tab-local', kind: 'doc', docId: 'd-recruit', title: '落地页.html', url: '落地页.html', fileName: '落地页.html', fileKind: 'html', rootId: 'r-brand' },
+        // 开局落在互链演示文档上（含「怎么创建链接」教学块）——落地页.html 几乎全是 designed 装饰块，
+        // 不可编辑，用户在上面试 @/工具栏/拖拽会全体没反应（Colin 实测）
+        { id: 'tab-local', kind: 'doc', docId: 'd-r2-plan', title: '产品规划.html', url: '产品规划.html', fileName: '产品规划.html', fileKind: 'html', rootId: 'r-docs' },
       ],
       activeTabId: 'tab-local',
       closedTabs: [],
@@ -444,6 +452,10 @@ export const useStore = create<State>()(
         )
         const newPath = uniqueFileInDir(others, file.rootId, dir, base, ext)
         const newName = newPath.split('/').pop() ?? newPath
+        // 互链：改名前先算「谁的链接指向旧路径」→ 一并重写（真 app「改名自动重写引用」同款；toast 可撤销）
+        const pre = get()
+        const moved = new Map([[file.path, newPath]])
+        const rewrite = rewriteDocsForMoves(pre.docs, pre.files, file.rootId, moved)
         set((s) => ({
           files: s.files.map((f) =>
             f.rootId === file.rootId && f.path === file.path ? { ...f, path: newPath } : f,
@@ -453,7 +465,37 @@ export const useStore = create<State>()(
               ? { ...t, url: newPath, fileName: newName, title: newName }
               : t,
           ),
+          docs: rewrite.changed.length ? rewrite.docs : s.docs,
         }))
+        if (rewrite.changed.length) {
+          get().toast(`已更新 ${rewrite.changed.length} 篇文档里的链接`, 'success', {
+            label: '撤销',
+            // 撤销 = 名字改回 + **反向再重写一遍**（只动 href，不回滚用户内容——存 blocks 快照整体
+            // 回滚会把撤销窗口内用户的编辑一起吞掉，对抗审查抓到的坑）。执行前校验前提：文件还在
+            // 新路径、旧路径没被占——否则已被后续操作覆盖，放弃并明说，不做半套撤销。
+            run: () => {
+              const s = get()
+              const still = s.files.some((f) => f.rootId === file.rootId && f.path === newPath)
+              const occupied = s.files.some((f) => f.rootId === file.rootId && f.path === file.path)
+              if (!still || occupied) {
+                s.toast('文件已被后续操作改动，无法撤销这次链接更新', 'neutral')
+                return
+              }
+              const back = rewriteDocsForMoves(s.docs, s.files, file.rootId, invertMoves(moved))
+              set((st) => ({
+                files: st.files.map((f) =>
+                  f.rootId === file.rootId && f.path === newPath ? { ...f, path: file.path } : f,
+                ),
+                tabs: st.tabs.map((t) =>
+                  t.fileName && t.rootId === file.rootId && t.url === newPath
+                    ? { ...t, url: file.path, fileName: baseOfPath(file.path), title: baseOfPath(file.path) }
+                    : t,
+                ),
+                docs: back.docs,
+              }))
+            },
+          })
+        }
       },
 
       // Delete a file but keep it recoverable: snapshot what we remove, then show
@@ -536,13 +578,26 @@ export const useStore = create<State>()(
             : p.startsWith(oldPrefix)
               ? `${target}/${p.slice(oldPrefix.length)}`
               : p
+        // 互链：子树整体换前缀 → moved 映射给全部受影响文件。子树**内部**互链（旧解析+新重算抵消）天然不变，
+        // 只有「树外 ↔ 树内」的链接会真的被改写。
+        const pre = get()
+        const movedMap = new Map<string, string>()
+        for (const f of pre.files) {
+          if (f.rootId === rootId && remap(f.path) !== f.path) movedMap.set(f.path, remap(f.path))
+        }
+        const rewrite = rewriteDocsForMoves(pre.docs, pre.files, rootId, movedMap)
         set((s) => ({
           files: s.files.map((f) => (f.rootId === rootId ? { ...f, path: remap(f.path) } : f)),
           dirs: s.dirs.map((d) => (d.rootId === rootId ? { ...d, path: remap(d.path) } : d)),
           tabs: s.tabs.map((t) =>
             t.fileName && t.rootId === rootId && t.url ? { ...t, url: remap(t.url) } : t,
           ),
+          docs: rewrite.changed.length ? rewrite.docs : s.docs,
         }))
+        if (rewrite.changed.length) {
+          // 文件夹改名本身没有撤销（与现状一致），这里只告知链接已跟上
+          get().toast(`已更新 ${rewrite.changed.length} 篇文档里的链接`, 'success')
+        }
       },
 
       // Delete a directory and everything under it, recoverably. Same backing-doc
@@ -618,6 +673,10 @@ export const useStore = create<State>()(
         )
         const newPath = uniqueFileInDir(others, file.rootId, destDir, base, ext)
         if (newPath === file.path) return // dropped onto its own folder — no-op
+        // 互链：移动 = 指向它的链接要改 + **它自己的出链要按新位置 rebase**（Obsidian 的著名缺口就漏了后半）
+        const pre = get()
+        const moved = new Map([[file.path, newPath]])
+        const rewrite = rewriteDocsForMoves(pre.docs, pre.files, file.rootId, moved)
         set((s) => ({
           files: s.files.map((f) =>
             f.rootId === file.rootId && f.path === file.path ? { ...f, path: newPath } : f,
@@ -627,8 +686,36 @@ export const useStore = create<State>()(
               ? { ...t, url: newPath }
               : t,
           ),
+          docs: rewrite.changed.length ? rewrite.docs : s.docs,
         }))
-        get().toast(`已移动「${leaf}」到 ${destDir || '根目录'}`, 'neutral')
+        // 撤销 = 移回去 + 反向重写（与 renameFile 同一套语义——同一个承诺同一种兑现）
+        get().toast(
+          `已移动「${leaf}」到 ${destDir || '根目录'}` +
+            (rewrite.changed.length ? ` · 已更新 ${rewrite.changed.length} 篇文档里的链接` : ''),
+          'neutral',
+          {
+            label: '撤销',
+            run: () => {
+              const s = get()
+              const still = s.files.some((f) => f.rootId === file.rootId && f.path === newPath)
+              const occupied = s.files.some((f) => f.rootId === file.rootId && f.path === file.path)
+              if (!still || occupied) {
+                s.toast('文件已被后续操作改动，无法撤销移动', 'neutral')
+                return
+              }
+              const back = rewriteDocsForMoves(s.docs, s.files, file.rootId, invertMoves(moved))
+              set((st) => ({
+                files: st.files.map((f) =>
+                  f.rootId === file.rootId && f.path === newPath ? { ...f, path: file.path } : f,
+                ),
+                tabs: st.tabs.map((t) =>
+                  t.fileName && t.rootId === file.rootId && t.url === newPath ? { ...t, url: file.path } : t,
+                ),
+                docs: back.docs,
+              }))
+            },
+          },
+        )
       },
 
       newBrowserTab: () => {
@@ -981,6 +1068,31 @@ export const useStore = create<State>()(
           get().openDoc(id)
         }
         return id
+      },
+
+      createLinkedDoc: (rootId, dir, title, ext = '.html') => {
+        const root = get().roots.find((r) => r.id === rootId && !r.missing)
+        if (!root) return null
+        const clean = cleanName(title) || '无标题文档'
+        const path = uniqueFileInDir(get().files, rootId, dir, clean, ext)
+        const id = uid('d')
+        const doc: Doc = {
+          id,
+          title: clean,
+          emoji: '📄',
+          kind: 'doc',
+          folderId: rootId,
+          blocks: [{ id: uid('b'), type: 'heading', level: 1, html: clean }],
+          visibility: 'private',
+          localPath: `${root.path}/${path}`,
+          updatedAt: Date.now(),
+          updatedBy: get().meId,
+          collaborators: [get().meId],
+        }
+        if (ext === '.md') doc.format = 'markdown'
+        const file: FileEntry = { rootId, path, kind: ext === '.md' ? 'md' : 'html', docId: id }
+        set((s) => ({ docs: [doc, ...s.docs], files: [...s.files, file] }))
+        return path
       },
 
       // 手动保存：把「临时文档」（unsaved）落进当前空间——连接文件夹里补一个 FileEntry

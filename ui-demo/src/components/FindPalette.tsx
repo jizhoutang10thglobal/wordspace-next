@@ -85,6 +85,7 @@ export default function FindPalette() {
       e.preventDefault()
       setSel((s) => Math.max(s - 1, 0))
     } else if (e.key === 'Enter') {
+      if (e.nativeEvent.isComposing) return // 中文/日文组字中按 Enter = 确认候选词，别当「打开选中文件」
       e.preventDefault()
       choose(hits[sel])
     }

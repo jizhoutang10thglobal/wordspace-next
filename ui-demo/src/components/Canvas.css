@@ -32,6 +32,73 @@
 .ws-doc.ws-fmt-a5 { max-width: 559px; padding: 44px 48px 72px; }
 .ws-doc.ws-fmt-letter { max-width: 816px; }
 
+/* ===== 分页文档（可视分页线）=====
+   页外灰底（sunken 槽）+ 内容列白纸。纸方：方角 + 1px 细边 + 一层极淡阴影
+   （任务口径的「轻阴影」，取 --shadow-menu 档，绝不堆叠假纸）。
+   纸宽/边距由 Canvas.tsx 按 mm→px 内联，CSS 只管观感。 */
+.ws-canvas-scroll.is-paged { background: var(--c-bg-sunken); overflow-x: auto; }
+.ws-doc-paged {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--c-border);
+  border-radius: 0; /* 纸=方角 */
+  box-shadow: var(--shadow-menu);
+  margin: 28px auto 56px;
+  box-sizing: border-box;
+}
+
+/* 分页线覆盖层：横贯纸面的虚线 + 右侧页码 chip。不占布局、不响应鼠标。 */
+.ws-page-marks { position: absolute; inset: 0; pointer-events: none; }
+.ws-page-mark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--c-border-strong); /* 淡墨导引，非 accent */
+}
+.ws-page-chip {
+  position: absolute;
+  right: 8px;
+  top: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  color: var(--c-text-3);
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill); /* chip 是 UI 不是纸 → 墨圆 */
+  padding: 1px 8px;
+}
+
+/* 分页符块：虚线 + 居中「分页符」小标签（同 divider 交互：可选中可删除可拖拽） */
+.ws-pagebreak {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  margin: 6px 0;
+}
+.ws-pagebreak::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px dashed var(--c-border-strong);
+}
+.ws-pagebreak-label {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-label);
+  color: var(--c-text-3);
+  background: var(--c-bg); /* 盖住中段虚线 */
+  padding: 0 10px;
+  user-select: none;
+}
+/* 纸上（分页视图）标签底色跟纸走 */
+.ws-doc-paged .ws-pagebreak-label { background: #fff; }
+
 /* header */
 .ws-doc-header { margin-bottom: 26px; }
 .ws-breadcrumb {
@@ -412,13 +479,12 @@
 .ws-aisoon-btn {
   height: 34px; padding: 0 18px; border-radius: var(--r-pill);
   background: var(--c-ink); color: var(--c-text-invert); font-size: var(--fs-base);
-  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
-.ws-aisoon-btn:hover { background: var(--c-ink-hover); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
-.ws-aisoon-btn:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
+.ws-aisoon-btn:hover { background: var(--c-ink-hover); }
+.ws-aisoon-btn:active { transform: scale(0.97); }
 .ws-aisoon-x {
   position: absolute; top: 12px; right: 12px;
   width: 26px; height: 26px; border-radius: var(--r-pill);
@@ -461,7 +527,8 @@
 
 /* 斜杠 / 插入菜单 */
 .ws-slashmenu {
-  z-index: 80; min-width: 184px; max-height: 290px; overflow-y: auto;
+  /* max-height 放到 12 项全显（12×32+8=392）——菜单折叠会把尾部条目藏成「不存在」 */
+  z-index: 80; min-width: 184px; max-height: 396px; overflow-y: auto;
   padding: 4px; background: var(--c-surface); border-radius: 8px;
   box-shadow: var(--shadow-menu);
   transform-origin: top left;
@@ -566,3 +633,120 @@
 @keyframes ws-shimmer {
   to { transform: translateX(100%); }
 }
+
+/* ------------------------------------------------------------------ */
+/* 文档互链：提及链接 / @菜单 / 悬停预览卡 / 反链面板                       */
+/* ------------------------------------------------------------------ */
+/* 提及链接：原生 <a href="相对路径">（磁盘形态干净），编辑器里给一点「实体感」——
+   accent 色 + 极淡底 + 悬停加深；不做重胶囊（贴「显示按原生」的冻结口径）。 */
+.ws-doclink {
+  color: var(--c-accent);
+  background: var(--c-accent-tint, #e8f0fe);
+  border-radius: 4px;
+  padding: 0 3px;
+  margin: 0 1px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+  white-space: nowrap;
+}
+.ws-doclink:hover { background: #d8e6fc; }
+/* 断链：红虚线下划线 + 灰字——一眼可分（Obsidian 把两态弄一样曾遭用户抗议，视觉区分是刚需） */
+.ws-doclink.is-broken {
+  color: var(--c-danger, #b3261e);
+  background: #fdf3f2;
+  text-decoration: underline dashed;
+  text-underline-offset: 3px;
+}
+
+/* @ 提及菜单：沿用 slashmenu 形制，条目两行（标题 + 根内路径消歧） */
+.ws-mentionmenu {
+  z-index: 80; min-width: 240px; max-width: 320px; max-height: 320px; overflow-y: auto;
+  padding: 4px; background: var(--c-surface); border-radius: 8px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top left;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
+}
+.ws-mentionmenu-head {
+  padding: 5px 10px 4px; font-size: var(--fs-xs); color: var(--c-text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ws-mentionmenu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 10px;
+  border-radius: var(--r-sm); text-align: left;
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+.ws-mentionmenu-item:hover { background-size: 100% 100%; }
+.ws-mentionmenu-item.active { background-color: var(--c-hover); }
+.ws-mentionmenu-ico { flex: none; color: var(--c-text-3); display: inline-flex; }
+.ws-mentionmenu-item.is-create .ws-mentionmenu-ico { color: var(--c-accent); }
+.ws-mentionmenu-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ws-mentionmenu-title { font-size: var(--fs-base); color: var(--c-text); }
+.ws-mentionmenu-path { font-size: var(--fs-xs); color: var(--c-text-3); }
+.ws-mentionmenu-empty { padding: 8px 10px; font-size: var(--fs-sm); color: var(--c-text-3); }
+
+/* 链接悬停预览卡 / 断链修复卡 */
+.ws-linkpreview {
+  position: fixed; z-index: 85; width: 300px; max-height: 260px; overflow: hidden;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px;
+  box-shadow: var(--shadow-menu); padding: 12px 14px;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
+}
+.ws-linkpreview-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-text);
+  margin-bottom: 8px;
+}
+.ws-linkpreview-title svg { flex: none; color: var(--c-text-3); }
+.ws-linkpreview-body { display: flex; flex-direction: column; gap: 4px; }
+.ws-linkpreview-line { margin: 0; font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.5; }
+.ws-linkpreview-foot {
+  display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 8px;
+  border-top: 1px solid var(--c-border);
+}
+.ws-linkpreview-path { flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--c-text-3); }
+.ws-linkpreview-open {
+  flex: none; font-size: var(--fs-sm); color: var(--c-accent); font-weight: var(--fw-medium);
+  padding: 2px 8px; border-radius: var(--r-pill);
+}
+.ws-linkpreview-open:hover { background: var(--c-accent-tint, #e8f0fe); }
+.ws-linkpreview.is-broken { border-color: #e8b4ae; }
+.ws-linkpreview-brokenhead {
+  display: flex; align-items: center; gap: 7px;
+  font-size: var(--fs-base); font-weight: var(--fw-semibold); color: var(--c-danger, #b3261e);
+  margin-bottom: 6px;
+}
+.ws-linkpreview-hint { font-size: var(--fs-sm); color: var(--c-text-3); margin: 4px 0 8px; }
+.ws-linkpreview-fixes { display: flex; flex-direction: column; gap: 2px; }
+.ws-linkpreview-fix {
+  display: flex; align-items: center; gap: 7px; width: 100%; padding: 5px 8px;
+  border-radius: var(--r-sm); font-size: var(--fs-sm); color: var(--c-text); text-align: left;
+}
+.ws-linkpreview-fix:hover { background: var(--c-hover); }
+.ws-linkpreview-fix svg { flex: none; color: var(--c-accent); }
+
+/* 反向链接面板（标题区下方，app chrome、不进文档字节） */
+.ws-backlinks { margin-top: 10px; }
+.ws-backlinks-head {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-sm); color: var(--c-text-3);
+  padding: 3px 8px 3px 4px; border-radius: var(--r-pill);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ws-backlinks-head:hover { background: var(--c-hover); color: var(--c-text); }
+.ws-backlinks-caret { transition: transform var(--dur-fast) var(--ease); }
+.ws-backlinks-caret.is-open { transform: rotate(90deg); }
+.ws-backlinks-list {
+  margin-top: 4px; border: 1px solid var(--c-border); border-radius: 8px;
+  padding: 4px; display: flex; flex-direction: column; gap: 1px;
+  background: var(--c-surface);
+}
+.ws-backlinks-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px;
+  border-radius: var(--r-sm); text-align: left;
+}
+.ws-backlinks-item:hover { background: var(--c-hover); }
+.ws-backlinks-item svg { flex: none; color: var(--c-text-3); }
+.ws-backlinks-title { flex: none; max-width: 40%; font-size: var(--fs-sm); color: var(--c-text); font-weight: var(--fw-medium); }
+.ws-backlinks-snippet { flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--c-text-3); }

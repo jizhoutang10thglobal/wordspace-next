@@ -138,6 +138,7 @@ function setZoom(z) {
   applyZoom();
   if (blockEdit) blockEdit.reposition(); // 缩放后手柄/气泡按新内容尺寸重定位
   if (basicEdit) basicEdit.reposition();  // 基础编辑器的宿主浮层同理（Feature 3）
+  if (window.WS2Find) window.WS2Find.reposition(); // 查找条钉在 iframe 角，缩放不改 iframe 元素 rect，但保险重定位
 }
 
 // 分流判定（Feature 3，KD-e）：纯函数、不碰控制流——判「磁盘原始字节 reparse 出的 DOM」是否合规。
@@ -154,6 +155,7 @@ function routeDoc(rawHtml) {
 // undoMgr 一并清空——否则基础模式/空态下按 Cmd+Z 会去 undo 上一个文档的陈旧 manager
 //（改的是已换掉的 detached doc、还把当前文档标脏）。
 function detachEditors() {
+  if (window.WS2Find) window.WS2Find.close(); // 换/关文档：关查找条 + 清高亮，否则飘到下一个文档
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
   if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
@@ -210,6 +212,7 @@ function attachBasic() {
     setZoom(zoomFactor * (1 - d * 0.01));
   }, { passive: false });
   zoomSheet = null; applyZoom();
+  installLinkGuard(doc); // U0：非合规文档同样收口链接点击
 }
 
 // 块编辑内核（WS2BlockEdit）跑在父层、操作 iframe 的 contentDocument（iframe sandbox 不跑脚本）。
@@ -258,6 +261,44 @@ function wireEditor() {
   // 新 contentDocument → 旧缩放样式表失效，按当前 zoomFactor 重挂（外部重载保留缩放；openDoc 已先复位 100%）
   zoomSheet = null;
   applyZoom();
+  installLinkGuard(doc); // U0：文档内 <a> 点击收口（见下）
+}
+
+// ---- U0：文档内 <a> 点击收口 ----
+// 修 P0：文档里点链接 → iframe 自导航到目标页 → 晚到的 onload 把块编辑器挂上新页、docPath 仍指旧文件
+// → 1.2s 自动保存把 B 页内容写进 A 的路径（跨文件数据覆盖）。这里 capture 阶段拦下所有会导致 iframe
+// 导航的点击、改走 openDoc 漏斗；同时是互链「点击打开」的地基。三条渲染路径（file:// 直载 / md srcdoc /
+// 非合规 basic-edit）都在 wireEditor/attachBasic 里装它，全覆盖。
+function toastLite(msg) { if (window.__wsToast) window.__wsToast(msg); } // U4 前的占位提示（断链等）
+async function onDocLinkClick(e) {
+  // 匹配 <a>/<area>（图片热区）/SVG <a>——任何能让 sandbox iframe 自导航的锚点都要收口（不止 HTML <a>）。
+  // href 从普通属性或 xlink:href（老 SVG）取，两者都可能触发导航。
+  const a = e.target && e.target.closest ? e.target.closest('a, area') : null;
+  if (!a) return;
+  const href = a.getAttribute('href') || a.getAttribute('xlink:href') || '';
+  if (!href) return; // 无 href 的 a/area 不导航，交给正常编辑
+  const kind = (window.WS2Links && window.WS2Links.classifyScheme(href)) || 'ignore';
+  if (kind === 'anchor') return; // #foo：同文档滚动、不导航——放行，不接管
+  e.preventDefault(); // 其余一律阻止 iframe 裸导航（P0 根治：相对/web/file:/其它都不许）
+  // 编辑态下点链接文字：浏览器本就不导航，让它放光标改字、别打开（对齐 ui-demo「editing→不 open」）
+  if (a.isContentEditable) return;
+  // 接管这次点击前，先清掉块编辑器的瞬态 UI（灰选中/块菜单/手柄）——否则 stopPropagation 跳过它的
+  // bubble onClick 清理，会留下幽灵灰选中（审查 #1）。deselect 幂等，无选中时无副作用。
+  if (blockEdit && blockEdit.deselect) blockEdit.deselect();
+  e.stopPropagation(); // 非编辑态：接管这次点击，别让块编辑器当「进入编辑」
+  if (kind === 'ignore') return; // 空/根绝对/file:/其它 scheme：拦下不动作
+  if (kind === 'web') { try { window.ws2.openExternalUrl(href); } catch (err) {} return; } // http/mailto/tel → 系统程序
+  if (!docPath) return; // 临时文档无磁盘路径：相对链接无从解析
+  let r;
+  try { r = await window.ws2.resolveDocLink(docPath, href); } catch (err) { return; }
+  if (!r || r.error) return;
+  if (!r.insideRoot) { toastLite('链接指向工作区外，未打开'); return; }
+  if (!r.exists) { toastLite('链接目标不存在：' + (r.rel || href)); return; } // U4 升级成断链修复卡
+  if (r.kind === 'html' || r.kind === 'md') openDoc(r.abs);
+  else showViewer({ abs: r.abs, rel: r.rel, rootId: r.rootId, name: r.name, kind: r.kind }); // 多根：查看器/外部打开按 rootId+rel
+}
+function installLinkGuard(doc) {
+  if (doc) doc.addEventListener('click', onDocLinkClick, true); // capture：先于块编辑器进入编辑
 }
 
 function prepFrame(asDirty) {
@@ -287,8 +328,8 @@ function openExternalBtn(node, cls) {
   const b = document.createElement('button');
   b.className = cls;
   b.innerHTML = EXT_SVG + '<span>用默认程序打开</span>';
-  // 工作区内走 rel（assertInsideWorkspace 守卫）；工作区外（「打开」按钮选的）没 rel，走吃 abs 的那条。
-  b.onclick = () => (node.rel ? window.ws2.wsOpenExternal(node.rel) : window.ws2.openExternalAbs(node.abs));
+  // 根内走 (rootId, rel)（assertInsideWorkspace 守卫）；根外（「打开」按钮选的）没 rel，走吃 abs 的那条。
+  b.onclick = () => (node.rel ? window.ws2.wsOpenExternal(node.rootId, node.rel) : window.ws2.openExternalAbs(node.abs));
   return b;
 }
 // node = { name, rel, abs, kind } —— rel 来自侧栏文件树；「打开」按钮选的工作区外文件 rel 为 null、走 abs
@@ -319,8 +360,8 @@ async function showViewer(node) {
   viewer.innerHTML = '';
   if (kind === 'image' || kind === 'pdf') {
     let url = null;
-    // 工作区内走 rel，工作区外走 abs（「打开」按钮选的）；取不到就退化成外部打开卡片。
-    try { url = node.rel ? await window.ws2.wsFileUrl(node.rel) : await window.ws2.fileUrlAbs(node.abs); } catch (e) { /* 退化成卡片 */ }
+    // 根内走 (rootId, rel)，根外走 abs（「打开」按钮选的）；取不到就退化成外部打开卡片。
+    try { url = node.rel ? await window.ws2.wsFileUrl(node.rootId, node.rel) : await window.ws2.fileUrlAbs(node.abs); } catch (e) { /* 退化成卡片 */ }
     if (url) {
       if (kind === 'pdf') {
         // PDF.js 渲染（连续滚动 canvas + 自己的一行工具栏）；替代 Chromium 内置 viewer（B7 合并工具栏 / B8 无预览栏）
@@ -389,11 +430,30 @@ window.__shellShowViewer = showViewer;
 function loadFromFile(opts) {
   detachEditors();
   const gen = ++loadGen;
+  const wantUrl = docInfo.fileUrl;
   // 分流（Feature 3）：docConform 由 openDoc/reloadDoc 先判好。合规→完整块编辑；不合规→基础编辑 + 降级条。
-  frame.onload = () => { if (gen !== loadGen) return; docConform ? wireEditor() : attachBasic(); };
+  frame.onload = () => {
+    if (gen !== loadGen) return;
+    if (!loadedIsExpected(wantUrl)) return; // U0 硬化：iframe 若被导航到别的文件（漏网的表单/meta-refresh），绝不把编辑器挂错页
+    docConform ? wireEditor() : attachBasic();
+  };
   frame.removeAttribute('srcdoc');
   frame.src = docInfo.fileUrl;
   prepFrame(opts && opts.asDirty);
+}
+// U0 硬化：onload 时校验 iframe 真的停在预期文档上，防「被漏网导航（表单/meta-refresh/未覆盖的锚点）打飞后，
+// 晚到的 load 把编辑器挂错页 + 自动保存写错文件」。三条渲染路径都接（file:// 直载 / srcdoc / reload），别只护一条。
+//   wantUrl 给了（file:// 直载 / reload 落地）：比对 decode 后 pathname，导航去别的 file:// 文件 → false。
+//   wantUrl 省略（srcdoc：.md / 临时 / 历史恢复，预期停在 about:srcdoc）：一旦变成 file:// 就是被导航走 → false。
+// about:blank（reload 中转）→ true；读不到 location（不该发生）→ 保守 true，不误挡正常载入。
+function loadedIsExpected(wantUrl) {
+  try {
+    const cur = new URL(frame.contentWindow.location.href);
+    if (!wantUrl) return cur.protocol !== 'file:'; // srcdoc 路径：跑到 file:// = 被导航走
+    if (cur.protocol !== 'file:') return true; // about:blank 中转 / 尚未落地
+    const want = new URL(wantUrl);
+    return decodeURIComponent(cur.pathname) === decodeURIComponent(want.pathname);
+  } catch (e) { return true; }
 }
 
 // 外部磁盘改动后重新载入磁盘版本（Bug2：用 Claude 等外部工具改完，自动刷新渲染）。
@@ -417,9 +477,10 @@ async function reloadDoc() {
   if (isMdPath(p)) { if (raw != null) loadFromHtml(raw); return; }
   detachEditors();
   const gen = ++loadGen;
+  const wantUrl = docInfo.fileUrl;
   frame.onload = () => {
     if (gen !== loadGen) return; // 被更晚的载入抢占
-    frame.onload = () => { if (gen !== loadGen) return; docConform ? wireEditor() : attachBasic(); setDirty(false); };
+    frame.onload = () => { if (gen !== loadGen) return; if (!loadedIsExpected(wantUrl)) return; docConform ? wireEditor() : attachBasic(); setDirty(false); };
     frame.src = docInfo.fileUrl;
   };
   frame.removeAttribute('srcdoc');
@@ -484,6 +545,7 @@ function loadFromHtml(html, opts) {
   // 历史恢复走同一文档既有 docConform；临时文档由 openTempDoc 先设好 docConform。injectBase 守 docInfo（临时文档无 docInfo/dirUrl）。
   frame.onload = () => {
     if (gen !== loadGen) return;
+    if (!loadedIsExpected()) return; // U0 硬化：srcdoc 被导航去 file:// → 不接线（防编辑器挂错页 + 自动保存写错 .md/临时文档）
     if (docInfo && docInfo.dirUrl) injectBase(frame.contentDocument, docInfo.dirUrl);
     mirrorSrcdocStyles(frame.contentDocument); // 只在 srcdoc 路径镜像（file:// 不需要，也别去规范化真文件的 style 属性）
     docConform ? wireEditor() : attachBasic();
@@ -667,7 +729,7 @@ window.__shellResumeAutosave = resumeAutoSave;
 // 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
-window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); };
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -677,11 +739,12 @@ async function pickAndOpen() {
   if (!p) return;
   let meta;
   try { meta = await window.ws2.classifyFile(p); }
-  catch (e) { meta = { kind: 'other', name: baseName(p), rel: null }; }
+  catch (e) { meta = { kind: 'other', name: baseName(p), rel: null, rootId: null }; }
   if (meta.kind === 'html' || meta.kind === 'md') {
     openDoc(p);
   } else {
-    showViewer({ abs: p, rel: meta.rel, name: meta.name || baseName(p), kind: meta.kind });
+    // rootId 跟着 rel 走：根内文件查看器走 wsFileUrl(rootId, rel)（assertInsideWorkspace 守卫那条）
+    showViewer({ abs: p, rel: meta.rel, rootId: meta.rootId, name: meta.name || baseName(p), kind: meta.kind });
   }
 }
 
@@ -769,7 +832,7 @@ if (openFolderMenuBtn) openFolderMenuBtn.onclick = () => { if (window.__sbHooks 
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = saveAs; // 菜单里的「另存为…」；Cmd+S / 菜单栏「保存」仍走 save()（真文件即存、临时弹 SaveModal）
-window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); }); // 窗口尺寸变 → 浮层跟上
+window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); }); // 窗口尺寸变 → 浮层跟上
 window.addEventListener('keydown', handleZoomKey); // 焦点在父层 shell（点过保存按钮/首页）时也能 Cmd± 缩放（iframe 内事件不冒泡到这）
 
 // 外部磁盘改动（Bug2）：是当前文档才处理；有未保存改动先问，免得静默覆盖用户的编辑。
@@ -921,7 +984,12 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'redo') runUndoRedo(true);
   if (cmd === 'new-tab' && window.__sbHooks && window.__sbHooks.newTab) window.__sbHooks.newTab();          // Cmd+T
   if (cmd === 'close-tab' && window.__sbHooks && window.__sbHooks.closeActiveTab) window.__sbHooks.closeActiveTab(); // Cmd+W
-  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+F
+  // Cmd+F = 文档内查找：块编辑器活跃（合规、已挂、非查看器/空态）→ 开查找条；否则回退聚焦侧栏文件筛选。
+  if (cmd === 'find-in-doc') {
+    if (blockEdit && frame.contentDocument && window.WS2Find) window.WS2Find.open(frame);
+    else if (window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();
+  }
+  if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+Shift+F
   if (cmd === 'find-palette' && window.__sbHooks && window.__sbHooks.findPalette) window.__sbHooks.findPalette();     // Cmd+P
 });
 

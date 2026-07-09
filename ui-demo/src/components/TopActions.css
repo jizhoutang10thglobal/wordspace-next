@@ -14,13 +14,12 @@
   background: var(--c-ink); color: var(--c-text-invert);
   font-size: var(--fs-base); font-weight: var(--fw-medium);
   border-radius: var(--r-pill);
-  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
-.top-share:hover { background: var(--c-ink-hover); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
-.top-share:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
+.top-share:hover { background: var(--c-ink-hover); }
+.top-share:active { transform: scale(0.97); }
 
 .top-save {
   display: flex; align-items: center; gap: 6px;
@@ -28,13 +27,12 @@
   background: var(--c-ink); color: var(--c-text-invert);
   font-size: var(--fs-base); font-weight: var(--fw-medium);
   border-radius: var(--r-pill);
-  box-shadow: 0 2px 0 rgba(12, 10, 9, 0.35);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease);
 }
-.top-save:hover { background: var(--c-ink-hover); transform: translateY(-1px); box-shadow: 0 3px 0 rgba(12, 10, 9, 0.35); }
-.top-save:active { transform: translateY(1px); box-shadow: 0 0 0 rgba(12, 10, 9, 0.35); }
+.top-save:hover { background: var(--c-ink-hover); }
+.top-save:active { transform: scale(0.97); }
 
 /* Markdown 源码开关：次要按钮（描边），开着时高亮。 */
 .top-mdsrc {
@@ -44,12 +42,11 @@
   border: 1px solid var(--c-border-strong);
   font-size: var(--fs-base); font-weight: var(--fw-medium);
   border-radius: var(--r-pill);
-  box-shadow: 0 2px 0 var(--c-border-strong);
   transition: transform var(--dur-fast) var(--ease),
     box-shadow var(--dur-fast) var(--ease),
     background-color var(--dur-fast) var(--ease),
     color var(--dur-fast) var(--ease);
 }
-.top-mdsrc:hover { background: var(--c-bg-chrome); color: var(--c-text); transform: translateY(-1px); box-shadow: 0 3px 0 var(--c-border-strong); }
-.top-mdsrc:active { transform: translateY(1px); box-shadow: 0 0 0 var(--c-border-strong); }
-.top-mdsrc.is-on { background: var(--c-accent-tint); border-color: var(--c-accent); color: var(--c-accent); box-shadow: 0 2px 0 var(--c-accent-tint-2); }
+.top-mdsrc:hover { background: var(--c-bg-chrome); color: var(--c-text); }
+.top-mdsrc:active { transform: scale(0.97); }
+.top-mdsrc.is-on { background: var(--c-accent-tint); border-color: var(--c-accent); color: var(--c-accent); }

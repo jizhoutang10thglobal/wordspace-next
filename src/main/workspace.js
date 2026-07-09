@@ -88,6 +88,10 @@ async function readTree(root) {
   // 否则 walk 对读不到的根静默返回空树 → renderer 把它当「文件夹空了」，reconcile 清空全部标签+置顶并持久化，
   // 盘回来也回不来。onTreeChanged 对 null 现成 return（不 reconcile 不写盘），保持现状。
   try { const st = await fs.stat(r); if (!st.isDirectory()) return null; } catch { return null; }
+  // 「可 stat 不可 readdir」（EACCES 权限收回 / EIO / TCC 拒授权）同样算不可达（对抗审查 MR-ADV-3）：
+  // stat 只要祖先的 execute 位就能过，walk 对 readdir 失败又静默吞成空树 → 半失联的根被当成「空了」，
+  // 标签+置顶全被 reconcile 清光。根层 readdir 探一次，抛错即 null；子目录级失败维持吞掉（局部问题局部退化）。
+  try { await fs.readdir(r); } catch { return null; }
   const { files: fl, dirs } = await walk(r);
   await Promise.all(
     fl.map(async (f) => {
@@ -160,6 +164,28 @@ async function movePath(root, relPath, destDirRel) {
   return { rel: toRel(r, dest), abs: dest };
 }
 
+// 跨根移动到另一个根的 destDirRel（'' = 目标根根目录）。v1「便宜档」：直接试 rename——同一文件系统
+// （绝大多数场景）瞬间成功；真跨盘 fs.rename 抛 EXDEV，原样上抛（ipc 层按 code 分流成 toast，不做复制回退）。
+// 双侧 assertInsideWorkspace 防越权；目标撞名走同款 uniqueLeaf 去重（绝不覆盖占位文件，同 movePath）。
+// opts.renameFn 是测试 seam（照 deletePath 注入 trashItem 先例）：单测注入抛 EXDEV 的假 rename，真 tmp 目录
+// 造不出跨文件系统。「移进自己子树」在跨根不可能发生（嵌套禁令保证两根永不重叠），无需防。
+async function movePathAcross(srcRoot, relPath, destRoot, destDirRel, opts = {}) {
+  const sr = path.resolve(srcRoot);
+  const dr = path.resolve(destRoot);
+  const abs = assertInsideWorkspace(sr, relPath);
+  const destDir = assertInsideWorkspace(dr, destDirRel || '.');
+  const leaf = path.basename(abs);
+  const ext = path.extname(leaf);
+  const baseName = leaf.slice(0, leaf.length - ext.length);
+  await fs.mkdir(destDir, { recursive: true });
+  const dest = assertInsideWorkspace(
+    dr,
+    path.join(destDir, uniqueLeaf(new Set(await listNames(destDir)), baseName, ext)),
+  );
+  await (opts.renameFn || fs.rename)(abs, dest);
+  return { rel: toRel(dr, dest), abs: dest };
+}
+
 // 删除(文件或整棵子树),先拷进 backupRoot/<token>/ 留撤销;可选 opts.trashItem(abs) 丢系统废纸篓。
 async function deletePath(root, relPath, backupRoot, opts = {}) {
   const r = path.resolve(root);
@@ -228,6 +254,7 @@ module.exports = {
   makeDir,
   renamePath,
   movePath,
+  movePathAcross,
   deletePath,
   undoDelete,
   sweepBackups,

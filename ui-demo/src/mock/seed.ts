@@ -236,6 +236,27 @@ export const seedDocs: Doc[] = [
       { id: 'r2i1', type: 'heading', level: 1, html: '用户访谈纪要' },
       { id: 'r2i2', type: 'callout', html: '受访者：______ · 日期：2026-00-00 · 记录：______' },
       { id: 'r2i3', type: 'list', listStyle: 'todo', html: '<li data-checked="true">整理录音</li><li data-checked="false">提炼关键引语</li><li data-checked="false">同步给产品组</li>' },
+      // 互链演示：反向链接回 产品规划（磁盘形态 = 纯净相对路径 <a>，浏览器裸开也能跳）
+      { id: 'r2i4', type: 'text', html: '整理后的需求已并入 <a class="ws-doclink" href="../产品规划.html" contenteditable="false">产品规划</a>，两边同步维护。' },
+    ],
+  },
+  // 互链演示文档：出链（同目录 + 子目录）、断链（指向不存在的文件）都有——@ 打出来的链接就长这样。
+  {
+    id: 'd-r2-plan',
+    title: '产品规划',
+    kind: 'doc',
+    folderId: 'r-docs',
+    visibility: 'private',
+    localPath: '~/Documents/产品资料/产品规划.html',
+    updatedAt: now - 2 * HR,
+    updatedBy: ME_ID,
+    collaborators: [ME_ID],
+    blocks: [
+      { id: 'r2p1', type: 'heading', level: 1, html: '产品规划' },
+      { id: 'r2p2', type: 'text', html: '本季度重点来自用户反馈——详见 <a class="ws-doclink" href="用户调研/访谈纪要.html" contenteditable="false">访谈纪要</a>，配套的手册在 <a class="ws-doclink" href="产品手册.html" contenteditable="false">产品手册</a>。' },
+      { id: 'r2p3', type: 'text', html: '硬件参数还没定稿：<a class="ws-doclink" href="规格/参数表.html" contenteditable="false">参数表</a>（这条是<b>断链演示</b>——目标不存在，悬停可修复）。' },
+      { id: 'r2p4', type: 'heading', level: 2, html: '怎么创建链接（四个入口）' },
+      { id: 'r2p5', type: 'list', listStyle: 'bulleted', html: '<li>正文里输入 <code>@</code>、<code>[[</code> 或中文输入法的 <code>【【</code> → 弹出文档选择菜单</li><li>输入 <code>/</code> 打开块菜单 → 选「🔗 链接到文档」</li><li><b>选中一段文字</b> → 浮出的工具栏点 🔗 → 选中文字变成链接</li><li>把左侧文件树里的任何文件<b>拖进正文</b> → 落点处插入链接（pdf/表格也可以）</li>' },
     ],
   },
   // 非合规样例（野生 HTML）：blocks 留空、带 rawHtml；打开后由校验器判定不符合 → BasicEditor 基础编辑。
@@ -387,11 +408,15 @@ export const seedFiles: FileEntry[] = [
   { rootId: 'r-brand', path: '外部导入/产品页.html', kind: 'html', docId: 'd-nc-interactive' },
   // 产品资料——注意「素材/」在两个根里都有：多根身份 (rootId, path) 保证互不相撞
   { rootId: 'r-docs', path: '产品手册.html', kind: 'html', docId: 'd-r2-manual' },
+  { rootId: 'r-docs', path: '产品规划.html', kind: 'html', docId: 'd-r2-plan' },
   { rootId: 'r-docs', path: '用户调研/访谈纪要.html', kind: 'html', docId: 'd-r2-interview' },
   { rootId: 'r-docs', path: '用户调研/问卷数据.xlsx', kind: 'sheet' },
   { rootId: 'r-docs', path: '路线图.pdf', kind: 'pdf' },
   { rootId: 'r-docs', path: '素材/产品截图.png', kind: 'image' },
-  // 深层嵌套样例：演示缩进封顶（层级再深也不会把行挤出侧栏）
+  // 深层嵌套样例：演示 compact folders（单子文件夹长链「归档/…/复盘」压成一行）+ 缩进导引线。
+  // 「复盘」下分华东/华南两区（分支点，不压缩）；华东区再有「明细」子层 → 导引线读多级层级。
   { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华东区/门店复盘.html', kind: 'html', docId: 'd-r2-manual' },
+  { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华东区/明细/1月.html', kind: 'html', docId: 'd-r2-interview' },
+  { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华东区/明细/2月.html', kind: 'html', docId: 'd-r2-interview' },
   { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华南区/门店复盘.html', kind: 'html', docId: 'd-r2-manual' },
 ]

@@ -127,7 +127,10 @@ function buildMenu() {
         { role: 'paste', label: '粘贴' },
         { role: 'selectAll', label: '全选' },
         { type: 'separator' },
-        { label: '查找文件…', accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-file') }
+        // Cmd+F = 文档内查找（调研裁决：全软件铁律）。shell 判定：块编辑器活跃→查找条，否则回退聚焦文件筛选。
+        { label: '在文档中查找…', accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-in-doc') },
+        // Cmd+Shift+F = 按文件名筛选（Cmd+F 让位后下沉到这，抄 VS Code 分层）。复用既有 find-file → focusFilter。
+        { label: '在文件名中查找…', accelerator: 'CmdOrCtrl+Shift+F', click: () => sendMenu('find-file') }
       ]
     },
     { role: 'windowMenu', label: '窗口' }

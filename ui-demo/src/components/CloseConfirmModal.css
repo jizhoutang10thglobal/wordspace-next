@@ -45,3 +45,8 @@
 
 /* 警示图标盖章式落定,把注意力引到「未保存」上(轻微 spring 微弹,不循环) */
 .cc-ico { animation: ws-pop-in var(--dur-slow) var(--ease-spring) both; }
+
+/* 删除被引用文档守卫（DeleteLinkedModal 复用本套 modal 样式）：引用来源列表 */
+.cc-reflist { margin: 8px 0 0; padding-left: 18px; font-size: var(--fs-sm); color: var(--c-text-2); }
+.cc-reflist li { margin: 2px 0; max-width: 380px; }
+.cc-refpath { color: var(--c-text-3); font-size: var(--fs-xs); margin-left: 6px; }
