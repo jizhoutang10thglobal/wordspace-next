@@ -25,8 +25,6 @@ function blockToHtml(b: Block): string {
       return `<div class="ws-callout">${b.html}</div>`
     case 'divider':
       return '<hr>'
-    case 'pagebreak':
-      return '<hr class="ws-page-break">'
     case 'image':
       return `<figure class="ws-image">${b.html}</figure>`
     case 'embed':

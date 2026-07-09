@@ -38,7 +38,6 @@ function docShell(id: string, title: string, emoji: string, blocks: Block[]): Do
 
 const para = (id: string, html: string): Block => ({ id, type: 'text', html })
 const h = (id: string, level: 1 | 2 | 3, html: string): Block => ({ id, type: 'heading', level, html })
-const pb = (id: string): Block => ({ id, type: 'pagebreak', html: '' })
 
 // 1)「长文流水」——50+ 段普通段落,撑 4-5 页:基础块级分页(整段推页、页底留白、页码 chip)
 const longFlow: Block[] = [h('lf-h', 1, '长文流水')]
@@ -111,38 +110,21 @@ const codeFall: Block[] = [
   { id: 'cf-c3', type: 'embed', designed: true, html: preHtml(codeLines.slice(0, 20)) },
 ]
 
-// 6)「混合大杂烩」——todo/callout/quote/嵌套列表/分隔线/图/表全混 + 手插分页符
+// 6)「混合大杂烩」——todo/callout/quote/嵌套列表/分隔线/图/表全混
 const mixed: Block[] = [
   h('mx-h', 1, '混合大杂烩'),
-  para('mx-p1', '所有块型混排 + 中间手插分页符，看真实文档形态下的分页观感。'),
+  para('mx-p1', '所有块型混排，看真实文档形态下的分页观感。'),
   { id: 'mx-todo', type: 'list', listStyle: 'todo', html: '<li data-checked="true">已完成的待办</li><li data-checked="false">未完成的待办</li><li data-checked="false">第三条待办，稍微长一点，看看换行后块高的测量是否仍然准确</li>' },
   { id: 'mx-call', type: 'callout', html: '这是一个 callout。它有底色和内边距，块高比普通段落大，卡页尾时更容易被整块推页。' },
   { id: 'mx-quote', type: 'quote', html: '引用块：块级分页的语义是「块永不被劈开」——引用也一样，要么整段在本页，要么整段去下一页。' },
-  pb('mx-pb1'),
-  h('mx-h2', 2, '分页符之后：第二页从这里开始'),
+  h('mx-h2', 2, '各种列表'),
   { id: 'mx-list', type: 'list', html: '<li>无序列表第一条<ul><li>嵌套第二层<ul><li>嵌套第三层，列表整块是一个分页单元</li></ul></li></ul></li><li>无序列表第二条</li>' },
   { id: 'mx-num', type: 'list', listStyle: 'numbered', html: '<li>编号列表一</li><li>编号列表二</li><li>编号列表三</li>' },
   { id: 'mx-div', type: 'divider', html: '' },
   { id: 'mx-img', type: 'embed', designed: true, html: svgImg(700, 420, '#5a5f66', '杂烩中图') },
   { id: 'mx-t', type: 'embed', designed: true, html: tableHtml(rows.slice(0, 5).join('')) },
-  pb('mx-pb2'),
-  h('mx-h3', 2, '再一个分页符之后'),
-  para('mx-p2', '结尾段落。上面两处分页符各自强制收页，页尾留白 + 灰缝 + 新页上边距应与自然分页完全同款。'),
-]
-
-// 7)「分页符炸弹」——分页符在开头/结尾/连续多个/两个夹一个短段:切页语义的边界
-const pbBomb: Block[] = [
-  pb('pbb-0'), // 文档开头就是分页符(标题区之后立刻收页)
-  h('pbb-h', 1, '分页符炸弹'),
-  para('pbb-p1', '这份文档专测分页符边界：文档开头就有一个分页符（上一「页」只有标题区）；下面还有连续两个分页符、两个分页符夹一个短段、以及文档结尾的分页符（应带出一张空尾页）。'),
-  pb('pbb-1'),
-  pb('pbb-2'), // 连续两个:中间是一张只有分页符块的页
-  para('pbb-p2', '连续两个分页符之后的段落。中间应该出现一张几乎全空的页（页上只有第二个分页符的虚线标记）。'),
-  pb('pbb-3'),
-  para('pbb-p3', '短段。'),
-  pb('pbb-4'), // 两个分页符夹一个短段:这页只有一句话
-  para('pbb-p4', '上一页只有一句「短段。」——页其余部分全是留白。下面是文档结尾的分页符：'),
-  pb('pbb-5'), // 结尾分页符 → 空尾页
+  h('mx-h3', 2, '结尾'),
+  para('mx-p2', '结尾段落。块级分页处的页尾留白 + 灰缝 + 新页上边距应与自然分页完全同款。'),
 ]
 
 // 8)「一句话」——只有一句话:单页短文档也要显示一张完整 A4 纸
@@ -178,7 +160,6 @@ export const PAGED_SAMPLE_DOCS: Doc[] = [
   docShell('d-pg-table', '长表格', '📊', longTable),
   docShell('d-pg-code', '代码瀑布', '💻', codeFall),
   docShell('d-pg-mixed', '混合大杂烩', '🥘', mixed),
-  docShell('d-pg-pbbomb', '分页符炸弹', '💣', pbBomb),
   docShell('d-pg-oneline', '一句话', '🫧', oneLiner),
   docShell('d-pg-nobreak', '超长不可断行', '🧵', noBreak),
   docShell('d-pg-deeplist', '深嵌套列表', '🪆', deepList),

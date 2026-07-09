@@ -57,17 +57,31 @@
    上段留白透明走纸面白底；中段灰缝用负 margin 盖过纸的 1px 边框，
    把整条白纸切成一页页——灰缝上下 1px 边线 = 上一页纸底缘 / 下一页纸顶缘，
    配一层极淡 inset 阴影露出纸边（纸方口径：细边 + 轻阴影，不叠假纸）。 */
-.ws-page-gap { pointer-events: none; user-select: none; }
-/* 超高块「块内切分」的覆盖层：绝对定位在块内被腾出的空档上（.ws-block 是定位上下文），
-   白底 = 当页纸面收尾 + 新页上边距，顺带盖住被拉长的块背景/侧边框；中段复用 .ws-page-gutter。 */
-.ws-inner-gap {
+/* 页间隙可点：点页底留白/页间空白把光标落到最近的块（修死区）。cursor:text 提示可编辑。 */
+.ws-page-gap { user-select: none; cursor: text; }
+/* 末页尾部留白 spacer：把末页补成整张纸，同样可点进末块。 */
+.ws-page-tail { user-select: none; cursor: text; }
+/* 超高块「块内页界」装饰覆盖层：绝对定位铺满整张纸（.ws-doc-paged 是定位上下文），
+   pointer-events:none 让点击穿透到底下连续流过的内容（表格/列表/代码照常可编辑）——
+   铁律：块内不推不切，页界只是画上去的细线 + 页码 chip。 */
+.ws-paged-overlay {
   position: absolute;
-  background: #fff;
+  inset: 0;
   pointer-events: none;
-  user-select: none;
+  z-index: 1;
 }
-/* 块内切分的推挤 spacer（表格 spacer 行 / pre 行首块级 span）：纯占位 */
-.ws-inner-split { pointer-events: none; user-select: none; }
+/* 单条块内页界带：一条落在 tr/li/代码行边界上的细线 + 右侧留白区的「第 N 页」chip。
+   零高度 + border-top → 不遮任何内容（不横切行/项/图）。 */
+.ws-inner-band {
+  position: absolute;
+  height: 0;
+  border-top: 1px dashed var(--c-border-strong);
+}
+.ws-inner-band .ws-page-chip {
+  position: absolute;
+  top: -11px;
+  right: 12px;
+}
 .ws-page-gutter {
   position: relative;
   background: var(--c-bg-sunken);
@@ -94,36 +108,6 @@
   border-radius: var(--r-pill); /* chip 是 UI 不是纸 → 墨圆 */
   padding: 1px 8px;
 }
-
-/* 分页符块：虚线 + 居中「分页符」小标签（同 divider 交互：可选中可删除可拖拽） */
-.ws-pagebreak {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 22px;
-  margin: 6px 0;
-}
-.ws-pagebreak::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  border-top: 1px dashed var(--c-border-strong);
-}
-.ws-pagebreak-label {
-  position: relative;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  letter-spacing: var(--tracking-label);
-  color: var(--c-text-3);
-  background: var(--c-bg); /* 盖住中段虚线 */
-  padding: 0 10px;
-  user-select: none;
-}
-/* 纸上（分页视图）标签底色跟纸走 */
-.ws-doc-paged .ws-pagebreak-label { background: #fff; }
 
 /* header */
 .ws-doc-header { margin-bottom: 26px; }

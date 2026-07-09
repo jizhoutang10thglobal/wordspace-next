@@ -97,30 +97,6 @@ for (let i = 0; i < geo.gaps.length; i++) {
   assert(hit === 'inside' || hit === 'no-next', `page-top block first line visible after gap#${i} (${hit})`)
 }
 
-// 分页符相邻：插一个分页符再验一遍其后 gap 零重叠
-await page.locator('.ws-block').nth(2).click()
-await page.keyboard.press('End')
-await page.keyboard.press('Enter')
-await page.waitForTimeout(200)
-await page.keyboard.type('/fenye', { delay: 40 })
-await page.waitForTimeout(400)
-await page.keyboard.press('Enter')
-await page.waitForTimeout(900)
-const pbGeo = await page.evaluate(() => {
-  const pb = document.querySelector('.ws-pagebreak')?.closest('.ws-block')
-  if (!pb) return null
-  let next = pb.nextElementSibling
-  while (next && !next.classList.contains('ws-page-gap') && !next.classList.contains('ws-block')) next = next.nextElementSibling
-  if (!next?.classList.contains('ws-page-gap')) return { hasGapAfter: false }
-  return {
-    hasGapAfter: true,
-    pbBottom: pb.getBoundingClientRect().bottom + scrollY,
-    gapTop: next.getBoundingClientRect().top + scrollY,
-  }
-})
-assert(!!pbGeo?.hasGapAfter, 'pagebreak block immediately followed by gap')
-if (pbGeo?.hasGapAfter) assert(pbGeo.gapTop >= pbGeo.pbBottom - 1, `pagebreak bottom(${pbGeo.pbBottom.toFixed(1)}) above gap top(${pbGeo.gapTop.toFixed(1)})`)
-
 // 截第 2 页页首区域存证
 const shot = process.env.SHOT
 if (shot) {

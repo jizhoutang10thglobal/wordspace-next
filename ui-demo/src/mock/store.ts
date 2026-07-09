@@ -33,7 +33,7 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 24 // 24: 加「分页测试」edge-case 文档集
+const SEED_VERSION = 25 // 25: 删分页符——分页测试文档集去掉「分页符炸弹」及混合文档里的分页符
 
 // A directory entry under one opened root. 身份 = (rootId, path)。
 type DirEntry = { rootId: string; path: string }
@@ -346,7 +346,6 @@ const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
     divider: { html: '' },
     callout: { html: '提示内容' },
     embed: { html: '' },
-    pagebreak: { html: '' },
   }
   const block = { id: uid('b'), type, ...base[type] } as Block
   if (type === 'list') block.listStyle = listStyle ?? 'bulleted'

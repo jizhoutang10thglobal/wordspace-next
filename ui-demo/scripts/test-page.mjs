@@ -20,11 +20,11 @@ const eq = (a, b, msg) => {
 const P = 800
 
 // 空文档：1 页、整页留白
-let r = paginateBlocks([], P, [])
-eq([r.pageCount, r.lastFill, r.gapBefore, r.trailingGap], [1, P, [], null], 'empty doc')
+let r = paginateBlocks([], P)
+eq([r.pageCount, r.lastFill, r.gapBefore], [1, P, []], 'empty doc')
 
 // 全部装得下：不切页
-r = paginateBlocks([100, 200, 300], P, [false, false, false])
+r = paginateBlocks([100, 200, 300], P)
 eq([r.pageCount, r.pageOfBlock, r.gapBefore, r.lastFill], [1, [0, 0, 0], [null, null, null], 200], 'fits one page')
 
 // 放不下整块推下页：gap = 上页剩余留白
@@ -39,17 +39,10 @@ eq([r.pageCount, r.pageOfBlock, r.gapBefore], [2, [0, 0, 1], [null, null, 0]], '
 r = paginateBlocks([100, 2000, 100], P)
 eq([r.pageCount, r.pageOfBlock, r.gapBefore, r.pageStartBlocks], [4, [0, 1, 3], [null, 700, null], [0, 1, 1, 1]], 'oversized block spans pages')
 
-// 显式分页符：其后强制结束当前页
-r = paginateBlocks([100, 20, 100], P, [false, true, false])
-eq([r.pageCount, r.pageOfBlock, r.gapBefore], [2, [0, 0, 1], [null, null, 680]], 'explicit break')
-
-// 分页符在页首（第一块就是分页符）
-r = paginateBlocks([20, 100], P, [true, false])
-eq([r.pageCount, r.pageOfBlock, r.gapBefore], [2, [0, 1], [null, 780]], 'break at page start')
-
-// 分页符在页尾（末块）：带出一张空尾页
-r = paginateBlocks([100, 20], P, [false, true])
-eq([r.pageCount, r.trailingGap, r.lastFill, r.pageStartBlocks], [2, 680, P, [0, 2]], 'trailing break → empty page')
+// 超高块给了块内切分点：每个切点占一页、块尾从最后切点起算（innerCutTops 第 3 参）
+// 块 2000、切点 [600,1300] → 占 3 页（1,2,3），尾段 700 高，下一块接着第 3 页排
+r = paginateBlocks([100, 2000, 100], P, [null, [600, 1300], null])
+eq([r.pageCount, r.pageOfBlock, r.gapBefore], [4, [0, 1, 3], [null, 700, null]], 'oversized block with inner cuts → page numbering')
 
 // 页高非法：防御性全落第 1 页
 r = paginateBlocks([100, 200], 0)

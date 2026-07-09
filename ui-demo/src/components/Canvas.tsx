@@ -62,16 +62,12 @@ const SLASH_ITEMS: {
   { key: 'quote', label: '引用', kw: 'quote yinyong', type: 'quote' },
   { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
   { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
-  // 分页符：仅分页文档开启时出现在菜单（filterSlash 按 pagedOn 过滤）
-  { key: 'pagebreak', label: '分页符', kw: 'pagebreak page break fenye fenyefu', type: 'pagebreak' },
   { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
 ]
-const filterSlash = (q: string, pagedOn: boolean) => {
+const filterSlash = (q: string) => {
   const s = q.toLowerCase()
   return SLASH_ITEMS.filter(
-    (it) =>
-      (pagedOn || it.type !== 'pagebreak') &&
-      (!s || it.label.toLowerCase().includes(s) || it.kw.includes(s)),
+    (it) => !s || it.label.toLowerCase().includes(s) || it.kw.includes(s),
   )
 }
 
@@ -280,17 +276,6 @@ function BlockRow({
         dangerouslySetInnerHTML={{ __html: block.html }}
       />
     )
-  } else if (block.type === 'pagebreak') {
-    // 分页符：虚线 + 居中小标签。不可编辑（同 divider 交互：单击块选中、Delete 删除、可拖拽）。
-    inner = (
-      <div
-        className="ws-pagebreak"
-        ref={(el) => registerEl(block.id, el)}
-        contentEditable={false}
-      >
-        <span className="ws-pagebreak-label">分页符</span>
-      </div>
-    )
   } else if (block.type === 'divider') {
     inner = <hr className="ws-hr" ref={(el) => registerEl(block.id, el)} />
   } else if (block.type === 'image') {
@@ -380,9 +365,9 @@ function BlockRow({
 }
 
 // ---------------------------------------------------------------------------
-// 超高块的块内切分（Word 式）：单块高 > 页内容高时，沿块内后代元素边界把它切成多页。
-// 全部是运行时视觉产物（React 渲染树之外的 DOM/样式），绝不进文档数据；
-// 编辑中的块不切（防 runtime 样式被 contenteditable persist 带走）。
+// 超高块的块内页界（Word 式）：单块高 > 页内容高时，沿块内后代元素边界算出「页界 Y」。
+// 只测量、只算切分 Y，绝不改内容 DOM——页界靠装饰覆盖层（.ws-inner-band）画上去，
+// 内容连续流过、不推不切、始终可编辑（铁律：分页层永不碰 contenteditable 的内容节点）。
 // ---------------------------------------------------------------------------
 type SplitAtom = {
   top: number // 相对块顶的原始 top（未被推挤）
@@ -434,87 +419,6 @@ function collectAtoms(host: HTMLElement): SplitAtom[] {
   return out
 }
 
-/**
- * 应用块内切分：在每个切点腾出 extra（当页剩余留白+下边距+灰缝+上边距）的空档——
- * 元素打 runtime margin-top / 表格插透明 spacer 行 / pre 在行首插块级 span；
- * 空档上盖一块与 .ws-page-gap 同观感的白底覆盖层（含灰缝带 + 页码 chip），
- * 顺带遮掉被拉长的块背景与侧边框。返回登记信息（总额外高度 + 完整清理函数）。
- */
-function applyInnerSplits(
-  host: HTMLElement,
-  atoms: SplitAtom[],
-  cuts: { atom: number; top: number; fill: number }[],
-  box: ReturnType<typeof pageBoxPx>,
-  blockStartPage: number, // 0-based 块起始页号
-): { extra: number; cleanup: () => void } {
-  const undos: (() => void)[] = []
-  const pres = new Set<HTMLElement>()
-  // 同一文本节点多次切：splitText 后偏移基准变化，用 nodeState 追踪当前节点与已消费偏移
-  const nodeState = new Map<Text, { node: Text; consumed: number }>()
-  let cum = 0
-  cuts.forEach((cut, k) => {
-    const extra = cut.fill + box.margin.bottom + PAGE_GAP_PX + box.margin.top
-    const atom = atoms[cut.atom]
-    if (atom.kind === 'el' && atom.el) {
-      const e = atom.el
-      const prev = e.style.marginTop
-      const baseMt = parseFloat(getComputedStyle(e).marginTop) || 0
-      e.style.marginTop = `${baseMt + extra}px`
-      undos.push(() => {
-        e.style.marginTop = prev
-      })
-    } else if (atom.kind === 'tr' && atom.el) {
-      const tr = atom.el
-      const sp = document.createElement('tr')
-      sp.className = 'ws-inner-split'
-      const td = document.createElement('td')
-      td.colSpan = 999
-      td.style.cssText = `height:${extra}px;padding:0;border:none;background:transparent`
-      sp.appendChild(td)
-      tr.parentNode?.insertBefore(sp, tr)
-      undos.push(() => sp.remove())
-    } else if (atom.kind === 'line' && atom.textNode) {
-      const st = nodeState.get(atom.textNode) ?? { node: atom.textNode, consumed: 0 }
-      const off = (atom.offset ?? 0) - st.consumed
-      if (off > 0 && off < st.node.data.length) {
-        const rest = st.node.splitText(off)
-        nodeState.set(atom.textNode, { node: rest, consumed: atom.offset ?? 0 })
-        const sp = document.createElement('span')
-        sp.className = 'ws-inner-split'
-        sp.style.cssText = `display:block;height:${extra}px`
-        rest.parentNode?.insertBefore(sp, rest)
-        const pre = sp.closest('pre') as HTMLElement | null
-        if (pre) pres.add(pre)
-        undos.push(() => sp.remove())
-      }
-    }
-    // 覆盖层：白纸收尾（fill+下边距）+ 灰缝带（页码 chip）+ 新页上边距
-    const ov = document.createElement('div')
-    ov.className = 'ws-inner-gap'
-    ov.setAttribute('aria-hidden', 'true')
-    ov.contentEditable = 'false'
-    ov.style.cssText = `top:${cut.top + cum}px;height:${extra}px;left:${-(box.margin.left + 1)}px;width:${box.paperW + 2}px`
-    const band = document.createElement('div')
-    band.className = 'ws-page-gutter'
-    band.style.cssText = `height:${PAGE_GAP_PX}px;margin-top:${cut.fill + box.margin.bottom}px`
-    const chip = document.createElement('span')
-    chip.className = 'ws-page-chip'
-    chip.textContent = `第 ${blockStartPage + k + 2} 页`
-    band.appendChild(chip)
-    ov.appendChild(band)
-    host.appendChild(ov)
-    undos.push(() => ov.remove())
-    cum += extra
-  })
-  return {
-    extra: cum,
-    cleanup: () => {
-      undos.forEach((u) => u())
-      pres.forEach((p) => p.normalize())
-    },
-  }
-}
-
 // ---------------------------------------------------------------------------
 // 页间隙 spacer（仅屏显视觉，不进文档数据、不可编辑）：
 // 上段 = 当前页剩余留白 fill + 页底边距（白，纸面自然收尾）；
@@ -525,16 +429,19 @@ function PageGap({
   fill,
   nextPage,
   box,
+  onClick,
 }: {
   fill: number
   nextPage: number // 1-based 下一页页码（chip 文案）
   box: ReturnType<typeof pageBoxPx>
+  onClick?: (e: React.MouseEvent) => void // 点页底留白/页间空白 → 路由光标到最近块（修死区）
 }) {
   return (
     <div
       className="ws-page-gap"
       contentEditable={false}
       aria-hidden
+      onClick={onClick}
       style={{
         height: fill + box.margin.bottom + PAGE_GAP_PX + box.margin.top,
       }}
@@ -690,10 +597,13 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const paged = !!doc && pageCfg.on
   const pageBox = useMemo(() => pageBoxPx(pageCfg), [pageCfg])
   const articleRef = useRef<HTMLElement | null>(null)
-  // gaps[i] = 块 i 前的页间隙（null = 不切页）；tail = 末块后分页符带出的空尾页间隙
+  // gaps[i] = 块 i 前的块级页间隙（null = 不切页，流内 spacer 真实推挤给出上下页边距）；
+  // bands = 超高块的块内页界（装饰覆盖层，top 相对纸 padding 盒、不推内容）；
+  // tailFill = 末页尾部补白（把末页补成整张纸）。
   const [pag, setPag] = useState<{
     gaps: ({ fill: number; nextPage: number } | null)[]
-    tail: { fill: number; nextPage: number } | null
+    bands: { top: number; page: number }[]
+    tailFill: number
     pageCount: number
   } | null>(null)
 
@@ -704,26 +614,15 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
   const focusedBlockId = useRef<string | null>(null)
 
-  // editingId 也参与分页重算（编辑中的块不做块内切分，防 runtime 样式被 persist 进文档数据）
   const [editingId, setEditingId] = useState<string | null>(null)
-  // 超高块「块内切分」的运行时产物登记：blockId → 已插入的总额外高度 + 清理函数。
-  // 量高走快路径时用 extra 反推原始块高，避免「清理→测量→重挂」的 RO 反馈循环。
-  const innerSplitsRef = useRef<Map<string, { extra: number; cleanup: () => void }>>(
-    new Map(),
-  )
   const pagSigRef = useRef('')
 
-  // 块级分页重算：内容 / 窗口变化（ResizeObserver）→ rAF 合帧 → paginateBlocks（纯函数）。
-  // 快路径：用登记的 extra 反推每块原始高度，几何没变就什么都不动（防 RO 反馈循环）；
-  // 慢路径：清掉全部块内切分产物 → 干净 DOM 量原始几何 → 超高块 collectAtoms +
-  // computeInnerSplits → paginateBlocks → 重挂 spacer 与灰缝覆盖层。
+  // 分页重算：内容 / 窗口变化（ResizeObserver）→ rAF 合帧 → paginateBlocks（纯函数）。
+  // 纯测量，绝不改内容 DOM——块级页界靠流内 PageGap spacer（真实推挤、给上下页边距），
+  // 超高块的块内页界靠装饰覆盖层的 band（只画一条线，内容连续流过、不推不切、始终可编辑）。
+  // editingId 不参与：编辑不影响分页结构（不动内容节点），页数/页界不因聚焦变化（修 #4/#6）。
   useEffect(() => {
-    const clearSplits = () => {
-      for (const s of innerSplitsRef.current.values()) s.cleanup()
-      innerSplitsRef.current.clear()
-    }
     if (!paged || !doc) {
-      clearSplits()
       pagSigRef.current = ''
       setPag(null)
       return
@@ -731,7 +630,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     const el = articleRef.current
     if (!el) return
     let raf = 0
-    // 伪块 0 = DocHeader（标题区占第 1 页头部）；量自身 rect + 上下 margin，不受 spacer 影响
+    // 伪块 0 = DocHeader（标题区占第 1 页头部）；量自身 rect + 上下 margin
     const measureHeader = () => {
       const headerEl = el.querySelector('.ws-doc-header')
       if (!headerEl) return 0
@@ -745,87 +644,70 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     const recalc = () => {
       raf = 0
       const hosts: HTMLElement[] = []
-      const origHeights: number[] = [measureHeader()]
-      const breakAfter: boolean[] = [false]
+      const heights: number[] = [measureHeader()]
       for (const b of doc.blocks) {
         const be = blockEls.current.get(b.id)
         const host = (be?.closest('.ws-block') as HTMLElement | null) ?? be
         if (!host) return // 尚未挂全，等下一轮 RO
         hosts.push(host)
-        origHeights.push(
-          host.getBoundingClientRect().height -
-            (innerSplitsRef.current.get(b.id)?.extra ?? 0),
-        )
-        breakAfter.push(b.type === 'pagebreak')
+        heights.push(host.getBoundingClientRect().height)
       }
       const sig =
-        origHeights.map((h) => Math.round(h * 2)).join(',') +
-        `|${pageBox.contentH}|${pageBox.contentW}|${editingId ?? ''}|` +
+        heights.map((h) => Math.round(h * 2)).join(',') +
+        `|${pageBox.contentH}|${pageBox.contentW}|` +
         doc.blocks.map((b) => b.id).join(',')
-      if (sig === pagSigRef.current) return // 快路径：几何未变
-      // 慢路径：清干净再量（原始坐标；清理会引发一次 RO，但下轮命中快路径即收敛）
-      clearSplits()
-      const heights: number[] = [measureHeader()]
-      for (const host of hosts) heights.push(host.getBoundingClientRect().height)
-      // 超高块 → 块内切分计划（编辑中的块跳过：runtime 样式不能冒进 contenteditable 的 persist）
+      if (sig === pagSigRef.current) return // 几何未变，跳过
+      // 超高块 → 块内页界 Y（相对块顶，吸附到 tr/li/代码行边界，保证不横切）
       const innerCutTops: (number[] | null)[] = [null]
-      const plans: (
-        | { host: HTMLElement; atoms: SplitAtom[]; cuts: { atom: number; top: number; fill: number }[] }
-        | null
-      )[] = [null]
-      doc.blocks.forEach((b, i) => {
+      const innerAtoms: (SplitAtom[] | null)[] = [null]
+      doc.blocks.forEach((_, i) => {
         const h = heights[i + 1]
-        if (h <= pageBox.contentH || b.id === editingId) {
+        if (h <= pageBox.contentH) {
           innerCutTops.push(null)
-          plans.push(null)
+          innerAtoms.push(null)
           return
         }
         const atoms = collectAtoms(hosts[i])
-        const cuts = computeInnerSplits(
-          atoms.map((a) => a.top),
-          h,
-          pageBox.contentH,
-        )
+        const cuts = computeInnerSplits(atoms.map((a) => a.top), h, pageBox.contentH)
         innerCutTops.push(cuts.length ? cuts.map((c) => c.top) : null)
-        plans.push(cuts.length ? { host: hosts[i], atoms, cuts } : null)
+        innerAtoms.push(cuts.length ? atoms : null)
       })
-      const r = paginateBlocks(heights, pageBox.contentH, breakAfter, innerCutTops)
-      // 重挂块内切分产物（spacer + 与 PageGap 同观感的灰缝覆盖层）
-      doc.blocks.forEach((b, i) => {
-        const plan = plans[i + 1]
-        if (!plan) return
-        innerSplitsRef.current.set(
-          b.id,
-          applyInnerSplits(plan.host, plan.atoms, plan.cuts, pageBox, r.pageOfBlock[i + 1]),
-        )
-      })
+      const r = paginateBlocks(heights, pageBox.contentH, innerCutTops)
       pagSigRef.current = sig
       const gaps = doc.blocks.map((_, i) => {
         const g = r.gapBefore[i + 1]
         return g === null ? null : { fill: g, nextPage: r.pageOfBlock[i + 1] + 1 }
       })
-      const tail =
-        r.trailingGap === null
-          ? null
-          : { fill: r.trailingGap, nextPage: r.pageCount }
+      // 块内页界 band：top = 块顶相对纸 padding 盒 + 切点 Y（padding 盒原点 = article border 下 1px）
+      const artTop = el.getBoundingClientRect().top
+      const borderTop = parseFloat(getComputedStyle(el).borderTopWidth) || 0
+      const bands: { top: number; page: number }[] = []
+      doc.blocks.forEach((_, i) => {
+        const cuts = innerCutTops[i + 1]
+        if (!cuts) return
+        const hostTop = hosts[i].getBoundingClientRect().top - artTop - borderTop
+        const startPage = r.pageOfBlock[i + 1] // 0-based 块起始页
+        cuts.forEach((cutTop, k) => {
+          bands.push({ top: hostTop + cutTop, page: startPage + k + 2 })
+        })
+      })
       setPag((prev) => {
-        const next = { gaps, tail, pageCount: r.pageCount }
-        if (
+        const next = { gaps, bands, tailFill: r.lastFill, pageCount: r.pageCount }
+        const same =
           prev &&
           prev.pageCount === next.pageCount &&
-          (prev.tail === null) === (next.tail === null) &&
-          (!prev.tail ||
-            (Math.abs(prev.tail.fill - next.tail!.fill) < 0.5 &&
-              prev.tail.nextPage === next.tail!.nextPage)) &&
+          Math.abs(prev.tailFill - next.tailFill) < 0.5 &&
           prev.gaps.length === next.gaps.length &&
           prev.gaps.every((g, i) => {
             const ng = next.gaps[i]
             if (g === null || ng === null) return g === ng
             return Math.abs(g.fill - ng.fill) < 0.5 && g.nextPage === ng.nextPage
-          })
-        )
-          return prev
-        return next
+          }) &&
+          prev.bands.length === next.bands.length &&
+          prev.bands.every(
+            (b, i) => Math.abs(b.top - next.bands[i].top) < 0.5 && b.page === next.bands[i].page,
+          )
+        return same ? prev : next
       })
     }
     const schedule = () => {
@@ -840,10 +722,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     return () => {
       ro.disconnect()
       if (raf) cancelAnimationFrame(raf)
-      clearSplits()
       pagSigRef.current = ''
     }
-  }, [paged, doc, pageBox, editingId])
+  }, [paged, doc, pageBox])
 
   const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -964,6 +845,57 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     setFmtRect(null)
   }, [])
 
+  // 页间空白/页底留白点击 → 把光标落到最近的可编辑块（修死区 #3）：
+  // 从「就近两块」（gap 上方块末 / 下方块首，按点击 Y 落在 gap 上下半选序）起，
+  // 向外扩散找第一个可编辑块。beforeIndex = gap 下方块的下标。
+  const routeCaretFromGap = useCallback(
+    (beforeIndex: number, e: React.MouseEvent) => {
+      if (!doc) return
+      e.stopPropagation()
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const upperHalf = e.clientY < r.top + r.height / 2
+      const enter = (idx: number, mode: 'start' | 'end') => {
+        const blk = doc.blocks[idx]
+        if (blk && isEditable(blk)) {
+          editBlock(blk.id, { mode })
+          return true
+        }
+        return false
+      }
+      // 就近偏好：上半 → 先上一块末尾；下半 → 先下一块开头
+      if (upperHalf) {
+        if (enter(beforeIndex - 1, 'end')) return
+        if (enter(beforeIndex, 'start')) return
+      } else {
+        if (enter(beforeIndex, 'start')) return
+        if (enter(beforeIndex - 1, 'end')) return
+      }
+      // 就近两块都不可编辑（如巨图之间）：向外扩散找最近可编辑块
+      for (let d = 1; d < doc.blocks.length; d++) {
+        if (enter(beforeIndex - 1 - d, 'end')) return
+        if (enter(beforeIndex + d, 'start')) return
+      }
+    },
+    [doc, editBlock],
+  )
+
+  // 末页尾部留白 / ws-canvas-tail 点击：进末块（空则直接进，否则末尾追加正文块）。
+  const enterTail = useCallback(
+    (e: React.MouseEvent) => {
+      if (!doc) return
+      e.stopPropagation()
+      const last = doc.blocks[doc.blocks.length - 1]
+      const lastEl = last && blockEls.current.get(last.id)
+      if (last && isEditable(last) && (lastEl?.textContent ?? '').trim() === '') {
+        editBlock(last.id, { mode: 'end' })
+      } else {
+        checkpoint()
+        editBlock(addBlock(doc.id, last ? last.id : '', 'text'), { mode: 'start' })
+      }
+    },
+    [doc, editBlock, addBlock, checkpoint],
+  )
+
   // 删块（带兜底）：删到只剩一块时清空成空正文并进编辑，避免空白死状态（KTD-7，不改 store）。
   const removeBlock = useCallback(
     (id: string) => {
@@ -1010,7 +942,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       checkpoint()
       const el = blockEls.current.get(slash.blockId)
       const empty = !el || (el.textContent ?? '').trim() === ''
-      if (it.type === 'divider' || it.type === 'image' || it.type === 'pagebreak') {
+      if (it.type === 'divider' || it.type === 'image') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
       } else if (it.type === 'list' && empty) {
         // 空块插列表：不在聚焦块上 setBlockType（p→ul 交换会触发 blur 把空 innerHTML 回写、
@@ -1976,7 +1908,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        const it = filterSlash(slash.query, paged)[slash.active]
+        const it = filterSlash(slash.query)[slash.active]
         if (it) applySlash(it.key)
         else setSlash(null)
         return
@@ -1989,7 +1921,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                 ...s,
                 active: Math.max(
                   0,
-                  Math.min(s.active + 1, filterSlash(s.query, paged).length - 1),
+                  Math.min(s.active + 1, filterSlash(s.query).length - 1),
                 ),
               }
             : s,
@@ -2224,16 +2156,14 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             (paged ? ' ws-doc-paged' : '')
           }
           // 分页视图：纸宽 = 纸张 px 宽，padding = 页边距（内容列自然收窄为页内容宽）。
-          // minHeight = 整页数总高（含页间灰缝），短文档/末页也撑成完整一张纸。
+          // 页高由内容流 + 块级 PageGap spacer + 末页补白 spacer 自然给出（超高块块内不推挤、
+          // 连续流过），故 minHeight 只做单页短文的地板；末页尾部补白见下面的 .ws-page-tail。
           style={
             paged
               ? {
                   width: pageBox.paperW,
                   maxWidth: 'none',
-                  minHeight: pag
-                    ? pag.pageCount * pageBox.paperH +
-                      (pag.pageCount - 1) * PAGE_GAP_PX
-                    : pageBox.paperH,
+                  minHeight: pageBox.paperH,
                   padding: `${pageBox.margin.top}px ${pageBox.margin.right}px ${pageBox.margin.bottom}px ${pageBox.margin.left}px`,
                 }
               : undefined
@@ -2257,7 +2187,12 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               return (
                 <Fragment key={b.id}>
                   {gap && (
-                    <PageGap fill={gap.fill} nextPage={gap.nextPage} box={pageBox} />
+                    <PageGap
+                      fill={gap.fill}
+                      nextPage={gap.nextPage}
+                      box={pageBox}
+                      onClick={(e) => routeCaretFromGap(i, e)}
+                    />
                   )}
                 <BlockRow
                   doc={doc}
@@ -2280,35 +2215,36 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                 </Fragment>
               )
             })}
-            {/* 末块后跟分页符 → 收掉当前页、露出一张空尾页 */}
-            {paged && pag?.tail && (
-              <PageGap
-                fill={pag.tail.fill}
-                nextPage={pag.tail.nextPage}
-                box={pageBox}
+            {/* 末页尾部补白：把末页补成整张纸；点它进末块（同 ws-canvas-tail）。 */}
+            {paged && pag && pag.tailFill > 0 && (
+              <div
+                className="ws-page-tail"
+                aria-hidden
+                style={{ height: pag.tailFill }}
+                onClick={enterTail}
               />
             )}
           </div>
-          <div
-            className="ws-canvas-tail"
-            onClick={(e) => {
-              e.stopPropagation()
-              const last = doc.blocks[doc.blocks.length - 1]
-              const lastEl = last && blockEls.current.get(last.id)
-              if (
-                last &&
-                isEditable(last) &&
-                (lastEl?.textContent ?? '').trim() === ''
-              ) {
-                editBlock(last.id, { mode: 'end' }) // 末块已是空可编辑块，直接进它
-              } else {
-                checkpoint()
-                editBlock(addBlock(doc.id, last ? last.id : '', 'text'), {
-                  mode: 'start',
-                })
-              }
-            }}
-          />
+          {/* 超高块块内页界的装饰覆盖层：绝对定位铺满纸、pointer-events:none，点击穿透到底下
+              连续流过的内容（表格/列表/代码照常可编辑）。铁律：块内不推不切，页界只是画上去。 */}
+          {paged && pag && pag.bands.length > 0 && (
+            <div className="ws-paged-overlay" aria-hidden>
+              {pag.bands.map((band, i) => (
+                <div
+                  key={i}
+                  className="ws-inner-band"
+                  style={{
+                    top: band.top,
+                    left: -pageBox.margin.left,
+                    width: pageBox.paperW,
+                  }}
+                >
+                  <span className="ws-page-chip">第 {band.page} 页</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="ws-canvas-tail" onClick={enterTail} />
           {!embedded && (
             <div className="ws-doc-end ws-muted">
               {doc.unsaved
@@ -2358,7 +2294,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       {slash && (
         <SlashMenu
           pos={slash.pos}
-          items={filterSlash(slash.query, paged).map((it) => ({
+          items={filterSlash(slash.query).map((it) => ({
             key: it.key,
             label: it.label,
           }))}

@@ -88,14 +88,12 @@ export interface BlockPagination {
    * 不切页（含首块落在第 1 页顶）= null。
    */
   gapBefore: (number | null)[]
-  /** 总页数（≥1；末块后跟显式分页符会带出一张空尾页）。 */
+  /** 总页数（≥1）。 */
   pageCount: number
-  /** 每页顶部所在块的索引（跨页大块占的页也记它自己；空尾页记 blockHeights.length）。 */
+  /** 每页顶部所在块的索引（跨页大块占的页也记它自己）。 */
   pageStartBlocks: number[]
   /** 最后一页尾部剩余留白 px（撑满末页用；空文档 = 整页内容高）。 */
   lastFill: number
-  /** 末块后跟显式分页符时：末块所在页收尾的剩余留白 px（其后是空尾页）；否则 null。 */
-  trailingGap: number | null
 }
 
 /**
@@ -138,13 +136,13 @@ export function computeInnerSplits(
  * - 超页高的单块例外：起点仍从新页开始。给了 innerCutTops[i]（块内切分点 top 序列，
  *   来自 computeInnerSplits）→ 每个切点占一页、块尾从最后切点起算；没给/切不动 →
  *   跨 ceil(h/页高) 页拉长纸面，下一块从它结束处所在页继续累计；
- * - breakAfter[i] = true（显式分页符）→ 块 i 之后强制结束当前页；
  * - 恰好填满一页（累计 == 页高）不切，下一块自然落到新页（gap = 0）。
+ * 注：innerCutTops 只参与「页号计数 + 块级 gap」计算，块内不推挤内容（超高块连续流过、
+ * 块内页界靠装饰覆盖层画，见 Canvas 覆盖层）——铁律：分页层永不改内容 DOM。
  */
 export function paginateBlocks(
   blockHeights: number[],
   pageContentH: number,
-  breakAfter: boolean[] = [],
   innerCutTops: (number[] | null | undefined)[] = [],
 ): BlockPagination {
   const n = blockHeights.length
@@ -158,21 +156,18 @@ export function paginateBlocks(
       pageCount: 1,
       pageStartBlocks: [0],
       lastFill: 0,
-      trailingGap: null,
     }
   }
   const pageStartBlocks: number[] = [0]
   let page = 0
   let y = 0
-  let pendingBreak = false
   for (let i = 0; i < n; i++) {
     const h = Math.max(0, blockHeights[i])
-    if (pendingBreak || (y > 0 && y + h > pageContentH)) {
+    if (y > 0 && y + h > pageContentH) {
       gapBefore[i] = Math.max(0, pageContentH - y)
       page++
       y = 0
       pageStartBlocks.push(i)
-      pendingBreak = false
     }
     pageOfBlock[i] = page
     if (h > pageContentH) {
@@ -192,19 +187,10 @@ export function paginateBlocks(
     } else {
       y += h
     }
-    if (breakAfter[i]) pendingBreak = true
   }
-  let pageCount = page + 1
-  let lastFill = Math.max(0, pageContentH - y)
-  let trailingGap: number | null = null
-  if (pendingBreak) {
-    // 末块后的分页符：带出一张空尾页
-    trailingGap = lastFill
-    pageCount++
-    pageStartBlocks.push(n)
-    lastFill = pageContentH
-  }
-  return { pageOfBlock, gapBefore, pageCount, pageStartBlocks, lastFill, trailingGap }
+  const pageCount = page + 1
+  const lastFill = Math.max(0, pageContentH - y)
+  return { pageOfBlock, gapBefore, pageCount, pageStartBlocks, lastFill }
 }
 
 /** @page 的 size 值（'A4 portrait' / 'Letter landscape'…）。Letter/Legal 是合法关键字。 */
@@ -222,11 +208,10 @@ export function buildPrintCss(cfg: PageConfig): string {
     : ''
   return [
     `@page{size:${pageSizeCss(cfg)};margin:${m.top}mm ${m.right}mm ${m.bottom}mm ${m.left}mm;${footer}}`,
-    `.ws-page-break{break-after:page;visibility:hidden;height:0;margin:0;border:none;padding:0}`,
     // 顶层块整块换页（与屏显块级分页同一决策口径）；超页高的块 avoid 不可满足时浏览器
     // 会自动放行、在内部找行级断点——配合下面 tr/li 的 avoid，断点落在行/项边界
     // （与屏显块内切分同口径），行自身不被劈开
-    `body>:not(.ws-page-break){break-inside:avoid}`,
+    `body>*{break-inside:avoid}`,
     `tr,li{break-inside:avoid}`,
     // 与屏显同口径的横向约束：无空格长串必须在纸内折行（pre 同理），不许把打印页横向顶破
     `body{overflow-wrap:anywhere}`,

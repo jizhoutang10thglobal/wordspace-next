@@ -38,7 +38,6 @@ export type BlockType =
   | 'divider'
   | 'callout'
   | 'embed'
-  | 'pagebreak' // 分页符（分页文档专用）：视觉是虚线+标签，导出时 break-after: page
 
 /** 列表三态：type 仍是 'list'，listStyle 区分无序 / 编号 / 待办。缺省按 bulleted。 */
 export type ListStyle = 'bulleted' | 'numbered' | 'todo'
