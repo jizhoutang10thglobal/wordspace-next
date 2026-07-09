@@ -15,7 +15,7 @@ import { useBrowserSettings } from './browserSettings'
 // ---------------------------------------------------------------------------
 
 export type SiteKind = 'newtab' | 'mock' | 'web'
-export type SiteKey = 'search' | 'company' | 'news' | 'saas'
+export type SiteKey = 'search' | 'company' | 'news' | 'saas' | 'longread'
 
 export interface Resolved {
   kind: SiteKind
@@ -34,6 +34,8 @@ const MOCK_HOSTS: Record<string, SiteKey> = {
   'www.news.design': 'news',
   'flowdesk.app': 'saas',
   'www.flowdesk.app': 'saas',
+  'dailybuzz.co': 'longread',
+  'www.dailybuzz.co': 'longread',
 }
 
 const NEWTAB_URL = 'wordspace://newtab'
@@ -59,6 +61,8 @@ function titleFor(kind: SiteKind, siteKey: SiteKey | undefined, url: string, que
         return 'Designer News'
       case 'saas':
         return 'FlowDesk'
+      case 'longread':
+        return '10 个信号，说明你的团队早该换工具了 · DailyBuzz'
     }
   }
   const u = safeUrl(url)

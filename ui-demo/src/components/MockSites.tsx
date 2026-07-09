@@ -367,6 +367,138 @@ function NewsSite() {
   )
 }
 
+// 一篇「野生」的文章详情页：真正的长文正文被顶部横幅广告、右侧栏推广、正文中插
+// 广告、底部标题党推荐和一个订阅浮层层层包围——就是阅读模式（Reader）真正的主场。
+// 正文全在 .lr-article 里；阅读模式把 .ms.lr 的其余直接子全隐藏，只留这一块。
+function LongreadArticle() {
+  const hot = [
+    '月薪三万的人，周末都在偷偷做这件事',
+    '为什么聪明人从不在下午开会',
+    '这 5 个习惯，正在悄悄拖垮你的团队',
+    '看完这篇，你会重新考虑你的工具栈',
+  ]
+  const related = [
+    { t: '震惊！90% 的团队都用错了协作工具', m: '广告 · 推广' },
+    { t: '一个动作，让你的文档效率翻倍', m: '4.1 万阅读' },
+    { t: '2026 年最值得换掉的 7 个软件', m: '赞助内容' },
+    { t: '他把公司文档搬上本地后，发生了什么', m: '2.3 万阅读' },
+  ]
+  return (
+    <div className="ms ms-longread lr">
+      <div className="lr-topbanner" onClick={() => nav('https://flowdesk.app')}>
+        🔥 限时 3 天 · 团队套件全场五折，名额有限 —— 点这里立即抢 →
+      </div>
+
+      <header className="lr-nav">
+        <span className="lr-logo" onClick={() => nav('https://www.dailybuzz.co/article')}>DailyBuzz</span>
+        <nav className="lr-nav-links">
+          <button>科技</button><button>职场</button><button>生活</button>
+          <button>财经</button><button>八卦</button><button>更多</button>
+        </nav>
+        <button className="lr-nav-login">登录</button>
+      </header>
+
+      <article className="lr-article">
+        <div className="lr-kicker">职场 · 效率</div>
+        <h1>10 个信号，说明你的团队早该换掉现在的工具了</h1>
+        <div className="lr-byline">作者 佚名编辑部 · 2026-07-09 · 3.2 万阅读 · 128 评论</div>
+        <figure className="lr-fig" />
+        <p>
+          你有没有过这样的时刻：明明是件小事，一份文件却在三个软件、五个链接和无数条消息里
+          绕了一大圈，最后谁也说不清最新版本在哪。如果这一幕你觉得熟悉，那你并不孤单——
+          我们采访了几十个团队，几乎每一个都在用一套自己都嫌弃、却又懒得换的工具。
+        </p>
+        <p>
+          问题往往不在某一个软件本身，而在于它们拼在一起之后的那种「摩擦感」。下面这 10 个信号，
+          只要中了三个以上，就说明是时候认真考虑换一套了。
+        </p>
+
+        <h2>1. 你们还在靠邮件和群消息传文件</h2>
+        <p>
+          文件靠附件传，版本靠文件名区分（「最终版」「最终版2」「真的最终版」），这是最典型的信号。
+          文件一旦离开源头，就再也没人知道哪份是对的。好的工具应该让「文件在哪、谁改的、改了什么」
+          一目了然，而不是让你在聊天记录里考古。
+        </p>
+
+        <div className="lr-inline-ad" onClick={() => nav('https://flowdesk.app')}>
+          广告 · 你可能感兴趣：立省 60% 的团队协作套件，现在注册再送三个月 →
+        </div>
+
+        <h2>2. 每换一个环节，就要换一个软件</h2>
+        <p>
+          写东西一个软件，存文件一个软件，发布又是另一个软件，中间还要手动搬来搬去。每一次「导出再导入」
+          都是一次信息损耗，也是一次出错的机会。工具越多，团队花在「对齐工具」上的时间就越多，
+          真正做事的时间反而被挤没了。
+        </p>
+
+        <h2>3. 没人说得清「东西到底存在哪」</h2>
+        <p>
+          有的在云端，有的在某个人电脑上，有的在聊天软件的历史消息里。当「我们的资料在哪」这个问题
+          没有一个确定答案时，说明你们的工具已经失去了它最基本的职责——让东西有个可靠的家。
+        </p>
+
+        <h2>4. 你开始害怕升级和迁移</h2>
+        <p>
+          一想到要换工具、要迁数据就头大，于是能拖就拖。但这种「换不起」的恐惧本身，恰恰说明你被工具
+          绑架了。真正好用的东西，应该让你的数据始终掌握在自己手里，走得干净、来得也干净。
+        </p>
+
+        <p>
+          说到底，工具是为人服务的，不是反过来。如果每天有相当一部分精力花在和软件较劲，那不是你的问题，
+          是工具的问题。别忍了。
+        </p>
+      </article>
+
+      <aside className="lr-rail">
+        <div className="lr-adcard" onClick={() => nav('https://flowdesk.app')}>
+          <div className="lr-adcard-tag">赞助</div>
+          <div className="lr-adcard-title">还在用旧工具？该升级了</div>
+          <div className="lr-adcard-cta">了解一下 →</div>
+        </div>
+        <div className="lr-hot">
+          <h3 className="lr-hot-title">热门 · 大家都在看</h3>
+          {hot.map((h, i) => (
+            <button key={i} className="lr-hot-item" onClick={() => nav('https://www.dailybuzz.co/article')}>
+              <span className="lr-hot-num">{i + 1}</span>
+              <span>{h}</span>
+            </button>
+          ))}
+        </div>
+        <div className="lr-subbox">
+          <div className="lr-subbox-title">订阅每日推送</div>
+          <input className="lr-subbox-input" placeholder="你的邮箱" spellCheck={false} />
+          <button className="lr-subbox-btn">立即订阅</button>
+        </div>
+      </aside>
+
+      <section className="lr-related">
+        <h3 className="lr-related-title">猜你喜欢</h3>
+        <div className="lr-related-grid">
+          {related.map((r, i) => (
+            <button key={i} className="lr-related-card" onClick={() => nav('https://www.dailybuzz.co/article')}>
+              <div className="lr-related-thumb" />
+              <div className="lr-related-card-title">{r.t}</div>
+              <div className="lr-related-card-meta">{r.m}</div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <footer className="lr-foot">DailyBuzz · 本页内容仅供演示 · 广告纯属虚构</footer>
+
+      <div className="lr-popup">
+        <button className="lr-popup-x">×</button>
+        <div className="lr-popup-title">别急着走！</div>
+        <div className="lr-popup-sub">订阅即可解锁全部文章，还送新人礼包</div>
+        <div className="lr-popup-row">
+          <input className="lr-popup-input" placeholder="输入邮箱" spellCheck={false} />
+          <button className="lr-popup-btn">订阅</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ===========================================================================
 export function MockSite({ siteKey, query }: { siteKey: SiteKey; query?: string }) {
   switch (siteKey) {
@@ -378,6 +510,8 @@ export function MockSite({ siteKey, query }: { siteKey: SiteKey; query?: string 
       return <SaasSite />
     case 'news':
       return <NewsSite />
+    case 'longread':
+      return <LongreadArticle />
     default:
       return <CompanySite />
   }
