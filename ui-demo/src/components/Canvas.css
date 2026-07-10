@@ -15,6 +15,9 @@
   max-width: var(--maxdoc-w);
   margin: 0 auto;
   padding: 30px 56px 140px;
+  /* 编辑列宽是硬约束（分页与否都一样）：无空格长串（URL/长单词）必须在列内折行，
+     不许把版面横向顶破。anywhere 只在无软换行点时介入，正常排版不受影响。 */
+  overflow-wrap: anywhere;
 }
 
 /* 格式模板（pageFormat）：把画布约束到一张实际纸的宽度，并给出纸张观感
