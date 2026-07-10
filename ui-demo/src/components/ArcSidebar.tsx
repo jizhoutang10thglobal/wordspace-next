@@ -28,13 +28,14 @@ import {
   Search,
   AlertCircle,
   Star,
+  Bookmark,
   History as HistoryIcon,
   ChevronDown,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
-import { useBookmarks } from '../mock/bookmarks'
+import { useBookmarks, BM_BAR } from '../mock/bookmarks'
 import { useHistory } from '../mock/history'
 import { useNav } from '../mock/nav'
 import { Avatar } from '../ui/primitives'
@@ -167,6 +168,18 @@ function TabRow({
         </button>
       )}
     </div>
+  )
+}
+
+// 收藏项的首字彩块图标（无真 favicon 时用标题首字 hash 到稳定色，比灰地球好认）。
+function FavChip({ label, seed }: { label: string; seed: string }) {
+  const ch = label.trim().charAt(0).toUpperCase() || '·'
+  let h = 0
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) % 360
+  return (
+    <span className="arc-fav-chip" style={{ background: `hsl(${h} 55% 92%)`, color: `hsl(${h} 42% 40%)` }}>
+      {ch}
+    </span>
   )
 }
 
@@ -821,6 +834,8 @@ export default function ArcSidebar() {
 
   // 收藏夹：网页标签才显示星标；点击/⌘D 加入或移出收藏。
   const bmList = useBookmarks((s) => s.bookmarks)
+  const bmFolders = useBookmarks((s) => s.folders)
+  const [favOpen, setFavOpen] = useState(false) // 侧栏收藏区默认收起，点标题行展开
   const isWebTab = activeTab?.kind === 'web' && !!activeTab.url && activeTab.url !== 'wordspace://newtab'
   const bookmarked = !!isWebTab && bmList.some((b) => b.url === activeTab!.url)
   const toggleBookmark = () => {
@@ -828,6 +843,12 @@ export default function ArcSidebar() {
     const bm = useBookmarks.getState()
     if (bm.isBookmarked(activeTab.url)) { bm.removeByUrl(activeTab.url); useStore.getState().toast('已移出收藏') }
     else { bm.add({ title: activeTab.title || activeTab.url, url: activeTab.url }); useStore.getState().toast('已加入收藏', 'success') }
+  }
+  // 侧栏收藏区点书签：新标签打开 + 记历史。
+  const openBookmark = (url: string, title: string) => {
+    useStore.getState().openWebTab(url, title)
+    useHistory.getState().record(url, title)
+    navigate('/docs')
   }
   const [omni, setOmni] = useState(activeTab?.url ?? '')
   useEffect(() => {
@@ -1146,6 +1167,44 @@ export default function ArcSidebar() {
       </div>
 
       <div className="arc-scroll" ref={scrollRef}>
+        {/* 收藏（默认收起，点标题行展开）——放在置顶上方，同 Arc 的 Favorites 在最顶 */}
+        <div className={`arc-fav ${favOpen ? 'is-open' : ''}`}>
+          <div className="arc-fav-head" onClick={() => setFavOpen((v) => !v)}>
+            {favOpen ? <ChevronDown size={13} className="arc-fav-caret" /> : <ChevronRight size={13} className="arc-fav-caret" />}
+            <Star size={13} className="arc-fav-star" />
+            <span className="arc-fav-title">收藏</span>
+            {bmList.length > 0 && <span className="arc-fav-count">{bmList.length}</span>}
+            <span className="arc-fav-spacer" />
+            <button
+              className="arc-ico arc-ico-sm"
+              title="管理收藏 · 导入导出"
+              onClick={(e) => { e.stopPropagation(); navigate('/bookmarks') }}
+            >
+              <Bookmark size={13} />
+            </button>
+          </div>
+          {favOpen && (
+            <div className="arc-fav-body">
+              {bmFolders.map((f) => {
+                const items = bmList.filter((b) => b.folderId === f.id)
+                if (!items.length) return null
+                return (
+                  <div key={f.id} className="arc-fav-folder">
+                    {f.id !== BM_BAR && <div className="arc-fav-folder-name">{f.name}</div>}
+                    {items.map((b) => (
+                      <button key={b.id} className="arc-fav-item" title={b.url} onClick={() => openBookmark(b.url, b.title)}>
+                        <FavChip label={b.title || b.url} seed={b.url} />
+                        <span className="arc-fav-item-title">{b.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              })}
+              {!bmList.length && <div className="arc-fav-empty">点地址栏的 ☆ 收藏网页</div>}
+            </div>
+          )}
+        </div>
+
         <div className="arc-section-label">置顶</div>
         <TabStrip pinned emptyHint="把标签页拖到这里置顶" />
 
