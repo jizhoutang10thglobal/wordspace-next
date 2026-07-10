@@ -1,11 +1,16 @@
 import { useStore } from '../mock/store'
 import { relTime } from '../lib/format'
 import { Avatar } from '../ui/primitives'
+import { useBrowserSettings, SEARCH_ENGINES, type EngineKey } from '../mock/browserSettings'
 import './Settings.css'
 
 export default function Settings() {
   const workspace = useStore((s) => s.workspace)
   const members = useStore((s) => s.members)
+  const engine = useBrowserSettings((s) => s.engine)
+  const homepage = useBrowserSettings((s) => s.homepage)
+  const setEngine = useBrowserSettings((s) => s.setEngine)
+  const setHomepage = useBrowserSettings((s) => s.setHomepage)
 
   return (
     <div className="st-scroll">
@@ -46,6 +51,31 @@ export default function Settings() {
         </section>
 
         {/* 成员 */}
+        {/* 浏览器 */}
+        <section className="st-section">
+          <div className="st-label">浏览器</div>
+          <div className="st-rows">
+            <div className="st-row">
+              <div className="st-row-left">
+                <div className="st-row-label">默认搜索引擎</div>
+                <div className="st-row-note">在地址栏打一句话（不是网址）时用它搜索</div>
+              </div>
+              <select className="st-select" value={engine} onChange={(e) => setEngine(e.target.value as EngineKey)}>
+                {(Object.keys(SEARCH_ENGINES) as EngineKey[]).map((k) => (
+                  <option key={k} value={k}>{SEARCH_ENGINES[k].name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="st-row">
+              <div className="st-row-left">
+                <div className="st-row-label">主页</div>
+                <div className="st-row-note">新标签页 / 启动时打开</div>
+              </div>
+              <input className="st-input" defaultValue={homepage} onBlur={(e) => setHomepage(e.target.value)} spellCheck={false} />
+            </div>
+          </div>
+        </section>
+
         <section className="st-section">
           <div className="st-label">成员</div>
           <div className="st-rows">

@@ -62,13 +62,24 @@
     return { entries: state.entries, activeRel: has ? key : state.activeRel };
   }
 
-  // 关标签（× 只在标签页区）：open=false；!pinned 则销毁；关的是激活项 → 回落激活。
+  // 关掉激活标签后的回落：优先相邻（视觉序里下一个开着的，末尾则上一个），而不是最后一个
+  // ——浏览器式（Colin 2026-07-09：关标签应打开旁边那个，不是跳到别处的文件夹）。neighbor 从关之前的
+  // 显示序里算；非激活项被关 → 激活不变。相邻项不在（罕见）→ 回落 resolveActive 的「最后一个」。
+  function activeAfterClose(state, key, entriesAfter) {
+    if (key !== state.activeRel) return resolveActive(entriesAfter, state.activeRel);
+    const order = displayOrder(state.entries).filter((e) => e.open);
+    const idx = order.findIndex((e) => keyOf(e) === key);
+    const nb = idx >= 0 ? order[idx + 1] || order[idx - 1] : null;
+    if (nb && entriesAfter.some((e) => keyOf(e) === keyOf(nb) && e.open)) return keyOf(nb);
+    return resolveActive(entriesAfter, null);
+  }
+
+  // 关标签（× 只在标签页区）：open=false；!pinned 则销毁；关的是激活项 → 回落到相邻标签。
   function closeEntry(state, key) {
     const entries = state.entries
       .map((e) => (keyOf(e) === key ? { ...e, open: false } : e))
       .filter((e) => e.open || e.pinned); // 销毁 !open && !pinned
-    const seed = key === state.activeRel ? null : state.activeRel;
-    return { entries, activeRel: resolveActive(entries, seed) };
+    return { entries, activeRel: activeAfterClose(state, key, entries) };
   }
 
   // 钉：已跟踪 → pinned=true（从标签页移进置顶）；未跟踪（树里直接钉、没开）→ 新建 {open:false,pinned:true}。

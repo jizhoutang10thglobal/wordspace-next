@@ -1,0 +1,102 @@
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Search, X, Trash2, Globe2, ChevronLeft } from 'lucide-react'
+import { useHistory, type HistEntry } from '../mock/history'
+import { useStore } from '../mock/store'
+import './HistoryPage.css'
+
+const dayKey = (ms: number) => {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+function dayLabel(ms: number): string {
+  const now = new Date()
+  const d = new Date(ms)
+  const oneDay = 86400_000
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  if (ms >= startToday) return '今天'
+  if (ms >= startToday - oneDay) return '昨天'
+  return `${d.getMonth() + 1} 月 ${d.getDate()} 日`
+}
+const timeStr = (ms: number) => {
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+export default function HistoryPage() {
+  const navigate = useNavigate()
+  const entries = useHistory((s) => s.entries)
+  const removeOne = useHistory((s) => s.removeOne)
+  const clear = useHistory((s) => s.clear)
+  const openWebTab = useStore((s) => s.openWebTab)
+  const [q, setQ] = useState('')
+  const [clearOpen, setClearOpen] = useState(false)
+
+  const groups = useMemo(() => {
+    const t = q.trim().toLowerCase()
+    const filtered = t
+      ? entries.filter((e) => e.title.toLowerCase().includes(t) || e.url.toLowerCase().includes(t))
+      : entries
+    const map = new Map<string, { label: string; items: HistEntry[] }>()
+    for (const e of filtered) {
+      const k = dayKey(e.visitedAt)
+      if (!map.has(k)) map.set(k, { label: dayLabel(e.visitedAt), items: [] })
+      map.get(k)!.items.push(e)
+    }
+    return Array.from(map.values())
+  }, [entries, q])
+
+  const open = (e: HistEntry) => { openWebTab(e.url, e.title); navigate('/docs') }
+  const doClear = (range: 'hour' | 'day' | 'week' | 'all') => { clear(range); setClearOpen(false) }
+
+  return (
+    <div className="hist-page">
+      <header className="hist-top">
+        <button className="hist-back" onClick={() => navigate('/docs')} title="返回"><ChevronLeft size={18} /></button>
+        <h1>历史记录</h1>
+        <div className="hist-search">
+          <Search size={14} className="hist-search-ico" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索历史记录" spellCheck={false} />
+          {q && <button className="hist-search-clear" onClick={() => setQ('')}><X size={13} /></button>}
+        </div>
+        <div className="hist-clear-wrap">
+          <button className="hist-clear-btn" onClick={() => setClearOpen((v) => !v)}>
+            <Trash2 size={14} /> 清除浏览数据
+          </button>
+          {clearOpen && (
+            <>
+              <div className="hist-clear-veil" onClick={() => setClearOpen(false)} />
+              <div className="hist-clear-menu">
+                <button onClick={() => doClear('hour')}>最近一小时</button>
+                <button onClick={() => doClear('day')}>最近 24 小时</button>
+                <button onClick={() => doClear('week')}>最近 7 天</button>
+                <div className="hist-clear-sep" />
+                <button className="is-danger" onClick={() => doClear('all')}>全部清除</button>
+              </div>
+            </>
+          )}
+        </div>
+      </header>
+
+      <div className="hist-body">
+        {groups.length === 0 && <div className="hist-empty">{q ? '没有匹配的历史记录' : '还没有浏览记录'}</div>}
+        {groups.map((g, i) => (
+          <section key={i} className="hist-group">
+            <div className="hist-day">{g.label}</div>
+            {g.items.map((e) => (
+              <div key={e.id} className="hist-row">
+                <button className="hist-row-main" onClick={() => open(e)} title={e.url}>
+                  <span className="hist-time">{timeStr(e.visitedAt)}</span>
+                  <Globe2 size={13} className="hist-ico" />
+                  <span className="hist-title">{e.title}</span>
+                  <span className="hist-url">{e.url.replace(/^https?:\/\//, '')}</span>
+                </button>
+                <button className="hist-del" title="从历史中删除" onClick={() => removeOne(e.id)}><X size={13} /></button>
+              </div>
+            ))}
+          </section>
+        ))}
+      </div>
+    </div>
+  )
+}

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { useStore } from './store'
+import { useHistory } from './history'
+import { useBrowserSettings } from './browserSettings'
 
 // ---------------------------------------------------------------------------
 // Wordspace's browser side. Wordspace is also a real browser, so it needs the
@@ -123,7 +125,7 @@ export function normalize(input: string): string {
 
   const looksLikeSearch = /\s/.test(raw) || !raw.includes('.')
   if (looksLikeSearch) {
-    return 'glass://search?q=' + encodeURIComponent(raw)
+    return useBrowserSettings.getState().searchUrl(raw) // 用当前默认搜索引擎设置
   }
   return 'https://' + raw
 }
@@ -131,12 +133,15 @@ export function normalize(input: string): string {
 interface BrowserState {
   // per-tab navigation history: a stack of urls + the current cursor.
   history: Record<string, { stack: string[]; index: number }>
+  zoom: number // 网页缩放（全局，作用于当前网页；Cmd +/-/0）
 
   navigate: (input: string) => void
   back: () => void
   forward: () => void
   canGoBack: (tabId?: string) => boolean
   canGoForward: (tabId?: string) => boolean
+  zoomBy: (delta: number) => void
+  zoomReset: () => void
 }
 
 /** Apply a resolved url to the active tab's address bar + title. */
@@ -147,6 +152,9 @@ function commitToTab(tabId: string, url: string) {
 
 export const useBrowser = create<BrowserState>()((set, get) => ({
   history: {},
+  zoom: 1,
+  zoomBy: (delta) => set((s) => ({ zoom: Math.min(2, Math.max(0.5, Math.round((s.zoom + delta) * 20) / 20)) })),
+  zoomReset: () => set({ zoom: 1 }),
 
   navigate: (input) => {
     const url = normalize(input)
@@ -154,7 +162,12 @@ export const useBrowser = create<BrowserState>()((set, get) => ({
     if (!tabId) return
 
     set((s) => {
-      const prev = s.history[tabId] ?? { stack: [], index: -1 }
+      let prev = s.history[tabId] ?? { stack: [], index: -1 }
+      // 首次导航前：把标签当前页作为历史起点，否则点链接跳走后 back 无处可退（原来那页从没进过栈）。
+      if (prev.index < 0) {
+        const cur = useStore.getState().tabs.find((t) => t.id === tabId)?.url
+        if (cur && cur !== url) prev = { stack: [cur], index: 0 }
+      }
       // Drop any forward entries, then push the new url.
       const stack = prev.stack.slice(0, prev.index + 1)
       // Avoid stacking the exact same url twice in a row.
@@ -163,6 +176,7 @@ export const useBrowser = create<BrowserState>()((set, get) => ({
     })
 
     commitToTab(tabId, url)
+    useHistory.getState().record(url, resolve(url).title) // 记浏览历史(back/forward 不记,只记主动导航)
   },
 
   back: () => {
