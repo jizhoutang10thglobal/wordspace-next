@@ -9,6 +9,7 @@ import type {
   Workspace,
 } from '../types'
 import { NON_CONFORM_SAMPLES } from '../lib/nonConformSamples'
+import { PAGED_SAMPLE_DOCS, PAGED_SAMPLE_FILES } from './pagedSamples'
 import { mdToBlocks } from '../lib/markdown'
 
 // 示例 Markdown 文件（Feature: markdown 文件阅读编辑器）。后端是 .md，前端用同一个块编辑器渲染。
@@ -275,6 +276,8 @@ export const seedDocs: Doc[] = [
       collaborators: [ME_ID],
     }),
   ),
+  // 「分页测试」edge-case 文档集（分页视图手测 + 测试用例，默认不开分页）
+  ...PAGED_SAMPLE_DOCS,
 ]
 
 // ---------------------------------------------------------------------------
@@ -419,4 +422,6 @@ export const seedFiles: FileEntry[] = [
   { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华东区/明细/1月.html', kind: 'html', docId: 'd-r2-interview' },
   { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华东区/明细/2月.html', kind: 'html', docId: 'd-r2-interview' },
   { rootId: 'r-docs', path: '归档/2025/Q4/市场活动/双十一/复盘/华南区/门店复盘.html', kind: 'html', docId: 'd-r2-manual' },
+  // 「分页测试」文件夹：分页视图 edge-case 集（右上 ⋯ →「页面设置…」手动开分页）
+  ...PAGED_SAMPLE_FILES,
 ]

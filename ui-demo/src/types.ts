@@ -38,7 +38,8 @@ export type BlockType =
   | 'divider'
   | 'callout'
   | 'embed'
-  | 'pagebreak' // 分页符（分页文档专用）：视觉是虚线+标签，导出时 break-after: page
+  | 'table' // 可编辑表格：block.html 存完整 <table>（thead+tbody+tr+td），单元格 contentEditable
+  | 'code' // 可编辑代码：block.html 存若干 <div class="ws-code-line"> 行（每行一个块级元素）
 
 /** 列表三态：type 仍是 'list'，listStyle 区分无序 / 编号 / 待办。缺省按 bulleted。 */
 export type ListStyle = 'bulleted' | 'numbered' | 'todo'

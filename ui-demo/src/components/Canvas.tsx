@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -30,13 +31,17 @@ import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
 import { resolveHref, relHref, dirOf, baseOf, splitHrefSuffix } from '../lib/links'
 import { usePageConfig } from '../mock/paged'
-import { computeBoundaries, pageBoxPx } from '../lib/page'
+import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
 import './Canvas.css'
 
-const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout']
+const EDITABLE: BlockType[] = ['heading', 'text', 'list', 'quote', 'callout', 'table', 'code']
 const isEditable = (b: Block) => !b.designed && EDITABLE.includes(b.type)
+// 表格 / 代码是「原生编辑」块：单元格 / 代码行是 contentEditable，Enter/Backspace/方向键/Tab
+// 一律交给浏览器原生（新行、合行、行内导航），块编辑器的结构性快捷键（新建块、并块、跨块导航、
+// 斜杠、@提及）在这类块里全部让路。
+const isRawEditBlock = (b: Block | undefined) => !!b && (b.type === 'table' || b.type === 'code')
 
 // 斜杠 `/` 插入菜单的条目（插入块 / 转换块 / AI）。kw 供拼音/英文筛选。
 const SLASH_ITEMS: {
@@ -60,17 +65,15 @@ const SLASH_ITEMS: {
   { key: 'doclink', label: '🔗 链接到文档', kw: 'link doclink lianjie wendang mention at @', type: 'doclink' },
   { key: 'quote', label: '引用', kw: 'quote yinyong', type: 'quote' },
   { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
+  { key: 'table', label: '表格', kw: 'table biaoge grid', type: 'table' },
+  { key: 'code', label: '代码', kw: 'code daima pre snippet', type: 'code' },
   { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
-  // 分页符：仅分页文档开启时出现在菜单（filterSlash 按 pagedOn 过滤）
-  { key: 'pagebreak', label: '分页符', kw: 'pagebreak page break fenye fenyefu', type: 'pagebreak' },
   { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
 ]
-const filterSlash = (q: string, pagedOn: boolean) => {
+const filterSlash = (q: string) => {
   const s = q.toLowerCase()
   return SLASH_ITEMS.filter(
-    (it) =>
-      (pagedOn || it.type !== 'pagebreak') &&
-      (!s || it.label.toLowerCase().includes(s) || it.kw.includes(s)),
+    (it) => !s || it.label.toLowerCase().includes(s) || it.kw.includes(s),
   )
 }
 
@@ -237,7 +240,8 @@ function BlockRow({
 
   const persist = () => {
     const el = elRef.current
-    if (el) updateBlockHtml(doc.id, block.id, el.innerHTML)
+    // strip-on-persist：块内推挤（表格间隔行 / li·代码行 marginTop）绝不进文档字节。
+    if (el) updateBlockHtml(doc.id, block.id, serializeClean(el))
   }
   const handleInput = () => {
     if (!edited.current) {
@@ -259,6 +263,71 @@ function BlockRow({
     onFocusBlock(block.id)
   }
 
+  // 代码块输入：把 contentEditable 里新产生的直接子元素统一标成 .ws-code-line（浏览器 Enter
+  // 默认插入无 class 的 <div>），保证「每行 = 一个块级元素」结构稳定（Phase 2 按行推挤要用）。
+  // 只加 class、不重排 DOM，光标安全。
+  const normalizeCodeLines = () => {
+    const el = elRef.current
+    if (!el) return
+    for (const child of Array.from(el.children)) {
+      if (child.tagName === 'DIV' && !child.classList.contains('ws-code-line')) {
+        child.classList.add('ws-code-line')
+      }
+    }
+  }
+  const handleCodeInput = () => {
+    normalizeCodeLines()
+    handleInput()
+  }
+
+  // 表格加/删行（demo 级）：直接改 elRef 里的 <table> DOM 再回写 html。
+  // 加一行：克隆末行的单元格结构（保内联样式）、清空文字后追加。
+  const addTableRow = () => {
+    const el = elRef.current
+    const tbody = el?.querySelector('tbody')
+    if (!el || !tbody) return
+    checkpoint()
+    // 跳过间隔行（.ws-page-spacer 是运行时视觉产物、不算数据行）取末行做结构样板。
+    const dataRows = Array.from(tbody.querySelectorAll('tr')).filter(
+      (r) => !r.classList.contains('ws-page-spacer'),
+    )
+    const last = dataRows[dataRows.length - 1] ?? null
+    const tr = document.createElement('tr')
+    const cells = last ? Array.from(last.children) : []
+    const n = cells.length || 1
+    for (let i = 0; i < n; i++) {
+      const td = document.createElement('td')
+      td.setAttribute('style', cells[i]?.getAttribute('style') || '')
+      td.innerHTML = '<br>'
+      tr.appendChild(td)
+    }
+    tbody.appendChild(tr)
+    persist()
+  }
+  // 删除此行：删光标所在的 tbody 行；取不到 / 不在表内则删末行。至少保留一行。
+  const deleteTableRow = () => {
+    const el = elRef.current
+    const tbody = el?.querySelector('tbody')
+    if (!el || !tbody) return
+    // 只数/删数据行——间隔行不参与行计数与光标导航。
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter(
+      (r) => !r.classList.contains('ws-page-spacer'),
+    )
+    if (rows.length <= 1) return
+    let target: Element | null = null
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount) {
+      const n = sel.getRangeAt(0).startContainer
+      const en = n.nodeType === 1 ? (n as Element) : n.parentElement
+      const tr = en?.closest('tr')
+      if (tr && tbody.contains(tr) && !tr.classList.contains('ws-page-spacer')) target = tr
+    }
+    if (!target) target = rows[rows.length - 1]
+    checkpoint()
+    target.remove()
+    persist()
+  }
+
   const editProps = {
     ref: setNode as never,
     contentEditable: editableNow,
@@ -278,17 +347,6 @@ function BlockRow({
         ref={(el) => registerEl(block.id, el)}
         dangerouslySetInnerHTML={{ __html: block.html }}
       />
-    )
-  } else if (block.type === 'pagebreak') {
-    // 分页符：虚线 + 居中小标签。不可编辑（同 divider 交互：单击块选中、Delete 删除、可拖拽）。
-    inner = (
-      <div
-        className="ws-pagebreak"
-        ref={(el) => registerEl(block.id, el)}
-        contentEditable={false}
-      >
-        <span className="ws-pagebreak-label">分页符</span>
-      </div>
     )
   } else if (block.type === 'divider') {
     inner = <hr className="ws-hr" ref={(el) => registerEl(block.id, el)} />
@@ -324,6 +382,38 @@ function BlockRow({
       persist()
     }
     inner = <Tag className={cls} {...editProps} onMouseDown={onToggleCheck} />
+  } else if (block.type === 'table') {
+    // 可编辑表格：wrapper div 为 contentEditable 根，block.html 是完整 <table>，
+    // 单元格（td/th）随 contentEditable 一起可编辑；加/删行按钮仅编辑态出现。
+    inner = (
+      <div className="ws-table-block">
+        <div className="ws-table" {...editProps} />
+        {editableNow && (
+          <div className="ws-table-tools" contentEditable={false}>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={addTableRow}
+            >
+              + 加一行
+            </button>
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={deleteTableRow}
+            >
+              删除此行
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  } else if (block.type === 'code') {
+    // 可编辑代码：<pre> 为 contentEditable 根，block.html 是若干 <div class="ws-code-line">。
+    // 每行独立块级元素（Enter 新增、Backspace 合行走浏览器原生），输入后归一化行 class。
+    inner = (
+      <pre className="ws-code" {...editProps} onInput={handleCodeInput} />
+    )
   } else if (block.type === 'quote') {
     inner = <blockquote className="ws-quote" {...editProps} />
   } else {
@@ -374,6 +464,87 @@ function BlockRow({
       </div>
 
       {inner}
+    </div>
+  )
+}
+
+// 序列化 strip-on-persist（V4）：分页推挤是运行时视觉产物（li/代码行的 paddingTop、表格的
+// ws-page-spacer 间隔行），绝不能进文档数据。序列化前 clone 一份剥干净再取 innerHTML。
+// 这也兜住 contenteditable 回车分裂继承出来的推挤克隆（persist 可能先于下一帧 recalc 扫荡发生）。
+function serializeClean(el: HTMLElement): string {
+  if (!el.querySelector('.ws-page-spacer, [data-ws-pushed]')) return el.innerHTML
+  const clone = el.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.ws-page-spacer').forEach((n) => n.remove())
+  clone.querySelectorAll<HTMLElement>('[data-ws-pushed]').forEach((n) => {
+    n.style.paddingTop = ''
+    n.removeAttribute('data-ws-pushed')
+    if (!n.getAttribute('style')) n.removeAttribute('style')
+  })
+  return clone.innerHTML
+}
+
+// 超高块的切分候选原子（V4）：干净几何下采集（调用方保证已扫荡掉一切推挤痕迹）。
+// 列表=li（含嵌套；父 li 与首子 li 同顶时去重保留外层，整棵子树一起推）、代码=.ws-code-line、
+// 表格=tr（跳过 spacer）、其余块级后代兜底。top 为相对块顶的干净坐标。
+type CutAtom = { top: number; kind: 'el' | 'tr'; el: HTMLElement }
+function collectCutAtoms(host: HTMLElement): CutAtom[] {
+  const base = host.getBoundingClientRect().top
+  const atoms: CutAtom[] = []
+  host
+    .querySelectorAll<HTMLElement>('li, p, blockquote, figure, hr, h1, h2, h3, h4, .ws-code-line')
+    .forEach((e) => {
+      if (e.closest('table')) return
+      if (e.closest('pre') && !e.classList.contains('ws-code-line')) return
+      atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'el', el: e })
+    })
+  host.querySelectorAll<HTMLElement>('tr').forEach((e) => {
+    if (e.classList.contains('ws-page-spacer')) return
+    atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'tr', el: e })
+  })
+  atoms.sort((a, b) => a.top - b.top)
+  const out: CutAtom[] = []
+  for (const a of atoms) if (!out.length || a.top - out[out.length - 1].top > 1) out.push(a)
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// 页间隙 spacer（仅屏显视觉，不进文档数据、不可编辑）：
+// 上段 = 当前页剩余留白 fill + 页底边距（白，纸面自然收尾）；
+// 中段 = 页间灰缝（负 margin 盖过纸边框，把整条白纸切成一页页，内含「第 N 页」chip）；
+// 下段 = 下一页顶边距（白）。
+// ---------------------------------------------------------------------------
+function PageGap({
+  fill,
+  nextPage,
+  box,
+  onClick,
+}: {
+  fill: number
+  nextPage: number // 1-based 下一页页码（chip 文案）
+  box: ReturnType<typeof pageBoxPx>
+  onClick?: (e: React.MouseEvent) => void // 点页底留白/页间空白 → 路由光标到最近块（修死区）
+}) {
+  return (
+    <div
+      className="ws-page-gap"
+      contentEditable={false}
+      aria-hidden
+      onClick={onClick}
+      style={{
+        height: fill + box.margin.bottom + PAGE_GAP_PX + box.margin.top,
+      }}
+    >
+      <div
+        className="ws-page-gutter"
+        style={{
+          height: PAGE_GAP_PX,
+          marginTop: fill + box.margin.bottom,
+          marginLeft: -(box.margin.left + 1),
+          marginRight: -(box.margin.right + 1),
+        }}
+      >
+        <span className="ws-page-chip">第 {nextPage} 页</span>
+      </div>
     </div>
   )
 }
@@ -509,12 +680,21 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const curRootId = linkingOn && tab?.fileName ? tab.rootId : undefined
   const curPath = linkingOn && tab?.fileName && tab.rootId ? tab.url : undefined
 
-  // ===== 分页文档（可视分页线路线，不做真物理切页）=====
+  // ===== 分页文档（块级分页 + 真实页间隙 spacer）=====
   const pageCfg = usePageConfig(doc?.id)
   const paged = !!doc && pageCfg.on
   const pageBox = useMemo(() => pageBoxPx(pageCfg), [pageCfg])
   const articleRef = useRef<HTMLElement | null>(null)
-  const [pageBounds, setPageBounds] = useState<number[]>([])
+  // gaps[i] = 块 i 前的块级页间隙（null = 不切页，流内 PageGap spacer 真实推挤给出上下页边距）；
+  // gutters = 超高块「跨页续排」时画在内容上的页界分隔线（top 相对纸 padding 盒、实测块顶算出，
+  //           覆盖层绝对定位、pointer-events:none 不吃点击、不改内容 DOM）；
+  // tailFill = 末页尾部补白（把末页补成整张纸）。
+  const [pag, setPag] = useState<{
+    gaps: ({ fill: number; nextPage: number } | null)[]
+    gutters: { top: number; fill: number; page: number }[]
+    tailFill: number
+    pageCount: number
+  } | null>(null)
 
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
@@ -523,32 +703,158 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
   const focusedBlockId = useRef<string | null>(null)
 
-  // 分页点重算：内容 / 窗口变化（ResizeObserver）→ rAF 合帧 → computeBoundaries。
-  // 显式分页符处强制切页、并从该点重新累计页高（语义在 lib/page.ts，纯函数）。
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  // 分页重算（V4「带留白的块内分页」）：内容/窗口变化（ResizeObserver）→ rAF 合帧 → recalc。
+  // 块与块之间靠流内 PageGap spacer 给出真实上下页边距（正常分页主力，一直稳）；
+  // 超高块（单块高 > 页内容高）在块内切分点「真推内容」——li/代码行加 paddingTop、表格插 spacer 行，
+  // 推挤量 = 切点上方剩余留白 + 页底边距 + 灰缝 + 页顶边距 → 每个页界都是 Word 式实体留白、每页恰一张纸。
+  // 两条铁则（Phase 2 巨隙翻车换来的）：
+  //  ① 清理走「选择器全量扫荡」：contenteditable 回车会把带推挤样式的元素一分为二，克隆继承
+  //     style/data-ws-pushed 却不在任何记录里——按引用清理永远漏掉它们、padding 越积越大（巨隙根因）。
+  //     每轮 recalc 先从整篇纸面扫掉所有推挤痕迹，回到干净几何再测量、再按新计划重推。
+  //  ② 灰缝锚定「实测推挤位置」：推完立刻量锚点元素的真实位置，缝画在腾出的空档里——内容在哪缝在哪，
+  //     结构上不可能 desync（绝不用纯几何网格反过来要求内容对齐）。
+  // 扫荡→测量→重推全程发生在同一帧的 rAF/RO 回调里（绘制之前），肉眼无闪烁；末态与上一帧相同时
+  // RO 不再触发 → 天然收敛。editingId 不参与：页界不因聚焦变化。
   useEffect(() => {
     if (!paged || !doc) {
-      setPageBounds([])
+      setPag(null)
       return
     }
     const el = articleRef.current
     if (!el) return
     let raf = 0
+    // 伪块 0 = DocHeader（标题区占第 1 页头部）；量自身 rect + 上下 margin
+    const measureHeader = () => {
+      const headerEl = el.querySelector('.ws-doc-header')
+      if (!headerEl) return 0
+      const cs = getComputedStyle(headerEl)
+      return (
+        headerEl.getBoundingClientRect().height +
+        (parseFloat(cs.marginTop) || 0) +
+        (parseFloat(cs.marginBottom) || 0)
+      )
+    }
     const recalc = () => {
       raf = 0
-      const rect = el.getBoundingClientRect()
-      // 纸的 padding 即页边距 → 内容总高 = padding 盒高度 - 上下边距
-      const totalH = el.clientHeight - pageBox.margin.top - pageBox.margin.bottom
-      const breakTops: number[] = []
+      // 铁则①：选择器全量扫荡——清掉一切推挤痕迹（含回车分裂继承出来的克隆），回到干净几何。
+      el.querySelectorAll<HTMLElement>('[data-ws-pushed]').forEach((n) => {
+        n.style.paddingTop = ''
+        n.removeAttribute('data-ws-pushed')
+        if (!n.getAttribute('style')) n.removeAttribute('style')
+      })
+      el.querySelectorAll('tr.ws-page-spacer').forEach((n) => n.remove())
+
+      const hosts: HTMLElement[] = []
+      const heights: number[] = [measureHeader()]
       for (const b of doc.blocks) {
-        if (b.type !== 'pagebreak') continue
         const be = blockEls.current.get(b.id)
         const host = (be?.closest('.ws-block') as HTMLElement | null) ?? be
-        if (host)
-          breakTops.push(
-            host.getBoundingClientRect().top - rect.top - pageBox.margin.top,
-          )
+        if (!host) return // 尚未挂全，等下一轮 RO
+        hosts.push(host)
+        heights.push(host.getBoundingClientRect().height)
       }
-      setPageBounds(computeBoundaries(totalH, pageBox.contentH, breakTops))
+      // 超高块：干净几何下采集切分原子 → computeInnerSplits 算切分计划。
+      // 切不动的（单张超页高图等）innerCutTops 给 null → paginateBlocks 走跨页拉长路径。
+      const innerCutTops: (number[] | null)[] = [null]
+      const plans: (
+        | { atoms: CutAtom[]; cuts: { atom: number; top: number; fill: number }[] }
+        | null
+      )[] = [null]
+      doc.blocks.forEach((_, i) => {
+        const h = heights[i + 1]
+        if (h <= pageBox.contentH) {
+          innerCutTops.push(null)
+          plans.push(null)
+          return
+        }
+        const atoms = collectCutAtoms(hosts[i])
+        const cuts = computeInnerSplits(atoms.map((a) => a.top), h, pageBox.contentH)
+        innerCutTops.push(cuts.length ? cuts.map((c) => c.top) : null)
+        plans.push(cuts.length ? { atoms, cuts } : null)
+      })
+      const r = paginateBlocks(heights, pageBox.contentH, innerCutTops)
+      // 真推内容 + 铁则②灰缝锚定实测位置。推挤量 push = 切点上方剩余留白 + 页底边距 + 灰缝 + 页顶边距
+      //（与块级 PageGap 同公式 → 每页恰一张纸）。锚点 = 推挤空档的起点元素：
+      //  · li/代码行：paddingTop 在 border-box 内，元素 border 顶 = 空档起点；
+      //  · 表格：spacer 行本身 = 空档。
+      // 推完立刻量锚点真实位置，灰缝画在空档内 fill+页底边距 之后——内容在哪缝在哪。
+      const gapUnit = pageBox.margin.bottom + PAGE_GAP_PX + pageBox.margin.top
+      const gutters: { top: number; fill: number; page: number }[] = []
+      doc.blocks.forEach((_, i) => {
+        const plan = plans[i + 1]
+        if (!plan) return
+        const startPage = r.pageOfBlock[i + 1] // 0-based 块起始页
+        plan.cuts.forEach((cut, k) => {
+          const atom = plan.atoms[cut.atom]
+          if (!atom || !atom.el.isConnected) return
+          const push = cut.fill + gapUnit
+          let anchor: HTMLElement
+          if (atom.kind === 'tr') {
+            const spacer = document.createElement('tr')
+            spacer.className = 'ws-page-spacer'
+            spacer.setAttribute('contenteditable', 'false')
+            spacer.setAttribute('aria-hidden', 'true')
+            const td = document.createElement('td')
+            td.setAttribute('colspan', '99')
+            td.setAttribute('style', `height:${push}px;padding:0;border:0;background:transparent`)
+            spacer.appendChild(td)
+            atom.el.parentElement?.insertBefore(spacer, atom.el)
+            anchor = spacer
+          } else {
+            atom.el.style.paddingTop = `${push}px`
+            atom.el.setAttribute('data-ws-pushed', '')
+            anchor = atom.el
+          }
+          const paperTop = el.getBoundingClientRect().top // 纸 padding 盒顶（每次现量，推挤会移动后续内容）
+          const zoneTop = anchor.getBoundingClientRect().top - paperTop // 推挤空档起点
+          gutters.push({
+            top: zoneTop, // 留白遮罩从空档起点铺（fill+页底边距+灰缝+页顶边距 整段）
+            fill: cut.fill,
+            page: startPage + k + 2, // 缝下方那一页的 1-based 页码
+          })
+        })
+      })
+      const gaps = doc.blocks.map((_, i) => {
+        const g = r.gapBefore[i + 1]
+        return g === null ? null : { fill: g, nextPage: r.pageOfBlock[i + 1] + 1 }
+      })
+      // 末页补白 = 末页剩余留白 − 文末 chrome（ws-canvas-tail + ws-doc-end 也在 article 里、
+      // 会占掉末页尾部）→ 让纸面正好收在整页底、不因文末 chrome 溢出成半张纸。
+      const chromeH = (sel: string) => {
+        const c = el.querySelector(sel)
+        if (!c) return 0
+        const cs = getComputedStyle(c)
+        return (
+          c.getBoundingClientRect().height +
+          (parseFloat(cs.marginTop) || 0) +
+          (parseFloat(cs.marginBottom) || 0)
+        )
+      }
+      const chrome = chromeH('.ws-canvas-tail') + chromeH('.ws-doc-end')
+      const tailFill = Math.max(0, r.lastFill - chrome)
+      setPag((prev) => {
+        const next = { gaps, gutters, tailFill, pageCount: r.pageCount }
+        const same =
+          prev &&
+          prev.pageCount === next.pageCount &&
+          Math.abs(prev.tailFill - next.tailFill) < 0.5 &&
+          prev.gaps.length === next.gaps.length &&
+          prev.gaps.every((g, i) => {
+            const ng = next.gaps[i]
+            if (g === null || ng === null) return g === ng
+            return Math.abs(g.fill - ng.fill) < 0.5 && g.nextPage === ng.nextPage
+          }) &&
+          prev.gutters.length === next.gutters.length &&
+          prev.gutters.every(
+            (b, i) =>
+              Math.abs(b.top - next.gutters[i].top) < 0.5 &&
+              Math.abs(b.fill - next.gutters[i].fill) < 0.5 &&
+              b.page === next.gutters[i].page,
+          )
+        return same ? prev : next
+      })
     }
     const schedule = () => {
       if (!raf) raf = requestAnimationFrame(recalc)
@@ -556,6 +862,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     schedule()
     const ro = new ResizeObserver(schedule)
     ro.observe(el)
+    // minHeight 撑住纸时打字不改 article 高度 → 还要盯内容列本身
+    const blocksEl = el.querySelector('.ws-blocks')
+    if (blocksEl) ro.observe(blocksEl)
     return () => {
       ro.disconnect()
       if (raf) cancelAnimationFrame(raf)
@@ -564,7 +873,6 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
   const [aiSoonOpen, setAiSoonOpen] = useState(false)
   const [blockMenuFor, setBlockMenuFor] = useState<string | null>(null)
   const [blockMenuPos, setBlockMenuPos] = useState<{
@@ -682,6 +990,57 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     setFmtRect(null)
   }, [])
 
+  // 页间空白/页底留白点击 → 把光标落到最近的可编辑块（修死区 #3）：
+  // 从「就近两块」（gap 上方块末 / 下方块首，按点击 Y 落在 gap 上下半选序）起，
+  // 向外扩散找第一个可编辑块。beforeIndex = gap 下方块的下标。
+  const routeCaretFromGap = useCallback(
+    (beforeIndex: number, e: React.MouseEvent) => {
+      if (!doc) return
+      e.stopPropagation()
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const upperHalf = e.clientY < r.top + r.height / 2
+      const enter = (idx: number, mode: 'start' | 'end') => {
+        const blk = doc.blocks[idx]
+        if (blk && isEditable(blk)) {
+          editBlock(blk.id, { mode })
+          return true
+        }
+        return false
+      }
+      // 就近偏好：上半 → 先上一块末尾；下半 → 先下一块开头
+      if (upperHalf) {
+        if (enter(beforeIndex - 1, 'end')) return
+        if (enter(beforeIndex, 'start')) return
+      } else {
+        if (enter(beforeIndex, 'start')) return
+        if (enter(beforeIndex - 1, 'end')) return
+      }
+      // 就近两块都不可编辑（如巨图之间）：向外扩散找最近可编辑块
+      for (let d = 1; d < doc.blocks.length; d++) {
+        if (enter(beforeIndex - 1 - d, 'end')) return
+        if (enter(beforeIndex + d, 'start')) return
+      }
+    },
+    [doc, editBlock],
+  )
+
+  // 末页尾部留白 / ws-canvas-tail 点击：进末块（空则直接进，否则末尾追加正文块）。
+  const enterTail = useCallback(
+    (e: React.MouseEvent) => {
+      if (!doc) return
+      e.stopPropagation()
+      const last = doc.blocks[doc.blocks.length - 1]
+      const lastEl = last && blockEls.current.get(last.id)
+      if (last && isEditable(last) && (lastEl?.textContent ?? '').trim() === '') {
+        editBlock(last.id, { mode: 'end' })
+      } else {
+        checkpoint()
+        editBlock(addBlock(doc.id, last ? last.id : '', 'text'), { mode: 'start' })
+      }
+    },
+    [doc, editBlock, addBlock, checkpoint],
+  )
+
   // 删块（带兜底）：删到只剩一块时清空成空正文并进编辑，避免空白死状态（KTD-7，不改 store）。
   const removeBlock = useCallback(
     (id: string) => {
@@ -728,8 +1087,11 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       checkpoint()
       const el = blockEls.current.get(slash.blockId)
       const empty = !el || (el.textContent ?? '').trim() === ''
-      if (it.type === 'divider' || it.type === 'image' || it.type === 'pagebreak') {
+      if (it.type === 'divider' || it.type === 'image') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
+      } else if (it.type === 'table' || it.type === 'code') {
+        // 表格/代码：插入带默认内容的新块并进编辑（单元格/代码行随即可点改）
+        editBlock(addBlock(doc.id, slash.blockId, it.type))
       } else if (it.type === 'list' && empty) {
         // 空块插列表：不在聚焦块上 setBlockType（p→ul 交换会触发 blur 把空 innerHTML 回写、
         // 得到没有 <li> 的空 <ul>）。改成 addBlock 一个带 <li> seed 的新列表块（挂载时同步进
@@ -901,6 +1263,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     // 半角 @ / 全角 ＠ / [[ / 【【 一网打尽（对抗审查抓到的 IME 形态缺口）。
     const maybeTrigger = (target: EventTarget | null) => {
       if (mention || !editingId || slash || !curRootId || !curPath) return
+      // 表格/代码里 @ 、[[ 是普通字符，不触发文档提及
+      if (isRawEditBlock(doc?.blocks.find((b) => b.id === editingId))) return
       const el = blockEls.current.get(editingId)
       if (!el || !(target instanceof Node) || !el.contains(target)) return
       const two = textBeforeCaret(el, 2)
@@ -1263,6 +1627,11 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       // 当前块 = 光标所在块或灰选中块（两个态的键位统一从这里解析,Notion 双态模型）
       const curId = editingId ?? selectedId
+      // 正在编辑表格/代码这类原生编辑块时，结构性按键（Enter 建块 / Backspace 并块 / Tab / 跨块方向键）
+      // 全部让给浏览器原生，别把新行当成新块、别把光标弹出编辑区。
+      const rawEdit = isRawEditBlock(
+        editingId ? doc?.blocks.find((b) => b.id === editingId) : undefined,
+      )
       // 把「编辑中的活内容」先写回 store,让复制/移动拿到最新文字（不打 checkpoint）
       const commitLive = () => {
         if (!doc || !editingId) return
@@ -1431,7 +1800,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         }
       }
       // Enter：可编辑块末尾 → 新建正文块（IME 组词 / Shift 软换行 / 中间 各自交还原生）
-      if (e.key === 'Enter' && editingId && doc) {
+      if (e.key === 'Enter' && editingId && doc && !rawEdit) {
         if (e.isComposing || e.keyCode === 229) return // 中文/日文输入法组词中 = 确认候选词
         if (e.shiftKey) return // 软换行
         const el = blockEls.current.get(editingId)
@@ -1475,7 +1844,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       // Tab / Shift-Tab：仅在列表内做缩进/反缩进（嵌套子列表，沿用本块的 ul/ol + 样式 class）；
       // 其他块也吞掉 Tab，避免它把光标跳出编辑区。
-      if (e.key === 'Tab' && editingId && doc) {
+      if (e.key === 'Tab' && editingId && doc && !rawEdit) {
         const el = blockEls.current.get(editingId)
         const blk = doc.blocks.find((b) => b.id === editingId)
         e.preventDefault()
@@ -1516,7 +1885,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       // Backspace 在可编辑块最前端：空块→删块、光标落上一块末；非空→并入上一块。
       // 这是「空行删不掉 / Enter 刷出一堆空块」问题的解药。
-      if (e.key === 'Backspace' && editingId && doc) {
+      if (e.key === 'Backspace' && editingId && doc && !rawEdit) {
         if (e.isComposing || e.keyCode === 229) return
         const el = blockEls.current.get(editingId)
         if (!el || !isCaretAtBlockStart(el)) return // 非块首 → 原生删字符
@@ -1541,7 +1910,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         return
       }
       // 跨块方向键：末行↓→下一块、首行↑→上一块（尽量保持列位置）；块中间交还原生。
-      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editingId && doc) {
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && editingId && doc && !rawEdit) {
         if (e.isComposing || e.keyCode === 229) return
         const el = blockEls.current.get(editingId)
         const sel = window.getSelection()
@@ -1679,6 +2048,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       if (mention) return // @提及菜单开着：按键归它（两菜单互斥）
       if (!slash) {
         if (e.key === '/' && editingId && !e.metaKey && !e.ctrlKey) {
+          // 表格/代码里的 '/' 是普通字符，不弹斜杠菜单
+          if (isRawEditBlock(doc?.blocks.find((b) => b.id === editingId))) return
           const bid = editingId
           window.setTimeout(() => {
             const rect = caretRect()
@@ -1694,7 +2065,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        const it = filterSlash(slash.query, paged)[slash.active]
+        const it = filterSlash(slash.query)[slash.active]
         if (it) applySlash(it.key)
         else setSlash(null)
         return
@@ -1707,7 +2078,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                 ...s,
                 active: Math.max(
                   0,
-                  Math.min(s.active + 1, filterSlash(s.query, paged).length - 1),
+                  Math.min(s.active + 1, filterSlash(s.query).length - 1),
                 ),
               }
             : s,
@@ -1941,7 +2312,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             (doc.pageFormat ? ` ws-fmt ws-fmt-${doc.pageFormat}` : '') +
             (paged ? ' ws-doc-paged' : '')
           }
-          // 分页视图：纸宽 = 纸张 px 宽，padding = 页边距（内容列自然收窄为页内容宽）
+          // 分页视图：纸宽 = 纸张 px 宽，padding = 页边距（内容列自然收窄为页内容宽）。
+          // 页高由内容流 + 块级 PageGap spacer + 末页补白 spacer 自然给出（超高块块内不推挤、
+          // 连续流过），故 minHeight 只做单页短文的地板；末页尾部补白见下面的 .ws-page-tail。
           style={
             paged
               ? {
@@ -1967,9 +2340,18 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               if (dropIndex === i && dragFrom.current !== null) {
                 edge = dragFrom.current < i ? 'bottom' : 'top'
               }
+              const gap = paged ? pag?.gaps[i] : null
               return (
+                <Fragment key={b.id}>
+                  {gap && (
+                    <PageGap
+                      fill={gap.fill}
+                      nextPage={gap.nextPage}
+                      box={pageBox}
+                      onClick={(e) => routeCaretFromGap(i, e)}
+                    />
+                  )}
                 <BlockRow
-                  key={b.id}
                   doc={doc}
                   block={b}
                   index={i}
@@ -1987,44 +2369,54 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                   onDragEnd={onDragEnd}
                   dropEdge={edge}
                 />
+                </Fragment>
               )
             })}
+            {/* 末页尾部补白：把末页补成整张纸；点它进末块（同 ws-canvas-tail）。 */}
+            {paged && pag && pag.tailFill > 0 && (
+              <div
+                className="ws-page-tail"
+                aria-hidden
+                style={{ height: pag.tailFill }}
+                onClick={enterTail}
+              />
+            )}
           </div>
-          <div
-            className="ws-canvas-tail"
-            onClick={(e) => {
-              e.stopPropagation()
-              const last = doc.blocks[doc.blocks.length - 1]
-              const lastEl = last && blockEls.current.get(last.id)
-              if (
-                last &&
-                isEditable(last) &&
-                (lastEl?.textContent ?? '').trim() === ''
-              ) {
-                editBlock(last.id, { mode: 'end' }) // 末块已是空可编辑块，直接进它
-              } else {
-                checkpoint()
-                editBlock(addBlock(doc.id, last ? last.id : '', 'text'), {
-                  mode: 'start',
-                })
-              }
-            }}
-          />
-          {/* 分页线覆盖层：每个分页点一条横贯纸面的虚线 + 右侧「第 N 页」chip。
-              绝对定位不占布局；相对纸张 padding 盒定位（top = 上边距 + 分页点 y）。 */}
-          {paged && pageBounds.length > 0 && (
-            <div className="ws-page-marks" aria-hidden contentEditable={false}>
-              {pageBounds.map((y, i) => (
+          {/* 超高块块内页界（V4）：内容已被真推腾出实体空档，留白遮罩（白底）整段盖上——
+              上段=页底留白(fill+页底边距)、中段=灰缝(页码 chip)、下段=页顶留白。白底同时盖住
+              超高块自身延续的背景（pre 灰底/表格边框），两页真正断开。pointer-events:none 不碍编辑。 */}
+          {paged && pag && pag.gutters.length > 0 && (
+            <div className="ws-paged-overlay" aria-hidden>
+              {/* 覆盖层原点已是纸的 padding 盒（overlay inset:0）——遮罩水平直接铺满（left/right:0），
+                  不能再减页边距（那是块级流内灰缝从内容列外扩用的，这里再减会凸出纸外）。
+                  白遮罩不盖纸的左右边线（纸边在留白区要延续）；灰缝各伸出 1px 把边线切断（同块级缝）。 */}
+              {pag.gutters.map((g, i) => (
                 <div
                   key={i}
-                  className="ws-page-mark"
-                  style={{ top: pageBox.margin.top + y }}
+                  className="ws-inner-void"
+                  style={{
+                    top: g.top,
+                    height: g.fill + pageBox.margin.bottom + PAGE_GAP_PX + pageBox.margin.top,
+                    left: 0,
+                    right: 0,
+                  }}
                 >
-                  <span className="ws-page-chip">第 {i + 2} 页</span>
+                  <div
+                    className="ws-page-gutter ws-inner-gutter"
+                    style={{
+                      height: PAGE_GAP_PX,
+                      marginTop: g.fill + pageBox.margin.bottom,
+                      marginLeft: -1,
+                      marginRight: -1,
+                    }}
+                  >
+                    <span className="ws-page-chip">第 {g.page} 页</span>
+                  </div>
                 </div>
               ))}
             </div>
           )}
+          <div className="ws-canvas-tail" onClick={enterTail} />
           {!embedded && (
             <div className="ws-doc-end ws-muted">
               {doc.unsaved
@@ -2074,7 +2466,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       {slash && (
         <SlashMenu
           pos={slash.pos}
-          items={filterSlash(slash.query, paged).map((it) => ({
+          items={filterSlash(slash.query).map((it) => ({
             key: it.key,
             label: it.label,
           }))}

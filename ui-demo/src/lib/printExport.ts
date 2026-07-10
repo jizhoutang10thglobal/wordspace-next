@@ -25,10 +25,14 @@ function blockToHtml(b: Block): string {
       return `<div class="ws-callout">${b.html}</div>`
     case 'divider':
       return '<hr>'
-    case 'pagebreak':
-      return '<hr class="ws-page-break">'
     case 'image':
       return `<figure class="ws-image">${b.html}</figure>`
+    case 'table':
+      // block.html 已是完整 <table>（内联样式），原样输出
+      return b.html
+    case 'code':
+      // block.html 是若干 <div class="ws-code-line"> 行，包回 <pre>
+      return `<pre class="ws-code">${b.html}</pre>`
     case 'embed':
       return `<div>${b.html}</div>`
     default:
@@ -56,6 +60,15 @@ const PRINT_BASE_CSS = `
   img { max-width: 100%; }
   h1, h2, h3 { break-after: avoid; }
   li, blockquote, .ws-callout { break-inside: avoid; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  tr { break-inside: avoid; }
+  pre.ws-code {
+    background: #f5f5f4; border: 1px solid #e4e6e9; border-radius: 6px;
+    padding: 14px 16px; font-size: 12.5px; line-height: 1.6;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.8em 0;
+  }
+  .ws-code-line { min-height: 1.6em; }
 `
 
 /**

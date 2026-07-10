@@ -15,6 +15,9 @@
   max-width: var(--maxdoc-w);
   margin: 0 auto;
   padding: 30px 56px 140px;
+  /* 编辑列宽是硬约束（分页与否都一样）：无空格长串（URL/长单词）必须在列内折行，
+     不许把版面横向顶破。anywhere 只在无软换行点时介入，正常排版不受影响。 */
+  overflow-wrap: anywhere;
 }
 
 /* 格式模板（pageFormat）：把画布约束到一张实际纸的宽度，并给出纸张观感
@@ -45,20 +48,56 @@
   box-shadow: var(--shadow-menu);
   margin: 28px auto 56px;
   box-sizing: border-box;
+  /* 纸宽是物理约束：无空格长串（URL/长单词/行内代码）必须在纸内折行，不许横向顶破纸面。
+     anywhere 只在无软换行点时才介入，正常文本排版不受影响。min-width:0 防 flex/grid 子项撑破。 */
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
+/* 代码块等 pre 场景：保留换行的同时允许长行折行（否则 white-space:pre 一行顶破纸宽） */
+.ws-doc-paged pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* 分页线覆盖层：横贯纸面的虚线 + 右侧页码 chip。不占布局、不响应鼠标。 */
-.ws-page-marks { position: absolute; inset: 0; pointer-events: none; }
-.ws-page-mark {
+/* 页间隙 spacer：块级分页的真实间隙（占布局、不进文档数据）。
+   上段留白透明走纸面白底；中段灰缝用负 margin 盖过纸的 1px 边框，
+   把整条白纸切成一页页——灰缝上下 1px 边线 = 上一页纸底缘 / 下一页纸顶缘，
+   配一层极淡 inset 阴影露出纸边（纸方口径：细边 + 轻阴影，不叠假纸）。 */
+/* 页间隙可点：点页底留白/页间空白把光标落到最近的块（修死区）。cursor:text 提示可编辑。 */
+.ws-page-gap { user-select: none; cursor: text; }
+/* 末页尾部留白 spacer：把末页补成整张纸，同样可点进末块。 */
+.ws-page-tail { user-select: none; cursor: text; }
+/* 超高块「跨页续排」页界分隔线覆盖层：绝对定位铺满整张纸（.ws-doc-paged 是定位上下文），
+   pointer-events:none 不吃点击。内容连续流过、不推不切，分隔线只画在实测页界处（块顶 + k×contentH），
+   观感与块级 PageGap 的灰缝一致（含页码 chip）。 */
+.ws-paged-overlay {
   position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 1px dashed var(--c-border-strong); /* 淡墨导引，非 accent */
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.ws-page-gutter {
+  position: relative;
+  background: var(--c-bg-sunken);
+  border-top: 1px solid var(--c-border);
+  border-bottom: 1px solid var(--c-border);
+  box-shadow:
+    inset 0 5px 5px -5px rgba(28, 25, 23, 0.1),
+    inset 0 -4px 4px -4px rgba(28, 25, 23, 0.06);
+}
+.ws-page-gutter .ws-page-chip {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--c-bg); /* 灰缝上提亮一档，别跟缝底同色糊掉 */
+}
+/* 块内页界的「整段留白遮罩」（V4）：绝对定位坐到推挤腾出的空档上，纸面白底——
+   盖住超高块自身延续的背景（pre 灰底、表格边框），让页底留白/灰缝/页顶留白真正像两张纸断开。
+   内部灰缝走正常流（margin-top = fill+页底边距），复用 .ws-page-gutter 观感（含页码 chip）。 */
+.ws-inner-void {
+  position: absolute;
+  background: #fff;
+  pointer-events: none;
 }
 .ws-page-chip {
-  position: absolute;
-  right: 8px;
-  top: 4px;
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   letter-spacing: 0.04em;
@@ -68,36 +107,6 @@
   border-radius: var(--r-pill); /* chip 是 UI 不是纸 → 墨圆 */
   padding: 1px 8px;
 }
-
-/* 分页符块：虚线 + 居中「分页符」小标签（同 divider 交互：可选中可删除可拖拽） */
-.ws-pagebreak {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 22px;
-  margin: 6px 0;
-}
-.ws-pagebreak::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  border-top: 1px dashed var(--c-border-strong);
-}
-.ws-pagebreak-label {
-  position: relative;
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
-  letter-spacing: var(--tracking-label);
-  color: var(--c-text-3);
-  background: var(--c-bg); /* 盖住中段虚线 */
-  padding: 0 10px;
-  user-select: none;
-}
-/* 纸上（分页视图）标签底色跟纸走 */
-.ws-doc-paged .ws-pagebreak-label { background: #fff; }
 
 /* header */
 .ws-doc-header { margin-bottom: 26px; }
@@ -295,6 +304,36 @@
 /* designed / embedded free-form region */
 .ws-block-static .ws-embed { margin: 14px 0; }
 .ws-embed { font-family: var(--font-doc); }
+
+/* ------------------------------------------------------------------ */
+/* 可编辑表格块 / 可编辑代码块                                          */
+/* ------------------------------------------------------------------ */
+.ws-table-block { margin: 12px 0; }
+.ws-table { overflow-x: auto; }
+.ws-table table { border-collapse: collapse; width: 100%; }
+.ws-table td, .ws-table th { min-width: 40px; }
+.ws-table td:focus, .ws-table th:focus { outline: none; }
+.ws-table-tools {
+  display: flex; gap: 8px; margin-top: 6px;
+}
+.ws-table-tools button {
+  font-size: var(--fs-sm); color: var(--c-text-2);
+  background: var(--c-bg-sunken); border: 1px solid var(--c-border);
+  border-radius: var(--r-sm); padding: 3px 10px; cursor: pointer;
+}
+.ws-table-tools button:hover { background: var(--c-bg-hover); color: var(--c-text-1); }
+
+.ws-code {
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  padding: 14px 16px; margin: 12px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px; line-height: 1.6;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.ws-code:focus { outline: none; }
+.ws-code-line { min-height: 1.6em; }
 
 .ws-doc-end {
   margin-top: 40px; padding-top: 16px;

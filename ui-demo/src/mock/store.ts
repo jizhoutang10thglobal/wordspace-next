@@ -33,7 +33,7 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 23
+const SEED_VERSION = 26 // 26: 分页测试的表格/代码改成可编辑 'table'/'code' 块（Phase 1 可编辑性）
 
 // A directory entry under one opened root. 身份 = (rootId, path)。
 type DirEntry = { rootId: string; path: string }
@@ -338,6 +338,22 @@ const fromListHtml = (html: string): string => {
 const cloneDocs = (docs: Doc[]): Doc[] =>
   docs.map((d) => ({ ...d, blocks: d.blocks.map((b) => ({ ...b })) }))
 
+// 斜杠菜单新插入的表格/代码块的默认内容。表格用内联样式（与 embed 表格同形状，
+// 单元格可直接 contentEditable）；代码用 <div class="ws-code-line"> 按行元素（Phase 2 可对行加 margin 推挤）。
+const TD = 'border:1px solid #e4e6e9;padding:6px 10px;'
+const TH = TD + 'background:#f5f5f4;text-align:left;'
+const DEFAULT_TABLE_HTML =
+  `<table style="border-collapse:collapse;width:100%;font-size:14px;">` +
+  `<thead><tr><th style="${TH}">列 1</th><th style="${TH}">列 2</th></tr></thead>` +
+  `<tbody>` +
+  `<tr><td style="${TD}">单元格</td><td style="${TD}">单元格</td></tr>` +
+  `<tr><td style="${TD}">单元格</td><td style="${TD}">单元格</td></tr>` +
+  `</tbody></table>`
+const DEFAULT_CODE_HTML =
+  `<div class="ws-code-line">function hello() {</div>` +
+  `<div class="ws-code-line">  return 'world'</div>` +
+  `<div class="ws-code-line">}</div>`
+
 const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
   const base: Record<BlockType, Partial<Block>> = {
     heading: { level: 2, html: '新标题' },
@@ -348,7 +364,8 @@ const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
     divider: { html: '' },
     callout: { html: '提示内容' },
     embed: { html: '' },
-    pagebreak: { html: '' },
+    table: { html: DEFAULT_TABLE_HTML },
+    code: { html: DEFAULT_CODE_HTML },
   }
   const block = { id: uid('b'), type, ...base[type] } as Block
   if (type === 'list') block.listStyle = listStyle ?? 'bulleted'
