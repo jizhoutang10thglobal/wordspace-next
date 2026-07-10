@@ -13,6 +13,22 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-10 — 浏览器 feature 规格定稿 + 六项拍板合 main；真 app 移植的唯一契约就位
+
+**是什么**：浏览器 feature（标签上网/地址栏+自动补全/侧栏折叠收藏/历史/右键菜单/快捷键/会话恢复）在
+ui-demo 定稿并合 main（PR #150）。完整规格=`docs/browser-feature-spec.md`（正本，~460 行：每功能三层
+「交互契约 → ui-demo 参考实现 → 真 app 后端设计(WebContentsView/IPC/存储)」，含安全不变式与验收清单）
++ `docs/features/browser.md`（features 注册表薄指针+欠账）。Colin 六项拍板已落地：真 app 默认引擎=Bing；
+删「主页」设置；点收藏=已开则聚焦；收藏折叠态持久化；新标签瓦片=书签栏前 N 个收藏；导入重名文件夹
+加后缀不合并+toast 报净新增。同日更早定稿：收藏=左侧栏折叠区（置顶上方、默认收起）、网页态无网页头、
+砍剪藏/下载/阅读模式（§12，别加回来）。
+**怎么 apply**：做真 app 浏览器移植的 session：唯一契约是 `docs/browser-feature-spec.md`（§14 验收清单
+逐项打勾、§11 安全不变式一条不许松）。⚠ worktree `wordspace-next-browser`（feat/browser-tabs，PR #132）
+停在多轮 UX 定稿之前——web-tabs.js 地基可复用，但其网页头/旧收藏形态不要照搬。ui-demo 侧改浏览器
+行为 → 改正本 + 同 PR 落实进 ui-demo（正本=可执行定义）。
+**来源**：PR #150（docs/browser-spec-v2）、docs/browser-feature-spec.md §13/§15、Colin 拍板 2026-07-10
+
+
 ## 2026-07-10 — 分页文档 ui-demo 定型合 main；真 app 移植契约在 docs/features/paged-doc.md，schema2 worktree 旧实现作废
 
 **是什么**：分页文档（Word 式：统一 A4 页高、超高块带留白分页、可编辑表格/代码、编辑稳定）在 ui-demo
