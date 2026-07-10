@@ -513,7 +513,7 @@ function serializeClean(el: HTMLElement): string {
   const clone = el.cloneNode(true) as HTMLElement
   clone.querySelectorAll('.ws-page-spacer').forEach((n) => n.remove())
   clone.querySelectorAll<HTMLElement>('[data-ws-pushed]').forEach((n) => {
-    n.style.marginTop = ''
+    n.style.paddingTop = ''
     n.removeAttribute('data-ws-pushed')
     if (!n.getAttribute('style')) n.removeAttribute('style')
   })
@@ -752,7 +752,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     const cleanInnerPushes = () => {
       const rec = innerPushRef.current
       for (const m of rec.margins) {
-        m.style.marginTop = ''
+        m.style.paddingTop = ''
         m.removeAttribute('data-ws-pushed')
         if (!m.getAttribute('style')) m.removeAttribute('style')
       }
@@ -817,30 +817,30 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             atom.el.parentElement?.insertBefore(spacer, atom.el)
             rec.rows.push(spacer)
           } else {
-            // 列表 li / 代码行：只加 marginTop（非破坏、可编辑，绝不注入节点）。
-            atom.el.style.marginTop = `${push}px`
+            // 列表 li / 代码行：加 paddingTop（非破坏、可编辑，绝不注入节点）。
+            // 用 padding 不用 margin——嵌套列表里首子 li 的 margin-top 会「穿透折叠」到祖先，
+            // 推挤量被吃掉 / 上一页也被带偏（实测页高 1098~1215 杂高）；padding 从不折叠、
+            // 稳定把「该元素内容 + 其后所有内容」下推 push（元素 border-box 顶不动、内容顶 +push）。
+            atom.el.style.paddingTop = `${push}px`
             atom.el.setAttribute('data-ws-pushed', '')
             rec.margins.push(atom.el)
           }
         }
       })
-      // 灰缝带：推挤后测量边界元素最终 top（相对纸 padding 盒），灰缝落在它正上方
-      // = [top − 下页顶边距 − 灰缝, top − 下页顶边距]（推开的空档里那段 PAGE_GAP）。
-      const artTop = el.getBoundingClientRect().top
-      const borderTop = parseFloat(getComputedStyle(el).borderTopWidth) || 0
+      // 灰缝带位置：不靠测量边界元素（测量受重排中途态干扰、会漂），直接按「统一页高」几何算——
+      // 纸相对 padding 盒原点按 paperH 铺，缝宽 PAGE_GAP → 第 P 页（1-based, P≥2）之上的灰缝
+      // top = (P−1)·paperH + (P−2)·PAGE_GAP。这与块级 PageGap 灰缝完全同一套铺法（已对每条块级灰缝
+      // 实测吻合），保证块内/块级灰缝共用一张统一网格；内容推挤独立把内容落到这些边界上。
+      const gutterTopOf = (page: number) =>
+        (page - 1) * pageBox.paperH + (page - 2) * PAGE_GAP_PX
       const gutters: { top: number; page: number }[] = []
       doc.blocks.forEach((_, i) => {
         const pb = perBlock[i + 1]
         if (!pb) return
         const startPage = r.pageOfBlock[i + 1] // 0-based 块起始页
-        pb.cuts.forEach((cut, k) => {
-          const atom = pb.atoms[cut.atom]
-          if (!atom) return
-          const boundaryTop = atom.el.getBoundingClientRect().top - artTop - borderTop
-          gutters.push({
-            top: boundaryTop - pageBox.margin.top - PAGE_GAP_PX,
-            page: startPage + k + 2,
-          })
+        pb.cuts.forEach((_cut, k) => {
+          const page = startPage + k + 2
+          gutters.push({ top: gutterTopOf(page), page })
         })
       })
       const gaps = doc.blocks.map((_, i) => {

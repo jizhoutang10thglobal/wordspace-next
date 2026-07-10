@@ -70,11 +70,6 @@
   pointer-events: none;
   z-index: 1;
 }
-/* 块内灰缝带：复用 .ws-page-gutter 的观感（沉底灰 + 上下边线 + 轻阴影 + 页码 chip），
-   只改成绝对定位坐到推开的空档里。 */
-.ws-inner-gutter {
-  position: absolute;
-}
 .ws-page-gutter {
   position: relative;
   background: var(--c-bg-sunken);
@@ -90,6 +85,12 @@
   top: 50%;
   transform: translateY(-50%);
   background: var(--c-bg); /* 灰缝上提亮一档，别跟缝底同色糊掉 */
+}
+/* 块内灰缝带：复用 .ws-page-gutter 的观感（沉底灰 + 上下边线 + 轻阴影 + 页码 chip），
+   只改成绝对定位坐到推开的空档里。规则须在 .ws-page-gutter 之后，position:absolute 才能压过
+   .ws-page-gutter 的 position:relative（同 class 特异度，靠源顺序取胜；否则灰缝会入流叠加漂移）。 */
+.ws-inner-gutter {
+  position: absolute;
 }
 .ws-page-chip {
   font-family: var(--font-mono);
