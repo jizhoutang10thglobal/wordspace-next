@@ -165,6 +165,7 @@
     } else if (r.status === 'added') {
       adoptRoot(r.root, r.tree);
       showToast('已打开文件夹「' + r.root.name + '」');
+      maybePerfBanner(); // 新加的根若大/云盘 → 自动横幅（fire-and-forget）
     }
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
@@ -2170,6 +2171,56 @@
     else if (e.key === 'Escape' && diagOverlay) { diagOverlay.remove(); diagOverlay = null; }
   });
 
+  // ── 自动性能横幅（给 Wendi 的零操作主路径，比 Cmd+Shift+D 简单）─────────────────────
+  // 某个根「在云盘 / 文件数 > 2万 / readTree > 1.5秒」时，顶部自动弹一条带关键数字的横幅，卡顿可能来自这里。
+  // 她什么都不用做、不用记快捷键——数字直接显示在条上，截图发回来即可（她本来就习惯发截图）。可关，每根每会话只弹一次。
+  const perfBannerShown = new Set(); // rootPath → 已弹过
+  const isHotRoot = (r) => !!r.cloud || r.fileCount > 20000 || r.maxReadMs > 1500;
+  async function maybePerfBanner() {
+    let roots = [];
+    try { roots = (await window.ws2.wsDiag()) || []; } catch { return; }
+    const hot = roots.filter((r) => isHotRoot(r) && !perfBannerShown.has(r.path));
+    if (!hot.length) return;
+    hot.forEach((r) => perfBannerShown.add(r.path));
+    showPerfBanner(hot);
+  }
+  function showPerfBanner(hot) {
+    const old = document.getElementById('perf-banner');
+    if (old) old.remove();
+    const bar = document.createElement('div');
+    bar.id = 'perf-banner';
+    bar.style.position = 'fixed'; bar.style.top = '8px'; bar.style.left = '50%';
+    bar.style.transform = 'translateX(-50%)'; bar.style.zIndex = '9998';
+    bar.style.maxWidth = '90vw'; bar.style.display = 'flex'; bar.style.alignItems = 'center';
+    bar.style.gap = '10px'; bar.style.padding = '9px 12px'; bar.style.borderRadius = '9px';
+    bar.style.background = '#3a2f12'; bar.style.color = '#f4e4bf';
+    bar.style.border = '1px solid #6b551f'; bar.style.boxShadow = '0 6px 24px rgba(0,0,0,.35)';
+    bar.style.font = '12.5px/1.5 -apple-system,system-ui,sans-serif';
+    const summary = hot.map((r) => {
+      const name = r.path.split('/').filter(Boolean).pop() || r.path;
+      const bits = [r.fileCount.toLocaleString() + ' 文件'];
+      if (r.maxReadMs) bits.push('加载 ' + (r.maxReadMs / 1000).toFixed(1) + '秒');
+      if (r.cloud) bits.push('☁ 云盘');
+      return '「' + name + '」' + bits.join(' · ');
+    }).join('，');
+    const text = document.createElement('span');
+    text.textContent = '文件夹较大，卡顿可能来自这里：' + summary;
+    const copy = document.createElement('button');
+    copy.textContent = '复制诊断';
+    const close = document.createElement('button');
+    close.textContent = '×';
+    for (const b of [copy, close]) {
+      b.style.font = 'inherit'; b.style.cursor = 'pointer'; b.style.color = 'inherit';
+      b.style.background = 'transparent'; b.style.border = '1px solid #6b551f'; b.style.borderRadius = '6px';
+    }
+    copy.style.padding = '3px 10px';
+    close.style.padding = '3px 8px'; close.style.fontSize = '15px'; close.style.lineHeight = '1';
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(await buildDiagReport()); copy.textContent = '已复制 ✓'; } catch { copy.textContent = '复制失败'; } };
+    close.onclick = () => bar.remove();
+    bar.append(text, copy, close);
+    document.body.appendChild(bar);
+  }
+
   // 启动恢复上次打开的全部根（含失联的灰态）+ 全局标签。整条跑完才 resolveRestore，
   // 让冷启动的 open-file 建标签等在这后面（无根 / 出错也要 resolve，否则 onOpen 永久挂起）。
   (async () => {
@@ -2187,6 +2238,7 @@
       // 只走「有根才恢复」的分支会让它们重启即丢、还被下一次 persist 从盘上抹掉。
       await loadTabs(); // 全局标签/置顶恢复 + 上次激活进编辑器（冷启动 open-file 在路上则不抢 viewer）
       syncChrome(); // 恢复出的外部标签要点亮侧栏（sb-on 依赖 tabState.entries）
+      maybePerfBanner(); // 恢复出的根里有大/云盘的 → 自动横幅提示（fire-and-forget）
     } catch (e) {
       /* 无根 / 已不存在：保持空态 */
     } finally {
