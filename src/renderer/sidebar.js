@@ -20,6 +20,8 @@
   let query = '';
   let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，全局单一集合持久化）
   let suppressRevealOnce = false; // 一次性:关标签回落时置真,onOpen 消费它抑制树定位（Colin：关标签不滚树）
+  let diagRenderStart = 0; // 诊断探针：一次 render/renderRoot 的起点，afterRender 里结算
+  const diagRender = { lastMs: 0, maxMs: 0, count: 0 }; // 诊断探针：renderer 渲染耗时（Cmd+Shift+D 看）
   // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复根 + 标签」
   // 整条跑完才做，否则会被 loadTabs 整体覆盖 / 被 openTabFromAbs 的过期根守卫中止（Colin 报的「文档开了没标签」）。
   // 一旦 resolve 永久 resolved：app 已开着时再 open（热路径）不阻塞，立即建标签。
@@ -367,6 +369,7 @@
   // ---- 渲染 ----
   let dragRootId = null; // 根标题行拖拽重排（模块级，跨 RootSection）
   function render() {
+    diagRenderStart = performance.now(); // 诊断探针
     treeEl.innerHTML = '';
     if (!rootsState.length) {
       renderZones(); // 标签区还可能有外部标签（根全移除后仍保留）
@@ -410,6 +413,7 @@
   // （它的 sb-root-head 到下一个根的 head / add-root 按钮之间），整段替换成新渲染的 fragment。
   // 保守兜底：筛选态（q 非空，筛选是全局的）、根节起点找不到（状态漂移）、根不在 → 退回全量 render()。
   function renderRoot(rootId) {
+    diagRenderStart = performance.now(); // 诊断探针
     const q = query.trim().toLowerCase();
     const st = rootOf(rootId);
     const idx = st ? rootsState.indexOf(st) : -1;
@@ -446,6 +450,10 @@
     cacheStickyRows();
     if (stickyEl) stickyEl.dataset.key = STICKY_FORCE; // 哨兵值：任何真 key（含空 pins 的 ''）都 ≠ 它 → 必重建
     renderSticky();
+    const ms = performance.now() - diagRenderStart; // 诊断探针：这次渲染（含 cacheStickyRows 全量 offsetTop）耗时
+    diagRender.lastMs = ms;
+    diagRender.maxMs = Math.max(diagRender.maxMs, ms);
+    diagRender.count++;
   }
 
   // 一节 = 根标题行 + 该根的树。返回是否渲染了（筛选时无命中的根整节隐藏 → false）。
@@ -2098,6 +2106,106 @@
   // 运行时根状态变化（拔盘/根被删 → 主进程转失联并广播）：重拉根列表，失联节灰态即刻可见。
   if (window.ws2.onWsRootsChanged) window.ws2.onWsRootsChanged(() => resyncRoots());
   window.addEventListener('focus', () => { for (const st of rootsState) { if (!st.missing) onTreeChanged(st.id); } });
+
+  // ── 性能诊断模式（隐藏，菜单「Wordspace Next → 性能诊断…」或 Cmd+Shift+D 手动开）────────────
+  // 普通用户零感知：默认不显示任何 debug 内容，只有主动从菜单打开才出面板。Wendi 报「两文件夹贼卡」，我们本地
+  // 量不出她环境；这个面板让她/开发者在真环境上看清时间花在哪。既然是 opt-in，做详尽：每根 readTree/文件数/
+  // watcher，渲染耗时，**主线程长任务（抓滚动等任何卡顿，不预判来源）**，内存，+ 一键录 CPU Profile（catch-anything）。
+  let perfPanel = null;      // 面板 DOM（null=关）
+  let perfTimer = 0;         // 实时刷新计时器
+  // 主线程长任务观察器（always-on，near-zero 成本）：浏览器自动上报 >50ms 的任务=一帧卡顿。滚动/渲染/readTree
+  // 回调处理——任何 block 主线程的东西都会被记到这里，不靠我预判在哪（补掉「只量我假设的地方」那个盲区）。
+  const longTasks = { count: 0, totalMs: 0, maxMs: 0 };
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        longTasks.count++;
+        longTasks.totalMs += e.duration;
+        longTasks.maxMs = Math.max(longTasks.maxMs, e.duration);
+      }
+    }).observe({ entryTypes: ['longtask'] });
+  } catch { /* longtask 不支持就算了，其余照常 */ }
+  function memMB() {
+    const m = performance.memory;
+    return m ? Math.round(m.usedJSHeapSize / 1048576) + ' / ' + Math.round(m.jsHeapSizeLimit / 1048576) + ' MB' : 'n/a';
+  }
+  async function buildDiagReport() {
+    let roots = [];
+    try { roots = (await window.ws2.wsDiag()) || []; } catch {}
+    let version = '';
+    try { version = await window.ws2.appVersion(); } catch {}
+    const domRows = treeEl ? treeEl.querySelectorAll('.sb-row').length : 0;
+    const L = [];
+    L.push('Wordspace 性能诊断  v' + version + '   ' + new Date().toLocaleString());
+    L.push('');
+    if (!roots.length) L.push('（还没打开任何文件夹，或还没读过树）');
+    roots.forEach((r, i) => {
+      const name = r.path.split('/').filter(Boolean).pop() || r.path;
+      L.push('根' + (i + 1) + '「' + name + '」  ' + (r.cloud ? '☁ ' + r.cloud + ' 云盘' : '本地'));
+      L.push('   ' + r.path);
+      L.push('   文件数 ' + r.fileCount.toLocaleString() +
+        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（读 ' + r.reads + ' 次）' +
+        '  ·  watcher 触发 ' + r.watchEvents + ' 次');
+    });
+    L.push('');
+    L.push('渲染：上次 ' + diagRender.lastMs.toFixed(0) + 'ms · 峰值 ' + diagRender.maxMs.toFixed(0) +
+      'ms · 共 ' + diagRender.count + ' 次  ·  当前树 DOM 行数 ' + domRows);
+    L.push('主线程长任务(>50ms 卡帧)：' + longTasks.count + ' 次 · 累计 ' + Math.round(longTasks.totalMs) +
+      'ms · 最长单次 ' + Math.round(longTasks.maxMs) + 'ms   ← 滚动/交互卡顿看这行');
+    L.push('JS 内存：' + memMB());
+    return L.join('\n');
+  }
+  async function renderPerfPanel() {
+    if (!perfPanel) return;
+    const report = await buildDiagReport();
+    const pre = perfPanel.querySelector('pre');
+    if (pre) pre.textContent = report;
+  }
+  async function togglePerfPanel() {
+    if (perfPanel) { perfPanel.remove(); perfPanel = null; if (perfTimer) { clearInterval(perfTimer); perfTimer = 0; } return; }
+    const panel = document.createElement('div');
+    panel.id = 'perf-panel';
+    // 非模态、固定右上：不挡操作，用户可以一边滚动一边看「长任务」数字实时涨（抓滚动卡顿）。
+    panel.style.position = 'fixed'; panel.style.top = '10px'; panel.style.right = '10px'; panel.style.zIndex = '9999';
+    panel.style.width = 'min(520px, 46vw)'; panel.style.maxHeight = '80vh'; panel.style.overflow = 'auto';
+    panel.style.background = 'rgba(24,24,24,0.97)'; panel.style.color = '#e6e6e6';
+    panel.style.font = '11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace';
+    panel.style.padding = '12px 14px'; panel.style.borderRadius = '10px';
+    panel.style.border = '1px solid #444'; panel.style.boxShadow = '0 10px 40px rgba(0,0,0,.5)';
+    const pre = document.createElement('pre');
+    pre.style.margin = '0 0 10px'; pre.style.whiteSpace = 'pre-wrap';
+    const bar = document.createElement('div');
+    bar.style.display = 'flex'; bar.style.gap = '7px'; bar.style.flexWrap = 'wrap'; bar.style.alignItems = 'center';
+    const mkBtn = (label) => { const b = document.createElement('button'); b.textContent = label; b.style.font = 'inherit'; b.style.padding = '4px 10px'; b.style.borderRadius = '6px'; b.style.border = '1px solid #555'; b.style.background = '#2d2d2d'; b.style.color = '#e6e6e6'; b.style.cursor = 'pointer'; return b; };
+    const copy = mkBtn('复制诊断');
+    const record = mkBtn('录制 5 秒 Profile');
+    const close = mkBtn('关闭');
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(await buildDiagReport()); copy.textContent = '已复制 ✓'; setTimeout(() => (copy.textContent = '复制诊断'), 1500); } catch { copy.textContent = '复制失败'; } };
+    // catch-anything：录一段真 CPU profile，记录每个函数/帧，主进程存成 .cpuprofile 文件并在访达里高亮，发回来。
+    record.onclick = async () => {
+      record.disabled = true; record.textContent = '录制中… 请现在复现卡顿（滚动/切换）';
+      try {
+        const res = await window.ws2.diagRecordProfile(5000);
+        record.textContent = res && res.path ? '已保存：' + res.path.split('/').pop() + '（访达已打开）' : '录制失败';
+      } catch { record.textContent = '录制失败（需在打包版里用）'; }
+      record.disabled = false; setTimeout(() => (record.textContent = '录制 5 秒 Profile'), 4000);
+    };
+    close.onclick = () => togglePerfPanel();
+    const hint = document.createElement('span');
+    hint.textContent = '打开后滚动/切换来复现卡顿，看「长任务」实时涨 · 每 1 秒刷新';
+    hint.style.opacity = '0.6'; hint.style.width = '100%';
+    bar.append(copy, record, close, hint);
+    panel.append(pre, bar);
+    document.body.appendChild(panel);
+    perfPanel = panel;
+    await renderPerfPanel();
+    perfTimer = setInterval(renderPerfPanel, 1000); // 实时刷新
+  }
+  if (window.__sbHooks) window.__sbHooks.perfDiag = () => togglePerfPanel(); // 菜单「性能诊断…」入口
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); togglePerfPanel(); } // 开发者备用快捷键
+    else if (e.key === 'Escape' && perfPanel) { togglePerfPanel(); }
+  });
 
   // 启动恢复上次打开的全部根（含失联的灰态）+ 全局标签。整条跑完才 resolveRestore，
   // 让冷启动的 open-file 建标签等在这后面（无根 / 出错也要 resolve，否则 onOpen 永久挂起）。
