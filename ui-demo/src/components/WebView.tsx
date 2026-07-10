@@ -1,8 +1,14 @@
-import { ExternalLink } from 'lucide-react'
+import { useState, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ExternalLink, Lock, Globe, Search, ChevronUp, ChevronDown, X, Folder, Bookmark } from 'lucide-react'
 import type { Tab } from '../types'
-import { resolve } from '../mock/browser'
+import { resolve, useBrowser, type Resolved } from '../mock/browser'
+import { useStore } from '../mock/store'
+import { useBookmarks, BM_BAR } from '../mock/bookmarks'
+import { buildWebCtx, cleanShareUrl, type CtxInfo, type CtxItem } from '../lib/webCtxMenu'
 import NewTab from './NewTab'
 import MockSite from './MockSites'
+import WebContextMenu from './WebContextMenu'
 import './WebView.css'
 
 // The content area for a tab of kind 'web'. Wordspace is also a real browser, so
@@ -10,38 +16,253 @@ import './WebView.css'
 //   - the new-tab start page
 //   - one of our polished mock websites (the demo's "open web")
 //   - a real <iframe> for a genuine typed URL (best-effort; many sites block it)
-// The address bar itself lives in the sidebar omnibox and is wired by the
-// integrator; here we only render what's below it.
+// Above the page sits a slim Wordspace chrome header (security + title + host) —
+// the same header the real app shows over a WebContentsView.
+// 右键网页内容 → 原生风格 DOM 菜单（对齐真 app 的 WebContentsView 右键菜单）。
 export default function WebView({ tab }: { tab: Tab }) {
   const r = resolve(tab.url)
+  const openWebTab = useStore((s) => s.openWebTab)
+  const toast = useStore((s) => s.toast)
+  const navigate = useNavigate()
+  const zoom = useBrowser((s) => s.zoom)
+  const [menu, setMenu] = useState<{ x: number; y: number; items: CtxItem[]; info: CtxInfo } | null>(null)
 
+  // 网页内查找（Cmd+F）：mock 站是同文档 DOM，用 window.find 定位+高亮+滚动（演示够用）。
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQ, setFindQ] = useState('')
+  const findInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    const onFind = () => { setFindOpen(true); setTimeout(() => { findInputRef.current?.focus(); findInputRef.current?.select() }, 0) }
+    window.addEventListener('ws-web-find', onFind)
+    return () => window.removeEventListener('ws-web-find', onFind)
+  }, [])
+  const doFind = (backwards = false) => {
+    const q = findQ.trim()
+    if (!q) return
+    ;(window as unknown as { find?: (s: string, cs: boolean, bw: boolean, wrap: boolean) => boolean }).find?.(q, false, backwards, true)
+  }
+  const closeFind = () => { setFindOpen(false); window.getSelection()?.removeAllRanges() }
+
+  // 右键：真读光标下的 DOM（链接/图片/选中文字/编辑框），据此算菜单分节——和真 app 一样按上下文变。
+  const onContextMenu = (e: ReactMouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('.web-chrome')) return // 网页头是 Wordspace UI，右键不接管
+    e.preventDefault()
+    const el = e.target as HTMLElement
+    const linkEl = el.closest('a[href], [data-ctx-href]')
+    const imgEl = el.closest('img, [data-ctx-img]')
+    const editEl = el.closest('input, textarea, [contenteditable="true"]')
+    const info: CtxInfo = {
+      linkUrl: linkEl ? linkEl.getAttribute('href') || linkEl.getAttribute('data-ctx-href') || undefined : undefined,
+      imgUrl: imgEl ? (imgEl as HTMLImageElement).src || imgEl.getAttribute('data-ctx-img') || undefined : undefined,
+      selection: window.getSelection()?.toString() || undefined,
+      editable: !!editEl,
+    }
+    const items = buildWebCtx(info, {
+      canGoBack: useBrowser.getState().canGoBack(),
+      canGoForward: useBrowser.getState().canGoForward(),
+    })
+    setMenu({ x: e.clientX, y: e.clientY, items, info })
+  }
+
+  const run = (id: string, info: CtxInfo) => {
+    const link = info.linkUrl || ''
+    const sel = (info.selection || '').trim()
+    switch (id) {
+      case 'open-link': openWebTab(link, link); navigate('/docs'); break
+      case 'open-link-bg': openWebTab(link, link, true); toast('已在后台标签页打开', 'neutral'); break
+      case 'copy-link': navigator.clipboard?.writeText(cleanShareUrl(link)); toast('已拷贝链接', 'success'); break
+      case 'copy-image': toast('已拷贝图片', 'success'); break
+      case 'copy-image-url': navigator.clipboard?.writeText(info.imgUrl || ''); toast('已拷贝图片地址', 'success'); break
+      case 'copy-selection': navigator.clipboard?.writeText(sel); toast('已拷贝', 'success'); break
+      case 'search-selection': openWebTab(`glass://search?q=${encodeURIComponent(sel)}`, `搜索:${sel.slice(0, 20)}`); navigate('/docs'); break
+      case 'cut': case 'copy': case 'paste': case 'select-all': toast('（演示）编辑操作', 'neutral'); break
+      case 'nav-back': useBrowser.getState().back(); break
+      case 'nav-forward': useBrowser.getState().forward(); break
+      case 'reload': toast('已刷新页面', 'neutral'); break
+      case 'copy-page-url': navigator.clipboard?.writeText(cleanShareUrl(tab.url)); toast('已拷贝页面链接', 'success'); break
+      case 'export-pdf': toast('正在导出 PDF…', 'neutral'); break
+    }
+  }
+
+  // 新标签页没有网页头（对齐真 app：newtab 态不显示 #web-header）。
   if (r.kind === 'newtab') return <NewTab />
-  if (r.kind === 'mock' && r.siteKey)
-    return <MockSite siteKey={r.siteKey} query={r.query} />
 
-  // Real external page. Most sites refuse to be framed (X-Frame-Options / CSP),
-  // so a slim strip offers opening it in the system browser if it comes up blank.
-  return (
-    <div className="webview">
-      <div className="webview-strip">
-        <span className="webview-strip-text">
-          某些网站不允许内嵌预览,若空白可在系统浏览器打开
-        </span>
-        <button
-          className="webview-strip-open"
-          onClick={() => window.open(tab.url, '_blank', 'noopener,noreferrer')}
-        >
-          <ExternalLink size={13} />
-          打开
-        </button>
+  const content =
+    r.kind === 'mock' && r.siteKey ? (
+      <MockSite siteKey={r.siteKey} query={r.query} />
+    ) : (
+      // Real external page. Most sites refuse to be framed (X-Frame-Options / CSP),
+      // so a slim strip offers opening it in the system browser if it comes up blank.
+      <div className="webview">
+        <div className="webview-strip">
+          <span className="webview-strip-text">
+            某些网站不允许内嵌预览,若空白可在系统浏览器打开
+          </span>
+          <button
+            className="webview-strip-open"
+            onClick={() => window.open(tab.url, '_blank', 'noopener,noreferrer')}
+          >
+            <ExternalLink size={13} />
+            打开
+          </button>
+        </div>
+        <iframe
+          className="webview-frame"
+          src={tab.url}
+          title={tab.title || tab.url}
+          sandbox="allow-scripts allow-same-origin allow-popups"
+          referrerPolicy="no-referrer"
+        />
       </div>
-      <iframe
-        className="webview-frame"
-        src={tab.url}
-        title={tab.title || tab.url}
-        sandbox="allow-scripts allow-same-origin allow-popups"
-        referrerPolicy="no-referrer"
-      />
+    )
+
+  return (
+    <div className="webpage" onContextMenu={onContextMenu}>
+      <WebChrome tab={tab} resolved={r} />
+      <BookmarkBar />
+      {findOpen && (
+        <div className="web-find">
+          <Search size={13} className="web-find-ico" />
+          <input
+            ref={findInputRef}
+            className="web-find-input"
+            value={findQ}
+            onChange={(e) => setFindQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); doFind(e.shiftKey) }
+              else if (e.key === 'Escape') { e.preventDefault(); closeFind() }
+            }}
+            placeholder="在页面中查找"
+            spellCheck={false}
+          />
+          <button className="web-find-btn" title="上一个" onClick={() => doFind(true)}><ChevronUp size={14} /></button>
+          <button className="web-find-btn" title="下一个" onClick={() => doFind(false)}><ChevronDown size={14} /></button>
+          <button className="web-find-btn" title="关闭（Esc）" onClick={closeFind}><X size={14} /></button>
+        </div>
+      )}
+      <div className="webpage-zoom" style={zoom !== 1 ? { zoom } : undefined}>{content}</div>
+      {menu && (
+        <WebContextMenu
+          x={menu.x}
+          y={menu.y}
+          items={menu.items}
+          onAction={(id) => run(id, menu.info)}
+          onClose={() => setMenu(null)}
+        />
+      )}
     </div>
+  )
+}
+
+// 网页头：安全指示（锁 / 非安全）+ 标题 + 域名。与文档面包屑同壳。
+function WebChrome({ tab, resolved }: { tab: Tab; resolved: Resolved }) {
+  const url = tab.url
+  const secure = /^https:/i.test(url) || url.startsWith('glass://') || url.startsWith('wordspace://')
+  let host = ''
+  try {
+    if (!url.startsWith('glass://') && !url.startsWith('wordspace://')) host = new URL(url).host
+  } catch {
+    host = ''
+  }
+
+  return (
+    <div className="web-chrome">
+      <div className="web-chrome-info">
+        <span className={`web-sec ${secure ? 'is-secure' : 'is-insecure'}`}>
+          {secure ? <Lock size={12} /> : <Globe size={12} />}
+        </span>
+        <span className="web-chrome-title">{resolved.title}</span>
+        {host && <span className="web-chrome-host">{host}</span>}
+      </div>
+    </div>
+  )
+}
+
+// 网页态书签栏：只在浏览网页时出现在网页头下方（回到文档就不在了）。
+// 平铺「书签栏」文件夹的收藏，其余文件夹收成带 ▾ 的下拉；右侧一个入口进收藏管理页。
+// 收藏 = 地址栏 ☆ / ⌘D（默认落书签栏文件夹），所以星标的东西会直接出现在这条上。
+function BookmarkBar() {
+  const folders = useBookmarks((s) => s.folders)
+  const bookmarks = useBookmarks((s) => s.bookmarks)
+  const navigate = useNavigate()
+  const [openFolder, setOpenFolder] = useState<string | null>(null)
+  const barRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!openFolder) return
+    const onDown = (e: globalThis.MouseEvent) => {
+      if (!barRef.current?.contains(e.target as Node)) setOpenFolder(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [openFolder])
+
+  // 左键 = 在当前标签打开（不堆标签）；⌘/Ctrl 点 = 后台新标签，同浏览器惯例。
+  const go = (url: string, title: string, e?: ReactMouseEvent) => {
+    if (e && (e.metaKey || e.ctrlKey)) {
+      useStore.getState().openWebTab(url, title, true)
+      useStore.getState().toast('已在后台标签页打开', 'neutral')
+    } else {
+      useBrowser.getState().navigate(url)
+    }
+    setOpenFolder(null)
+  }
+
+  const barItems = bookmarks.filter((b) => b.folderId === BM_BAR)
+  const otherFolders = folders.filter((f) => f.id !== BM_BAR && bookmarks.some((b) => b.folderId === f.id))
+  const empty = !barItems.length && !otherFolders.length
+
+  return (
+    <div className="web-bmbar" ref={barRef}>
+      {barItems.map((b) => (
+        <button key={b.id} className="web-bmbar-item" title={b.url} onClick={(e) => go(b.url, b.title, e)}>
+          <BmFavicon label={b.title || b.url} seed={b.url} />
+          <span className="web-bmbar-title">{b.title}</span>
+        </button>
+      ))}
+      {otherFolders.map((f) => {
+        const items = bookmarks.filter((b) => b.folderId === f.id)
+        const isOpen = openFolder === f.id
+        return (
+          <div key={f.id} className="web-bmbar-folder">
+            <button
+              className={`web-bmbar-item web-bmbar-folder-btn ${isOpen ? 'is-open' : ''}`}
+              onClick={() => setOpenFolder(isOpen ? null : f.id)}
+            >
+              <Folder size={13} className="web-bmbar-folder-ico" />
+              <span className="web-bmbar-title">{f.name}</span>
+              <ChevronDown size={12} className="web-bmbar-caret" />
+            </button>
+            {isOpen && (
+              <div className="web-bmbar-pop">
+                {items.map((b) => (
+                  <button key={b.id} className="web-bmbar-pop-item" title={b.url} onClick={(e) => go(b.url, b.title, e)}>
+                    <BmFavicon label={b.title || b.url} seed={b.url} />
+                    <span className="web-bmbar-title">{b.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {empty && <span className="web-bmbar-empty">还没有收藏 · 点地址栏的 ☆ 收藏当前页</span>}
+      <div className="web-bmbar-spacer" />
+      <button className="web-bmbar-manage" title="管理收藏 · 导入导出" onClick={() => navigate('/bookmarks')}>
+        <Bookmark size={13} />
+      </button>
+    </div>
+  )
+}
+
+// 书签没有真 favicon，用标题首字（去重 hash 到一个稳定色）当小图标，比灰地球更好认。
+function BmFavicon({ label, seed }: { label: string; seed: string }) {
+  const ch = label.trim().charAt(0).toUpperCase() || '·'
+  let h = 0
+  for (const c of seed) h = (h * 31 + c.charCodeAt(0)) % 360
+  return (
+    <span className="web-bmbar-fav" style={{ background: `hsl(${h} 55% 92%)`, color: `hsl(${h} 42% 40%)` }}>
+      {ch}
+    </span>
   )
 }

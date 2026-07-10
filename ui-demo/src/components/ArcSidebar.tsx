@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   PanelLeft,
@@ -27,10 +27,15 @@ import {
   PinOff,
   Search,
   AlertCircle,
+  Star,
+  History as HistoryIcon,
+  ChevronDown,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
+import { useBookmarks } from '../mock/bookmarks'
+import { useHistory } from '../mock/history'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
 import { computeBacklinks, computeDirBacklinks } from '../lib/links'
@@ -804,10 +809,45 @@ export default function ArcSidebar() {
   const doc = activeTab?.docId ? getDoc(activeTab.docId) : undefined
   const isLocal = !doc?.publishedUrl || doc.visibility === 'private' || doc.visibility === 'invited'
 
+  // 后退/前进按钮响应式启用态：无历史可退时置灰（否则「能点但没反应」= 手感坏）。
+  const browserHistory = useBrowser((s) => s.history)
+  const curHist = activeTab?.kind === 'web' ? browserHistory[activeTabId] : undefined
+  const canBack = !!curHist && curHist.index > 0
+  const canFwd = !!curHist && curHist.index < curHist.stack.length - 1
+
+  // 收藏夹：网页标签才显示星标；点击/⌘D 加入或移出收藏。
+  const bmList = useBookmarks((s) => s.bookmarks)
+  const isWebTab = activeTab?.kind === 'web' && !!activeTab.url && activeTab.url !== 'wordspace://newtab'
+  const bookmarked = !!isWebTab && bmList.some((b) => b.url === activeTab!.url)
+  const toggleBookmark = () => {
+    if (!isWebTab || !activeTab) return
+    const bm = useBookmarks.getState()
+    if (bm.isBookmarked(activeTab.url)) { bm.removeByUrl(activeTab.url); useStore.getState().toast('已移出收藏') }
+    else { bm.add({ title: activeTab.title || activeTab.url, url: activeTab.url }); useStore.getState().toast('已加入收藏', 'success') }
+  }
   const [omni, setOmni] = useState(activeTab?.url ?? '')
   useEffect(() => {
     setOmni(activeTab?.url ?? '')
   }, [activeTabId, activeTab?.url])
+
+  // 地址栏自动补全：边打字从「开着的标签 / 收藏 / 历史」给建议（按此优先级去重）。
+  const [omniOpen, setOmniOpen] = useState(false)
+  const [omniSel, setOmniSel] = useState(-1)
+  const omniSug = useMemo(() => {
+    const t = omni.trim().toLowerCase()
+    if (!t || !omniOpen) return []
+    if (activeTab?.kind === 'web' && omni === activeTab.url) return [] // 没在打字(显示的是当前 url) → 不弹
+    const out: { url: string; title: string; kind: 'tab' | 'bookmark' | 'history' }[] = []
+    const seen = new Set<string>()
+    const add = (url: string, title: string, kind: 'tab' | 'bookmark' | 'history') => {
+      if (!url || url === 'wordspace://newtab' || seen.has(url)) return
+      seen.add(url); out.push({ url, title: title || url, kind })
+    }
+    for (const tb of tabs) if (tb.kind === 'web' && tb.url && (tb.url.toLowerCase().includes(t) || (tb.title || '').toLowerCase().includes(t))) add(tb.url, tb.title, 'tab')
+    for (const bk of bmList) if (bk.url.toLowerCase().includes(t) || bk.title.toLowerCase().includes(t)) add(bk.url, bk.title, 'bookmark')
+    for (const h of useHistory.getState().search(omni, 8)) add(h.url, h.title, 'history')
+    return out.slice(0, 6)
+  }, [omni, omniOpen, tabs, bmList, activeTab?.kind, activeTab?.url])
 
   // file-tree quick filter (the real "search my files", separate from the web omnibox)
   const [query, setQuery] = useState('')
@@ -858,6 +898,11 @@ export default function ArcSidebar() {
       } else if (!e.shiftKey && (e.key === 't' || e.key === 'T')) {
         e.preventDefault()
         openNewTab()
+      } else if (e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        // Cmd+Shift+T 重开刚关闭的标签
+        e.preventDefault()
+        const st = useStore.getState()
+        if (st.closedTabs.length) { st.reopenClosedTab(); navigate('/docs') }
       } else if (e.shiftKey && (e.key === 's' || e.key === 'S')) {
         // 另存为…（裁决 4：Cmd+Shift+S 回归 HIG 语义；删除线已迁 Cmd+Shift+X）
         e.preventDefault()
@@ -869,12 +914,15 @@ export default function ArcSidebar() {
         e.preventDefault()
         saveActiveDoc()
       } else if (!e.shiftKey && (e.key === 'f' || e.key === 'F')) {
-        // Cmd+F = 文档内查找（调研裁决：全软件铁律，还给正文）。仅当编辑器有打开的文档时。
+        // Cmd+F = 页内查找。文档 → 编辑器查找条；网页标签 → 网页查找条（覆盖真 app 的两半）。
         const st = useStore.getState()
         const tab = st.tabs.find((t) => t.id === st.activeTabId)
         if (tab?.docId) {
           e.preventDefault()
           ui.openDocFind()
+        } else if (tab?.kind === 'web') {
+          e.preventDefault()
+          window.dispatchEvent(new CustomEvent('ws-web-find'))
         }
       } else if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
         // Cmd+Shift+F = 聚焦文件筛选框（Cmd+F 让位给文档内查找后，文件筛选下沉到这，抄 VS Code 分层）
@@ -895,6 +943,31 @@ export default function ArcSidebar() {
         const doc = tab.docId ? st.getDoc(tab.docId) : undefined
         if (doc?.unsaved) ui.askCloseTab(tab.id)
         else st.closeTab(tab.id)
+      } else if (!e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        // Cmd+D 收藏 / 取消收藏当前网页
+        const st = useStore.getState()
+        const tab = st.tabs.find((t) => t.id === st.activeTabId)
+        if (!tab || tab.kind !== 'web' || !tab.url || tab.url === 'wordspace://newtab') return
+        e.preventDefault()
+        const b = useBookmarks.getState()
+        if (b.isBookmarked(tab.url)) { b.removeByUrl(tab.url); st.toast('已移出收藏') }
+        else { b.add({ title: tab.title || tab.url, url: tab.url }); st.toast('已加入收藏', 'success') }
+      } else if (!e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+        // Cmd+L 聚焦地址栏
+        e.preventDefault()
+        if (useUI.getState().sidebarCollapsed) toggleSidebar()
+        window.setTimeout(() => {
+          const el = document.querySelector<HTMLInputElement>('.arc-omni-input')
+          el?.focus(); el?.select()
+        }, 0)
+      } else if (e.key === '=' || e.key === '+' || e.key === '-' || e.key === '0') {
+        // Cmd +/-/0 网页缩放（仅网页标签，读实时激活态防闭包过期）
+        const st = useStore.getState()
+        const at = st.tabs.find((t) => t.id === st.activeTabId)
+        if (at?.kind !== 'web') return
+        e.preventDefault()
+        if (e.key === '0') useBrowser.getState().zoomReset()
+        else useBrowser.getState().zoomBy(e.key === '-' ? -0.1 : 0.1)
       } else if (!e.shiftKey && /^[1-9]$/.test(e.key)) {
         // 直达第 N 个标签页；9 = 最后一个（浏览器语义）
         e.preventDefault()
@@ -953,9 +1026,10 @@ export default function ArcSidebar() {
     }
   })
 
-  const submitOmni = () => {
-    const v = omni.trim()
+  const submitOmni = (explicitUrl?: string) => {
+    const v = (explicitUrl ?? omni).trim()
     if (!v) return
+    setOmniOpen(false); setOmniSel(-1)
     if (activeTab?.kind !== 'web') newBrowserTab()
     useBrowser.getState().navigate(v)
     navigate('/docs')
@@ -1004,9 +1078,10 @@ export default function ArcSidebar() {
         </div>
         <div className="arc-top-nav">
           <button className="arc-ico" title="收起侧栏" onClick={toggleSidebar}><PanelLeft size={15} /></button>
-          <button className="arc-ico" title="后退" onClick={goBack}><ChevronLeft size={16} /></button>
-          <button className="arc-ico" title="前进" onClick={goForward}><ChevronRight size={16} /></button>
+          <button className="arc-ico" title="后退" onClick={goBack} disabled={!canBack}><ChevronLeft size={16} /></button>
+          <button className="arc-ico" title="前进" onClick={goForward} disabled={!canFwd}><ChevronRight size={16} /></button>
           <button className="arc-ico" title="刷新" onClick={reload}><RotateCw size={13} /></button>
+          <button className="arc-ico" title="历史记录" onClick={() => navigate('/history')}><HistoryIcon size={15} /></button>
           <button className="arc-ico" title={IS_MAC ? '查找文件 ⌘P' : '查找文件 Ctrl+P'} onClick={openFind}><Search size={14} /></button>
         </div>
       </div>
@@ -1024,15 +1099,44 @@ export default function ArcSidebar() {
         <input
           className="arc-omni-url arc-omni-input"
           value={omni}
-          onChange={(e) => setOmni(e.target.value)}
+          onChange={(e) => { setOmni(e.target.value); setOmniOpen(true); setOmniSel(-1) }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') submitOmni()
+            if (e.key === 'Enter') { const pick = omniSel >= 0 ? omniSug[omniSel] : null; submitOmni(pick?.url); e.currentTarget.blur() }
+            else if (e.key === 'ArrowDown') { e.preventDefault(); if (omniSug.length) { setOmniOpen(true); setOmniSel((i) => Math.min(i + 1, omniSug.length - 1)) } }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setOmniSel((i) => Math.max(i - 1, -1)) }
+            else if (e.key === 'Escape') { setOmniOpen(false); setOmniSel(-1); e.currentTarget.blur() }
           }}
           onFocus={(e) => e.currentTarget.select()}
+          onBlur={() => window.setTimeout(() => setOmniOpen(false), 150)}
           placeholder="搜索,或输入网址"
           spellCheck={false}
         />
+        {isWebTab && (
+          <button
+            className={`arc-omni-star ${bookmarked ? 'is-on' : ''}`}
+            title={bookmarked ? '已收藏（⌘D 移出）' : '加入收藏 ⌘D'}
+            onClick={toggleBookmark}
+          >
+            <Star size={14} fill={bookmarked ? 'currentColor' : 'none'} />
+          </button>
+        )}
         {isLocal && activeTab?.kind !== 'web' && <span className="arc-omni-tag">本地</span>}
+        {omniOpen && omniSug.length > 0 && (
+          <div className="arc-omni-sug">
+            {omniSug.map((s, i) => (
+              <button
+                key={s.url}
+                className={`arc-omni-sug-item ${i === omniSel ? 'is-sel' : ''}`}
+                onMouseDown={(e) => { e.preventDefault(); submitOmni(s.url) }}
+                onMouseEnter={() => setOmniSel(i)}
+              >
+                {s.kind === 'bookmark' ? <Star size={12} className="arc-sug-ico" /> : s.kind === 'history' ? <HistoryIcon size={12} className="arc-sug-ico" /> : <Globe2 size={12} className="arc-sug-ico" />}
+                <span className="arc-sug-title">{s.title}</span>
+                <span className="arc-sug-url">{s.url.replace(/^https?:\/\//, '').replace(/^glass:\/\//, '')}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="arc-scroll" ref={scrollRef}>

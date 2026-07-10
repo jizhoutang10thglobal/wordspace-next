@@ -1,0 +1,38 @@
+/* 网页右键菜单（纸方墨圆）——与文件树 .arc-ctx 同一套视觉语言，加分节分隔线 + 禁用态。 */
+.web-ctx {
+  position: fixed;
+  z-index: 200;
+  min-width: 208px;
+  padding: 4px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-menu);
+  transform-origin: top left;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.web-ctx-item {
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
+  cursor: default;
+  white-space: nowrap;
+}
+.web-ctx-item:hover:not(:disabled) { background-size: 100% 100%; }
+.web-ctx-item:disabled {
+  color: var(--c-text-3);
+  cursor: default;
+}
+.web-ctx-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--c-border);
+}
