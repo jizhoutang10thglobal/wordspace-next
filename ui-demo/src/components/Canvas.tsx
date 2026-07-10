@@ -240,7 +240,8 @@ function BlockRow({
 
   const persist = () => {
     const el = elRef.current
-    if (el) updateBlockHtml(doc.id, block.id, el.innerHTML)
+    // strip-on-persist：块内推挤（表格间隔行 / li·代码行 marginTop）绝不进文档字节。
+    if (el) updateBlockHtml(doc.id, block.id, serializeClean(el))
   }
   const handleInput = () => {
     if (!edited.current) {
@@ -286,7 +287,11 @@ function BlockRow({
     const tbody = el?.querySelector('tbody')
     if (!el || !tbody) return
     checkpoint()
-    const last = tbody.querySelector('tr:last-child')
+    // 跳过间隔行（.ws-page-spacer 是运行时视觉产物、不算数据行）取末行做结构样板。
+    const dataRows = Array.from(tbody.querySelectorAll('tr')).filter(
+      (r) => !r.classList.contains('ws-page-spacer'),
+    )
+    const last = dataRows[dataRows.length - 1] ?? null
     const tr = document.createElement('tr')
     const cells = last ? Array.from(last.children) : []
     const n = cells.length || 1
@@ -304,7 +309,10 @@ function BlockRow({
     const el = elRef.current
     const tbody = el?.querySelector('tbody')
     if (!el || !tbody) return
-    const rows = Array.from(tbody.querySelectorAll('tr'))
+    // 只数/删数据行——间隔行不参与行计数与光标导航。
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter(
+      (r) => !r.classList.contains('ws-page-spacer'),
+    )
     if (rows.length <= 1) return
     let target: Element | null = null
     const sel = window.getSelection()
@@ -312,7 +320,7 @@ function BlockRow({
       const n = sel.getRangeAt(0).startContainer
       const en = n.nodeType === 1 ? (n as Element) : n.parentElement
       const tr = en?.closest('tr')
-      if (tr && tbody.contains(tr)) target = tr
+      if (tr && tbody.contains(tr) && !tr.classList.contains('ws-page-spacer')) target = tr
     }
     if (!target) target = rows[rows.length - 1]
     checkpoint()
@@ -462,18 +470,17 @@ function BlockRow({
 
 // ---------------------------------------------------------------------------
 // 超高块的块内页界（Word 式）：单块高 > 页内容高时，沿块内后代元素边界算出「页界 Y」。
-// 只测量、只算切分 Y，绝不改内容 DOM——页界靠装饰覆盖层（.ws-inner-band）画上去，
-// 内容连续流过、不推不切、始终可编辑（铁律：分页层永不碰 contenteditable 的内容节点）。
+// Phase 2：块内页界「真推内容」——把页界处的边界子元素往下推一个页间距（列表 li / 代码行
+// 用 marginTop，表格 tr 前插一个不进数据的间隔行），推开的空档里画灰缝带，达成统一 A4 页高。
+// SplitAtom 一律携带边界元素 el（列表/代码/表格行都是元素级边界，供推挤定位）。
 // ---------------------------------------------------------------------------
 type SplitAtom = {
   top: number // 相对块顶的原始 top（未被推挤）
-  kind: 'el' | 'tr' | 'line'
-  el?: HTMLElement
-  textNode?: Text
-  offset?: number // kind='line'：行首在文本节点里的字符偏移
+  kind: 'el' | 'tr' // 'el' → marginTop 推；'tr' → 前插间隔行推
+  el: HTMLElement
 }
 
-/** 收集候选切分原子：通用块级后代（table/pre 内部除外）+ 表格行 tr + pre 代码行行首。 */
+/** 收集候选切分原子：通用块级后代（table/pre 内部除外）+ 代码行 .ws-code-line + 表格行 tr。 */
 function collectAtoms(host: HTMLElement): SplitAtom[] {
   const base = host.getBoundingClientRect().top
   const atoms: SplitAtom[] = []
@@ -483,36 +490,34 @@ function collectAtoms(host: HTMLElement): SplitAtom[] {
       if (e.closest('table, pre')) return
       atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'el', el: e })
     })
-  host.querySelectorAll<HTMLElement>('tr').forEach((e) => {
-    atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'tr', el: e })
+  // 代码块：每行是 <div class="ws-code-line">（Phase 1 结构），按行推挤（marginTop）。
+  host.querySelectorAll<HTMLElement>('pre .ws-code-line').forEach((e) => {
+    atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'el', el: e })
   })
-  host.querySelectorAll('pre').forEach((pre) => {
-    const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT)
-    for (
-      let tn = walker.nextNode() as Text | null;
-      tn;
-      tn = walker.nextNode() as Text | null
-    ) {
-      const text = tn.data
-      for (
-        let idx = text.indexOf('\n');
-        idx !== -1 && idx + 1 < text.length;
-        idx = text.indexOf('\n', idx + 1)
-      ) {
-        const rg = document.createRange()
-        rg.setStart(tn, idx + 1)
-        rg.setEnd(tn, Math.min(idx + 2, text.length))
-        const rect = rg.getBoundingClientRect()
-        if (rect.height > 0)
-          atoms.push({ top: rect.top - base, kind: 'line', textNode: tn, offset: idx + 1 })
-      }
-    }
+  // 表格行：间隔行前插推挤（tr 不吃 margin）。间隔行本身别当候选（防被重复推）。
+  host.querySelectorAll<HTMLElement>('tr').forEach((e) => {
+    if (e.classList.contains('ws-page-spacer')) return
+    atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'tr', el: e })
   })
   atoms.sort((a, b) => a.top - b.top)
   // 同 top 去重（嵌套列表：父 li 与首个子 li 同顶）——保留文档序靠前的外层，整棵子树一起推
   const out: SplitAtom[] = []
   for (const a of atoms) if (!out.length || a.top - out[out.length - 1].top > 1) out.push(a)
   return out
+}
+
+// 分页推挤是运行时视觉产物，绝不能进文档数据：序列化前 clone 一份，删掉表格间隔行、
+// 清掉块内推挤 li/代码行的 marginTop，再取 innerHTML（strip-on-persist）。
+function serializeClean(el: HTMLElement): string {
+  if (!el.querySelector('.ws-page-spacer, [data-ws-pushed]')) return el.innerHTML
+  const clone = el.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.ws-page-spacer').forEach((n) => n.remove())
+  clone.querySelectorAll<HTMLElement>('[data-ws-pushed]').forEach((n) => {
+    n.style.marginTop = ''
+    n.removeAttribute('data-ws-pushed')
+    if (!n.getAttribute('style')) n.removeAttribute('style')
+  })
+  return clone.innerHTML
 }
 
 // ---------------------------------------------------------------------------
@@ -694,14 +699,19 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const pageBox = useMemo(() => pageBoxPx(pageCfg), [pageCfg])
   const articleRef = useRef<HTMLElement | null>(null)
   // gaps[i] = 块 i 前的块级页间隙（null = 不切页，流内 spacer 真实推挤给出上下页边距）；
-  // bands = 超高块的块内页界（装饰覆盖层，top 相对纸 padding 盒、不推内容）；
+  // gutters = 超高块块内页界的灰缝带（画在真推开的空档里，top 相对纸 padding 盒）；
   // tailFill = 末页尾部补白（把末页补成整张纸）。
   const [pag, setPag] = useState<{
     gaps: ({ fill: number; nextPage: number } | null)[]
-    bands: { top: number; page: number }[]
+    gutters: { top: number; page: number }[]
     tailFill: number
     pageCount: number
   } | null>(null)
+  // 当前已应用的块内推挤记录（清理→干净测量→重挂：每轮 recalc 先清掉再按新几何重推）。
+  const innerPushRef = useRef<{ margins: HTMLElement[]; rows: HTMLElement[] }>({
+    margins: [],
+    rows: [],
+  })
 
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
@@ -711,15 +721,16 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const focusedBlockId = useRef<string | null>(null)
 
   const [editingId, setEditingId] = useState<string | null>(null)
-  const pagSigRef = useRef('')
 
   // 分页重算：内容 / 窗口变化（ResizeObserver）→ rAF 合帧 → paginateBlocks（纯函数）。
-  // 纯测量，绝不改内容 DOM——块级页界靠流内 PageGap spacer（真实推挤、给上下页边距），
-  // 超高块的块内页界靠装饰覆盖层的 band（只画一条线，内容连续流过、不推不切、始终可编辑）。
-  // editingId 不参与：编辑不影响分页结构（不动内容节点），页数/页界不因聚焦变化（修 #4/#6）。
+  // 块级页界靠流内 PageGap spacer（真实推挤、给上下页边距）；超高块的块内页界「真推内容」——
+  // 列表 li / 代码行加 marginTop、表格 tr 前插间隔行，推开一个页间距，推开的空档里画灰缝带 → 统一 A4 页高。
+  // 每轮先「清理→干净测量→重挂」（clean-before-measure，不留上一轮的推挤影响测量）；因为清理+重推
+  // 同步跑完、净结果确定，RO 不会因中途瞬态再次触发（稳定收敛），也不丢块内光标。
+  // editingId 不参与：编辑不改分页结构（推挤不动被编辑的文本节点），页数/页界不因聚焦变化（修 #4/#6）。
   useEffect(() => {
     if (!paged || !doc) {
-      pagSigRef.current = ''
+      innerPushRef.current = { margins: [], rows: [] }
       setPag(null)
       return
     }
@@ -737,8 +748,20 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         (parseFloat(cs.marginBottom) || 0)
       )
     }
+    // 清掉上一轮的块内推挤（marginTop / 间隔行），恢复干净内容再测量。
+    const cleanInnerPushes = () => {
+      const rec = innerPushRef.current
+      for (const m of rec.margins) {
+        m.style.marginTop = ''
+        m.removeAttribute('data-ws-pushed')
+        if (!m.getAttribute('style')) m.removeAttribute('style')
+      }
+      for (const row of rec.rows) row.remove()
+      innerPushRef.current = { margins: [], rows: [] }
+    }
     const recalc = () => {
       raf = 0
+      cleanInnerPushes() // 干净测量前先卸掉推挤
       const hosts: HTMLElement[] = []
       const heights: number[] = [measureHeader()]
       for (const b of doc.blocks) {
@@ -748,44 +771,81 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         hosts.push(host)
         heights.push(host.getBoundingClientRect().height)
       }
-      const sig =
-        heights.map((h) => Math.round(h * 2)).join(',') +
-        `|${pageBox.contentH}|${pageBox.contentW}|` +
-        doc.blocks.map((b) => b.id).join(',')
-      if (sig === pagSigRef.current) return // 几何未变，跳过
-      // 超高块 → 块内页界 Y（相对块顶，吸附到 tr/li/代码行边界，保证不横切）
+      // 超高块 → 块内切分点 cuts（保留 fill，供推挤量计算）+ 边界原子 atoms（供定位推挤）。
       const innerCutTops: (number[] | null)[] = [null]
-      const innerAtoms: (SplitAtom[] | null)[] = [null]
+      const perBlock: (
+        | { atoms: SplitAtom[]; cuts: { atom: number; top: number; fill: number }[] }
+        | null
+      )[] = [null]
       doc.blocks.forEach((_, i) => {
         const h = heights[i + 1]
         if (h <= pageBox.contentH) {
           innerCutTops.push(null)
-          innerAtoms.push(null)
+          perBlock.push(null)
           return
         }
         const atoms = collectAtoms(hosts[i])
         const cuts = computeInnerSplits(atoms.map((a) => a.top), h, pageBox.contentH)
         innerCutTops.push(cuts.length ? cuts.map((c) => c.top) : null)
-        innerAtoms.push(cuts.length ? atoms : null)
+        perBlock.push(cuts.length ? { atoms, cuts } : null)
       })
       const r = paginateBlocks(heights, pageBox.contentH, innerCutTops)
-      pagSigRef.current = sig
+      // 真推内容：块内每个切分点把边界子元素往下推一个「页间距」——
+      // push = 切点上方本页剩余留白 fill + 页底边距 + 灰缝 + 下页顶边距（= 块级 PageGap 同公式）→ 每页恰一张纸。
+      const gapUnit = pageBox.margin.bottom + PAGE_GAP_PX + pageBox.margin.top
+      const rec = innerPushRef.current
+      doc.blocks.forEach((_, i) => {
+        const pb = perBlock[i + 1]
+        if (!pb) return
+        for (const cut of pb.cuts) {
+          const atom = pb.atoms[cut.atom]
+          if (!atom) continue
+          const push = cut.fill + gapUnit
+          if (atom.kind === 'tr') {
+            // 表格：页界处的 tr 前插一个不进数据、排除光标导航的间隔行（唯一的节点注入例外）。
+            const spacer = document.createElement('tr')
+            spacer.className = 'ws-page-spacer'
+            spacer.setAttribute('contenteditable', 'false')
+            spacer.setAttribute('aria-hidden', 'true')
+            const td = document.createElement('td')
+            td.setAttribute('colspan', '99')
+            td.setAttribute(
+              'style',
+              `height:${push}px;padding:0;border:0;background:transparent`,
+            )
+            spacer.appendChild(td)
+            atom.el.parentElement?.insertBefore(spacer, atom.el)
+            rec.rows.push(spacer)
+          } else {
+            // 列表 li / 代码行：只加 marginTop（非破坏、可编辑，绝不注入节点）。
+            atom.el.style.marginTop = `${push}px`
+            atom.el.setAttribute('data-ws-pushed', '')
+            rec.margins.push(atom.el)
+          }
+        }
+      })
+      // 灰缝带：推挤后测量边界元素最终 top（相对纸 padding 盒），灰缝落在它正上方
+      // = [top − 下页顶边距 − 灰缝, top − 下页顶边距]（推开的空档里那段 PAGE_GAP）。
+      const artTop = el.getBoundingClientRect().top
+      const borderTop = parseFloat(getComputedStyle(el).borderTopWidth) || 0
+      const gutters: { top: number; page: number }[] = []
+      doc.blocks.forEach((_, i) => {
+        const pb = perBlock[i + 1]
+        if (!pb) return
+        const startPage = r.pageOfBlock[i + 1] // 0-based 块起始页
+        pb.cuts.forEach((cut, k) => {
+          const atom = pb.atoms[cut.atom]
+          if (!atom) return
+          const boundaryTop = atom.el.getBoundingClientRect().top - artTop - borderTop
+          gutters.push({
+            top: boundaryTop - pageBox.margin.top - PAGE_GAP_PX,
+            page: startPage + k + 2,
+          })
+        })
+      })
       const gaps = doc.blocks.map((_, i) => {
         const g = r.gapBefore[i + 1]
         return g === null ? null : { fill: g, nextPage: r.pageOfBlock[i + 1] + 1 }
-      })
-      // 块内页界 band：top = 块顶相对纸 padding 盒 + 切点 Y（padding 盒原点 = article border 下 1px）
-      const artTop = el.getBoundingClientRect().top
-      const borderTop = parseFloat(getComputedStyle(el).borderTopWidth) || 0
-      const bands: { top: number; page: number }[] = []
-      doc.blocks.forEach((_, i) => {
-        const cuts = innerCutTops[i + 1]
-        if (!cuts) return
-        const hostTop = hosts[i].getBoundingClientRect().top - artTop - borderTop
-        const startPage = r.pageOfBlock[i + 1] // 0-based 块起始页
-        cuts.forEach((cutTop, k) => {
-          bands.push({ top: hostTop + cutTop, page: startPage + k + 2 })
-        })
       })
       // 末页补白 = 末页剩余留白 − 文末 chrome（ws-canvas-tail + ws-doc-end 也在 article 里、
       // 会占掉末页尾部）→ 让纸面正好收在整页底、不因文末 chrome 溢出成半张纸。
@@ -802,7 +862,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       const chrome = chromeH('.ws-canvas-tail') + chromeH('.ws-doc-end')
       const tailFill = Math.max(0, r.lastFill - chrome)
       setPag((prev) => {
-        const next = { gaps, bands, tailFill, pageCount: r.pageCount }
+        const next = { gaps, gutters, tailFill, pageCount: r.pageCount }
         const same =
           prev &&
           prev.pageCount === next.pageCount &&
@@ -813,9 +873,10 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             if (g === null || ng === null) return g === ng
             return Math.abs(g.fill - ng.fill) < 0.5 && g.nextPage === ng.nextPage
           }) &&
-          prev.bands.length === next.bands.length &&
-          prev.bands.every(
-            (b, i) => Math.abs(b.top - next.bands[i].top) < 0.5 && b.page === next.bands[i].page,
+          prev.gutters.length === next.gutters.length &&
+          prev.gutters.every(
+            (b, i) =>
+              Math.abs(b.top - next.gutters[i].top) < 0.5 && b.page === next.gutters[i].page,
           )
         return same ? prev : next
       })
@@ -832,7 +893,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     return () => {
       ro.disconnect()
       if (raf) cancelAnimationFrame(raf)
-      pagSigRef.current = ''
+      cleanInnerPushes() // 卸载/重订阅前卸掉推挤，避免残留影响下一轮干净测量
     }
   }, [paged, doc, pageBox])
 
@@ -2347,21 +2408,22 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               />
             )}
           </div>
-          {/* 超高块块内页界的装饰覆盖层：绝对定位铺满纸、pointer-events:none，点击穿透到底下
-              连续流过的内容（表格/列表/代码照常可编辑）。铁律：块内不推不切，页界只是画上去。 */}
-          {paged && pag && pag.bands.length > 0 && (
+          {/* 超高块块内页界的灰缝带：画在「真推开」的空档里（内容已被 marginTop / 间隔行推下去），
+              绝对定位、pointer-events:none 不吃点击。观感与块级 PageGap 的灰缝完全一致（含页码 chip）。 */}
+          {paged && pag && pag.gutters.length > 0 && (
             <div className="ws-paged-overlay" aria-hidden>
-              {pag.bands.map((band, i) => (
+              {pag.gutters.map((g, i) => (
                 <div
                   key={i}
-                  className="ws-inner-band"
+                  className="ws-page-gutter ws-inner-gutter"
                   style={{
-                    top: band.top,
+                    top: g.top,
+                    height: PAGE_GAP_PX,
                     left: -pageBox.margin.left,
                     width: pageBox.paperW,
                   }}
                 >
-                  <span className="ws-page-chip">第 {band.page} 页</span>
+                  <span className="ws-page-chip">第 {g.page} 页</span>
                 </div>
               ))}
             </div>

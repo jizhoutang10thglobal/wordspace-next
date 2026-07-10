@@ -61,26 +61,19 @@
 .ws-page-gap { user-select: none; cursor: text; }
 /* 末页尾部留白 spacer：把末页补成整张纸，同样可点进末块。 */
 .ws-page-tail { user-select: none; cursor: text; }
-/* 超高块「块内页界」装饰覆盖层：绝对定位铺满整张纸（.ws-doc-paged 是定位上下文），
-   pointer-events:none 让点击穿透到底下连续流过的内容（表格/列表/代码照常可编辑）——
-   铁律：块内不推不切，页界只是画上去的细线 + 页码 chip。 */
+/* 超高块「块内页界」灰缝覆盖层：绝对定位铺满整张纸（.ws-doc-paged 是定位上下文），
+   pointer-events:none 不吃点击。灰缝画在「真推开」的空档里——块内边界元素已被 marginTop /
+   间隔行推到下一页顶，这段空档就是页间距，灰缝坐落其中，与块级 PageGap 观感一致。 */
 .ws-paged-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 1;
 }
-/* 单条块内页界带：一条落在 tr/li/代码行边界上的细线 + 右侧留白区的「第 N 页」chip。
-   零高度 + border-top → 不遮任何内容（不横切行/项/图）。 */
-.ws-inner-band {
+/* 块内灰缝带：复用 .ws-page-gutter 的观感（沉底灰 + 上下边线 + 轻阴影 + 页码 chip），
+   只改成绝对定位坐到推开的空档里。 */
+.ws-inner-gutter {
   position: absolute;
-  height: 0;
-  border-top: 1px dashed var(--c-border-strong);
-}
-.ws-inner-band .ws-page-chip {
-  position: absolute;
-  top: -11px;
-  right: 12px;
 }
 .ws-page-gutter {
   position: relative;
