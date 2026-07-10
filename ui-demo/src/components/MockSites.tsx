@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Search, ArrowRight, Check } from 'lucide-react'
-import { useBrowser, type SiteKey } from '../mock/browser'
+import { useBrowser, resolve, type SiteKey } from '../mock/browser'
+import { useStore } from '../mock/store'
+import { useHistory } from '../mock/history'
 import './MockSites.css'
 
 // Polished MOCK websites. The app chrome is plain, but these are meant to read
@@ -8,7 +10,19 @@ import './MockSites.css'
 // and restrained palette. Internal links call useBrowser.navigate(...), so the
 // demo can hop between mock sites and real URLs from inside a page.
 
-const nav = (url: string) => useBrowser.getState().navigate(url)
+// 点链接 = 当前标签导航；⌘/Ctrl+点击 = 后台新标签打开（对齐真浏览器）。
+// 读 window.event 拿修饰键,免得改遍每个 onClick 的签名。
+const nav = (url: string) => {
+  const e = window.event as MouseEvent | undefined
+  if (e && (e.metaKey || e.ctrlKey)) {
+    const title = resolve(url).title
+    useStore.getState().openWebTab(url, title, true)
+    useHistory.getState().record(url, title)
+    useStore.getState().toast('已在后台标签页打开', 'neutral')
+    return
+  }
+  useBrowser.getState().navigate(url)
+}
 
 // ===========================================================================
 // Glass 搜索 — a clean search-engine results page
@@ -320,8 +334,8 @@ function NewsSite() {
         <button className="nw-cta" onClick={() => nav('https://flowdesk.app')}>订阅</button>
       </header>
 
-      <article className="nw-hero" onClick={() => nav('https://tenthglobal.com')}>
-        <div className="nw-hero-media" />
+      <article className="nw-hero" data-ctx-href="https://tenthglobal.com" onClick={() => nav('https://tenthglobal.com')}>
+        <div className="nw-hero-media" data-ctx-img="https://news.design/img/hero.jpg" />
         <div className="nw-hero-body">
           <div className="nw-hero-tag">头条</div>
           <h1>文档、网站和浏览器,正在变成同一件东西</h1>
@@ -335,9 +349,10 @@ function NewsSite() {
           <article
             key={i}
             className="nw-card"
+            data-ctx-href="https://news.design/today"
             onClick={() => nav('https://news.design/today')}
           >
-            <div className={`nw-thumb nw-thumb-${p.tint}`} />
+            <div className={`nw-thumb nw-thumb-${p.tint}`} data-ctx-img={`https://news.design/thumb/${i + 1}.jpg`} />
             <div className="nw-card-tag">{p.tag}</div>
             <div className="nw-card-title">{p.title}</div>
             <div className="nw-card-meta">{p.meta}</div>

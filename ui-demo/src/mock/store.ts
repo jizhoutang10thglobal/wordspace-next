@@ -122,6 +122,7 @@ interface State {
   // transient ui (not persisted)
   meId: string
   tabs: Tab[]
+  closedTabs: Tab[] // 刚关闭的标签栈，供 ⌘⇧T 重开
   activeTabId: string
   toasts: Toast[]
   presence: Presence[]
@@ -133,7 +134,7 @@ interface State {
 
   // tabs
   openDoc: (docId: string) => void
-  openWebTab: (url: string, title: string) => void
+  openWebTab: (url: string, title: string, background?: boolean) => void
   openFileTab: (file: FileEntry) => void
   renameFile: (file: FileEntry, newBase: string) => void
   deleteFileWithUndo: (file: FileEntry) => void
@@ -145,6 +146,7 @@ interface State {
   newBrowserTab: () => void
   setTabUrl: (tabId: string, url: string, title?: string) => void
   closeTab: (tabId: string) => void
+  reopenClosedTab: () => void
   setActiveTab: (tabId: string) => void
   dropTab: (tabId: string, pinned: boolean, toIndex: number) => void
   togglePin: (tabId: string) => void
@@ -374,6 +376,7 @@ export const useStore = create<State>()(
         { id: 'tab-local', kind: 'doc', docId: 'd-r2-plan', title: '产品规划.html', url: '产品规划.html', fileName: '产品规划.html', fileKind: 'html', rootId: 'r-docs' },
       ],
       activeTabId: 'tab-local',
+      closedTabs: [],
       toasts: [],
       presence: [],
       aiBusy: false,
@@ -399,9 +402,9 @@ export const useStore = create<State>()(
         set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
       },
 
-      openWebTab: (url, title) => {
+      openWebTab: (url, title, background) => {
         const tab: Tab = { id: uid('tab'), kind: 'web', title, url }
-        set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
+        set((s) => ({ tabs: [...s.tabs, tab], activeTabId: background ? s.activeTabId : tab.id }))
       },
 
       // Open a file from a connected folder. HTML opens in the editor (a 'doc'
@@ -864,10 +867,21 @@ export const useStore = create<State>()(
 
       closeTab: (tabId) =>
         set((s) => {
+          const closing = s.tabs.find((t) => t.id === tabId)
           const tabs = s.tabs.filter((t) => t.id !== tabId)
           let activeTabId = s.activeTabId
           if (s.activeTabId === tabId) activeTabId = tabs[tabs.length - 1]?.id ?? ''
-          return { tabs, activeTabId }
+          // 记进「刚关闭」栈，供 ⌘⇧T 重开（临时未保存文档不记，重开也没内容）
+          const closedTabs = closing && !closing.docId ? [closing, ...s.closedTabs].slice(0, 15) : s.closedTabs
+          return { tabs, activeTabId, closedTabs }
+        }),
+
+      reopenClosedTab: () =>
+        set((s) => {
+          const [last, ...rest] = s.closedTabs
+          if (!last) return {}
+          const tab: Tab = { ...last, id: uid('tab') }
+          return { tabs: [...s.tabs, tab], activeTabId: tab.id, closedTabs: rest }
         }),
 
       setActiveTab: (tabId) => set({ activeTabId: tabId }),
@@ -1350,6 +1364,9 @@ export const useStore = create<State>()(
         roots: s.roots,
         files: s.files,
         dirs: s.dirs,
+        // 会话恢复：重开 app（刷新）后恢复上次开着的标签与激活标签。
+        tabs: s.tabs,
+        activeTabId: s.activeTabId,
       }),
       migrate: () => ({ ...freshData() }) as never,
     },

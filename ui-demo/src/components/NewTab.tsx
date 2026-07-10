@@ -75,6 +75,9 @@ export default function NewTab() {
             ))}
           </div>
         )}
+
+        {/* 安全口径提示（对齐真 app）：内置浏览器无恶意网站防护 */}
+        <div className="nt-safe-note">内置浏览器没有恶意网站防护，访问陌生网站请自行留意</div>
       </div>
     </div>
   )
