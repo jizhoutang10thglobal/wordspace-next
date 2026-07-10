@@ -38,8 +38,15 @@ export default function BookmarksPage() {
     const f = e.target.files?.[0]
     if (!f) return
     f.text().then((txt) => {
-      const n = useBookmarks.getState().importHtml(txt)
-      toast(n ? `已导入 ${n} 个书签` : '没识别到书签（需要浏览器导出的 HTML 书签文件）', n ? 'success' : 'neutral')
+      const r = useBookmarks.getState().importHtml(txt)
+      toast(
+        r.parsed === 0
+          ? '没识别到书签（需要浏览器导出的 HTML 书签文件）'
+          : r.added === 0
+            ? '这些书签都已存在，没有新增'
+            : `已导入 ${r.added} 个书签`,
+        r.added ? 'success' : 'neutral',
+      )
     })
     e.target.value = ''
   }

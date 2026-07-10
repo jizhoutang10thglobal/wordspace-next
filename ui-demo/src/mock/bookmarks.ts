@@ -109,7 +109,7 @@ interface BmState {
   renameFolder: (id: string, name: string) => void
   removeFolder: (id: string) => void
   exportHtml: () => string
-  importHtml: (html: string) => number
+  importHtml: (html: string) => { parsed: number; added: number }
 }
 
 export const useBookmarks = create<BmState>()(
@@ -132,14 +132,23 @@ export const useBookmarks = create<BmState>()(
       exportHtml: () => toNetscapeHtml(get().folders, get().bookmarks),
       importHtml: (html) => {
         const { folders, bookmarks } = fromNetscapeHtml(html)
-        if (!bookmarks.length) return 0
-        set((s) => {
-          // 合并文件夹(书签栏共用),导入的非书签栏文件夹直接追加
-          const existingUrls = new Set(s.bookmarks.map((b) => b.folderId + '|' + b.url))
-          const fresh = bookmarks.filter((b) => !existingUrls.has(b.folderId + '|' + b.url))
-          return { folders: [...s.folders, ...folders], bookmarks: [...s.bookmarks, ...fresh] }
+        if (!bookmarks.length) return { parsed: 0, added: 0 }
+        const s = get()
+        // 导入文件夹与现有重名时不合并——加「名字 2」式后缀（Colin 2026-07-10 拍板：
+        // 同名≠同一个文件夹，宁可 xxx 2 也不悄悄搅在一起）。书签栏（BM_BAR）例外，天然共用。
+        const taken = new Set(s.folders.map((f) => f.name))
+        const renamedFolders = folders.map((f) => {
+          let name = f.name
+          let n = 2
+          while (taken.has(name)) name = `${f.name} ${n++}`
+          taken.add(name)
+          return name === f.name ? f : { ...f, name }
         })
-        return bookmarks.length
+        // 同文件夹同 url 去重（实际只会命中书签栏——非书签栏导入文件夹是全新 id）
+        const existingKeys = new Set(s.bookmarks.map((b) => b.folderId + '|' + b.url))
+        const fresh = bookmarks.filter((b) => !existingKeys.has(b.folderId + '|' + b.url))
+        set((st) => ({ folders: [...st.folders, ...renamedFolders], bookmarks: [...st.bookmarks, ...fresh] }))
+        return { parsed: bookmarks.length, added: fresh.length } // toast 报净新增，不报解析数
       },
     }),
     { name: 'wordspace-bookmarks' },

@@ -405,9 +405,13 @@ localStorage（key `ws-fav-open`）。`openBookmark(url,title)`：先按 url 找
   **文件夹下拉**（选中即移动）+ 打开 `ExternalLink`（**同 §4.3 语义：已开则聚焦，否则新标签+记历史**）+ 删除 `Trash2`。
 - **导出**：生成 `bookmarks.html` 下载（demo 用 Blob；真 app 用保存对话框），toast
   「已导出为 bookmarks.html（Chrome/Safari/Firefox 都能导入）」。
-- **导入**：选 `.html` 文件解析合并；toast「已导入 N 个书签」或「没识别到书签（需要浏览器导出的 HTML 书签文件）」。
-  合并规则：对方的「书签栏」（`PERSONAL_TOOLBAR_FOLDER`）并入我们的书签栏；其他文件夹追加为新文件夹；
-  同文件夹同 url 的书签跳过（去重）。
+- **导入**：选 `.html` 文件解析合并。规则（Colin 2026-07-10 拍板）：
+  - 对方的「书签栏」（`PERSONAL_TOOLBAR_FOLDER`）并入我们的书签栏（书签栏天然只有一个）；
+  - 其他文件夹**追加为新文件夹，重名不合并**——与现有文件夹重名时加「名字 2」式后缀
+    （同名≠同一个文件夹，宁可 `工作 2` 也不悄悄搅在一起；后缀式样与 app 文件树去重一致）；
+  - 同文件夹同 url 的书签跳过（去重）；
+  - toast 报**净新增数**：「已导入 N 个书签」/ 全是重复「这些书签都已存在，没有新增」/
+    解析不出「没识别到书签（需要浏览器导出的 HTML 书签文件）」。
 
 **Netscape Bookmark File Format（互通硬契约——两端逻辑一字别改语义）**
 - 导出结构：`<!DOCTYPE NETSCAPE-Bookmark-file-1>` + 生成注释 + `<META charset UTF-8>` + `<TITLE>/<H1>Bookmarks` +
@@ -419,9 +423,8 @@ localStorage（key `ws-fav-open`）。`openBookmark(url,title)`：先按 url 找
   只收 http(s)；`ADD_DATE` 秒→毫秒；整份文件没有 `<h3>` 时，把所有裸 `<a>` 兜底进书签栏。
   **实测互通**：已吃过 Chrome 真实导出文件（3 书签 + 子文件夹全对）。
 
-**ui-demo 参考实现**：`mock/bookmarks.ts` 的 `toNetscapeHtml/fromNetscapeHtml` + `BookmarksPage.tsx`。
-已知小毛边（拍板：真 app 顺手修，见 §13-6）：导入的非书签栏文件夹**盲追加**（重名会出两个）；
-toast 的 N 是解析数不是净新增数——真 app 做成**按名合并 + 报净新增**。
+**ui-demo 参考实现**：`mock/bookmarks.ts` 的 `toNetscapeHtml/fromNetscapeHtml`（`importHtml` 返回
+`{parsed, added}`，重名后缀去重已实现）+ `BookmarksPage.tsx`。
 
 **真 app 后端设计**
 - 存储 `userData/browser-bookmarks.json`：`{ version, folders, bookmarks }`（§10.4）。`BM_BAR` id 固定。
@@ -671,7 +674,6 @@ main → renderer (push)
 | 导航历史栈 | 自维护 per-tab 栈 | `webContents.navigationHistory`，不自造 |
 | 默认搜索引擎 | glass（虚构，demo 内能渲染结果页） | **Bing**（拍板） |
 | 新标签页快捷瓦片 | 写死 7 个演示站（demo 需要「有网可上」素材） | **书签栏前 N 个收藏**（拍板），空态给引导 |
-| 收藏导入 | 重名文件夹盲追加；toast 计数=解析数 | **按名合并 + 报净新增**（拍板顺手修） |
 
 **六项拍板结果（Colin 2026-07-10，全部已定，无遗留）**
 
@@ -680,7 +682,8 @@ main → renderer (push)
 3. **点收藏 = 已开该网址则聚焦（含置顶），否则新标签打开**。ui-demo 已实现（侧栏收藏区 + 收藏管理页同语义）。
 4. **收藏区折叠态持久化**（记住上次，首次默认收起）。ui-demo 已实现（localStorage `ws-fav-open`）。
 5. **新标签页瓦片 = 书签栏前 N 个收藏**（真 app；ui-demo 保留演示瓦片=刻意差异）。
-6. **收藏夹导入修毛边**：按名合并文件夹 + toast 报净新增数（真 app 侧实现）。
+6. **收藏夹导入修毛边**：重名文件夹**不合并**、加「名字 2」式后缀当两个文件夹（Colin 修正：同名≠同一个）；
+   toast 报净新增数。ui-demo 已实现。
 
 **仍开放（非移植阻塞，挂着的更大命题）**
 - 战略层：剪藏砍掉后浏览器没有独特卖点，定位=「够用的标准浏览器」（Colin 已接受现状，未补新融合主线）。
@@ -699,7 +702,7 @@ main → renderer (push)
 - [ ] 标签：置顶无关闭钮、⌘W 守置顶、未保存先确认、关闭激活→**相邻**、拖拽跨组=置顶语义、⌘⇧T（15 条栈）、Ctrl+Tab 循环、⌘1-9、⌘T 二合一 modal、会话恢复（web 标签懒加载）。
 - [ ] 右键菜单：**原生**、六分节按上下文、危险 scheme 整节滤、选中截 20 码点、拷贝清洗跟踪参数、动作主进程白名单收口、back/forward 灰态正确。
 - [ ] 历史：main 自动记（http(s)、60s 合并、cap 500、back/forward 不记）；历史页按日分组/搜索/删单条/四档清除（清「最近 X」删的是新记录）。
-- [ ] 收藏：管理页全功能（就地改名/移动/删除/书签栏固定）；Netscape 导入导出与 Chrome/Safari/Firefox/Edge 互通（宽松解析）。
+- [ ] 收藏：管理页全功能（就地改名/移动/删除/书签栏固定）；Netscape 导入导出与 Chrome/Safari/Firefox/Edge 互通（宽松解析）；导入重名文件夹加后缀不合并、toast 报净新增。
 - [ ] 设置：搜索引擎接进 normalize，真 app 默认 **Bing**；**没有**主页设置项。
 - [ ] 新标签页瓦片取书签栏前 N 个收藏（空态有引导），不照搬 demo 演示站。
 - [ ] 查找 `findInPage`（键位/循环/清除高亮）+ 缩放每标签（0.5–2、±0.1、⌘0）。
@@ -720,7 +723,7 @@ main → renderer (push)
 | 2026-07-10 | 砍阅读模式 + 演示页（Colin） |
 | 2026-07-10 | **删网页态网页头**（Wendi+Colin）；**收藏回左侧栏：置顶上方、默认收起点击展开**（Colin 三选一拍板） |
 | 2026-07-10 | Glass=虚构搜索引擎的口径保留（避免「克隆了 Bing」误导） |
-| 2026-07-10 | **六项拍板（Colin）**：真 app 默认引擎=Bing；删「主页」设置；点收藏=已开则聚焦；折叠态持久化；新标签瓦片=书签栏前 N；导入按名合并+净新增。前四项已同步实现进 ui-demo |
+| 2026-07-10 | **六项拍板（Colin）**：真 app 默认引擎=Bing；删「主页」设置；点收藏=已开则聚焦；折叠态持久化；新标签瓦片=书签栏前 N；导入重名文件夹**加后缀不合并**（修正了最初「按名合并」的提议）+报净新增。除瓦片/引擎（真 app 侧）外均已同步实现进 ui-demo |
 
 ## 16. 源码索引（ui-demo 侧）
 
