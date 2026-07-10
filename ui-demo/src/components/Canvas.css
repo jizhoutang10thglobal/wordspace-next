@@ -86,11 +86,13 @@
   transform: translateY(-50%);
   background: var(--c-bg); /* 灰缝上提亮一档，别跟缝底同色糊掉 */
 }
-/* 块内灰缝带：复用 .ws-page-gutter 的观感（沉底灰 + 上下边线 + 轻阴影 + 页码 chip），
-   只改成绝对定位坐到推开的空档里。规则须在 .ws-page-gutter 之后，position:absolute 才能压过
-   .ws-page-gutter 的 position:relative（同 class 特异度，靠源顺序取胜；否则灰缝会入流叠加漂移）。 */
-.ws-inner-gutter {
+/* 块内页界的「整段留白遮罩」（V4）：绝对定位坐到推挤腾出的空档上，纸面白底——
+   盖住超高块自身延续的背景（pre 灰底、表格边框），让页底留白/灰缝/页顶留白真正像两张纸断开。
+   内部灰缝走正常流（margin-top = fill+页底边距），复用 .ws-page-gutter 观感（含页码 chip）。 */
+.ws-inner-void {
   position: absolute;
+  background: #fff;
+  pointer-events: none;
 }
 .ws-page-chip {
   font-family: var(--font-mono);

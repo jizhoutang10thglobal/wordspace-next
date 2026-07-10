@@ -31,7 +31,7 @@ import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
 import { resolveHref, relHref, dirOf, baseOf, splitHrefSuffix } from '../lib/links'
 import { usePageConfig } from '../mock/paged'
-import { PAGE_GAP_PX, paginateBlocks, pageBoxPx } from '../lib/page'
+import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
 import './Canvas.css'
@@ -468,9 +468,9 @@ function BlockRow({
   )
 }
 
-// 序列化：分页层「稳健块级分页（Option A）」不再改任何内容 DOM（超高块跨页续排、只画页界线），
-// 所以正常情况下 innerHTML 就是干净的。保留对历史遗留 ws-page-spacer / [data-ws-pushed]（旧「块内推挤」
-// 版本可能残留在磁盘/内存里的产物）的清理，纯防御、无害。
+// 序列化 strip-on-persist（V4）：分页推挤是运行时视觉产物（li/代码行的 paddingTop、表格的
+// ws-page-spacer 间隔行），绝不能进文档数据。序列化前 clone 一份剥干净再取 innerHTML。
+// 这也兜住 contenteditable 回车分裂继承出来的推挤克隆（persist 可能先于下一帧 recalc 扫荡发生）。
 function serializeClean(el: HTMLElement): string {
   if (!el.querySelector('.ws-page-spacer, [data-ws-pushed]')) return el.innerHTML
   const clone = el.cloneNode(true) as HTMLElement
@@ -481,6 +481,30 @@ function serializeClean(el: HTMLElement): string {
     if (!n.getAttribute('style')) n.removeAttribute('style')
   })
   return clone.innerHTML
+}
+
+// 超高块的切分候选原子（V4）：干净几何下采集（调用方保证已扫荡掉一切推挤痕迹）。
+// 列表=li（含嵌套；父 li 与首子 li 同顶时去重保留外层，整棵子树一起推）、代码=.ws-code-line、
+// 表格=tr（跳过 spacer）、其余块级后代兜底。top 为相对块顶的干净坐标。
+type CutAtom = { top: number; kind: 'el' | 'tr'; el: HTMLElement }
+function collectCutAtoms(host: HTMLElement): CutAtom[] {
+  const base = host.getBoundingClientRect().top
+  const atoms: CutAtom[] = []
+  host
+    .querySelectorAll<HTMLElement>('li, p, blockquote, figure, hr, h1, h2, h3, h4, .ws-code-line')
+    .forEach((e) => {
+      if (e.closest('table')) return
+      if (e.closest('pre') && !e.classList.contains('ws-code-line')) return
+      atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'el', el: e })
+    })
+  host.querySelectorAll<HTMLElement>('tr').forEach((e) => {
+    if (e.classList.contains('ws-page-spacer')) return
+    atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'tr', el: e })
+  })
+  atoms.sort((a, b) => a.top - b.top)
+  const out: CutAtom[] = []
+  for (const a of atoms) if (!out.length || a.top - out[out.length - 1].top > 1) out.push(a)
+  return out
 }
 
 // ---------------------------------------------------------------------------
@@ -667,7 +691,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   // tailFill = 末页尾部补白（把末页补成整张纸）。
   const [pag, setPag] = useState<{
     gaps: ({ fill: number; nextPage: number } | null)[]
-    gutters: { top: number; page: number }[]
+    gutters: { top: number; fill: number; page: number }[]
     tailFill: number
     pageCount: number
   } | null>(null)
@@ -681,13 +705,18 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  // 分页重算：内容 / 窗口变化（ResizeObserver）→ rAF 合帧 → paginateBlocks（纯函数）。
-  // Option A「稳健块级分页」：块与块之间靠流内 PageGap spacer 真实推挤给上下页边距（正常分页主力）；
-  // 超高块（单块高 > 页内容高）「跨页续排」——内容连续流过、不推不切、不改任何内容 DOM，块自然占多个页高，
-  // 只在其上画页界分隔线（覆盖层绝对定位、pointer-events:none）。分隔线位置 = 该块相对纸 padding 盒的
-  // 实测 top + k×contentH（实测块顶 → 编辑后线永远跟着内容走、不 desync）。
-  // recalc 里不再改任何内容 DOM（无推挤、无节点注入）→ RO 不会被自身 DOM 变更反复触发，天然稳定收敛。
-  // editingId 不参与：编辑不改分页结构，页数/页界不因聚焦变化。
+  // 分页重算（V4「带留白的块内分页」）：内容/窗口变化（ResizeObserver）→ rAF 合帧 → recalc。
+  // 块与块之间靠流内 PageGap spacer 给出真实上下页边距（正常分页主力，一直稳）；
+  // 超高块（单块高 > 页内容高）在块内切分点「真推内容」——li/代码行加 paddingTop、表格插 spacer 行，
+  // 推挤量 = 切点上方剩余留白 + 页底边距 + 灰缝 + 页顶边距 → 每个页界都是 Word 式实体留白、每页恰一张纸。
+  // 两条铁则（Phase 2 巨隙翻车换来的）：
+  //  ① 清理走「选择器全量扫荡」：contenteditable 回车会把带推挤样式的元素一分为二，克隆继承
+  //     style/data-ws-pushed 却不在任何记录里——按引用清理永远漏掉它们、padding 越积越大（巨隙根因）。
+  //     每轮 recalc 先从整篇纸面扫掉所有推挤痕迹，回到干净几何再测量、再按新计划重推。
+  //  ② 灰缝锚定「实测推挤位置」：推完立刻量锚点元素的真实位置，缝画在腾出的空档里——内容在哪缝在哪，
+  //     结构上不可能 desync（绝不用纯几何网格反过来要求内容对齐）。
+  // 扫荡→测量→重推全程发生在同一帧的 rAF/RO 回调里（绘制之前），肉眼无闪烁；末态与上一帧相同时
+  // RO 不再触发 → 天然收敛。editingId 不参与：页界不因聚焦变化。
   useEffect(() => {
     if (!paged || !doc) {
       setPag(null)
@@ -709,6 +738,14 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     }
     const recalc = () => {
       raf = 0
+      // 铁则①：选择器全量扫荡——清掉一切推挤痕迹（含回车分裂继承出来的克隆），回到干净几何。
+      el.querySelectorAll<HTMLElement>('[data-ws-pushed]').forEach((n) => {
+        n.style.paddingTop = ''
+        n.removeAttribute('data-ws-pushed')
+        if (!n.getAttribute('style')) n.removeAttribute('style')
+      })
+      el.querySelectorAll('tr.ws-page-spacer').forEach((n) => n.remove())
+
       const hosts: HTMLElement[] = []
       const heights: number[] = [measureHeader()]
       for (const b of doc.blocks) {
@@ -718,23 +755,66 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         hosts.push(host)
         heights.push(host.getBoundingClientRect().height)
       }
-      // innerCutTops 全 null：超高块不给切分点 → paginateBlocks 走「跨 ceil(h/contentH) 页」路径
-      // 只做页数统计（页码连续），块内不推挤、不切分。
-      const r = paginateBlocks(heights, pageBox.contentH)
-      // 超高块页界分隔线：覆盖层坐标原点 = 纸 padding 盒顶（.ws-doc-paged 是定位上下文、overlay inset:0）。
-      // 实测块顶（host.top − 纸顶）+ k×contentH = 第 k 条页界的 top。超高块由块级 PageGap 保证从页顶开纸，
-      // 故沿块连续流每 contentH 一条界线即为真实页界；用实测块顶 → 编辑后线跟着内容走、不 desync。
-      const paperTop = el.getBoundingClientRect().top // 纸 padding 盒顶（无 border）
-      const gutters: { top: number; page: number }[] = []
+      // 超高块：干净几何下采集切分原子 → computeInnerSplits 算切分计划。
+      // 切不动的（单张超页高图等）innerCutTops 给 null → paginateBlocks 走跨页拉长路径。
+      const innerCutTops: (number[] | null)[] = [null]
+      const plans: (
+        | { atoms: CutAtom[]; cuts: { atom: number; top: number; fill: number }[] }
+        | null
+      )[] = [null]
       doc.blocks.forEach((_, i) => {
         const h = heights[i + 1]
-        if (h <= pageBox.contentH) return
-        const blockTop = hosts[i].getBoundingClientRect().top - paperTop
-        const startPage = r.pageOfBlock[i + 1] // 0-based 块起始页
-        const lines = Math.ceil(h / pageBox.contentH) - 1 // 块内页界数
-        for (let k = 1; k <= lines; k++) {
-          gutters.push({ top: blockTop + k * pageBox.contentH, page: startPage + k + 1 })
+        if (h <= pageBox.contentH) {
+          innerCutTops.push(null)
+          plans.push(null)
+          return
         }
+        const atoms = collectCutAtoms(hosts[i])
+        const cuts = computeInnerSplits(atoms.map((a) => a.top), h, pageBox.contentH)
+        innerCutTops.push(cuts.length ? cuts.map((c) => c.top) : null)
+        plans.push(cuts.length ? { atoms, cuts } : null)
+      })
+      const r = paginateBlocks(heights, pageBox.contentH, innerCutTops)
+      // 真推内容 + 铁则②灰缝锚定实测位置。推挤量 push = 切点上方剩余留白 + 页底边距 + 灰缝 + 页顶边距
+      //（与块级 PageGap 同公式 → 每页恰一张纸）。锚点 = 推挤空档的起点元素：
+      //  · li/代码行：paddingTop 在 border-box 内，元素 border 顶 = 空档起点；
+      //  · 表格：spacer 行本身 = 空档。
+      // 推完立刻量锚点真实位置，灰缝画在空档内 fill+页底边距 之后——内容在哪缝在哪。
+      const gapUnit = pageBox.margin.bottom + PAGE_GAP_PX + pageBox.margin.top
+      const gutters: { top: number; fill: number; page: number }[] = []
+      doc.blocks.forEach((_, i) => {
+        const plan = plans[i + 1]
+        if (!plan) return
+        const startPage = r.pageOfBlock[i + 1] // 0-based 块起始页
+        plan.cuts.forEach((cut, k) => {
+          const atom = plan.atoms[cut.atom]
+          if (!atom || !atom.el.isConnected) return
+          const push = cut.fill + gapUnit
+          let anchor: HTMLElement
+          if (atom.kind === 'tr') {
+            const spacer = document.createElement('tr')
+            spacer.className = 'ws-page-spacer'
+            spacer.setAttribute('contenteditable', 'false')
+            spacer.setAttribute('aria-hidden', 'true')
+            const td = document.createElement('td')
+            td.setAttribute('colspan', '99')
+            td.setAttribute('style', `height:${push}px;padding:0;border:0;background:transparent`)
+            spacer.appendChild(td)
+            atom.el.parentElement?.insertBefore(spacer, atom.el)
+            anchor = spacer
+          } else {
+            atom.el.style.paddingTop = `${push}px`
+            atom.el.setAttribute('data-ws-pushed', '')
+            anchor = atom.el
+          }
+          const paperTop = el.getBoundingClientRect().top // 纸 padding 盒顶（每次现量，推挤会移动后续内容）
+          const zoneTop = anchor.getBoundingClientRect().top - paperTop // 推挤空档起点
+          gutters.push({
+            top: zoneTop, // 留白遮罩从空档起点铺（fill+页底边距+灰缝+页顶边距 整段）
+            fill: cut.fill,
+            page: startPage + k + 2, // 缝下方那一页的 1-based 页码
+          })
+        })
       })
       const gaps = doc.blocks.map((_, i) => {
         const g = r.gapBefore[i + 1]
@@ -769,7 +849,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           prev.gutters.length === next.gutters.length &&
           prev.gutters.every(
             (b, i) =>
-              Math.abs(b.top - next.gutters[i].top) < 0.5 && b.page === next.gutters[i].page,
+              Math.abs(b.top - next.gutters[i].top) < 0.5 &&
+              Math.abs(b.fill - next.gutters[i].fill) < 0.5 &&
+              b.page === next.gutters[i].page,
           )
         return same ? prev : next
       })
@@ -2300,22 +2382,28 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               />
             )}
           </div>
-          {/* 超高块「跨页续排」的页界分隔线：内容连续流过、不推不切，只在实测页界处画线。
-              绝对定位、pointer-events:none 不吃点击、不影响编辑。观感复用块级 PageGap 灰缝（含页码 chip）。 */}
+          {/* 超高块块内页界（V4）：内容已被真推腾出实体空档，留白遮罩（白底）整段盖上——
+              上段=页底留白(fill+页底边距)、中段=灰缝(页码 chip)、下段=页顶留白。白底同时盖住
+              超高块自身延续的背景（pre 灰底/表格边框），两页真正断开。pointer-events:none 不碍编辑。 */}
           {paged && pag && pag.gutters.length > 0 && (
             <div className="ws-paged-overlay" aria-hidden>
               {pag.gutters.map((g, i) => (
                 <div
                   key={i}
-                  className="ws-page-gutter ws-inner-gutter"
+                  className="ws-inner-void"
                   style={{
                     top: g.top,
-                    height: PAGE_GAP_PX,
+                    height: g.fill + pageBox.margin.bottom + PAGE_GAP_PX + pageBox.margin.top,
                     left: -pageBox.margin.left,
                     width: pageBox.paperW,
                   }}
                 >
-                  <span className="ws-page-chip">第 {g.page} 页</span>
+                  <div
+                    className="ws-page-gutter ws-inner-gutter"
+                    style={{ height: PAGE_GAP_PX, marginTop: g.fill + pageBox.margin.bottom }}
+                  >
+                    <span className="ws-page-chip">第 {g.page} 页</span>
+                  </div>
                 </div>
               ))}
             </div>
