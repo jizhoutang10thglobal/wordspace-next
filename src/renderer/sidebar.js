@@ -165,7 +165,6 @@
     } else if (r.status === 'added') {
       adoptRoot(r.root, r.tree);
       showToast('已打开文件夹「' + r.root.name + '」');
-      maybePerfBanner(); // 新加的根若大/云盘 → 自动横幅（fire-and-forget）
     }
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
@@ -2108,10 +2107,28 @@
   if (window.ws2.onWsRootsChanged) window.ws2.onWsRootsChanged(() => resyncRoots());
   window.addEventListener('focus', () => { for (const st of rootsState) { if (!st.missing) onTreeChanged(st.id); } });
 
-  // ── 性能诊断面板（Cmd/Ctrl+Shift+D）──────────────────────────────────────────────
-  // 最小探针：Wendi 报「两文件夹贼卡」，我们本地量不出她环境的真实规模/形状。复现卡顿时按这个快捷键，
-  // 读到每根的文件数 / readTree 耗时 / watcher 触发次数 / 是否云盘 + 渲染耗时，一键复制发回来定位。诊断用，非产品功能。
-  let diagOverlay = null;
+  // ── 性能诊断模式（隐藏，菜单「Wordspace Next → 性能诊断…」或 Cmd+Shift+D 手动开）────────────
+  // 普通用户零感知：默认不显示任何 debug 内容，只有主动从菜单打开才出面板。Wendi 报「两文件夹贼卡」，我们本地
+  // 量不出她环境；这个面板让她/开发者在真环境上看清时间花在哪。既然是 opt-in，做详尽：每根 readTree/文件数/
+  // watcher，渲染耗时，**主线程长任务（抓滚动等任何卡顿，不预判来源）**，内存，+ 一键录 CPU Profile（catch-anything）。
+  let perfPanel = null;      // 面板 DOM（null=关）
+  let perfTimer = 0;         // 实时刷新计时器
+  // 主线程长任务观察器（always-on，near-zero 成本）：浏览器自动上报 >50ms 的任务=一帧卡顿。滚动/渲染/readTree
+  // 回调处理——任何 block 主线程的东西都会被记到这里，不靠我预判在哪（补掉「只量我假设的地方」那个盲区）。
+  const longTasks = { count: 0, totalMs: 0, maxMs: 0 };
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) {
+        longTasks.count++;
+        longTasks.totalMs += e.duration;
+        longTasks.maxMs = Math.max(longTasks.maxMs, e.duration);
+      }
+    }).observe({ entryTypes: ['longtask'] });
+  } catch { /* longtask 不支持就算了，其余照常 */ }
+  function memMB() {
+    const m = performance.memory;
+    return m ? Math.round(m.usedJSHeapSize / 1048576) + ' / ' + Math.round(m.jsHeapSizeLimit / 1048576) + ' MB' : 'n/a';
+  }
   async function buildDiagReport() {
     let roots = [];
     try { roots = (await window.ws2.wsDiag()) || []; } catch {}
@@ -2119,7 +2136,7 @@
     try { version = await window.ws2.appVersion(); } catch {}
     const domRows = treeEl ? treeEl.querySelectorAll('.sb-row').length : 0;
     const L = [];
-    L.push('Wordspace 诊断  v' + version + '   ' + new Date().toLocaleString());
+    L.push('Wordspace 性能诊断  v' + version + '   ' + new Date().toLocaleString());
     L.push('');
     if (!roots.length) L.push('（还没打开任何文件夹，或还没读过树）');
     roots.forEach((r, i) => {
@@ -2132,94 +2149,63 @@
     });
     L.push('');
     L.push('渲染：上次 ' + diagRender.lastMs.toFixed(0) + 'ms · 峰值 ' + diagRender.maxMs.toFixed(0) +
-      'ms · 共 ' + diagRender.count + ' 次    │    当前树 DOM 行数 ' + domRows);
+      'ms · 共 ' + diagRender.count + ' 次  ·  当前树 DOM 行数 ' + domRows);
+    L.push('主线程长任务(>50ms 卡帧)：' + longTasks.count + ' 次 · 累计 ' + Math.round(longTasks.totalMs) +
+      'ms · 最长单次 ' + Math.round(longTasks.maxMs) + 'ms   ← 滚动/交互卡顿看这行');
+    L.push('JS 内存：' + memMB());
     return L.join('\n');
   }
-  async function toggleDiag() {
-    if (diagOverlay) { diagOverlay.remove(); diagOverlay = null; return; }
+  async function renderPerfPanel() {
+    if (!perfPanel) return;
     const report = await buildDiagReport();
-    const ov = document.createElement('div');
-    ov.style.position = 'fixed'; ov.style.inset = '0'; ov.style.zIndex = '9999';
-    ov.style.background = 'rgba(0,0,0,0.45)'; ov.style.display = 'flex';
-    ov.style.alignItems = 'center'; ov.style.justifyContent = 'center';
+    const pre = perfPanel.querySelector('pre');
+    if (pre) pre.textContent = report;
+  }
+  async function togglePerfPanel() {
+    if (perfPanel) { perfPanel.remove(); perfPanel = null; if (perfTimer) { clearInterval(perfTimer); perfTimer = 0; } return; }
     const panel = document.createElement('div');
-    panel.style.background = '#1e1e1e'; panel.style.color = '#e6e6e6';
-    panel.style.font = '12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace';
-    panel.style.padding = '16px 18px'; panel.style.borderRadius = '10px';
-    panel.style.maxWidth = '82vw'; panel.style.maxHeight = '78vh'; panel.style.overflow = 'auto';
-    panel.style.boxShadow = '0 12px 48px rgba(0,0,0,.5)';
+    panel.id = 'perf-panel';
+    // 非模态、固定右上：不挡操作，用户可以一边滚动一边看「长任务」数字实时涨（抓滚动卡顿）。
+    panel.style.position = 'fixed'; panel.style.top = '10px'; panel.style.right = '10px'; panel.style.zIndex = '9999';
+    panel.style.width = 'min(520px, 46vw)'; panel.style.maxHeight = '80vh'; panel.style.overflow = 'auto';
+    panel.style.background = 'rgba(24,24,24,0.97)'; panel.style.color = '#e6e6e6';
+    panel.style.font = '11.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace';
+    panel.style.padding = '12px 14px'; panel.style.borderRadius = '10px';
+    panel.style.border = '1px solid #444'; panel.style.boxShadow = '0 10px 40px rgba(0,0,0,.5)';
     const pre = document.createElement('pre');
-    pre.textContent = report; pre.style.margin = '0 0 12px'; pre.style.whiteSpace = 'pre-wrap';
+    pre.style.margin = '0 0 10px'; pre.style.whiteSpace = 'pre-wrap';
     const bar = document.createElement('div');
-    bar.style.display = 'flex'; bar.style.gap = '8px'; bar.style.alignItems = 'center';
-    const copy = document.createElement('button');
-    copy.textContent = '复制诊断';
-    for (const b of [copy]) { b.style.font = 'inherit'; b.style.padding = '5px 12px'; b.style.borderRadius = '6px'; b.style.border = '1px solid #555'; b.style.background = '#2d2d2d'; b.style.color = '#e6e6e6'; b.style.cursor = 'pointer'; }
-    copy.onclick = async () => { try { await navigator.clipboard.writeText(report); copy.textContent = '已复制 ✓'; } catch { copy.textContent = '复制失败'; } };
+    bar.style.display = 'flex'; bar.style.gap = '7px'; bar.style.flexWrap = 'wrap'; bar.style.alignItems = 'center';
+    const mkBtn = (label) => { const b = document.createElement('button'); b.textContent = label; b.style.font = 'inherit'; b.style.padding = '4px 10px'; b.style.borderRadius = '6px'; b.style.border = '1px solid #555'; b.style.background = '#2d2d2d'; b.style.color = '#e6e6e6'; b.style.cursor = 'pointer'; return b; };
+    const copy = mkBtn('复制诊断');
+    const record = mkBtn('录制 5 秒 Profile');
+    const close = mkBtn('关闭');
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(await buildDiagReport()); copy.textContent = '已复制 ✓'; setTimeout(() => (copy.textContent = '复制诊断'), 1500); } catch { copy.textContent = '复制失败'; } };
+    // catch-anything：录一段真 CPU profile，记录每个函数/帧，主进程存成 .cpuprofile 文件并在访达里高亮，发回来。
+    record.onclick = async () => {
+      record.disabled = true; record.textContent = '录制中… 请现在复现卡顿（滚动/切换）';
+      try {
+        const res = await window.ws2.diagRecordProfile(5000);
+        record.textContent = res && res.path ? '已保存：' + res.path.split('/').pop() + '（访达已打开）' : '录制失败';
+      } catch { record.textContent = '录制失败（需在打包版里用）'; }
+      record.disabled = false; setTimeout(() => (record.textContent = '录制 5 秒 Profile'), 4000);
+    };
+    close.onclick = () => togglePerfPanel();
     const hint = document.createElement('span');
-    hint.textContent = '复现卡顿时按 Cmd+Shift+D，把这些数字发回来定位  ·  Esc 关闭';
-    hint.style.opacity = '0.65'; hint.style.marginLeft = '4px';
-    bar.append(copy, hint);
+    hint.textContent = '打开后滚动/切换来复现卡顿，看「长任务」实时涨 · 每 1 秒刷新';
+    hint.style.opacity = '0.6'; hint.style.width = '100%';
+    bar.append(copy, record, close, hint);
     panel.append(pre, bar);
-    ov.append(panel);
-    ov.onclick = (e) => { if (e.target === ov) toggleDiag(); };
-    document.body.appendChild(ov);
-    diagOverlay = ov;
+    document.body.appendChild(panel);
+    perfPanel = panel;
+    await renderPerfPanel();
+    perfTimer = setInterval(renderPerfPanel, 1000); // 实时刷新
   }
+  if (window.__sbHooks) window.__sbHooks.perfDiag = () => togglePerfPanel(); // 菜单「性能诊断…」入口
   document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); toggleDiag(); }
-    else if (e.key === 'Escape' && diagOverlay) { diagOverlay.remove(); diagOverlay = null; }
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); togglePerfPanel(); } // 开发者备用快捷键
+    else if (e.key === 'Escape' && perfPanel) { togglePerfPanel(); }
   });
-
-  // ── 自动性能横幅（给 Wendi 的零操作主路径，比 Cmd+Shift+D 简单）─────────────────────
-  // 某个根「在云盘 / 文件数 > 2万 / readTree > 1.5秒」时，顶部自动弹一条带关键数字的横幅，卡顿可能来自这里。
-  // 她什么都不用做、不用记快捷键——数字直接显示在条上，截图发回来即可（她本来就习惯发截图）。可关，每根每会话只弹一次。
-  const perfBannerShown = new Set(); // rootPath → 已弹过
-  const isHotRoot = (r) => !!r.cloud || r.fileCount > 20000 || r.maxReadMs > 1500;
-  async function maybePerfBanner() {
-    let roots = [];
-    try { roots = (await window.ws2.wsDiag()) || []; } catch { return; }
-    const hot = roots.filter((r) => isHotRoot(r) && !perfBannerShown.has(r.path));
-    if (!hot.length) return;
-    hot.forEach((r) => perfBannerShown.add(r.path));
-    showPerfBanner(hot);
-  }
-  function showPerfBanner(hot) {
-    const old = document.getElementById('perf-banner');
-    if (old) old.remove();
-    const bar = document.createElement('div');
-    bar.id = 'perf-banner';
-    bar.style.position = 'fixed'; bar.style.top = '8px'; bar.style.left = '50%';
-    bar.style.transform = 'translateX(-50%)'; bar.style.zIndex = '9998';
-    bar.style.maxWidth = '90vw'; bar.style.display = 'flex'; bar.style.alignItems = 'center';
-    bar.style.gap = '10px'; bar.style.padding = '9px 12px'; bar.style.borderRadius = '9px';
-    bar.style.background = '#3a2f12'; bar.style.color = '#f4e4bf';
-    bar.style.border = '1px solid #6b551f'; bar.style.boxShadow = '0 6px 24px rgba(0,0,0,.35)';
-    bar.style.font = '12.5px/1.5 -apple-system,system-ui,sans-serif';
-    const summary = hot.map((r) => {
-      const name = r.path.split('/').filter(Boolean).pop() || r.path;
-      const bits = [r.fileCount.toLocaleString() + ' 文件'];
-      if (r.maxReadMs) bits.push('加载 ' + (r.maxReadMs / 1000).toFixed(1) + '秒');
-      if (r.cloud) bits.push('☁ 云盘');
-      return '「' + name + '」' + bits.join(' · ');
-    }).join('，');
-    const text = document.createElement('span');
-    text.textContent = '文件夹较大，卡顿可能来自这里：' + summary;
-    const copy = document.createElement('button');
-    copy.textContent = '复制诊断';
-    const close = document.createElement('button');
-    close.textContent = '×';
-    for (const b of [copy, close]) {
-      b.style.font = 'inherit'; b.style.cursor = 'pointer'; b.style.color = 'inherit';
-      b.style.background = 'transparent'; b.style.border = '1px solid #6b551f'; b.style.borderRadius = '6px';
-    }
-    copy.style.padding = '3px 10px';
-    close.style.padding = '3px 8px'; close.style.fontSize = '15px'; close.style.lineHeight = '1';
-    copy.onclick = async () => { try { await navigator.clipboard.writeText(await buildDiagReport()); copy.textContent = '已复制 ✓'; } catch { copy.textContent = '复制失败'; } };
-    close.onclick = () => bar.remove();
-    bar.append(text, copy, close);
-    document.body.appendChild(bar);
-  }
 
   // 启动恢复上次打开的全部根（含失联的灰态）+ 全局标签。整条跑完才 resolveRestore，
   // 让冷启动的 open-file 建标签等在这后面（无根 / 出错也要 resolve，否则 onOpen 永久挂起）。
@@ -2238,7 +2224,6 @@
       // 只走「有根才恢复」的分支会让它们重启即丢、还被下一次 persist 从盘上抹掉。
       await loadTabs(); // 全局标签/置顶恢复 + 上次激活进编辑器（冷启动 open-file 在路上则不抢 viewer）
       syncChrome(); // 恢复出的外部标签要点亮侧栏（sb-on 依赖 tabState.entries）
-      maybePerfBanner(); // 恢复出的根里有大/云盘的 → 自动横幅提示（fire-and-forget）
     } catch (e) {
       /* 无根 / 已不存在：保持空态 */
     } finally {

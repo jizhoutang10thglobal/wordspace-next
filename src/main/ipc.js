@@ -286,6 +286,28 @@ function registerIpc() {
   });
   ipcMain.handle('app-version', () => app.getVersion());
   ipcMain.handle('ws-diag', () => perfDiag.snapshot()); // 诊断面板：每根 readTree 耗时/文件数/watcher 次数/云盘
+  // 诊断面板「录制 Profile」：用 CDP 抓一段 renderer CPU profile（记录每个函数/每帧，不预判卡顿在哪 = catch-anything），
+  // 存 .cpuprofile 到桌面 + 访达高亮，用户发回来我在 Chrome DevTools / speedscope 里看时间花在哪。DevTools 开着时会
+  // 冲突（debugger 已被占）→ 返回 error，面板提示（打包版无 DevTools，正常工作）。
+  ipcMain.handle('diag-record-profile', async (e, ms) => {
+    const dbg = e.sender.debugger;
+    try {
+      if (!dbg.isAttached()) dbg.attach('1.3');
+      await dbg.sendCommand('Profiler.enable');
+      await dbg.sendCommand('Profiler.start');
+      await new Promise((r) => setTimeout(r, Math.min(Math.max(Number(ms) || 5000, 1000), 30000)));
+      const { profile } = await dbg.sendCommand('Profiler.stop');
+      await dbg.sendCommand('Profiler.disable');
+      dbg.detach();
+      const file = path.join(app.getPath('desktop'), 'wordspace-profile-' + Date.now() + '.cpuprofile');
+      await fsp.writeFile(file, JSON.stringify(profile));
+      shell.showItemInFolder(file);
+      return { path: file };
+    } catch (err) {
+      try { dbg.detach(); } catch {}
+      return { error: err.message };
+    }
+  });
   ipcMain.handle('recents-list', () => recents.load(recentsFile()));
   ipcMain.handle('recents-add', (_e, p) => recents.add(recentsFile(), p));
   ipcMain.handle('history-list', (_e, p) => history.list(historyRoot(), p));
