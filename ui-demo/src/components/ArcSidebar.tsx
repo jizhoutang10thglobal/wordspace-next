@@ -36,6 +36,7 @@ import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
 import { useBookmarks } from '../mock/bookmarks'
 import { useHistory } from '../mock/history'
+import { useNav } from '../mock/nav'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
 import { computeBacklinks, computeDirBacklinks } from '../lib/links'
@@ -810,10 +811,13 @@ export default function ArcSidebar() {
   const isLocal = !doc?.publishedUrl || doc.visibility === 'private' || doc.visibility === 'invited'
 
   // 后退/前进按钮响应式启用态：无历史可退时置灰（否则「能点但没反应」= 手感坏）。
+  // 网页标签走浏览器历史；文档/文件标签走文档导航历史 useNav（文档互链上线后「点错能回上一篇」）。
   const browserHistory = useBrowser((s) => s.history)
   const curHist = activeTab?.kind === 'web' ? browserHistory[activeTabId] : undefined
-  const canBack = !!curHist && curHist.index > 0
-  const canFwd = !!curHist && curHist.index < curHist.stack.length - 1
+  const navCanBack = useNav((s) => s.past.length > 0)
+  const navCanForward = useNav((s) => s.future.length > 0)
+  const canBack = activeTab?.kind === 'web' ? !!curHist && curHist.index > 0 : navCanBack
+  const canFwd = activeTab?.kind === 'web' ? !!curHist && curHist.index < curHist.stack.length - 1 : navCanForward
 
   // 收藏夹：网页标签才显示星标；点击/⌘D 加入或移出收藏。
   const bmList = useBookmarks((s) => s.bookmarks)
@@ -1035,11 +1039,13 @@ export default function ArcSidebar() {
     navigate('/docs')
   }
   const goBack = () => {
-    useBrowser.getState().back()
+    if (activeTab?.kind === 'web') useBrowser.getState().back()
+    else useNav.getState().back()
     navigate('/docs')
   }
   const goForward = () => {
-    useBrowser.getState().forward()
+    if (activeTab?.kind === 'web') useBrowser.getState().forward()
+    else useNav.getState().forward()
     navigate('/docs')
   }
   const onNewTab = () => {
