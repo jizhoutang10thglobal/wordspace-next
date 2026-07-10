@@ -2387,6 +2387,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               超高块自身延续的背景（pre 灰底/表格边框），两页真正断开。pointer-events:none 不碍编辑。 */}
           {paged && pag && pag.gutters.length > 0 && (
             <div className="ws-paged-overlay" aria-hidden>
+              {/* 覆盖层原点已是纸的 padding 盒（overlay inset:0）——遮罩水平直接铺满（left/right:0），
+                  不能再减页边距（那是块级流内灰缝从内容列外扩用的，这里再减会凸出纸外）。
+                  白遮罩不盖纸的左右边线（纸边在留白区要延续）；灰缝各伸出 1px 把边线切断（同块级缝）。 */}
               {pag.gutters.map((g, i) => (
                 <div
                   key={i}
@@ -2394,13 +2397,18 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                   style={{
                     top: g.top,
                     height: g.fill + pageBox.margin.bottom + PAGE_GAP_PX + pageBox.margin.top,
-                    left: -pageBox.margin.left,
-                    width: pageBox.paperW,
+                    left: 0,
+                    right: 0,
                   }}
                 >
                   <div
                     className="ws-page-gutter ws-inner-gutter"
-                    style={{ height: PAGE_GAP_PX, marginTop: g.fill + pageBox.margin.bottom }}
+                    style={{
+                      height: PAGE_GAP_PX,
+                      marginTop: g.fill + pageBox.margin.bottom,
+                      marginLeft: -1,
+                      marginRight: -1,
+                    }}
                   >
                     <span className="ws-page-chip">第 {g.page} 页</span>
                   </div>
