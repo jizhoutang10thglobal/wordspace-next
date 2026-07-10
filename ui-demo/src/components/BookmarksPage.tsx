@@ -15,7 +15,14 @@ export default function BookmarksPage() {
   const toast = useStore((s) => s.toast)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const open = (url: string, title: string) => { openWebTab(url, title); useHistory.getState().record(url, title); navigate('/docs') }
+  // 打开书签：已开着该网址的网页标签就聚焦，否则新标签打开 + 记历史（与侧栏收藏区同语义，拍板 2026-07-10）。
+  const open = (url: string, title: string) => {
+    const st = useStore.getState()
+    const existing = st.tabs.find((t) => t.kind === 'web' && t.url === url)
+    if (existing) st.setActiveTab(existing.id)
+    else { openWebTab(url, title); useHistory.getState().record(url, title) }
+    navigate('/docs')
+  }
 
   const doExport = () => {
     const html = bm.exportHtml()
@@ -31,8 +38,15 @@ export default function BookmarksPage() {
     const f = e.target.files?.[0]
     if (!f) return
     f.text().then((txt) => {
-      const n = useBookmarks.getState().importHtml(txt)
-      toast(n ? `已导入 ${n} 个书签` : '没识别到书签（需要浏览器导出的 HTML 书签文件）', n ? 'success' : 'neutral')
+      const r = useBookmarks.getState().importHtml(txt)
+      toast(
+        r.parsed === 0
+          ? '没识别到书签（需要浏览器导出的 HTML 书签文件）'
+          : r.added === 0
+            ? '这些书签都已存在，没有新增'
+            : `已导入 ${r.added} 个书签`,
+        r.added ? 'success' : 'neutral',
+      )
     })
     e.target.value = ''
   }
