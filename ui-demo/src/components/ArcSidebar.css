@@ -103,22 +103,40 @@
 .arc-sug-title { flex: none; max-width: 45%; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .arc-sug-url { flex: 1; min-width: 0; font-size: var(--fs-xs); color: var(--c-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 收藏区 */
-.arc-bm { padding: 0 6px 4px; }
-.arc-bm-folder { margin-bottom: 4px; }
-.arc-bm-folder-name {
+/* 收藏区（默认收起，点标题行展开；放在置顶上方，同 Arc 的 Favorites 在最顶） */
+.arc-fav { padding: 0 6px; }
+.arc-fav-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 6px 5px 4px; border-radius: var(--r-sm);
+  cursor: pointer; user-select: none;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.arc-fav-head:hover { background: var(--c-hover); }
+.arc-fav-caret { flex: none; color: var(--c-text-3); }
+.arc-fav-star { flex: none; color: var(--c-accent); }
+.arc-fav-title { font-size: var(--fs-sm); font-weight: 500; color: var(--c-text-2); }
+.arc-fav-count { font-size: var(--fs-xs); color: var(--c-text-3); }
+.arc-fav-spacer { flex: 1; }
+/* 管理入口默认淡出，hover 标题行或展开时才显（收起态保持干净） */
+.arc-fav-head .arc-ico-sm { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.arc-fav-head:hover .arc-ico-sm, .arc-fav.is-open .arc-fav-head .arc-ico-sm { opacity: 1; }
+.arc-fav-body { padding: 2px 0 4px 4px; }
+.arc-fav-folder { margin-bottom: 4px; }
+.arc-fav-folder-name {
   font-size: var(--fs-xs); color: var(--c-text-3); padding: 3px 8px 2px; letter-spacing: 0.02em;
 }
-.arc-bm-item {
+.arc-fav-item {
   width: 100%; display: flex; align-items: center; gap: 8px;
-  padding: 5px 8px; border-radius: var(--r-sm); text-align: left; color: var(--c-text-2);
-  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
-  transition: background-size var(--dur) var(--ease), color var(--dur-fast) var(--ease);
+  padding: 4px 8px; border-radius: var(--r-sm); text-align: left; color: var(--c-text-2);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-.arc-bm-item:hover { background-size: 100% 100%; color: var(--c-text); }
-.arc-bm-ico { flex: none; color: var(--c-text-3); }
-.arc-bm-title { flex: 1; min-width: 0; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.arc-bm-empty { font-size: var(--fs-xs); color: var(--c-text-3); padding: 4px 10px; }
+.arc-fav-item:hover { background: var(--c-hover); color: var(--c-text); }
+.arc-fav-chip {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1;
+}
+.arc-fav-item-title { flex: 1; min-width: 0; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arc-fav-empty { font-size: var(--fs-xs); color: var(--c-text-3); padding: 4px 10px; }
 .arc-tabs-label {
   display: flex; align-items: center; justify-content: space-between;
 }
