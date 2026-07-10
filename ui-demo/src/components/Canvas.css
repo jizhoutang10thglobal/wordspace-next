@@ -61,9 +61,9 @@
 .ws-page-gap { user-select: none; cursor: text; }
 /* 末页尾部留白 spacer：把末页补成整张纸，同样可点进末块。 */
 .ws-page-tail { user-select: none; cursor: text; }
-/* 超高块「块内页界」灰缝覆盖层：绝对定位铺满整张纸（.ws-doc-paged 是定位上下文），
-   pointer-events:none 不吃点击。灰缝画在「真推开」的空档里——块内边界元素已被 marginTop /
-   间隔行推到下一页顶，这段空档就是页间距，灰缝坐落其中，与块级 PageGap 观感一致。 */
+/* 超高块「跨页续排」页界分隔线覆盖层：绝对定位铺满整张纸（.ws-doc-paged 是定位上下文），
+   pointer-events:none 不吃点击。内容连续流过、不推不切，分隔线只画在实测页界处（块顶 + k×contentH），
+   观感与块级 PageGap 的灰缝一致（含页码 chip）。 */
 .ws-paged-overlay {
   position: absolute;
   inset: 0;
