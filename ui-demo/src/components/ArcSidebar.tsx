@@ -835,7 +835,13 @@ export default function ArcSidebar() {
   // 收藏夹：网页标签才显示星标；点击/⌘D 加入或移出收藏。
   const bmList = useBookmarks((s) => s.bookmarks)
   const bmFolders = useBookmarks((s) => s.folders)
-  const [favOpen, setFavOpen] = useState(false) // 侧栏收藏区默认收起，点标题行展开
+  // 侧栏收藏区：默认收起，点标题行展开；展开/收起记住上次（拍板 2026-07-10）。
+  const [favOpen, setFavOpen] = useState(() => localStorage.getItem('ws-fav-open') === '1')
+  const toggleFav = () =>
+    setFavOpen((v) => {
+      localStorage.setItem('ws-fav-open', v ? '0' : '1')
+      return !v
+    })
   const isWebTab = activeTab?.kind === 'web' && !!activeTab.url && activeTab.url !== 'wordspace://newtab'
   const bookmarked = !!isWebTab && bmList.some((b) => b.url === activeTab!.url)
   const toggleBookmark = () => {
@@ -844,10 +850,16 @@ export default function ArcSidebar() {
     if (bm.isBookmarked(activeTab.url)) { bm.removeByUrl(activeTab.url); useStore.getState().toast('已移出收藏') }
     else { bm.add({ title: activeTab.title || activeTab.url, url: activeTab.url }); useStore.getState().toast('已加入收藏', 'success') }
   }
-  // 侧栏收藏区点书签：新标签打开 + 记历史。
+  // 侧栏收藏区点书签：已开着该网址的网页标签就聚焦过去（含置顶），否则新标签打开 + 记历史
+  //（Colin 2026-07-10 拍板：聚焦已开，别连点连开重复标签）。
   const openBookmark = (url: string, title: string) => {
-    useStore.getState().openWebTab(url, title)
-    useHistory.getState().record(url, title)
+    const st = useStore.getState()
+    const existing = st.tabs.find((t) => t.kind === 'web' && t.url === url)
+    if (existing) st.setActiveTab(existing.id)
+    else {
+      st.openWebTab(url, title)
+      useHistory.getState().record(url, title)
+    }
     navigate('/docs')
   }
   const [omni, setOmni] = useState(activeTab?.url ?? '')
@@ -1169,7 +1181,7 @@ export default function ArcSidebar() {
       <div className="arc-scroll" ref={scrollRef}>
         {/* 收藏（默认收起，点标题行展开）——放在置顶上方，同 Arc 的 Favorites 在最顶 */}
         <div className={`arc-fav ${favOpen ? 'is-open' : ''}`}>
-          <div className="arc-fav-head" onClick={() => setFavOpen((v) => !v)}>
+          <div className="arc-fav-head" onClick={toggleFav}>
             {favOpen ? <ChevronDown size={13} className="arc-fav-caret" /> : <ChevronRight size={13} className="arc-fav-caret" />}
             <Star size={13} className="arc-fav-star" />
             <span className="arc-fav-title">收藏</span>

@@ -15,7 +15,14 @@ export default function BookmarksPage() {
   const toast = useStore((s) => s.toast)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const open = (url: string, title: string) => { openWebTab(url, title); useHistory.getState().record(url, title); navigate('/docs') }
+  // 打开书签：已开着该网址的网页标签就聚焦，否则新标签打开 + 记历史（与侧栏收藏区同语义，拍板 2026-07-10）。
+  const open = (url: string, title: string) => {
+    const st = useStore.getState()
+    const existing = st.tabs.find((t) => t.kind === 'web' && t.url === url)
+    if (existing) st.setActiveTab(existing.id)
+    else { openWebTab(url, title); useHistory.getState().record(url, title) }
+    navigate('/docs')
+  }
 
   const doExport = () => {
     const html = bm.exportHtml()
