@@ -13,6 +13,21 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-11 — 文档 back/forward 归到浏览器统一导航移植里做（别单独建两套）
+
+**是什么**：真 app 的「文档向前向后 / 导航历史」决定挂到**浏览器 feature 的统一导航移植**上做，不在
+doc-linking 或别处单独在 doc-header 建一套（Colin 2026-07-11 拍板）。原因：浏览器 feature
+（`docs/browser-feature-spec.md`）在真 app 要建侧栏导航 chrome（网页 back/forward），而 ui-demo 已把
+「网页 + 文档」的前进后退**统一在侧栏箭头**上（按当前标签类型分派：web→浏览器历史 / doc→文档导航历史，
+见 PR #146 `ui-demo/src/mock/nav.ts`）。两者抢同一块地盘，分开建 = 两套 back/forward UI = 分裂。
+**怎么 apply**：**谁做浏览器真 app 移植**（按 `docs/browser-feature-spec.md` 建 app 级导航 chrome）——请
+**一并建统一的前进后退（网页 + 文档共用一套历史栈 + 一对箭头）**，照 ui-demo 模型；文档侧的导航历史
+（记录 openDoc/showViewer 两个导航终点）作为 doc 分支接进去。**doc-linking 这条不单独做真 app 版**
+back/forward（移交文档 `docs/doc-linking-feature-spec.md` §4.2 已把 doc-header 独立版标为兜底）。眼下
+文档「回上一篇」靠标签页兜（上一篇的标签还开着，点它回去）。
+**来源**：Colin 2026-07-11 拍板；ui-demo 版 PR #146；`docs/doc-linking-feature-spec.md` §4.2 +
+`docs/features/doc-linking.md` 欠账 N1。
+
 ## 2026-07-10 — 真 app 加了隐藏性能诊断模式 + 「云盘不是 perf 元凶」实测教训
 
 **是什么**：v0.6.5 起，真 app 菜单「Wordspace Next→性能诊断…」（或 Cmd+Shift+D）开隐藏诊断面板，显示每根 readTree 耗时/文件数/watcher 触发次数/云盘徽章 + 渲染耗时 + 主线程长任务(>50ms 卡帧) + JS 内存，并可「录制 5 秒 CPU Profile」存桌面。普通用户零感知（默认不显示）。**硬教训**：Wendi 报「桌面+谷歌网盘两文件夹贼卡」，但云盘 stat 不慢（dataless 只是内容不在本地、元数据本地缓存）、readTree 不比本地慢（OneDrive 24k 文件 759ms vs 本地 20k 186ms 同量级）、空闲云盘 40 秒零 watcher 事件——三次实测全推翻「云盘慢」这个纯代码脑补。真实成本是文件数→readTree 线性涨，默认折叠时渲染很便宜。
