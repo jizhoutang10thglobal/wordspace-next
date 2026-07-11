@@ -931,4 +931,14 @@
 
   // 初始 chrome 态
   syncChrome();
+
+  // 启动竞态兜底（实测抓到,间歇复现）：sidebar 的 loadTabs 恢复流程走 IPC invoke,其余脚本求值与
+  // invoke 响应的先后**不保证**——恢复的激活 web 标签可能在本脚本定义 __webActivate 之前就走完
+  // openTabRow,那次激活被 `if (window.__webActivate)` 守卫静默跳过,view 永不 attach。
+  // 这里补一拍：本脚本就绪后若激活的是 web 标签且还没 attach → 激活一次。两种时序都安全：
+  // loadTabs 晚于本脚本 → 这里 no-op（active 还不是 web）,正常路径自己激活;早于 → 这里补上。
+  setTimeout(() => {
+    const e = activeEntry();
+    if (e && T.isWebEntry(e) && !attachedKey && !subPage && newtabEl.hidden) activate(e);
+  }, 0);
 })();

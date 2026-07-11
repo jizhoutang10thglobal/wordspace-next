@@ -276,7 +276,15 @@ function nav(key, action) {
   else if (action === 'undo') wc.undo();   // 菜单吞了 Cmd+Z,不转发=杀死网页文本框撤销
   else if (action === 'redo') wc.redo();
 }
-function find(key, text, opts) { const r = registry.get(key); if (r && text) r.view.webContents.findInPage(text, opts || {}); }
+function find(key, text, opts) {
+  const r = registry.get(key);
+  if (!r || !text) return;
+  // ⚠ Electron 42 实测怪癖：显式传 findNext:false 会让 found-in-page **静默不发**（无事件无报错）；
+  // 首次请求必须省略 findNext,只有「下一个/上一个」跟进请求才传 findNext:true。
+  const o = { forward: !opts || opts.forward !== false };
+  if (opts && opts.findNext) o.findNext = true;
+  r.view.webContents.findInPage(text, o);
+}
 function stopFind(key, action) { const r = registry.get(key); if (r) r.view.webContents.stopFindInPage(action || 'clearSelection'); }
 function wireFoundInPage(key) {
   const r = registry.get(key); if (!r || r._foundWired) return; // 幂等:防重复挂 listener 泄漏

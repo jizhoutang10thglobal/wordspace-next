@@ -413,3 +413,6 @@ body.is-sb-collapsed .sb-reopen { z-index: 70; }
   opacity: 0.55;
 }
 .sb-cm-para.is-on { color: var(--c-accent); border-color: var(--c-accent); background: var(--c-accent-tint); opacity: 1; }
+
+/* hidden 属性必须赢过上面的 display 声明（.web-error 的 flex 曾把隐藏态干掉——隐形全屏层拦点击） */
+.web-newtab[hidden], .web-error[hidden], .web-page[hidden], .web-findbar[hidden], .sb-omni-sug[hidden] { display: none !important; }

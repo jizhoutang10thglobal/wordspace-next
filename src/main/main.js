@@ -32,6 +32,7 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
   webTabs.init(() => win); // 网页标签 view 管理器（浏览器 feature）：attach/事件都以这个窗口为宿主
+  if (!app.isPackaged) global.__ws2WebTabs = webTabs; // e2e seam：app.evaluate 沙箱无 require,经 global 取 registry（照 WS2_CTXMENU_PROBE 惯例,打包态不暴露）
   win.on('closed', () => { docWatcher.close(); webTabs.destroyAll(); }); // 关窗即停文件监听 + 销毁全部 web view（防 webContents 泄漏）
   // 修 MP-5：did-finish-load（主框架加载完成）后置就绪并 flush 排队的 open-file。
   // ⚠ 不用 did-start-loading 重置——它对 iframe（文档 frame）导航也触发，会把每次开文档都误判成 renderer 未就绪、
