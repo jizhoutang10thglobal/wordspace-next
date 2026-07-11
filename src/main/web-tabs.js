@@ -295,8 +295,9 @@ function navigate(key, input) {
   pushUpdate(key);
   return { url: parsed.url };
 }
-// 书签/历史/补全建议/恢复重载：URL 已知,仍过 scheme 守卫（§11.3）。opts.record=false 时不记历史
-// （会话恢复的懒加载走这条——§4.8 主动导航是封闭列表,不含会话恢复;书签/历史/补全点击不传=照记）。
+// 书签/历史/补全建议/恢复重载：URL 已知,仍过 scheme 守卫（§11.3）。opts.record=false 预留给「会话恢复
+// 不记历史」（§4.8 主动导航封闭列表不含恢复）——目前 renderer 未接线,恢复也记一条历史（轻微,且恢复的
+// 就是上次看的页,记它并不违和;要真不记需一路穿 sidebar→browser→preload 标记,收益不划算,记欠账）。
 function loadUrlDirect(key, url, opts) {
   if (!policy.isAllowedNavUrl(url)) return { blocked: true };
   createView(key, url);
