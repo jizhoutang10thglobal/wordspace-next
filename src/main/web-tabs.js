@@ -68,6 +68,7 @@ function pushUpdate(key) {
   sendToRenderer('web-tab-updated', {
     key, url: rec.url, title: rec.title, favicon: rec.favicon,
     loading: rec.loading, canGoBack: rec.canGoBack, canGoForward: rec.canGoForward, error: rec.error || null,
+    everCommitted: !!rec.everCommitted, // 首次 did-navigate 才置位——renderer 拿它判「起始页可以让位了」（navigate() 会提前写 url,不能当提交信号）
   });
 }
 
@@ -114,6 +115,9 @@ function createView(key, url) {
       // 零 preload——远程内容碰不到任何 Wordspace API（spec §11.1）
     },
   });
+  // 首绘前的 WebContentsView 是透明的——不设底色,新标签首次加载的几秒里会把底下的文档透出来
+  // （Colin 实测报的「加载中闪回文档」bug 的根因之一;白底=正常浏览器的加载观感）。
+  try { view.setBackgroundColor('#ffffff'); } catch { /* 老版本无此 API 就算了 */ }
   const rec = { view, url: url || null, title: '新标签页', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, userZoom: null, _skipRecord: false };
   registry.set(key, rec);
   wireViewEvents(key, view);
@@ -146,7 +150,7 @@ function wireViewEvents(key, view) {
   });
   const onNav = (url) => {
     const r = registry.get(key); if (!r || !url) return;
-    r.url = url; syncNav(key); pushUpdate(key);
+    r.url = url; r.everCommitted = true; syncNav(key); pushUpdate(key);
     // 历史：主动导航才记；back/forward 前 nav() 打了 _skipRecord 标志（§4.8 契约）。
     if (r._skipRecord) { r._skipRecord = false; return; }
     recordHistory(url, r.title);

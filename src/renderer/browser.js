@@ -222,6 +222,13 @@
     if (sb() && (prev.url !== s.url || prev.title !== s.title || prev.favicon !== s.favicon)) {
       sb().updateWeb(s.key, { url: s.url, title: s.title || s.url || '新标签页' });
     }
+    // 起始页 → 真网页的切换点：导航**真提交**（everCommitted,首次 did-navigate）才藏起始页 surface。
+    // navigate() 会提前把 url 写进推送（地址栏要即时显示）,不能当提交信号——慢站的响应头没来之前
+    // 起始页要一直盖着（submitNavigate 不再提前藏——fresh view 首绘前藏掉它会透出底下的文档,闪回 bug）。
+    if (!newtabEl.hidden && s.everCommitted && s.url && isWebActive() && keyOf(activeEntry()) === s.key) {
+      newtabEl.hidden = true;
+      if (attachedKey === null) { attachedKey = s.key; window.ws2.webShow(s.key, viewBounds()); }
+    }
     if (s.error && isWebActive() && keyOf(activeEntry()) === s.key) showError(s.key, s.error);
     else if (!s.error && attachedKey === s.key) errEl.hidden = true;
     syncChrome();
@@ -284,7 +291,8 @@
         attachedKey = key;
         window.ws2.webShow(key, viewBounds());
       }
-      newtabEl.hidden = true;
+      // 起始页 surface 这里不藏——fresh view 首绘前藏掉它会把底下的文档透出来（闪回文档 bug）。
+      // 等主进程第一次带 url 的 webtab:state 推送（导航已提交）再藏,见 onWebTabUpdated。
     }).catch(() => {});
   }
 
@@ -435,6 +443,7 @@
     renderSug();
   });
   omniInput.addEventListener('keydown', (ev) => {
+    if (ev.isComposing || ev.keyCode === 229) return; // IME 组合中的 Enter/方向键是选字,不是提交（血泪教训:IME 走 input 事件）
     if (ev.key === 'ArrowDown') {
       ev.preventDefault();
       if (sug.length) { sugSel = Math.min(sugSel + 1, sug.length - 1); omniInput.value = sug[sugSel].url; renderSug(); }
@@ -547,6 +556,7 @@
     } else ntPins.hidden = true;
   }
   ntInput.addEventListener('keydown', (ev) => {
+    if (ev.isComposing || ev.keyCode === 229) return; // IME 确认键不当提交
     if (ev.key !== 'Enter') return;
     ev.preventDefault();
     const raw = ntInput.value.trim();
@@ -585,6 +595,7 @@
   }
   findInput.addEventListener('input', () => { findGo(true, false); });
   findInput.addEventListener('keydown', (ev) => {
+    if (ev.isComposing || ev.keyCode === 229) return; // IME 确认键不当「下一个」
     if (ev.key === 'Enter') { ev.preventDefault(); findGo(!ev.shiftKey, true); }
     else if (ev.key === 'Escape') { ev.preventDefault(); closeFind(); }
   });

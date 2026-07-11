@@ -1848,6 +1848,7 @@
       omniIn.spellcheck = false;
       omniIn.onkeydown = (e) => {
         e.stopPropagation();
+        if (e.isComposing || e.keyCode === 229) return; // IME 确认键不当提交
         if (e.key === 'Enter') {
           e.preventDefault();
           const v = omniIn.value.trim();

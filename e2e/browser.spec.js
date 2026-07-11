@@ -22,6 +22,12 @@ function startServer() {
       if (req.url.startsWith('/b')) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end('<!DOCTYPE html><html><head><title>Page B</title></head><body style="background:#1e8a3c;color:#fff"><h1>BBB page</h1></body></html>');
+      } else if (req.url.startsWith('/slow')) {
+        // 慢首载页（闪回文档 bug 的回归门）：3s 后才给响应头 → 导航提交前有一段长「加载中」窗口
+        setTimeout(() => {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<!DOCTYPE html><html><head><title>Slow</title></head><body style="background:#1e5a8a;color:#fff"><h1>slow page</h1></body></html>');
+        }, 3000);
       } else if (req.url.startsWith('/dl')) {
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="evil.bin"' });
         res.end('xx');
@@ -134,6 +140,32 @@ test('⌘T 地址栏开网页：真加载(像素级红底上屏) + 标签行/omn
   expect(v.bounds.height).toBe(v.content.h); // 全高
   // 无网页头：内容区里没有任何 Wordspace chrome 罩在网页上（§3.2 决策——连元素都不存在）
   expect(await page.locator('#web-header, .web-chrome, .web-bmbar').count()).toBe(0);
+});
+
+test('闪回文档回归门：新标签慢首载期间起始页 surface 撑住,导航提交后才切网页(Colin 实测 bug)', async () => {
+  await launch();
+  // ⌘T → 慢页：fresh view 首绘前透明,过早藏起始页会把底下的文档透出来
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
+  const omni = page.locator('.sb-cm-omni-input');
+  await expect(omni).toBeVisible();
+  await omni.fill(base + '/slow');
+  await omni.press('Enter');
+  // 加载窗口内（响应头 3s 后才来）：起始页必须还盖着（不许露出底下的内容）
+  await page.waitForTimeout(1000);
+  await expect(page.locator('#web-newtab')).toBeVisible();
+  // 导航提交后：起始页藏、view attach、慢页真渲染（蓝底）
+  await expect(page.locator('#web-newtab')).toBeHidden({ timeout: 10000 });
+  const key = await activeWebKey();
+  await expect.poll(async () => {
+    const v = await viewInfo(key);
+    return !!(v && v.attached && v.pixel && v.pixel.b > 100 && v.pixel.r < 90);
+  }, { timeout: 8000 }).toBe(true);
+  // 主进程 view 有白底（首绘前不透明,防透出文档——setBackgroundColor 的变异防护）
+  const bg = await mainWebTabs((wt, { key }) => {
+    const v = wt._registry.get(key).view;
+    try { return v.getBackgroundColor ? v.getBackgroundColor() : 'no-api'; } catch { return 'err'; }
+  }, { key });
+  expect(bg === 'no-api' || String(bg).toLowerCase().includes('ffffff') || String(bg).toLowerCase() === '#fff').toBeTruthy();
 });
 
 test('历史自动记录(60s 合并/back 不记) + 导航条 disabled 实时 + 历史页分组/删除', async () => {
