@@ -13,6 +13,21 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-11 — 浏览器真 app 移植 PR #160 已开：动了共享核心，动 sidebar/shell/tabs/ipc 前看一眼
+
+**是什么**：浏览器 feature 按唯一契约 `docs/browser-feature-spec.md` §14 全量移植进真 app
+（`feat/browser-port`，PR #160，等 Colin review）。改动横跨共享核心：`src/renderer/sidebar.js`
+（web 第三身份类/循环切换/⌘⇧T 重开栈/⌘T 二合一 modal）、`src/renderer/shell.js`（web view
+摘挂钩子/菜单 web 态拦截）、`src/lib/tabs.js`（web: 前缀/updateEntry/关闭栈）、
+`src/main/{ipc,main}.js`（浏览器 IPC 面/菜单项）+ 新模块一批。附赠两条通用硬教训：
+① Electron `findInPage` 显式传 `findNext:false` 会让 `found-in-page` **静默不发**（首次请求
+必须省略 findNext）；② `git add -A` 会把 worktree 里陈年未跟踪产物扫进历史（本次 `release-smoke/`
+整个 .app 几百 MB 进了 6 个 commit，push「网络挂死」查半天其实是巨型包——filter-branch 剔掉才推动）。
+**怎么 apply**：并行 session 近期动上述共享文件前先看 PR #160 的 diff 防撞车；它合进 main 后记得
+rebase。commit 前扫一眼 `git log --name-only` 的顶层路径，别让打包产物进历史。浏览器行为的改动
+一律改 spec 正本 + 同 PR 更 `docs/features/browser.md`（欠账清单也在那）。
+**来源**：PR #160（feat/browser-port）；spec=docs/browser-feature-spec.md；worktree wordspace-next-browser。
+
 ## 2026-07-11 — 文档 back/forward 归到浏览器统一导航移植里做（别单独建两套）
 
 **是什么**：真 app 的「文档向前向后 / 导航历史」决定挂到**浏览器 feature 的统一导航移植**上做，不在
