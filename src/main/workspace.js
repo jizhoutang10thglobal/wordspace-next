@@ -11,8 +11,25 @@ const { buildFileTree, kindOf, assertInsideWorkspace, cleanLeafName } = require(
 const files = require('./files');
 const perfDiag = require('./perf-diag');
 
-// 不进树的噪音：隐藏文件 / 版本目录 / 原子写的临时文件。
-const IGNORE = new Set(['node_modules', '.git']);
+// 不进树的噪音：隐藏文件 / 依赖·构建·缓存目录 / 原子写的临时文件。
+// B 档只列「工具生成、绝不会是用户文档文件夹名」的目录，且都是文件数炸弹（node_modules 常 10 万+）——
+// 不含 build/dist/out/target 这种普通词（怕误伤真文件夹）。点开头的（.git/.next/.cache/.venv/.gradle/.idea/
+// .svn/.Spotlight-V100…）已被下面 skip 的 name.startsWith('.') 覆盖，不用在这重列。
+const IGNORE = new Set([
+  'node_modules', '.git', 'bower_components', '__pycache__', 'Pods', 'DerivedData', 'venv',
+]);
+// macOS 包（package/bundle）：Finder 当单个文件、内部可含上万文件（.app 应用包 / .photoslibrary 照片图库…）。
+// 文档工作区里递归钻进去 → 文件数爆炸、readTree 卡死（Wendi「打开桌面特别卡」根因 = 桌面上的 Minecraft.app，
+// 一个 .app 内部可几千到十几万文件）。学 Finder：树上显示成单个节点、不往里递归。按后缀判定（够用，不引 UTI）。
+const BUNDLE_EXTS = new Set([
+  'app', 'framework', 'bundle', 'plugin', 'kext', 'xpc', 'component', 'mdimporter', 'qlgenerator',
+  'prefpane', 'wdgt', 'dsym', 'pkg', 'mpkg', 'photoslibrary', 'photolibrary', 'fcpbundle',
+  'imovielibrary', 'tvlibrary', 'aplibrary', 'musiclibrary',
+]);
+const isBundle = (name) => {
+  const i = name.lastIndexOf('.');
+  return i > 0 && BUNDLE_EXTS.has(name.slice(i + 1).toLowerCase());
+};
 // 原子写 tmp 命名从 `.ws2tmp` 改成了 `.ws2tmp-<pid>-<seq>`（防并发保存互踩，files.js），endsWith('.ws2tmp')
 // 匹配不上新名字 → 存盘时临时文件漏进侧栏树。用 includes 兜住新旧两种命名（不该给用户看的写盘中间产物）。
 const skip = (name) => name.startsWith('.') || name.includes('.ws2tmp') || IGNORE.has(name);
@@ -61,6 +78,7 @@ async function walk(root) {
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         dirsOut.push(childRel);
+        if (isBundle(e.name)) continue; // macOS 包：树上显示成一个节点，但不递归进去（否则钻进内部上万文件、卡死）
         await rec(path.join(absDir, e.name), childRel);
       } else if (e.isFile()) {
         filesOut.push({ path: childRel, kind: kindOf(e.name) });
