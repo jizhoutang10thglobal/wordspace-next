@@ -138,6 +138,7 @@
   // 多根版：匹配限定在 rootId 内（别的根里同 rel 的文件是不同文件，不许误伤）。外部 entry（key=abs）
   // 的 rel=undefined，永不命中，天然不被波及。若 newRel 在同根内撞名 → 合并（open/pinned 取并集）守去重不变式。
   function retargetEntry(state, rootId, oldRel, newRel, newTitle, newKind) {
+    if (!oldRel || !rootId) return state; // 防御：都传 undefined 时 hit 会命中 web/temp entry（rel/rootId 皆 undefined）,把网页标签身份改写成裸 rel（潜伏 footgun,P2-8）
     const hit = (e) => e.rootId === rootId && e.rel === oldRel;
     const old = state.entries.find(hit);
     if (!old) return state;

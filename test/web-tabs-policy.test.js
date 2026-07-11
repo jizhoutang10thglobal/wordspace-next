@@ -62,3 +62,10 @@ test('nextZoom：±0.1 步进、夹 0.5–2.0、reset 回 1、浮点不漂移', 
   assert.strictEqual(P.nextZoom(1.6, 'reset'), 1);
   assert.strictEqual(P.nextZoom(undefined, 'in'), 1.1); // 无值当 1
 });
+
+test('pickFavicon 取第一个 http(s)(P2-4)：data: 在首位时跳过、取后面的 http', () => {
+  assert.strictEqual(P.pickFavicon(['data:image/svg+xml,x', 'https://a.com/f.ico'], null), 'https://a.com/f.ico');
+  assert.strictEqual(P.pickFavicon(['data:x', 'file:///y', 'http://b.com/g.png'], null), 'http://b.com/g.png');
+  assert.strictEqual(P.pickFavicon(['data:x', 'data:y'], null), null); // 全 data: → null
+  assert.strictEqual(P.pickFavicon(['https://a.com/f.ico'], 'https://a.com/f.ico'), null); // 命中的没变 → 去重
+});

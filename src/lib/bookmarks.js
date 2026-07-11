@@ -20,16 +20,19 @@ function sanitize(state) {
     : [];
   if (!folders.some((f) => f.id === BM_BAR)) folders = [{ id: BM_BAR, name: '书签栏' }, ...folders];
   const ids = new Set(folders.map((f) => f.id));
+  // favicon 只留 http(s) 或有限长 data:（主进程存的是 data:URL）——拒 javascript: 和无上限 data:
+  // （sanitize 是「载入前防旧数据毒化」的兜底,磁盘被塞多 MB data:URL 会永久重持久化+每次全量推 renderer,P2-5）。
+  const okFavicon = (f) => typeof f === 'string' && f && (/^https?:\/\//i.test(f) || (/^data:image\//i.test(f) && f.length <= 256 * 1024));
   const bookmarks = Array.isArray(s.bookmarks)
     ? s.bookmarks
         .filter((b) => b && typeof b.url === 'string' && /^https?:\/\//i.test(b.url) && ids.has(b.folderId))
         .map((b) => ({
           id: typeof b.id === 'string' && b.id ? b.id : uid('bm', b.addedAt),
-          title: typeof b.title === 'string' && b.title ? b.title : b.url,
+          title: typeof b.title === 'string' && b.title.trim() ? b.title : b.url,
           url: b.url,
           folderId: b.folderId,
           addedAt: typeof b.addedAt === 'number' ? b.addedAt : 0,
-          ...(typeof b.favicon === 'string' && b.favicon ? { favicon: b.favicon } : {}),
+          ...(okFavicon(b.favicon) ? { favicon: b.favicon } : {}),
         }))
     : [];
   return { folders, bookmarks };
@@ -54,7 +57,7 @@ function removeOne(state, id) {
 }
 function update(state, id, patch) {
   const allow = {};
-  if (patch && typeof patch.title === 'string' && patch.title) allow.title = patch.title;
+  if (patch && typeof patch.title === 'string' && patch.title.trim()) allow.title = patch.title; // 纯空白标题不算改（穿过「空值回退 url」的 UI 约定）
   if (patch && typeof patch.url === 'string' && /^https?:\/\//i.test(patch.url)) allow.url = patch.url;
   if (patch && typeof patch.folderId === 'string' && state.folders.some((f) => f.id === patch.folderId)) allow.folderId = patch.folderId;
   return { folders: state.folders, bookmarks: state.bookmarks.map((b) => (b.id === id ? { ...b, ...allow } : b)) };
@@ -114,7 +117,8 @@ function parseNetscapeHtml(html, ts) {
   const bookmarks = [];
   const seen = new Set();
   // token：h3 开标签+内文 / dl 开 / dl 关 / a 标签+内文。h3/a 的内文取到对应闭标签或下一个 <（容忍不闭合）。
-  const re = /<h3([^>]*)>([\s\S]*?)(?:<\/h3>|(?=<))|<dl[^>]*>|<\/dl>|<a\s([^>]*)>([\s\S]*?)(?:<\/a>|(?=<))/gi;
+  // a 内文取到 </a> 或下一个**结构标签**为止（内嵌 <em>/<b> 不算边界,否则「Title <em>x</em>」标题被截成「Title」,P2-7）。
+  const re = /<h3([^>]*)>([\s\S]*?)(?:<\/h3>|(?=<))|<dl[^>]*>|<\/dl>|<a\s([^>]*)>([\s\S]*?)(?:<\/a>|(?=<dt\b|<dl\b|<\/dl\b|<h3\b|<a\s))/gi;
   // 文件夹栈：进 h3 记「待入栈」，它的 <dl> 到来时入栈；</dl> 弹栈。栈顶 = 当前归属文件夹（null=书签栏层）。
   const stack = [];
   let pendingFolder;
@@ -135,19 +139,22 @@ function parseNetscapeHtml(html, ts) {
       pendingFolder = undefined;
     } else if (/^<\/dl/i.test(tok)) {
       stack.pop();
+      pendingFolder = undefined; // 清悬挂 h3（h3 后没 DL 就来了 </dl>）,否则它会劫持后续无关 DL 的书签（P2-6）
     } else {
       const attrs = m[3] || '';
-      const href = /href\s*=\s*"([^"]*)"/i.exec(attrs) || /href\s*=\s*'([^']*)'/i.exec(attrs) || /href\s*=\s*([^\s>]+)/i.exec(attrs);
+      // ⚠ href 正则要有属性名边界（(?:^|\s)）——否则 `data-href="..."` 或 base64 ICON 尾巴以 `href=` 收尾时
+      // 会抢在真 HREF 之前匹配到,整条书签被静默吞掉（P2-1,互通契约主路径）。
+      const href = /(?:^|\s)href\s*=\s*"([^"]*)"/i.exec(attrs) || /(?:^|\s)href\s*=\s*'([^']*)'/i.exec(attrs) || /(?:^|\s)href\s*=\s*([^\s>]+)/i.exec(attrs);
       const url = href ? unesc(href[1]) : '';
       if (!/^https?:\/\//i.test(url)) continue;
       const top = stack.length ? stack[stack.length - 1] : null;
       const folderId = top ? top.id : BM_BAR;
       if (seen.has(folderId + '|' + url)) continue;
       seen.add(folderId + '|' + url);
-      const add_ = /add_date\s*=\s*["']?(\d+)/i.exec(attrs);
+      const add_ = /(?:^|\s)add_date\s*=\s*["']?(\d+)/i.exec(attrs);
       bookmarks.push({
         id: uid('imb', ts),
-        title: unesc((m[4] || '').trim()) || url,
+        title: unesc(String(m[4] || '').replace(/<[^>]*>/g, '').trim()) || url, // strip 内嵌标签（<em> 等）,取纯文本标题
         url,
         folderId,
         addedAt: add_ ? Number(add_[1]) * 1000 : ts || 0,

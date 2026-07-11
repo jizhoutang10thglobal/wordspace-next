@@ -219,6 +219,11 @@ function wireViewEvents(key, view) {
       setZoom(key, cmd === 'zoom-in' ? 'in' : cmd === 'zoom-out' ? 'out' : 'reset');
       return;
     }
+    // 要聚焦 DOM 控件的命令（地址栏/查找条）：show() 刚把焦点给了 view,renderer 的 input.focus()
+    // 夺不回窗口级焦点 → 键击仍进网页。转发前先把焦点还给主 webContents（#9）。
+    if (cmd === 'focus-address' || cmd === 'web-find') {
+      const win = getWin(); if (win && !win.isDestroyed()) { try { win.webContents.focus(); } catch { /* 销毁竞态 */ } }
+    }
     sendToRenderer('web-shortcut', { cmd });
   });
 }
@@ -447,6 +452,6 @@ function scheduleRefit(key) { clearTimeout(fitTimer); fitTimer = setTimeout(() =
 module.exports = {
   init, setHistoryHook, createView, show, hide, hideAll, setBounds, destroy, destroyAll,
   navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setZoom, printToPdf,
-  openCtxMenu, executeCtxAction, recordHistory,
+  openCtxMenu, executeCtxAction, recordHistory, setAllAudioMuted,
   _registry: registry,
 };

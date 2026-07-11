@@ -44,13 +44,16 @@
 
   // ---- favicon 事件去重 ----
   // setBounds 可能触发多余 page-favicon-updated（URL 没变也发）→ 按 URL 去重。
-  // 且只放行 http/https（恶意页声明 file:// 图标会让主进程 net.fetch 读本地文件）。
+  // 且只放行 http/https（恶意页声明 file:// 图标会让主进程 fetch 读本地文件）。
   function pickFavicon(favicons, prevUrl) {
-    if (!Array.isArray(favicons) || !favicons.length) return null;
-    var url = favicons[0];
-    if (!isAllowedNavUrl(url)) return null; // file:/data: 图标拒绝
-    if (url === prevUrl) return null; // 没变,跳过
-    return url;
+    if (!Array.isArray(favicons)) return null;
+    // 取**第一个 http(s)** 图标,别只看 [0]——现代站点常把内联 SVG data:-URI 图标放首位,
+    // 后面才是 http .ico;只判 [0] 会让这类站永远回落地球图标（P2-4）。file:/data: 跳过（安全）。
+    for (var i = 0; i < favicons.length; i++) {
+      var url = favicons[i];
+      if (isAllowedNavUrl(url)) return url === prevUrl ? null : url; // 命中的这个若没变则跳过（去重）
+    }
+    return null;
   }
 
   // ---- 网页缩放（spec §4.6：步长 0.1、范围 0.5–2.0、复位 1.0；每标签独立）----

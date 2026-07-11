@@ -62,6 +62,7 @@ function createWindow() {
     // Windows/Linux 不驻留：按平台惯例关窗即退（走下面守卫 → window-all-closed → quit）。
     if (process.platform === 'darwin' && !quitting) {
       e.preventDefault();
+      webTabs.setAllAudioMuted(true); // 隐藏驻留：后台网页别继续放声/烧 CPU（P2-11；标签静音已砍,只能整体静音）
       win.hide();
       return;
     }
@@ -235,6 +236,7 @@ function focusWindow() {
   if (!win.isVisible()) win.show();
   if (win.isMinimized()) win.restore();
   win.focus();
+  webTabs.setAllAudioMuted(false); // 唤回前台：解除隐藏驻留时的静音（P2-11；幂等,每次唤起都调无妨）
 }
 
 // macOS：Finder 双击 / 拖到 Dock（可能在 whenReady 之前触发，故走 pendingOpenPath 兜底）。

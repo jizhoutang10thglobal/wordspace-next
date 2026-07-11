@@ -576,3 +576,11 @@ test('pushClosed/popClosed：LIFO、同 key 去重、封顶 15（spec §4.4）',
   assert.equal(rest.length, 14);
   assert.deepEqual(T.popClosed([]), { entry: null, rest: [] });
 });
+
+test('retargetEntry(undefined,undefined) 防御(P2-8)：不劫持 web/temp entry', () => {
+  let s = T.openEntry(empty(), web('web:1:x', 'https://a.com'));
+  const before = JSON.stringify(s);
+  s = T.retargetEntry(s, undefined, undefined, 'evil.html', 'evil');
+  assert.strictEqual(JSON.stringify(s), before); // 原样返回,web entry 身份不被改写
+  assert.ok(T.isWebEntry(s.entries[0]));
+});

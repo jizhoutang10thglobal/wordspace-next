@@ -182,3 +182,49 @@ test('导入实体解码：&amp; 等在标题/URL 还原', () => {
   assert.strictEqual(r.state.bookmarks[0].url, 'https://x.com/?a=1&b=2');
   assert.strictEqual(r.state.bookmarks[0].title, 'A & B');
 });
+
+test('导入 href 边界(P2-1)：data-href/base64 ICON 尾巴不抢真 HREF', () => {
+  const r1 = B.importNetscape(B.emptyState(), '<DT><A data-href="javascript:evil" HREF="http://good.example/">good</A>', T0);
+  assert.strictEqual(r1.added, 1);
+  assert.strictEqual(r1.state.bookmarks[0].url, 'http://good.example/');
+  // base64 ICON 以 href= 收尾（前面是非空白字符）
+  const r2 = B.importNetscape(B.emptyState(), '<DT><A ICON="data:image/png;base64,AAAhref=" HREF="http://real.example/">x</A>', T0);
+  assert.strictEqual(r2.added, 1);
+  assert.strictEqual(r2.state.bookmarks[0].url, 'http://real.example/');
+});
+
+test('导入标题内嵌标签(P2-7)：<em> 被 strip,取完整纯文本', () => {
+  const r = B.importNetscape(B.emptyState(), '<DT><A HREF="http://a.example/">Title with <em>markup</em> tail</A>', T0);
+  assert.strictEqual(r.state.bookmarks[0].title, 'Title with markup tail');
+});
+
+test('导入 </dl> 清 pendingFolder(P2-6)：畸形空文件夹不劫持后续书签', () => {
+  const html = '<DL><p><DT><H3>Sub</H3></DL><p> <DL><p><DT><A HREF="http://stray.example/">s</A></DL><p>';
+  const r = B.importNetscape(B.emptyState(), html, T0);
+  const stray = r.state.bookmarks.find((b) => b.url === 'http://stray.example/');
+  assert.strictEqual(stray.folderId, 'bm-bar'); // 归书签栏,不归 Sub
+});
+
+test('sanitize favicon 校验(P2-5)：javascript: 和超长 data: 被剔,http/合理 data: 保留;纯空白标题回退 url', () => {
+  const big = 'data:image/png;base64,' + 'A'.repeat(300 * 1024);
+  const s = B.sanitize({
+    folders: [{ id: B.BM_BAR, name: '书签栏' }],
+    bookmarks: [
+      { id: 'b1', title: 'ok', url: 'https://a.com/', folderId: B.BM_BAR, addedAt: T0, favicon: 'javascript:alert(1)' },
+      { id: 'b2', title: '   ', url: 'https://b.com/', folderId: B.BM_BAR, addedAt: T0, favicon: big },
+      { id: 'b3', title: 'g', url: 'https://c.com/', folderId: B.BM_BAR, addedAt: T0, favicon: 'https://c.com/f.ico' },
+    ],
+  });
+  assert.strictEqual(s.bookmarks.find((b) => b.id === 'b1').favicon, undefined); // javascript: 剔
+  assert.strictEqual(s.bookmarks.find((b) => b.id === 'b2').favicon, undefined); // 超长 data: 剔
+  assert.strictEqual(s.bookmarks.find((b) => b.id === 'b2').title, 'https://b.com/'); // 纯空白标题回退 url
+  assert.strictEqual(s.bookmarks.find((b) => b.id === 'b3').favicon, 'https://c.com/f.ico'); // http favicon 留
+});
+
+test('update 纯空白标题不生效(P2-5)', () => {
+  let st = B.emptyState();
+  st = B.add(st, { title: '原标题', url: 'https://a.com/', ts: T0 }).state;
+  const id = st.bookmarks[0].id;
+  st = B.update(st, id, { title: '   ' });
+  assert.strictEqual(st.bookmarks[0].title, '原标题'); // 空白不改
+});
