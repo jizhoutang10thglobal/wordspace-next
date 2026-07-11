@@ -177,6 +177,24 @@
   window.__webStatus = (key) => webState[key] || null;
   window.__webEnsureLoaded = (key, url) => { if (!live.has(key) && url) { live.add(key); window.ws2.webLoadUrl(key, url); } }; // 后台标签建 view 加载,不 attach
 
+  // DOM 弹层（⌘T modal / SaveModal / 关闭确认 / ⌘P 面板 / AI 接入）会被原生 view 盖住 →
+  // 弹层存在期间临时摘掉 view,关掉后若激活的还是网页标签再挂回（视觉正确;标签状态不动）。
+  let overlayPaused = false;
+  const OVERLAY_SEL = '.sb-modal-overlay, #fp-overlay, .aiax-overlay';
+  try {
+    new MutationObserver(() => {
+      const has = !!document.querySelector(OVERLAY_SEL);
+      if (has && attachedKey && !overlayPaused) {
+        overlayPaused = true;
+        window.ws2.webHideAll();
+      } else if (!has && overlayPaused) {
+        overlayPaused = false;
+        const e = activeEntry();
+        if (e && T.isWebEntry(e) && e.url && attachedKey === keyOf(e)) window.ws2.webShow(attachedKey, viewBounds());
+      }
+    }).observe(document.body, { childList: true });
+  } catch { /* MutationObserver 恒可用;防御 */ }
+
   function showError(key, err) {
     errTitle.textContent = err.code === 'crash' ? '页面崩溃了' : '页面加载失败';
     errDesc.textContent = (err.url || '') + (err.desc ? '（' + err.desc + '）' : '');

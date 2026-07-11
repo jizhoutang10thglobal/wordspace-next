@@ -1740,6 +1740,9 @@
     if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
     else tlist.appendChild(zoneHint('没有打开的标签'));
     tabsEl.appendChild(tlist);
+    // 浏览器 feature：无工作区也能开网页标签——第一个 web 标签要能点亮侧栏（syncChrome 只在根变化时跑）。
+    const sbEl = document.getElementById('sidebar');
+    if (sbEl) sbEl.classList.toggle('sb-on', rootsState.length > 0 || tabState.entries.length > 0);
     if (window.__webChromeSync) window.__webChromeSync(); // 激活/标签变化 → 同步地址栏值/导航条 disabled/星标
   }
 
