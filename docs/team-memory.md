@@ -13,6 +13,16 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-11 — /remember-global 落账方式定案：PR + auto-merge，直推特权废除
+
+**是什么**：Colin 拍板（方案 B）：保留 main 的全部保护门（must-PR + required test/e2e，含管理员），
+`/remember-global` 改走「短命分支 + PR + `gh pr merge --auto`」；仓库已开 Allow auto-merge。
+skill 文档已同步改写（含标记行前缀匹配、jizhoutang10thglobal 账号 push 等实操坑）。
+**怎么 apply**：写 team-memory 一律按新版 skill 步骤走，发完即走不等 CI（约 7 分钟后自动上 main）。
+任何「直推 main」的念头都打消——对所有人所有文件都不存在这条路。
+**来源**：PR（本条目所在）+ 仓库设置 allow_auto_merge=true（2026-07-11 API 实开）
+
+
 ## 2026-07-10 — 浏览器 feature 规格定稿 + 六项拍板合 main；真 app 移植的唯一契约就位
 
 **是什么**：浏览器 feature（标签上网/地址栏+自动补全/侧栏折叠收藏/历史/右键菜单/快捷键/会话恢复）在
