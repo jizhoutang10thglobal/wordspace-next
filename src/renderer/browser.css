@@ -416,3 +416,14 @@ body.is-sb-collapsed .sb-reopen { z-index: 70; }
 
 /* hidden 属性必须赢过上面的 display 声明（.web-error 的 flex 曾把隐藏态干掉——隐形全屏层拦点击） */
 .web-newtab[hidden], .web-error[hidden], .web-page[hidden], .web-findbar[hidden], .sb-omni-sug[hidden] { display: none !important; }
+
+/* web 态隐藏文档编辑 chrome（#8）：⋯菜单(z65)/文档面包屑本浮在 web surface(z60) 之上,
+   起始页/子页面右上角会露出对不可见后台文档的操作按钮。web 激活时整体隐藏。 */
+body.ws-web-on .top-actions,
+body.ws-web-on #doc-header,
+body.ws-web-on #ws-degrade-notice { display: none !important; }
+
+/* web 态遮罩（#13）：盖住底下文档 iframe,z 高于 iframe、低于 surface(60) 与原生 view。
+   查找条/toast 收缩 view 露出的条带落在这层纸色上,不露另一篇文档。 */
+.web-veil { position: absolute; inset: 0; z-index: 55; background: var(--c-bg); }
+.web-veil[hidden] { display: none !important; }

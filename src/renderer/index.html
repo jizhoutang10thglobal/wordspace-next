@@ -178,6 +178,10 @@
     <div id="viewer" class="ws-viewer" hidden></div>
   </div>
 
+  <!-- web 态遮罩：网页标签激活时盖住底下的文档 iframe（切回即恢复设计,iframe 不隐藏）。原生 WebContentsView
+       在最上层盖住它;只有查找条/toast 让 view 顶/底收缩出的条带里,露出的是这层纸色 veil 而非另一篇文档切片（#13）。 -->
+  <div id="web-veil" class="web-veil" hidden></div>
+
   <!-- ==== 浏览器 feature 的内容区 surfaces（browser.js 管理）====
        真网页由主进程 WebContentsView 原生盖在整个内容区上（无网页头，spec §3.2/§10.2）；
        下面这些 DOM 只在「起始页 / 历史页 / 收藏页 / 设置页 / 加载失败占位」时可见。 -->

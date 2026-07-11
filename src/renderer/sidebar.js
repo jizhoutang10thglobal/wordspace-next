@@ -1195,8 +1195,11 @@
     if (entry && (window.WS2Tabs.isWebEntry(entry) || (isExternal(entry) && !isTempEntry(entry) && entry.kind !== 'html' && entry.kind !== 'md'))) {
       closedStack = window.WS2Tabs.pushClosed(closedStack, entry, 15);
     }
+    // ⚠ web 标签不走 __shellDiscard（P1,两路审查确认）：shell 的 dirty 属于 view 底下的**后台文档**,
+    // web 标签本身没有脏态。原来 web 标签也 setDirty(false) 会把后台文档 1.2s 自动保存窗内/保存失败的
+    // 未保存修改静默清零（autosave 因 dirty=false 跳过写盘、退出守卫也解除）→ 切走/退出即丢数据。
     if (entry && isTempEntry(entry)) { if (window.__shellDiscardTemp) window.__shellDiscardTemp(key); }
-    else if (wasActive && window.__shellDiscard) window.__shellDiscard();
+    else if (wasActive && !window.WS2Tabs.isWebEntry(entry) && window.__shellDiscard) window.__shellDiscard();
     applyTabs(op(tabState, key));
     // web 标签不再「开着」（关闭/移出置顶）→ 销毁主进程 view 释放内存（⌘⇧T 重开 = 按存的 url 重建,不复活旧 view）
     if (entry && window.WS2Tabs.isWebEntry(entry) && !tabState.entries.some((e) => keyOf(e) === key && e.open)) {
@@ -1540,8 +1543,7 @@
   // 两条都跑（幂等、无害）；reveal=false 时这里跳过 + suppressRevealOnce 让 onOpen 那次也跳过，两条都不定位。
   function openTabRow(entry, reveal = true) {
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
-      if (window.__webDetach) window.__webDetach(); // 先摘 web view（原生 view 会盖住编辑器）
-      if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry));
+      if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry)); // renderTemp 内部摘 web view（canLeaveActive 取消则不摘,网页态保留,P2-1）
       return;
     }
     // 网页标签（浏览器 feature）：激活 = openEntry（置顶纯快捷方式顺带变开）+ 交给 browser.js 的激活漏斗。
@@ -1555,7 +1557,8 @@
       if (window.__webActivate) window.__webActivate(cur || entry);
       return;
     }
-    if (window.__webDetach) window.__webDetach(); // 切到任何文档/查看器表面前,先摘掉 web view
+    // web view 的摘除交给下游 openNode→openDoc/showViewer（它们在各自脏守卫**通过后**才摘,P2-1）——
+    // 这里不提前摘,否则失联根/findNode-miss 提前 return 时 view 已摘、activeRel 仍是 web = 状态劈开。
     if (entry.rel) {
       const root = rootOf(entry.rootId);
       if (root && root.missing) { showToast('「' + root.name + '」失联了，重新定位后才能打开'); return; }
@@ -2196,7 +2199,7 @@
   window.__sbCycleTab = (prev) => cycleTab(prev); // shell 的 iframe keydown 转发（焦点在编辑器里也能切标签）
   window.__sbTabByIndex = (n) => tabByIndex(n);
   document.addEventListener('keydown', (e) => {
-    if (document.querySelector('.sb-modal-overlay') || document.getElementById('fp-overlay')) return; // 弹层守卫（§7）
+    if (document.querySelector('.sb-modal-overlay, #fp-overlay, .aiax-overlay')) return; // 弹层守卫（§7,含 AI 接入面板,#11）
     if (e.ctrlKey && !e.metaKey && e.key === 'Tab') { e.preventDefault(); cycleTab(e.shiftKey); return; }
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) { e.preventDefault(); tabByIndex(+e.key); }
   });

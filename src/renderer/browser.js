@@ -36,6 +36,7 @@
   const errDesc = document.getElementById('web-err-desc');
   const errReload = document.getElementById('web-err-reload');
   const pageEl = document.getElementById('web-page');
+  const veilEl = document.getElementById('web-veil');
   const findBar = document.getElementById('web-findbar');
   const findInput = document.getElementById('web-find-input');
   const findCount = document.getElementById('web-find-count');
@@ -135,6 +136,7 @@
     newtabEl.hidden = true;
     errEl.hidden = true;
   }
+  const setVeil = (on) => { if (veilEl) veilEl.hidden = !on; }; // 只在真网页 view attach 时开（#13）
   function activate(entry) {
     clearSubPage(); // 清子页面 DOM 状态（不 activateBack——activate 自己接管 view）
     closeFind();
@@ -142,6 +144,7 @@
     if (!entry.url) { // 起始页：本地 surface，不建 view（§4.5.2 懒创建）
       if (attachedKey) { window.ws2.webHideAll(); attachedKey = null; }
       errEl.hidden = true;
+      setVeil(false);
       renderNewtab();
       newtabEl.hidden = false;
       setTimeout(() => { try { ntInput.focus(); } catch { /* detached */ } }, 0);
@@ -153,9 +156,11 @@
     if (!live.has(key)) { live.add(key); window.ws2.webLoadUrl(key, entry.url); } // 恢复的标签懒加载（§8）
     if (st && st.error) { // 上次加载失败：显示占位,别把空白 view 盖上去（P1:占位+重试按钮才可用）
       if (attachedKey) { window.ws2.webHideAll(); attachedKey = null; }
+      setVeil(false);
       showError(key, st.error);
     } else {
       attachedKey = key;
+      setVeil(true); // 真网页 view 挂上 → veil 盖底下文档
       window.ws2.webShow(key, viewBounds());
     }
     syncChrome();
@@ -163,6 +168,7 @@
   function detach() {
     if (attachedKey) { window.ws2.webHideAll(); attachedKey = null; }
     surfaceOff();
+    setVeil(false);
     closeFind();
     clearSubPage(); // ⚠ 不 activateBack（要切到文档/查看器了,别把 web view 挂回来盖住文档,P1）
     syncChrome();
@@ -202,6 +208,7 @@
     errTitle.textContent = err.code === 'crash' ? '页面崩溃了' : '页面加载失败';
     errDesc.textContent = (err.url || '') + (err.desc ? '（' + err.desc + '）' : '');
     errEl.hidden = false;
+    setVeil(false);
     if (attachedKey === key) { window.ws2.webHideAll(); attachedKey = null; } // 摘掉空白 view 露出占位
   }
   errReload.onclick = () => {
@@ -212,6 +219,7 @@
     live.add(key);
     window.ws2.webLoadUrl(key, e.url); // 重建/重载
     attachedKey = key;
+    setVeil(true);
     window.ws2.webShow(key, viewBounds());
   };
 
@@ -260,8 +268,11 @@
   });
 
   // ---- 收藏 / 历史镜像 ----
-  window.ws2.onBookmarksChanged((s) => { bmState = s || bmState; renderFav(); renderNewtab(); if (subPage === 'bookmarks') renderBookmarksPage(); syncOmniStar(); });
-  window.ws2.onHistoryChanged((s) => { histState = Array.isArray(s) ? s : histState; if (subPage === 'history') renderHistoryPage(); });
+  // 子页面正在被输入时（焦点在它的输入框/组合中）不整页重建——否则后台标签导航推来的 changed 会把
+  // 搜索框焦点、IME 组合、打开着的「清除数据」菜单全打掉（#7）。数据已进镜像,失焦后下次操作会刷。
+  const subPageEditing = () => pageEl.contains(document.activeElement) && /INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '');
+  window.ws2.onBookmarksChanged((s) => { bmState = s || bmState; renderFav(); if (newtabEl.hidden === false) renderNewtab(); if (subPage === 'bookmarks' && !subPageEditing()) renderBookmarksPage(); syncOmniStar(); });
+  window.ws2.onHistoryChanged((s) => { histState = Array.isArray(s) ? s : histState; if (subPage === 'history' && !subPageEditing()) renderHistoryPage(); });
   (async () => {
     try { bmState = (await window.ws2.bmState()) || bmState; } catch { /* keep default */ }
     try { histState = (await window.ws2.histState()) || histState; } catch { /* keep default */ }
@@ -312,6 +323,9 @@
     navBack.disabled = !(web && st && st.canGoBack); // 文档标签暂无导航历史 → 恒灰（§4.1 注）
     navFwd.disabled = !(web && st && st.canGoForward);
     navReload.disabled = !(web && e.url);
+    // web 态（含起始页/子页面）隐藏文档编辑 chrome（⋯菜单 z65 / 文档面包屑）——否则它们浮在 web
+    // surface(z60) 之上,起始页点右上角 ⋯ 会对看不见的后台文档导出 PDF（#8）。
+    document.body.classList.toggle('ws-web-on', web);
     if (!newtabEl.hidden) renderNewtab(); // 起始页可见时刷新置顶快捷行/瓦片
     syncOmni();
   }
@@ -351,14 +365,18 @@
     }
   }
   omniStar.onclick = () => toggleBookmark();
+  let bmBusy = false;
   async function toggleBookmark() { // ⌘D/☆：落书签栏；取消=跨全部文件夹删该 url（§4.6/§4.9）
     const e = activeEntry();
     if (!e || !T.isWebEntry(e) || !e.url) return;
-    const st = webState[keyOf(e)] || {};
-    if (bmState.bookmarks.some((b) => b.url === e.url)) await window.ws2.bmRemoveByUrl(e.url);
-    else await window.ws2.bmAdd({ title: st.title || e.title || e.url, url: e.url, favicon: st.favicon || undefined });
-    // bmState 由 bookmarks-changed 推送刷新；星标即时反馈：
-    syncOmniStar();
+    if (bmBusy) return; // 连按去重（#12）：bmState 是推送前的陈旧镜像,快速双击 ⌘D 会读到旧态各加一条
+    bmBusy = true;
+    try {
+      const st = webState[keyOf(e)] || {};
+      if (bmState.bookmarks.some((b) => b.url === e.url)) await window.ws2.bmRemoveByUrl(e.url);
+      else await window.ws2.bmAdd({ title: st.title || e.title || e.url, url: e.url, favicon: st.favicon || undefined });
+      syncOmniStar(); // bmState 由 bookmarks-changed 推送刷新；星标即时反馈
+    } finally { bmBusy = false; }
   }
 
   function focusOmni() { // ⌘L：聚焦并全选（侧栏收起时先展开，§7）
@@ -434,8 +452,11 @@
       else window.__webOpenInput(raw);
     }
   }
-  omniInput.addEventListener('focus', () => { omniInput.select(); });
+  let blurTimer = null; // blur 收起下拉的 150ms 定时器——回焦/打字要取消它,否则它会把刚打的字回吞（#10）
+  const cancelBlur = () => { if (blurTimer) { clearTimeout(blurTimer); blurTimer = null; } };
+  omniInput.addEventListener('focus', () => { cancelBlur(); omniInput.select(); });
   omniInput.addEventListener('input', () => {
+    cancelBlur();
     omniTyping = true;
     sugOriginal = omniInput.value;
     sug = computeSug(omniInput.value);
@@ -462,7 +483,8 @@
     }
   });
   omniInput.addEventListener('blur', () => {
-    setTimeout(() => { omniTyping = false; hideSug(); syncOmni(); }, 150); // 150ms 宽限：点建议的时间窗（§4.2）
+    cancelBlur();
+    blurTimer = setTimeout(() => { omniTyping = false; hideSug(); syncOmni(); blurTimer = null; }, 150); // 150ms 宽限：点建议的时间窗（§4.2）
   });
 
   // ---- 收藏区（§4.3）----
@@ -607,6 +629,7 @@
   function openSubPage(name) {
     subPage = name;
     if (attachedKey) { window.ws2.webHideAll(); attachedKey = null; } // 原生 view 会盖住 DOM → 先摘
+    setVeil(false);
     closeFind();
     newtabEl.hidden = true;
     errEl.hidden = true;
@@ -923,8 +946,8 @@
   // ---- 全局快捷键（renderer 聚焦时；web view 聚焦时由主进程 before-input-event 转发同名命令）----
   document.addEventListener('keydown', (ev) => {
     const mod = ev.metaKey || ev.ctrlKey;
-    // 弹层守卫（§7）：modal 开着不穿透
-    if (document.querySelector('.sb-modal-overlay') || document.getElementById('fp-overlay')) return;
+    // 弹层守卫（§7）：任何 modal/面板开着不穿透——含 AI 接入 .aiax-overlay（#11,与 view 暂停的 OVERLAY_SEL 口径一致）
+    if (document.querySelector('.sb-modal-overlay, #fp-overlay, .aiax-overlay')) return;
     if (mod && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'l') { ev.preventDefault(); focusOmni(); return; }
     if (mod && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'd') {
       if (isWebActive()) { ev.preventDefault(); toggleBookmark(); }

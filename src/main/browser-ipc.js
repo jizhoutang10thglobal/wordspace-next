@@ -40,6 +40,7 @@ function registerBrowserIpc() {
   ipcMain.handle('bm-add', (_e, b) => {
     const src = b && typeof b === 'object' ? b : {};
     if (typeof src.url !== 'string' || !/^https?:\/\//i.test(src.url)) return null;
+    if (bookmarksLib.isBookmarked(browserStore.getBookmarks(), src.url)) return null; // 同 url 已收藏 → 不重复加（连点 ⌘D 的服务端防御,#12）
     const r = bookmarksLib.add(browserStore.getBookmarks(), {
       title: typeof src.title === 'string' ? src.title : '',
       url: src.url,

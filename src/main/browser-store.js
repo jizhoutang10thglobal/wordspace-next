@@ -46,16 +46,23 @@ function cell(name) {
   return cells[name];
 }
 
+let writeSeq = 0;
 async function writeCell(c) {
-  c.dirty = false;
-  const json = JSON.stringify(c.dump(c.data), null, 2);
-  const tmp = c.file + '.tmp';
+  // ⚠ dirty 不在开头清（P2-5）：若 quit 落在下面 await 窗口,早清 dirty 会让 flushSync 跳过、
+  // 异步写随进程退出被截断 → 该轮变更丢。改成落盘成功后、且 data 引用没再换（无新变更）才清。
+  const data = c.data; // 快照引用：setX 是换引用（c.data = 新对象）,据此判有没有新变更
+  const json = JSON.stringify(c.dump(data), null, 2);
+  // 唯一 tmp（P2-5）：原来 async writeCell 与 flushSync 共用 `c.file+'.tmp'`,并发写同名 tmp 再各自
+  // rename 会撕裂正本、下次 load 被 sanitize 清空。带 pid+seq 保证不撞。
+  const tmp = c.file + '.' + process.pid + '.' + (++writeSeq) + '.tmp';
   try {
     await fsp.mkdir(path.dirname(c.file), { recursive: true });
     await fsp.writeFile(tmp, json, 'utf8');
     await fsp.rename(tmp, c.file); // 原子：坏了只坏 tmp，正本完好
+    if (c.data === data) c.dirty = false; // 落盘后 data 没再变 → 清 dirty；变了则留 dirty,下轮再写
   } catch (e) {
     console.error('[browser-store] write failed:', c.file, e && e.message);
+    try { await fsp.rm(tmp, { force: true }); } catch { /* 清残留 tmp */ }
   }
 }
 function schedule(c) {
@@ -63,18 +70,18 @@ function schedule(c) {
   if (c.timer) clearTimeout(c.timer);
   c.timer = setTimeout(() => { c.timer = null; writeCell(c); }, DEBOUNCE_MS);
 }
-// 退出前同步冲盘（before-quit）：防抖窗内的最后变更不能丢。
+// 退出前同步冲盘（before-quit）：防抖窗内的最后变更不能丢。用独立 `.sync.tmp`,不与 async 撞。
 function flushSync() {
   for (const name of Object.keys(cells)) {
     const c = cells[name];
-    if (!c.dirty && !c.timer) continue;
+    if (!c.dirty) continue; // dirty=true 就冲（含 async writeCell await 窗口内被 quit 打断的情形）
     if (c.timer) { clearTimeout(c.timer); c.timer = null; }
-    c.dirty = false;
     try {
       fs.mkdirSync(path.dirname(c.file), { recursive: true });
-      const tmp = c.file + '.tmp';
+      const tmp = c.file + '.sync.tmp';
       fs.writeFileSync(tmp, JSON.stringify(c.dump(c.data), null, 2), 'utf8');
       fs.renameSync(tmp, c.file);
+      c.dirty = false;
     } catch (e) {
       console.error('[browser-store] flush failed:', c.file, e && e.message);
     }

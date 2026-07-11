@@ -341,12 +341,13 @@ function openExternalBtn(node, cls) {
 }
 // node = { name, rel, abs, kind } —— rel 来自侧栏文件树；「打开」按钮选的工作区外文件 rel 为 null、走 abs
 async function showViewer(node) {
-  if (window.__webDetach) window.__webDetach(); // 浏览器 feature：先摘 web view（原生 view 盖住一切 DOM）
+  // ⚠ 摘 web view 挪到脏守卫**之后**（浏览器 feature P2-1）：取消丢弃时什么都不动、网页态保留。
   if (tempDoc) { stashActiveTemp(); tempDoc = null; }
   else if (dirty) {
     if (!confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
     discardPendingAutoSave(); // 确认丢弃：到期的自动保存不能把刚丢弃的编辑写回盘
   }
+  if (window.__webDetach) window.__webDetach(); // 守卫通过 → 摘 web view（原生 view 盖住一切 DOM）
   // 退出编辑器态：停 watch、拆编辑内核（块+基础都拆）、清 docPath（非可编辑文件没有保存目标）
   window.ws2.unwatchDoc();
   detachEditors();
@@ -650,19 +651,32 @@ function shellDiscardTemp(id) {
 }
 
 async function openDoc(p) {
-  if (window.__webDetach) window.__webDetach(); // 浏览器 feature：先摘 web view（含「点已打开文档的标签」短路路径）
-  // 修 SH-4：点当前已打开文档的标签/树行 → 无条件全量重载（实测同 file:// 赋 src 会重导航），undo 栈清空、
-  // 缩放滚动复位；脏态还弹「丢弃?」。点已激活项应是 no-op。
-  if (p === docPath && !tempDoc) return;
+  const wasWebActive = window.__webIsActive && window.__webIsActive(); // 浏览器 feature：进来时激活的是不是网页标签
+  // 修 SH-4 + 浏览器 feature P1-2：点已打开文档的标签/树行。
+  // ① 非 web 态点已激活文档 → no-op（旧行为）。
+  // ② **web 态**点「已载入的后台文档」标签（p===docPath,iframe 内容还在）→ 不重载（重载会丢它的未保存
+  //    编辑）,但必须摘 web view 显示 iframe + 把 activeRel 切回文档（onOpen 设）——否则 activeRel 滞留在
+  //    web 标签,地址栏/⌘S/⌘W 全作用到看不见的网页上（状态分裂）。
+  if (p === docPath && !tempDoc) {
+    if (wasWebActive) {
+      if (window.__webDetach) window.__webDetach();
+      if (window.__sbHooks && window.__sbHooks.onOpen) window.__sbHooks.onOpen(docPath);
+    }
+    return;
+  }
   const seq = ++openSeq; // 修 SH-1：本次 open 的序号；await 期间又开/关了别的文档，落地时作废（最后点击者赢）
   // 没真打开成 → 撤销 onOpenFile 设的 __pendingColdOpen，否则它会一直抑制后续 loadTabs 的「恢复激活标签」
   // （如 app 已开 + 当前文档脏，第二实例双击别的文件、用户点「取消」时会走到这）。
   // 离开活跃临时文档：序列化存回 tempStore（不弹脏守卫，切回它还在）；真文件仍走原脏守卫。
+  // ⚠ 脏守卫在**摘 web view 之前**（浏览器 feature P2-1）：用户点「取消」时什么都不该动、网页态保留;
+  //    原来 __webDetach 在最前,取消后 view 已摘=网页态丢失、露出旧文档。脏确认对 web 态也要保留——
+  //    web 态下 dirty 属于后台文档 A,切去别的文档 B 会让 A 让位,不问就丢了 A 的未保存编辑。
   if (tempDoc) { stashActiveTemp(); tempDoc = null; }
   else if (dirty) {
     if (!confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
     discardPendingAutoSave(); // 确认丢弃：到期的自动保存不能在下面 readDoc 的让出期把刚丢弃的编辑写回盘
   }
+  if (window.__webDetach) window.__webDetach(); // 守卫通过、确定打开新文档 → 摘 web view
   let info; let raw; // raw：接住磁盘原始文本做 Feature 3 分流判定（routeDoc）
   try {
     // 校验文件存在 + UTF-8（拒非 UTF-8 防损坏）；接住返回的原始文本做分流判定（Feature 3，不新增 IPC）；再取 file:// URL 等
