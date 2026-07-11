@@ -13,6 +13,13 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-10 — 真 app 加了隐藏性能诊断模式 + 「云盘不是 perf 元凶」实测教训
+
+**是什么**：v0.6.5 起，真 app 菜单「Wordspace Next→性能诊断…」（或 Cmd+Shift+D）开隐藏诊断面板，显示每根 readTree 耗时/文件数/watcher 触发次数/云盘徽章 + 渲染耗时 + 主线程长任务(>50ms 卡帧) + JS 内存，并可「录制 5 秒 CPU Profile」存桌面。普通用户零感知（默认不显示）。**硬教训**：Wendi 报「桌面+谷歌网盘两文件夹贼卡」，但云盘 stat 不慢（dataless 只是内容不在本地、元数据本地缓存）、readTree 不比本地慢（OneDrive 24k 文件 759ms vs 本地 20k 186ms 同量级）、空闲云盘 40 秒零 watcher 事件——三次实测全推翻「云盘慢」这个纯代码脑补。真实成本是文件数→readTree 线性涨，默认折叠时渲染很便宜。
+**怎么 apply**：做 perf 别从代码猜「云盘慢」；要判断就用这个诊断面板、且在代表性大文件夹上量（本地合成小文件夹会给假绿、骗过我们一次）。工具已在 src/main/perf-diag.js + src/main/workspace.js readTree 埋点。
+**来源**：PR #147（已合 main、发版 v0.6.5），worktree 已清。
+
+
 ## 2026-07-11 — /remember-global 落账方式定案：PR + auto-merge，直推特权废除
 
 **是什么**：Colin 拍板（方案 B）：保留 main 的全部保护门（must-PR + required test/e2e，含管理员），
