@@ -256,3 +256,31 @@ test('U0：断链（目标不存在）→ 提示且不导航、不切文档', as
   const dp = await page.evaluate(() => window.__shellDocPath());
   expect(dp.endsWith('C.html')).toBe(true);
 });
+
+test('U4：断链文档 → ws-broken 高亮圈住断链锚文本；有效内链不圈；装饰零落盘', async () => {
+  // C.html 恰有 1 条断链（缺失.html，文字「找不到」）+ 1 条外链（web 不算断链）
+  await page.click('.sb-file[data-rel="C.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档C');
+  const brokenSize = () => page.evaluate(() => {
+    const w = document.getElementById('doc-frame').contentWindow;
+    const hl = w.CSS && w.CSS.highlights && w.CSS.highlights.get('ws-broken');
+    return hl ? hl.size : 0;
+  });
+  // scan 是异步（逐 href resolveDocLink）→ poll 等高亮注册；断真实 CSS.highlights 注册状态（非 JS class）
+  await expect.poll(brokenSize, { timeout: 5000 }).toBe(1);
+  const covered = await page.evaluate(() => {
+    const w = document.getElementById('doc-frame').contentWindow;
+    return [...w.CSS.highlights.get('ws-broken')][0].toString();
+  });
+  expect(covered).toBe('找不到'); // 圈的是断链锚整段文字
+  // 铁律1：装饰纯视觉、不落盘——扫过之后 C.html 的 <a> 仍是纯净字节
+  const c = await fs.readFile(path.join(wsDir, 'C.html'), 'utf8');
+  expect(c).not.toContain('ws-broken');
+  expect(c).toMatch(/<a href="缺失\.html">找不到<\/a>/);
+  // 差分自检：切到有效内链文档（A.html 的 B.html 存在）→ 0 断链高亮（证明真检测、非恒亮）
+  await page.click('.sb-file[data-rel="A.html"]');
+  await expect(frame.locator('h1')).toHaveText('文档A');
+  await expect.poll(brokenSize, { timeout: 5000 }).toBe(0);
+  // TODO(U4 step 6)：补像素门 + 变异自检（清 ws-broken 高亮 → 像素必翻红），随 host-verify 一起做
+});

@@ -11,6 +11,7 @@ function refreshDocContext(p) {
   return docContextPromise;
 }
 window.__wsDocContext = () => docContext;
+window.__wsDocPath = () => docPath; // U4 linkview：断链扫描的 resolveDocLink fromAbs 来源
 // 就绪 promise：刚打开文档 docContext 还在异步算（classify-file），@ 触发时可等它一下再开菜单（审查 D）。
 window.__wsDocContextReady = () => docContextPromise || Promise.resolve(docContext);
 // U3 @新建：在当前文档同目录建一篇新文档，返回 { rel（给提及菜单算 href）, abs（建完插链接后跳去编辑它） }。null=失败。
@@ -185,6 +186,7 @@ function routeDoc(rawHtml) {
 function detachEditors() {
   if (window.WS2Find) window.WS2Find.close(); // 换/关文档：关查找条 + 清高亮，否则飘到下一个文档
   if (window.WS2Mention) window.WS2Mention.close(); // 同理关提及菜单（跨文档持有的 DOM 引用必失效）
+  if (window.WS2LinkView) window.WS2LinkView.detach(); // U4：清断链高亮 + 悬停/修复卡 + 定时器（跨文档必失效）
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
   if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
@@ -242,6 +244,7 @@ function attachBasic() {
   }, { passive: false });
   zoomSheet = null; applyZoom();
   installLinkGuard(doc); // U0：非合规文档同样收口链接点击
+  if (window.WS2LinkView) window.WS2LinkView.scan(frame); // U4：非合规文档也扫断链装饰（§8）
 }
 
 // 块编辑内核（WS2BlockEdit）跑在父层、操作 iframe 的 contentDocument（iframe sandbox 不跑脚本）。
@@ -291,6 +294,7 @@ function wireEditor() {
   zoomSheet = null;
   applyZoom();
   installLinkGuard(doc); // U0：文档内 <a> 点击收口（见下）
+  if (window.WS2LinkView) window.WS2LinkView.scan(frame); // U4：合规文档加载完成 → 扫断链装饰
 }
 
 // ---- U0：文档内 <a> 点击收口 ----
@@ -760,7 +764,7 @@ window.__shellResumeAutosave = resumeAutoSave;
 // 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
-window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); if (window.WS2Mention) window.WS2Mention.reposition(); };
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); if (window.WS2Mention) window.WS2Mention.reposition(); if (window.WS2LinkView) window.WS2LinkView.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -883,6 +887,11 @@ function handleDocChanged(p) {
   reloadDoc();
 }
 window.ws2.onDocChanged(handleDocChanged);
+// U4：链接索引刷新（目标文件增删/改名）→ 若刷的是当前文档所在根，重扫断链装饰自愈。
+window.ws2.onLinksUpdated((rootId) => {
+  const c = window.__wsDocContext && window.__wsDocContext();
+  if (c && c.rootId === rootId && window.WS2LinkView) window.WS2LinkView.scan(frame);
+});
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && pendingExternalChange) {
     const p = pendingExternalChange;
