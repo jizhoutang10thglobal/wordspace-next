@@ -17,6 +17,7 @@ const { assertInsideWorkspace, kindOf } = require('../lib/file-tree');
 const { TEMPLATES } = require('../lib/doc-templates');
 const rootsLib = require('../lib/roots');
 const tabsLib = require('../lib/tabs'); // 吸收时把持久化标签同步 rebase（双导出 IIFE，主进程可 require）
+const { registerBrowserIpc } = require('./browser-ipc'); // 浏览器 feature（网页标签/收藏/历史/设置,spec §10.3）
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recentsFile = () => path.join(app.getPath('userData'), 'recents.json');
@@ -579,6 +580,9 @@ function registerIpc() {
     const abs = assertInsideWorkspace(rootById(rootId), relPath);
     return pathToFileURL(abs).href;
   });
+
+  // 浏览器 feature 的 IPC 面（webtab:*/bm:*/hist:*/browser-settings）。
+  registerBrowserIpc();
 
   // 启动机会性清掉过期的删除备份。
   workspace.sweepBackups(trashRoot()).catch(() => {});

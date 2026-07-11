@@ -2,6 +2,7 @@ const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron')
 const path = require('path');
 const { registerIpc } = require('./ipc');
 const docWatcher = require('./doc-watcher');
+const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
 
 // e2e 测试用：隔离 userData，避免污染真实的最近文档与历史。
@@ -30,7 +31,8 @@ function createWindow() {
     }
   });
   win.loadFile(path.join(__dirname, '../renderer/index.html'));
-  win.on('closed', () => docWatcher.close()); // 关窗即停文件监听（防悬挂 watcher / 去抖定时器在窗口销毁后还触发）
+  webTabs.init(() => win); // 网页标签 view 管理器（浏览器 feature）：attach/事件都以这个窗口为宿主
+  win.on('closed', () => { docWatcher.close(); webTabs.destroyAll(); }); // 关窗即停文件监听 + 销毁全部 web view（防 webContents 泄漏）
   // 修 MP-5：did-finish-load（主框架加载完成）后置就绪并 flush 排队的 open-file。
   // ⚠ 不用 did-start-loading 重置——它对 iframe（文档 frame）导航也触发，会把每次开文档都误判成 renderer 未就绪、
   // 而 did-finish-load 只认主框架、不会再触发 → rendererReady 永久卡 false（residency 唤醒开文档就废）。
@@ -102,7 +104,7 @@ const BUG_REPORT_URL = 'https://humble-blanket-79b.notion.site/11f77f0ceeb647f89
 function buildMenu() {
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { label: 'AI 接入…', click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: '性能诊断…', click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { label: 'AI 接入…', click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: '性能诊断…', click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
     {
       label: '文件',
       submenu: [
@@ -111,6 +113,8 @@ function buildMenu() {
         { label: '打开文件夹…', accelerator: 'CmdOrCtrl+Shift+O', click: () => sendMenu('open-folder') },
         { label: '快速打开…', accelerator: 'CmdOrCtrl+P', click: () => sendMenu('find-palette') },
         { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
+        // 浏览器 feature（spec §4.4/§7）：⌘⇧T 重开最近关闭的标签（只记非文档标签,栈容量 15,renderer 管）
+        { label: '重新打开关闭的标签页', accelerator: 'CmdOrCtrl+Shift+T', click: () => sendMenu('reopen-tab') },
         { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
         { type: 'separator' },
         { label: '导出 PDF…', accelerator: 'CmdOrCtrl+E', click: () => sendMenu('export-pdf') }

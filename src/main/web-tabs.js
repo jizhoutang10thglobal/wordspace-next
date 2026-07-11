@@ -1,0 +1,394 @@
+// 网页标签的主进程 view 管理器 + 安全 session（spec §10.2/§11）。
+// 一个 registry 管完：view 生命周期 + 导航事件权威副本 + 安全边界（独立 session/零 preload/
+// 权限默认拒/loadURL 白名单/下载 cancel）。纯决策逻辑在 src/lib/web-tabs-policy.js（可单测），
+// 这里只做 electron 副作用。
+//
+// 关键不变式：
+//  - view 是可丢弃的渲染面,tab 状态在 renderer/store（tabs 持久化里带 url/title）。惰性创建,关标签 destroy。
+//  - webContents 永不自动销毁（官方明示会泄漏）→ 关闭路径显式 webContents.close()。
+//  - url/title/favicon 权威副本在这（registry）,renderer 只做 UI 镜像（webtab:state 推送驱动）。
+//  - 主进程永不自行 attach view：show() 是唯一 attach 入口,由 renderer 的激活漏斗驱动。
+//  - 历史只由这里的导航事件写（spec §10.3：历史写入无 renderer 入口）；back/forward 不记（§4.8）。
+const { WebContentsView, session, net, dialog, Menu, clipboard, app, shell } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const policy = require('../lib/web-tabs-policy');
+const webHistory = require('../lib/web-history');
+const ctxMenu = require('../lib/web-context-menu');
+const urlInput = require('../lib/url-input');
+const engines = require('../lib/search-engines');
+const browserStore = require('./browser-store');
+
+const PARTITION = 'persist:webtabs';
+const registry = new Map(); // key -> { view, url, title, favicon, loading, canGoBack, canGoForward, error, userZoom, _skipRecord }
+let getWin = () => null;
+let sess = null;
+let onHistoryChange = null; // ipc 注册：历史变更 → 持久化 + 推 renderer
+
+function engineTemplate() { return engines.engineOf(browserStore.getSettings().engine).url; }
+function engineName() { return engines.engineOf(browserStore.getSettings().engine).name; }
+
+// ---- 初始化 session（一次）----
+function ensureSession() {
+  if (sess) return sess;
+  sess = session.fromPartition(PARTITION);
+
+  // 权限：默认拒绝,极小白名单放行（policy）。request + check 两个 handler 都要设。
+  sess.setPermissionRequestHandler((_wc, permission, cb) => cb(policy.permissionAllowed(permission)));
+  sess.setPermissionCheckHandler((_wc, permission) => policy.permissionAllowed(permission));
+  // 屏幕共享：不给源 = 拒。设备类权限（WebUSB/HID/Serial/BT）走独立机制,一律拒。
+  if (sess.setDisplayMediaRequestHandler) sess.setDisplayMediaRequestHandler((_req, cb) => cb({}));
+  if (sess.setDevicePermissionHandler) sess.setDevicePermissionHandler(() => false);
+
+  // 下载已砍（spec §12）：一律 cancel + toast 告知,不落任何文件。
+  sess.on('will-download', (_e, item) => {
+    try { item.cancel(); } catch { /* 已取消 */ }
+    sendToRenderer('web-toast', 'Wordspace 浏览器不支持下载');
+  });
+
+  return sess;
+}
+
+function init(winGetter) {
+  getWin = winGetter;
+  ensureSession();
+  if (ctxProbeOn()) global.__ws2CtxAction = executeCtxAction; // e2e 探针：右键前也能直接调动作出口
+}
+function setHistoryHook(fn) { onHistoryChange = fn; }
+
+function sendToRenderer(channel, payload) {
+  const win = getWin();
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) win.webContents.send(channel, payload);
+}
+
+// registry → renderer 的合并推送（url/title/favicon/loading/canGoBack/error 合成一条 webtab:state）
+function pushUpdate(key) {
+  const rec = registry.get(key);
+  if (!rec) return;
+  sendToRenderer('web-tab-updated', {
+    key, url: rec.url, title: rec.title, favicon: rec.favicon,
+    loading: rec.loading, canGoBack: rec.canGoBack, canGoForward: rec.canGoForward, error: rec.error || null,
+  });
+}
+
+// ---- 历史（主进程自动记录，spec §4.8）----
+function recordHistory(url, title) {
+  const next = webHistory.record(browserStore.getHistory(), { url, title, ts: Date.now() });
+  browserStore.setHistory(next);
+  if (onHistoryChange) onHistoryChange(next);
+}
+function touchHistoryTitle(url, title) {
+  const cur = browserStore.getHistory();
+  const next = webHistory.touchTitle(cur, url, title, Date.now());
+  if (next !== cur) {
+    browserStore.setHistory(next);
+    if (onHistoryChange) onHistoryChange(next);
+  }
+}
+
+// ---- 拉 favicon → data:URL（renderer CSP img-src 无 https:,主进程拉图转 data 推给标签行/收藏）----
+async function fetchFavicon(key, url) {
+  try {
+    const resp = await net.fetch(url, { session: sess });
+    if (!resp.ok) return;
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length > 200 * 1024) return; // favicon 该很小,超 200KB 视为异常不存
+    const mime = resp.headers.get('content-type') || 'image/x-icon';
+    const rec = registry.get(key);
+    if (!rec) return;
+    rec.favicon = 'data:' + mime + ';base64,' + buf.toString('base64');
+    pushUpdate(key);
+  } catch { /* 失败静默：favicon 是装饰,标签行回落地球/FavChip */ }
+}
+
+// ---- 建 view（惰性,首次导航才调；起始页是 renderer 本地 surface,不建 view）----
+function createView(key, url) {
+  if (registry.get(key)) return registry.get(key).view;
+  ensureSession();
+  const view = new WebContentsView({
+    webPreferences: {
+      session: sess,
+      sandbox: true, contextIsolation: true, nodeIntegration: false,
+      safeDialogs: true, // 防 alert 洪水
+      focusOnNavigation: false, // 阻止 loadURL 完成抢焦点（Electron #42578 实证）
+      // 零 preload——远程内容碰不到任何 Wordspace API（spec §11.1）
+    },
+  });
+  const rec = { view, url: url || null, title: '新标签页', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, userZoom: null, _skipRecord: false };
+  registry.set(key, rec);
+  wireViewEvents(key, view);
+  return view;
+}
+
+function wireViewEvents(key, view) {
+  const wc = view.webContents;
+  // file:// 封死：will-navigate + will-redirect + will-frame-navigate 三处同守（spec §11.3）。
+  // ⚠ Electron 42：这三个事件的 URL 在**第一个参数**（Event 对象,同时带 .url 和 .preventDefault()）；
+  // 第二个位置参数是 deprecated 的 url 字符串。读错参数会永远 undefined → 无条件 preventDefault
+  // → 拦掉所有站内跳转/重定向/iframe（http→https、OAuth、点链接全废）。
+  const guard = (e) => { if (!policy.isAllowedNavUrl(e && e.url)) e.preventDefault(); };
+  wc.on('will-navigate', guard);
+  wc.on('will-redirect', guard);
+  if (wc.on) wc.on('will-frame-navigate', guard);
+
+  wc.on('did-start-loading', () => { const r = registry.get(key); if (r) { r.loading = true; r.error = null; pushUpdate(key); } });
+  wc.on('did-stop-loading', () => { const r = registry.get(key); if (r) { r.loading = false; syncNav(key); pushUpdate(key); } });
+  wc.on('did-finish-load', () => { fitToWidth(key); }); // 宽页自动缩放适配（Colin 2026-07-08:别让用户横滚）
+  wc.on('page-title-updated', (_e, title) => {
+    const r = registry.get(key); if (!r) return;
+    r.title = title || r.url || '新标签页'; pushUpdate(key);
+    if (title && r.url) touchHistoryTitle(r.url, title); // 晚到的真标题补进历史头条目（§4.8）
+  });
+  wc.on('page-favicon-updated', (_e, favicons) => {
+    const r = registry.get(key); if (!r) return;
+    const pick = policy.pickFavicon(favicons, r._faviconSrc);
+    if (pick) { r._faviconSrc = pick; fetchFavicon(key, pick); }
+  });
+  const onNav = (url) => {
+    const r = registry.get(key); if (!r || !url) return;
+    r.url = url; syncNav(key); pushUpdate(key);
+    // 历史：主动导航才记；back/forward 前 nav() 打了 _skipRecord 标志（§4.8 契约）。
+    if (r._skipRecord) { r._skipRecord = false; return; }
+    recordHistory(url, r.title);
+  };
+  wc.on('did-navigate', (_e, url) => onNav(url));
+  wc.on('did-navigate-in-page', (_e, url, isMainFrame) => { if (isMainFrame) onNav(url); });
+  wc.on('did-fail-load', (_e, code, desc, validatedURL, isMainFrame) => {
+    if (policy.classifyLoadFailure(code, isMainFrame) === 'error-page') {
+      const r = registry.get(key); if (r) { r.loading = false; r.error = { code, desc, url: validatedURL }; pushUpdate(key); }
+    }
+  });
+  wc.on('render-process-gone', (_e, details) => {
+    if (!policy.isRealCrash(details && details.reason)) return;
+    const r = registry.get(key); if (r) { r.error = { code: 'crash', desc: (details && details.reason) || 'crashed', url: r.url }; pushUpdate(key); }
+  });
+
+  // window.open：deny 原生弹窗；http(s) 链接 → 通知 renderer 建新标签走漏斗（spec §10.2：主进程不直接建 view）。
+  // disposition=background-tab（⌘点击）→ 后台标签；其余（target=_blank/window.open）→ 前台（浏览器惯例）。
+  wc.setWindowOpenHandler((details) => {
+    if (policy.isAllowedNavUrl(details.url)) {
+      const background = details.disposition === 'background-tab';
+      sendToRenderer('web-open-request', { url: details.url, background });
+    }
+    return { action: 'deny' };
+  });
+
+  // 右键菜单：原生 Menu.popup（DOM 菜单会被 native view 盖住，spec §4.7 硬约束）。
+  wc.on('context-menu', (_e, params) => openCtxMenu(key, params));
+
+  // web view 聚焦时 renderer 的 DOM keydown 全死 → 应用级快捷键在这拦截转发（菜单加速器已覆盖的
+  // ⌘T/⌘W/⌘P/⌘⇧F/⌘⇧T/⌘S/⌘E 不用管）。只拦我们认识的组合,其余放行给网页（§7 未命中放行）。
+  wc.on('before-input-event', (e, input) => {
+    if (!input || input.type !== 'keyDown') return;
+    const cmd = shortcutOf(input);
+    if (!cmd) return;
+    e.preventDefault();
+    if (cmd === 'zoom-in' || cmd === 'zoom-out' || cmd === 'zoom-reset') {
+      setZoom(key, cmd === 'zoom-in' ? 'in' : cmd === 'zoom-out' ? 'out' : 'reset');
+      return;
+    }
+    sendToRenderer('web-shortcut', { cmd });
+  });
+}
+
+// before-input-event → 应用命令映射。mac ⌘ = meta,Win/Linux = ctrl（Ctrl+Tab 两边都是 control）。
+function shortcutOf(input) {
+  const mod = process.platform === 'darwin' ? input.meta : input.control;
+  const k = String(input.key || '').toLowerCase();
+  if (input.control && k === 'tab') return input.shift ? 'cycle-prev' : 'cycle-next';
+  if (!mod) return null;
+  if (input.shift) return null; // ⌘⇧ 组合都在菜单加速器里（⌘⇧T/⌘⇧F/⌘⇧S）
+  if (k === 'l') return 'focus-address';
+  if (k === 'd') return 'bookmark-toggle';
+  if (k === 'f') return 'web-find';
+  if (k === '\\') return 'toggle-sidebar';
+  if (k === ',') return 'open-settings';
+  if (k === '=' || k === '+') return 'zoom-in';
+  if (k === '-') return 'zoom-out';
+  if (k === '0') return 'zoom-reset';
+  if (/^[1-9]$/.test(k)) return 'tab-' + k;
+  return null;
+}
+
+function syncNav(key) {
+  const r = registry.get(key); if (!r) return;
+  const nh = r.view.webContents.navigationHistory;
+  try { r.canGoBack = nh ? nh.canGoBack() : r.view.webContents.canGoBack(); } catch { r.canGoBack = false; }
+  try { r.canGoForward = nh ? nh.canGoForward() : r.view.webContents.canGoForward(); } catch { r.canGoForward = false; }
+}
+
+// ---- 显示/隐藏/销毁（renderer 激活漏斗驱动）----
+function show(key, bounds) {
+  const win = getWin(); if (!win || win.isDestroyed()) return;
+  const rec = registry.get(key); if (!rec) return;
+  const children = win.contentView.children;
+  // 排他:先摘掉其它所有 web view（同一时刻最多一个 attach）
+  for (const [k, r] of registry) { if (k !== key && children.indexOf(r.view) !== -1) win.contentView.removeChildView(r.view); }
+  win.contentView.addChildView(rec.view); // re-add 已存在的 = 提到最顶（官方 z-order）
+  if (bounds) { rec.view.setBounds(bounds); scheduleRefit(key); }
+  rec.view.setVisible(true);
+  try { rec.view.webContents.focus(); } catch { /* 销毁竞态 */ } // 切到网页标签,键盘该进页面
+}
+function setBounds(key, bounds) { const r = registry.get(key); if (r && bounds) { try { r.view.setBounds(bounds); scheduleRefit(key); } catch { /* view 已销毁 */ } } }
+function hide(key) {
+  const win = getWin(); const rec = registry.get(key); if (!win || !rec) return;
+  try {
+    if (win.isDestroyed()) return;
+    if (win.contentView.children.indexOf(rec.view) !== -1) win.contentView.removeChildView(rec.view);
+  } catch { /* 窗口/view 已销毁,无需 detach */ }
+}
+function hideAll() { for (const key of registry.keys()) hide(key); }
+function destroy(key) {
+  const rec = registry.get(key); if (!rec) return;
+  hide(key);
+  try { if (rec.view.webContents && !rec.view.webContents.isDestroyed()) rec.view.webContents.close(); } catch { /* 已销毁 */ } // 显式 close,否则内存泄漏
+  registry.delete(key);
+}
+function destroyAll() { for (const key of Array.from(registry.keys())) destroy(key); }
+
+// ---- 导航操作 ----
+// 地址栏提交：input 原文进来,主进程统一 parse（搜索引擎模板从设置取,单一实现,spec §5 等价实现）。
+function navigate(key, input) {
+  const parsed = urlInput.parse(input, { searchTemplate: engineTemplate() });
+  if (parsed.kind === 'blocked') return { blocked: true }; // 先判 blocked,别为拒绝的输入白建 view
+  createView(key, null);
+  const r = registry.get(key);
+  r.url = parsed.url; r.error = null;
+  r.view.webContents.loadURL(parsed.url); // noop rejection 已内附,不必 catch
+  pushUpdate(key);
+  return { url: parsed.url };
+}
+function loadUrlDirect(key, url) { // 书签/历史/补全建议/恢复重载：URL 已知,仍过 scheme 守卫（§11.3）
+  if (!policy.isAllowedNavUrl(url)) return { blocked: true };
+  createView(key, url);
+  const r = registry.get(key); r.url = url; r.error = null;
+  r.view.webContents.loadURL(url);
+  pushUpdate(key);
+  return { url };
+}
+function nav(key, action) {
+  const r = registry.get(key); if (!r) return;
+  const wc = r.view.webContents; const nh = wc.navigationHistory;
+  if (action === 'back') { r._skipRecord = true; nh && nh.canGoBack() ? nh.goBack() : wc.canGoBack() && wc.goBack(); }
+  else if (action === 'forward') { r._skipRecord = true; nh && nh.canGoForward() ? nh.goForward() : wc.canGoForward() && wc.goForward(); }
+  else if (action === 'reload') wc.reload(); // 刷新记历史（60s 合并兜着不刷屏，§4.8）
+  else if (action === 'stop') wc.stop();
+  else if (action === 'undo') wc.undo();   // 菜单吞了 Cmd+Z,不转发=杀死网页文本框撤销
+  else if (action === 'redo') wc.redo();
+}
+function find(key, text, opts) { const r = registry.get(key); if (r && text) r.view.webContents.findInPage(text, opts || {}); }
+function stopFind(key, action) { const r = registry.get(key); if (r) r.view.webContents.stopFindInPage(action || 'clearSelection'); }
+function wireFoundInPage(key) {
+  const r = registry.get(key); if (!r || r._foundWired) return; // 幂等:防重复挂 listener 泄漏
+  r._foundWired = true;
+  r.view.webContents.on('found-in-page', (_e, result) => {
+    if (result.finalUpdate) sendToRenderer('web-found', { key, matches: result.matches, active: result.activeMatchOrdinal });
+  });
+}
+
+// ---- 缩放（spec §4.6：每标签独立、±0.1、0.5–2、⌘0 复位）----
+function setZoom(key, dir) {
+  const r = registry.get(key); if (!r) return;
+  const wc = r.view.webContents;
+  if (wc.isDestroyed()) return;
+  const next = policy.nextZoom(wc.getZoomFactor() || 1, dir);
+  r.userZoom = next; // 用户手动缩放后,fitToWidth 不再自动动它
+  try { wc.setZoomFactor(next); } catch { /* 销毁竞态 */ }
+}
+
+// 网页导出 PDF（右键菜单）：printToPDF → 保存对话框（spec §4.7；下载已砍,不走下载目录）。
+async function printToPdf(key) {
+  const r = registry.get(key); if (!r) return null;
+  const wc = r.view.webContents;
+  if (wc.isDestroyed()) return null;
+  const buf = await wc.printToPDF({ printBackground: true });
+  const win = getWin();
+  const leaf = policy.safeFilename(r.title || 'webpage') + '.pdf';
+  const seamPath = !app.isPackaged ? process.env.WS2_PDF_OUT : null; // 测试 seam,照 export-pdf 先例
+  let out = seamPath;
+  if (!out) {
+    let defDir;
+    try { defDir = app.getPath('downloads'); } catch { defDir = app.getPath('home'); }
+    const picked = await dialog.showSaveDialog(win, {
+      title: '导出 PDF',
+      defaultPath: path.join(defDir, leaf),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (picked.canceled || !picked.filePath) return { canceled: true };
+    out = picked.filePath;
+  }
+  fs.writeFileSync(out, buf);
+  if (!seamPath) shell.showItemInFolder(out);
+  return { ok: true, path: out };
+}
+
+// ---- 右键菜单（原生）----
+function ctxProbeOn() { try { return !!process.env.WS2_CTXMENU_PROBE && !app.isPackaged; } catch { return false; } }
+function openCtxMenu(key, params) {
+  const rec = registry.get(key); if (!rec) return;
+  const p = params || {};
+  const sub = { linkURL: p.linkURL, srcURL: p.srcURL, mediaType: p.mediaType, selectionText: p.selectionText, isEditable: p.isEditable, x: p.x, y: p.y };
+  const ctx = { canGoBack: rec.canGoBack, canGoForward: rec.canGoForward, pageUrl: rec.url, engineName: engineName(), isAllowedUrl: policy.isAllowedNavUrl };
+  const template = ctxMenu.buildCtxTemplate(sub, ctx);
+  if (ctxProbeOn()) { global.__ws2LastCtxMenu = { key, params: sub, template }; global.__ws2CtxAction = executeCtxAction; return; } // e2e 探针：不弹菜单，存捕获
+  const win = getWin(); if (!win || win.isDestroyed()) return;
+  const items = template.map((it) => it.type === 'separator'
+    ? { type: 'separator' }
+    : { label: it.label, enabled: it.enabled !== false, click: () => executeCtxAction(key, it.id, it.args) });
+  try { Menu.buildFromTemplate(items).popup({ window: win }); } catch { /* 窗口销毁中 */ } // 不传 x/y = 弹在鼠标处
+}
+// 唯一动作出口（id 白名单收口,spec §11.4）。open/search 类动作内部重校验 URL（防御纵深,不信 template 回传的 args）。
+// 未知 id 静默 no-op。
+function executeCtxAction(key, id, args) {
+  const rec = registry.get(key); if (!rec) return;
+  const wc = rec.view && rec.view.webContents; if (!wc || wc.isDestroyed()) return;
+  const a = args || {};
+  switch (id) {
+    case 'open-link': if (policy.isAllowedNavUrl(a.url)) sendToRenderer('web-open-request', { url: a.url, background: false }); break;
+    case 'open-link-bg': if (policy.isAllowedNavUrl(a.url)) sendToRenderer('web-open-request', { url: a.url, background: true }); break;
+    case 'copy-link': clipboard.writeText(urlInput.cleanShareUrl(a.url || '')); break;
+    case 'copy-image': wc.copyImageAt(a.x, a.y); break;
+    case 'copy-image-url': if (policy.isAllowedNavUrl(a.url)) clipboard.writeText(a.url); break;
+    case 'copy-selection': wc.copy(); break;
+    case 'search-selection': { const u = urlInput.searchUrl(String(a.text || ''), engineTemplate()); if (policy.isAllowedNavUrl(u)) sendToRenderer('web-open-request', { url: u, background: false }); break; }
+    case 'cut': wc.cut(); break;
+    case 'copy': wc.copy(); break;
+    case 'paste': wc.paste(); break;
+    case 'select-all': wc.selectAll(); break;
+    case 'nav-back': nav(key, 'back'); break;
+    case 'nav-forward': nav(key, 'forward'); break;
+    case 'reload': nav(key, 'reload'); break;
+    case 'copy-page-url': clipboard.writeText(urlInput.cleanShareUrl(rec.url || '')); break;
+    case 'export-pdf': printToPdf(key); break;
+    default: break;
+  }
+}
+
+// 宽页自动缩放适配（Colin 2026-07-08:固定宽度老站比网页区宽会出横滚,该像手机浏览器 shrink-to-fit）。
+// 只缩不放:zoom' = min(1, 视口宽/内容宽),下限 0.65,溢出 <2% 不动。did-finish-load + 视口变化都重算。
+// ⚠ 与手动缩放的边界（spec §4.6 每标签手动缩放优先）：用户 ⌘±/⌘0 过（userZoom != null）就不再自动动。
+async function fitToWidth(key) {
+  const r = registry.get(key); if (!r || r.userZoom != null) return;
+  const wc = r.view && r.view.webContents;
+  if (!wc || wc.isDestroyed()) return;
+  try {
+    // 先回 zoom 1 量**自然宽度**——若在缩小态下量,流式页永远报告 dw≈vw、算不出「其实 1x 就放得下」。
+    if ((wc.getZoomFactor() || 1) !== 1) wc.setZoomFactor(1);
+    const m = await wc.executeJavaScript(
+      'new Promise((res) => requestAnimationFrame(() => res({ vw: window.innerWidth, dw: Math.max(document.documentElement ? document.documentElement.scrollWidth : 0, document.body ? document.body.scrollWidth : 0) })))',
+      true,
+    );
+    if (!m || !m.vw || !m.dw) return;
+    if (m.dw <= m.vw * 1.02) return;                    // 自然宽度放得下 → 保持 1
+    wc.setZoomFactor(Math.max(0.65, m.vw / m.dw));      // 缩到正好放下
+  } catch { /* 页面导航中/被销毁,下个 load 再算 */ }
+}
+let fitTimer = null;
+function scheduleRefit(key) { clearTimeout(fitTimer); fitTimer = setTimeout(() => fitToWidth(key), 250); }
+
+module.exports = {
+  init, setHistoryHook, createView, show, hide, hideAll, setBounds, destroy, destroyAll,
+  navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setZoom, printToPdf,
+  openCtxMenu, executeCtxAction, recordHistory,
+  _registry: registry,
+};
