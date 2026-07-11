@@ -50,6 +50,7 @@
   let settings = { engine: 'bing', engines: [] };
   let subPage = null; // 'history' | 'bookmarks' | 'settings' | null
   let findOpen = false;
+  let findKey = null; // 查找条打开时锁定的标签 key（切标签必关查找条,但 stop 要发给打开时那个标签,别发给新标签）
   let toastInsetTimer = null;
   const BM_BAR = 'bm-bar';
 
@@ -135,7 +136,7 @@
     errEl.hidden = true;
   }
   function activate(entry) {
-    closeSubPage(); // 正在看历史/收藏/设置 → 回主视图（§4.1/§4.3）
+    clearSubPage(); // 清子页面 DOM 状态（不 activateBack——activate 自己接管 view）
     closeFind();
     const key = keyOf(entry);
     if (!entry.url) { // 起始页：本地 surface，不建 view（§4.5.2 懒创建）
@@ -149,19 +150,21 @@
     }
     surfaceOff();
     const st = webState[key];
-    if (st && st.error) { // 上次加载失败：显示占位（view 可能空白）
-      showError(key, st.error);
-    }
     if (!live.has(key)) { live.add(key); window.ws2.webLoadUrl(key, entry.url); } // 恢复的标签懒加载（§8）
-    attachedKey = key;
-    window.ws2.webShow(key, viewBounds());
+    if (st && st.error) { // 上次加载失败：显示占位,别把空白 view 盖上去（P1:占位+重试按钮才可用）
+      if (attachedKey) { window.ws2.webHideAll(); attachedKey = null; }
+      showError(key, st.error);
+    } else {
+      attachedKey = key;
+      window.ws2.webShow(key, viewBounds());
+    }
     syncChrome();
   }
   function detach() {
     if (attachedKey) { window.ws2.webHideAll(); attachedKey = null; }
     surfaceOff();
     closeFind();
-    closeSubPage();
+    clearSubPage(); // ⚠ 不 activateBack（要切到文档/查看器了,别把 web view 挂回来盖住文档,P1）
     syncChrome();
   }
   function closeView(key) {
@@ -287,12 +290,10 @@
     live.add(key);
     window.ws2.webNavigate(key, input).then((r) => {
       if (r && r.blocked) { live.delete(key); toast('不支持打开这类地址'); return; }
-      if (attachedKey === null && isWebActive() && keyOf(activeEntry()) === key) {
-        attachedKey = key;
-        window.ws2.webShow(key, viewBounds());
-      }
-      // 起始页 surface 这里不藏——fresh view 首绘前藏掉它会把底下的文档透出来（闪回文档 bug）。
-      // 等主进程第一次带 url 的 webtab:state 推送（导航已提交）再藏,见 onWebTabUpdated。
+      // ⚠ 这里既不藏起始页也不 attach view——fresh WebContentsView 首绘前透明,提前挂上会盖住起始页
+      // 露白屏（闪回 bug 只修一半的根因,两路审查交叉确认）。attach + 藏起始页全交给 onWebTabUpdated
+      // 的 everCommitted 分支（导航真提交后才切,慢站加载期起始页一直盖着,像 Chrome 停在原页）。
+      // 若这是已 attach 的网页标签原地导航（attachedKey===key）,view 早已挂着,不受影响。
     }).catch(() => {});
   }
 
@@ -423,16 +424,15 @@
     omniInput.blur();
     if (e && T.isWebEntry(e)) {
       closeSubPage();
-      if (pick) { live.add(keyOf(e)); window.ws2.webLoadUrl(keyOf(e), pick.url); newtabEl.hidden = true; attachIfActive(keyOf(e)); }
+      // pick（选建议）与直接导航同款：都不提前藏起始页/attach——起始页态下会盖白屏（同闪回根因）。
+      // 交给 everCommitted 分支。已 attach 的网页标签原地导航时 view 早挂着,不受影响。
+      if (pick) { live.add(keyOf(e)); window.ws2.webLoadUrl(keyOf(e), pick.url); }
       else submitNavigate(keyOf(e), raw);
     } else {
       // 文档/文件/空态：开新网页标签再导航（文档不被顶掉）
       if (pick) focusOrOpen(pick.url, pick.title);
       else window.__webOpenInput(raw);
     }
-  }
-  function attachIfActive(key) {
-    if (isWebActive() && keyOf(activeEntry()) === key) { attachedKey = key; window.ws2.webShow(key, viewBounds()); }
   }
   omniInput.addEventListener('focus', () => { omniInput.select(); });
   omniInput.addEventListener('input', () => {
@@ -571,6 +571,7 @@
   function openFind() {
     const e = activeEntry();
     if (!e || !T.isWebEntry(e) || !e.url) return;
+    findKey = keyOf(e); // 锁定当前标签——后续 find/stop 都发给它,不看 activeEntry（切标签会变）
     findOpen = true;
     findBar.hidden = false;
     findCount.hidden = true;
@@ -582,16 +583,15 @@
     if (!findOpen) return;
     findOpen = false;
     findBar.hidden = true;
-    const e = activeEntry();
-    if (e && T.isWebEntry(e)) window.ws2.webFindStop(keyOf(e), 'clearSelection');
+    if (findKey) window.ws2.webFindStop(findKey, 'clearSelection'); // 清打开时那个标签的高亮,别错发给切过去的新标签（#5）
+    findKey = null;
     rebound();
   }
   function findGo(forward, next) {
-    const e = activeEntry();
-    if (!e || !T.isWebEntry(e)) return;
+    if (!findKey) return;
     const q = findInput.value;
     if (!q) { findCount.hidden = true; return; }
-    window.ws2.webFind(keyOf(e), q, { forward, findNext: next });
+    window.ws2.webFind(findKey, q, { forward, findNext: next });
   }
   findInput.addEventListener('input', () => { findGo(true, false); });
   findInput.addEventListener('keydown', (ev) => {
@@ -615,21 +615,19 @@
     else renderSettingsPage();
     pageEl.hidden = false;
   }
-  function closeSubPage() {
+  // 只清子页面 DOM/状态,不回主视图（detach/activate 用——它们自己接管 view）。
+  function clearSubPage() {
     if (!subPage) return;
     subPage = null;
     pageEl.hidden = true;
     pageEl.innerHTML = '';
-    // 回主视图：激活的是 web 标签 → 重新 attach / 起始页
-    const e = activeEntry();
-    if (e && T.isWebEntry(e)) activateBack(e);
   }
-  function activateBack(e) {
-    if (!e.url) { renderNewtab(); newtabEl.hidden = false; return; }
-    const key = keyOf(e);
-    if (!live.has(key)) { live.add(key); window.ws2.webLoadUrl(key, e.url); }
-    attachedKey = key;
-    window.ws2.webShow(key, viewBounds());
+  // 用户从子页面「返回」：清 + 回到激活的 web 标签主视图（复用 activate 的完整逻辑,含错误占位/起始页）。
+  function closeSubPage() {
+    if (!subPage) return;
+    clearSubPage();
+    const e = activeEntry();
+    if (e && T.isWebEntry(e)) activate(e);
   }
   function pageShell(title, actions) {
     pageEl.innerHTML = '';

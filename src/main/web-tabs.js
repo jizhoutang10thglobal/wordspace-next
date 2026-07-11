@@ -88,12 +88,22 @@ function touchHistoryTitle(url, title) {
 }
 
 // ---- 拉 favicon → data:URL（renderer CSP img-src 无 https:,主进程拉图转 data 推给标签行/收藏）----
+const FAVICON_MAX = 200 * 1024; // favicon 该很小,超 200KB 视为异常不存
 async function fetchFavicon(key, url) {
   try {
-    const resp = await net.fetch(url, { session: sess });
+    // ⚠ 必须走 persist:webtabs session（§11.1 隔离）——`net.fetch` 的 init **没有 session 选项**
+    // （Electron 42 d.ts 明示：net.fetch 用默认 session,跨 session 要 ses.fetch()）。原来传
+    // `{ session: sess }` 被静默忽略,favicon 请求落默认 session、cookie/cache 跨界。改用 sess.fetch。
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000); // 无超时的恶意流式 favicon 会吊住,加 8s 闸
+    let resp;
+    try { resp = await sess.fetch(url, { signal: ctrl.signal }); }
+    finally { clearTimeout(timer); }
     if (!resp.ok) return;
+    const declared = Number(resp.headers.get('content-length'));
+    if (declared && declared > FAVICON_MAX) return; // 声明就超限 → 不缓冲（防无界吃内存）
     const buf = Buffer.from(await resp.arrayBuffer());
-    if (buf.length > 200 * 1024) return; // favicon 该很小,超 200KB 视为异常不存
+    if (buf.length > FAVICON_MAX) return; // 没声明长度的兜底：全量拿到再判（arrayBuffer 无流式截断,只能靠 declared 先挡大头）
     const mime = resp.headers.get('content-type') || 'image/x-icon';
     const rec = registry.get(key);
     if (!rec) return;
@@ -148,15 +158,24 @@ function wireViewEvents(key, view) {
     const pick = policy.pickFavicon(favicons, r._faviconSrc);
     if (pick) { r._faviconSrc = pick; fetchFavicon(key, pick); }
   });
-  const onNav = (url) => {
+  // isTop=true 是整页导航（did-navigate）；false 是 SPA 站内路由（did-navigate-in-page,不换 favicon/不重置）。
+  const onNav = (url, isTop) => {
     const r = registry.get(key); if (!r || !url) return;
+    if (isTop) {
+      // 整页导航 → 换站：清 favicon,别让新页无 icon 时挂着上一站图标（轻度 spoof 面,P2-9）。
+      // _faviconSrc 也清,否则同 URL 首次 fetch 失败后被 pickFavicon 永久去重、reload 不再拉。
+      r.favicon = null; r._faviconSrc = null;
+    }
     r.url = url; r.everCommitted = true; syncNav(key); pushUpdate(key);
-    // 历史：主动导航才记；back/forward 前 nav() 打了 _skipRecord 标志（§4.8 契约）。
+    // 历史：主动导航才记；back/forward 前 nav() 打了 _skipRecord 标志（§4.8 契约）。用后即清,别泄漏。
     if (r._skipRecord) { r._skipRecord = false; return; }
-    recordHistory(url, r.title);
+    // ⚠ did-navigate 时 r.title 还是**上一页**的标题（page-title-updated 晚于 did-navigate）——
+    // 传它会让历史条目顶着旧标题。传 null,让 web-history 用 url 兜底（§4.8「先用 url 当标题」）,
+    // 真标题稍后由 page-title-updated → touchHistoryTitle 补写。
+    recordHistory(url, null);
   };
-  wc.on('did-navigate', (_e, url) => onNav(url));
-  wc.on('did-navigate-in-page', (_e, url, isMainFrame) => { if (isMainFrame) onNav(url); });
+  wc.on('did-navigate', (_e, url) => onNav(url, true));
+  wc.on('did-navigate-in-page', (_e, url, isMainFrame) => { if (isMainFrame) onNav(url, false); });
   wc.on('did-fail-load', (_e, code, desc, validatedURL, isMainFrame) => {
     if (policy.classifyLoadFailure(code, isMainFrame) === 'error-page') {
       const r = registry.get(key); if (r) { r.loading = false; r.error = { code, desc, url: validatedURL }; pushUpdate(key); }
@@ -171,6 +190,15 @@ function wireViewEvents(key, view) {
   // disposition=background-tab（⌘点击）→ 后台标签；其余（target=_blank/window.open）→ 前台（浏览器惯例）。
   wc.setWindowOpenHandler((details) => {
     if (policy.isAllowedNavUrl(details.url)) {
+      // 频率闸（P2-7）：Electron 基于 //content,没有 Chrome 的 popup blocker。恶意页
+      // setInterval(window.open) 会无界开标签打死 UI。每标签每秒最多 5 个新标签,超了静默丢。
+      const r = registry.get(key);
+      const now = Date.now();
+      if (r) {
+        r._openTimes = (r._openTimes || []).filter((t) => now - t < 1000);
+        if (r._openTimes.length >= 5) return { action: 'deny' };
+        r._openTimes.push(now);
+      }
       const background = details.disposition === 'background-tab';
       sendToRenderer('web-open-request', { url: details.url, background });
     }
@@ -257,15 +285,18 @@ function navigate(key, input) {
   if (parsed.kind === 'blocked') return { blocked: true }; // 先判 blocked,别为拒绝的输入白建 view
   createView(key, null);
   const r = registry.get(key);
-  r.url = parsed.url; r.error = null;
+  r.url = parsed.url; r.error = null; r._skipRecord = false; // 兜底清 back/forward 残留标志（P1-1:back 未成行时标志会滞留,吞掉这次正常导航的历史）
   r.view.webContents.loadURL(parsed.url); // noop rejection 已内附,不必 catch
   pushUpdate(key);
   return { url: parsed.url };
 }
-function loadUrlDirect(key, url) { // 书签/历史/补全建议/恢复重载：URL 已知,仍过 scheme 守卫（§11.3）
+// 书签/历史/补全建议/恢复重载：URL 已知,仍过 scheme 守卫（§11.3）。opts.record=false 时不记历史
+// （会话恢复的懒加载走这条——§4.8 主动导航是封闭列表,不含会话恢复;书签/历史/补全点击不传=照记）。
+function loadUrlDirect(key, url, opts) {
   if (!policy.isAllowedNavUrl(url)) return { blocked: true };
   createView(key, url);
   const r = registry.get(key); r.url = url; r.error = null;
+  r._skipRecord = opts && opts.record === false; // 恢复不记；其余清零（兜底 back 残留）
   r.view.webContents.loadURL(url);
   pushUpdate(key);
   return { url };
@@ -273,8 +304,10 @@ function loadUrlDirect(key, url) { // 书签/历史/补全建议/恢复重载：
 function nav(key, action) {
   const r = registry.get(key); if (!r) return;
   const wc = r.view.webContents; const nh = wc.navigationHistory;
-  if (action === 'back') { r._skipRecord = true; nh && nh.canGoBack() ? nh.goBack() : wc.canGoBack() && wc.goBack(); }
-  else if (action === 'forward') { r._skipRecord = true; nh && nh.canGoForward() ? nh.goForward() : wc.canGoForward() && wc.goForward(); }
+  // ⚠ 只有**真的会导航**时才置 _skipRecord（P1-1）：双击到栈底 canGoBack=false 时不置,否则标志
+  // 滞留、吞掉下一次正常导航的历史。
+  if (action === 'back') { const can = nh ? nh.canGoBack() : wc.canGoBack(); if (can) { r._skipRecord = true; nh ? nh.goBack() : wc.goBack(); } }
+  else if (action === 'forward') { const can = nh ? nh.canGoForward() : wc.canGoForward(); if (can) { r._skipRecord = true; nh ? nh.goForward() : wc.goForward(); } }
   else if (action === 'reload') wc.reload(); // 刷新记历史（60s 合并兜着不刷屏，§4.8）
   else if (action === 'stop') wc.stop();
   else if (action === 'undo') wc.undo();   // 菜单吞了 Cmd+Z,不转发=杀死网页文本框撤销
@@ -309,29 +342,42 @@ function setZoom(key, dir) {
 }
 
 // 网页导出 PDF（右键菜单）：printToPDF → 保存对话框（spec §4.7；下载已砍,不走下载目录）。
+// single-flight（P2-6）：连点两次导出会叠两个 printToPDF + 两个保存框；rec._pdfBusy 挡住。
 async function printToPdf(key) {
   const r = registry.get(key); if (!r) return null;
+  if (r._pdfBusy) return { busy: true };
   const wc = r.view.webContents;
   if (wc.isDestroyed()) return null;
-  const buf = await wc.printToPDF({ printBackground: true });
-  const win = getWin();
-  const leaf = policy.safeFilename(r.title || 'webpage') + '.pdf';
-  const seamPath = !app.isPackaged ? process.env.WS2_PDF_OUT : null; // 测试 seam,照 export-pdf 先例
-  let out = seamPath;
-  if (!out) {
-    let defDir;
-    try { defDir = app.getPath('downloads'); } catch { defDir = app.getPath('home'); }
-    const picked = await dialog.showSaveDialog(win, {
-      title: '导出 PDF',
-      defaultPath: path.join(defDir, leaf),
-      filters: [{ name: 'PDF', extensions: ['pdf'] }],
-    });
-    if (picked.canceled || !picked.filePath) return { canceled: true };
-    out = picked.filePath;
+  r._pdfBusy = true;
+  try {
+    const buf = await wc.printToPDF({ printBackground: true });
+    const win = getWin();
+    const leaf = policy.safeFilename(r.title || 'webpage') + '.pdf';
+    const seamPath = !app.isPackaged ? process.env.WS2_PDF_OUT : null; // 测试 seam,照 export-pdf 先例
+    let out = seamPath;
+    if (!out) {
+      let defDir;
+      try { defDir = app.getPath('downloads'); } catch { defDir = app.getPath('home'); }
+      const picked = await dialog.showSaveDialog(win, {
+        title: '导出 PDF',
+        defaultPath: path.join(defDir, leaf),
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      });
+      if (picked.canceled || !picked.filePath) return { canceled: true };
+      out = picked.filePath;
+    }
+    fs.writeFileSync(out, buf);
+    if (!seamPath) shell.showItemInFolder(out);
+    return { ok: true, path: out };
+  } finally {
+    r._pdfBusy = false; // registry 里的 rec 引用即使标签已关也安全（局部 r）
   }
-  fs.writeFileSync(out, buf);
-  if (!seamPath) shell.showItemInFolder(out);
-  return { ok: true, path: out };
+}
+// 全部 web view 静音/取消静音（P2-11：macOS 关窗=隐藏驻留,view 保活,别让后台网页继续放声）。
+function setAllAudioMuted(muted) {
+  for (const r of registry.values()) {
+    try { if (r.view.webContents && !r.view.webContents.isDestroyed()) r.view.webContents.setAudioMuted(muted); } catch { /* 销毁竞态 */ }
+  }
 }
 
 // ---- 右键菜单（原生）----
