@@ -13,6 +13,18 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-11 — 「打开大文件夹/桌面特别卡」根因 = .app 等 macOS 包被递归；文件树加三档忽略
+
+**是什么**：Wendi「打开 Wordspace 特别卡」真根因（视频实测）：她把桌面当工作区，桌面里有 Minecraft.app——
+macOS 的 .app/.framework/.photoslibrary 等是「包」（Finder 当单个文件），但 readTree 原来把它当普通文件夹**递归钻进去**，
+内部上万框架/资源文件把 readTree 卡死。**又一次不是云盘**（桌面是本地盘）。修法 PR #162：文件树三档忽略——
+A macOS 包（20 种后缀）显示成单节点不递归；B 依赖/构建/缓存目录（node_modules/.git/bower_components/__pycache__/
+Pods/DerivedData/venv）完全隐藏；C 隐藏文件（点开头）原 skip 已覆盖。实测 demo 10002 文件→只 2 文件进树、7ms。
+**怎么 apply**：遇「打开某文件夹卡」先查里面有没有 .app 或 node_modules 这类包/依赖目录被递归（别再先怀疑云盘）；
+忽略规则在 src/main/workspace.js（IGNORE / BUNDLE_EXTS / walk），加新类型往这两个 set 加。契约见 docs/features/workspace-file-tree.md。
+**来源**：PR #162。
+
+
 ## 2026-07-11 — 浏览器真 app 移植 PR #160 已开：动了共享核心，动 sidebar/shell/tabs/ipc 前看一眼
 
 **是什么**：浏览器 feature 按唯一契约 `docs/browser-feature-spec.md` §14 全量移植进真 app
