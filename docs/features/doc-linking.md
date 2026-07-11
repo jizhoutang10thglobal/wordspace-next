@@ -63,7 +63,12 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 - **消费面 U4-U6**：悬停预览卡 / 断链装饰+修复卡 / 反链面板 / 改名·移动·外部改名重写 / 删除守卫——
   ui-demo（`ec6c73d`）全有，app 无。
 - **U7 doc-id 修复锚**：两侧都未落盘 meta（ui-demo 修复候选只用同名，app 待做）。
-- **N1 back/forward**：ui-demo 已做并上 live（PR #146，`mock/nav.ts`），真 app **未移植**（本 spec §文件映射
-  标"待建"）。这一项是**两侧都刚成型**、app 追 ui-demo。
+- **N1 back/forward**：ui-demo 已做并上 live（PR #146，`mock/nav.ts`）。真 app **决定挂到浏览器 feature 的
+  统一导航移植上做**（Colin 2026-07-11 拍板）——**不单独在 doc-header 建一套**。理由：ui-demo 的文档
+  back/forward 复用侧栏箭头，而浏览器 feature（`docs/browser-feature-spec.md`）在真 app 也要建一套侧栏导航
+  chrome（web-back/forward + web-header）；两者抢同一块地盘。所以等浏览器真 app 移植建 app 级导航 chrome 时，
+  **一并建一套统一的前进后退（网页+文档共用）**，照 ui-demo 模型（箭头按当前标签类型分派 web→浏览器历史 /
+  doc→文档导航历史）。眼下文档"回上一篇"靠标签页兜（上一篇标签还开着）。仅当浏览器移植遥遥无期 + "回不去"
+  痛感急时，才退而求其次建最小 doc-header 独立版、后并。
 
 port 完成一项就从本节清一项、更新对齐锚点。
