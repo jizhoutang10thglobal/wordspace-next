@@ -6,6 +6,8 @@
 //   - 同 url **60 秒内连续访问**合并为一条（更新标题和时间，不堆重复）——只看头部条目；
 //   - 上限 500 条（FIFO 淘汰最老）；
 //   - back/forward 不记（由调用方 web-tabs.js 用跳记标志控制，不在这里）。
+// 双导出：主进程 require / renderer(window.WS2WebHistory,补全搜索用)。
+(function () {
 
 const CAP = 500;
 const MERGE_MS = 60 * 1000;
@@ -84,4 +86,7 @@ function sanitize(list) {
     .slice(0, CAP);
 }
 
-module.exports = { record, touchTitle, removeOne, clearRange, search, sanitize, recordable, CAP, MERGE_MS };
+const API = { record, touchTitle, removeOne, clearRange, search, sanitize, recordable, CAP, MERGE_MS };
+if (typeof module !== 'undefined' && module.exports) module.exports = API;
+if (typeof window !== 'undefined') window.WS2WebHistory = API;
+})();

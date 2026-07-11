@@ -6,26 +6,61 @@
 <title>Wordspace Next</title>
 <link rel="stylesheet" href="shell.css">
 <link rel="stylesheet" href="basic-edit.css">
+<link rel="stylesheet" href="browser.css">
 </head>
 <body>
 
 <!-- 左侧本地文件栏（F06，对齐 ui-demo ArcSidebar 的「连接文件夹」一支）。body 是 flex 行：侧栏定宽，#main flex:1。 -->
 <aside id="sidebar" class="sb">
   <div class="sb-resize" id="sb-resize" title="拖拽调整侧栏宽度"></div>
+  <!-- 顶栏导航条（浏览器 spec §4.1）：收起侧栏 / 后退 / 前进 / 刷新 / 历史 / 查找文件。
+       后退/前进/刷新按「当前标签能否导航」实时 disabled（文档标签暂无导航历史 → 恒灰；网页标签由 browser.js 驱动）。 -->
   <div class="sb-head">
     <button id="sb-toggle" class="sb-icobtn" title="收起/展开侧栏 (Cmd+\)">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
     </button>
-    <span class="sb-title ws-truncate" id="sb-root-name">本地文件</span>
-    <!-- 查找文件的可见入口（T7，Colin 拍板）：调 Cmd+P 命令面板，此前只有快捷键、界面无入口 -->
+    <button id="nav-back" class="sb-icobtn" title="后退" disabled>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <button id="nav-fwd" class="sb-icobtn" title="前进" disabled>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+    <button id="nav-reload" class="sb-icobtn" title="刷新" disabled>
+      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+    </button>
+    <span class="sb-head-sp"></span>
+    <button id="nav-history" class="sb-icobtn" title="历史记录">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+    </button>
+    <!-- 查找文件的可见入口（T7，Colin 拍板）：调 Cmd+P 命令面板 -->
     <button id="sb-find" class="sb-icobtn" title="查找文件 (Cmd+P)">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
     </button>
-    <button id="sb-open-folder" class="sb-icobtn" title="打开文件夹">
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
+  </div>
+  <!-- 地址栏 omnibox（spec §4.2）：值=激活标签 url；左状态图标随标签类型；网页标签右端 ☆；下方补全下拉。 -->
+  <div class="sb-omni" id="sb-omni">
+    <span class="sb-omni-ico" id="omni-ico"></span>
+    <input id="omni-input" type="text" placeholder="搜索,或输入网址" spellcheck="false" autocomplete="off">
+    <span class="sb-omni-tag" id="omni-local" hidden>本地</span>
+    <button class="sb-omni-star" id="omni-star" title="收藏 (Cmd+D)" hidden>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.4a.55.55 0 0 1 1 0l2.4 4.9a.55.55 0 0 0 .4.3l5.4.8a.55.55 0 0 1 .3.9l-3.9 3.8a.55.55 0 0 0-.15.5l.9 5.3a.55.55 0 0 1-.8.6l-4.8-2.5a.55.55 0 0 0-.5 0l-4.8 2.5a.55.55 0 0 1-.8-.6l.9-5.3a.55.55 0 0 0-.15-.5L3 10.3a.55.55 0 0 1 .3-.9l5.4-.8a.55.55 0 0 0 .4-.3z"/></svg>
     </button>
+    <div class="sb-omni-sug" id="omni-sug" hidden></div>
   </div>
   <div class="sb-body" id="sb-body">
+    <!-- 收藏区（spec §4.3）：置顶上方、默认收起点标题行展开、折叠态持久化。browser.js 填充。 -->
+    <div class="sb-fav" id="sb-fav" hidden>
+      <div class="sb-fav-head" id="sb-fav-head" role="button" tabindex="0">
+        <span class="sb-fav-caret" id="sb-fav-caret"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+        <span class="sb-fav-star"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.4a.55.55 0 0 1 1 0l2.4 4.9a.55.55 0 0 0 .4.3l5.4.8a.55.55 0 0 1 .3.9l-3.9 3.8a.55.55 0 0 0-.15.5l.9 5.3a.55.55 0 0 1-.8.6l-4.8-2.5a.55.55 0 0 0-.5 0l-4.8 2.5a.55.55 0 0 1-.8-.6l.9-5.3a.55.55 0 0 0-.15-.5L3 10.3a.55.55 0 0 1 .3-.9l5.4-.8a.55.55 0 0 0 .4-.3z"/></svg></span>
+        <span class="sb-fav-label">收藏</span>
+        <span class="sb-fav-count" id="sb-fav-count"></span>
+        <button class="sb-fav-manage" id="sb-fav-manage" title="管理收藏">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
+        </button>
+      </div>
+      <div class="sb-fav-list" id="sb-fav-list" hidden></div>
+    </div>
     <!-- sticky ancestor 吸顶浮层（扁平树无法用原生 CSS sticky 正确释放，VS Code 式 JS 浮层）：
          滚动时 sidebar.js 往这里填当前路径的祖先文件夹行、绝对定位在可视区顶部。 -->
     <div class="sb-sticky" id="sb-sticky" aria-hidden="true"></div>
@@ -142,6 +177,48 @@
     <!-- 非 HTML 文件的应用内查看器（图片/PDF 直接预览；Word/表格/其他 → 外部打开卡片）。shell.js 填充。 -->
     <div id="viewer" class="ws-viewer" hidden></div>
   </div>
+
+  <!-- ==== 浏览器 feature 的内容区 surfaces（browser.js 管理）====
+       真网页由主进程 WebContentsView 原生盖在整个内容区上（无网页头，spec §3.2/§10.2）；
+       下面这些 DOM 只在「起始页 / 历史页 / 收藏页 / 设置页 / 加载失败占位」时可见。 -->
+  <!-- 起始页（新标签页，spec §4.5.2）：本地 surface，绝不是远程 URL。 -->
+  <div id="web-newtab" class="web-newtab" hidden>
+    <div class="web-nt-inner">
+      <div class="web-nt-brand">Wordspace</div>
+      <div class="web-nt-search">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <input id="web-nt-input" type="text" placeholder="搜索,或输入网址" spellcheck="false" autocomplete="off">
+      </div>
+      <div class="web-nt-tiles" id="web-nt-tiles"></div>
+      <div class="web-nt-pins" id="web-nt-pins" hidden></div>
+      <div class="web-nt-note">内置浏览器没有恶意网站防护，访问陌生网站请自行留意</div>
+    </div>
+  </div>
+  <!-- 网页加载失败 / 渲染进程崩溃的占位（view 已隐藏时可见）。 -->
+  <div id="web-error" class="web-error" hidden>
+    <div class="web-err-card">
+      <div class="web-err-title" id="web-err-title">页面加载失败</div>
+      <div class="web-err-desc" id="web-err-desc"></div>
+      <button class="web-err-reload" id="web-err-reload">重新加载</button>
+    </div>
+  </div>
+  <!-- 子页面（历史 / 收藏管理 / 设置，spec §4.8/§4.9/§4.10）：browser.js 填充。 -->
+  <div id="web-page" class="web-page" hidden></div>
+  <!-- 页内查找条（spec §4.6）：查找激活期间 view bounds 顶部收缩出这条的高度（原生 view 会盖住 DOM）。 -->
+  <div id="web-findbar" class="web-findbar" hidden>
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+    <input id="web-find-input" type="text" placeholder="在页面中查找" spellcheck="false">
+    <span class="web-find-count" id="web-find-count" hidden></span>
+    <button class="web-find-btn" id="web-find-prev" title="上一个 (⇧Enter)">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+    </button>
+    <button class="web-find-btn" id="web-find-next" title="下一个 (Enter)">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <button class="web-find-btn" id="web-find-close" title="关闭 (Esc)">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
 </section>
 
 <script src="../editor/serialize.js"></script>
@@ -158,6 +235,9 @@
 <script src="../lib/links.js"></script>
 <script src="shell.js"></script>
 <script src="../lib/tabs.js"></script>
+<script src="../lib/web-history.js"></script>
+<script src="../lib/search-engines.js"></script>
 <script src="sidebar.js"></script>
+<script src="browser.js"></script>
 </body>
 </html>
