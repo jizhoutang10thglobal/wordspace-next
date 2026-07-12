@@ -135,6 +135,11 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
         <span>导出为 Markdown…</span>
       </button>
+      <!-- 页面设置（分页文档 = Schema 1 可选版式）：分页开关 / 纸张·方向·边距 / 导出页码。仅合规 html 文档可用。 -->
+      <button id="page-setup-btn" class="ws-docmenu-item" disabled title="页面设置（分页文档：纸张 / 方向 / 边距）">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+        <span>页面设置…</span>
+      </button>
     </div>
   </div>
 
@@ -230,8 +235,10 @@
 <script src="../editor/format.js"></script>
 <script src="../lib/schema-model.js"></script>
 <script src="../lib/schema-validate.js"></script>
+<script src="../lib/schema-page.js"></script>
 <script src="../lib/schema-registry.js"></script>
 <script src="../editor/blockedit.js"></script>
+<script src="../editor/pagination.js"></script>
 <script src="../editor/basic-edit.js"></script>
 <script src="pdf-viewer.js"></script>
 <script src="../lib/find-ranges.js"></script>

@@ -22,8 +22,19 @@
   ]);
 
   function cleanRoot(root) {
-    // 只删本编辑器覆盖层（data-ws2-ui 值 = sentinel），保留用户自带的 data-ws2-ui="任意其他值"（F1）
+    // 只删本编辑器覆盖层（data-ws2-ui 值 = sentinel），保留用户自带的 data-ws2-ui="任意其他值"（F1）。
+    // 分页的 spacer 节点（表格间隔行 / pre 的行间隔 span / 覆盖层遮罩）都带此 sentinel → 一并整删。
     root.querySelectorAll('[data-ws2-ui="' + OVERLAY_VAL + '"]').forEach(n => n.remove());
+    // 分页 strip-on-persist（P0）：V4 推挤是运行时视觉产物（块内切分的 paddingTop / 块级切页的
+    // marginTop，带 data-ws-pushed 标记）。漏一个进磁盘 = 块级 style 属性 = 文档瞬间非合规
+    //（Schema 1 校验器 block-style 规则）。这里剥样式而非删节点——被推挤的是用户内容元素本身。
+    // 也兜住 contenteditable 回车分裂继承出来的推挤克隆（persist 可能先于下一帧 recalc 扫荡发生）。
+    root.querySelectorAll('[data-ws-pushed]').forEach(n => {
+      n.style.paddingTop = '';
+      n.style.marginTop = '';
+      n.removeAttribute('data-ws-pushed');
+      if (!n.getAttribute('style')) n.removeAttribute('style');
+    });
     const all = [root, ...root.querySelectorAll('*')];
     for (const el of all) {
       if (el.hasAttribute('data-ws2-ce')) el.removeAttribute('contenteditable');

@@ -32,6 +32,8 @@ let dirty = false;
 let undoMgr = null;
 let blockEdit = null; // 当前文档的块编辑内核（WS2BlockEdit.attach 返回）；换文档前 detach 防堆叠
 let basicEdit = null; // 非合规文档的基础编辑内核（WS2BasicEdit.attach 返回，Feature 3）
+let pagination = null; // 分页文档的 V4 分页引擎（WS2Pagination.attach 返回）；与块编辑器同生命周期
+let docPageCfg = null; // 分页版式配置（routeDoc 按磁盘字节解析 / applyPageSetup 运行时更新）；null = 非分页
 let docConform = true; // openDoc 判定：文件合规→完整块编辑；不合规→基础编辑（分流 seam，KD-e）
 let loadGen = 0;       // 每次载入/重载自增；旧的 frame.onload 闭包据此作废，防并发载入（如外部连改 + 重载）交叉 wireEditor
 let openSeq = 0;       // openDoc 序号：await 期间又开了别的文档 / 关了文档 → 陈旧 openDoc 落地作废（修 SH-1，仿 loadGen）
@@ -167,6 +169,7 @@ function setZoom(z) {
   applyZoom();
   if (blockEdit) blockEdit.reposition(); // 缩放后手柄/气泡按新内容尺寸重定位
   if (basicEdit) basicEdit.reposition();  // 基础编辑器的宿主浮层同理（Feature 3）
+  if (pagination) pagination.refresh();   // 分页几何按「实测宽/配置宽」反推缩放重算
   if (window.WS2Find) window.WS2Find.reposition(); // 查找条钉在 iframe 角，缩放不改 iframe 元素 rect，但保险重定位
 }
 
@@ -176,8 +179,17 @@ function routeDoc(rawHtml) {
   try {
     // 走 Schema 注册表分类（多 Schema 就绪：classify 遍历已注册 schema、认出属于哪个）。现阶段仍只用 .conform
     // 二值分流；将来把 docConform 升成 docSchema 后，可按 classify().schemaId 路由到各自编辑器（待 align 的 shell.js 落地后做）。
-    return !!WS2SchemaRegistry.classify(new DOMParser().parseFromString(rawHtml, 'text/html')).conform;
-  } catch (e) { return false; } // fail-closed：判不了就走基础编辑器（对任意 HTML 都安全、不套块模型），别 fail-open 把坏文档送进完整编辑器
+    const dom = new DOMParser().parseFromString(rawHtml, 'text/html');
+    const r = WS2SchemaRegistry.classify(dom);
+    // 分页版式（判磁盘字节口径，同 conform）：合规 + head 有可解析的 page 块 → wireEditor 挂分页引擎。
+    // 解析不出（写坏）只是分页不生效，不降级（分页 = Schema 1 可选版式，不是独立 Schema）。
+    docPageCfg = null;
+    if (r.conform && window.WS2SchemaPage) {
+      const st = dom.head && dom.head.querySelector('style[data-ws-schema-css="page"]');
+      if (st) docPageCfg = WS2SchemaPage.parsePageCss(st.textContent);
+    }
+    return !!r.conform;
+  } catch (e) { docPageCfg = null; return false; } // fail-closed：判不了就走基础编辑器（对任意 HTML 都安全、不套块模型），别 fail-open 把坏文档送进完整编辑器
 }
 
 // 换文档 / 关文档：两个编辑内核都拆、降级条收起（统一收口，防堆叠）。
@@ -185,11 +197,13 @@ function routeDoc(rawHtml) {
 //（改的是已换掉的 detached doc、还把当前文档标脏）。
 function detachEditors() {
   if (window.WS2Find) window.WS2Find.close(); // 换/关文档：关查找条 + 清高亮，否则飘到下一个文档
+  if (pagination) { pagination.detach(); pagination = null; } // 先拆分页（它的扫荡要在块内核还活着时做完）
   if (window.WS2Mention) window.WS2Mention.close(); // 同理关提及菜单（跨文档持有的 DOM 引用必失效）
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
   if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
   if (degradeNotice) degradeNotice.hidden = true;
+  updatePageSetupBtn(); // 编辑器已拆 → 「页面设置…」禁用（wireEditor 重挂时再开）
 }
 
 // 撤销/重做统一收口（菜单加速器 + 两个编辑器的 keydown 都走这）：
@@ -221,6 +235,7 @@ function attachBasic() {
   basicEdit = WS2BasicEdit.attach(doc, { win: frame.contentWindow, host: mainEl, markDirty });
   if (degradeNotice) degradeNotice.hidden = false;
   updateExportMd(); // 非合规 → 导出 md 禁用
+  updatePageSetupBtn(); // 非合规 → 页面设置禁用（分页只对合规文档开放）
   // 输入调度 undo checkpoint（连续打字塌成一个 op）；标脏由基础编辑器内部 onInput 做
   doc.addEventListener('input', () => { if (undoMgr && undoMgr.scheduleCheckpoint) undoMgr.scheduleCheckpoint(); });
   // 导出仍可用：基础模式走 raw（直印源文件、忠于野文件原貌），不走块编辑器的 Wordspace 排版（见导出触发点）
@@ -266,6 +281,13 @@ function wireEditor() {
   blockEdit = WS2BlockEdit.attach(doc, {
     win: frame.contentWindow, undoMgr, markDirty, onAiSoon: showAiSoon,
   });
+  // 分页文档：磁盘字节里有可解析的 page 块（routeDoc 已判）→ 挂 V4 分页引擎（引擎样式走
+  // adoptedStyleSheets、推挤产物 strip-on-persist，都不入盘）。md 不套页面概念（入盘格式装不下 page 块）。
+  if (pagination) { pagination.detach(); pagination = null; }
+  if (docPageCfg && !isMdPath(docPath || '') && window.WS2Pagination) {
+    pagination = WS2Pagination.attach(doc, { win: frame.contentWindow, config: docPageCfg });
+  }
+  updatePageSetupBtn(); // 合规 html + 块编辑器已挂 → 「页面设置…」可用
 
   // 输入：标脏 + 调度 undo checkpoint（连续打字塌成一个 op）
   doc.addEventListener('input', () => { markDirty(); if (undoMgr.scheduleCheckpoint) undoMgr.scheduleCheckpoint(); });
@@ -383,6 +405,7 @@ async function showViewer(node) {
   loadGen++; frame.onload = null; // 对称 #94 shellCloseDoc：作废在飞导航，否则晚到的 load 把块编辑器挂上查看器底下的隐藏 iframe（幽灵脏态）
   docPath = null; docContext = null;
   docInfo = null;
+  docPageCfg = null; // 查看器态没有分页概念（对称 shellCloseDoc）
   setDirty(false);
   frame.hidden = true;
   frame.removeAttribute('src');
@@ -756,6 +779,7 @@ function shellCloseDoc() {
   docPath = null; docContext = null;
   docInfo = null;
   tempDoc = null;
+  docPageCfg = null; // 关文档清分页配置（防陈旧值泄漏到下一个上下文；openDoc 的 routeDoc 会重设）
   setDirty(false);
   frame.hidden = true;
   frame.removeAttribute('src');
@@ -786,7 +810,7 @@ window.__shellResumeAutosave = resumeAutoSave;
 // 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
-window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); if (window.WS2Mention) window.WS2Mention.reposition(); };
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (pagination) pagination.refresh(); if (window.WS2Find) window.WS2Find.reposition(); if (window.WS2Mention) window.WS2Mention.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -882,6 +906,114 @@ if (docMenuBtn && docMenu) {
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !docMenu.hidden) docMenu.hidden = true; });
 }
 window.__shellOpenAiAccess = openAiAccessModal; // 侧栏页脚 AI 钮（sidebar.js）也开同一个弹窗
+
+// ---- 页面设置（分页文档 = Schema 1 可选版式）----
+// 只对「合规 html 文档 + 块编辑器已挂」开放（md 的入盘格式装不下 page 块；非合规走基础编辑不套页面概念）。
+function updatePageSetupBtn() { // 惰性取元素：detachEditors 等调用点在 DOM 早期就会跑到
+  const b = document.getElementById('page-setup-btn');
+  if (b) b.disabled = !(blockEdit && (docPath || tempDoc) && !isMdPath(docPath || ''));
+}
+// 应用页面设置：cfg=null 关分页（移除 page 块）；否则写入/更新 canonical page CSS（buildPageCss）。
+// 页码开关走 head 的 meta[name="ws-page-numbers"]（head 白名单放行 meta[name]，conform 不受影响）。
+// 轻量重接（不动 undoMgr / 块内核）：分页引擎 detach/attach + docPageCfg 同步 + markDirty（自动保存落盘）。
+function applyPageSetup(cfg, pageNumbers) {
+  const doc = frame.contentDocument;
+  if (!doc || !blockEdit) return;
+  const head = doc.head || doc.documentElement;
+  let st = head.querySelector('style[data-ws-schema-css="page"]');
+  if (!cfg) {
+    if (st) st.remove();
+  } else {
+    if (!st) { st = doc.createElement('style'); st.setAttribute('data-ws-schema-css', 'page'); head.appendChild(st); }
+    st.textContent = WS2SchemaPage.buildPageCss(cfg);
+  }
+  let m = head.querySelector('meta[name="ws-page-numbers"]');
+  if (cfg && pageNumbers) {
+    if (!m) { m = doc.createElement('meta'); m.setAttribute('name', 'ws-page-numbers'); head.appendChild(m); }
+    m.setAttribute('content', 'true');
+  } else if (m) { m.remove(); }
+  docPageCfg = cfg || null;
+  if (pagination) { pagination.detach(); pagination = null; }
+  if (cfg && window.WS2Pagination) pagination = WS2Pagination.attach(doc, { win: frame.contentWindow, config: cfg });
+  if (blockEdit) blockEdit.reposition(); // 纸面几何变了，手柄/气泡重定位
+  markDirty();
+}
+// 页面设置弹窗：所有改动即时生效（弹窗背后分页视图实时变，关掉弹窗就是「完成」）——对齐 ui-demo
+// PageSetupModal 的行为契约（docs/features/paged-doc.md）。
+function openPageSetupModal() {
+  if (!blockEdit || document.querySelector('.ws-pgs-overlay')) return;
+  const doc = frame.contentDocument;
+  const P = window.WS2SchemaPage;
+  // 工作副本（引擎当前配置 / 默认）；nums 从活文档 head 读
+  let on = !!docPageCfg;
+  let cfg = docPageCfg
+    ? { size: docPageCfg.size, orientation: docPageCfg.orientation, margin: { ...docPageCfg.margin } }
+    : { size: 'A4', orientation: 'portrait', margin: { ...P.DEFAULT_PAGE.margin } };
+  let nums = !!(doc.head && doc.head.querySelector('meta[name="ws-page-numbers"][content="true"]'));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sb-modal-overlay ws-pgs-overlay';
+  const sizeOpts = Object.keys(P.PAGE_SIZES).map((s) => '<option value="' + s + '"' + (s === cfg.size ? ' selected' : '') + '>' + s + '</option>').join('');
+  overlay.innerHTML =
+    '<div class="sb-modal ws-pgs-modal">' +
+      '<div class="sb-modal-head"><div class="sb-modal-head-text">' +
+        '<div class="sb-modal-title">页面设置</div>' +
+        '<div class="sb-modal-where">分页显示与导出 PDF 的纸张版式 · 改动即时生效</div></div>' +
+        '<button class="sb-modal-x" id="pgs-x" aria-label="关闭"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>' +
+      '<label class="ws-pgs-row ws-pgs-toggle"><input type="checkbox" id="pgs-on"' + (on ? ' checked' : '') + '> 分页文档（像 Word：按页显示、导出 PDF 按页分页）</label>' +
+      '<div id="pgs-body"' + (on ? '' : ' class="ws-pgs-off"') + '>' +
+        '<div class="ws-pgs-row"><span class="ws-pgs-lbl">纸张</span><select id="pgs-size">' + sizeOpts + '</select>' +
+          '<select id="pgs-orient"><option value="portrait"' + (cfg.orientation === 'portrait' ? ' selected' : '') + '>纵向</option><option value="landscape"' + (cfg.orientation === 'landscape' ? ' selected' : '') + '>横向</option></select></div>' +
+        '<div class="ws-pgs-row"><span class="ws-pgs-lbl">边距</span><select id="pgs-preset">' +
+          '<option value="normal">普通（25.4mm）</option><option value="narrow">窄（12.7mm）</option><option value="wide">宽（左右 50.8mm）</option><option value="custom">自定义</option></select></div>' +
+        '<div class="ws-pgs-row ws-pgs-margins">' +
+          ['top', 'right', 'bottom', 'left'].map((k, i) => '<label>' + ['上', '右', '下', '左'][i] + ' <input type="number" min="0" max="80" step="0.1" id="pgs-m-' + k + '" value="' + cfg.margin[k] + '"> mm</label>').join('') +
+        '</div>' +
+        '<label class="ws-pgs-row ws-pgs-toggle"><input type="checkbox" id="pgs-nums"' + (nums ? ' checked' : '') + '> 导出 PDF 时在页脚加页码</label>' +
+      '</div>' +
+      '<div class="ws-pgs-actions"><button id="pgs-done" class="ws-pgs-btn ws-pgs-primary">完成</button></div>' +
+    '</div>';
+  const $ = (id) => overlay.querySelector('#' + id);
+  const presetOf = (mg) => Object.keys(P.MARGIN_PRESETS).find((k) => ['top', 'right', 'bottom', 'left'].every((e) => P.MARGIN_PRESETS[k][e] === mg[e])) || 'custom';
+  $('pgs-preset').value = presetOf(cfg.margin);
+  function readMargins() {
+    const mg = {};
+    for (const k of ['top', 'right', 'bottom', 'left']) {
+      const v = parseFloat($('pgs-m-' + k).value);
+      mg[k] = (Number.isFinite(v) && v >= 0 && v <= 80) ? Math.round(v * 10) / 10 : 25.4; // 越界回默认，别让 NaN 入盘
+    }
+    return mg;
+  }
+  const sync = () => applyPageSetup(on ? cfg : null, on && nums); // 即时生效（关分页时页码 meta 一并清）
+  $('pgs-on').onchange = () => {
+    on = $('pgs-on').checked;
+    $('pgs-body').classList.toggle('ws-pgs-off', !on);
+    sync();
+  };
+  $('pgs-size').onchange = () => { cfg.size = $('pgs-size').value; sync(); };
+  $('pgs-orient').onchange = () => { cfg.orientation = $('pgs-orient').value; sync(); };
+  $('pgs-preset').onchange = () => {
+    const p = P.MARGIN_PRESETS[$('pgs-preset').value];
+    if (!p) return; // 自定义：等用户改输入框
+    ['top', 'right', 'bottom', 'left'].forEach((k) => { $('pgs-m-' + k).value = p[k]; });
+    cfg.margin = { ...p };
+    sync();
+  };
+  ['top', 'right', 'bottom', 'left'].forEach((k) => {
+    $('pgs-m-' + k).oninput = () => { cfg.margin = readMargins(); $('pgs-preset').value = presetOf(cfg.margin); sync(); };
+  });
+  $('pgs-nums').onchange = () => { nums = $('pgs-nums').checked; sync(); };
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  $('pgs-x').onclick = close;
+  $('pgs-done').onclick = close;
+  overlay.onmousedown = (e) => { if (e.target === overlay) close(); };
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
+}
+const pageSetupBtn = document.getElementById('page-setup-btn');
+if (pageSetupBtn) pageSetupBtn.onclick = openPageSetupModal;
+
 document.getElementById('open-btn').onclick = pickAndOpen;
 // 打开文件夹（⋯ 菜单 / 菜单栏）：走侧栏的 pickFolder（含 WS2_FOLDER_IN 测试 seam 与工作区装载全流程）
 const openFolderMenuBtn = document.getElementById('open-folder-btn');
@@ -889,7 +1021,7 @@ if (openFolderMenuBtn) openFolderMenuBtn.onclick = () => { if (window.__sbHooks 
 const homeOpenBtn = document.getElementById('home-open');
 if (homeOpenBtn) homeOpenBtn.onclick = pickAndOpen;
 saveBtn.onclick = saveAs; // 菜单里的「另存为…」；Cmd+S / 菜单栏「保存」仍走 save()（真文件即存、临时弹 SaveModal）
-window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (window.WS2Find) window.WS2Find.reposition(); }); // 窗口尺寸变 → 浮层跟上
+window.addEventListener('resize', () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (pagination) pagination.refresh(); if (window.WS2Find) window.WS2Find.reposition(); }); // 窗口尺寸变 → 浮层跟上
 window.addEventListener('keydown', handleZoomKey); // 焦点在父层 shell（点过保存按钮/首页）时也能 Cmd± 缩放（iframe 内事件不冒泡到这）
 
 // 外部磁盘改动（Bug2）：是当前文档才处理；有未保存改动先问，免得静默覆盖用户的编辑。
@@ -1070,7 +1202,11 @@ async function exportPdf(mode) {
     const html = mode === 'wordspace'
       ? (basicEdit ? WS2BasicEdit.serialize(frame.contentDocument) : buildWordspacePrintHtml())
       : null; // raw 无需烤 HTML（主进程直印源文件）；wordspace 可能抛错，下面 catch 兜
-    const res = await window.ws2.exportPdf(docPath, mode, html);          // 主进程按 mode 分 exportPdfFromHtml / 直印源文件
+    // 分页文档：走标准 @page 分页（preferCSSPageSize）而非连续单页；页码开关随文档 head meta。
+    const paged = mode === 'wordspace' && !basicEdit && !!docPageCfg && !isMdPath(docPath);
+    const cdoc = frame.contentDocument;
+    const pageNumbers = paged && !!(cdoc && cdoc.head && cdoc.head.querySelector('meta[name="ws-page-numbers"][content="true"]'));
+    const res = await window.ws2.exportPdf(docPath, mode, html, { paged, pageNumbers }); // 主进程按 mode 分 exportPdfFromHtml / 直印源文件
     if (res && res.error) alert('导出 PDF 失败：' + res.error);
   } catch (e) {
     alert('导出 PDF 失败：' + ((e && e.message) || e));
@@ -1096,8 +1232,22 @@ function buildWordspacePrintHtml() {
   ['data-ws2-editing', 'data-ws2-selected', 'data-ws2-ce', 'data-ws2-drop', 'data-ws2-eid'].forEach((a) =>
     root.querySelectorAll('[' + a + ']').forEach((n) => n.removeAttribute(a)));
   root.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach((n) => n.remove());
+  // 分页推挤是运行时视觉产物，绝不烤进打印 HTML：spacer 节点已随 data-ws2-ui 整删（上面那行），
+  // 这里再剥内容元素上的推挤样式（li 的 paddingTop / 块级 marginTop）+ 兜底删 spacer。
+  root.querySelectorAll('.ws-page-spacer').forEach((n) => n.remove());
+  root.querySelectorAll('[data-ws-pushed]').forEach((n) => {
+    n.style.paddingTop = '';
+    n.style.marginTop = '';
+    n.removeAttribute('data-ws-pushed');
+    if (!n.getAttribute('style')) n.removeAttribute('style');
+  });
   const head = root.querySelector('head') || root;
   const style = cd.createElement('style'); style.textContent = WS2BlockEdit.EDITOR_CSS; head.appendChild(style);
+  // 分页文档：打印辅助（body 版式还原 + break-inside 断行口径 + pre 折行）烤进打印 HTML、不入盘。
+  // 排在 EDITOR_CSS 之后，同权重时以打印口径为准。@page 本身已在文档 head 的 page 块里（入盘 canonical）。
+  if (docPageCfg && window.WS2SchemaPage) {
+    const ps = cd.createElement('style'); ps.textContent = WS2SchemaPage.PAGED_PRINT_CSS; head.appendChild(ps);
+  }
   // 保留原 doctype：无 doctype 的 quirks 文档别被强塞标准模式（盒模型/行高会变、跟编辑器不一致）
   const dt = cd.doctype;
   const doctypeStr = dt ? '<!DOCTYPE ' + dt.name
