@@ -4,8 +4,9 @@
 > auto-memory 按文件夹路径隔离、跨不了 worktree；这份文件走 git，人人可达。
 >
 > **读**：任何 session 里调 `/sync-main`（冷启动、长 session 隔段时间、动新改动前都值得跑）。
-> **写**：调 `/remember-global`——它把条目直接 commit 到 main（这是唯一允许直推 main 的文件，
-> 其他一切改动照走 PR）。
+> **写**：调 `/remember-global`——它把条目经「短命分支 + PR + auto-merge」落到 main（发完即走，
+> required checks 绿后约 7 分钟自动合上）。不直推——branch protection 对所有人所有文件生效，
+> 曾经的直推特权已废除（Colin 拍板 2026-07-11，见下方同日公告）。
 >
 > **写什么**：会影响其他 session 的东西——全局教训、规则/门变更、拍板决策、流程变化。
 > 只对单个 feature 有效的知识别写这。条目要写「是什么 + 怎么 apply + 来源」，别只写「改了 X」。
