@@ -44,3 +44,10 @@ mac 用 zip + latest-mac.yml、win 用 exe + latest.yml 给 electron-updater 做
 ## 发完怎么验
 
 按 [`shipping-verification-checklist.md`](shipping-verification-checklist.md) 在宿主 mac 上验证签名 / 公证 / staple，以及自动更新能真正拉到新版本。
+
+## Release notes（2026-07-12 起的约定）
+
+- 每次发版后给该版本写一段**人话说明**（用户视角优先），落两处：
+  1. 仓库根 [`CHANGELOG.md`](../CHANGELOG.md)（正本，倒序）；
+  2. 同步到该版本 GitHub Release 页顶部（自动生成的 PR 列表保留在下方给开发者）。
+- 带新功能的版本值得写细；纯修复的小版本一两行即可。
