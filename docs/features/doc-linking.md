@@ -25,7 +25,7 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 | 链接索引/反链 | `computeBacklinks`（现算，`lib/links.ts`） | `main/link-index.js`（主进程可丢弃缓存 + ipc） |
 | 创建·提及菜单 | `components/canvas/MentionMenu.tsx` + `Canvas.tsx` | `editor/mention.js`（父层浮层）+ `editor/blockedit.js` 接线 |
 | 点击导航 | `Canvas.tsx onBlocksClickCapture` | `renderer/shell.js onDocLinkClick` + ipc `ws-resolve-doc-link` |
-| 悬停卡/断链修复 | `components/canvas/LinkPreview.tsx` | 待建 `editor/linkview.js`（U4） |
+| 悬停卡/断链修复 | `components/canvas/LinkPreview.tsx` | `editor/linkview.js`（U4，已落 app：断链装饰 CSS Highlight + 悬停预览卡 + 断链修复卡） |
 | 反链面板 | `components/canvas/Backlinks.tsx` | 待建（U6，父层 chrome） |
 | 改名/移动重写 | `mock/store.ts` renameFile/moveFile/renameDir | 待建 `main/link-rewrite.js`（U5，字节保真 splice） |
 | 删除守卫 | `components/DeleteLinkedModal.tsx` | 待建（U6） |
@@ -45,6 +45,8 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 | @新建 | 建同目录 + 插链接、**不切走标签页** | 建 + 插 + 存当前 + **跳去编辑新文档** | Colin 2026-07-09 |
 | 触发检测 | input/compositionend（IME） | 同（IME 走 input，非 keydown） | 一致（非分歧，记录以防误改） |
 | 打开中的脏文档被重写 | demo 无此问题（内存态） | v1 跳过它 + toast 注明「1 篇打开中的文档未更新」 | 真 app 新边界，实现决策 |
+| 修复卡「新建」类型 | 恒有一条「新建」 | **仅 html/md 可创作类型给「新建」**（断链指向 pdf/图片等无从新建；`.md` 尊重后缀建 `.md`） | 实现决策（§5.3「恒有」按可创作类型收窄） |
+| 修复卡关闭键 | 执行/悬出/切文档 | 同上 + **Esc 关**（父层浮层惯例，抄 find.js，补 ui-demo 缺口） | 实现补缺，非偏离 |
 
 **不在上表的行为差异都算漂移**，要么 port 对齐、要么补进本表。
 
@@ -60,8 +62,9 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 
 真 app **落后 ui-demo** 的漂移（ui-demo 已有、app 未移植，全在移交文档 §2 的「未做」清单，跟踪于此）：
 
-- **消费面 U4-U6**：悬停预览卡 / 断链装饰+修复卡 / 反链面板 / 改名·移动·外部改名重写 / 删除守卫——
-  ui-demo（`ec6c73d`）全有，app 无。
+- ~~**U4 消费面**：悬停预览卡 / 断链装饰 / 断链修复卡~~ **已落 app**（本 PR，`editor/linkview.js`）。
+- **U5 改名/移动重写**：改名·移动·外部改名 → 自动重写引用（字节保真 splice）——ui-demo（`ec6c73d`）有，app 无。
+- **U6 反链面板 + 删除守卫**：标题下「N 篇链到这里」+ 删除前引用告警——ui-demo 有，app 无。
 - **U7 doc-id 修复锚**：两侧都未落盘 meta（ui-demo 修复候选只用同名，app 待做）。
 - **N1 back/forward**：ui-demo 已做并上 live（PR #146，`mock/nav.ts`）。真 app **决定挂到浏览器 feature 的
   统一导航移植上做**（Colin 2026-07-11 拍板）——**不单独在 doc-header 建一套**。理由：ui-demo 的文档
