@@ -336,9 +336,27 @@ test('U4：断链文档 → ws-broken 高亮圈住断链锚文本；有效内链
   const c = await fs.readFile(path.join(wsDir, 'C.html'), 'utf8');
   expect(c).not.toContain('ws-broken');
   expect(c).toMatch(/<a href="缺失\.html#节2">找不到<\/a>/);
+  // ── 像素门 + 变异自检（CLAUDE.md 铁律：门存在≠门够强）——断链红虚线真画在屏上，非哑门 ──
+  // 抄 find.spec.js：截断链锚区域 → 清掉 ws-broken registry（把「画」拆掉）→ 同区域必须变；
+  // 不变 = ::highlight 被 CSP 拦 / 没生效 = 哑门 → fail。变异是运行时清 registry（非改源码），无「先 commit」顾虑。
+  const brokenBox = () => page.evaluate(() => {
+    const f = document.getElementById('doc-frame');
+    const fr = f.getBoundingClientRect();
+    const hl = f.contentWindow.CSS.highlights.get('ws-broken');
+    const r = hl ? [...hl][0] : null;
+    if (!r) return null;
+    const rr = r.getBoundingClientRect();
+    return { x: Math.round(fr.left + rr.left), y: Math.round(fr.top + rr.top), width: Math.max(6, Math.round(rr.width)), height: Math.max(6, Math.round(rr.height)) };
+  });
+  const box = await brokenBox();
+  expect(box).not.toBeNull();
+  const on = await page.screenshot({ clip: box });
+  await page.evaluate(() => document.getElementById('doc-frame').contentWindow.CSS.highlights.delete('ws-broken'));
+  await page.waitForTimeout(150);
+  const off = await page.screenshot({ clip: box });
+  expect(Buffer.compare(on, off)).not.toBe(0); // 红虚线真画了（清前清后像素必不同）
   // 差分自检：切到有效内链文档（A.html 的 B.html 存在）→ 0 断链高亮（证明真检测、非恒亮）
   await page.click('.sb-file[data-rel="A.html"]');
   await expect(frame.locator('h1')).toHaveText('文档A');
   await expect.poll(brokenSize, { timeout: 5000 }).toBe(0);
-  // TODO(U4 step 6)：补像素门 + 变异自检（清 ws-broken 高亮 → 像素必翻红），随 host-verify 一起做
 });
