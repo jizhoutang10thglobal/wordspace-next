@@ -110,12 +110,13 @@ async function readTree(root) {
 }
 
 // 在 dirRel 目录里新建一个 .html（内容由调用方给——模板 HTML）。dirRel '' = 工作区根。
-async function newDoc(root, dirRel, baseName, html) {
+async function newDoc(root, dirRel, baseName, html, ext) {
+  const e = ext === '.md' ? '.md' : '.html'; // U4 断链「新建」尊重断链后缀；默认 .html（@新建/旧调用方不传）
   const r = path.resolve(root);
   const destDir = assertInsideWorkspace(r, dirRel || '.');
   const base = cleanLeafName(baseName) || '未命名';
   await fs.mkdir(destDir, { recursive: true });
-  const leaf = uniqueLeaf(new Set(await listNames(destDir)), base, '.html');
+  const leaf = uniqueLeaf(new Set(await listNames(destDir)), base, e);
   const abs = assertInsideWorkspace(r, path.join(destDir, leaf));
   await files.writeDocSafe(abs, html); // 原子写、拒空——字节层落盘,不过编辑器序列化器
   return { rel: toRel(r, abs), abs };

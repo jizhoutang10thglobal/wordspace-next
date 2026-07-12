@@ -552,8 +552,8 @@ function registerIpc() {
     if (!tree && !(await dirExists(r.path))) markRootMissing(r);
     return tree;
   });
-  ipcMain.handle('ws-new-doc', (_e, rootId, dirRel, base, html) =>
-    workspace.newDoc(rootById(rootId), dirRel, base, html),
+  ipcMain.handle('ws-new-doc', (_e, rootId, dirRel, base, html, ext) =>
+    workspace.newDoc(rootById(rootId), dirRel, base, html, ext),
   );
   // 「浏览…」把临时文档存到任意位置（可在工作区外）：主进程自己弹原生保存框、只写对话框返回的
   // 路径——renderer 不传 abs（信任模型同 pick-file：路径是用户当场在原生对话框亲手选的）。

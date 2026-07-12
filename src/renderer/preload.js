@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsReorderRoots: (ids) => ipcRenderer.invoke('ws-reorder-roots', ids),
   wsGetRoots: () => ipcRenderer.invoke('ws-get-roots'),
   wsReadTree: (rootId) => ipcRenderer.invoke('ws-read-tree', rootId),
-  wsNewDoc: (rootId, dirRel, base, html) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html),
+  wsNewDoc: (rootId, dirRel, base, html, ext) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html, ext),
   wsSaveDocAs: (base, html, ext, opts) => ipcRenderer.invoke('ws-save-doc-as', base, html, ext, opts), // ext 'md'=写盘前转 md；opts.reveal=导出语义 Finder 高亮
   wsMakeDir: (rootId, dirRel, name) => ipcRenderer.invoke('ws-make-dir', rootId, dirRel, name),
   wsRename: (rootId, relPath, newLeaf) => ipcRenderer.invoke('ws-rename', rootId, relPath, newLeaf),

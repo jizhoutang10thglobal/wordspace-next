@@ -14,13 +14,17 @@ window.__wsDocContext = () => docContext;
 window.__wsDocPath = () => docPath; // U4 linkview：断链扫描的 resolveDocLink fromAbs 来源
 // 就绪 promise：刚打开文档 docContext 还在异步算（classify-file），@ 触发时可等它一下再开菜单（审查 D）。
 window.__wsDocContextReady = () => docContextPromise || Promise.resolve(docContext);
-// U3 @新建：在当前文档同目录建一篇新文档，返回 { rel（给提及菜单算 href）, abs（建完插链接后跳去编辑它） }。null=失败。
-window.__wsCreateLinkedDoc = async (rootId, fromRel, title) => {
+// U3 @新建 / U4 断链「新建」：在 fromRel 同目录建一篇新文档，返回 { rel（算 href）, abs（跳去编辑/自愈用） }。null=失败。
+// ext：'.md' → 建 markdown（骨架 = 一行 h1）；否则 '.html'（schema-1 合规骨架）。@新建默认 .html；断链「新建」尊重断链后缀。
+window.__wsCreateLinkedDoc = async (rootId, fromRel, title, ext) => {
+  ext = ext === '.md' ? '.md' : '.html';
   const dir = fromRel && fromRel.indexOf('/') >= 0 ? fromRel.slice(0, fromRel.lastIndexOf('/')) : '';
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n<title>'
-    + esc(title) + '</title>\n</head>\n<body>\n<h1>' + esc(title) + '</h1>\n<p></p>\n</body>\n</html>\n';
-  try { const r = await window.ws2.wsNewDoc(rootId, dir, title, html); return r && r.rel ? { rel: r.rel, abs: r.abs } : null; }
+  const content = ext === '.md'
+    ? '# ' + String(title) + '\n'
+    : '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n<title>'
+        + esc(title) + '</title>\n</head>\n<body>\n<h1>' + esc(title) + '</h1>\n<p></p>\n</body>\n</html>\n';
+  try { const r = await window.ws2.wsNewDoc(rootId, dir, title, content, ext); return r && r.rel ? { rel: r.rel, abs: r.abs } : null; }
   catch (e) { return null; }
 };
 // U3 @新建收尾：链接已插进当前文档 → 先存当前文档（别让脏守卫吞掉刚插的链接）→ 跳去编辑新文档（Colin 2026-07-09）。
@@ -113,6 +117,10 @@ function scheduleAutoSave() {
   }, 1200);
 }
 const markDirty = () => { setDirty(true); scheduleAutoSave(); };
+// U4 修复卡「重新指向」：程序化改当前文档 <a> href 前后的收口，跟 @提及 onDone 同款配方。
+// before：flush 待定编辑成独立 undo 快照（免撤销修复时连带撤销之前的打字）；after：标脏 + checkpoint 修复后状态。
+window.__wsBeforeDocEdit = () => { if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
+window.__wsAfterDocEdit = () => { markDirty(); if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
 
 // AI 占位（斜杠 /ai 或格式气泡 ✦AI 触发）——本地编辑器暂无 AI，仅提示开发中（用父窗口弹窗，
 // 因 iframe sandbox 无 allow-modals）。
@@ -326,7 +334,11 @@ async function onDocLinkClick(e) {
   try { r = await window.ws2.resolveDocLink(docPath, href); } catch (err) { return; }
   if (!r || r.error) return;
   if (!r.insideRoot) { toastLite('链接指向工作区外，未打开'); return; }
-  if (!r.exists) { toastLite('链接目标不存在：' + (r.rel || href)); return; } // U4 升级成断链修复卡
+  if (!r.exists) { // U4：断链 → 弹修复卡（重新指向候选 / 新建），linkview 缺失时退回 toast 占位
+    if (window.WS2LinkView && window.WS2LinkView.showRepair) window.WS2LinkView.showRepair(a, r);
+    else toastLite('链接目标不存在：' + (r.rel || href));
+    return;
+  }
   window.__wsOpenResolved(r);
 }
 // U4：把 resolveDocLink 结果按 kind 打开——html/md 进编辑器，其余进查看器/外部打开卡片。

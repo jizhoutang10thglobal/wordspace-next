@@ -13,7 +13,7 @@
  *   · 内链淡底 chip 做不了（::highlight 画在文本 run 上，无 border-radius/padding）——按冻结
  *     决策「显示按原生」，有效内链不加任何装饰，只对断链圈 range。
  *
- * 本文件当前实现：断链装饰（step 1）。悬停卡 / 修复卡（step 2-4）后续接。
+ * 本文件实现：断链装饰（step 1）+ 站内链接悬停预览卡（step 2）+ 断链点击/悬停修复卡（step 3-4）。
  */
 (function () {
   'use strict';
@@ -88,6 +88,7 @@
     if (d !== wiredDoc) {
       d.addEventListener('mouseover', onOver, false);
       d.addEventListener('mouseout', onOut, false);
+      d.addEventListener('keydown', onKeyDown, false); // Esc 也要在 iframe 内收（点断链后焦点在 iframe，事件不冒泡过边界）
       wiredDoc = d;
     }
     var Links = window.WS2Links;
@@ -133,6 +134,14 @@
     cardEl.addEventListener('mouseenter', function () { clearTimeout(closeTimer); }); // 进卡不关（§5.1）
     cardEl.addEventListener('mouseleave', function () { closeTimer = setTimeout(closeCard, 200); }); // 出卡 200ms 关
     document.body.appendChild(cardEl);
+    installEsc();
+  }
+  // Esc 关卡（父层浮层惯例，抄 find.js；ui-demo 无此键，真 app 补上算修缺口不算行为偏离——§5.3）。
+  var escWired = false;
+  function installEsc() {
+    if (escWired) return;
+    document.addEventListener('keydown', onKeyDown, false); // 父层焦点时（如悬停卡）也能 Esc 关
+    escWired = true;
   }
   function closeCard() {
     clearTimeout(openTimer); clearTimeout(closeTimer);
@@ -167,6 +176,7 @@
     clearTimeout(openTimer);                    // 350ms 内移开 → 不开
     closeTimer = setTimeout(closeCard, 250);    // 已开的 → 250ms 宽限关（§5.1）
   }
+  function onKeyDown(e) { if (e.key === 'Escape' && cardEl && cardEl.style.display === 'block') closeCard(); }
   function resolveAndShow(a, href, g) {
     var docPath = (typeof window.__wsDocPath === 'function') ? window.__wsDocPath() : null;
     var resolve = window.ws2 && window.ws2.resolveDocLink;
@@ -174,7 +184,7 @@
     Promise.resolve(resolve(docPath, href)).then(function (r) {
       if (g !== hoverGen) return;                       // 已移开 / 换文档
       if (!r || r.error || !r.insideRoot) return;       // 工作区外 / 解析失败：不弹
-      if (r.exists === false) return;                   // 断链：step 3 修复卡接管（暂不弹）
+      if (r.exists === false) { buildRepairCard(a, r, g); return; } // 断链 → 修复卡（§5.3）
       renderCard(a, r, g);
     }).catch(function () {});
   }
@@ -243,6 +253,84 @@
     cardEl.appendChild(foot);
   }
 
+  // ---- 断链修复卡（step 3-4，§5.3）----
+  // 点断链（shell.js onDocLinkClick）或 hover 断链 350ms → 同一张卡。含：重新指向候选（≤3，同根同名
+  // 文档）+ 恒有「新建」（可创作类型才给：html/md）。修复动作走 __wsBeforeDocEdit/__wsAfterDocEdit 收口。
+  function showRepair(a, r) {
+    var g = ++hoverGen;
+    clearTimeout(closeTimer); clearTimeout(openTimer);
+    buildRepairCard(a, r, g);
+  }
+  function repairItem(icon, label, onClick) {
+    var b = el('button', 'ws-linkview-repair-item');
+    b.appendChild(el('span', null, icon));
+    b.appendChild(el('span', 'ws-linkview-title-text', label));
+    b.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); onClick(); });
+    return b;
+  }
+  function buildRepairCard(a, r, g) {
+    ensureCard();
+    cardEl.className = 'ws-linkview-card is-broken';
+    cardEl.innerHTML = '';
+    var titleRow = el('div', 'ws-linkview-title is-broken');
+    titleRow.appendChild(el('span', null, '⚠'));
+    titleRow.appendChild(el('span', 'ws-linkview-title-text', '链接目标不存在'));
+    cardEl.appendChild(titleRow);
+    cardEl.appendChild(el('div', 'ws-linkview-path', r.rel));
+    cardEl.appendChild(el('div', 'ws-linkview-note', '目标可能被移动、改名，或已删除。'));
+    var repairs = el('div', 'ws-linkview-repairs');
+    cardEl.appendChild(repairs);
+    hoverAnchor = a; positionCard(a);
+    // 候选：同根内纯文件名精确相等（baseOf）的文档（linksQuery 只回文档 → pdf/图片天然不入候选，§5.3）。
+    var Links = window.WS2Links;
+    var q = window.ws2 && window.ws2.linksQuery;
+    Promise.resolve(q ? q(r.rootId) : []).then(function (list) {
+      if (g !== hoverGen) return;
+      var want = Links.baseOf(r.rel);
+      (list || []).filter(function (f) { return f.rel !== r.rel && Links.baseOf(f.rel) === want; })
+        .slice(0, 3)
+        .forEach(function (c) { repairs.appendChild(repairItem('↩', '重新指向 ' + c.rel, function () { doRepoint(a, r, c.rel); })); });
+      // 恒有「新建」——仅对编辑器可创作的类型（html/md）；断链指向 pdf/图片等无从「新建」。
+      if (r.kind === 'html' || r.kind === 'md') {
+        var dir = Links.dirOf(r.rel);
+        repairs.appendChild(repairItem('＋', '在' + (dir || '根目录') + '新建「' + r.name + '」', function () { doCreate(a, r); }));
+      }
+      positionCard(a); // 内容高度变了 → 重新夹取 left/top
+    }).catch(function () {});
+  }
+  // 重新指向：flush 待定编辑 → 保留原 href 尾缀 → relHref 重算只改这一条 <a> → 标脏+checkpoint → 装饰自愈。
+  function doRepoint(a, r, candRel) {
+    var ctx = window.__wsDocContext && window.__wsDocContext();
+    var d = cd();
+    if (!ctx || !d || !d.contains(a)) { // <a> 已不在当前文档（切走 / 块删）→ 不动任何东西（§5.3）
+      if (window.__wsToast) window.__wsToast('链接已不在当前文档，未能重新指向');
+      closeCard(); return;
+    }
+    var Links = window.WS2Links;
+    var suffix = Links.splitHrefSuffix(a.getAttribute('href') || '')[1]; // #锚点/?查询 尾缀保留（L2）
+    var newHref = Links.relHref(ctx.rel, candRel) + suffix;
+    if (window.__wsBeforeDocEdit) window.__wsBeforeDocEdit();
+    a.setAttribute('href', newHref);
+    if (window.__wsAfterDocEdit) window.__wsAfterDocEdit();
+    if (window.__wsToast) window.__wsToast('已重新指向 ' + candRel);
+    closeCard();
+    scan(frame); // 即时自愈，别等存盘/reindex
+  }
+  // 新建：目录=断链目标目录、名=目标名去扩展、扩展名按断链后缀（.md→.md 否则 .html）。不切走当前标签页。
+  function doCreate(a, r) {
+    var ctx = window.__wsDocContext && window.__wsDocContext();
+    var create = window.__wsCreateLinkedDoc;
+    if (!ctx || !create) { if (window.__wsToast) window.__wsToast('新建失败'); return; }
+    var name = r.name.replace(/\.(html?|md)$/i, '');
+    var ext = /\.md$/i.test(r.name) ? '.md' : '.html';
+    closeCard();
+    Promise.resolve(create(ctx.rootId, r.rel, name, ext)).then(function (res) { // fromRel=r.rel → dirOf 落到目标目录
+      if (!res) { if (window.__wsToast) window.__wsToast('新建失败'); return; }
+      if (window.__wsToast) window.__wsToast('已新建「' + name + '」');
+      scan(frame); // 目标现已存在 → 断链自愈
+    }).catch(function () { if (window.__wsToast) window.__wsToast('新建失败'); });
+  }
+
   // 切/关文档统一收口（shell.js detachEditors 调）：清高亮 + 关卡 + 清定时器 + 作废在飞异步。
   function detach() {
     scanGen++; // 作废在飞的异步 scan
@@ -253,6 +341,6 @@
   // 缩放/滚动/resize：直接关卡（最省心的正确解，抄 mention.reposition）。
   function reposition() { closeCard(); }
 
-  var api = { scan: scan, detach: detach, reposition: reposition };
+  var api = { scan: scan, detach: detach, reposition: reposition, showRepair: showRepair };
   if (typeof window !== 'undefined') window.WS2LinkView = api;
 })();
