@@ -27,7 +27,7 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 | 点击导航 | `Canvas.tsx onBlocksClickCapture` | `renderer/shell.js onDocLinkClick` + ipc `ws-resolve-doc-link` |
 | 悬停卡/断链修复 | `components/canvas/LinkPreview.tsx` | `editor/linkview.js`（U4，已落 app：断链装饰 CSS Highlight + 悬停预览卡 + 断链修复卡） |
 | 反链面板 | `components/canvas/Backlinks.tsx` | `renderer/shell.js` 反链面板（U6，doc-header 下父层 chrome + ws-abs IPC） |
-| 改名/移动重写 | `mock/store.ts` renameFile/moveFile/renameDir | `main/link-rewrite.js`（U5，字节保真 splice；app 内改名/移动已落，撤销/外部改名探测欠账） |
+| 改名/移动重写 | `mock/store.ts` renameFile/moveFile/renameDir | `main/link-rewrite.js`（U5，字节保真 splice；app 内改名/移动 + 外部改名探测 + 撤销全落） |
 | 删除守卫 | `components/DeleteLinkedModal.tsx` | `sidebar.js` doDelete 守卫（U6，link-index.dirBacklinks 夹外反链） |
 | back/forward | `mock/nav.ts` + `ArcSidebar` 箭头分派 | 待建 `lib/nav-history.js` + doc-header 按钮（N1） |
 | 装饰机制 | DOM class toggle（`.ws-doclink`/`.is-broken`，会落库） | CSS Custom Highlight（不落盘，抄 `editor/find.js`） |
@@ -63,7 +63,7 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 真 app **落后 ui-demo** 的漂移（ui-demo 已有、app 未移植，全在移交文档 §2 的「未做」清单，跟踪于此）：
 
 - ~~**U4 消费面**：悬停预览卡 / 断链装饰 / 断链修复卡~~ **已落 app**（本 PR，`editor/linkview.js`）。
-- ~~**U5 改名/移动重写**：app 内改名·移动 → 自动重写引用（字节保真 splice，html+md+非合规，含打开中文档内存改）~~ **已落 app**（`main/link-rewrite.js`）。**仍欠**：撤销（toast「撤销」action，undo=反向 move+invertMoves 重写，要连带反转 tabs/retarget/collapsed）、外部改名探测（Finder 里改名 → workspace-watcher inode 匹配 → 询问式 toast）、移动专属文案、md 引用式链接定义行。
+- ~~**U5 改名/移动重写**：app 内改名·移动 + 外部改名探测 + 撤销~~ **已全落 app**（`main/link-rewrite.js` 字节保真 + ipc orchestration + sidebar 撤销/外部探测 + 打开中文档内存改）。**仅剩小欠账**：移动专属 toast 文案（现统一「已更新 N 篇」）、md 引用式链接定义行（inline 已支持）。
 - ~~**U6 反链面板 + 删除守卫**：标题下「N 篇链到这里」+ 删除前引用告警~~ **已落 app**（`shell.js` 反链面板 + `sidebar.js` doDelete 守卫 + `link-index.dirBacklinks`）。
 - ~~**U7 doc-id 修复锚**~~ **已落 app**（`src/lib/doc-id.js` 保存补 meta + `link-index` docId 快照/carry-forward + 修复卡 doc-id 全库反查现址置顶）。Colin 2026-07-12 批准「保存时改用户文件」。⚠md frontmatter doc-id + 无 head 野生 HTML 记欠账。
 - **N1 back/forward**：ui-demo 已做并上 live（PR #146，`mock/nav.ts`）。真 app **决定挂到浏览器 feature 的
