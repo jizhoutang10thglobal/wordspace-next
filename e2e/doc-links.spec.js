@@ -419,6 +419,22 @@ test('U7：外部改名后靠 doc-id → 修复卡「原文件已移动到这里
   await expect(frame.locator('a[href="挪走了.html"]')).toBeVisible();
 });
 
+test('U5：外部改名被链接文件 → 询问式 toast「一键更新」，点了才重写引用（不静默改盘）', async () => {
+  await page.click('.sb-file[data-rel="A.html"]'); // 打开 A（链 B），建索引
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档A');
+  // Finder 场景：app 没参与，直接在磁盘上改名 B.html → 改名了.html
+  await fs.rename(path.join(wsDir, 'B.html'), path.join(wsDir, '改名了.html'));
+  // reconcile inode 匹配探测到 → 询问式 toast（B 有反链 A/M/N）
+  await expect(page.locator('.sb-toast-action', { hasText: '一键更新' })).toBeVisible({ timeout: 8000 });
+  // 点之前：引用还没改（询问式，绝不静默改用户盘）
+  expect(await fs.readFile(path.join(wsDir, 'A.html'), 'utf8')).toContain('href="B.html"');
+  // 点「一键更新」→ 重写引用（非打开的 M/N 落盘 + 打开的 A 内存改→自动保存）
+  await page.locator('.sb-toast-action', { hasText: '一键更新' }).click();
+  await expect.poll(() => fs.readFile(path.join(wsDir, 'N.html'), 'utf8'), { timeout: 5000 }).toContain('改名了.html');
+  await expect(frame.locator('a[href="改名了.html"]')).toBeVisible(); // A 内存也改了
+});
+
 test('U6：反链面板 — 有反链显示计数+展开列表+点击打开；无反链整体隐藏', async () => {
   // B.html 被 A.html / M.md / N.html 三处链接
   await page.click('.sb-file[data-rel="B.html"]');

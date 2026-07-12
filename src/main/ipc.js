@@ -670,6 +670,13 @@ function registerIpc() {
     const rw = await rewriteAfterMove(root, rootId, relPath, r.rel, openAbs);
     return { ...r, ...rw };
   });
+  // U5 外部改名/移动探测「一键更新」：rename 已在外部（Finder）发生，这里只按 moves 重写引用（不做 rename）。
+  ipcMain.handle('ws-rewrite-moves', async (_e, rootId, movesArr, openAbs) => {
+    const root = rootById(rootId);
+    const rewritten = await rewriteRefsForMoves(root, new Map(movesArr), openAbs);
+    refreshLinkIndex(rootId);
+    return { rewritten };
+  });
   // 跨根移动（v1 便宜档）：同文件系统 rename 快路径成功即返回新 rel；真跨盘 EXDEV → 结构化 {crossDevice:true}
   // 让 renderer 出 toast（不做复制回退，Colin 2026-07-08 拍板）。其他错误（EACCES/ENOENT）原样抛，renderer 有 catch。
   // WS2_FORCE_EXDEV 测试 seam（仅非打包态，同 WS2_FOLDER_IN/WS2_PDF_OUT 先例）：真 tmp 造不出跨文件系统，
