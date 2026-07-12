@@ -674,6 +674,9 @@ main → renderer (push)
 | 导航历史栈 | 自维护 per-tab 栈 | `webContents.navigationHistory`，不自造 |
 | 默认搜索引擎 | glass（虚构，demo 内能渲染结果页） | **Bing**（拍板） |
 | 新标签页快捷瓦片 | 写死 7 个演示站（demo 需要「有网可上」素材） | **书签栏前 N 个收藏**（拍板），空态给引导 |
+| normalize 网址判定 | 含 `.` 即当网址补 https:// | TLD 快照 + IP/localhost/端口**真验证**（Min urlParser 式；验不过走搜索——`localhost:3000`/`192.168.1.1` 能开、`file.txt` 不会误导航。语义超集，词→搜索/网址→导航的契约不变） |
+| 权限请求 | 无（iframe 演示不触发） | default-deny + 极小白名单：fullscreen / pointerLock / clipboard-sanitized-write（无隐私面，视频全屏/网页复制按钮不坏）；摄麦/定位/通知/设备一律拒（§11.5 的「默认全拒」按此口径落地，2026-07-11） |
+| ⌘/ 快捷键面板 | 有 | 暂无（app 本来就没有快捷键面板，属独立小 feature——欠账记在 `docs/features/browser.md`，其余 §7 键位全表已落地） |
 
 **六项拍板结果（Colin 2026-07-10，全部已定，无遗留）**
 
@@ -724,6 +727,7 @@ main → renderer (push)
 | 2026-07-10 | **删网页态网页头**（Wendi+Colin）；**收藏回左侧栏：置顶上方、默认收起点击展开**（Colin 三选一拍板） |
 | 2026-07-10 | Glass=虚构搜索引擎的口径保留（避免「克隆了 Bing」误导） |
 | 2026-07-10 | **六项拍板（Colin）**：真 app 默认引擎=Bing；删「主页」设置；点收藏=已开则聚焦；折叠态持久化；新标签瓦片=书签栏前 N；导入重名文件夹**加后缀不合并**（修正了最初「按名合并」的提议）+报净新增。除瓦片/引擎（真 app 侧）外均已同步实现进 ui-demo |
+| 2026-07-11 | **真 app 全量移植落地**（`feat/browser-port`，按本文档 §14 逐条）。落地口径三则（进 §13 差异表）：权限 default-deny+三项无隐私白名单；normalize 用 TLD 真验证（语义超集）；⌘/ 面板暂缺记欠账。app 侧锚点/文件映射见 `docs/features/browser.md` |
 
 ## 16. 源码索引（ui-demo 侧）
 
@@ -746,7 +750,7 @@ main → renderer (push)
 | `ui-demo/src/components/MockSites.tsx/.css` | demo mock 站（不移植）；`nav()` 的 ⌘点后台开标签参考 |
 | `ui-demo/src/types.ts` / `src/App.tsx` | Tab 类型 / 路由与 MainDocs 分流 |
 
-真 app 侧既有参考：`src/main/web-tabs.js`、`src/lib/web-context-menu.js`（`feat/browser-tabs` 分支，
-以本文档口径为准取舍）。
+真 app 侧实现已按本文档落地（2026-07-11，`feat/browser-port`）——完整文件映射维护在
+`docs/features/browser.md`；旧试验分支 `feat/browser-tabs`（PR #132）已被取代，别再照搬。
 
 *本文档随 ui-demo 浏览器 feature 演进；改了功能记得同步这里（尤其 §4 契约、§12 砍除、§13 待拍板）。*

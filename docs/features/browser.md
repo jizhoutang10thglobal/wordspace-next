@@ -1,7 +1,7 @@
 # 浏览器（标签上网 / 收藏 / 历史 / 右键菜单）—— 对齐 spec
 
 > **正本在 [`../browser-feature-spec.md`](../browser-feature-spec.md)**（本模式的先例，留在原位；
-> ~460 行完整规格：每功能三层 = 交互契约 → ui-demo 参考实现 → 真 app 后端设计）。
+> 完整规格：每功能三层 = 交互契约 → ui-demo 参考实现 → 真 app 后端设计）。
 > 本文件是 features/ 注册表里的**薄指针**——防两份规格漂移（本仓防漂移教训：绝不写变体）。
 > 改浏览器行为 → 改正本；本文件只维护锚点与欠账。
 
@@ -15,24 +15,51 @@
 
 ## 文件映射
 
-| 维度 | ui-demo | 真 app |
+| 子模块 | ui-demo | 真 app |
 |---|---|---|
-| 全部子模块 | 见正本 §16 源码索引 | 现状仅 `src/main/web-tabs.js` + `src/lib/web-context-menu.js`（`feat/browser-tabs` 分支，未合 main，口径落后于正本） |
+| 交互总览 | 见正本 §16 源码索引 | 下面各行 |
+| view 生命周期/安全边界/原生右键/导航事件 | mock（§13 差异表） | `src/main/web-tabs.js` |
+| IPC 面 + 导入导出对话框 | 无 | `src/main/browser-ipc.js`（spec §10.3） |
+| 收藏/历史/设置持久化 | zustand persist | `src/main/browser-store.js`（`userData/browser-*.json`，防抖原子写） |
+| 收藏纯逻辑 + Netscape 互通 | `ui-demo/src/mock/bookmarks.ts` | `src/lib/bookmarks.js` |
+| 历史纯逻辑（60s 合并/cap500） | `ui-demo/src/mock/history.ts` | `src/lib/web-history.js` |
+| 右键菜单 builder（双胞胎） | `ui-demo/src/lib/webCtxMenu.ts` | `src/lib/web-context-menu.js` |
+| omnibox 输入判定 / 引擎表 | `ui-demo/src/mock/browser.ts` / `browserSettings.ts` | `src/lib/url-input.js` + `tld-set.js` / `search-engines.js` |
+| 决策纯逻辑（权限/scheme/缩放步进） | 散在组件里 | `src/lib/web-tabs-policy.js` |
+| 标签模型的 web 身份类 | `ui-demo/src/mock/store.ts` | `src/lib/tabs.js`（`web:` 前缀 / updateEntry / 关闭栈） |
+| 侧栏导航条/omnibox/收藏区/起始页/历史页/收藏页/设置页/查找条 | `ArcSidebar/WebView/NewTab/HistoryPage/BookmarksPage/Settings` | `src/renderer/browser.js` + `browser.css` + `index.html`（DOM）+ `sidebar.js`/`shell.js` 接线 |
+| 测试 | —— | `test/{bookmarks,web-history,web-context-menu,web-tabs-policy,url-input,tabs}.test.js` + `e2e/browser.spec.js`（本地 http server 真加载 + attach/bounds/像素三件套强断言） |
 
 ## 有意分歧
 
 见正本 §13「刻意差异表」（mock 渲染方式 / DOM vs 原生菜单 / 缩放全局 vs 每标签 /
-关标签焦点 / 历史触发点 / favicon / 默认引擎 glass vs Bing / 新标签瓦片演示位 vs 书签栏前 N），
+关标签焦点 / 历史触发点 / favicon / 默认引擎 glass vs Bing / 新标签瓦片演示位 vs 书签栏前 N /
+normalize TLD 真验证 / 权限 default-deny 白名单 / ⌘/ 面板暂缺），
 均为拍板差异，日期与拍板人在正本 §15 决策日志。不在该表里的行为差异都算漂移。
 
 ## 对齐锚点
 
 - ui-demo 侧：PR #150 合入 main 的 commit（2026-07-10，正本定稿 + 六项拍板落地）
-- app 侧：**尚未对齐**（`feat/browser-tabs` 停在书签栏/网页头改造之前，见欠账）
+- app 侧：`feat/browser-port` 分支（2026-07-11，按正本 §14 验收清单全量移植；合 main 后以 merge commit 为准）
 
 ## 欠账
 
-- **真 app 全量移植**：按正本 §14 验收清单逐项做进 `src/**`（WebContentsView/原生菜单/
-  findInPage/每标签 zoom/收藏历史落盘/Netscape 互通/快捷键/会话恢复/安全不变式 §11）。
-  起点可复用 `feat/browser-tabs`（PR #132）的 web-tabs.js 地基，但其网页头/旧收藏形态**不要照搬**。
-- 移植完成后回填本文件的 app 侧锚点，并按正本 §13「仍开放」处理打包冒烟/Windows 验证。
+- **打包冒烟 / Windows 未验**（正本 §13「仍开放」；dev 态 mac 全绿，签名打包后的 WebContentsView/
+  持久化路径未实测）。
+- **⌘/ 快捷键面板**：ui-demo 有、真 app 暂无（app 本无快捷键面板，独立小 feature）。
+- **文档标签的后退/前进**：导航条按钮对文档标签恒灰——文档区导航历史是另一个 feature
+  （ui-demo #146，尚未移植真 app），移植后接进 §4.1 的分派。
+- **favicon 磁盘缓存**（正本 §10.4 的 `favicons/`）：现为内存 data:URL + 收藏落库时随存；
+  重启后标签行 favicon 回落地球图标（视觉可接受），有需要再补磁盘缓存。
+- **tld-set 快照有个别假 TLD**（如 `web`/`git` 未委派）：地址栏输 `foo.git` 会当网址走死路错误页
+  而非搜索。tld-set 是刻意近似快照,正确修法是从 IANA 根区脚本重新生成,别手删（怕误删真 TLD）。
+- **P3 图标/文案细节**（bug sweep 2026-07-12 记账,非阻塞）：补全下拉「开着的标签」图标应 Globe2 现 Globe；
+  标签行 web 图标 Globe/14 应 Globe2/13；⌘⇧= 未触发放大（仅 ⌘=）；空地址栏回车应回起始页现 no-op。
+  以及**每标签独立缩放**：Electron zoom 按 host 在 session 内传播（同站两标签互相带动、重启保留），
+  真正隔离要给每标签独立 session,代价大,暂受此限（正本 §4.6/§13 的「每标签」是意图,实现有此约束）。
+
+## bug sweep 记录（2026-07-12）
+
+5 路对抗审查（主进程/renderer 状态机/sidebar-shell 集成/纯逻辑库/spec 契约漂移）+ Colin 实测报的
+「加载中闪回文档」。修了 ~25 个确认项（含 6 个 P1，两路交叉确认的丢数据/状态分裂），
+新增回归门（闪回真断言 + lib 7 条 + policy/tabs）。详见 commit `adf711d`→`b997c22`。

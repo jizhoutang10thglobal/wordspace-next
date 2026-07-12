@@ -1,0 +1,429 @@
+/* ============================================================
+   浏览器 feature（spec docs/browser-feature-spec.md §9 视觉规格）
+   全部用 tokens（shell.css :root），无裸色值（FavChip 的 hsl 是数据驱动色，例外）。
+   ============================================================ */
+
+/* ---- 顶栏导航条（§4.1）---- */
+.sb-head-sp { flex: 1; }
+.sb-icobtn:disabled { opacity: 0.35; pointer-events: none; }
+
+/* ---- 地址栏 omnibox（§4.2）---- */
+.sb-omni {
+  flex: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 0 8px;
+  height: 30px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.sb:not(.sb-on) .sb-omni { display: none; }
+.sb-omni:focus-within { border-color: var(--c-accent); box-shadow: 0 0 0 2px var(--c-accent-tint); }
+.sb-omni-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.sb-omni-ico.is-web { color: var(--c-text-2); }
+#omni-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+}
+#omni-input::placeholder { color: var(--c-text-3); }
+.sb-omni-tag {
+  flex: none;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  padding: 0 6px;
+  line-height: 16px;
+}
+.sb-omni-star {
+  flex: none;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill);
+  color: var(--c-text-3);
+}
+.sb-omni-star:hover { background: var(--c-hover); color: var(--c-text); }
+.sb-omni-star.is-on { color: var(--c-accent); }
+.sb-omni-star.is-on svg { fill: var(--c-accent); }
+/* 自动补全下拉（§4.2）：地址栏正下方浮层 */
+.sb-omni-sug {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: -2px;
+  right: -2px;
+  z-index: 120;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  padding: 4px;
+  animation: ws-pop-in var(--dur-fast) var(--ease);
+  overflow: hidden;
+}
+.sb-omni-sug-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+  text-align: left;
+  cursor: default;
+}
+.sb-omni-sug-row.is-sel { background: var(--c-hover); color: var(--c-text); }
+.sb-omni-sug-row .sug-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.sb-omni-sug-row .sug-title { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-omni-sug-row .sug-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-3); font-size: var(--fs-xs); }
+
+/* ---- 收藏区（§4.3）：置顶上方、默认收起 ---- */
+.sb-fav { flex: none; padding: 2px 8px 4px; }
+.sb-fav-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  cursor: default;
+}
+.sb-fav-head:hover { background: var(--c-hover); }
+.sb-fav-caret { display: inline-flex; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
+.sb-fav.is-open .sb-fav-caret { transform: rotate(90deg); }
+.sb-fav-star { display: inline-flex; color: var(--c-accent); }
+.sb-fav-label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+.sb-fav-count { flex: 1; font-size: var(--fs-xs); color: var(--c-text-3); }
+.sb-fav-manage {
+  flex: none;
+  width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill);
+  color: var(--c-text-3);
+  opacity: 0; /* 收起时保持干净：hover 标题行或展开态才显现（§4.3） */
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.sb-fav-head:hover .sb-fav-manage, .sb-fav.is-open .sb-fav-manage { opacity: 1; }
+.sb-fav-manage:hover { background: var(--c-hover); color: var(--c-text); }
+.sb-fav-list { padding: 2px 0 2px 4px; }
+.sb-fav-group { margin: 4px 0 2px; padding: 0 6px; font-size: var(--fs-xs); color: var(--c-text-3); }
+.sb-fav-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--c-text-2);
+  text-align: left;
+}
+.sb-fav-row:hover { background: var(--c-hover); color: var(--c-text); }
+.sb-fav-row .fav-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-fav-empty { padding: 4px 8px 6px; font-size: var(--fs-xs); color: var(--c-text-3); }
+/* FavChip：无 favicon 时的首字彩块（§4.3 算法；hsl 为数据驱动色，token 豁免） */
+.fav-chip {
+  flex: none;
+  width: 16px; height: 16px;
+  border-radius: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600;
+}
+.fav-favicon { flex: none; width: 16px; height: 16px; border-radius: 4px; object-fit: contain; }
+
+/* 标签行的 favicon（web 标签） */
+.sb-tab-fav { width: 14px; height: 14px; border-radius: 3px; object-fit: contain; }
+
+/* ---- 起始页（§4.5.2）：内容区本地 surface ---- */
+.web-newtab, .web-error, .web-page {
+  position: absolute;
+  inset: 0;
+  z-index: 60; /* 盖住文档 chrome；sb-reopen(70) 仍在上 */
+  background: var(--c-bg);
+  overflow: auto;
+}
+body.is-sb-collapsed .sb-reopen { z-index: 70; }
+.web-nt-inner {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 96px 32px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+.web-nt-brand { font-size: 30px; font-weight: var(--fw-semibold); color: var(--c-text); letter-spacing: -0.02em; }
+.web-nt-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 44px;
+  padding: 0 16px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  color: var(--c-text-3);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.web-nt-search:focus-within { border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-tint); }
+#web-nt-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--fs-md); color: var(--c-text); }
+.web-nt-tiles { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+.web-nt-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  width: 86px;
+  padding: 12px 4px 10px;
+  border-radius: var(--r-md);
+  color: var(--c-text-2);
+  font-size: var(--fs-xs);
+}
+.web-nt-tile:hover { background: var(--c-hover); color: var(--c-text); }
+.web-nt-tile .fav-chip, .web-nt-tile .fav-favicon { width: 34px; height: 34px; border-radius: 9px; font-size: 16px; }
+.web-nt-tile-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-nt-tiles-empty { font-size: var(--fs-sm); color: var(--c-text-3); }
+.web-nt-pins { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--c-text-3); }
+.web-nt-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+  max-width: 180px;
+}
+.web-nt-pin:hover { background: var(--c-hover); color: var(--c-text); }
+.web-nt-pin span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.web-nt-note { margin-top: 12px; font-size: var(--fs-xs); color: var(--c-text-3); }
+
+/* ---- 加载失败占位 ---- */
+.web-error { display: flex; align-items: center; justify-content: center; }
+.web-err-card { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 420px; text-align: center; padding: 24px; }
+.web-err-title { font-size: var(--fs-lg); font-weight: var(--fw-semibold); color: var(--c-text); }
+.web-err-desc { font-size: var(--fs-sm); color: var(--c-text-3); word-break: break-all; }
+.web-err-reload {
+  margin-top: 6px;
+  height: 30px;
+  padding: 0 16px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+}
+.web-err-reload:hover { background: var(--c-bg-chrome); }
+
+/* ---- 页内查找条（§4.6）：胶囊，top 8 / right 16 ---- */
+.web-findbar {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 10px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-pop);
+  color: var(--c-text-3);
+  animation: ws-pop-in var(--dur-fast) var(--ease);
+}
+#web-find-input { width: 180px; border: none; outline: none; background: transparent; font-size: var(--fs-sm); color: var(--c-text); }
+.web-find-count { font-size: var(--fs-xs); color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.web-find-btn {
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill);
+  color: var(--c-text-2);
+}
+.web-find-btn:hover { background: var(--c-hover); color: var(--c-text); }
+
+/* ---- 子页面公共壳（历史/收藏/设置，§4.8/§4.9/§4.10）---- */
+.web-page { padding: 0; }
+.wp-wrap { max-width: 760px; margin: 0 auto; padding: 28px 32px 60px; }
+.wp-top { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.wp-back {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-pill);
+  color: var(--c-text-2);
+}
+.wp-back:hover { background: var(--c-hover); color: var(--c-text); }
+.wp-title { font-size: 19px; font-weight: var(--fw-semibold); color: var(--c-text); flex: 1; }
+.wp-actions { display: flex; align-items: center; gap: 8px; position: relative; }
+.wp-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 11px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+}
+.wp-btn:hover { background: var(--c-hover); color: var(--c-text); }
+.wp-btn.is-danger { color: var(--c-danger, #c4443c); }
+.wp-hint { font-size: var(--fs-xs); color: var(--c-text-3); margin: 2px 0 18px; }
+
+/* 历史页 */
+.wp-search {
+  display: flex; align-items: center; gap: 8px;
+  height: 32px; padding: 0 10px;
+  margin: 10px 0 16px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  color: var(--c-text-3);
+}
+.wp-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--fs-sm); color: var(--c-text); }
+.wp-search .wp-search-x { display: inline-flex; border-radius: var(--r-pill); color: var(--c-text-3); }
+.wp-search .wp-search-x:hover { color: var(--c-text); }
+.wp-day { margin: 16px 0 4px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-3); }
+.wp-row {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; height: 32px; padding: 0 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm); color: var(--c-text-2);
+  text-align: left;
+}
+.wp-row:hover { background: var(--c-hover); color: var(--c-text); }
+.wp-row-time { flex: none; width: 40px; font-size: var(--fs-xs); color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.wp-row-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.wp-row-title { flex: none; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wp-row-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-3); font-size: var(--fs-xs); }
+.wp-row-x { flex: none; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-pill); color: var(--c-text-3); opacity: 0; }
+.wp-row:hover .wp-row-x { opacity: 1; }
+.wp-row-x:hover { background: var(--c-hover); color: var(--c-text); }
+.wp-empty { padding: 32px 0; text-align: center; font-size: var(--fs-sm); color: var(--c-text-3); }
+/* 清除浏览数据下拉 */
+.wp-clear-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 90;
+  min-width: 150px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  padding: 4px;
+  animation: ws-pop-in var(--dur-fast) var(--ease);
+}
+.wp-clear-item {
+  display: block; width: 100%;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm); color: var(--c-text-2);
+  text-align: left;
+}
+.wp-clear-item:hover { background: var(--c-hover); color: var(--c-text); }
+.wp-clear-item.is-danger { color: var(--c-danger, #c4443c); }
+.wp-clear-sep { height: 1px; margin: 4px 6px; background: var(--c-divider); }
+
+/* 收藏管理页 */
+.wp-folder { margin: 18px 0 6px; }
+.wp-folder-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.wp-folder-name {
+  font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text);
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; padding: 2px 6px; margin-left: -6px;
+  min-width: 60px; max-width: 300px;
+}
+.wp-folder-name:not(:disabled):hover, .wp-folder-name:focus { border-color: var(--c-border); background: var(--c-surface); outline: none; }
+.wp-folder-count { font-size: var(--fs-xs); color: var(--c-text-3); }
+.wp-folder-del { margin-left: auto; }
+.wp-bm-title {
+  flex: none; width: 34%;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; padding: 2px 6px;
+  font-size: var(--fs-sm); color: var(--c-text);
+  overflow: hidden; text-overflow: ellipsis;
+}
+.wp-bm-title:hover, .wp-bm-title:focus { border-color: var(--c-border); background: var(--c-surface); outline: none; }
+.wp-bm-folder {
+  flex: none;
+  height: 24px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+  max-width: 130px;
+}
+
+/* 设置页 */
+.wp-sec { margin: 22px 0 8px; font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
+.wp-set-row { display: flex; align-items: center; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--c-divider); }
+.wp-set-label { flex: none; width: 150px; font-size: var(--fs-sm); color: var(--c-text); }
+.wp-set-desc { flex: 1; font-size: var(--fs-xs); color: var(--c-text-3); }
+.wp-set-ctl select {
+  height: 28px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  padding: 0 8px;
+}
+
+/* ---- ⌘T 二合一新建 modal 的地址栏行 + 范式选择（§4.5.1）---- */
+.sb-cm-omni {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  margin-bottom: 14px;
+  background: var(--c-bg);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  color: var(--c-text-3);
+  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+}
+.sb-cm-omni:focus-within { border-color: var(--c-accent); box-shadow: 0 0 0 2px var(--c-accent-tint); }
+.sb-cm-omni-ico { display: inline-flex; }
+.sb-cm-omni-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--fs-sm); color: var(--c-text); }
+.sb-cm-sec { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; }
+.sb-cm-sec-label { flex: 1; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+.sb-cm-para {
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  padding: 2px 9px;
+  opacity: 0.55;
+}
+.sb-cm-para.is-on { color: var(--c-accent); border-color: var(--c-accent); background: var(--c-accent-tint); opacity: 1; }
+
+/* hidden 属性必须赢过上面的 display 声明（.web-error 的 flex 曾把隐藏态干掉——隐形全屏层拦点击） */
+.web-newtab[hidden], .web-error[hidden], .web-page[hidden], .web-findbar[hidden], .sb-omni-sug[hidden] { display: none !important; }
+
+/* web 态隐藏文档编辑 chrome（#8）：⋯菜单(z65)/文档面包屑本浮在 web surface(z60) 之上,
+   起始页/子页面右上角会露出对不可见后台文档的操作按钮。web 激活时整体隐藏。 */
+body.ws-web-on .top-actions,
+body.ws-web-on #doc-header,
+body.ws-web-on #ws-degrade-notice { display: none !important; }
+
+/* web 态遮罩（#13）：盖住底下文档 iframe,z 高于 iframe、低于 surface(60) 与原生 view。
+   查找条/toast 收缩 view 露出的条带落在这层纸色上,不露另一篇文档。 */
+.web-veil { position: absolute; inset: 0; z-index: 55; background: var(--c-bg); }
+.web-veil[hidden] { display: none !important; }
