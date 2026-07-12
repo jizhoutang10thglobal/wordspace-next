@@ -376,6 +376,26 @@ test('U5：改名被链接文件 → 所有链接文档 href 自动重写（disk
   expect(n).toContain('href="BB.html"'); // 非合规文档也重写
 });
 
+test('U7：html 主动保存补 wordspace-doc-id（缺失才补、复用不换、单个、不破合规）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]'); // D 干净合规、无 doc-id
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await frame.locator('p').first().click();
+  await page.keyboard.type('X');
+  await page.waitForTimeout(1700); // 自动保存
+  const d1 = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  const m = d1.match(/wordspace-doc-id"\s+content="([^"]+)"/);
+  expect(m).not.toBeNull(); // 补上了 doc-id
+  const id = m[1];
+  await page.keyboard.type('Y');
+  await page.waitForTimeout(1700);
+  const d2 = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect((d2.match(/wordspace-doc-id/g) || []).length).toBe(1); // 只有一个（幂等、不叠加）
+  expect(d2.match(/wordspace-doc-id"\s+content="([^"]+)"/)[1]).toBe(id); // id 不变（复用磁盘旧 id）
+  // 仍走完整块编辑（doc-id 不影响合规）——降级条不出现
+  expect(await page.locator('#ws-degrade-notice').isHidden()).toBe(true);
+});
+
 test('U6：反链面板 — 有反链显示计数+展开列表+点击打开；无反链整体隐藏', async () => {
   // B.html 被 A.html / M.md / N.html 三处链接
   await page.click('.sb-file[data-rel="B.html"]');

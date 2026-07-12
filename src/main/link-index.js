@@ -11,6 +11,7 @@ const path = require('path');
 const { kindOf } = require('../lib/file-tree');
 const wsLinks = require('../lib/links'); // resolveHref/relHref（U1）
 const mdAdapter = require('./md-adapter');
+const docIdLib = require('../lib/doc-id'); // U7 双层身份修复锚
 
 const INDEX_VERSION = 1;
 const DOC_RE = /\.(html?|md)$/i;
@@ -79,6 +80,7 @@ async function readDocMeta(abs, ownRel) {
   let raw;
   try { raw = await fsp.readFile(abs, 'utf8'); }
   catch (e) { return null; } // 读字节失败 → 跳过、下轮重试
+  const docId = mdAdapter.isMdPath(abs) ? null : docIdLib.readDocId(raw); // U7：html 从 raw 读 doc-id（md frontmatter 欠账）
   let html = raw;
   if (mdAdapter.isMdPath(abs)) { try { html = await mdAdapter.mdToHtml(raw, { title: baseNoExt(abs) }); } catch (e) { html = raw; } } // md 转换失败：退化按原文抽（不毒化）
   const { title, links } = await extractDocMeta(html);
@@ -90,7 +92,7 @@ async function readDocMeta(abs, ownRel) {
     seen.add(rel);
     outLinks.push({ rel, snippet });
   }
-  return { title: title || baseNoExt(abs), outLinks };
+  return { title: title || baseNoExt(abs), outLinks, docId };
 }
 function baseNoExt(p) { return path.basename(p).replace(DOC_RE, ''); }
 
@@ -145,7 +147,7 @@ async function refreshRoot(rootId, rootPath) {
     if (prev && prev.mtime === mtime && prev.size === size && prev.ino === ino) return; // 没变
     const meta = await readDocMeta(abs, rel);
     if (!meta) return; // 读失败：不写条目、不推进 stat 戳 → 保留旧条目、下轮重试（审查 A）
-    r.docs.set(rel, { mtime, size, ino, kind: kindOf(rel), title: meta.title, outLinks: meta.outLinks });
+    r.docs.set(rel, { mtime, size, ino, kind: kindOf(rel), title: meta.title, outLinks: meta.outLinks, docId: meta.docId });
     changed = true;
   }));
   for (const rel of [...r.docs.keys()]) { if (!live.has(rel)) { r.docs.delete(rel); changed = true; } } // 删消失的
@@ -204,6 +206,15 @@ function titleOf(rootId, rel) {
   return e ? e.title : null;
 }
 
+// U7：按 doc-id 反查当前文件 rel（全库匹配修复锚）。找不到 / 没 id → null。
+function relOfDocId(rootId, docId) {
+  if (!docId) return null;
+  const r = index.get(rootId);
+  if (!r) return null;
+  for (const [rel, e] of r.docs) { if (e.docId === docId) return rel; }
+  return null;
+}
+
 // ---- 持久化（可丢弃缓存的热启动优化）：按根 path 存（跨会话稳定，rootId 是会话号）。原子写，损坏/版本不符 → 忽略全量重建 ----
 // read-modify-write（审查 B）：只覆盖内存中各根的条目，保留本会话没加载进内存的根的缓存——否则全量覆盖会把
 // 「已打开但本会话没先碰过」的根的持久化缓存抹掉，多根热启动优化失效。keepPaths 给定时剪掉已不在注册表的根（防无界增长）。
@@ -238,7 +249,7 @@ async function hydrate(storeFile, rootId, rootPath) {
 module.exports = {
   extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
   refreshRoot, rebuildRoot, removeRoot,
-  query, backlinks, dirBacklinks, titleOf,
+  query, backlinks, dirBacklinks, titleOf, relOfDocId,
   save, hydrate,
   _index: index, // 测试用
 };

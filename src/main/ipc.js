@@ -20,6 +20,8 @@ const tabsLib = require('../lib/tabs'); // 吸收时把持久化标签同步 reb
 const linkIndex = require('./link-index'); // U2 文档互链索引（可丢弃缓存，多根 rootId:rel 键）
 const linkRewrite = require('./link-rewrite'); // U5 改名/移动 → 字节保真重写引用
 const wsLinks = require('../lib/links'); // 路径代数（invertMoves/resolveHref/relHref）
+const docIdLib = require('../lib/doc-id'); // U7 双层身份修复锚（wordspace-doc-id meta）
+const crypto = require('crypto'); // U7 doc-id 生成（randomUUID）
 const { registerBrowserIpc } = require('./browser-ipc'); // 浏览器 feature（网页标签/收藏/历史/设置,spec §10.3）
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
@@ -344,12 +346,16 @@ function registerIpc() {
     // writeDocSafe 拒空串（防误清空），一个换行 = 合法的空 md，否则清空后的 md 永远保存失败。
     let out = content;
     const isMd = mdAdapter.isMdPath(p);
+    // 归档读原始字节（与文件编码无关）；U7 也用它读磁盘旧 doc-id（缺失才补、复用旧 id 不换）
+    const prev = await files.readDocBuffer(p).catch(() => null);
     if (isMd) {
       out = await mdAdapter.htmlToMd(content);
       if (!out.trim()) out = '\n';
+    } else {
+      // U7 双层身份：html 主动保存时确保带 wordspace-doc-id（修复锚）。缺失才补、优先复用磁盘旧 id、绝不每次换。
+      const diskId = prev !== null ? docIdLib.readDocId(prev.toString('utf8')) : null;
+      out = docIdLib.ensureHtmlDocId(content, { id: diskId, gen: () => crypto.randomUUID() }).html;
     }
-    // 归档读原始字节，与文件编码无关
-    const prev = await files.readDocBuffer(p).catch(() => null);
     let archiveWarning = null;
     if (prev !== null) {
       // 归档失败不能挡住保存：历史是安全网，保存本身优先
