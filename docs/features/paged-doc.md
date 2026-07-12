@@ -38,27 +38,41 @@
 
 | 维度 | ui-demo | 真 app |
 |---|---|---|
-| 页面模型纯逻辑 | `ui-demo/src/lib/page.ts`（paginateBlocks/computeInnerSplits/pageBoxPx） | `src/lib/schema-page.js`（worktree wordspace-next-schema2，未合） |
-| 分页视图/推挤 | `ui-demo/src/components/Canvas.tsx` recalc effect + PageGap/.ws-inner-void | `src/editor/pagination.js`（旧版画线实现，需按 V4 重写） |
-| 页面设置 UI | `ui-demo/src/components/PageSetupModal.tsx` | `src/renderer/shell.js` 页面设置弹窗（schema2 worktree） |
-| 配置存储 | `ui-demo/src/mock/paged.ts`（localStorage per doc） | 入盘 `@page` CSS 块（文件自携带） |
-| 导出 | `ui-demo/src/lib/printExport.ts` | `src/main/pdf-export.js` paged 路径 |
-| 验证门 | `ui-demo/scripts/verify-paged-v4.mjs` + `test-page.mjs` + `smoke-paged.mjs` | 待建（移植时按同断言口径） |
+| 页面模型纯逻辑 | `ui-demo/src/lib/page.ts`（paginateBlocks/computeInnerSplits/pageBoxPx） | `src/lib/schema-page.js`（含 paginateBlocks/computeInnerSplits 逐行移植 + canonical @page build/parse） |
+| 分页视图/推挤 | `ui-demo/src/components/Canvas.tsx` recalc effect + PageGap/.ws-inner-void | `src/editor/pagination.js`（V4 重写版；旧画线 V3 已删） |
+| 页面设置 UI | `ui-demo/src/components/PageSetupModal.tsx` | `src/renderer/shell.js` openPageSetupModal（改动即时生效）+ `src/renderer/index.html` ⋯ 菜单入口 |
+| 配置存储 | `ui-demo/src/mock/paged.ts`（localStorage per doc） | 入盘 `@page` CSS 块（文件自携带）+ 页码开关 `meta[name="ws-page-numbers"]` |
+| strip-on-persist | `Canvas.tsx` serializeClean | `src/editor/serialize.js` cleanRoot（[data-ws-pushed] 剥样式；spacer 带 OVERLAY sentinel 整删）+ `shell.js` buildWordspacePrintHtml 同款剥除 |
+| 导出 | `ui-demo/src/lib/printExport.ts` | `src/main/pdf-export.js` paged 路径（preferCSSPageSize + footerTemplate）+ `schema-page.js` PAGED_PRINT_CSS 烤进打印 HTML |
+| 验证门 | `ui-demo/scripts/verify-paged-v4.mjs` + `test-page.mjs` + `smoke-paged.mjs` | `e2e/paged.spec.js`（同断言口径：页高统一/真空带/编辑稳定/磁盘零污染/关分页还原）+ `test/schema-page.test.js` + `test/serialize.test.js` strip 断言 |
 
 ## 有意分歧
 
 - 配置存储：demo 存 localStorage；真 app 入盘 `@page`（HTML-native，文件自携带）——产品设计如此
   （Colin 2026-07-08）。
 - 可编辑表格/代码块：demo 为测分页新建的简化块类型（2026-07-10）；真 app 的表格/代码编辑走
-  Schema 1 既有块模型，能力差异不算漂移。
+  Schema 1 既有块模型，能力差异不算漂移。**且 Schema 1 目前没有代码块类型**（`body>pre` 不在
+  TOP_BLOCKS → 非合规 → 根本进不了分页）：真 app 引擎已按「pre 沿逻辑行（\n/`<br>`）切 +
+  display:block spacer span 推挤」预留实现，待 Schema 收编代码块后激活验证（2026-07-12）。
+- 块级页界的实现机制：demo 在块间插流内 PageGap spacer；真 app 给开新页的块加运行时 marginTop
+  推挤 + 覆盖层画缝（真 app 的块是裸元素，流内兄弟节点会搅乱 blockedit 的兄弟遍历与 margin
+  折叠账）。用户可感知行为一致（每页一张纸、页界留白结构、页码 chip、可点），不算漂移（2026-07-12）。
+- 空/短文档末页补白：demo 扣除文末 chrome（ws-canvas-tail 等）；真 app 无文末 chrome，
+  body min-height = 页数×(纸高+缝)−缝 直接给足（2026-07-12）。
 
 ## 对齐锚点
 
 - ui-demo 侧：commit `876a701`（2026-07-10，PR #151）
-- app 侧：未对齐（旧实现停在 worktree `wordspace-next-schema2`，为 V4 之前的画线方案）
+- app 侧：commit `e97ea60`（2026-07-12，PR #164 合 main）
 
 ## 欠账
 
-- **真 app 全量移植**：schema2 worktree 里的实现是「独立 Schema 2 + 画线」旧口径，需按本 spec
-  改造（删 schema-2 descriptor、V4 推挤引擎、页面设置入口门控）后合入。宿主验证（printToPDF
-  页码实测）也未做。
+- ~~**真 app 全量移植**：schema2 worktree 里的实现是「独立 Schema 2 + 画线」旧口径，需按本 spec
+  改造（删 schema-2 descriptor、V4 推挤引擎、页面设置入口门控）后合入。~~
+  ✅ 已完成（`feat/paged-doc-app`，2026-07-12）：分页收编为 Schema 1 可选版式（无 schema-2
+  descriptor）、V4 推挤引擎按 iframe 架构重写、页面设置门控（非合规/md 禁用）、strip-on-persist
+  进 cleanRoot（变异自检验证过门有牙）、e2e 真门 5 条全绿。
+- **宿主验证（printToPDF 页码实测）未做**——代码路径已通（preferCSSPageSize + footerTemplate），
+  真开 app 导出 PDF 看页码/分页位置由 Colin 宿主实测。
+- 页间空白点击的光标路由：app 侧统一路由到「上方最近块」末尾（合成块内点击，复用 blockedit
+  enterEdit 全套判定）；demo routeCaretFromGap 的按点击位置就近选上/下块语义未逐一对齐。

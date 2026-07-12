@@ -18,6 +18,20 @@
   function keyOf(e) {
     return e.rel ? (e.rootId ? e.rootId + ':' + e.rel : e.rel) : e.abs;
   }
+  // 第三身份类：网页标签。身份键塞进 abs（照抄 temp: 先例），前缀 'web:'。URL 是 entry 上的可变状态,
+  // 导航不改身份。⚠ id 必须带时间戳（见 mkWebId）——web 条目要跨重启持久化,裸递增 seq 每次从 1 重数
+  // 会与恢复条目撞键、openEntry 撞键即把两个逻辑标签合并成一个。
+  var WEB_PREFIX = 'web:';
+  function isWebKey(key) {
+    return typeof key === 'string' && key.indexOf(WEB_PREFIX) === 0;
+  }
+  function isWebEntry(e) {
+    return !!e && isWebKey(keyOf(e));
+  }
+  // 纯函数生成 web 身份键：'web:' + seq + ':' + base36(nowMs)。seq 保证同会话内唯一,时间戳保证跨重启唯一。
+  function mkWebId(seq, nowMs) {
+    return WEB_PREFIX + seq + ':' + Number(nowMs).toString(36);
+  }
   function pinnedEntries(entries) {
     return entries.filter((e) => e.pinned);
   }
@@ -36,15 +50,20 @@
     return open.length ? keyOf(open[open.length - 1]) : null;
   }
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-  const mkEntry = ({ rootId, rel, abs, kind, title }, open, pinned) => ({
-    rootId,
-    rel,
-    abs,
-    kind: kind || 'other',
-    title: title != null ? title : rel || abs,
-    open,
-    pinned,
-  });
+  const mkEntry = ({ rootId, rel, abs, kind, title, url }, open, pinned) => {
+    const e = {
+      rootId,
+      rel,
+      abs,
+      kind: kind || 'other',
+      title: title != null ? title : rel || abs,
+      open,
+      pinned,
+    };
+    // web 条目携带当前 URL（null = 新标签页,尚未导航）；doc 条目无此字段,不污染。
+    if (url !== undefined) e.url = url;
+    return e;
+  };
 
   // 打开文件：已跟踪 → open=true（钉的状态保持）+ 激活；未跟踪 → 新建 {open:true,pinned:false} 追加 + 激活。
   function openEntry(state, file) {
@@ -119,6 +138,7 @@
   // 多根版：匹配限定在 rootId 内（别的根里同 rel 的文件是不同文件，不许误伤）。外部 entry（key=abs）
   // 的 rel=undefined，永不命中，天然不被波及。若 newRel 在同根内撞名 → 合并（open/pinned 取并集）守去重不变式。
   function retargetEntry(state, rootId, oldRel, newRel, newTitle, newKind) {
+    if (!oldRel || !rootId) return state; // 防御：都传 undefined 时 hit 会命中 web/temp entry（rel/rootId 皆 undefined）,把网页标签身份改写成裸 rel（潜伏 footgun,P2-8）
     const hit = (e) => e.rootId === rootId && e.rel === oldRel;
     const old = state.entries.find(hit);
     if (!old) return state;
@@ -152,6 +172,32 @@
     const newKey = keyOf({ rootId, rel: newRel });
     const activeRel = state.activeRel === oldKey ? newKey : state.activeRel;
     return { entries, activeRel };
+  }
+
+  // 更新被跟踪 entry 的字段（web 导航后主进程推来 url/title 刷新用）。只 patch 命中的项,
+  // 不动 open/pinned/激活态；未命中原样返回。
+  function updateEntry(state, key, patch) {
+    let hit = false;
+    const entries = state.entries.map((e) => {
+      if (keyOf(e) !== key) return e;
+      hit = true;
+      return { ...e, ...patch };
+    });
+    return hit ? { entries, activeRel: state.activeRel } : state;
+  }
+
+  // 最近关闭栈（⌘⇧T 重开）：纯数据、内存态、重启即清。同 key 去重（反复关同一个只留最新一条），
+  // 封顶防无限涨（spec §4.4：容量 15，只记非文档标签——过滤由调用方做）。
+  function pushClosed(stack, entry, cap) {
+    if (!entry) return stack || [];
+    const key = keyOf(entry);
+    const rest = (stack || []).filter((e) => keyOf(e) !== key);
+    rest.unshift({ ...entry });
+    return rest.slice(0, cap || 15);
+  }
+  function popClosed(stack) {
+    const s = stack || [];
+    return { entry: s[0] || null, rest: s.slice(1) };
   }
 
   // 销毁一条 entry（按身份键 keyOf）+ 激活项则回落。按 key 删：内部传 rel、外部传 abs 都能删
@@ -262,6 +308,9 @@
 
   const API = {
     keyOf,
+    isWebKey,
+    isWebEntry,
+    mkWebId,
     reconcileTree,
     openEntry,
     setActive,
@@ -270,6 +319,9 @@
     unpinEntry,
     dropEntry,
     retargetEntry,
+    updateEntry,
+    pushClosed,
+    popClosed,
     removeEntry,
     dropRootEntries,
     undoDropRoot,

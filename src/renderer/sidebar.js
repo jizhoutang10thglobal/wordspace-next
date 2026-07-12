@@ -73,6 +73,7 @@
   KIND_PATH.pdf = KIND_PATH.word; // FileText 同款（ui-demo：word/pdf/html 都是 FileText、靠颜色区分）
   KIND_PATH.html = KIND_PATH.word;
   KIND_PATH.md = KIND_PATH.word; // md 也是可编辑文档，同 FileText 轮廓（.sb-kind-md 类是将来单独标色的钩子）
+  KIND_PATH.web = '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'; // 地球（web 标签无 favicon 时的通用图标）
   const kindSvg = (kind) =>
     '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
     (KIND_PATH[kind] || '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>') +
@@ -1168,7 +1169,8 @@
     const wasActive = tabState.activeRel === key;
     const entry = tabState.entries.find((e) => keyOf(e) === key);
     if (!entry) return; // 双击 × 第二下打在已 detach 的旧行上：key 已不存在，别让 keyOf(undefined) 抛 TypeError
-    const dirtyActive = wasActive && window.__shellIsDirty && window.__shellIsDirty();
+    // web 标签没有脏态；shell 的 dirty 属于底下开着的后台文档,不该把它的确认弹到网页标签头上。
+    const dirtyActive = wasActive && !window.WS2Tabs.isWebEntry(entry) && window.__shellIsDirty && window.__shellIsDirty();
     // 修 SB-4（bug-sweep #111 与本 PR 撞车,两家合一）：临时文档永远是未保存内容 → 无论激活
     // 与否都要确认,别让非激活 temp 的 × 零确认直接销毁。非激活 temp 先切到前台（编辑器渲染它 +
     // 设为激活）,确认框的「保存并关闭」才作用在正确目标上。
@@ -1193,9 +1195,20 @@
   function finishClose(key, op) {
     const wasActive = tabState.activeRel === key;
     const entry = tabState.entries.find((e) => keyOf(e) === key);
+    // ⌘⇧T 重开栈：只记非文档标签（web / 非可编辑的外部文件,spec §4.4——文档标签在树里丢不了,临时文档重开也没内容）
+    if (entry && (window.WS2Tabs.isWebEntry(entry) || (isExternal(entry) && !isTempEntry(entry) && entry.kind !== 'html' && entry.kind !== 'md'))) {
+      closedStack = window.WS2Tabs.pushClosed(closedStack, entry, 15);
+    }
+    // ⚠ web 标签不走 __shellDiscard（P1,两路审查确认）：shell 的 dirty 属于 view 底下的**后台文档**,
+    // web 标签本身没有脏态。原来 web 标签也 setDirty(false) 会把后台文档 1.2s 自动保存窗内/保存失败的
+    // 未保存修改静默清零（autosave 因 dirty=false 跳过写盘、退出守卫也解除）→ 切走/退出即丢数据。
     if (entry && isTempEntry(entry)) { if (window.__shellDiscardTemp) window.__shellDiscardTemp(key); }
-    else if (wasActive && window.__shellDiscard) window.__shellDiscard();
+    else if (wasActive && !window.WS2Tabs.isWebEntry(entry) && window.__shellDiscard) window.__shellDiscard();
     applyTabs(op(tabState, key));
+    // web 标签不再「开着」（关闭/移出置顶）→ 销毁主进程 view 释放内存（⌘⇧T 重开 = 按存的 url 重建,不复活旧 view）
+    if (entry && window.WS2Tabs.isWebEntry(entry) && !tabState.entries.some((e) => keyOf(e) === key && e.open)) {
+      if (window.__webCloseView) window.__webCloseView(key);
+    }
     if (wasActive) {
       let e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
       // 相邻回落项若落在失联根 → 它打不开（openTabRow 只弹 toast、不切编辑器），会把编辑器留在刚关掉的
@@ -1481,6 +1494,8 @@
     if (rootsGen !== genBefore) return loadTabs(); // 作废后按新根集合重跑（集合稳定即终止），别让标签永不恢复
     const raw = st.entries || [];
     const checks = await Promise.all(raw.map((e) => {
+      // web 标签：不查 fs（'web:…' 不是路径）,校验 url 形状即可（null=起始页 / http(s)）。
+      if (window.WS2Tabs.isWebKey(keyOf(e))) return Promise.resolve(e.url == null || /^https?:\/\//i.test(e.url));
       if (e.rel) {
         const root = rootOf(e.rootId);
         if (!root) return Promise.resolve(false); // 根都不在了（store 与注册表漂移）→ 丢
@@ -1532,9 +1547,22 @@
   // 两条都跑（幂等、无害）；reveal=false 时这里跳过 + suppressRevealOnce 让 onOpen 那次也跳过，两条都不定位。
   function openTabRow(entry, reveal = true) {
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
-      if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry));
+      if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry)); // renderTemp 内部摘 web view（canLeaveActive 取消则不摘,网页态保留,P2-1）
       return;
     }
+    // 网页标签（浏览器 feature）：激活 = openEntry（置顶纯快捷方式顺带变开）+ 交给 browser.js 的激活漏斗。
+    // 活跃临时文档先 stash（切走不丢；文档不关闭,iframe 留在 view 底下,切回即恢复）。
+    if (window.WS2Tabs.isWebEntry(entry)) {
+      if (window.__shellIsTemp && window.__shellIsTemp() && window.__shellStashActiveTemp) window.__shellStashActiveTemp();
+      tabState = window.WS2Tabs.openEntry(tabState, entry);
+      persistTabs();
+      renderZones();
+      const cur = tabState.entries.find((x) => keyOf(x) === keyOf(entry));
+      if (window.__webActivate) window.__webActivate(cur || entry);
+      return;
+    }
+    // web view 的摘除交给下游 openNode→openDoc/showViewer（它们在各自脏守卫**通过后**才摘,P2-1）——
+    // 这里不提前摘,否则失联根/findNode-miss 提前 return 时 view 已摘、activeRel 仍是 web = 状态劈开。
     if (entry.rel) {
       const root = rootOf(entry.rootId);
       if (root && root.missing) { showToast('「' + root.name + '」失联了，重新定位后才能打开'); return; }
@@ -1552,10 +1580,11 @@
   function tabRow(entry, zone) {
     const key = keyOf(entry);
     const temp = isTempEntry(entry);
-    const external = isExternal(entry) && !temp; // 临时文档不算「工作区外」，不显示 ↗ 标记
+    const web = window.WS2Tabs.isWebEntry(entry);
+    const external = isExternal(entry) && !temp && !web; // 临时文档/网页标签不算「工作区外」，不显示 ↗ 标记
     const missing = !!(entry.rel && rootOf(entry.rootId) && rootOf(entry.rootId).missing); // 所在根失联 → 灰态
     const row = document.createElement('div');
-    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '') + (temp ? ' sb-tab-temp' : '') + (missing ? ' sb-tab-missing' : '');
+    row.className = 'sb-row sb-tab sb-kind-' + (entry.kind || 'other') + (external ? ' sb-tab-ext' : '') + (temp ? ' sb-tab-temp' : '') + (web ? ' sb-tab-web' : '') + (missing ? ' sb-tab-missing' : '');
     row.dataset.rel = entry.rel || entry.abs; // 属性名沿用 data-rel（e2e 选择器靠它）：内部=rel、外部=abs（根限定看 data-root）
     row.dataset.root = entry.rootId || '';
     row.dataset.key = key; // 完整身份键（rootId:rel || abs），拖拽/调试用
@@ -1565,11 +1594,21 @@
     if (key === tabState.activeRel) row.classList.add('is-active');
     const ico = document.createElement('span');
     ico.className = 'sb-ico';
-    ico.innerHTML = kindSvg(entry.kind); // T8：标签也按类型换形状（跟树一套）
+    if (web) {
+      // 网页标签：favicon 优先（主进程拉好推来的 data:URL），取不到回落通用地球
+      const st = window.__webStatus ? window.__webStatus(key) : null;
+      if (st && st.favicon) {
+        const img = document.createElement('img');
+        img.className = 'sb-tab-fav';
+        img.src = st.favicon;
+        img.onerror = () => { ico.innerHTML = kindSvg('web'); };
+        ico.append(img);
+      } else ico.innerHTML = kindSvg('web');
+    } else ico.innerHTML = kindSvg(entry.kind); // T8：标签也按类型换形状（跟树一套）
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
-    name.title = external ? entry.abs : entry.title; // 截断时悬停显全名（外部标签显完整绝对路径）
+    name.title = web && entry.url ? entry.url : external ? entry.abs : entry.title; // 网页悬停显 URL；外部显绝对路径
     row.append(ico, name);
     if (external) {
       const ext = document.createElement('span');
@@ -1584,7 +1623,8 @@
     const dot = document.createElement('span');
     dot.className = 'sb-tab-dot';
     dot.title = temp ? '未保存（还没存进文件夹）' : '有未保存的修改';
-    if (!temp && !(key === tabState.activeRel && window.__shellIsDirty && window.__shellIsDirty())) dot.hidden = true;
+    // web 标签没有脏态（shell 的 dirty 属于底下的后台文档,不挂到网页标签上）
+    if (web || (!temp && !(key === tabState.activeRel && window.__shellIsDirty && window.__shellIsDirty()))) dot.hidden = true;
     row.append(dot);
     if (!temp) { // 临时文档不能置顶（置顶持久化、临时文档重启即弃）
       const pin = document.createElement('button');
@@ -1707,6 +1747,10 @@
     if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
     else tlist.appendChild(zoneHint('没有打开的标签'));
     tabsEl.appendChild(tlist);
+    // 浏览器 feature：无工作区也能开网页标签——第一个 web 标签要能点亮侧栏（syncChrome 只在根变化时跑）。
+    const sbEl = document.getElementById('sidebar');
+    if (sbEl) sbEl.classList.toggle('sb-on', rootsState.length > 0 || tabState.entries.length > 0);
+    if (window.__webChromeSync) window.__webChromeSync(); // 激活/标签变化 → 同步地址栏值/导航条 disabled/星标
   }
 
   // ---- 筛选输入（+ 清除钮，T8 对齐 ui-demo arc-filter-clear）----
@@ -1797,9 +1841,36 @@
     }
     const modal = document.createElement('div');
     modal.className = 'sb-modal';
-    const head = modalHead('新建文档', temp
-      ? '新建的是临时文档，编辑后保存时再选存到哪个文件夹'
+    const head = modalHead(temp ? '新建标签页' : '新建文档', temp
+      ? '输入网址直接上网，或在下面新建一个文档（临时文档，保存时再选存到哪）'
       : '在 ' + (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : ''), close);
+    // ⌘T 二合一（spec §4.5.1）：顶部一条地址栏（自动聚焦）——Enter 开新网页标签并导航,关 modal。
+    let omniRow = null;
+    if (temp) {
+      omniRow = document.createElement('div');
+      omniRow.className = 'sb-cm-omni';
+      const ico = document.createElement('span');
+      ico.className = 'sb-cm-omni-ico';
+      ico.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+      const omniIn = document.createElement('input');
+      omniIn.className = 'sb-cm-omni-input';
+      omniIn.type = 'text';
+      omniIn.placeholder = '搜索,或输入网址';
+      omniIn.spellcheck = false;
+      omniIn.onkeydown = (e) => {
+        e.stopPropagation();
+        if (e.isComposing || e.keyCode === 229) return; // IME 确认键不当提交
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const v = omniIn.value.trim();
+          if (!v) return;
+          close();
+          if (window.__webOpenInput) window.__webOpenInput(v);
+        } else if (e.key === 'Escape') { e.preventDefault(); close(); }
+      };
+      omniRow.append(ico, omniIn);
+      setTimeout(() => omniIn.focus(), 0);
+    }
     const grid = document.createElement('div');
     grid.className = 'sb-modal-grid';
     for (const t of templates) {
@@ -1830,6 +1901,28 @@
       grid.appendChild(card);
     }
     const body = modalBody();
+    if (omniRow) {
+      body.appendChild(omniRow);
+      // 「新建文档」小节标 + 范式选择（范式 1 可用；2/3 灰态敬请期待,spec §4.5.1）
+      const secRow = document.createElement('div');
+      secRow.className = 'sb-cm-sec';
+      const secLabel = document.createElement('span');
+      secLabel.className = 'sb-cm-sec-label';
+      secLabel.textContent = '新建文档';
+      const p1 = document.createElement('span');
+      p1.className = 'sb-cm-para is-on';
+      p1.textContent = '范式 1';
+      const p2 = document.createElement('span');
+      p2.className = 'sb-cm-para';
+      p2.textContent = '范式 2';
+      p2.title = '敬请期待';
+      const p3 = document.createElement('span');
+      p3.className = 'sb-cm-para';
+      p3.textContent = '范式 3';
+      p3.title = '敬请期待';
+      secRow.append(secLabel, p1, p2, p3);
+      body.appendChild(secRow);
+    }
     body.appendChild(grid);
     modal.append(head, body);
     overlay.appendChild(modal);
@@ -2040,10 +2133,89 @@
     }
   }
 
+  // ===== 浏览器 feature：web 标签桥 + 顺序循环切换 + ⌘⇧T 重开栈（spec §4.4/§7）=====
+  let closedStack = []; // 最近关闭的非文档标签（web / 非可编辑外部文件）,内存态,cap 15,重启即清
+  let webSeq = 0; // mkWebId 的会话内序号（id 还带时间戳,跨重启不撞键）
+  function openOrder() { return window.WS2Tabs.displayOrder(tabState.entries).filter((e) => e.open); }
+  // Ctrl+Tab / Ctrl+⇧Tab：按条顺序循环（置顶组在前、普通组在后；不做 MRU）。
+  function cycleTab(prev) {
+    const order = openOrder();
+    if (order.length < 2) return;
+    let idx = order.findIndex((e) => keyOf(e) === tabState.activeRel);
+    if (idx < 0) idx = 0;
+    const next = order[(idx + (prev ? -1 : 1) + order.length) % order.length];
+    if (next) openTabRow(next, false); // 循环切换不滚树（同关标签回落的口径）
+  }
+  // ⌘1..8 直达第 N 条、⌘9 直达最后一条（浏览器语义）。
+  function tabByIndex(n) {
+    const order = openOrder();
+    if (!order.length) return;
+    const e = n >= 9 ? order[order.length - 1] : order[n - 1];
+    if (e) openTabRow(e, false);
+  }
+  // ⌘⇧T：后进先出重开（原 url/title/pinned 恢复成新标签并激活）。
+  function reopenClosedTab() {
+    const popped = window.WS2Tabs.popClosed(closedStack);
+    if (!popped.entry) return;
+    closedStack = popped.rest;
+    const entry = popped.entry;
+    tabState = window.WS2Tabs.openEntry(tabState, entry);
+    if (entry.pinned) tabState = window.WS2Tabs.pinEntry(tabState, entry);
+    persistTabs();
+    renderZones();
+    const cur = tabState.entries.find((x) => keyOf(x) === keyOf(entry));
+    if (cur) openTabRow(cur);
+  }
+  // 新开网页标签。background=true 后台加载不抢激活（⌘点链接/右键后台打开）。返回身份键。
+  function openWebTab(url, title, background) {
+    const key = window.WS2Tabs.mkWebId(++webSeq, Date.now());
+    const entry = { abs: key, kind: 'web', title: title || url || '新标签页', url: url || null };
+    if (background) {
+      tabState = { entries: [...tabState.entries, { ...entry, open: true, pinned: false }], activeRel: tabState.activeRel };
+      persistTabs();
+      renderZones();
+      if (url && window.__webEnsureLoaded) window.__webEnsureLoaded(key, url); // 后台建 view 加载,不 attach
+    } else {
+      openTabRow(entry); // web 分支：openEntry + 激活漏斗（懒建 view）
+    }
+    return key;
+  }
+  // 点收藏/补全里的「开着的标签」：已开同址（含置顶）→ 聚焦过去（拍板#3），返回是否命中。
+  function focusWebByUrl(url) {
+    if (!url) return false;
+    const hit = tabState.entries.find((e) => window.WS2Tabs.isWebEntry(e) && e.url === url);
+    if (!hit) return false;
+    openTabRow(hit);
+    return true;
+  }
+  // 主进程导航状态推送 → 标签行标题/URL 跟随 + 落盘（url/title 变了才写）。
+  function updateWebEntry(key, patch) {
+    const prev = tabState;
+    tabState = window.WS2Tabs.updateEntry(tabState, key, patch);
+    if (tabState !== prev) {
+      persistTabs();
+      renderZones();
+    }
+  }
+  window.__sbWeb = {
+    entries: () => tabState.entries,
+    active: () => (tabState.activeRel ? tabState.entries.find((e) => keyOf(e) === tabState.activeRel) || null : null),
+    openWeb: openWebTab,
+    focusWebByUrl,
+    updateWeb: updateWebEntry,
+  };
+  window.__sbCycleTab = (prev) => cycleTab(prev); // shell 的 iframe keydown 转发（焦点在编辑器里也能切标签）
+  window.__sbTabByIndex = (n) => tabByIndex(n);
+  document.addEventListener('keydown', (e) => {
+    if (document.querySelector('.sb-modal-overlay, #fp-overlay, .aiax-overlay')) return; // 弹层守卫（§7,含 AI 接入面板,#11）
+    if (e.ctrlKey && !e.metaKey && e.key === 'Tab') { e.preventDefault(); cycleTab(e.shiftKey); return; }
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) { e.preventDefault(); tabByIndex(+e.key); }
+  });
+
   window.__sbHooks = {
     // shell 脏态变化 → 同步活跃真文件标签的未保存点（T2 arc-tab-dot；临时文档的点常显、不经这里）
     onDirtyChange: (d) => {
-      document.querySelectorAll('.sb-tab.is-active:not(.sb-tab-temp) .sb-tab-dot').forEach((el) => { el.hidden = !d; });
+      document.querySelectorAll('.sb-tab.is-active:not(.sb-tab-temp):not(.sb-tab-web) .sb-tab-dot').forEach((el) => { el.hidden = !d; });
     },
     pickFolder: () => pickFolder(), // ⋯ 菜单/菜单栏「打开文件夹…」= 添加根（单文件模式也要有开工作区的入口）
     onOpen: async (abs) => {
@@ -2081,14 +2253,26 @@
       window.__pendingColdOpen = null; // 标签已建，撤销 loadTabs 的「别抢 viewer」抑制
     },
     refresh,
-    newTab: () => { if (rootsState.length) openCreateModal(null, '', { temp: true }); }, // Cmd+T：新建临时文档（没打开文件夹不建，没地方保存）
+    // Cmd+T：二合一新建 modal（地址栏 + 新建文档,spec §4.5.1）。不再要求先开工作区——
+    // 网页标签不依赖工作区；临时文档保存时 SaveModal 有「浏览…」兜底。
+    newTab: () => openCreateModal(null, '', { temp: true }),
+    cycleTab: (prev) => cycleTab(prev),           // Ctrl+Tab / Ctrl+⇧Tab
+    tabByIndex: (n) => tabByIndex(n),             // ⌘1-9
+    reopenClosedTab: () => reopenClosedTab(),     // ⌘⇧T（菜单加速器）
+    expandSidebar: () => setSidebarCollapsed(false), // ⌘L 侧栏收起时先展开（browser.js 用）
+    openEntryRow: (entry) => openTabRow(entry),   // browser.js 起始页置顶行/补全「开着的标签」聚焦用
     // Cmd+W：有活跃标签关标签；无标签但还有内容（工作区外查看器 / 单文件模式的文档）先关内容回空态；
     // 真·空态 → 关窗口（Wendi 2026-07-03：macOS=隐藏驻留、后台开着；Windows/Linux 按平台惯例退出）。
     closeActiveTab: () => {
       // 弹层开着（保存到哪里/关闭确认）时 Cmd+W 不做分层动作：菜单加速器不被 DOM 弹层拦，
       // 不守这行会叠出第二层确认框、两边对同一文档双执行（审计发现）
       if (document.querySelector('.sb-modal-overlay')) return;
-      if (tabState.activeRel) { closeTabRel(tabState.activeRel); return; }
+      if (tabState.activeRel) {
+        const act = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
+        if (act && act.pinned) return; // ⌘W 对置顶标签无效（spec §4.4/§7,同浏览器防误关）
+        closeTabRel(tabState.activeRel);
+        return;
+      }
       const v = document.getElementById('viewer');
       const hasDoc = window.__shellDocPath && window.__shellDocPath();
       if ((v && !v.hidden) || hasDoc) {
