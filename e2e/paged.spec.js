@@ -1,0 +1,218 @@
+// 分页文档 e2e 真门（断言口径对齐 ui-demo scripts/verify-paged-v4.mjs；CI 用 xvfb 真启动 Electron 跑）：
+//  A) 页高统一：全部灰缝（块级 + 块内）纵向间距 ≈ 纸高（A4 竖 1122.5px @96dpi）±4；
+//  B) 页界真空带：每条灰缝上下「内容底 → 内容顶」的空隙 ≥ 页底边距+灰缝+页顶边距 − 容差（204px），
+//     且无内容元素被页界横穿；
+//  C) 编辑稳定（Colin 复现）：点进被推挤 li 正文连按 5 次回车——推挤不累积（推挤痕迹数 == 灰缝数）、
+//     无「贼大」空行、A/B 仍全过；
+//  D) 磁盘字节零污染（strip-on-persist P0）：编辑 → 自动保存 → 读磁盘原始字节，断言无
+//     data-ws-pushed / ws-page-spacer / style 属性里的 padding-top·margin-top，且 reparse 后仍 conform、
+//     page 块仍可解析（漏一个推挤样式进盘 = 块级 style = 文档瞬间非合规）；
+//  E) 表格：spacer 行数 == 表内页界数；编辑落盘同样零污染；
+//  F) 关分页还原：页面设置关掉分页 → 灰缝清空、page 块移除、落盘后磁盘无 @page、仍 conform。
+const { test, expect, _electron: electron } = require('@playwright/test');
+const fs = require('fs/promises');
+const path = require('path');
+const os = require('os');
+const { JSDOM } = require('jsdom');
+const registry = require('../src/lib/schema-registry.js');
+const schemaPage = require('../src/lib/schema-page.js');
+
+const ROOT = path.join(__dirname, '..');
+const FIX = path.join(__dirname, 'paged-fixtures');
+const PAPER_H = 1122.5; // A4 纵向 297mm @96dpi
+const MB = 96, MT = 96, GAP = 24; // normal 边距 25.4mm=96px + 灰缝
+const VOID_MIN = MB + GAP + MT - 12; // 内容真空带下限（容差 12px：行距/边框）
+
+let app, page, frame, tmpDir;
+
+test.beforeAll(async () => {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2e2e-paged-'));
+  app = await electron.launch({
+    args: ['--no-sandbox', ROOT],
+    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' },
+  });
+  page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+  await page.setViewportSize({ width: 1280, height: 860 });
+  await page.evaluate(() => { window.confirm = () => true; window.alert = () => {}; });
+});
+test.afterAll(async () => {
+  try { if (app) await app.close(); } catch (e) {}
+  try { if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }); } catch (e) {}
+});
+
+// fixture 拷进 tmp 再打开（编辑会触发自动保存写盘，绝不能写回仓库里的 fixture）
+async function openFixture(name) {
+  const src = path.join(FIX, name);
+  const dst = path.join(tmpDir, name);
+  await fs.copyFile(src, dst);
+  await app.evaluate(({ BrowserWindow }, p) => { BrowserWindow.getAllWindows()[0].webContents.send('open-file', p); }, dst);
+  frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('body')).toBeVisible();
+  await page.waitForTimeout(900); // 等分页引擎 rAF/RO 收敛
+  return dst;
+}
+
+// 页界几何（iframe 内实测）：灰缝 rel 顶序列 → 页高 spans；真空带 = 缝上内容底 → 缝下内容顶。
+// contentSel = 叶子内容元素选择器（li / tr…）。被推挤元素的 paddingTop 是留白不是内容——内容顶从
+// content-box 起算（同 verify-paged-v4 口径）。
+const geometry = (contentSel) => frame.locator('body').evaluate((body, sel) => {
+  const doc = body.ownerDocument;
+  const pr = body.getBoundingClientRect();
+  const rel = (v) => +(v - pr.top).toFixed(1);
+  const contents = [...doc.querySelectorAll(sel)]
+    .filter((e) => !e.closest('.ws-page-spacer') && !e.querySelector(sel)) // 只取叶子内容元素
+    .map((e) => {
+      const r = e.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(e).paddingTop) || 0;
+      return { top: rel(r.top + pad), bottom: rel(r.bottom) };
+    });
+  const bands = [...doc.querySelectorAll('.ws-page-gutter')].map((g) => {
+    const r = g.getBoundingClientRect();
+    return { top: rel(r.top), bottom: rel(r.bottom) };
+  }).sort((a, b) => a.top - b.top);
+  const voids = bands.map((b) => {
+    const above = Math.max(0, ...contents.filter((c) => c.bottom <= b.top + 2).map((c) => c.bottom));
+    const belows = contents.filter((c) => c.top >= b.bottom - 2).map((c) => c.top);
+    const below = belows.length ? Math.min(...belows) : Infinity;
+    const crossed = contents.filter((c) => c.top < b.top - 2 && c.bottom > b.bottom + 2).length;
+    return { void: +(below - above).toFixed(1), crossed };
+  });
+  const spans = [];
+  let prev = 0;
+  for (const b of bands) { spans.push(+(b.top - prev).toFixed(1)); prev = b.top + 24; }
+  return { bandCount: bands.length, voids, spans, paperW: +pr.width.toFixed(1), bodyH: +pr.height.toFixed(1) };
+}, contentSel);
+
+// 推挤痕迹统计：每个页界恰对应一个推挤（data-ws-pushed 元素或 spacer 节点），1:1 才叫「不累积」。
+const pushedStats = () => frame.locator('body').evaluate((body) => {
+  const doc = body.ownerDocument;
+  const pushed = doc.querySelectorAll('[data-ws-pushed]').length;
+  const spacers = doc.querySelectorAll('.ws-page-spacer').length;
+  const gutters = doc.querySelectorAll('.ws-page-gutter').length;
+  // 「贼大」空行：无内容却超高、且不是被推挤元素（推挤元素的 padding 即留白，允许高）
+  const emptyBig = [...doc.querySelectorAll('li')].filter(
+    (e) => !(e.textContent || '').trim() && e.getBoundingClientRect().height > 60
+      && (parseFloat(getComputedStyle(e).paddingTop) || 0) < 50,
+  ).length;
+  return { pushed, spacers, gutters, emptyBig };
+});
+
+// 点进 iframe 内某元素（视口坐标 = iframe 偏移 + 元素内坐标；先 scrollIntoView 保证在视口内）
+async function clickInFrame(selector, dxRatio, dyPx) {
+  const box = await frame.locator('body').evaluate((body, sel) => {
+    const el = body.ownerDocument.querySelector(sel);
+    if (!el) return null;
+    el.scrollIntoView({ block: 'center' });
+    const r = el.getBoundingClientRect();
+    const pad = parseFloat(getComputedStyle(el).paddingTop) || 0;
+    return { left: r.left, top: r.top + pad, width: r.width };
+  }, selector);
+  if (!box) return false;
+  const fr = await page.locator('#doc-frame').boundingBox();
+  await page.mouse.click(fr.x + box.left + Math.min(60, box.width * dxRatio), fr.y + box.top + dyPx);
+  return true;
+}
+
+test('列表：开分页即每页一张纸——页高统一 + 页界真空带 + 无内容被横穿', async () => {
+  await openFixture('nested-list.html');
+  const g = await geometry('li');
+  expect(g.bandCount).toBeGreaterThan(0);
+  expect(Math.abs(g.paperW - 794)).toBeLessThan(2); // 纸宽 = A4 794px（引擎纸面接管 baseline 820px）
+  for (const v of g.voids) {
+    expect(v.void).toBeGreaterThanOrEqual(VOID_MIN); // 页界真空带 ≥ 204px
+    expect(v.crossed).toBe(0);                        // 无 li 被页界横穿
+  }
+  expect(g.spans.length).toBeGreaterThan(1);
+  for (const s of g.spans) expect(Math.abs(s - PAPER_H)).toBeLessThan(4); // 页高统一 ±4
+});
+
+test('列表：点进被推挤 li 打字 + 连按 5 次回车——推挤不累积、无巨隙、页高仍统一', async () => {
+  const clicked = await clickInFrame('li[data-ws-pushed]', 0.3, 10);
+  expect(clicked).toBe(true);
+  await page.waitForTimeout(250);
+  await page.keyboard.press('End');
+  await page.keyboard.type('编辑稳定验证');
+  for (let i = 0; i < 5; i++) { await page.keyboard.press('Enter'); await page.waitForTimeout(320); }
+  await page.waitForTimeout(700);
+  const st = await pushedStats();
+  expect(st.pushed + st.spacers).toBe(st.gutters); // 推挤痕迹 == 页界数（回车分裂克隆已被扫荡，不累积）
+  expect(st.emptyBig).toBe(0);                     // 无「贼大」空行
+  const g = await geometry('li');
+  for (const v of g.voids) { expect(v.void).toBeGreaterThanOrEqual(VOID_MIN); expect(v.crossed).toBe(0); }
+  for (const s of g.spans) expect(Math.abs(s - PAPER_H)).toBeLessThan(4);
+});
+
+test('列表：磁盘字节零污染（strip-on-persist P0）——自动保存后 reparse 仍 conform', async () => {
+  // 上一个测试已编辑并触发自动保存（1.2s 静默）；再补一次编辑确保最新推挤态之后有落盘
+  await page.keyboard.type('落盘前再敲一笔');
+  await page.waitForTimeout(2000); // > 1.2s 自动保存窗口
+  const raw = await fs.readFile(path.join(tmpDir, 'nested-list.html'), 'utf8');
+  expect(raw.includes('data-ws-pushed')).toBe(false);
+  expect(raw.includes('ws-page-spacer')).toBe(false);
+  expect(/style="[^"]*padding-top/.test(raw)).toBe(false); // 块内推挤 paddingTop 绝不入盘
+  expect(/style="[^"]*margin-top/.test(raw)).toBe(false);  // 块级推挤 marginTop 绝不入盘
+  expect(raw.includes('编辑稳定验证')).toBe(true);          // 编辑内容真的保存了（不是没存所以干净）
+  const r = registry.classify(new JSDOM(raw).window.document);
+  expect(r.conform).toBe(true); // 漏推挤样式进盘 = 块级 style = 非合规——这里必须还是 conform
+  const m = raw.match(/<style data-ws-schema-css="page">([\s\S]*?)<\/style>/);
+  expect(m).toBeTruthy();
+  expect(schemaPage.parsePageCss(m[1])).toBeTruthy(); // page 块仍是可解析 canonical
+});
+
+test('表格：spacer 行数 == 表内页界数；编辑落盘零污染', async () => {
+  const dst = await openFixture('long-table.html');
+  const g = await geometry('tr:not(.ws-page-spacer)');
+  expect(g.bandCount).toBeGreaterThan(0);
+  for (const v of g.voids) { expect(v.void).toBeGreaterThanOrEqual(VOID_MIN); expect(v.crossed).toBe(0); }
+  for (const s of g.spans) expect(Math.abs(s - PAPER_H)).toBeLessThan(4);
+  const st = await pushedStats();
+  const innerBands = await frame.locator('body').evaluate((b) => b.ownerDocument.querySelectorAll('.ws-inner-gutter').length);
+  expect(st.spacers).toBe(innerBands); // 表内每个页界恰一根 spacer 行
+  // 编辑正文段落触发自动保存（表格单元格编辑走既有块模型，能力差异不算漂移——spec 有意分歧）
+  const clicked = await clickInFrame('p', 0.3, 8);
+  expect(clicked).toBe(true);
+  await page.waitForTimeout(250);
+  await page.keyboard.press('End');
+  await page.keyboard.type('——表格分页落盘验证');
+  await page.waitForTimeout(2000);
+  const raw = await fs.readFile(dst, 'utf8');
+  expect(raw.includes('ws-page-spacer')).toBe(false);
+  expect(raw.includes('data-ws-pushed')).toBe(false);
+  expect(/style="[^"]*(padding-top|margin-top)/.test(raw)).toBe(false);
+  expect(raw.includes('表格分页落盘验证')).toBe(true);
+  expect(registry.classify(new JSDOM(raw).window.document).conform).toBe(true);
+});
+
+test('关分页还原：灰缝清空、page 块移除、磁盘无 @page、仍 conform', async () => {
+  // 长表格文档还开着。⋯ 菜单 → 页面设置… → 关掉「分页文档」→ 完成
+  await page.click('#doc-menu-btn');
+  const disabled = await page.locator('#page-setup-btn').isDisabled();
+  expect(disabled).toBe(false); // 合规 html → 入口可用
+  await page.click('#page-setup-btn');
+  await page.click('#pgs-on'); // 取消勾选 = 关分页（改动即时生效）
+  await page.waitForTimeout(400);
+  await page.click('#pgs-done');
+  const state = await frame.locator('body').evaluate((body) => {
+    const doc = body.ownerDocument;
+    return {
+      gutters: doc.querySelectorAll('.ws-page-gutter').length,
+      overlay: doc.querySelectorAll('.ws-pgn-overlay').length,
+      pushed: doc.querySelectorAll('[data-ws-pushed]').length,
+      spacers: doc.querySelectorAll('.ws-page-spacer').length,
+      pageStyle: doc.querySelectorAll('style[data-ws-schema-css="page"]').length,
+      maxW: getComputedStyle(body).maxWidth,
+    };
+  });
+  expect(state.gutters).toBe(0);
+  expect(state.overlay).toBe(0);
+  expect(state.pushed).toBe(0);
+  expect(state.spacers).toBe(0);
+  expect(state.pageStyle).toBe(0);
+  expect(state.maxW).toBe('820px'); // baseline 版式还原（纸面接管解除）
+  await page.waitForTimeout(2000); // markDirty → 自动保存
+  const raw = await fs.readFile(path.join(tmpDir, 'long-table.html'), 'utf8');
+  expect(raw.includes('@page')).toBe(false);
+  expect(raw.includes('data-ws-schema-css="page"')).toBe(false);
+  expect(registry.classify(new JSDOM(raw).window.document).conform).toBe(true);
+});
