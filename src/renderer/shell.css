@@ -878,3 +878,27 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-pgs-btn:hover { background: var(--c-hover, #f0f1f3); }
 .ws-pgs-primary { background: var(--c-text); color: var(--c-surface); border-color: var(--c-text); }
 .ws-pgs-primary:hover { opacity: 0.88; background: var(--c-text); }
+
+/* U3 文档互链：提及菜单（父层浮层，position:fixed 锚 iframe caret + frame offset；见 editor/mention.js）。
+   在父 document 里、走 shell.css 外链样式（不受 iframe srcdoc 的 style-src CSP 限制）。
+   pop-in 不加 fill-mode（默认 none）：transform 动画结束即清，不劫持 fixed 后代包含块（L11）。 */
+.ws-mention-menu {
+  position: fixed; z-index: 300; min-width: 220px; max-width: 300px; padding: 4px;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-menu); display: none;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
+  font-size: 13px; color: var(--c-text);
+}
+.ws-mention-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+.ws-mention-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-sm);
+  cursor: pointer; white-space: nowrap;
+}
+.ws-mention-item:hover { background: var(--c-hover); }
+.ws-mention-item.is-active, .ws-mention-item.is-active:hover { background: var(--c-accent-tint); }
+.ws-mention-ico { flex: none; width: 18px; text-align: center; }
+.ws-mention-main { min-width: 0; flex: 1; }
+.ws-mention-title { overflow: hidden; text-overflow: ellipsis; }
+.ws-mention-title.ws-mention-action { color: var(--c-accent); }
+.ws-mention-path { font-size: 11px; opacity: 0.55; overflow: hidden; text-overflow: ellipsis; }
+.ws-mention-empty { padding: 8px; opacity: 0.6; font-size: 12px; }

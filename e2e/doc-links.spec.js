@@ -24,6 +24,9 @@ test.beforeEach(async () => {
   // .md（srcdoc 渲染路径）+ 非合规 HTML（基础编辑路径）——覆盖另外两条渲染路径的链接点击 P0
   await fs.writeFile(path.join(wsDir, 'M.md'), '# 文档M\n\n正文 MMM-KEEP [去B](B.html) 结束。\n', 'utf8');
   await fs.writeFile(path.join(wsDir, 'N.html'), '<!doctype html><html><head><meta charset="utf-8"></head><body><div><h1>文档N</h1><p>正文 NNN-KEEP <a href="B.html">去B</a></p></div></body></html>', 'utf8');
+  // D.html：干净可编辑正文（无既有链接），给 U3 @ 提及测试用（点它不会误点到已有链接触发 U0 打开）
+  await fs.writeFile(path.join(wsDir, 'D.html'), DOC('文档D', '<p>草稿一段文字 </p>'), 'utf8');
+  await fs.writeFile(path.join(wsDir, '报告.pdf'), '%PDF-1.4 fake', 'utf8'); // 非文档文件（B2：@菜单也列它）
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
     env: { ...process.env, WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir },
@@ -119,6 +122,125 @@ test('U0：文档内 http 外链 → 走系统程序（openExternalUrl），ifra
   // iframe 没被导航走：还停在 C
   await expect(frame.locator('h1')).toHaveText('文档C');
   await app.evaluate(() => globalThis.__restoreExt && globalThis.__restoreExt());
+});
+
+test('U3：@ 提及 → 选文档 → 插入纯净 <a href>（磁盘零 class/contenteditable/&nbsp;）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await frame.locator('p').first().click(); // 进入编辑
+  await page.keyboard.press('End');
+  await page.keyboard.type('@');            // 触发提及菜单（父层浮层）
+  await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
+  await page.keyboard.type('文档B');         // 中文筛（DOM 真相 query：insertText 走 input→syncFromDom，验证中文能筛）
+  await expect(page.locator('.ws-mention-item.is-active')).toContainText('文档B'); // 文档在前，active=0=文档B（含「新建」项时用 active 消歧）
+  await page.keyboard.press('Enter');       // 选中
+  await expect(page.locator('.ws-mention-menu')).toBeHidden();
+  await expect(frame.locator('a', { hasText: '文档B' })).toHaveAttribute('href', 'B.html');
+  await page.waitForTimeout(1700);          // 自动保存
+  const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect(d).toMatch(/<a href="B\.html">文档B<\/a>/);      // 纯净 href + 标题快照
+  expect(d).not.toContain('ws-doclink');                 // 零 class
+  expect(d).not.toContain('contenteditable');            // 零 contenteditable
+  expect(d).not.toContain('&nbsp;');
+  expect(d).not.toContain('\u00a0'); // 零 nbsp（用普通空格落 caret）
+});
+
+test('U3-E：@新建 → 当前文档插链接 + 跳去编辑新文档（Colin 2026-07-09）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await frame.locator('p').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('@');
+  await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
+  await page.keyboard.type('新章节');            // 不存在的名字 → 菜单出「新建「新章节」」项（active=0）
+  await expect(page.locator('.ws-mention-item.is-active')).toContainText('新建「新章节」');
+  await page.keyboard.press('Enter');           // 选新建 → 建文档 + 插链接 + 跳去编辑新文档
+  // 跳转到新文档：编辑器 h1 变成「新章节」（是 E 的核心——不再留在老文档）
+  await expect(frame.locator('h1')).toHaveText('新章节', { timeout: 6000 });
+  // 新文档真落盘
+  const nu = await fs.readFile(path.join(wsDir, '新章节.html'), 'utf8');
+  expect(nu).toContain('<h1>新章节</h1>');
+  // 老文档 D.html 存了纯净链接（跳转前已 save）
+  const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect(d).toMatch(/<a href="新章节\.html">新章节<\/a>/);
+  expect(d).not.toContain('ws-doclink');
+  expect(d).not.toContain('@新章节'); // 触发符+query 不残留正文
+  // 去掉正确的链接后不应再有「新章节」残留（href+文字都在链接里，别有漏进正文的裸文字）
+  expect(d.replace(/<a href="新章节\.html">新章节<\/a>/g, '')).not.toContain('新章节');
+});
+
+test('U3-B6：从侧栏拖文件进正文 → 插入纯净链接（真实拖拽管线）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  // 真实拖拽：Playwright dragTo 走 mousedown/move/up → 浏览器生成真 dragstart/dragover/drop（非合成事件，L10）
+  await page.locator('.sb-file[data-rel="B.html"]').dragTo(frame.locator('p').first());
+  await expect(frame.locator('a[href="B.html"]')).toBeVisible({ timeout: 4000 });
+  await page.waitForTimeout(1700);
+  const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect(d).toMatch(/<a href="B\.html">/);
+  expect(d).not.toContain('ws-doclink');
+  expect(d).not.toContain('contenteditable');
+});
+
+test('U3-B5：选中文字 → 气泡「链接」→ 选文档 → 选中文字变链接（wrap 保留文字）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await frame.locator('p').first().click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+ArrowRight'); await page.keyboard.press('Shift+ArrowRight'); // 选中「草稿」
+  await frame.locator('button[title="链接"]').click(); // 气泡链接按钮
+  await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
+  await page.keyboard.type('b');                 // ASCII 筛（rel b.html）——wrap 模式下中文 IME 会替换掉选中的「草稿」
+  await expect(page.locator('.ws-mention-item', { hasText: '文档B' })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(frame.locator('a[href="B.html"]')).toHaveText('草稿'); // 选中文字变链接、保留文字（wrap）
+  await page.waitForTimeout(1700);
+  const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect(d).toMatch(/<a href="B\.html">草稿<\/a>/);
+  expect(d).not.toContain('ws-doclink');
+});
+
+test('U3-B2：@菜单也列非文档文件（pdf）', async () => {
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await frame.locator('p').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('@');
+  await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
+  await page.keyboard.type('报告'); // 中文筛（DOM 真相 query 现在能捕获）；docs 无匹配 → 非文档 报告.pdf 排 active=0
+  await expect(page.locator('.ws-mention-item.is-active')).toContainText('报告');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(1700);
+  const d = await fs.readFile(path.join(wsDir, 'D.html'), 'utf8');
+  expect(d).toMatch(/<a href="[^"]*报告[^"]*\.pdf">报告<\/a>/); // 链到 pdf（href 可能百分号转义）
+});
+
+test('U2：链接索引 IPC —— query 列全部文档 + backlinks 根内反查', async () => {
+  const res = await page.evaluate(async () => {
+    const roots = await window.ws2.wsGetRoots();
+    const rootId = roots[0].id;
+    const q = await window.ws2.linksQuery(rootId);           // 懒建索引 + 返回候选
+    const bl = await window.ws2.linksBacklinks(rootId, 'B.html');
+    return {
+      rels: q.map((d) => d.rel).sort(),
+      titleA: (q.find((d) => d.rel === 'A.html') || {}).title,
+      titleMd: (q.find((d) => d.rel === 'M.md') || {}).title,
+      backlinksOfB: bl.map((e) => e.rel).sort(),
+      snippetA: (bl.find((e) => e.rel === 'A.html') || {}).snippet,
+    };
+  });
+  // A/B/C/D/M.md/N.html 全在索引
+  expect(res.rels).toEqual(['A.html', 'B.html', 'C.html', 'D.html', 'M.md', 'N.html']);
+  expect(res.titleA).toBe('文档A');
+  expect(res.titleMd).toBe('文档M'); // md 的 h1 也抽到
+  // A、M.md、N.html 都链到 B → 都是 B 的反链（索引不看合规性，非合规 N 的链接也算）
+  expect(res.backlinksOfB).toEqual(['A.html', 'M.md', 'N.html']);
+  expect(res.snippetA).toContain('去B'); // 反链带上下文摘句
 });
 
 test('U0：断链（目标不存在）→ 提示且不导航、不切文档', async () => {
