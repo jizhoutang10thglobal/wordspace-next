@@ -56,5 +56,44 @@ contextBridge.exposeInMainWorld('ws2', {
   wsGetTabs: () => ipcRenderer.invoke('ws-get-tabs'),
   wsSetTabs: (state) => ipcRenderer.invoke('ws-set-tabs', state),
   wsTemplates: () => ipcRenderer.invoke('ws-templates'),
-  aiGuide: () => ipcRenderer.invoke('ai-guide')
+  aiGuide: () => ipcRenderer.invoke('ai-guide'),
+
+  // ---- 浏览器 feature（spec docs/browser-feature-spec.md §10.3）----
+  // 网页标签 view：renderer 激活漏斗驱动 show/hide/bounds；导航 parse 在主进程（引擎模板从设置取）。
+  webNavigate: (key, input) => ipcRenderer.invoke('webtab-navigate', key, input),
+  webLoadUrl: (key, url) => ipcRenderer.invoke('webtab-load-url', key, url),
+  webNav: (key, action) => ipcRenderer.send('webtab-nav', key, action),
+  webShow: (key, bounds) => ipcRenderer.send('webtab-show', key, bounds),
+  webHideAll: () => ipcRenderer.send('webtab-hide-all'),
+  webSetBounds: (key, bounds) => ipcRenderer.send('webtab-bounds', key, bounds),
+  webClose: (key) => ipcRenderer.send('webtab-close', key),
+  webFind: (key, text, opts) => ipcRenderer.send('webtab-find', key, text, opts),
+  webFindStop: (key, action) => ipcRenderer.send('webtab-find-stop', key, action),
+  webZoom: (key, dir) => ipcRenderer.send('webtab-zoom', key, dir),
+  webExportPdf: (key) => ipcRenderer.invoke('webtab-export-pdf', key),
+  onWebTabUpdated: (cb) => ipcRenderer.on('web-tab-updated', (_e, s) => cb(s)),
+  onWebOpenRequest: (cb) => ipcRenderer.on('web-open-request', (_e, r) => cb(r)),
+  onWebFound: (cb) => ipcRenderer.on('web-found', (_e, r) => cb(r)),
+  onWebToast: (cb) => ipcRenderer.on('web-toast', (_e, msg) => cb(msg)),
+  onWebShortcut: (cb) => ipcRenderer.on('web-shortcut', (_e, r) => cb(r)),
+  // 收藏（主进程持久化 + 变更推全量,renderer 内存镜像做逐键补全）
+  bmState: () => ipcRenderer.invoke('bm-state'),
+  bmAdd: (b) => ipcRenderer.invoke('bm-add', b),
+  bmRemoveByUrl: (url) => ipcRenderer.invoke('bm-remove-by-url', url),
+  bmRemoveOne: (id) => ipcRenderer.invoke('bm-remove-one', id),
+  bmUpdate: (id, patch) => ipcRenderer.invoke('bm-update', id, patch),
+  bmAddFolder: (name) => ipcRenderer.invoke('bm-add-folder', name),
+  bmRenameFolder: (id, name) => ipcRenderer.invoke('bm-rename-folder', id, name),
+  bmRemoveFolder: (id) => ipcRenderer.invoke('bm-remove-folder', id),
+  bmExport: () => ipcRenderer.invoke('bm-export'),
+  bmImport: () => ipcRenderer.invoke('bm-import'),
+  onBookmarksChanged: (cb) => ipcRenderer.on('bookmarks-changed', (_e, s) => cb(s)),
+  // 历史（写入无 renderer 入口；只读 + 删）
+  histState: () => ipcRenderer.invoke('hist-state'),
+  histRemoveOne: (id) => ipcRenderer.invoke('hist-remove-one', id),
+  histClear: (range) => ipcRenderer.invoke('hist-clear', range),
+  onHistoryChanged: (cb) => ipcRenderer.on('history-changed', (_e, s) => cb(s)),
+  // 浏览器设置（搜索引擎；真 app 默认 Bing,拍板）
+  browserSettings: () => ipcRenderer.invoke('browser-settings'),
+  browserSetEngine: (key) => ipcRenderer.invoke('browser-set-engine', key)
 });

@@ -4,14 +4,42 @@
 > auto-memory 按文件夹路径隔离、跨不了 worktree；这份文件走 git，人人可达。
 >
 > **读**：任何 session 里调 `/sync-main`（冷启动、长 session 隔段时间、动新改动前都值得跑）。
-> **写**：调 `/remember-global`——它把条目直接 commit 到 main（这是唯一允许直推 main 的文件，
-> 其他一切改动照走 PR）。
+> **写**：调 `/remember-global`——它把条目经「短命分支 + PR + auto-merge」落到 main（发完即走，
+> required checks 绿后约 7 分钟自动合上）。不直推——branch protection 对所有人所有文件生效，
+> 曾经的直推特权已废除（Colin 拍板 2026-07-11，见下方同日公告）。
 >
 > **写什么**：会影响其他 session 的东西——全局教训、规则/门变更、拍板决策、流程变化。
 > 只对单个 feature 有效的知识别写这。条目要写「是什么 + 怎么 apply + 来源」，别只写「改了 X」。
 > **沉淀**：时效已过的条目可清理；升格为硬规则的移进 `CLAUDE.md`。
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
+
+## 2026-07-11 — 「打开大文件夹/桌面特别卡」根因 = .app 等 macOS 包被递归；文件树加三档忽略
+
+**是什么**：Wendi「打开 Wordspace 特别卡」真根因（视频实测）：她把桌面当工作区，桌面里有 Minecraft.app——
+macOS 的 .app/.framework/.photoslibrary 等是「包」（Finder 当单个文件），但 readTree 原来把它当普通文件夹**递归钻进去**，
+内部上万框架/资源文件把 readTree 卡死。**又一次不是云盘**（桌面是本地盘）。修法 PR #162：文件树三档忽略——
+A macOS 包（20 种后缀）显示成单节点不递归；B 依赖/构建/缓存目录（node_modules/.git/bower_components/__pycache__/
+Pods/DerivedData/venv）完全隐藏；C 隐藏文件（点开头）原 skip 已覆盖。实测 demo 10002 文件→只 2 文件进树、7ms。
+**怎么 apply**：遇「打开某文件夹卡」先查里面有没有 .app 或 node_modules 这类包/依赖目录被递归（别再先怀疑云盘）；
+忽略规则在 src/main/workspace.js（IGNORE / BUNDLE_EXTS / walk），加新类型往这两个 set 加。契约见 docs/features/workspace-file-tree.md。
+**来源**：PR #162。
+
+
+## 2026-07-11 — 浏览器真 app 移植 PR #160 已开：动了共享核心，动 sidebar/shell/tabs/ipc 前看一眼
+
+**是什么**：浏览器 feature 按唯一契约 `docs/browser-feature-spec.md` §14 全量移植进真 app
+（`feat/browser-port`，PR #160，等 Colin review）。改动横跨共享核心：`src/renderer/sidebar.js`
+（web 第三身份类/循环切换/⌘⇧T 重开栈/⌘T 二合一 modal）、`src/renderer/shell.js`（web view
+摘挂钩子/菜单 web 态拦截）、`src/lib/tabs.js`（web: 前缀/updateEntry/关闭栈）、
+`src/main/{ipc,main}.js`（浏览器 IPC 面/菜单项）+ 新模块一批。附赠两条通用硬教训：
+① Electron `findInPage` 显式传 `findNext:false` 会让 `found-in-page` **静默不发**（首次请求
+必须省略 findNext）；② `git add -A` 会把 worktree 里陈年未跟踪产物扫进历史（本次 `release-smoke/`
+整个 .app 几百 MB 进了 6 个 commit，push「网络挂死」查半天其实是巨型包——filter-branch 剔掉才推动）。
+**怎么 apply**：并行 session 近期动上述共享文件前先看 PR #160 的 diff 防撞车；它合进 main 后记得
+rebase。commit 前扫一眼 `git log --name-only` 的顶层路径，别让打包产物进历史。浏览器行为的改动
+一律改 spec 正本 + 同 PR 更 `docs/features/browser.md`（欠账清单也在那）。
+**来源**：PR #160（feat/browser-port）；spec=docs/browser-feature-spec.md；worktree wordspace-next-browser。
 
 ## 2026-07-11 — 文档 back/forward 归到浏览器统一导航移植里做（别单独建两套）
 

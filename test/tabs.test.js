@@ -509,3 +509,78 @@ test('reconcileTree：没 ino 的标签文件消失→当删除处理（不乱�
   assert.ok(!r.entries.some((e) => e.rel === 'a.html')); // 删掉，不会乱认成 b
   assert.ok(!r.entries.some((e) => e.rel === 'b.html'));
 });
+
+// ============ web 标签（第三身份类，浏览器 feature）============
+const web = (id, url = null, title) => ({ abs: id, kind: 'web', title: title || (url || '新标签页'), url });
+
+test('isWebKey/isWebEntry/mkWebId：前缀识别 + id 带时间戳（跨重启不撞键）', () => {
+  assert.ok(T.isWebKey('web:3:abc'));
+  assert.ok(!T.isWebKey('r1:a.html'));
+  assert.ok(!T.isWebKey('/abs/x.html'));
+  assert.ok(!T.isWebKey('temp:1:x'));
+  assert.ok(T.isWebEntry(web('web:1:x', 'https://a.com')));
+  assert.ok(!T.isWebEntry(f('a.html')));
+  const id = T.mkWebId(7, 1700000000000);
+  assert.ok(T.isWebKey(id));
+  assert.ok(id.includes(':7:'));
+  assert.notEqual(T.mkWebId(1, 1700000000000), T.mkWebId(1, 1700000001000)); // 时间戳参与唯一性
+});
+
+test('openEntry：web 标签建条目携带 url（null=新标签页），再开保留', () => {
+  let s = T.openEntry(empty(), web('web:1:x', 'https://a.com', 'A'));
+  assert.equal(s.entries[0].url, 'https://a.com');
+  assert.equal(s.activeRel, 'web:1:x');
+  s = T.openEntry(empty(), web('web:2:y', null));
+  assert.strictEqual(s.entries[0].url, null);
+  invariant(s);
+});
+
+test('updateEntry：导航后 patch url/title，不动 open/pinned/激活；未命中原样返回同一引用', () => {
+  let s = T.openEntry(empty(), web('web:1:x', null, '新标签页'));
+  s = T.updateEntry(s, 'web:1:x', { url: 'https://b.com', title: 'B站' });
+  assert.equal(s.entries[0].url, 'https://b.com');
+  assert.equal(s.entries[0].title, 'B站');
+  assert.equal(s.entries[0].open, true);
+  assert.equal(s.activeRel, 'web:1:x');
+  assert.strictEqual(T.updateEntry(s, 'web:9:z', { url: 'x' }), s);
+});
+
+test('同 URL 两个 web 标签共存不去重（身份是 id 非 url）', () => {
+  let s = T.openEntry(empty(), web('web:1:x', 'https://same.com'));
+  s = T.openEntry(s, web('web:2:y', 'https://same.com'));
+  assert.equal(T.tabEntries(s.entries).length, 2);
+  invariant(s);
+});
+
+test('web 标签可置顶；关闭置顶 web 标签后置顶条目留存（open=false）', () => {
+  let s = T.openEntry(empty(), web('web:1:x', 'https://a.com'));
+  s = T.pinEntry(s, web('web:1:x', 'https://a.com'));
+  s = T.closeEntry(s, 'web:1:x');
+  const e = s.entries.find((x) => T.keyOf(x) === 'web:1:x');
+  assert.ok(e && e.pinned && !e.open);
+  invariant(s);
+});
+
+test('pushClosed/popClosed：LIFO、同 key 去重、封顶 15（spec §4.4）', () => {
+  let stack = [];
+  stack = T.pushClosed(stack, web('web:1:x', 'https://a.com'));
+  stack = T.pushClosed(stack, web('web:2:y', 'https://b.com'));
+  assert.equal(T.keyOf(stack[0]), 'web:2:y'); // 后进先出
+  stack = T.pushClosed(stack, web('web:1:x', 'https://a2.com'));
+  assert.equal(stack.length, 2); // 同 key 去重
+  assert.equal(stack[0].url, 'https://a2.com'); // 留最新
+  for (let i = 0; i < 30; i++) stack = T.pushClosed(stack, web('web:n' + i + ':z', 'https://n.com/' + i));
+  assert.equal(stack.length, 15); // 默认封顶 15
+  const { entry, rest } = T.popClosed(stack);
+  assert.ok(entry);
+  assert.equal(rest.length, 14);
+  assert.deepEqual(T.popClosed([]), { entry: null, rest: [] });
+});
+
+test('retargetEntry(undefined,undefined) 防御(P2-8)：不劫持 web/temp entry', () => {
+  let s = T.openEntry(empty(), web('web:1:x', 'https://a.com'));
+  const before = JSON.stringify(s);
+  s = T.retargetEntry(s, undefined, undefined, 'evil.html', 'evil');
+  assert.strictEqual(JSON.stringify(s), before); // 原样返回,web entry 身份不被改写
+  assert.ok(T.isWebEntry(s.entries[0]));
+});

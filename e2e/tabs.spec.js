@@ -114,10 +114,12 @@ test('UX2: Cmd+W 关当前标签 / Cmd+T 弹模板台（菜单 onMenu 路由）'
   // Cmd+W → 'close-tab' → __sbHooks.closeActiveTab 关当前活跃标签
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'close-tab'));
   await expect(tabRow('a.html')).toHaveCount(0);
-  // Cmd+T → 'new-tab' → __sbHooks.newTab 弹模板台
+  // Cmd+T → 'new-tab' → __sbHooks.newTab 弹二合一新建 modal（浏览器 spec §4.5.1：地址栏 + 新建文档）
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
   await expect(page.locator('.sb-modal-overlay')).toBeVisible();
-  await expect(page.locator('.sb-modal-title')).toHaveText('新建文档');
+  await expect(page.locator('.sb-modal-title')).toHaveText('新建标签页');
+  await expect(page.locator('.sb-cm-omni-input')).toBeVisible(); // 顶部地址栏行
+  await expect(page.locator('.sb-modal-grid')).toBeVisible(); // 下方仍是模板台
 });
 
 // UX3（Wendi F5-②；2026-07-06 调整）：Cmd+F 改成文档内查找（find-in-doc），无块编辑器文档时回退聚焦
