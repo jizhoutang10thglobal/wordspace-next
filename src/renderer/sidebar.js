@@ -830,7 +830,56 @@
       unguardRoot(toRootId);
     }
   }
+  // U6 删除守卫（父层 modal，抄 sb-modal 壳；用 createElement 装用户文件名，防 XSS）。resolve(true)=仍要删除。
+  function deleteGuardModal(node, referrers) {
+    return new Promise((resolve) => {
+      const N = referrers.length;
+      const overlay = document.createElement('div');
+      overlay.className = 'sb-modal-overlay';
+      const modal = document.createElement('div');
+      modal.className = 'sb-modal ws-delguard';
+      overlay.appendChild(modal);
+      const h = document.createElement('div'); h.className = 'sb-modal-title';
+      h.textContent = node.isDir ? '文件夹「' + node.name + '」里的文档被 ' + N + ' 篇外部文档链接'
+                                 : '「' + node.name + '」被 ' + N + ' 篇文档链接';
+      modal.appendChild(h);
+      const desc = document.createElement('div'); desc.className = 'ws-delguard-desc';
+      desc.textContent = '删除后这些文档里指向它的链接会断开（显示为断链，可在链接上重新指向或撤销删除恢复）：';
+      modal.appendChild(desc);
+      const list = document.createElement('div'); list.className = 'ws-delguard-list';
+      referrers.slice(0, 5).forEach((s) => {
+        const it = document.createElement('div'); it.className = 'ws-delguard-item'; it.title = s.rel;
+        const t = document.createElement('div'); t.className = 'ws-delguard-item-title'; t.textContent = s.title || s.rel;
+        const p = document.createElement('div'); p.className = 'ws-delguard-item-path'; p.textContent = s.rel;
+        it.appendChild(t); it.appendChild(p); list.appendChild(it);
+      });
+      if (N > 5) { const more = document.createElement('div'); more.className = 'ws-delguard-more'; more.textContent = '… 等 ' + N + ' 篇'; list.appendChild(more); } // N=引用总数，非 remainder
+      modal.appendChild(list);
+      const acts = document.createElement('div'); acts.className = 'ws-delguard-actions';
+      const cancel = document.createElement('button'); cancel.className = 'ws-delguard-btn'; cancel.textContent = '取消';
+      const del = document.createElement('button'); del.className = 'ws-delguard-btn ws-delguard-danger'; del.textContent = '仍要删除';
+      acts.appendChild(cancel); acts.appendChild(del); modal.appendChild(acts);
+      const close = (v) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(v); };
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(false); } };
+      cancel.addEventListener('click', () => close(false));
+      del.addEventListener('click', () => close(true));
+      overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); }); // 点遮罩=取消
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(overlay);
+      cancel.focus();
+    });
+  }
   async function doDelete(node) {
+    // U6 删除守卫：先查引用（文件→backlinks，文件夹→夹外引用）。有引用才弹守卫、用户确认才删；无引用直接删。
+    let referrers = [];
+    try {
+      referrers = node.isDir ? await window.ws2.linksDirBacklinks(node.rootId, node.rel)
+                             : await window.ws2.linksBacklinks(node.rootId, node.rel);
+    } catch (e) { referrers = []; }
+    if (referrers && referrers.length) {
+      const ok = await deleteGuardModal(node, referrers);
+      if (!ok) return; // 取消：不删
+    }
     const op = openPath();
     const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
     let r;

@@ -182,6 +182,22 @@ function backlinks(rootId, targetRel) {
   return out;
 }
 
+// 文件夹反链（U6 删除守卫）：夹外文档里，哪些链到「夹内任意文档」。**夹内互链不算**（删整夹一起走）。
+// 返回 [{rel, title, snippet}]（每个外部来源一条，取首个命中夹内的链接的 snippet）。dirRel = 文件夹根内路径。
+function dirBacklinks(rootId, dirRel) {
+  const r = index.get(rootId);
+  if (!r || !dirRel) return [];
+  const prefix = dirRel + '/';
+  const under = (rel) => rel.indexOf(prefix) === 0; // 夹内（文件夹本身不是文档，不会等于 rel）
+  const out = [];
+  for (const [rel, e] of r.docs) {
+    if (under(rel)) continue; // 夹内来源不算外部引用
+    const hit = e.outLinks.find((l) => under(l.rel));
+    if (hit) out.push({ rel, title: e.title, snippet: hit.snippet });
+  }
+  return out;
+}
+
 function titleOf(rootId, rel) {
   const r = index.get(rootId);
   const e = r && r.docs.get(rel);
@@ -222,7 +238,7 @@ async function hydrate(storeFile, rootId, rootPath) {
 module.exports = {
   extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
   refreshRoot, rebuildRoot, removeRoot,
-  query, backlinks, titleOf,
+  query, backlinks, dirBacklinks, titleOf,
   save, hydrate,
   _index: index, // 测试用
 };

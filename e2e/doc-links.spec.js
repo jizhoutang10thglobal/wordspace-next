@@ -399,6 +399,42 @@ test('U6：反链面板 — 有反链显示计数+展开列表+点击打开；�
   await expect(page.locator('#ws-backlinks')).toBeHidden();
 });
 
+test('U6：删除守卫 — 删被链接文件弹守卫，取消则不删', async () => {
+  await page.click('.sb-file[data-rel="B.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect(page.locator('.ws-delguard')).toBeVisible();
+  await expect(page.locator('.ws-delguard .sb-modal-title')).toContainText('被 3 篇文档链接');
+  await expect(page.locator('.ws-delguard-item')).toHaveCount(3); // A/M/N 三条来源
+  await page.locator('.ws-delguard-btn', { hasText: '取消' }).click();
+  await expect(page.locator('.ws-delguard')).toHaveCount(0);
+  expect(await fs.readFile(path.join(wsDir, 'B.html'), 'utf8').then(() => true).catch(() => false)).toBe(true); // 没删
+});
+
+test('U6：删除守卫 — 仍要删除 → 文件删掉、引用变断链', async () => {
+  await page.click('.sb-file[data-rel="B.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect(page.locator('.ws-delguard')).toBeVisible();
+  await page.locator('.ws-delguard-btn', { hasText: '仍要删除' }).click();
+  await expect.poll(() => fs.readFile(path.join(wsDir, 'B.html'), 'utf8').then(() => true).catch(() => false), { timeout: 5000 }).toBe(false);
+  // 打开 A（原本链到 B）→ 断链装饰出现（引用不重写、变断链，U4 兜）
+  await page.click('.sb-file[data-rel="A.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档A');
+  await expect.poll(() => page.evaluate(() => {
+    const w = document.getElementById('doc-frame').contentWindow;
+    const hl = w.CSS && w.CSS.highlights && w.CSS.highlights.get('ws-broken');
+    return hl ? hl.size : 0;
+  }), { timeout: 5000 }).toBe(1);
+});
+
+test('U6：删除守卫 — 删无引用文件不弹守卫、直接删', async () => {
+  await page.click('.sb-file[data-rel="D.html"]', { button: 'right' }); // D 没人链
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => fs.readFile(path.join(wsDir, 'D.html'), 'utf8').then(() => true).catch(() => false), { timeout: 5000 }).toBe(false);
+  await expect(page.locator('.ws-delguard')).toHaveCount(0); // 全程无守卫
+  await expect(page.locator('.sb-toast')).toContainText('已删除');
+});
+
 test('U5：改名时打开中的链接文档 → 内存改 href + toast + 落盘（不和自动保存打架）', async () => {
   await page.click('.sb-file[data-rel="A.html"]'); // 打开 A（它链到 B）
   const frame = page.frameLocator('#doc-frame');

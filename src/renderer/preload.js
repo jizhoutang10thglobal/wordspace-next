@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('ws2', {
   linksQuery: (rootId) => ipcRenderer.invoke('ws-links-query', rootId), // U2：全部文档 rel/title/kind
   linksCandidates: (rootId) => ipcRenderer.invoke('ws-links-candidates', rootId), // U3：@菜单候选（文档 + 非文档文件）
   linksBacklinks: (rootId, rel) => ipcRenderer.invoke('ws-links-backlinks', rootId, rel), // U2：反链来源
+  linksDirBacklinks: (rootId, dirRel) => ipcRenderer.invoke('ws-links-dir-backlinks', rootId, dirRel), // U6：文件夹夹外反链（删除守卫）
   linksRebuild: (rootId) => ipcRenderer.invoke('ws-links-rebuild', rootId), // U2：索引重建逃生门
   pathExists: (abs) => ipcRenderer.invoke('path-exists', abs),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),

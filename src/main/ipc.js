@@ -315,6 +315,7 @@ function registerIpc() {
     return { docs: linkIndex.query(rootId), others };
   });
   ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureLinkIndex(rootId); return linkIndex.backlinks(rootId, rel); });
+  ipcMain.handle('ws-links-dir-backlinks', async (_e, rootId, dirRel) => { await ensureLinkIndex(rootId); return linkIndex.dirBacklinks(rootId, dirRel); }); // U6 删除守卫（文件夹=夹外引用）
   ipcMain.handle('ws-links-rebuild', async (_e, rootId) => {
     await queueLink(rootId, async () => {
       const root = liveRoot(rootId);

@@ -95,6 +95,21 @@ test('backlinks：根内反查正确（自链不算）', async () => {
   await fsp.rm(dir, { recursive: true, force: true });
 });
 
+test('dirBacklinks：文件夹夹外反链（夹内互链不算，U6 删除守卫）', async () => {
+  const rootId = 103;
+  const dir = await mkRoot({
+    'docs/a.html': DOC('A', '<p><a href="b.html">夹内互链</a></p>'), // 夹内 → 不算
+    'docs/b.html': DOC('B', '<p>无外链</p>'),
+    'outside.html': DOC('外部', '<p><a href="docs/a.html">链进夹内</a></p>'), // 夹外 → 算
+    'other.html': DOC('无关', '<p>没链接</p>'),
+  });
+  await idx.refreshRoot(rootId, dir);
+  const bl = idx.dirBacklinks(rootId, 'docs').map((e) => e.rel).sort();
+  assert.deepEqual(bl, ['outside.html']); // 只有夹外的 outside.html；docs/a.html 夹内互链不计
+  idx.removeRoot(rootId);
+  await fsp.rm(dir, { recursive: true, force: true });
+});
+
 test('.md 文档：转 HTML 后同口径抽 title + 出链', async () => {
   const rootId = 103;
   const dir = await mkRoot({
