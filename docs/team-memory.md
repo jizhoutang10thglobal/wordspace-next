@@ -14,6 +14,18 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-12 — 分页文档已进真 app（PR #164 合 main），feature 全链路收官
+
+**是什么**：分页文档完成 ui-demo（PR #151）→ 真 app（PR #164）全链路：V4 引擎/页面设置/@page 入盘/
+分页导出+页码，宿主实测屏显与 PDF 一致（6 页 A4 + 页脚页码）。两侧对齐锚点已更新
+（docs/features/paged-doc.md）。
+**怎么 apply**：动分页相关代码前先读 spec；改动必须过 e2e/paged.spec.js（真 app）/
+scripts/verify-paged-v4.mjs（ui-demo）两道门。遗留小项（pre 收编 Schema 后激活块内切分、
+页间点击路由语义统一）在 spec 欠账。worktree `wordspace-next-schema2` 的旧分支 feat/schema-2-paped
+已删除，勿再引用。
+**来源**：PR #164 / docs/features/paged-doc.md
+
+
 ## 2026-07-11 — 「打开大文件夹/桌面特别卡」根因 = .app 等 macOS 包被递归；文件树加三档忽略
 
 **是什么**：Wendi「打开 Wordspace 特别卡」真根因（视频实测）：她把桌面当工作区，桌面里有 Minecraft.app——
