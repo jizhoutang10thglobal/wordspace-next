@@ -757,15 +757,30 @@
         }
       }
     }
-    await notifyRefsRewritten(r); // U5：更新打开中文档 + toast「已更新 N 篇」
+    // U5 撤销：反向改名（新 rel → 旧基名，走同一套 commitRenameOp → 引用反向重写 + 标签/retarget 自然反转）。
+    const oldAbs = node.abs, newRel = r.rel, rootId = node.rootId, oldBase = node.name.replace(/\.[^.]+$/, '');
+    const reverse = r.rel !== node.rel ? (() => undoMoveOp(newRel, oldAbs, rootId, (nn) => commitRenameOp(nn, oldBase))) : null;
+    await notifyRefsRewritten(r, reverse); // U5：更新打开中文档 + toast「已更新 N 篇」+ 撤销
     await refreshRoot(node.rootId);
   }
   // U5 改名/移动收口：主进程已重写非打开文档（r.rewritten），这里把 moves 应用到打开中文档的内存 DOM，
-  // 合计后弹 toast（有引用被更新才弹）。撤销 + 移动专属文案随后续 commit 补。
-  async function notifyRefsRewritten(r) {
+  // 合计后弹 toast（有引用被更新才弹）+「撤销」action（reverse=把这次改名/移动整个反着做一遍，含反向重写）。
+  async function notifyRefsRewritten(r, reverse) {
     const openN = (r.moves && r.moves.length && window.__wsApplyMovesToOpenDoc) ? await window.__wsApplyMovesToOpenDoc(r.moves) : 0;
     const total = (r.rewritten || 0) + openN;
-    if (total > 0) showToast('已更新 ' + total + ' 篇文档里的链接');
+    if (total > 0) {
+      if (reverse) showToast('已更新 ' + total + ' 篇文档里的链接', '撤销', reverse);
+      else showToast('已更新 ' + total + ' 篇文档里的链接');
+    }
+  }
+  // U5 撤销：把改名/移动整个反着做一遍（L4：绝不快照回滚——反向 op 走同一套机器，引用/标签/retarget 自然反转）。
+  // 前置校验：新文件还在、旧路径没被占（不满足→明说放弃、不做半套）。revOp = 反向操作的执行体。
+  async function undoMoveOp(newRel, oldAbs, rootId, revOp) {
+    if (!(await window.ws2.pathExists(await window.ws2.wsAbs(rootId, newRel))) || (await window.ws2.pathExists(oldAbs))) {
+      showToast('文件已被后续操作改动，无法撤销这次链接更新'); return;
+    }
+    const nn = findNode(rootId, newRel);
+    if (nn) await revOp(nn);
   }
   // U5 外部改名/移动探测（询问式，绝不静默改盘）：reconcile 里 inode 匹配算「旧 rel → 新 rel」，
   // 若旧路径有文档引用 → toast「一键更新」；只有用户点了才重写引用。app 内改名走 lastInAppFileOp 抑制。
@@ -808,7 +823,11 @@
       window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     }
     if (r.rel !== node.rel) retargetTabsUnder(node.rootId, node.rel, r.rel, node.isDir); // 标签跟随移动
-    await notifyRefsRewritten(r); // U5：更新打开中文档 + toast
+    // U5 撤销：反向移动回原目录（走同一套 doMove → 引用反向重写 + 标签/retarget 自然反转）。
+    const oldAbs = node.abs, newRel = r.rel, rootId = node.rootId;
+    const oldDir = node.rel.indexOf('/') >= 0 ? node.rel.slice(0, node.rel.lastIndexOf('/')) : '';
+    const reverse = r.rel !== node.rel ? (() => undoMoveOp(newRel, oldAbs, rootId, (nn) => doMove(nn, oldDir))) : null;
+    await notifyRefsRewritten(r, reverse); // U5：更新打开中文档 + toast + 撤销
     await refreshRoot(node.rootId);
   }
   // U5 外部改名探测的抑制：app 内改名/移动已在 ws-rename/ws-move 重写过引用，别让紧随的 watcher

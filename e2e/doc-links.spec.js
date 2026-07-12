@@ -419,6 +419,23 @@ test('U7：外部改名后靠 doc-id → 修复卡「原文件已移动到这里
   await expect(frame.locator('a[href="挪走了.html"]')).toBeVisible();
 });
 
+test('U5：改名 toast「撤销」→ 名字 + 引用整个反转', async () => {
+  const exists = (rel) => fs.readFile(path.join(wsDir, rel), 'utf8').then(() => true).catch(() => false);
+  // 右键 B → 重命名 → BB（A/M/N 都链 B）
+  await page.click('.sb-file[data-rel="B.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '重命名' }).click();
+  await page.locator('.sb-rename').fill('BB');
+  await page.locator('.sb-rename').press('Enter');
+  await expect.poll(() => exists('BB.html'), { timeout: 5000 }).toBe(true);
+  await expect(page.locator('.sb-toast-action', { hasText: '撤销' })).toBeVisible();
+  expect(await fs.readFile(path.join(wsDir, 'A.html'), 'utf8')).toContain('href="BB.html"'); // 引用已改
+  // 点撤销 → BB 改回 B + 引用反向重写
+  await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
+  await expect.poll(() => exists('B.html'), { timeout: 5000 }).toBe(true);
+  await expect.poll(() => exists('BB.html'), { timeout: 5000 }).toBe(false);
+  await expect.poll(() => fs.readFile(path.join(wsDir, 'A.html'), 'utf8'), { timeout: 5000 }).toContain('href="B.html"');
+});
+
 test('U5：外部改名被链接文件 → 询问式 toast「一键更新」，点了才重写引用（不静默改盘）', async () => {
   await page.click('.sb-file[data-rel="A.html"]'); // 打开 A（链 B），建索引
   const frame = page.frameLocator('#doc-frame');
