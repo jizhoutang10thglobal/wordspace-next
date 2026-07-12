@@ -1028,11 +1028,15 @@
       row.onclick = () => openNode(node);
       row.ondragstart = (e) => {
         dragNode = node;
-        e.dataTransfer.effectAllowed = 'move';
+        // effectAllowed 'all'（不是 'move'）：正文 drop 想要 dropEffect 'link'，源声明 'move' 会让浏览器直接禁 drop（L9）。
+        e.dataTransfer.effectAllowed = 'all';
         e.dataTransfer.setData('text/plain', node.rel);
+        // 跨 iframe 拖拽 dataTransfer 不可靠 → 用全局传递被拖文件（对齐 ui-demo getDragFile）；正文 drop 读它插链接。
+        window.__wsDragFile = { rootId: node.rootId, rel: node.rel, kind: node.kind, title: node.name };
       };
       row.ondragend = () => {
         dragNode = null;
+        window.__wsDragFile = null;
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
@@ -1772,6 +1776,10 @@
 
   // 「拖文件到根顶层」的落点改在各根标题行（renderRootSection 里，带同根校验）——多根后侧栏头
   // 不再是唯一根的化身，不能当 drop 目标（不知道该落哪个根）。
+
+  // U3-B6 兜底：任何拖拽结束都清 __wsDragFile（源文件行若在拖拽中被树重渲染销毁，它自己的 ondragend 可能不触发 → 泄漏，
+  // 下次正文内原生拖拽会被误当插链接）。document 级捕获一次，与源行 ondragend 双保险。
+  document.addEventListener('dragend', () => { window.__wsDragFile = null; }, true);
 
   // ---- 轻量 toast（删除「撤销」用）。CSP 安全：classes，无 inline style。----
   let toastTimer = null;

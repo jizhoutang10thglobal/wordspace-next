@@ -17,11 +17,13 @@ const { assertInsideWorkspace, kindOf } = require('../lib/file-tree');
 const { TEMPLATES } = require('../lib/doc-templates');
 const rootsLib = require('../lib/roots');
 const tabsLib = require('../lib/tabs'); // 吸收时把持久化标签同步 rebase（双导出 IIFE，主进程可 require）
+const linkIndex = require('./link-index'); // U2 文档互链索引（可丢弃缓存，多根 rootId:rel 键）
 const { registerBrowserIpc } = require('./browser-ipc'); // 浏览器 feature（网页标签/收藏/历史/设置,spec §10.3）
 
 const historyRoot = () => path.join(app.getPath('userData'), 'history');
 const recentsFile = () => path.join(app.getPath('userData'), 'recents.json');
 const workspaceFile = () => path.join(app.getPath('userData'), 'workspace.json');
+const linkIndexFile = () => path.join(app.getPath('userData'), 'link-index.json');
 const trashRoot = () => path.join(app.getPath('userData'), '.ws2-trash');
 
 // 根注册表（多根）：服务端唯一真相。所有文件操作只收 (rootId, relPath)、路径由注册表解析——
@@ -76,6 +78,7 @@ function startRootWatch(root) {
       for (const w of BrowserWindow.getAllWindows()) {
         if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id);
       }
+      refreshLinkIndex(root.id); // U2：外部增删改 → 增量刷新该根链接索引（内部去抖/串行）
     },
     async () => {
       if (await dirExists(root.path)) { startRootWatch(root); return; }
@@ -91,6 +94,57 @@ function markRootMissing(root) {
     if (!w.webContents.isDestroyed()) w.webContents.send('ws-roots-changed');
   }
 }
+// ---- U2 文档互链索引：每根一份可丢弃缓存。懒建（首次 query/backlinks 才建，用户从不互链的根不花代价）；
+// 树变化时增量刷新；根移除时丢弃。所有索引变更按 rootId 串行化（防并发 refresh 竞态改同一 Map）。----
+const linkBuilt = new Set(); // 已建过索引的 rootId
+const linkChain = new Map(); // rootId → 上一个索引操作的 promise（串行链）
+const linkRefreshPending = new Set(); // 已有一次「树变化增量刷新」在排队的 rootId（合并突发变更，审查 #3）
+let linkSaveTimer = null;
+// 丢弃某根的全部索引态（root 移除/被吸收/重定位前调，对齐三处入口，防泄漏 + 陈旧 byPath 反复入盘）。
+function dropLinkIndex(rootId) {
+  linkIndex.removeRoot(rootId); linkBuilt.delete(rootId); linkChain.delete(rootId); linkRefreshPending.delete(rootId);
+}
+function queueLink(rootId, fn) {
+  const prev = linkChain.get(rootId) || Promise.resolve();
+  const next = prev.then(fn, fn).catch(() => {}); // 无论上一步成败都接着跑，异常吞掉（索引尽力而为）
+  linkChain.set(rootId, next);
+  return next;
+}
+function scheduleLinkSave() {
+  if (linkSaveTimer) clearTimeout(linkSaveTimer);
+  // keepPaths = 当前注册表所有根的 path：save 合并保留未加载根的缓存、剪掉已移除根的陈旧条目（审查 B）。
+  linkSaveTimer = setTimeout(() => { linkSaveTimer = null; linkIndex.save(linkIndexFile(), new Set(roots.map((r) => r.path))).catch(() => {}); }, 1500);
+}
+function broadcastLinksUpdated(rootId) {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.webContents.isDestroyed()) w.webContents.send('links-index-updated', rootId);
+  }
+}
+function liveRoot(rootId) { return roots.find((r) => r.id === rootId && !r.missing) || null; }
+// 确保某根索引已建（首访 hydrate 热缓存 + 一次 refresh 对磁盘校对；之后只增量）。
+function ensureLinkIndex(rootId) {
+  return queueLink(rootId, async () => {
+    const root = liveRoot(rootId);
+    if (!root) return;
+    if (!linkBuilt.has(rootId)) { await linkIndex.hydrate(linkIndexFile(), rootId, root.path).catch(() => {}); linkBuilt.add(rootId); }
+    await linkIndex.refreshRoot(rootId, root.path);
+    scheduleLinkSave();
+  });
+}
+// 树变化后增量刷新（只对已建过索引的根——没建过的等被 query 时懒建）。变了才广播 + 存盘。
+// 合并突发（审查 #3）：已排队一次刷新就不再叠加——排队的那次进入执行时会读到最新磁盘、覆盖执行前的全部变更。
+function refreshLinkIndex(rootId) {
+  if (!linkBuilt.has(rootId) || linkRefreshPending.has(rootId)) return Promise.resolve();
+  linkRefreshPending.add(rootId);
+  return queueLink(rootId, async () => {
+    linkRefreshPending.delete(rootId); // 进入执行 → 执行期间的新变更可再排一次
+    const root = liveRoot(rootId);
+    if (!root) return;
+    const changed = await linkIndex.refreshRoot(rootId, root.path);
+    if (changed) { broadcastLinksUpdated(rootId); scheduleLinkSave(); }
+  });
+}
+
 // 启动恢复（幂等，首次 ws-get-roots 触发）：store 里的每个根检查可达性，失联的标 missing 不悄悄丢。
 async function restoreRoots() {
   if (!rootsRestorePromise) {
@@ -200,6 +254,25 @@ function registerIpc() {
     let exists = false;
     if (rel != null) { try { exists = (await fsp.stat(abs)).isFile(); } catch { /* 根内但不存在 → 断链 */ } }
     return { abs, rel, rootId, kind, name, exists, insideRoot: rel != null };
+  });
+  // U2 链接索引查询面（@菜单候选 / 反链 / 逃生门重建）。懒建：首次访问才建该根索引。
+  ipcMain.handle('ws-links-query', async (_e, rootId) => { await ensureLinkIndex(rootId); return linkIndex.query(rootId); });
+  // @菜单候选：文档（索引，带标题）+ 非文档文件（pdf/图片等，文件名）。docs 在前、others 在后。
+  ipcMain.handle('ws-links-candidates', async (_e, rootId) => {
+    await ensureLinkIndex(rootId);
+    const root = liveRoot(rootId);
+    const others = root ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
+    return { docs: linkIndex.query(rootId), others };
+  });
+  ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureLinkIndex(rootId); return linkIndex.backlinks(rootId, rel); });
+  ipcMain.handle('ws-links-rebuild', async (_e, rootId) => {
+    await queueLink(rootId, async () => {
+      const root = liveRoot(rootId);
+      if (!root) return;
+      await linkIndex.rebuildRoot(rootId, root.path); linkBuilt.add(rootId);
+      broadcastLinksUpdated(rootId); scheduleLinkSave();
+    });
+    return { ok: true };
   });
   ipcMain.handle('read-doc', async (_e, p) => {
     assertDocPath(p);
@@ -384,6 +457,7 @@ function registerIpc() {
       if (!own || !own.rel) return { status: 'stale' };
       rebases.push({ fromRootId: id, toRootId: newRoot.id, prefix: own.rel });
       workspaceWatcher.unwatch(id);
+      dropLinkIndex(id); // U2（审查 #1）：被吸收的子根不再是根，丢它的链接索引（对齐 ws-remove-root）
     }
     roots = roots.filter((x) => !cls.childIds.includes(x.id));
     roots.push(newRoot); // 照 ui-demo：子根去掉、父根追加到末尾
@@ -402,6 +476,7 @@ function registerIpc() {
     if (idx < 0) return null;
     const [root] = roots.splice(idx, 1);
     workspaceWatcher.unwatch(rootId);
+    dropLinkIndex(rootId); // U2：丢弃该根链接索引
     await persistRoots();
     const token = 'rmroot-' + stashSeq++;
     removedStash.set(token, { root, index: idx });
@@ -447,6 +522,7 @@ function registerIpc() {
     r.path = path.resolve(dir);
     r.real = real;
     r.missing = false;
+    dropLinkIndex(rootId); // U2（审查 #1）：路径变了，旧路径的索引作废 → 下次 query 从新路径懒建
     await persistRoots();
     startRootWatch(r);
     return { status: 'ok', root: rootInfo(r), tree: await workspace.readTree(r.path) };
