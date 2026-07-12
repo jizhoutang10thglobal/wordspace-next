@@ -647,6 +647,8 @@ function registerIpc() {
     return { ok: true, abs: out };
   });
   ipcMain.handle('ws-make-dir', (_e, rootId, dirRel, name) => workspace.makeDir(rootById(rootId), dirRel, name));
+  // rootId+rel → abs（U6 反链面板点来源文档 → openDoc 需要 abs；assertInsideWorkspace 防越权）。
+  ipcMain.handle('ws-abs', (_e, rootId, rel) => assertInsideWorkspace(rootById(rootId), rel));
   // 改名/移动 + U5 自动重写引用：openAbs = 打开中的文档 abs（主进程重写时跳过它，renderer 内存改，免竞态）。
   ipcMain.handle('ws-rename', async (_e, rootId, relPath, newLeaf, openAbs) => {
     const root = rootById(rootId);

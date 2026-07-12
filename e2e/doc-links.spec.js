@@ -376,6 +376,29 @@ test('U5：改名被链接文件 → 所有链接文档 href 自动重写（disk
   expect(n).toContain('href="BB.html"'); // 非合规文档也重写
 });
 
+test('U6：反链面板 — 有反链显示计数+展开列表+点击打开；无反链整体隐藏', async () => {
+  // B.html 被 A.html / M.md / N.html 三处链接
+  await page.click('.sb-file[data-rel="B.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档B');
+  // 折叠头出现，计数 = 3（异步查 backlinks → 用 poll/可见性等）
+  await expect(page.locator('#ws-backlinks')).toBeVisible();
+  await expect(page.locator('#ws-bl-count')).toHaveText('3 篇文档链接到这里');
+  // 默认折叠：列表隐藏
+  await expect(page.locator('#ws-bl-list')).toBeHidden();
+  // 点头展开 → 列出来源（A/M/N）
+  await page.click('#ws-bl-head');
+  await expect(page.locator('#ws-bl-list')).toBeVisible();
+  await expect(page.locator('.ws-bl-item')).toHaveCount(3);
+  // 点一条来源 → 应用内打开它（点标题含「文档A」那条）
+  await page.locator('.ws-bl-item', { hasText: '文档A' }).click();
+  await expect(frame.locator('h1')).toHaveText('文档A');
+  // 切到无反链的文档（D.html 没人链它）→ 面板整体隐藏
+  await page.click('.sb-file[data-rel="D.html"]');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await expect(page.locator('#ws-backlinks')).toBeHidden();
+});
+
 test('U5：改名时打开中的链接文档 → 内存改 href + toast + 落盘（不和自动保存打架）', async () => {
   await page.click('.sb-file[data-rel="A.html"]'); // 打开 A（它链到 B）
   const frame = page.frameLocator('#doc-frame');

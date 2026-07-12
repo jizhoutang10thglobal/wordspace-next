@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsNewDoc: (rootId, dirRel, base, html, ext) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html, ext),
   wsSaveDocAs: (base, html, ext, opts) => ipcRenderer.invoke('ws-save-doc-as', base, html, ext, opts), // ext 'md'=写盘前转 md；opts.reveal=导出语义 Finder 高亮
   wsMakeDir: (rootId, dirRel, name) => ipcRenderer.invoke('ws-make-dir', rootId, dirRel, name),
+  wsAbs: (rootId, rel) => ipcRenderer.invoke('ws-abs', rootId, rel), // U6 反链：rel → abs（openDoc 用）
   wsRename: (rootId, relPath, newLeaf, openAbs) => ipcRenderer.invoke('ws-rename', rootId, relPath, newLeaf, openAbs),
   wsMove: (rootId, relPath, destDirRel, openAbs) => ipcRenderer.invoke('ws-move', rootId, relPath, destDirRel, openAbs),
   wsMoveAcross: (fromRootId, relPath, toRootId, destDirRel) => ipcRenderer.invoke('ws-move-across', fromRootId, relPath, toRootId, destDirRel),

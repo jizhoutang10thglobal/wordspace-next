@@ -7,6 +7,7 @@ function refreshDocContext(p) {
   docContextPromise = (async () => {
     try { const m = await window.ws2.classifyFile(p); if (docPath === p) docContext = (m && m.rootId != null) ? { rootId: m.rootId, rel: m.rel } : null; }
     catch (e) { if (docPath === p) docContext = null; }
+    if (docPath === p && typeof refreshBacklinks === 'function') refreshBacklinks(); // U6：算完身份就刷反链面板
   })();
   return docContextPromise;
 }
@@ -57,6 +58,55 @@ function syncAppDirty() { window.ws2.setDirty(dirty || !!tempDoc || tempStore.si
 const frame = document.getElementById('doc-frame');
 const mainEl = document.getElementById('main');
 const degradeNotice = document.getElementById('ws-degrade-notice'); // 非合规降级提示条（Feature 3）
+
+// ---- U6 反链面板（标题下「N 篇文档链接到这里」；父层 chrome，绝不注入文档字节；0 反链整体隐藏）----
+const backlinksEl = document.getElementById('ws-backlinks');
+const blHeadEl = document.getElementById('ws-bl-head');
+const blCountEl = document.getElementById('ws-bl-count');
+const blListEl = document.getElementById('ws-bl-list');
+let blExpanded = false;
+let blGen = 0; // 每次刷新自增；异步 backlinks 回来校验，防切文档串味
+function hideBacklinks() {
+  blGen++;
+  if (backlinksEl) backlinksEl.hidden = true;
+  if (blListEl) blListEl.hidden = true;
+  if (blHeadEl) blHeadEl.setAttribute('aria-expanded', 'false');
+  blExpanded = false;
+  if (backlinksEl) backlinksEl.classList.remove('is-expanded');
+}
+function blClamp(s) { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 80 ? s.slice(0, 80) + '…' : s; }
+async function refreshBacklinks() {
+  if (!backlinksEl) return;
+  const c = docContext;
+  const g = ++blGen;
+  if (!c) { hideBacklinks(); return; }
+  let list;
+  try { list = await window.ws2.linksBacklinks(c.rootId, c.rel); } catch (e) { return; }
+  if (g !== blGen || docContext !== c) return; // 又刷了一次 / 切了文档 → 本次作废
+  if (!list || !list.length) { hideBacklinks(); return; }
+  blCountEl.textContent = list.length + ' 篇文档链接到这里';
+  blListEl.textContent = '';
+  for (let i = 0; i < list.length; i++) {
+    const src = list[i];
+    const item = document.createElement('button');
+    item.className = 'ws-bl-item';
+    item.title = src.rel;
+    const t = document.createElement('div'); t.className = 'ws-bl-item-title'; t.textContent = src.title || src.rel;
+    item.appendChild(t);
+    if (src.snippet) { const sn = document.createElement('div'); sn.className = 'ws-bl-item-snippet'; sn.textContent = blClamp(src.snippet); item.appendChild(sn); }
+    item.addEventListener('click', async () => { // 点来源 = 应用内打开
+      try { const abs = await window.ws2.wsAbs(c.rootId, src.rel); if (abs) openDoc(abs); } catch (e) {}
+    });
+    blListEl.appendChild(item);
+  }
+  backlinksEl.hidden = false;
+}
+if (blHeadEl) blHeadEl.addEventListener('click', () => {
+  blExpanded = !blExpanded;
+  blListEl.hidden = !blExpanded;
+  blHeadEl.setAttribute('aria-expanded', blExpanded ? 'true' : 'false');
+  backlinksEl.classList.toggle('is-expanded', blExpanded);
+});
 const home = document.getElementById('home');
 const docHeader = document.getElementById('doc-header');
 const docName = document.getElementById('doc-name');
@@ -239,6 +289,7 @@ function detachEditors() {
   if (pagination) { pagination.detach(); pagination = null; } // 先拆分页（它的扫荡要在块内核还活着时做完）
   if (window.WS2Mention) window.WS2Mention.close(); // 同理关提及菜单（跨文档持有的 DOM 引用必失效）
   if (window.WS2LinkView) window.WS2LinkView.detach(); // U4：清断链高亮 + 悬停/修复卡 + 定时器（跨文档必失效）
+  hideBacklinks(); // U6：换/关文档先隐反链面板（refreshBacklinks 算完新文档再决定显不显）
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
   if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
@@ -1099,7 +1150,9 @@ window.ws2.onDocChanged(handleDocChanged);
 let linksScanTimer = null;
 window.ws2.onLinksUpdated((rootId) => {
   const c = window.__wsDocContext && window.__wsDocContext();
-  if (!(c && c.rootId === rootId && window.WS2LinkView)) return;
+  if (!(c && c.rootId === rootId)) return;
+  refreshBacklinks(); // U6：别的文档增删了指向本文档的链接 → 反链面板跟上（自带 blGen 防抖/守卫）
+  if (!window.WS2LinkView) return;
   clearTimeout(linksScanTimer);
   linksScanTimer = setTimeout(() => window.WS2LinkView.scan(frame), 250);
 });

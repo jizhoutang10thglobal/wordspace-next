@@ -924,3 +924,18 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-linkview-repairs { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
 .ws-linkview-repair-item { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: var(--r-sm); cursor: pointer; text-align: left; background: none; border: none; color: var(--c-text); font-size: 12px; width: 100%; }
 .ws-linkview-repair-item:hover { background: var(--c-hover); }
+
+/* U6 反链面板（标题下「N 篇文档链接到这里」；父层 chrome，随文档流排在 doc-header 与正文之间）*/
+.ws-backlinks { border-bottom: 1px solid var(--c-border); background: var(--c-surface); flex: none; }
+.ws-bl-head { display: flex; align-items: center; gap: 7px; width: 100%; padding: 7px 16px; background: none; border: none; cursor: pointer; color: var(--c-text-2); font-size: 12px; text-align: left; }
+.ws-bl-head:hover { background: var(--c-hover); }
+.ws-bl-caret { flex: none; transition: transform var(--dur-fast, 0.12s) ease; color: var(--c-text-3); }
+.ws-backlinks.is-expanded .ws-bl-caret { transform: rotate(90deg); }
+.ws-bl-icon { flex: none; color: var(--c-text-3); }
+.ws-bl-count { font-weight: 500; }
+.ws-bl-list { display: flex; flex-direction: column; padding: 2px 8px 8px 8px; gap: 1px; }
+.ws-bl-list[hidden] { display: none; } /* display:flex 会盖掉 [hidden] 的 UA display:none，显式补回 */
+.ws-bl-item { display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 6px 8px; border-radius: var(--r-sm); color: var(--c-text); }
+.ws-bl-item:hover { background: var(--c-hover); }
+.ws-bl-item-title { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-bl-item-snippet { font-size: 11px; color: var(--c-text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
