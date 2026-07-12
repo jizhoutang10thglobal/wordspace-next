@@ -738,7 +738,7 @@
     // 此后每次（自动）保存都 ENOENT 失败、弹 alert 风暴（doDelete 早有 isUnder 处理，rename 漏了）。
     const openUnderDir = node.isDir && isUnder(op, node.abs);
     let r;
-    try { r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf); }
+    try { r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf, op); } // op=打开中文档 abs，主进程重写时跳过它
     catch (e) { showToast('重命名失败：' + shortErr(e)); await refreshRoot(node.rootId); return; } // 根刚失联/文件没了：别未捕获 rejection 把改名框晾在原地
     if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     else if (openUnderDir && window.__shellRetargetDoc) {
@@ -756,17 +756,27 @@
         }
       }
     }
+    await notifyRefsRewritten(r); // U5：更新打开中文档 + toast「已更新 N 篇」
     await refreshRoot(node.rootId);
   }
+  // U5 改名/移动收口：主进程已重写非打开文档（r.rewritten），这里把 moves 应用到打开中文档的内存 DOM，
+  // 合计后弹 toast（有引用被更新才弹）。撤销 + 移动专属文案随后续 commit 补。
+  async function notifyRefsRewritten(r) {
+    const openN = (r.moves && r.moves.length && window.__wsApplyMovesToOpenDoc) ? await window.__wsApplyMovesToOpenDoc(r.moves) : 0;
+    const total = (r.rewritten || 0) + openN;
+    if (total > 0) showToast('已更新 ' + total + ' 篇文档里的链接');
+  }
   async function doMove(node, destDirRel) {
-    const wasOpen = !node.isDir && openPath() === node.abs;
+    const op = openPath();
+    const wasOpen = !node.isDir && op === node.abs;
     let r;
-    try { r = await window.ws2.wsMove(node.rootId, node.rel, destDirRel); }
+    try { r = await window.ws2.wsMove(node.rootId, node.rel, destDirRel, op); } // op=打开中文档 abs，主进程重写时跳过它
     catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
     if (wasOpen && window.__shellRetargetDoc && r.abs !== node.abs) {
       window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     }
     if (r.rel !== node.rel) retargetTabsUnder(node.rootId, node.rel, r.rel, node.isDir); // 标签跟随移动
+    await notifyRefsRewritten(r); // U5：更新打开中文档 + toast
     await refreshRoot(node.rootId);
   }
   // 跨根移动进行中的根（引用计数，支持并发移动同根参与）：onTreeChanged 对这些根跳过 reconcile。

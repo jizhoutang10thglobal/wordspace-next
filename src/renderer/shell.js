@@ -123,6 +123,36 @@ const markDirty = () => { setDirty(true); scheduleAutoSave(); };
 // before：flush 待定编辑成独立 undo 快照（免撤销修复时连带撤销之前的打字）；after：标脏 + checkpoint 修复后状态。
 window.__wsBeforeDocEdit = () => { if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
 window.__wsAfterDocEdit = () => { markDirty(); if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
+// U5 改名/移动：把 moves 应用到「打开中文档」的内存 DOM（主进程重写时跳过了它，避免和自动保存打架——
+// 内存改 + 走正常保存管线，脏文档也不会被覆盖）。moves=[[oldRel,newRel],…]。返回改的链接数。
+window.__wsApplyMovesToOpenDoc = async (movesArr) => {
+  await (window.__wsDocContextReady ? window.__wsDocContextReady() : Promise.resolve()); // retarget 后 rel 重算完
+  const ctx = window.__wsDocContext && window.__wsDocContext();
+  const doc = frame.contentDocument;
+  const L = window.WS2Links;
+  if (!ctx || !doc || !L || !Array.isArray(movesArr) || !movesArr.length) return 0;
+  const moves = new Map(movesArr);
+  const inv = L.invertMoves(moves);
+  const ownNew = ctx.rel;
+  const ownOld = inv.get(ownNew) || ownNew; // 自己被移动了？用旧 rel 解析既有 href
+  let n = 0;
+  const as = doc.querySelectorAll('a[href]');
+  for (let i = 0; i < as.length; i++) {
+    const href = as[i].getAttribute('href');
+    if (!href || L.classifyScheme(href) !== 'relative') continue;
+    const parts = L.splitHrefSuffix(href);
+    const target = L.resolveHref(ownOld, parts[0]);
+    if (target == null) continue;
+    const has = moves.get(target);
+    const tNew = has != null ? has : target;
+    if (tNew === target && ownNew === ownOld) continue;
+    const nh = L.relHref(ownNew, tNew) + parts[1];
+    if (nh === href) continue;
+    as[i].setAttribute('href', nh); n++;
+  }
+  if (n) { markDirty(); if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); if (window.WS2LinkView) window.WS2LinkView.scan(frame); }
+  return n;
+};
 
 // AI 占位（斜杠 /ai 或格式气泡 ✦AI 触发）——本地编辑器暂无 AI，仅提示开发中（用父窗口弹窗，
 // 因 iframe sandbox 无 allow-modals）。

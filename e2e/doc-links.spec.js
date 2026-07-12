@@ -360,3 +360,37 @@ test('U4：断链文档 → ws-broken 高亮圈住断链锚文本；有效内链
   await expect(frame.locator('h1')).toHaveText('文档A');
   await expect.poll(brokenSize, { timeout: 5000 }).toBe(0);
 });
+
+test('U5：改名被链接文件 → 所有链接文档 href 自动重写（disk 字节保真，html+md+非合规）', async () => {
+  const before = await fs.readFile(path.join(wsDir, 'A.html'), 'utf8');
+  const rootId = await page.evaluate(async () => (await window.ws2.wsGetRoots())[0].id);
+  const r = await page.evaluate((id) => window.ws2.wsRename(id, 'B.html', 'BB', null), rootId);
+  expect(r.rel).toBe('BB.html');
+  expect(r.rewritten).toBe(3); // A.html + M.md + N.html 都链到 B
+  const a = await fs.readFile(path.join(wsDir, 'A.html'), 'utf8');
+  expect(a).toContain('<a href="BB.html">去B</a>');
+  expect(a.replace('BB.html', 'B.html')).toBe(before); // 字节保真：除 href 外一字不差
+  const m = await fs.readFile(path.join(wsDir, 'M.md'), 'utf8');
+  expect(m).toContain('[去B](BB.html)'); // md inline 也重写
+  const n = await fs.readFile(path.join(wsDir, 'N.html'), 'utf8');
+  expect(n).toContain('href="BB.html"'); // 非合规文档也重写
+});
+
+test('U5：改名时打开中的链接文档 → 内存改 href + toast + 落盘（不和自动保存打架）', async () => {
+  await page.click('.sb-file[data-rel="A.html"]'); // 打开 A（它链到 B）
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档A');
+  // 右键 B → 重命名 → BB
+  await page.click('.sb-file[data-rel="B.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '重命名' }).click();
+  await page.locator('.sb-rename').fill('BB');
+  await page.locator('.sb-rename').press('Enter');
+  // 打开中的 A：主进程跳过、renderer 内存改 → href 立即更新
+  await expect(frame.locator('a[href="BB.html"]')).toBeVisible();
+  await expect(page.locator('.sb-toast')).toContainText('已更新'); // toast「已更新 N 篇」（A 内存 + M + N）
+  // 落盘：等自动保存，A.html disk 也变（内存改走正常保存管线，不被覆盖）
+  await page.waitForTimeout(1700);
+  const a = await fs.readFile(path.join(wsDir, 'A.html'), 'utf8');
+  expect(a).toContain('BB.html');
+  expect(a).not.toMatch(/href="B\.html"/);
+});

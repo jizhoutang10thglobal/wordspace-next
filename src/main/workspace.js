@@ -140,6 +140,12 @@ async function newDoc(root, dirRel, baseName, html, ext) {
   return { rel: toRel(r, abs), abs };
 }
 
+// 列出根内所有文档文件（.html/.htm/.md）的根内相对路径。U5 改名/移动重写要逐文档扫 href。
+async function listDocs(root) {
+  const { files } = await walk(path.resolve(root));
+  return files.filter((f) => /\.(html?|md)$/i.test(f.path)).map((f) => f.path);
+}
+
 // 在 dirRel 下建子文件夹。
 async function makeDir(root, dirRel, name) {
   const r = path.resolve(root);
@@ -272,6 +278,7 @@ async function sweepBackups(backupRoot, maxAgeMs = 24 * 60 * 60 * 1000) {
 
 module.exports = {
   readTree,
+  listDocs,
   newDoc,
   makeDir,
   renamePath,
