@@ -253,8 +253,11 @@ function registerIpc() {
   // 有 html（Wordspace 所见即所得，UI 唯一路径）→ 印烤好的静态 HTML；无 html → 直印源文件
   // （只测试/内部用，不接 UI；也是「编辑器排版真烤进导出」e2e 的差分基线）。
   // WS2_PDF_OUT 是测试 seam：设了就跳过原生对话框直接用该路径（原生对话框 e2e 点不了）。
-  ipcMain.handle('export-pdf', async (e, p, mode, html) => {
+  ipcMain.handle('export-pdf', async (e, p, mode, html, opts) => {
     assertDocPath(p);
+    // opts（分页文档）：paged=走标准 @page 分页（preferCSSPageSize）而非连续单页；pageNumbers=页脚页码。
+    // 只取白名单字段成布尔（IPC 入参不可信，不原样透传对象）。
+    const pdfOpts = { paged: !!(opts && opts.paged), pageNumbers: !!(opts && opts.pageNumbers) };
     // WS2_PDF_OUT 仅在非打包态生效（打包后忽略，一律走保存对话框）——跟 main.js 自动更新 isPackaged 闸一致，
     // 防生产进程继承到该环境变量就静默把 PDF 写到预设路径、绕过对话框。
     const seamPath = !app.isPackaged ? process.env.WS2_PDF_OUT : null;
@@ -273,9 +276,9 @@ function registerIpc() {
       if (mode === 'wordspace' && html) {
         // Wordspace 样式：renderer 已把「文档+编辑器排版」烤成静态 HTML，写到源文件同目录的临时文件
         // （相对资源原生解析），印完删。
-        await exportPdfFromHtml(html, path.dirname(p), outPath);
+        await exportPdfFromHtml(html, path.dirname(p), outPath, pdfOpts);
       } else {
-        await exportPdf(p, outPath); // 无 html：直印源文件（测试/内部用）
+        await exportPdf(p, outPath, pdfOpts); // 无 html：直印源文件（测试/内部用）
       }
       if (!seamPath) shell.showItemInFolder(outPath); // 成功：在 Finder 高亮文件（确认成功 + 告诉用户落在哪）；测试 seam 路径不弹
       return { ok: true, path: outPath };

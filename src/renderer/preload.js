@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsDiag: () => ipcRenderer.invoke('ws-diag'), // 诊断面板读主进程侧每根成本
   diagRecordProfile: (ms) => ipcRenderer.invoke('diag-record-profile', ms), // 诊断面板：录 N 毫秒 CPU profile 存桌面
   saveDoc: (p, c) => ipcRenderer.invoke('save-doc', p, c),
-  exportPdf: (p, mode, html) => ipcRenderer.invoke('export-pdf', p, mode, html),
+  exportPdf: (p, mode, html, opts) => ipcRenderer.invoke('export-pdf', p, mode, html, opts),
   recents: () => ipcRenderer.invoke('recents-list'),
   recentsAdd: (p) => ipcRenderer.invoke('recents-add', p),
   historyList: (p) => ipcRenderer.invoke('history-list', p),

@@ -73,3 +73,33 @@ test('F1: 文档自带 data-ws2-ui 的元素及内容存盘不丢（不被当覆
   assert.ok(out.includes('重要内容'), '用户带 data-ws2-ui 的内容被误删（F1）');
   assert.ok(out.includes('正文'));
 });
+
+// 分页 strip-on-persist（P0）：V4 推挤是运行时视觉产物——块内切分的 paddingTop / 块级切页的
+// marginTop（带 data-ws-pushed）必须在序列化前剥净；spacer（表格间隔行 / pre 行间隔 span）带
+// OVERLAY_VAL 整删。漏一个 padding-top 进磁盘 = 块级 style 属性 = 文档瞬间非合规（block-style 规则）。
+test('paged strip-on-persist: 剥 data-ws-pushed 的推挤样式、整删 spacer、保留用户 style', () => {
+  const dom = new JSDOM('<!DOCTYPE html><html><body>' +
+    '<ul><li data-ws-pushed="" style="padding-top:217px">推挤行</li><li>普通行</li></ul>' +
+    '<p data-ws-pushed="" style="margin-top:333px">块级推挤</p>' +
+    '<table><tbody>' +
+      '<tr class="ws-page-spacer" data-ws2-ui="__ws2-overlay__" contenteditable="false"><td colspan="99" style="height:217px"></td></tr>' +
+      '<tr><td>数据行</td></tr>' +
+    '</tbody></table>' +
+    '<pre>a\n<span class="ws-page-spacer" data-ws2-ui="__ws2-overlay__" style="display:block;height:217px"></span>b</pre>' +
+    '<p style="margin-top:5px" data-ws-pushed="">用户没有的样式只剩我们注的——剥后 style 应整个消失</p>' +
+    '</body></html>');
+  const out = serializeDocument(dom.window.document);
+  assert.ok(!out.includes('data-ws-pushed'), '推挤标记必须剥净');
+  assert.ok(!out.includes('padding-top'), '推挤 paddingTop 必须剥净（漏一个 = 非合规）');
+  assert.ok(!out.includes('ws-page-spacer'), 'spacer 必须整删');
+  assert.ok(out.includes('推挤行') && out.includes('普通行') && out.includes('数据行'), '用户内容不丢');
+  assert.ok(out.includes('a\n') && out.includes('b</pre>'), 'pre 文本不丢（spacer span 删除后原文完整）');
+  assert.ok(!/style=""/.test(out), '剥空后的 style 属性应整个移除');
+});
+
+// 用户自带的 class="ws-page-spacer"（无 OVERLAY sentinel）不是我们的节点——绝不整删（保真红线 F1 同款）。
+test('paged strip 保真：用户自带 class=ws-page-spacer 的元素不被误删', () => {
+  const dom = new JSDOM('<!DOCTYPE html><html><body><div class="ws-page-spacer">用户的内容</div></body></html>');
+  const out = serializeDocument(dom.window.document);
+  assert.ok(out.includes('用户的内容'), '用户元素被误删');
+});
