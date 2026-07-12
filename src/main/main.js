@@ -267,6 +267,7 @@ if (!app.requestSingleInstanceLock()) {
     buildMenu();
     createWindow();
     setupAutoUpdater();
+    require('./link-index').warm(); // U6：预热索引解析器（避开首次开文档冷 import 的竞态 + 加速首次反链）
     // Windows/Linux 首次带文件启动：从 argv 取路径（macOS 由上面的 open-file 事件负责）。
     // 此时 renderer 尚未 ready，挂 pendingOpenPath 等 did-finish-load 发出。
     if (process.platform !== 'darwin') {

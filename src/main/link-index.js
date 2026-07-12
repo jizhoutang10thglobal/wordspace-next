@@ -29,6 +29,10 @@ function loadParser() {
   }
   return parserPromise;
 }
+// 启动时预热解析器（main.js whenReady 调）：把首次冷 `import()` 提前到启动、别等第一次开文档才做——
+// 一来第一次反链/索引更快；二来避开「首次开文档触发冷 ESM import 在主进程里瞬时打断 app.evaluate」的
+// 测试竞态（U6 反链面板让每次开文档都建索引后暴露：`Execution context was destroyed`）。
+function warm() { return loadParser().catch(() => {}); }
 
 const SKIP_TEXT = new Set(['script', 'style', 'template', 'noscript']); // 这些子树是源码/非可见内容，别混进 title/snippet
 function textOf(node) {
@@ -274,7 +278,7 @@ async function hydrate(storeFile, rootId, rootPath) {
 module.exports = {
   extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
   refreshRoot, rebuildRoot, removeRoot,
-  query, backlinks, dirBacklinks, titleOf, relOfDocId, movedTarget,
+  query, backlinks, dirBacklinks, titleOf, relOfDocId, movedTarget, warm,
   save, hydrate,
   _index: index, // 测试用
 };
