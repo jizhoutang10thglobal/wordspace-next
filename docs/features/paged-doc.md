@@ -63,7 +63,7 @@
 ## 对齐锚点
 
 - ui-demo 侧：commit `876a701`（2026-07-10，PR #151）
-- app 侧：分支 `feat/paged-doc-app`（2026-07-12，全量移植完成、待合 main；合入后以 merge commit 为锚）
+- app 侧：commit `e97ea60`（2026-07-12，PR #164 合 main）
 
 ## 欠账
 
