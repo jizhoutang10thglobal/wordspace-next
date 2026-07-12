@@ -95,6 +95,24 @@ test('backlinks：根内反查正确（自链不算）', async () => {
   await fsp.rm(dir, { recursive: true, force: true });
 });
 
+const DOCID = (title, id, body) => `<!doctype html><html><head><meta charset="utf-8"><meta name="wordspace-doc-id" content="${id}">${'<title>' + title + '</title>'}</head><body><h1>${title}</h1>${body}</body></html>`;
+
+test('movedTarget：目标改名（保留 doc-id）→ 靠 doc-id 快照 carry-forward 反查现址（U7）', async () => {
+  const rootId = 104;
+  const dir = await mkRoot({
+    'A.html': DOCID('A', 'id-A', '<p><a href="B.html">去B</a></p>'),
+    'B.html': DOCID('B', 'id-B', '<p>B</p>'),
+  });
+  await idx.refreshRoot(rootId, dir); // A→B 出链快照 targetDocId=id-B
+  await fsp.rename(path.join(dir, 'B.html'), path.join(dir, 'C.html')); // 外部改名，doc-id 随字节不变
+  await idx.refreshRoot(rootId, dir);
+  assert.strictEqual(idx.relOfDocId(rootId, 'id-B'), 'C.html'); // C.html 现在带 id-B
+  assert.strictEqual(idx.movedTarget(rootId, 'A.html', 'B.html'), 'C.html'); // A 的断链靠 carry-forward 反查到 C
+  assert.strictEqual(idx.movedTarget(rootId, 'A.html', 'nope.html'), null); // 没这条出链 → null
+  idx.removeRoot(rootId);
+  await fsp.rm(dir, { recursive: true, force: true });
+});
+
 test('dirBacklinks：文件夹夹外反链（夹内互链不算，U6 删除守卫）', async () => {
   const rootId = 103;
   const dir = await mkRoot({

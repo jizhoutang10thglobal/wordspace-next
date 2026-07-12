@@ -147,10 +147,23 @@ async function refreshRoot(rootId, rootPath) {
     if (prev && prev.mtime === mtime && prev.size === size && prev.ino === ino) return; // 没变
     const meta = await readDocMeta(abs, rel);
     if (!meta) return; // 读失败：不写条目、不推进 stat 戳 → 保留旧条目、下轮重试（审查 A）
-    r.docs.set(rel, { mtime, size, ino, kind: kindOf(rel), title: meta.title, outLinks: meta.outLinks, docId: meta.docId });
+    // _prevOut：重建前旧出链（带 targetDocId），给 U7 carry-forward 用；post-pass 后删除、不入盘。
+    r.docs.set(rel, { mtime, size, ino, kind: kindOf(rel), title: meta.title, outLinks: meta.outLinks, docId: meta.docId, _prevOut: prev ? prev.outLinks : null });
     changed = true;
   }));
   for (const rel of [...r.docs.keys()]) { if (!live.has(rel)) { r.docs.delete(rel); changed = true; } } // 删消失的
+  // U7 修复锚快照：给每条出链记「目标当前 docId」；目标已消失（断链）→ 沿用重建前的旧快照（carry-forward）。
+  // 这样目标被外部改名/移动后（rel 变了但 docId 随字节不变），修复卡靠这个稳定 id 反查现址。
+  for (const [, e] of r.docs) {
+    const prevMap = e._prevOut ? new Map(e._prevOut.map((l) => [l.rel, l.targetDocId])) : null;
+    for (const l of e.outLinks) {
+      const tgt = r.docs.get(l.rel);
+      if (tgt) l.targetDocId = tgt.docId || null;                              // 目标在 → 快照现 id
+      else if (prevMap && prevMap.has(l.rel)) l.targetDocId = prevMap.get(l.rel); // 目标没了 → 沿用旧快照
+      // 目标没了且本轮没重建（未变文档）：l.targetDocId 保持对象上已有的旧值
+    }
+    if ('_prevOut' in e) delete e._prevOut; // 不入盘
+  }
   return changed;
 }
 
@@ -215,6 +228,18 @@ function relOfDocId(rootId, docId) {
   return null;
 }
 
+// U7 修复卡：断链的目标搬去哪了？靠 source→target 出链快照的 doc-id 全库反查现址
+// （目标被外部改名/移动后 rel 变了、docId 随字节不变 → 仍能找到）。找不到 / 没搬 → null。
+function movedTarget(rootId, sourceRel, targetRel) {
+  const r = index.get(rootId);
+  const src = r && r.docs.get(sourceRel);
+  if (!src) return null;
+  const l = src.outLinks.find((x) => x.rel === targetRel);
+  if (!l || !l.targetDocId) return null;
+  const rel = relOfDocId(rootId, l.targetDocId);
+  return (rel && rel !== targetRel) ? rel : null;
+}
+
 // ---- 持久化（可丢弃缓存的热启动优化）：按根 path 存（跨会话稳定，rootId 是会话号）。原子写，损坏/版本不符 → 忽略全量重建 ----
 // read-modify-write（审查 B）：只覆盖内存中各根的条目，保留本会话没加载进内存的根的缓存——否则全量覆盖会把
 // 「已打开但本会话没先碰过」的根的持久化缓存抹掉，多根热启动优化失效。keepPaths 给定时剪掉已不在注册表的根（防无界增长）。
@@ -249,7 +274,7 @@ async function hydrate(storeFile, rootId, rootPath) {
 module.exports = {
   extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
   refreshRoot, rebuildRoot, removeRoot,
-  query, backlinks, dirBacklinks, titleOf, relOfDocId,
+  query, backlinks, dirBacklinks, titleOf, relOfDocId, movedTarget,
   save, hydrate,
   _index: index, // 测试用
 };

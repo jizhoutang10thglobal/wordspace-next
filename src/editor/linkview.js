@@ -281,16 +281,23 @@
     var repairs = el('div', 'ws-linkview-repairs');
     cardEl.appendChild(repairs);
     hoverAnchor = a; positionCard(a);
-    // 候选：同根内纯文件名精确相等（baseOf）的文档（linksQuery 只回文档 → pdf/图片天然不入候选，§5.3）。
+    // 候选优先级（§5.3 U7 升级）：doc-id 全库匹配（原文件被外部改名/移动到哪了）> 同名文档 > 新建。
     var Links = window.WS2Links;
-    var q = window.ws2 && window.ws2.linksQuery;
-    Promise.resolve(q ? q(r.rootId) : []).then(function (list) {
+    var ctx = window.__wsDocContext && window.__wsDocContext();
+    var sourceRel = ctx && ctx.rel;
+    var mtP = (sourceRel && window.ws2 && window.ws2.linksMovedTarget) ? Promise.resolve(window.ws2.linksMovedTarget(r.rootId, sourceRel, r.rel)) : Promise.resolve(null);
+    var qP = (window.ws2 && window.ws2.linksQuery) ? Promise.resolve(window.ws2.linksQuery(r.rootId)) : Promise.resolve([]);
+    Promise.all([mtP, qP]).then(function (res) {
       if (g !== hoverGen) return;
+      var moved = res[0], list = res[1] || [], added = {};
+      // ① doc-id 反查到的现址：原文件已移动/改名到这里（最强候选，置顶）
+      if (moved) { repairs.appendChild(repairItem('↪', '重新指向 ' + moved + '（原文件已移动到这里）', function () { doRepoint(a, r, moved); })); added[moved] = 1; }
+      // ② 同根同名文档（linksQuery 只回文档 → pdf/图片天然不入）
       var want = Links.baseOf(r.rel);
-      (list || []).filter(function (f) { return f.rel !== r.rel && Links.baseOf(f.rel) === want; })
+      (list).filter(function (f) { return f.rel !== r.rel && !added[f.rel] && Links.baseOf(f.rel) === want; })
         .slice(0, 3)
         .forEach(function (c) { repairs.appendChild(repairItem('↩', '重新指向 ' + c.rel, function () { doRepoint(a, r, c.rel); })); });
-      // 恒有「新建」——仅对编辑器可创作的类型（html/md）；断链指向 pdf/图片等无从「新建」。
+      // ③ 恒有「新建」——仅对编辑器可创作的类型（html/md）；断链指向 pdf/图片等无从「新建」。
       if (r.kind === 'html' || r.kind === 'md') {
         var dir = Links.dirOf(r.rel);
         repairs.appendChild(repairItem('＋', '在' + (dir || '根目录') + '新建「' + r.name + '」', function () { doCreate(a, r); }));
