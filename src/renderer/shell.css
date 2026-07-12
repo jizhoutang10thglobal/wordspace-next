@@ -886,3 +886,25 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-mention-title.ws-mention-action { color: var(--c-accent); }
 .ws-mention-path { font-size: 11px; opacity: 0.55; overflow: hidden; text-overflow: ellipsis; }
 .ws-mention-empty { padding: 8px; opacity: 0.6; font-size: 12px; }
+
+/* U4 悬停预览卡 / 断链修复卡（父层浮层，抄 mention 壳；position 由 JS el.style 设——CSP 下 CSSOM setter 安全）*/
+.ws-linkview-card {
+  position: fixed; z-index: 150; width: 300px; max-height: 260px; overflow: hidden; box-sizing: border-box;
+  padding: 12px 14px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px;
+  box-shadow: var(--shadow-menu); display: none;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
+  font-size: 12px; color: var(--c-text); line-height: 1.5;
+}
+.ws-linkview-card.is-broken { border-color: #e8b4ae; }
+.ws-linkview-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.ws-linkview-title.is-broken { color: #b91c1c; }
+.ws-linkview-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ws-linkview-snippet { opacity: 0.72; margin-top: 6px; overflow: hidden; }
+.ws-linkview-note { opacity: 0.72; margin-top: 6px; }
+.ws-linkview-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.ws-linkview-path { font-size: 11px; opacity: 0.55; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ws-linkview-act { flex: none; color: var(--c-accent); cursor: pointer; font-size: 12px; background: none; border: none; padding: 2px 4px; border-radius: var(--r-sm); }
+.ws-linkview-act:hover { text-decoration: underline; }
+.ws-linkview-repairs { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+.ws-linkview-repair-item { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: var(--r-sm); cursor: pointer; text-align: left; background: none; border: none; color: var(--c-text); font-size: 12px; width: 100%; }
+.ws-linkview-repair-item:hover { background: var(--c-hover); }

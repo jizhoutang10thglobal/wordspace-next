@@ -28,6 +28,14 @@
   var frame = null;       // 当前目标 doc-frame（<iframe id="doc-frame">）
   var brokenSheet = null; // 注进 iframe 的 constructable stylesheet
   var scanGen = 0;        // 每次 scan 自增；异步解析回来时校验，防切文档串味（L12/竞态）
+  // ---- 悬停预览卡（step 2）状态 ----
+  var cardEl = null;
+  var openTimer = null, closeTimer = null;
+  var hoverGen = 0;       // 每次 hover 意图自增；异步解析/读盘回来校验，防移开后旧卡冒出
+  var hoverAnchor = null; // 当前已展示卡的 <a>
+  var wiredDoc = null;    // 已挂 mouseover/mouseout 的 contentDocument（换文档重挂）
+  var ICONS = { html: '📄', md: '📝', pdf: '📕', image: '🖼', sheet: '📊', slides: '📽', word: '📄', other: '📎' };
+  function snippet(t, max) { t = (t || '').replace(/\s+/g, ' ').trim(); return t.length > max ? t.slice(0, max) + '…' : t; }
 
   // ---- realm 访问器（照抄 find.js:35-38；所有 Highlight/Range/Sheet 对象必须取自 iframe realm）----
   function cw() { try { return frame && frame.contentWindow; } catch (e) { return null; } }
@@ -76,6 +84,12 @@
     if (f) frame = f;
     var d = cd();
     if (!d) return;
+    // 悬停监听按 contentDocument 挂一次（换文档=新 doc，旧监听随旧 doc 失效；换文档时 wiredDoc 重置）
+    if (d !== wiredDoc) {
+      d.addEventListener('mouseover', onOver, false);
+      d.addEventListener('mouseout', onOut, false);
+      wiredDoc = d;
+    }
     var Links = window.WS2Links;
     var resolve = window.ws2 && window.ws2.resolveDocLink;
     var docPath = (typeof window.__wsDocPath === 'function') ? window.__wsDocPath() : null;
@@ -108,16 +122,136 @@
     });
   }
 
-  // 切/关文档统一收口（shell.js detachEditors 调）：清高亮 + 作废在飞的 scan。
-  // （后续 step：这里还要关悬停卡/修复卡 + 清 hover 定时器。）
+  // ---- 悬停预览卡（step 2）----
+  // 卡 DOM 在父层 document.body（data-ws2-ui 防块编辑器误当内容；mousedown preventDefault 防塌 iframe 选区）。
+  function ensureCard() {
+    if (cardEl && document.body.contains(cardEl)) return;
+    cardEl = document.createElement('div');
+    cardEl.className = 'ws-linkview-card';
+    cardEl.setAttribute('data-ws2-ui', '');
+    cardEl.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    cardEl.addEventListener('mouseenter', function () { clearTimeout(closeTimer); }); // 进卡不关（§5.1）
+    cardEl.addEventListener('mouseleave', function () { closeTimer = setTimeout(closeCard, 200); }); // 出卡 200ms 关
+    document.body.appendChild(cardEl);
+  }
+  function closeCard() {
+    clearTimeout(openTimer); clearTimeout(closeTimer);
+    hoverGen++; // 作废在飞的解析/读盘
+    hoverAnchor = null;
+    if (cardEl) cardEl.style.display = 'none';
+  }
+  // 定位：命中链接 rect（iframe 坐标）+ frame offset → 链接下方 +8，left 夹取（§5.1）。
+  function positionCard(a) {
+    if (!cardEl || !frame) return;
+    var fr = frame.getBoundingClientRect();
+    var r = a.getBoundingClientRect();
+    var left = Math.min(Math.max(12, fr.left + r.left - 8), window.innerWidth - 312);
+    cardEl.style.left = left + 'px';
+    cardEl.style.top = (fr.top + r.bottom + 8) + 'px';
+    cardEl.style.display = 'block';
+  }
+  function onOver(e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    var href = a.getAttribute('href');
+    // web/anchor/越根/临时 → 不弹卡（只对站内相对链接）
+    if (!href || !window.WS2Links || window.WS2Links.classifyScheme(href) !== 'relative') return;
+    if (a === hoverAnchor) { clearTimeout(closeTimer); return; } // 已在这条上：别重开、别关
+    clearTimeout(closeTimer); clearTimeout(openTimer);
+    var g = ++hoverGen;
+    openTimer = setTimeout(function () { resolveAndShow(a, href, g); }, 350); // §5.1：350ms 开
+  }
+  function onOut(e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    clearTimeout(openTimer);                    // 350ms 内移开 → 不开
+    closeTimer = setTimeout(closeCard, 250);    // 已开的 → 250ms 宽限关（§5.1）
+  }
+  function resolveAndShow(a, href, g) {
+    var docPath = (typeof window.__wsDocPath === 'function') ? window.__wsDocPath() : null;
+    var resolve = window.ws2 && window.ws2.resolveDocLink;
+    if (!docPath || !resolve) return;
+    Promise.resolve(resolve(docPath, href)).then(function (r) {
+      if (g !== hoverGen) return;                       // 已移开 / 换文档
+      if (!r || r.error || !r.insideRoot) return;       // 工作区外 / 解析失败：不弹
+      if (r.exists === false) return;                   // 断链：step 3 修复卡接管（暂不弹）
+      renderCard(a, r, g);
+    }).catch(function () {});
+  }
+  function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+  function openBtn(r) {
+    var b = el('button', 'ws-linkview-act', '打开');
+    b.addEventListener('click', function (ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      if (window.__wsOpenResolved) window.__wsOpenResolved(r);
+      closeCard();
+    });
+    return b;
+  }
+  function renderCard(a, r, g) {
+    ensureCard();
+    if ((r.kind === 'html' || r.kind === 'md') && window.ws2 && window.ws2.readDoc) {
+      Promise.resolve(window.ws2.readDoc(r.abs)).then(function (html) {
+        if (g !== hoverGen) return;
+        buildDocCard(r, html); hoverAnchor = a; positionCard(a);
+      }).catch(function () {
+        if (g !== hoverGen) return;
+        buildDocCard(r, null); hoverAnchor = a; positionCard(a);
+      });
+    } else {
+      buildFileCard(r); hoverAnchor = a; positionCard(a);
+    }
+  }
+  function buildDocCard(r, html) {
+    cardEl.className = 'ws-linkview-card';
+    cardEl.innerHTML = '';
+    var title = r.name, snippets = [];
+    if (html) {
+      try {
+        var d = new DOMParser().parseFromString(html, 'text/html');
+        var h1 = d.querySelector('h1'), tt = d.querySelector('title');
+        title = (h1 && h1.textContent.trim()) || (tt && tt.textContent.trim()) || r.name;
+        var kids = d.body ? Array.prototype.slice.call(d.body.children, 0, 4) : [];
+        snippets = kids.map(function (b) { return snippet(b.textContent, 72); }).filter(Boolean);
+      } catch (e) {}
+    }
+    var titleRow = el('div', 'ws-linkview-title');
+    titleRow.appendChild(el('span', null, ICONS[r.kind] || ICONS.other));
+    titleRow.appendChild(el('span', 'ws-linkview-title-text', title));
+    cardEl.appendChild(titleRow);
+    if (snippets.length) {
+      var sn = el('div', 'ws-linkview-snippet');
+      snippets.forEach(function (s) { sn.appendChild(el('div', null, s)); });
+      cardEl.appendChild(sn);
+    }
+    var foot = el('div', 'ws-linkview-foot');
+    foot.appendChild(el('span', 'ws-linkview-path', r.rel));
+    foot.appendChild(openBtn(r));
+    cardEl.appendChild(foot);
+  }
+  function buildFileCard(r) {
+    cardEl.className = 'ws-linkview-card';
+    cardEl.innerHTML = '';
+    var titleRow = el('div', 'ws-linkview-title');
+    titleRow.appendChild(el('span', null, ICONS[r.kind] || ICONS.other));
+    titleRow.appendChild(el('span', 'ws-linkview-title-text', r.name));
+    cardEl.appendChild(titleRow);
+    cardEl.appendChild(el('div', 'ws-linkview-note', '非文档文件，打开后转交系统对应程序。'));
+    var foot = el('div', 'ws-linkview-foot');
+    foot.appendChild(el('span', 'ws-linkview-path', r.rel));
+    foot.appendChild(openBtn(r));
+    cardEl.appendChild(foot);
+  }
+
+  // 切/关文档统一收口（shell.js detachEditors 调）：清高亮 + 关卡 + 清定时器 + 作废在飞异步。
   function detach() {
     scanGen++; // 作废在飞的异步 scan
     clearHighlights();
-    frame = null;
+    closeCard();
+    frame = null; wiredDoc = null;
   }
-
-  // 缩放/resize 时重定位浮层（当前无卡，空实现；step 2 加卡后关卡即可）。
-  function reposition() { /* no cards yet */ }
+  // 缩放/滚动/resize：直接关卡（最省心的正确解，抄 mention.reposition）。
+  function reposition() { closeCard(); }
 
   var api = { scan: scan, detach: detach, reposition: reposition };
   if (typeof window !== 'undefined') window.WS2LinkView = api;

@@ -327,9 +327,15 @@ async function onDocLinkClick(e) {
   if (!r || r.error) return;
   if (!r.insideRoot) { toastLite('链接指向工作区外，未打开'); return; }
   if (!r.exists) { toastLite('链接目标不存在：' + (r.rel || href)); return; } // U4 升级成断链修复卡
+  window.__wsOpenResolved(r);
+}
+// U4：把 resolveDocLink 结果按 kind 打开——html/md 进编辑器，其余进查看器/外部打开卡片。
+// 抽出来给 onDocLinkClick + linkview 悬停卡「打开」/修复后跳转复用（避免重解析）。
+window.__wsOpenResolved = (r) => {
+  if (!r) return;
   if (r.kind === 'html' || r.kind === 'md') openDoc(r.abs);
   else showViewer({ abs: r.abs, rel: r.rel, rootId: r.rootId, name: r.name, kind: r.kind }); // 多根：查看器/外部打开按 rootId+rel
-}
+};
 function installLinkGuard(doc) {
   if (doc) doc.addEventListener('click', onDocLinkClick, true); // capture：先于块编辑器进入编辑
 }
@@ -888,9 +894,14 @@ function handleDocChanged(p) {
 }
 window.ws2.onDocChanged(handleDocChanged);
 // U4：链接索引刷新（目标文件增删/改名）→ 若刷的是当前文档所在根，重扫断链装饰自愈。
+// 突发合并防抖：单次文件操作（如 @新建 create→save）会连发多个 links-index-updated，
+// 每个都触发一轮 async resolveDocLink 扫描风暴、抢 IPC（U3-E 因此偶发翻车）。合并成一次。
+let linksScanTimer = null;
 window.ws2.onLinksUpdated((rootId) => {
   const c = window.__wsDocContext && window.__wsDocContext();
-  if (c && c.rootId === rootId && window.WS2LinkView) window.WS2LinkView.scan(frame);
+  if (!(c && c.rootId === rootId && window.WS2LinkView)) return;
+  clearTimeout(linksScanTimer);
+  linksScanTimer = setTimeout(() => window.WS2LinkView.scan(frame), 250);
 });
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && pendingExternalChange) {
