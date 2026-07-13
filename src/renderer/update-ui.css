@@ -1,0 +1,129 @@
+/* 更新 UI：侧栏 pill + 更新面板（update-ui.js）。面板复用 .sb-modal 壳，这里只补自己的内容样式。 */
+
+/* ---- 侧栏 pill：页脚上方一条，后台下载/就绪时出现 ---- */
+.sb-update {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 8px 6px;
+  padding: 7px 10px 8px;
+  border: none;
+  border-radius: var(--r-md, 8px);
+  background: var(--c-accent-tint);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  transition: background var(--dur-fast) ease;
+}
+.sb-update:hover { background: var(--c-accent-tint-2, var(--c-hover)); }
+.sb-update[hidden] { display: none; }
+.sb-update-txt {
+  font-size: var(--fs-xs);
+  color: var(--c-ink);
+  font-weight: var(--fw-medium, 500);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.sb-update.is-ready .sb-update-txt { color: var(--c-ink); }
+.sb-update-bar {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--c-divider);
+  overflow: hidden;
+}
+.sb-update-bar[hidden] { display: none; }
+.sb-update-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: var(--c-ink);
+  transition: width .3s ease;
+}
+.sb.is-collapsed .sb-update { display: none; }
+
+/* ---- 更新面板 ---- */
+.up-card { width: 400px; }
+.up-body { min-height: 44px; }
+.up-line { font-size: var(--fs-sm); color: var(--c-text-2, var(--c-text)); line-height: 1.55; }
+.up-line + .up-line { margin-top: 4px; }
+.up-line-h {
+  font-weight: var(--fw-semibold);
+  color: var(--c-text);
+  margin-top: 10px;
+}
+.up-line-h:first-child { margin-top: 0; }
+.up-line-li { padding-left: 14px; position: relative; }
+.up-line-li::before { content: '·'; position: absolute; left: 4px; color: var(--c-text-3); }
+
+/* 进度条：与 pill 同语言，粗一号 */
+.up-prog { margin-top: 6px; }
+.up-prog-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--c-bg-sunken, var(--c-divider));
+  overflow: hidden;
+}
+.up-prog-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--c-ink);
+  transition: width .3s ease;
+}
+.up-prog-bar.is-indet .up-prog-fill {
+  width: 30%;
+  animation: up-indet 1.1s ease-in-out infinite alternate;
+}
+@keyframes up-indet {
+  from { margin-left: 0; }
+  to { margin-left: 70%; }
+}
+.up-prog-detail {
+  margin-top: 7px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 检查中 spinner：细环旋转 */
+.up-spinner {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 8px;
+  border: 2px solid var(--c-divider);
+  border-top-color: var(--c-ink);
+  border-radius: 50%;
+  animation: up-spin .8s linear infinite;
+}
+@keyframes up-spin { to { transform: rotate(360deg); } }
+
+/* 按钮行：右对齐，主按钮墨底 */
+.up-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 18px 16px;
+}
+.up-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md, 8px);
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium, 500);
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.up-btn:hover { background: var(--c-hover); }
+.up-btn-primary {
+  border-color: var(--c-ink);
+  background: var(--c-ink);
+  color: var(--c-surface);
+}
+.up-btn-primary:hover { background: var(--c-ink-hover, var(--c-ink)); border-color: var(--c-ink-hover, var(--c-ink)); }
