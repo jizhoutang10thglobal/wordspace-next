@@ -2,6 +2,7 @@ const { BrowserWindow } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 const { pathInfo } = require('../lib/path-url');
+const { isSelfPaged } = require('../lib/self-paged');
 
 // 导出 PDF（MVP：直印源文件，文档自带 CSS，不注入编辑器样式）。
 // 连续单页：页宽 = A4（210mm），页高 = 内容实际高度 → 零分页、所见即所得（不被纸张切断）。
@@ -25,10 +26,18 @@ async function exportPdf(srcPath, outPath, exportOpts) {
   try {
     await win.loadURL(pathInfo(srcPath).fileUrl); // 等 load（图片/资源就绪）后再量高
     const wc = win.webContents;
+    // 自带分页版式的文档（<style> 里有 @page / 强制分页符，如公函模板、Word 导出的 HTML）→ 视同
+    // 分页文档走标准分页。不识别的话走连续单页会翻车：文档自己的 break-after:page 在 print 媒介下
+    // 生效，把内容掰成 N 张「页高=全文高」的超长半空页 = 大白间隙（Wendi 2026-07-13 实报，
+    // 她的 PDF MediaBox 实测 210mm×619.5mm）。读盘失败不抛——当不自分页，走原路径兜底。
+    let selfPaged = false;
+    if (!exportOpts.paged) {
+      try { selfPaged = isSelfPaged(await fs.readFile(srcPath, 'utf8')); } catch (e) { /* 读不了按普通文档 */ }
+    }
     // 分页文档：标准分页导出。纸张/方向/边距全由文档自带的 @page 决定（preferCSSPageSize），
     // 不量高、不走连续单页——「按页分页」正是分页文档的导出语义。不传 margins（交给 CSS @page）。
     // 页码走 Chromium 页眉页脚模板（MVP：只做页码，文档内页眉页脚不做）。
-    if (exportOpts.paged) {
+    if (exportOpts.paged || selfPaged) {
       const popts = { printBackground: true, preferCSSPageSize: true };
       if (exportOpts.pageNumbers) {
         popts.displayHeaderFooter = true;
@@ -46,6 +55,9 @@ async function exportPdf(srcPath, outPath, exportOpts) {
     wc.debugger.attach('1.3');
     let h;
     try {
+      // 先切到 print 媒介再量：printToPDF 是在 print 媒介下渲染的，文档若带 @media print
+      //（藏元素/去间隙），screen 下量出的高会偏大 → 页尾多出一段空白。同媒介量高=页高恰合内容。
+      await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { media: 'print' });
       const m = await wc.debugger.sendCommand('Page.getLayoutMetrics');
       const sz = m.cssContentSize || m.contentSize;
       h = sz && sz.height ? Math.ceil(sz.height) : A4_HEIGHT_PX; // 真量不到（空文档）→ 一个视口高，合理
