@@ -976,6 +976,34 @@ test('导出 PDF：连续单页 + 合法 PDF（MVP 直印源文件）', async ()
   expect(mediaH, '页高没跟内容走（疑似没量到高/退兜底 842pt）').toBeGreaterThan(1000);
 });
 
+// 自带分页版式的文档（@page + break-after:page 的公函/Word 式 HTML）：按它自己的 A4 分页导出，
+// 不走连续单页——原 bug（Wendi 2026-07-13 实报）：连续单页在 screen 媒介量高（含纸间灰隙），
+// printToPDF 在 print 媒介渲染时文档自己的 break-after:page 生效，内容被掰成 2 张
+// 「页高=全文高（619.5mm）」的超长页，每张只有顶部 297mm 有内容 = 大白间隙。
+const PDF_SELF_PAGED = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>'
+  + '<style>html{background:#9b9b9b}body{margin:0;padding:24px 0}'
+  + '.page{width:210mm;min-height:297mm;box-sizing:border-box;padding:37mm 26mm;margin:0 auto 24px;background:#fff}'
+  + '@media print{html{background:none}body{padding:0}.page{margin:0;break-after:page}.page:last-child{break-after:auto}@page{size:A4;margin:0}}'
+  + '</style></head><body>'
+  + '<div class="page"><p>第一页（中文页）</p></div>'
+  + '<div class="page"><p>第二页（英文页）</p></div>'
+  + '</body></html>';
+test('导出 PDF：自带分页版式（@page/break-after）→ 按文档自己的 A4 分页，不掰成超长半空页', async () => {
+  await launch();
+  const docPath = await openDoc(PDF_SELF_PAGED);
+  const res = await page.evaluate((dp) => window.ws2.exportPdf(dp), docPath); // raw 直印路径（该 bug 的现场）
+  expect(res && res.ok, '导出没成功：' + JSON.stringify(res)).toBe(true);
+  const buf = await fs.readFile(path.join(tmpDir, 'export.pdf'));
+  expect(buf.slice(0, 5).toString('latin1')).toBe('%PDF-');
+  const s = buf.toString('latin1');
+  // 恰好 2 页（两个 .page 各一张 A4）
+  expect((s.match(/\/Count\s+(\d+)/) || [])[1], '不是 2 页').toBe('2');
+  // 页高 = A4（842pt±3），不是原 bug 的超长页（实测 1756pt=619.5mm）。这是强断言：
+  // 变异（去掉 isSelfPaged 检测）后 /Count 仍是 2（break-after 照样掰两半），只有页高能翻红。
+  const mediaH = parseFloat((s.match(/\/MediaBox\s*\[[^\]]*?\s([\d.]+)\]/) || [])[1] || '0');
+  expect(Math.abs(mediaH - 842), `页高 ${mediaH}pt 不是 A4（842pt）——自分页检测没生效？`).toBeLessThan(3);
+});
+
 // 超长文档（内容高 > Chromium 单页上限 ~200in）：退标准 A4 分页，内容一段不丢，而非钳成一页把底部静默截断。
 test('导出 PDF：超长文档退 A4 分页、不静默截断', async () => {
   await launch();
