@@ -221,7 +221,8 @@
         var d = new DOMParser().parseFromString(html, 'text/html');
         var h1 = d.querySelector('h1'), tt = d.querySelector('title');
         title = (h1 && h1.textContent.trim()) || (tt && tt.textContent.trim()) || r.name;
-        var kids = d.body ? Array.prototype.slice.call(d.body.children, 0, 4) : [];
+        // 摘要排除标题那个 h1（已作卡片标题显示，别重复）
+        var kids = d.body ? Array.prototype.slice.call(d.body.children).filter(function (b) { return b !== h1; }).slice(0, 4) : [];
         snippets = kids.map(function (b) { return snippet(b.textContent, 72); }).filter(Boolean);
       } catch (e) {}
     }
@@ -297,13 +298,46 @@
       (list).filter(function (f) { return f.rel !== r.rel && !added[f.rel] && Links.baseOf(f.rel) === want; })
         .slice(0, 3)
         .forEach(function (c) { repairs.appendChild(repairItem('↩', '重新指向 ' + c.rel, function () { doRepoint(a, r, c.rel); })); });
-      // ③ 恒有「新建」——仅对编辑器可创作的类型（html/md）；断链指向 pdf/图片等无从「新建」。
+      // ③ 「新建」——仅对编辑器可创作的类型（html/md）；断链指向 pdf/图片等无从「新建」。
       if (r.kind === 'html' || r.kind === 'md') {
         var dir = Links.dirOf(r.rel);
         repairs.appendChild(repairItem('＋', '在' + (dir || '根目录') + '新建「' + r.name + '」', function () { doCreate(a, r); }));
       }
+      // ①②③ 都是「系统的智能猜测」（可能没有 / 猜错）。下面两条是恒有的手动兜底：
+      // 系统找不到时让用户自己在 Finder 里指、或彻底断了就删掉链接（保留文字）——分隔线区隔。
+      var sep = el('div', 'ws-linkview-repair-sep'); repairs.appendChild(sep);
+      repairs.appendChild(repairItem('📁', '浏览…手动选择要指向的文件', function () { doPickAndRepoint(a, r); }));
+      repairs.appendChild(repairItem('✕', '删除此链接（保留文字）', function () { doDeleteLink(a); }));
       positionCard(a); // 内容高度变了 → 重新夹取 left/top
     }).catch(function () {});
+  }
+  // 手动兜底①：浏览选文件 → 同工作区则重新指向；工作区外无法建相对链接（提示）。
+  function doPickAndRepoint(a, r) {
+    var ctx = window.__wsDocContext && window.__wsDocContext();
+    if (!ctx || !window.ws2 || !window.ws2.pickFile) return;
+    Promise.resolve(window.ws2.pickFile()).then(function (abs) {
+      if (!abs) return; // 用户取消
+      return Promise.resolve(window.ws2.classifyFile(abs)).then(function (m) {
+        if (!m || m.rootId !== ctx.rootId || m.rel == null) {
+          if (window.__wsToast) window.__wsToast('所选文件不在当前工作区，无法建相对链接');
+          closeCard(); return;
+        }
+        doRepoint(a, r, m.rel); // 复用重新指向（保尾缀 + 编辑收口 + 自愈）
+      });
+    }).catch(function () {});
+  }
+  // 手动兜底②：文件确实没了 → 拆掉 <a>、保留其文字（unwrap），断链装饰随之消失。
+  function doDeleteLink(a) {
+    var d = cd();
+    if (!d || !d.contains(a)) { if (window.__wsToast) window.__wsToast('链接已不在当前文档'); closeCard(); return; }
+    if (window.__wsBeforeDocEdit) window.__wsBeforeDocEdit();
+    var parent = a.parentNode;
+    while (a.firstChild) parent.insertBefore(a.firstChild, a); // 文字移出到原位
+    parent.removeChild(a);
+    if (window.__wsAfterDocEdit) window.__wsAfterDocEdit();
+    if (window.__wsToast) window.__wsToast('已删除链接（保留文字）');
+    closeCard();
+    scan(frame);
   }
   // 重新指向：flush 待定编辑 → 保留原 href 尾缀 → relHref 重算只改这一条 <a> → 标脏+checkpoint → 装饰自愈。
   function doRepoint(a, r, candRel) {

@@ -315,6 +315,21 @@ test('U4：修复卡「重新指向」→ 改写 href 到候选（保留 #尾缀
   expect(c).not.toMatch(/href="缺失\.html/); // 旧断链 href 不再存在
 });
 
+test('U4：修复卡「删除此链接」→ 拆掉 <a> 保留文字、断链消失、落盘无 href', async () => {
+  await page.click('.sb-file[data-rel="C.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档C');
+  await frame.locator('a[href="缺失.html#节2"]').click();
+  await expect(page.locator('.ws-linkview-card.is-broken')).toBeVisible();
+  await page.locator('.ws-linkview-repair-item', { hasText: '删除此链接' }).click();
+  await expect(frame.locator('a[href="缺失.html#节2"]')).toHaveCount(0); // <a> 没了
+  await expect(frame.locator('p', { hasText: '找不到' })).toBeVisible(); // 文字保留
+  await page.waitForTimeout(1700); // 自动保存
+  const c = await fs.readFile(path.join(wsDir, 'C.html'), 'utf8');
+  expect(c).not.toContain('缺失.html'); // 断链 href 落盘也没了
+  expect(c).toContain('找不到'); // 文字保留
+});
+
 test('U4：断链文档 → ws-broken 高亮圈住断链锚文本；有效内链不圈；装饰零落盘', async () => {
   // C.html 恰有 1 条断链（缺失.html，文字「找不到」）+ 1 条外链（web 不算断链）
   await page.click('.sb-file[data-rel="C.html"]');
