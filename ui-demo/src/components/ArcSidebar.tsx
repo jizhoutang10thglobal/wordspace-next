@@ -30,7 +30,6 @@ import {
   Star,
   Bookmark,
   History as HistoryIcon,
-  ChevronDown,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
@@ -1182,8 +1181,6 @@ export default function ArcSidebar() {
         {/* 收藏（默认收起，点标题行展开）——放在置顶上方，同 Arc 的 Favorites 在最顶 */}
         <div className={`arc-fav ${favOpen ? 'is-open' : ''}`}>
           <div className="arc-fav-head" onClick={toggleFav}>
-            {favOpen ? <ChevronDown size={13} className="arc-fav-caret" /> : <ChevronRight size={13} className="arc-fav-caret" />}
-            <Star size={13} className="arc-fav-star" />
             <span className="arc-fav-title">收藏</span>
             {bmList.length > 0 && <span className="arc-fav-count">{bmList.length}</span>}
             <span className="arc-fav-spacer" />
@@ -1194,6 +1191,7 @@ export default function ArcSidebar() {
             >
               <Bookmark size={13} />
             </button>
+            <ChevronRight size={12} className={`arc-caret ${favOpen ? 'is-open' : ''}`} />
           </div>
           {favOpen && (
             <div className="arc-fav-body">

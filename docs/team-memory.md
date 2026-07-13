@@ -14,6 +14,20 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-13 — 侧栏收藏区 header 口径变更：栏标化 + 对齐网格，两侧已同步（spec §4.3 已更新）
+
+**是什么**：Wendi 反馈收藏区「视觉乱」，根因 = 收藏 header 穿「文件夹行」的衣服（行首 caret +
+accent 星标 + 中灰粗体），与同级栏标（置顶/标签页/文档）语言不一致，且列内多套左缘各自为政。
+新口径：header 用 editorial 栏标语言（mono/fs-xs/宽字距/text-3），星标撤出 header（☆ 只留地址栏），
+caret 移行尾常显、展开原地旋转；对齐网格 = 栏标与内容各一条左缘。正本 `docs/browser-feature-spec.md`
+§4.3 / 图标清单 / 验收清单 / ASCII 图已全部更新。
+**怎么 apply**：ui-demo（PR #170）与真 app（PR #173）已按新口径同步落地，锚点已记账
+（`docs/features/browser.md`），此项无欠账。之后动侧栏收藏区、写相关 e2e、或做移植的 session
+一律按 spec §4.3 新口径来——别参考旧截图，也别参考旧分支（如 `wordspace-next-browser` 的
+feat/browser-tabs 旧实现）。
+**来源**：PR #170 / #173，spec §4.3（2026-07-13），Wendi 反馈 + Colin 拍板。
+
+
 ## 2026-07-12 — 分页文档已进真 app（PR #164 合 main），feature 全链路收官
 
 **是什么**：分页文档完成 ui-demo（PR #151）→ 真 app（PR #164）全链路：V4 引擎/页面设置/@page 入盘/
