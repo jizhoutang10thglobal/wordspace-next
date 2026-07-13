@@ -130,6 +130,21 @@ function registerBrowserIpc() {
   ipcMain.handle('browser-settings', () => ({ ...browserStore.getSettings(), engines: engines.ORDER.map((k) => ({ key: k, name: engines.ENGINES[k].name })) }));
   ipcMain.handle('browser-set-engine', (_e, key) => browserStore.setEngine(key));
 
+  // ---- 默认浏览器（设置页按钮）----
+  // 只在打包态有意义：dev 跑的是 Electron.app，把它注册成系统 http handler 会污染开发机的
+  // Launch Services（之后点链接弹 Electron 空壳），所以非打包直接拒。
+  // macOS 上 setAsDefaultProtocolClient('http') 会触发系统确认弹窗，返回 true ≠ 用户已确认——
+  // isDefault 要用户点完系统弹窗才翻真，UI 按「已请求」处理。
+  ipcMain.handle('browser-default-status', () => ({
+    isDefault: app.isPackaged && app.isDefaultProtocolClient('http') && app.isDefaultProtocolClient('https'),
+    packaged: app.isPackaged
+  }));
+  ipcMain.handle('browser-set-default', () => {
+    if (!app.isPackaged) return { ok: false, packaged: false, isDefault: false };
+    const ok = app.setAsDefaultProtocolClient('http') && app.setAsDefaultProtocolClient('https');
+    return { ok, packaged: true, isDefault: app.isDefaultProtocolClient('http') && app.isDefaultProtocolClient('https') };
+  });
+
   // 退出前把防抖窗内的收藏/历史/设置变更冲盘。
   app.on('before-quit', () => browserStore.flushSync());
 }

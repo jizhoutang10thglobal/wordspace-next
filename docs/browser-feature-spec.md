@@ -636,6 +636,28 @@ main → renderer (push)
 **但该分支停在多轮 UX 定稿之前**——它的网页头、（若有）剪藏/收藏旧形态**不要照搬**，一律以本文档为准
 （无网页头、侧栏折叠收藏区、砍除清单 §12）。
 
+### 10.6 系统集成：默认浏览器（2026-07-13，Wendi 案「没法把 Wordspace 设成默认浏览器」）
+
+真 app 独有（ui-demo 是网页 mock，没有系统集成面），三层：
+
+1. **候选资格 = 打包声明**：`package.json` `build.protocols` 声明 `http`/`https`（electron-builder 生成
+   `CFBundleURLTypes`）→ macOS 系统设置「默认网页浏览器」下拉才会列出 Wordspace。顺带
+   `build.fileAssociations` 声明 `html`/`htm`（Finder「打开方式」不再要用户强选）。这份声明只活在
+   **打包产物**里——dev 态（`npm start`）永远不出现在系统列表，验证要用装好的 .app。
+   配置回归门：`test/default-browser-config.test.js`（谁删了 protocols 立刻红）。
+2. **接收路由**：`app.on('open-url')`（main.js）→ scheme 白名单（复用 `web-tabs-policy.isAllowedNavUrl`，
+   file:/javascript: 直接丢弃）→ 复用既有 `web-open-request` 通道建网页标签。冷启动（app 没开时点
+   链接）：URL 进 `pendingOpenUrls` 队列等 `did-finish-load` 冲刷（与 open-file 同款），renderer 侧
+   消费者再 `await __sbRestoreReady`——不等会被 loadTabs 的标签恢复**整体覆盖**（open-file 的
+   `__pendingColdOpen` 同款竞态，变异实证会翻红）。测试 seam：`WS2_OPEN_URL`（走同一道白名单）。
+3. **设置页入口**：设置页「默认浏览器」行 + 「设为默认浏览器」按钮
+   （`browser-set-default`/`browser-default-status` IPC → `app.setAsDefaultProtocolClient`）。
+   macOS 会弹**系统级确认框**，`setAsDefaultProtocolClient` 返回 true ≠ 用户已确认，UI 按「请在系统
+   弹窗里确认」处理；dev 态按钮禁用（把 Electron.app 注册成系统 http handler 会污染开发机）。
+
+真门：`e2e/default-browser.spec.js`（热路径 / 冷启动不覆盖恢复标签 / scheme 白名单，变异自检两刀均翻红）。
+**欠账**：Windows/Linux 未做（Win 要安装器注册表 + `second-instance` argv 的 URL 解析，现只解析文件路径）。
+
 ---
 
 ## 11. 安全不变式（一条都不许松）

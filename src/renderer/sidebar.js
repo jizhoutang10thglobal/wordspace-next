@@ -27,6 +27,7 @@
   // 一旦 resolve 永久 resolved：app 已开着时再 open（热路径）不阻塞，立即建标签。
   let resolveRestore;
   const restoreReady = new Promise((r) => { resolveRestore = r; });
+  window.__sbRestoreReady = restoreReady; // browser.js 的 web-open-request 消费者同款串行化（冷启动系统递 URL 不被 loadTabs 覆盖）
   // 收起的文件夹，键 = `rootId:rel`（多根里同 rel 是不同文件夹，必须带根限定；加根时该根全部收起，只显示顶层）
   const collapsed = new Set();
   const rootClosed = new Set(); // 收起的根（整节折叠，rootId）

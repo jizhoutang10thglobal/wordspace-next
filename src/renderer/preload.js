@@ -105,5 +105,8 @@ contextBridge.exposeInMainWorld('ws2', {
   onHistoryChanged: (cb) => ipcRenderer.on('history-changed', (_e, s) => cb(s)),
   // 浏览器设置（搜索引擎；真 app 默认 Bing,拍板）
   browserSettings: () => ipcRenderer.invoke('browser-settings'),
-  browserSetEngine: (key) => ipcRenderer.invoke('browser-set-engine', key)
+  browserSetEngine: (key) => ipcRenderer.invoke('browser-set-engine', key),
+  // 默认浏览器（设置页；macOS set 会触发系统确认弹窗）
+  browserDefaultStatus: () => ipcRenderer.invoke('browser-default-status'),
+  browserSetDefault: () => ipcRenderer.invoke('browser-set-default')
 });
