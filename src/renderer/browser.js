@@ -121,14 +121,20 @@
   window.__webRebound = rebound;
   try { new ResizeObserver(() => rebound()).observe(mainEl); } catch { window.addEventListener('resize', rebound); }
 
-  // 主进程推来的 toast（如「不支持下载」）在 view 盖着时会被挡住 → 临时把 view 底部收起一条。
-  function toastOverWeb(msg) {
-    toast(msg);
+  // web 态给底部 toast 让位：临时把 view 底部收起一条（update-ui.js 等外部模块经 window.__webToastInset 用）。
+  function webToastInset() {
     if (!attachedKey) return;
     toastInset = 72;
     rebound();
     clearTimeout(toastInsetTimer);
     toastInsetTimer = setTimeout(() => { toastInset = 0; rebound(); }, 6600);
+  }
+  window.__webToastInset = webToastInset;
+
+  // 主进程推来的 toast（如「不支持下载」）在 view 盖着时会被挡住。
+  function toastOverWeb(msg) {
+    toast(msg);
+    webToastInset();
   }
 
   // ---- 激活漏斗（sidebar.openTabRow 的 web 分支进来）----

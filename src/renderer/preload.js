@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld('ws2', {
   pathInfo: (p) => ipcRenderer.invoke('path-info', p),
   appVersion: () => ipcRenderer.invoke('app-version'),
   wsDiag: () => ipcRenderer.invoke('ws-diag'), // 诊断面板读主进程侧每根成本
+  // 自动更新（应用内面板）：状态/展示模型都在 main 算好整包推来，renderer 纯渲染
+  updateGetStatus: () => ipcRenderer.invoke('update-get-status'), // 启动补拉（解「事件先于 renderer 就绪」竞态）
+  updateCheck: () => ipcRenderer.invoke('update-check'),
+  updateDownload: () => ipcRenderer.invoke('update-download'),
+  updateInstall: () => ipcRenderer.invoke('update-install'),
+  onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_e, payload) => cb(payload)),
   diagRecordProfile: (ms) => ipcRenderer.invoke('diag-record-profile', ms), // 诊断面板：录 N 毫秒 CPU profile 存桌面
   saveDoc: (p, c) => ipcRenderer.invoke('save-doc', p, c),
   exportPdf: (p, mode, html, opts) => ipcRenderer.invoke('export-pdf', p, mode, html, opts),

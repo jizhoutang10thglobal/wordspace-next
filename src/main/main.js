@@ -144,75 +144,85 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// 自动更新：仅打包后生效。dev 无 update feed，惰性 require（dev 不加载 electron-updater）。
-// autoDownload=false：下载时机自己控——启动自动更新静默下载；菜单「检查更新…」先问用户再下载。
-// manualCheck 标志区分两条路的弹窗（手动才弹「已是最新 / 失败」，自动保持静默）。
+// 自动更新（重做：dialog 链 → 应用内面板）。状态机/展示模型在 src/lib/update-status.js（纯逻辑，单测在那层兜），
+// 这里只做三件事：① electron-updater 事件 → 状态机 → 整包 {status,panel,pill} 推给 renderer（并缓存，
+// renderer 启动后补拉——同 loadTabs 竞态的解法）；② 按状态机判定执行动作（shouldStartDownload → downloadUpdate）；
+// ③ updater 文件日志落 userData/logs/updater.log（下次「更新没更上」有账可查）。
+// 旧实现的 manualCheck/manualDownloading 双标志没了——manual 进状态机继承，MP-7 那类漏对齐不会再犯。
+const US = require('../lib/update-status');
 let autoUpdater = null;
-let manualCheck = false;
-let manualDownloading = false; // 修 MP-7：手动检查同意下载后，下载失败也要弹提示（不然用户以为在更新、永远等不到重启）
+let updStatus = null; // 最新状态（真相源在 main；renderer 只是显示）
+let updLog = null;
 
-function setupAutoUpdater() {
-  if (!app.isPackaged) return;
-  autoUpdater = require('electron-updater').autoUpdater;
-  const up = require('../lib/update-prompt');
-  autoUpdater.autoDownload = false;
-
-  autoUpdater.on('update-available', (info) => {
-    if (manualCheck) {
-      manualCheck = false;
-      dialog.showMessageBox(up.buildAvailableDialogOptions(info && info.version)).then(({ response }) => {
-        if (up.shouldDownload(response)) { manualDownloading = true; autoUpdater.downloadUpdate().catch((e) => console.error('[updater] download error:', e && e.message)); }
-      }).catch((e) => console.error('[updater] dialog error:', e && e.message));
-    } else {
-      // 启动自动更新：静默下载（保持原行为），下载完走下面 update-downloaded 的「立即重启」弹窗。
-      autoUpdater.downloadUpdate().catch((e) => console.error('[updater] download error:', e && e.message));
-    }
-  });
-
-  autoUpdater.on('update-not-available', () => {
-    if (manualCheck) {
-      manualCheck = false;
-      dialog.showMessageBox(up.buildUpToDateDialogOptions(app.getVersion())).catch(() => {});
-    }
-  });
-
-  autoUpdater.on('update-downloaded', (info) => {
-    manualDownloading = false;
-    dialog.showMessageBox(up.buildUpdateDialogOptions(info && info.version)).then(({ response }) => {
-      if (up.shouldInstall(response)) autoUpdater.quitAndInstall();
-    }).catch((err) => console.error('[updater] dialog/install error:', err && err.message));
-  });
-
-  autoUpdater.on('error', (err) => {
-    console.error('[updater] error:', err && err.message);
-    // 修 MP-7：手动检查（查阶段）或手动下载（下载阶段）失败都要给用户可见反馈，别静默。
-    if (manualCheck || manualDownloading) {
-      manualCheck = false;
-      manualDownloading = false;
-      dialog.showMessageBox(up.buildCheckErrorDialogOptions()).catch(() => {});
-    }
-  });
-
-  // 启动自动查一次（auto 路径：manualCheck=false → 有更新静默下载）。
-  autoUpdater.checkForUpdates().catch(() => {});
+function updatePayload() {
+  return { status: updStatus, panel: US.panelModel(updStatus, app.getVersion()), pill: US.pillModel(updStatus) };
 }
 
-// 菜单「检查更新…」：手动查。dev/未就绪 → 弹「开发模式无法检查更新」；packaged → 走 manualCheck 路径
-// （有新版问下载、没有提示已是最新、出错弹失败）。
-function manualCheckForUpdates() {
-  const up = require('../lib/update-prompt');
-  if (!app.isPackaged || !autoUpdater) {
-    dialog.showMessageBox(up.buildDevDialogOptions()).catch(() => {});
+function pushUpdateEvent(evt) {
+  const prev = updStatus;
+  updStatus = US.nextStatus(prev, evt);
+  if (updLog && evt.type !== 'progress') {
+    updLog.info('evt=' + evt.type, (prev ? prev.state : '∅') + ' -> ' + updStatus.state,
+      evt.version || '', evt.message || '');
+  }
+  if (win && !win.isDestroyed()) win.webContents.send('update-status', updatePayload());
+  if (US.shouldStartDownload(prev, updStatus) && autoUpdater) {
+    autoUpdater.downloadUpdate().catch((e) => pushUpdateEvent({ type: 'error', message: e && e.message }));
+  }
+}
+
+function setupAutoUpdater() {
+  // IPC 桥 dev/packaged 都建：dev 要能弹「开发模式」面板，e2e 靠 __ws2UpdateSim 驱动整条 UI 链。
+  ipcMain.handle('update-get-status', () => updatePayload());
+  ipcMain.handle('update-check', () => { manualCheckForUpdates(); });
+  ipcMain.handle('update-download', () => {
+    if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.download++; return; }
+    pushUpdateEvent({ type: 'download-started' }); // shouldStartDownload 判真 → 真正开下载
+  });
+  ipcMain.handle('update-install', () => {
+    if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.install++; return; }
+    if (autoUpdater) { if (updLog) updLog.info('user chose quitAndInstall'); autoUpdater.quitAndInstall(); }
+  });
+
+  if (!app.isPackaged) {
+    // e2e seam（照 __ws2WebTabs 惯例，仅非打包态）：注入状态事件驱动面板/pill，动作调用只计数不真跑。
+    global.__ws2UpdateSim = { push: (evt) => pushUpdateEvent(evt), calls: { download: 0, install: 0 }, payload: () => updatePayload() };
     return;
   }
-  manualCheck = true;
-  autoUpdater.checkForUpdates().catch((e) => {
-    console.error('[updater] manual check error:', e && e.message);
-    if (manualCheck) {
-      manualCheck = false;
-      dialog.showMessageBox(up.buildCheckErrorDialogOptions()).catch(() => {});
-    }
-  });
+
+  updLog = require('../lib/file-log').createFileLogger(path.join(app.getPath('userData'), 'logs', 'updater.log'));
+  autoUpdater = require('electron-updater').autoUpdater;
+  autoUpdater.logger = updLog; // electron-updater 自身的下载/差分/安装日志也进同一个文件
+  autoUpdater.autoDownload = false;
+
+  autoUpdater.on('update-available', (info) => pushUpdateEvent({
+    type: 'available',
+    version: info && info.version,
+    notes: US.parseReleaseNotes(info && info.releaseNotes), // GitHub release body 顶部的人话说明（docs/releasing.md 约定）
+  }));
+  autoUpdater.on('update-not-available', () => pushUpdateEvent({ type: 'not-available' }));
+  autoUpdater.on('download-progress', (p) => pushUpdateEvent({
+    type: 'progress', percent: p && p.percent, transferred: p && p.transferred, total: p && p.total, bytesPerSecond: p && p.bytesPerSecond,
+  }));
+  autoUpdater.on('update-downloaded', (info) => pushUpdateEvent({ type: 'downloaded', version: info && info.version }));
+  autoUpdater.on('error', (err) => pushUpdateEvent({ type: 'error', message: err && err.message }));
+
+  // 启动自动查一次（auto 路径：manual=false → 有更新静默下载，renderer 只挂 pill 不弹面板）。
+  pushUpdateEvent({ type: 'checking', manual: false });
+  autoUpdater.checkForUpdates().catch((e) => pushUpdateEvent({ type: 'error', message: e && e.message }));
+}
+
+// 菜单「检查更新…」：手动查（manual=true → renderer 弹面板跟进全程）。
+// 已在下载/已就绪时不重查——把当前状态标成 manual 重推，面板直接打开显示进行中的下载/重启按钮。
+function manualCheckForUpdates() {
+  if (!app.isPackaged || !autoUpdater) { pushUpdateEvent({ type: 'dev-check' }); return; }
+  if (updStatus && (updStatus.state === 'downloading' || updStatus.state === 'ready')) {
+    updStatus = { ...updStatus, manual: true };
+    if (win && !win.isDestroyed()) win.webContents.send('update-status', updatePayload());
+    return;
+  }
+  pushUpdateEvent({ type: 'checking', manual: true });
+  autoUpdater.checkForUpdates().catch((e) => pushUpdateEvent({ type: 'error', message: e && e.message }));
 }
 
 // 把外部请求打开的文件路径送进窗口：已就绪则发并聚焦，未就绪则挂起等 did-finish-load。
