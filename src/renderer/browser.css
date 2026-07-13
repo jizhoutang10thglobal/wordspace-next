@@ -87,23 +87,30 @@
 .sb-omni-sug-row .sug-title { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-omni-sug-row .sug-url { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text-3); font-size: var(--fs-xs); }
 
-/* ---- 收藏区（§4.3）：置顶上方、默认收起 ---- */
-.sb-fav { flex: none; padding: 2px 8px 4px; }
+/* ---- 收藏区（§4.3）：置顶上方、默认收起。
+   header 穿栏标衣服（同 .sb-sec-label 的 editorial 语言，模式=栏标+右侧动作），星标已撤
+   （☆ 概念只留地址栏）；不再额外内缩——沿用 .sb-body 的列内边距，整列只有 8px 一条左缘
+   （spec §4.3 对齐网格，2026-07-13 Wendi「视觉乱」反馈定稿） ---- */
+.sb-fav { flex: none; padding: 2px 0 4px; }
 .sb-fav-head {
   display: flex;
   align-items: center;
   gap: 6px;
   height: 26px;
-  padding: 0 6px;
+  padding: 0 8px;
   border-radius: var(--r-sm);
   cursor: default;
 }
 .sb-fav-head:hover { background: var(--c-hover); }
 .sb-fav-caret { display: inline-flex; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
 .sb-fav.is-open .sb-fav-caret { transform: rotate(90deg); }
-.sb-fav-star { display: inline-flex; color: var(--c-accent); }
-.sb-fav-label { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
-.sb-fav-count { flex: 1; font-size: var(--fs-xs); color: var(--c-text-3); }
+.sb-fav-label {
+  font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label); color: var(--c-text-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+.sb-fav-head:hover .sb-fav-label { color: var(--c-text-2); }
+.sb-fav-count { flex: 1; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-3); }
 .sb-fav-manage {
   flex: none;
   width: 22px; height: 22px;
@@ -115,15 +122,15 @@
 }
 .sb-fav-head:hover .sb-fav-manage, .sb-fav.is-open .sb-fav-manage { opacity: 1; }
 .sb-fav-manage:hover { background: var(--c-hover); color: var(--c-text); }
-.sb-fav-list { padding: 2px 0 2px 4px; }
-.sb-fav-group { margin: 4px 0 2px; padding: 0 6px; font-size: var(--fs-xs); color: var(--c-text-3); }
+.sb-fav-list { padding: 2px 0; }
+.sb-fav-group { margin: 4px 0 2px; padding: 0 8px; font-size: var(--fs-xs); color: var(--c-text-3); }
 .sb-fav-row {
   display: flex;
   align-items: center;
   gap: 7px;
   width: 100%;
   height: 26px;
-  padding: 0 6px;
+  padding: 0 8px;
   border-radius: var(--r-sm);
   font-size: var(--fs-sm);
   color: var(--c-text-2);
