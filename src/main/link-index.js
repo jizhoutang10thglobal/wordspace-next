@@ -11,6 +11,7 @@ const path = require('path');
 const { kindOf } = require('../lib/file-tree');
 const wsLinks = require('../lib/links'); // resolveHref/relHref（U1）
 const mdAdapter = require('./md-adapter');
+const docIdLib = require('../lib/doc-id'); // U7 双层身份修复锚
 
 const INDEX_VERSION = 1;
 const DOC_RE = /\.(html?|md)$/i;
@@ -28,6 +29,10 @@ function loadParser() {
   }
   return parserPromise;
 }
+// 启动时预热解析器（main.js whenReady 调）：把首次冷 `import()` 提前到启动、别等第一次开文档才做——
+// 一来第一次反链/索引更快；二来避开「首次开文档触发冷 ESM import 在主进程里瞬时打断 app.evaluate」的
+// 测试竞态（U6 反链面板让每次开文档都建索引后暴露：`Execution context was destroyed`）。
+function warm() { return loadParser().catch(() => {}); }
 
 const SKIP_TEXT = new Set(['script', 'style', 'template', 'noscript']); // 这些子树是源码/非可见内容，别混进 title/snippet
 function textOf(node) {
@@ -79,6 +84,7 @@ async function readDocMeta(abs, ownRel) {
   let raw;
   try { raw = await fsp.readFile(abs, 'utf8'); }
   catch (e) { return null; } // 读字节失败 → 跳过、下轮重试
+  const docId = mdAdapter.isMdPath(abs) ? null : docIdLib.readDocId(raw); // U7：html 从 raw 读 doc-id（md frontmatter 欠账）
   let html = raw;
   if (mdAdapter.isMdPath(abs)) { try { html = await mdAdapter.mdToHtml(raw, { title: baseNoExt(abs) }); } catch (e) { html = raw; } } // md 转换失败：退化按原文抽（不毒化）
   const { title, links } = await extractDocMeta(html);
@@ -90,7 +96,7 @@ async function readDocMeta(abs, ownRel) {
     seen.add(rel);
     outLinks.push({ rel, snippet });
   }
-  return { title: title || baseNoExt(abs), outLinks };
+  return { title: title || baseNoExt(abs), outLinks, docId };
 }
 function baseNoExt(p) { return path.basename(p).replace(DOC_RE, ''); }
 
@@ -145,10 +151,23 @@ async function refreshRoot(rootId, rootPath) {
     if (prev && prev.mtime === mtime && prev.size === size && prev.ino === ino) return; // 没变
     const meta = await readDocMeta(abs, rel);
     if (!meta) return; // 读失败：不写条目、不推进 stat 戳 → 保留旧条目、下轮重试（审查 A）
-    r.docs.set(rel, { mtime, size, ino, kind: kindOf(rel), title: meta.title, outLinks: meta.outLinks });
+    // _prevOut：重建前旧出链（带 targetDocId），给 U7 carry-forward 用；post-pass 后删除、不入盘。
+    r.docs.set(rel, { mtime, size, ino, kind: kindOf(rel), title: meta.title, outLinks: meta.outLinks, docId: meta.docId, _prevOut: prev ? prev.outLinks : null });
     changed = true;
   }));
   for (const rel of [...r.docs.keys()]) { if (!live.has(rel)) { r.docs.delete(rel); changed = true; } } // 删消失的
+  // U7 修复锚快照：给每条出链记「目标当前 docId」；目标已消失（断链）→ 沿用重建前的旧快照（carry-forward）。
+  // 这样目标被外部改名/移动后（rel 变了但 docId 随字节不变），修复卡靠这个稳定 id 反查现址。
+  for (const [, e] of r.docs) {
+    const prevMap = e._prevOut ? new Map(e._prevOut.map((l) => [l.rel, l.targetDocId])) : null;
+    for (const l of e.outLinks) {
+      const tgt = r.docs.get(l.rel);
+      if (tgt) l.targetDocId = tgt.docId || null;                              // 目标在 → 快照现 id
+      else if (prevMap && prevMap.has(l.rel)) l.targetDocId = prevMap.get(l.rel); // 目标没了 → 沿用旧快照
+      // 目标没了且本轮没重建（未变文档）：l.targetDocId 保持对象上已有的旧值
+    }
+    if ('_prevOut' in e) delete e._prevOut; // 不入盘
+  }
   return changed;
 }
 
@@ -182,10 +201,47 @@ function backlinks(rootId, targetRel) {
   return out;
 }
 
+// 文件夹反链（U6 删除守卫）：夹外文档里，哪些链到「夹内任意文档」。**夹内互链不算**（删整夹一起走）。
+// 返回 [{rel, title, snippet}]（每个外部来源一条，取首个命中夹内的链接的 snippet）。dirRel = 文件夹根内路径。
+function dirBacklinks(rootId, dirRel) {
+  const r = index.get(rootId);
+  if (!r || !dirRel) return [];
+  const prefix = dirRel + '/';
+  const under = (rel) => rel.indexOf(prefix) === 0; // 夹内（文件夹本身不是文档，不会等于 rel）
+  const out = [];
+  for (const [rel, e] of r.docs) {
+    if (under(rel)) continue; // 夹内来源不算外部引用
+    const hit = e.outLinks.find((l) => under(l.rel));
+    if (hit) out.push({ rel, title: e.title, snippet: hit.snippet });
+  }
+  return out;
+}
+
 function titleOf(rootId, rel) {
   const r = index.get(rootId);
   const e = r && r.docs.get(rel);
   return e ? e.title : null;
+}
+
+// U7：按 doc-id 反查当前文件 rel（全库匹配修复锚）。找不到 / 没 id → null。
+function relOfDocId(rootId, docId) {
+  if (!docId) return null;
+  const r = index.get(rootId);
+  if (!r) return null;
+  for (const [rel, e] of r.docs) { if (e.docId === docId) return rel; }
+  return null;
+}
+
+// U7 修复卡：断链的目标搬去哪了？靠 source→target 出链快照的 doc-id 全库反查现址
+// （目标被外部改名/移动后 rel 变了、docId 随字节不变 → 仍能找到）。找不到 / 没搬 → null。
+function movedTarget(rootId, sourceRel, targetRel) {
+  const r = index.get(rootId);
+  const src = r && r.docs.get(sourceRel);
+  if (!src) return null;
+  const l = src.outLinks.find((x) => x.rel === targetRel);
+  if (!l || !l.targetDocId) return null;
+  const rel = relOfDocId(rootId, l.targetDocId);
+  return (rel && rel !== targetRel) ? rel : null;
 }
 
 // ---- 持久化（可丢弃缓存的热启动优化）：按根 path 存（跨会话稳定，rootId 是会话号）。原子写，损坏/版本不符 → 忽略全量重建 ----
@@ -222,7 +278,7 @@ async function hydrate(storeFile, rootId, rootPath) {
 module.exports = {
   extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
   refreshRoot, rebuildRoot, removeRoot,
-  query, backlinks, titleOf,
+  query, backlinks, dirBacklinks, titleOf, relOfDocId, movedTarget, warm,
   save, hydrate,
   _index: index, // 测试用
 };
