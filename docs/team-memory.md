@@ -14,6 +14,13 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-13 — 并行 Electron 手测能同时开窗，靠唯一 WS2_USERDATA + 精准杀（禁一刀切 pkill electron）
+
+**是什么**：多个 parallel session 可以同时开 Electron 窗口做手测/e2e（实测证实）。Electron 单实例锁按 userData 目录判——每个 session 用唯一 `WS2_USERDATA=<session专属目录>` 就各自独立、不撞锁。Colin 2026-07-13 被另一个 session 一刀切 `pkill electron` 关掉过测试窗口，那是根因，不是不能并行。
+**怎么 apply**：① 起 app：`nohup env WS2_USERDATA=<唯一目录> WS2_FOLDER_IN=<测试文件夹> npm start >log 2>&1 & echo $!` 记下 npm PID（nohup+disown 脱离 harness 后台管理，否则回合结束被 SIGTERM 回收）。② 清理**只杀自己那个**：`pkill -P <npmpid>; kill <npmpid>`（杀进程树）+ 兜底 `pkill -f "<你的唯一 userData 路径>"`。③ **绝对禁止 `pkill electron` / `pkill -f "MacOS/Electron"` 一刀切**——会杀掉别的 session 正在测的窗口。进程结构：npm→`node <worktree>/node_modules/.bin/electron .`（launcher）→Electron 主进程（命令行只 `.`、无唯一标记别按它杀）→helper（带 `--user-data-dir`）；不同 session 不同 worktree → launcher 路径天然 scoped。
+**来源**：doc-linking 消费面 host-verify（PR #166）实测：起 A+B 两 userData = 2 主进程共存，按 PID 树杀 B → 回 1、A 无损。
+
+
 ## 2026-07-12 — 分页文档已进真 app（PR #164 合 main），feature 全链路收官
 
 **是什么**：分页文档完成 ui-demo（PR #151）→ 真 app（PR #164）全链路：V4 引擎/页面设置/@page 入盘/
