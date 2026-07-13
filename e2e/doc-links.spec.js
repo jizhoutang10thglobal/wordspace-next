@@ -149,6 +149,23 @@ test('U3：@ 提及 → 选文档 → 插入纯净 <a href>（磁盘零 class/co
   expect(d).not.toContain('\u00a0'); // 零 nbsp（用普通空格落 caret）
 });
 
+test('U3：同名不同路径 → @菜单强制显示完整路径消歧（含根目录候选）', async () => {
+  // 造两个同名文件：根目录 + 子目录（同 basename、异路径）
+  await fs.writeFile(path.join(wsDir, '同名.html'), DOC('同名根', '<p>x</p>'), 'utf8');
+  await fs.mkdir(path.join(wsDir, '子目录'), { recursive: true });
+  await fs.writeFile(path.join(wsDir, '子目录', '同名.html'), DOC('同名子', '<p>y</p>'), 'utf8');
+  await page.click('.sb-file[data-rel="D.html"]');
+  const frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('h1')).toHaveText('文档D');
+  await frame.locator('p').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('@同名');
+  await expect(page.locator('.ws-mention-menu')).toBeVisible({ timeout: 5000 });
+  // 两个同名候选都带路径：根那个平时不显示路径、冲突时被强制显示（无此逻辑则只有子目录 1 个带路径）
+  await expect(page.locator('.ws-mention-path')).toHaveCount(2);
+  await expect(page.locator('.ws-mention-path').filter({ hasText: '子目录/同名.html' })).toHaveCount(1);
+});
+
 test('U3-E：@新建 → 当前文档插链接 + 跳去编辑新文档（Colin 2026-07-09）', async () => {
   await page.click('.sb-file[data-rel="D.html"]');
   const frame = page.frameLocator('#doc-frame');

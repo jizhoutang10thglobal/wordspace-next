@@ -60,6 +60,10 @@
       listEl.appendChild(empty);
       return;
     }
+    // 同名冲突检测：同 basename（文件名）在候选里出现 >1 次 → 这些候选全强制显示完整路径消歧
+    // （哪怕在根目录）。子目录文件本就显示路径（有目录信息，天然可区分）。
+    var baseCount = {};
+    st.items.forEach(function (it) { if (it.kind === 'doc') { var b = it.rel.split('/').pop(); baseCount[b] = (baseCount[b] || 0) + 1; } });
     st.items.forEach(function (it, i) {
       var row = document.createElement('div');
       row.className = 'ws-mention-item' + (i === st.active ? ' is-active' : '');
@@ -69,8 +73,9 @@
         var main = document.createElement('div'); main.className = 'ws-mention-main';
         var t = document.createElement('div'); t.className = 'ws-mention-title'; t.textContent = it.title;
         main.appendChild(t);
-        // 同名消歧：路径含目录才显示
-        if (it.rel.indexOf('/') >= 0) { var p = document.createElement('div'); p.className = 'ws-mention-path'; p.textContent = it.rel; main.appendChild(p); }
+        // 同名消歧：子目录文件显示路径；或同名冲突时（同 basename 多个候选）也强制显示，好区分。
+        var hasDup = baseCount[it.rel.split('/').pop()] > 1;
+        if (it.rel.indexOf('/') >= 0 || hasDup) { var p = document.createElement('div'); p.className = 'ws-mention-path'; p.textContent = it.rel; main.appendChild(p); }
         row.appendChild(ico); row.appendChild(main);
       } else {
         var t2 = document.createElement('div'); t2.className = 'ws-mention-title ws-mention-action'; t2.textContent = it.title;
