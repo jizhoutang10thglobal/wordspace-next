@@ -37,6 +37,20 @@
   "build": {
     "appId": "com.tenthglobal.wordspace-next",
     "productName": "Wordspace Next",
+    "protocols": [
+      {
+        "name": "Web 链接",
+        "schemes": ["http", "https"],
+        "role": "Viewer"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["html", "htm"],
+        "name": "HTML 文档",
+        "role": "Editor"
+      }
+    ],
     "directories": {
       "output": "release"
     },

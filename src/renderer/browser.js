@@ -244,8 +244,11 @@
     else if (!s.error && attachedKey === s.key) errEl.hidden = true;
     syncChrome();
   });
-  window.ws2.onWebOpenRequest((r) => { // window.open / 右键「新标签页打开」/ 搜索选中
+  window.ws2.onWebOpenRequest(async (r) => { // window.open / 右键「新标签页打开」/ 搜索选中 / 系统递来的链接（默认浏览器）
     if (!r || !r.url) return;
+    // 冷启动（系统点链接把 app 拉起来）：等标签恢复整条跑完再建，否则新标签被 loadTabs 整体覆盖
+    // （同 open-file 的 restoreReady 串行化；热路径 promise 已 resolved,微任务级开销）。
+    if (window.__sbRestoreReady) await window.__sbRestoreReady;
     openWeb(r.url, r.url, !!r.background);
     if (r.background) toastOverWeb('已在后台标签页打开');
   });
@@ -923,6 +926,37 @@
     ctl.appendChild(sel);
     row.append(label, desc, ctl);
     wrap.appendChild(row);
+
+    // 默认浏览器（macOS 点按钮后系统会弹确认框,确认前 isDefault 不翻真 → 文案按「已请求」处理）
+    const row2 = document.createElement('div');
+    row2.className = 'wp-set-row';
+    const label2 = document.createElement('span');
+    label2.className = 'wp-set-label';
+    label2.textContent = '默认浏览器';
+    const desc2 = document.createElement('span');
+    desc2.className = 'wp-set-desc';
+    desc2.textContent = '系统里点开的网页链接都用 Wordspace 打开';
+    const ctl2 = document.createElement('span');
+    ctl2.className = 'wp-set-ctl';
+    const btn = document.createElement('button');
+    btn.className = 'wp-btn';
+    btn.textContent = '设为默认浏览器';
+    window.ws2.browserDefaultStatus().then((s) => {
+      if (!s) return;
+      if (s.isDefault) { btn.textContent = '已是默认浏览器'; btn.disabled = true; }
+      else if (!s.packaged) { btn.textContent = '仅安装版可设'; btn.disabled = true; }
+    }).catch(() => {});
+    btn.onclick = async () => {
+      try {
+        const r = await window.ws2.browserSetDefault();
+        if (r && r.isDefault) { btn.textContent = '已是默认浏览器'; btn.disabled = true; }
+        else if (r && r.ok) btn.textContent = '请在系统弹窗里确认';
+        else btn.textContent = '设置失败';
+      } catch { btn.textContent = '设置失败'; }
+    };
+    ctl2.appendChild(btn);
+    row2.append(label2, desc2, ctl2);
+    wrap.appendChild(row2);
   }
 
   // ---- 菜单命令的 web 态拦截（shell.onMenu 顶部调 __webMenu，true=已处理别再走文档路径）----

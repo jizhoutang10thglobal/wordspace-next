@@ -4,6 +4,7 @@ const { registerIpc } = require('./ipc');
 const docWatcher = require('./doc-watcher');
 const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
+const webPolicy = require('../lib/web-tabs-policy');
 
 // e2e 测试用：隔离 userData，避免污染真实的最近文档与历史。
 // 修 MP-8：加 !app.isPackaged 闸（对齐 WS2_PDF_OUT 等全部 seam 惯例，这条原来漏了）——
@@ -13,6 +14,7 @@ if (process.env.WS2_USERDATA && !app.isPackaged) app.setPath('userData', process
 let win = null;
 let rendererReady = false; // 修 MP-5：renderer 脚本是否已就绪（did-finish-load）；未就绪时 open-file 必须排队，不能直接 send
 let pendingOpenPaths = []; // 修 MP-5：改成队列——mac 冷启动一次多选双击 N 个文件时单槽会只留最后一个
+let pendingOpenUrls = []; // 默认浏览器：系统 open-url 可能在 renderer 就绪前到（冷启动点链接），同款排队
 let isDirty = false;
 let forceClose = false;
 let quitting = false; // 真退出（Cmd+Q / 自动更新重启）标志：区分「关窗=隐藏驻留」与「退出=真销毁」
@@ -42,6 +44,8 @@ function createWindow() {
     rendererReady = true;
     const q = pendingOpenPaths; pendingOpenPaths = [];
     for (const p of q) win.webContents.send('open-file', p);
+    const uq = pendingOpenUrls; pendingOpenUrls = [];
+    for (const u of uq) win.webContents.send('web-open-request', { url: u, background: false });
   });
   // 修 MP-15：renderer 崩溃（OOM/GPU 挂）原来无处理 = 白屏死窗，未保存临时文档（只活在 renderer 内存）全丢、
   // 唯一出路强退。这里提示并重载，至少把窗口救回来（磁盘文件不受影响）。
@@ -245,6 +249,24 @@ app.on('open-file', (e, p) => {
   openExternalPath(p);
 });
 
+// macOS：系统递来的 http/https 链接（设为默认浏览器后点任何链接都走这；也可能在 whenReady 前到）。
+// scheme 白名单复用 web-tabs-policy——file:/javascript: 等系统理论上不会发，但零信任直接丢弃。
+// 复用 web-open-request 通道：renderer 侧 browser.js 已有消费者（建网页标签 + 激活）。
+function openExternalUrlFromOS(u) {
+  if (!webPolicy.isAllowedNavUrl(u)) return;
+  if (win && !win.isDestroyed() && rendererReady) {
+    focusWindow();
+    win.webContents.send('web-open-request', { url: u, background: false });
+  } else {
+    if (win && !win.isDestroyed()) focusWindow();
+    pendingOpenUrls.push(u);
+  }
+}
+app.on('open-url', (e, u) => {
+  e.preventDefault();
+  openExternalUrlFromOS(u);
+});
+
 ipcMain.on('set-dirty', (_e, v) => { isDirty = !!v; });
 // renderer 的 Cmd+W 空态「关窗口」入口：统一走 win.close()，由上面 close 守卫按平台分流
 // （macOS=隐藏驻留 / 其他平台=真关 → 退出），别在 renderer 里自己 hide 绕开语义收口。
@@ -276,6 +298,9 @@ if (!app.requestSingleInstanceLock()) {
     // 测试 seam（仅非打包态，仿 WS2_FOLDER_IN）：挂 pendingOpenPaths 忠实复现 macOS 冷启动
     // 「Finder 双击」那条路（open-file 在 ready 前到、等 did-finish-load 才发），e2e 点不了真 Finder。
     if (!app.isPackaged && process.env.WS2_OPEN_FILE) pendingOpenPaths.push(process.env.WS2_OPEN_FILE);
+    // 同款 seam：冷启动系统递 URL（open-url 在 ready 前到）。走 openExternalUrlFromOS 而不是直接
+    // push 队列——让 seam 也过 scheme 白名单，e2e 才能验「file:// 不开标签」这道门。
+    if (!app.isPackaged && process.env.WS2_OPEN_URL) openExternalUrlFromOS(process.env.WS2_OPEN_URL);
   });
   // 真退出的第一信号（Cmd+Q / autoUpdater.quitAndInstall 内部 quit 都会先发 before-quit）：
   // 打上标志，close 守卫据此放行销毁而不是隐藏。
