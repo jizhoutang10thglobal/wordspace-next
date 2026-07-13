@@ -7,19 +7,25 @@ function refreshDocContext(p) {
   docContextPromise = (async () => {
     try { const m = await window.ws2.classifyFile(p); if (docPath === p) docContext = (m && m.rootId != null) ? { rootId: m.rootId, rel: m.rel } : null; }
     catch (e) { if (docPath === p) docContext = null; }
+    if (docPath === p && typeof refreshBacklinks === 'function') refreshBacklinks(); // U6：算完身份就刷反链面板
   })();
   return docContextPromise;
 }
 window.__wsDocContext = () => docContext;
+window.__wsDocPath = () => docPath; // U4 linkview：断链扫描的 resolveDocLink fromAbs 来源
 // 就绪 promise：刚打开文档 docContext 还在异步算（classify-file），@ 触发时可等它一下再开菜单（审查 D）。
 window.__wsDocContextReady = () => docContextPromise || Promise.resolve(docContext);
-// U3 @新建：在当前文档同目录建一篇新文档，返回 { rel（给提及菜单算 href）, abs（建完插链接后跳去编辑它） }。null=失败。
-window.__wsCreateLinkedDoc = async (rootId, fromRel, title) => {
+// U3 @新建 / U4 断链「新建」：在 fromRel 同目录建一篇新文档，返回 { rel（算 href）, abs（跳去编辑/自愈用） }。null=失败。
+// ext：'.md' → 建 markdown（骨架 = 一行 h1）；否则 '.html'（schema-1 合规骨架）。@新建默认 .html；断链「新建」尊重断链后缀。
+window.__wsCreateLinkedDoc = async (rootId, fromRel, title, ext) => {
+  ext = ext === '.md' ? '.md' : '.html';
   const dir = fromRel && fromRel.indexOf('/') >= 0 ? fromRel.slice(0, fromRel.lastIndexOf('/')) : '';
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const html = '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n<title>'
-    + esc(title) + '</title>\n</head>\n<body>\n<h1>' + esc(title) + '</h1>\n<p></p>\n</body>\n</html>\n';
-  try { const r = await window.ws2.wsNewDoc(rootId, dir, title, html); return r && r.rel ? { rel: r.rel, abs: r.abs } : null; }
+  const content = ext === '.md'
+    ? '# ' + String(title) + '\n'
+    : '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n<title>'
+        + esc(title) + '</title>\n</head>\n<body>\n<h1>' + esc(title) + '</h1>\n<p></p>\n</body>\n</html>\n';
+  try { const r = await window.ws2.wsNewDoc(rootId, dir, title, content, ext); return r && r.rel ? { rel: r.rel, abs: r.abs } : null; }
   catch (e) { return null; }
 };
 // U3 @新建收尾：链接已插进当前文档 → 先存当前文档（别让脏守卫吞掉刚插的链接）→ 跳去编辑新文档（Colin 2026-07-09）。
@@ -52,6 +58,55 @@ function syncAppDirty() { window.ws2.setDirty(dirty || !!tempDoc || tempStore.si
 const frame = document.getElementById('doc-frame');
 const mainEl = document.getElementById('main');
 const degradeNotice = document.getElementById('ws-degrade-notice'); // 非合规降级提示条（Feature 3）
+
+// ---- U6 反链面板（标题下「N 篇文档链接到这里」；父层 chrome，绝不注入文档字节；0 反链整体隐藏）----
+const backlinksEl = document.getElementById('ws-backlinks');
+const blHeadEl = document.getElementById('ws-bl-head');
+const blCountEl = document.getElementById('ws-bl-count');
+const blListEl = document.getElementById('ws-bl-list');
+let blExpanded = false;
+let blGen = 0; // 每次刷新自增；异步 backlinks 回来校验，防切文档串味
+function hideBacklinks() {
+  blGen++;
+  if (backlinksEl) backlinksEl.hidden = true;
+  if (blListEl) blListEl.hidden = true;
+  if (blHeadEl) blHeadEl.setAttribute('aria-expanded', 'false');
+  blExpanded = false;
+  if (backlinksEl) backlinksEl.classList.remove('is-expanded');
+}
+function blClamp(s) { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 80 ? s.slice(0, 80) + '…' : s; }
+async function refreshBacklinks() {
+  if (!backlinksEl) return;
+  const c = docContext;
+  const g = ++blGen;
+  if (!c) { hideBacklinks(); return; }
+  let list;
+  try { list = await window.ws2.linksBacklinks(c.rootId, c.rel); } catch (e) { return; }
+  if (g !== blGen || docContext !== c) return; // 又刷了一次 / 切了文档 → 本次作废
+  if (!list || !list.length) { hideBacklinks(); return; }
+  blCountEl.textContent = list.length + ' 篇文档链接到这里';
+  blListEl.textContent = '';
+  for (let i = 0; i < list.length; i++) {
+    const src = list[i];
+    const item = document.createElement('button');
+    item.className = 'ws-bl-item';
+    item.title = src.rel;
+    const t = document.createElement('div'); t.className = 'ws-bl-item-title'; t.textContent = src.title || src.rel;
+    item.appendChild(t);
+    if (src.snippet) { const sn = document.createElement('div'); sn.className = 'ws-bl-item-snippet'; sn.textContent = blClamp(src.snippet); item.appendChild(sn); }
+    item.addEventListener('click', async () => { // 点来源 = 应用内打开
+      try { const abs = await window.ws2.wsAbs(c.rootId, src.rel); if (abs) openDoc(abs); } catch (e) {}
+    });
+    blListEl.appendChild(item);
+  }
+  backlinksEl.hidden = false;
+}
+if (blHeadEl) blHeadEl.addEventListener('click', () => {
+  blExpanded = !blExpanded;
+  blListEl.hidden = !blExpanded;
+  blHeadEl.setAttribute('aria-expanded', blExpanded ? 'true' : 'false');
+  backlinksEl.classList.toggle('is-expanded', blExpanded);
+});
 const home = document.getElementById('home');
 const docHeader = document.getElementById('doc-header');
 const docName = document.getElementById('doc-name');
@@ -114,6 +169,40 @@ function scheduleAutoSave() {
   }, 1200);
 }
 const markDirty = () => { setDirty(true); scheduleAutoSave(); };
+// U4 修复卡「重新指向」：程序化改当前文档 <a> href 前后的收口，跟 @提及 onDone 同款配方。
+// before：flush 待定编辑成独立 undo 快照（免撤销修复时连带撤销之前的打字）；after：标脏 + checkpoint 修复后状态。
+window.__wsBeforeDocEdit = () => { if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
+window.__wsAfterDocEdit = () => { markDirty(); if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
+// U5 改名/移动：把 moves 应用到「打开中文档」的内存 DOM（主进程重写时跳过了它，避免和自动保存打架——
+// 内存改 + 走正常保存管线，脏文档也不会被覆盖）。moves=[[oldRel,newRel],…]。返回改的链接数。
+window.__wsApplyMovesToOpenDoc = async (movesArr) => {
+  await (window.__wsDocContextReady ? window.__wsDocContextReady() : Promise.resolve()); // retarget 后 rel 重算完
+  const ctx = window.__wsDocContext && window.__wsDocContext();
+  const doc = frame.contentDocument;
+  const L = window.WS2Links;
+  if (!ctx || !doc || !L || !Array.isArray(movesArr) || !movesArr.length) return 0;
+  const moves = new Map(movesArr);
+  const inv = L.invertMoves(moves);
+  const ownNew = ctx.rel;
+  const ownOld = inv.get(ownNew) || ownNew; // 自己被移动了？用旧 rel 解析既有 href
+  let n = 0;
+  const as = doc.querySelectorAll('a[href]');
+  for (let i = 0; i < as.length; i++) {
+    const href = as[i].getAttribute('href');
+    if (!href || L.classifyScheme(href) !== 'relative') continue;
+    const parts = L.splitHrefSuffix(href);
+    const target = L.resolveHref(ownOld, parts[0]);
+    if (target == null) continue;
+    const has = moves.get(target);
+    const tNew = has != null ? has : target;
+    if (tNew === target && ownNew === ownOld) continue;
+    const nh = L.relHref(ownNew, tNew) + parts[1];
+    if (nh === href) continue;
+    as[i].setAttribute('href', nh); n++;
+  }
+  if (n) { markDirty(); if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); if (window.WS2LinkView) window.WS2LinkView.scan(frame); }
+  return n;
+};
 
 // AI 占位（斜杠 /ai 或格式气泡 ✦AI 触发）——本地编辑器暂无 AI，仅提示开发中（用父窗口弹窗，
 // 因 iframe sandbox 无 allow-modals）。
@@ -199,6 +288,8 @@ function detachEditors() {
   if (window.WS2Find) window.WS2Find.close(); // 换/关文档：关查找条 + 清高亮，否则飘到下一个文档
   if (pagination) { pagination.detach(); pagination = null; } // 先拆分页（它的扫荡要在块内核还活着时做完）
   if (window.WS2Mention) window.WS2Mention.close(); // 同理关提及菜单（跨文档持有的 DOM 引用必失效）
+  if (window.WS2LinkView) window.WS2LinkView.detach(); // U4：清断链高亮 + 悬停/修复卡 + 定时器（跨文档必失效）
+  hideBacklinks(); // U6：换/关文档先隐反链面板（refreshBacklinks 算完新文档再决定显不显）
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   if (basicEdit) { basicEdit.detach(); basicEdit = null; }
   if (undoMgr) { if (undoMgr.timer) clearTimeout(undoMgr.timer); undoMgr = null; }
@@ -261,6 +352,7 @@ function attachBasic() {
   }, { passive: false });
   zoomSheet = null; applyZoom();
   installLinkGuard(doc); // U0：非合规文档同样收口链接点击
+  if (window.WS2LinkView) window.WS2LinkView.scan(frame); // U4：非合规文档也扫断链装饰（§8）
 }
 
 // 块编辑内核（WS2BlockEdit）跑在父层、操作 iframe 的 contentDocument（iframe sandbox 不跑脚本）。
@@ -320,6 +412,7 @@ function wireEditor() {
   zoomSheet = null;
   applyZoom();
   installLinkGuard(doc); // U0：文档内 <a> 点击收口（见下）
+  if (window.WS2LinkView) window.WS2LinkView.scan(frame); // U4：合规文档加载完成 → 扫断链装饰
 }
 
 // ---- U0：文档内 <a> 点击收口 ----
@@ -351,10 +444,20 @@ async function onDocLinkClick(e) {
   try { r = await window.ws2.resolveDocLink(docPath, href); } catch (err) { return; }
   if (!r || r.error) return;
   if (!r.insideRoot) { toastLite('链接指向工作区外，未打开'); return; }
-  if (!r.exists) { toastLite('链接目标不存在：' + (r.rel || href)); return; } // U4 升级成断链修复卡
+  if (!r.exists) { // U4：断链 → 弹修复卡（重新指向候选 / 新建），linkview 缺失时退回 toast 占位
+    if (window.WS2LinkView && window.WS2LinkView.showRepair) window.WS2LinkView.showRepair(a, r);
+    else toastLite('链接目标不存在：' + (r.rel || href));
+    return;
+  }
+  window.__wsOpenResolved(r);
+}
+// U4：把 resolveDocLink 结果按 kind 打开——html/md 进编辑器，其余进查看器/外部打开卡片。
+// 抽出来给 onDocLinkClick + linkview 悬停卡「打开」/修复后跳转复用（避免重解析）。
+window.__wsOpenResolved = (r) => {
+  if (!r) return;
   if (r.kind === 'html' || r.kind === 'md') openDoc(r.abs);
   else showViewer({ abs: r.abs, rel: r.rel, rootId: r.rootId, name: r.name, kind: r.kind }); // 多根：查看器/外部打开按 rootId+rel
-}
+};
 function installLinkGuard(doc) {
   if (doc) doc.addEventListener('click', onDocLinkClick, true); // capture：先于块编辑器进入编辑
 }
@@ -810,7 +913,7 @@ window.__shellResumeAutosave = resumeAutoSave;
 // 侧栏收起/展开改了 iframe 几何（真收起：宽 260→0，编辑区 iframe 横移）→ 编辑器宿主浮层（块编辑手柄/气泡，
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
-window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (pagination) pagination.refresh(); if (window.WS2Find) window.WS2Find.reposition(); if (window.WS2Mention) window.WS2Mention.reposition(); };
+window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (pagination) pagination.refresh(); if (window.WS2Find) window.WS2Find.reposition(); if (window.WS2Mention) window.WS2Mention.reposition(); if (window.WS2LinkView) window.WS2LinkView.reposition(); };
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -1041,6 +1144,18 @@ function handleDocChanged(p) {
   reloadDoc();
 }
 window.ws2.onDocChanged(handleDocChanged);
+// U4：链接索引刷新（目标文件增删/改名）→ 若刷的是当前文档所在根，重扫断链装饰自愈。
+// 突发合并防抖：单次文件操作（如 @新建 create→save）会连发多个 links-index-updated，
+// 每个都触发一轮 async resolveDocLink 扫描风暴、抢 IPC（U3-E 因此偶发翻车）。合并成一次。
+let linksScanTimer = null;
+window.ws2.onLinksUpdated((rootId) => {
+  const c = window.__wsDocContext && window.__wsDocContext();
+  if (!(c && c.rootId === rootId)) return;
+  refreshBacklinks(); // U6：别的文档增删了指向本文档的链接 → 反链面板跟上（自带 blGen 防抖/守卫）
+  if (!window.WS2LinkView) return;
+  clearTimeout(linksScanTimer);
+  linksScanTimer = setTimeout(() => window.WS2LinkView.scan(frame), 250);
+});
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && pendingExternalChange) {
     const p = pendingExternalChange;

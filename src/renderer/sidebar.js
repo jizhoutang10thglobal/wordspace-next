@@ -738,8 +738,9 @@
     // 修 SB-1：改的是「包含当前打开文档的文件夹」时也要给编辑器重指向——否则 docPath 仍指旧路径，
     // 此后每次（自动）保存都 ENOENT 失败、弹 alert 风暴（doDelete 早有 isUnder 处理，rename 漏了）。
     const openUnderDir = node.isDir && isUnder(op, node.abs);
+    markInAppFileOp(); // U5：标记 in-app 操作，抑制紧随的外部改名探测二次提示
     let r;
-    try { r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf); }
+    try { r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf, op); } // op=打开中文档 abs，主进程重写时跳过它
     catch (e) { showToast('重命名失败：' + shortErr(e)); await refreshRoot(node.rootId); return; } // 根刚失联/文件没了：别未捕获 rejection 把改名框晾在原地
     if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     else if (openUnderDir && window.__shellRetargetDoc) {
@@ -757,19 +758,83 @@
         }
       }
     }
+    // U5 撤销：反向改名（新 rel → 旧基名，走同一套 commitRenameOp → 引用反向重写 + 标签/retarget 自然反转）。
+    const oldAbs = node.abs, newRel = r.rel, rootId = node.rootId, oldBase = node.name.replace(/\.[^.]+$/, '');
+    const reverse = r.rel !== node.rel ? (() => undoMoveOp(newRel, oldAbs, rootId, (nn) => commitRenameOp(nn, oldBase))) : null;
+    await notifyRefsRewritten(r, reverse); // U5：更新打开中文档 + toast「已更新 N 篇」+ 撤销
     await refreshRoot(node.rootId);
   }
+  // U5 改名/移动收口：主进程已重写非打开文档（r.rewritten），这里把 moves 应用到打开中文档的内存 DOM，
+  // 合计后弹 toast（有引用被更新才弹）+「撤销」action（reverse=把这次改名/移动整个反着做一遍，含反向重写）。
+  async function notifyRefsRewritten(r, reverse) {
+    const openN = (r.moves && r.moves.length && window.__wsApplyMovesToOpenDoc) ? await window.__wsApplyMovesToOpenDoc(r.moves) : 0;
+    const total = (r.rewritten || 0) + openN;
+    if (total > 0) {
+      if (reverse) showToast('已更新 ' + total + ' 篇文档里的链接', '撤销', reverse);
+      else showToast('已更新 ' + total + ' 篇文档里的链接');
+    }
+  }
+  // U5 撤销：把改名/移动整个反着做一遍（L4：绝不快照回滚——反向 op 走同一套机器，引用/标签/retarget 自然反转）。
+  // 前置校验：新文件还在、旧路径没被占（不满足→明说放弃、不做半套）。revOp = 反向操作的执行体。
+  async function undoMoveOp(newRel, oldAbs, rootId, revOp) {
+    if (!(await window.ws2.pathExists(await window.ws2.wsAbs(rootId, newRel))) || (await window.ws2.pathExists(oldAbs))) {
+      showToast('文件已被后续操作改动，无法撤销这次链接更新'); return;
+    }
+    const nn = findNode(rootId, newRel);
+    if (nn) await revOp(nn);
+  }
+  // U5 外部改名/移动探测（询问式，绝不静默改盘）：reconcile 里 inode 匹配算「旧 rel → 新 rel」，
+  // 若旧路径有文档引用 → toast「一键更新」；只有用户点了才重写引用。app 内改名走 lastInAppFileOp 抑制。
+  async function detectExternalRenames(rootId, oldTree, inoToRel) {
+    if (Date.now() - lastInAppFileOp < 3000) return; // app 内改动刚发生 → 别当外部重复提示
+    const moves = new Map();
+    (function w(nodes) {
+      for (const n of nodes) {
+        if (n.isDir) { w(n.children || []); continue; }
+        if (n.ino == null || !/\.(html?|md)$/i.test(n.rel)) continue;
+        const newRel = inoToRel.get(String(n.ino));
+        if (newRel && newRel !== n.rel) moves.set(n.rel, newRel); // 同 inode 挪了位置 = 外部改名/移动
+      }
+    })(oldTree || []);
+    if (!moves.size) return;
+    let total = 0; const names = [];
+    for (const [oldRel] of moves) {
+      let bl = [];
+      try { bl = await window.ws2.linksBacklinks(rootId, oldRel); } catch (e) {}
+      if (bl && bl.length) { total += bl.length; names.push(oldRel.split('/').pop()); }
+    }
+    if (!total) return; // 没文档引用旧路径 → 不打扰
+    const label = names.length === 1 ? '「' + names[0] + '」' : (names.length + ' 个文件');
+    showToast('检测到' + label + '改名/移动，' + total + ' 篇文档的链接指向旧路径', '一键更新', async () => {
+      const openAbs = window.__shellDocPath ? window.__shellDocPath() : null;
+      let n = 0;
+      try { const res = await window.ws2.wsRewriteMoves(rootId, [...moves], openAbs); n = (res && res.rewritten) || 0; } catch (e) {}
+      const openN = window.__wsApplyMovesToOpenDoc ? await window.__wsApplyMovesToOpenDoc([...moves]) : 0;
+      showToast('已更新 ' + (n + openN) + ' 篇文档里的链接');
+    });
+  }
   async function doMove(node, destDirRel) {
-    const wasOpen = !node.isDir && openPath() === node.abs;
+    const op = openPath();
+    const wasOpen = !node.isDir && op === node.abs;
+    markInAppFileOp(); // U5：抑制外部改名探测二次提示
     let r;
-    try { r = await window.ws2.wsMove(node.rootId, node.rel, destDirRel); }
+    try { r = await window.ws2.wsMove(node.rootId, node.rel, destDirRel, op); } // op=打开中文档 abs，主进程重写时跳过它
     catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
     if (wasOpen && window.__shellRetargetDoc && r.abs !== node.abs) {
       window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     }
     if (r.rel !== node.rel) retargetTabsUnder(node.rootId, node.rel, r.rel, node.isDir); // 标签跟随移动
+    // U5 撤销：反向移动回原目录（走同一套 doMove → 引用反向重写 + 标签/retarget 自然反转）。
+    const oldAbs = node.abs, newRel = r.rel, rootId = node.rootId;
+    const oldDir = node.rel.indexOf('/') >= 0 ? node.rel.slice(0, node.rel.lastIndexOf('/')) : '';
+    const reverse = r.rel !== node.rel ? (() => undoMoveOp(newRel, oldAbs, rootId, (nn) => doMove(nn, oldDir))) : null;
+    await notifyRefsRewritten(r, reverse); // U5：更新打开中文档 + toast + 撤销
     await refreshRoot(node.rootId);
   }
+  // U5 外部改名探测的抑制：app 内改名/移动已在 ws-rename/ws-move 重写过引用，别让紧随的 watcher
+  // reconcile 又把同一次改动当「外部改名」二次提示。记最近一次 in-app 文件操作时间，探测在窗口内跳过。
+  let lastInAppFileOp = 0;
+  const markInAppFileOp = () => { lastInAppFileOp = Date.now(); };
   // 跨根移动进行中的根（引用计数，支持并发移动同根参与）：onTreeChanged 对这些根跳过 reconcile。
   // 见 onTreeChanged 里的说明（对抗审查 P2 竞态）。
   const crossMoveGuard = new Map();
@@ -821,7 +886,56 @@
       unguardRoot(toRootId);
     }
   }
+  // U6 删除守卫（父层 modal，抄 sb-modal 壳；用 createElement 装用户文件名，防 XSS）。resolve(true)=仍要删除。
+  function deleteGuardModal(node, referrers) {
+    return new Promise((resolve) => {
+      const N = referrers.length;
+      const overlay = document.createElement('div');
+      overlay.className = 'sb-modal-overlay';
+      const modal = document.createElement('div');
+      modal.className = 'sb-modal ws-delguard';
+      overlay.appendChild(modal);
+      const h = document.createElement('div'); h.className = 'sb-modal-title';
+      h.textContent = node.isDir ? '文件夹「' + node.name + '」里的文档被 ' + N + ' 篇外部文档链接'
+                                 : '「' + node.name + '」被 ' + N + ' 篇文档链接';
+      modal.appendChild(h);
+      const desc = document.createElement('div'); desc.className = 'ws-delguard-desc';
+      desc.textContent = '删除后这些文档里指向它的链接会断开（显示为断链，可在链接上重新指向或撤销删除恢复）：';
+      modal.appendChild(desc);
+      const list = document.createElement('div'); list.className = 'ws-delguard-list';
+      referrers.slice(0, 5).forEach((s) => {
+        const it = document.createElement('div'); it.className = 'ws-delguard-item'; it.title = s.rel;
+        const t = document.createElement('div'); t.className = 'ws-delguard-item-title'; t.textContent = s.title || s.rel;
+        const p = document.createElement('div'); p.className = 'ws-delguard-item-path'; p.textContent = s.rel;
+        it.appendChild(t); it.appendChild(p); list.appendChild(it);
+      });
+      if (N > 5) { const more = document.createElement('div'); more.className = 'ws-delguard-more'; more.textContent = '… 等 ' + N + ' 篇'; list.appendChild(more); } // N=引用总数，非 remainder
+      modal.appendChild(list);
+      const acts = document.createElement('div'); acts.className = 'ws-delguard-actions';
+      const cancel = document.createElement('button'); cancel.className = 'ws-delguard-btn'; cancel.textContent = '取消';
+      const del = document.createElement('button'); del.className = 'ws-delguard-btn ws-delguard-danger'; del.textContent = '仍要删除';
+      acts.appendChild(cancel); acts.appendChild(del); modal.appendChild(acts);
+      const close = (v) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(v); };
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(false); } };
+      cancel.addEventListener('click', () => close(false));
+      del.addEventListener('click', () => close(true));
+      overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); }); // 点遮罩=取消
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(overlay);
+      cancel.focus();
+    });
+  }
   async function doDelete(node) {
+    // U6 删除守卫：先查引用（文件→backlinks，文件夹→夹外引用）。有引用才弹守卫、用户确认才删；无引用直接删。
+    let referrers = [];
+    try {
+      referrers = node.isDir ? await window.ws2.linksDirBacklinks(node.rootId, node.rel)
+                             : await window.ws2.linksBacklinks(node.rootId, node.rel);
+    } catch (e) { referrers = []; }
+    if (referrers && referrers.length) {
+      const ok = await deleteGuardModal(node, referrers);
+      if (!ok) return; // 取消：不删
+    }
     const op = openPath();
     const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
     let r;
@@ -2110,6 +2224,7 @@
     const oldRels = new Set();
     (function w(nodes) { for (const n of nodes) { if (n.isDir) w(n.children || []); else oldRels.add(n.rel); } })(st.tree);
     const sameStructure = oldRels.size === relSet.size && [...relSet].every((r) => oldRels.has(r));
+    const oldTree = st.tree; // U5：捕获旧树（带 ino），给外部改名探测做 inode 匹配（下一行就被新树覆盖）
     st.tree = annotateTree(data.tree, rootId); // 总更新：保持树/ino 新鲜（即使不重渲染）
     if (sameStructure) return;
     // 结构变了（增/删/改名/移动）→ reconcile 该根标签 + 重渲染 + 同步编辑器
@@ -2132,6 +2247,7 @@
         else if (window.__shellCloseDoc) window.__shellCloseDoc(); // 没得回落 → 空态
       }
     }
+    detectExternalRenames(rootId, oldTree, inoToRel); // U5：外部改名/移动 → 询问式「一键更新」引用（fire-and-forget）
   }
 
   // ===== 浏览器 feature：web 标签桥 + 顺序循环切换 + ⌘⇧T 重开栈（spec §4.4/§7）=====

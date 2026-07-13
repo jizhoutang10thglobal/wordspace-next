@@ -162,6 +162,16 @@
       </div>
     </div>
 
+    <!-- U6 反链面板：标题下「N 篇文档链接到这里」（父层 chrome，绝不注入文档字节）。默认折叠、0 反链整体隐藏。 -->
+    <div id="ws-backlinks" class="ws-backlinks" hidden>
+      <button id="ws-bl-head" class="ws-bl-head" aria-expanded="false">
+        <svg class="ws-bl-caret" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+        <svg class="ws-bl-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+        <span id="ws-bl-count" class="ws-bl-count"></span>
+      </button>
+      <div id="ws-bl-list" class="ws-bl-list" hidden></div>
+    </div>
+
     <!-- 空态（无文档时） -->
     <div id="home" class="ws-empty-wrap">
       <div class="ws-empty">
@@ -251,6 +261,7 @@
 <script src="../editor/find.js"></script>
 <script src="../lib/links.js"></script>
 <script src="../editor/mention.js"></script>
+<script src="../editor/linkview.js"></script>
 <script src="shell.js"></script>
 <script src="../lib/tabs.js"></script>
 <script src="../lib/web-history.js"></script>

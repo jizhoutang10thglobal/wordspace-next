@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('ws2', {
   linksQuery: (rootId) => ipcRenderer.invoke('ws-links-query', rootId), // U2：全部文档 rel/title/kind
   linksCandidates: (rootId) => ipcRenderer.invoke('ws-links-candidates', rootId), // U3：@菜单候选（文档 + 非文档文件）
   linksBacklinks: (rootId, rel) => ipcRenderer.invoke('ws-links-backlinks', rootId, rel), // U2：反链来源
+  linksDirBacklinks: (rootId, dirRel) => ipcRenderer.invoke('ws-links-dir-backlinks', rootId, dirRel), // U6：文件夹夹外反链（删除守卫）
+  linksMovedTarget: (rootId, sourceRel, targetRel) => ipcRenderer.invoke('ws-links-moved-target', rootId, sourceRel, targetRel), // U7：断链目标 doc-id 反查现址
   linksRebuild: (rootId) => ipcRenderer.invoke('ws-links-rebuild', rootId), // U2：索引重建逃生门
   pathExists: (abs) => ipcRenderer.invoke('path-exists', abs),
   readDoc: (p) => ipcRenderer.invoke('read-doc', p),
@@ -49,11 +51,13 @@ contextBridge.exposeInMainWorld('ws2', {
   wsReorderRoots: (ids) => ipcRenderer.invoke('ws-reorder-roots', ids),
   wsGetRoots: () => ipcRenderer.invoke('ws-get-roots'),
   wsReadTree: (rootId) => ipcRenderer.invoke('ws-read-tree', rootId),
-  wsNewDoc: (rootId, dirRel, base, html) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html),
+  wsNewDoc: (rootId, dirRel, base, html, ext) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html, ext),
   wsSaveDocAs: (base, html, ext, opts) => ipcRenderer.invoke('ws-save-doc-as', base, html, ext, opts), // ext 'md'=写盘前转 md；opts.reveal=导出语义 Finder 高亮
   wsMakeDir: (rootId, dirRel, name) => ipcRenderer.invoke('ws-make-dir', rootId, dirRel, name),
-  wsRename: (rootId, relPath, newLeaf) => ipcRenderer.invoke('ws-rename', rootId, relPath, newLeaf),
-  wsMove: (rootId, relPath, destDirRel) => ipcRenderer.invoke('ws-move', rootId, relPath, destDirRel),
+  wsAbs: (rootId, rel) => ipcRenderer.invoke('ws-abs', rootId, rel), // U6 反链：rel → abs（openDoc 用）
+  wsRename: (rootId, relPath, newLeaf, openAbs) => ipcRenderer.invoke('ws-rename', rootId, relPath, newLeaf, openAbs),
+  wsMove: (rootId, relPath, destDirRel, openAbs) => ipcRenderer.invoke('ws-move', rootId, relPath, destDirRel, openAbs),
+  wsRewriteMoves: (rootId, moves, openAbs) => ipcRenderer.invoke('ws-rewrite-moves', rootId, moves, openAbs), // U5 外部改名探测「一键更新」
   wsMoveAcross: (fromRootId, relPath, toRootId, destDirRel) => ipcRenderer.invoke('ws-move-across', fromRootId, relPath, toRootId, destDirRel),
   wsDelete: (rootId, relPath) => ipcRenderer.invoke('ws-delete', rootId, relPath),
   wsUndoDelete: (rootId, token) => ipcRenderer.invoke('ws-undo-delete', rootId, token),

@@ -25,10 +25,10 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 | 链接索引/反链 | `computeBacklinks`（现算，`lib/links.ts`） | `main/link-index.js`（主进程可丢弃缓存 + ipc） |
 | 创建·提及菜单 | `components/canvas/MentionMenu.tsx` + `Canvas.tsx` | `editor/mention.js`（父层浮层）+ `editor/blockedit.js` 接线 |
 | 点击导航 | `Canvas.tsx onBlocksClickCapture` | `renderer/shell.js onDocLinkClick` + ipc `ws-resolve-doc-link` |
-| 悬停卡/断链修复 | `components/canvas/LinkPreview.tsx` | 待建 `editor/linkview.js`（U4） |
-| 反链面板 | `components/canvas/Backlinks.tsx` | 待建（U6，父层 chrome） |
-| 改名/移动重写 | `mock/store.ts` renameFile/moveFile/renameDir | 待建 `main/link-rewrite.js`（U5，字节保真 splice） |
-| 删除守卫 | `components/DeleteLinkedModal.tsx` | 待建（U6） |
+| 悬停卡/断链修复 | `components/canvas/LinkPreview.tsx` | `editor/linkview.js`（U4，已落 app：断链装饰 CSS Highlight + 悬停预览卡 + 断链修复卡） |
+| 反链面板 | `components/canvas/Backlinks.tsx` | `renderer/shell.js` 反链面板（U6，doc-header 下父层 chrome + ws-abs IPC） |
+| 改名/移动重写 | `mock/store.ts` renameFile/moveFile/renameDir | `main/link-rewrite.js`（U5，字节保真 splice；app 内改名/移动 + 外部改名探测 + 撤销全落） |
+| 删除守卫 | `components/DeleteLinkedModal.tsx` | `sidebar.js` doDelete 守卫（U6，link-index.dirBacklinks 夹外反链） |
 | back/forward | `mock/nav.ts` + `ArcSidebar` 箭头分派 | 待建 `lib/nav-history.js` + doc-header 按钮（N1） |
 | 装饰机制 | DOM class toggle（`.ws-doclink`/`.is-broken`，会落库） | CSS Custom Highlight（不落盘，抄 `editor/find.js`） |
 
@@ -45,6 +45,8 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 | @新建 | 建同目录 + 插链接、**不切走标签页** | 建 + 插 + 存当前 + **跳去编辑新文档** | Colin 2026-07-09 |
 | 触发检测 | input/compositionend（IME） | 同（IME 走 input，非 keydown） | 一致（非分歧，记录以防误改） |
 | 打开中的脏文档被重写 | demo 无此问题（内存态） | v1 跳过它 + toast 注明「1 篇打开中的文档未更新」 | 真 app 新边界，实现决策 |
+| 修复卡「新建」类型 | 恒有一条「新建」 | **仅 html/md 可创作类型给「新建」**（断链指向 pdf/图片等无从新建；`.md` 尊重后缀建 `.md`） | 实现决策（§5.3「恒有」按可创作类型收窄） |
+| 修复卡关闭键 | 执行/悬出/切文档 | 同上 + **Esc 关**（父层浮层惯例，抄 find.js，补 ui-demo 缺口） | 实现补缺，非偏离 |
 
 **不在上表的行为差异都算漂移**，要么 port 对齐、要么补进本表。
 
@@ -60,9 +62,10 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 
 真 app **落后 ui-demo** 的漂移（ui-demo 已有、app 未移植，全在移交文档 §2 的「未做」清单，跟踪于此）：
 
-- **消费面 U4-U6**：悬停预览卡 / 断链装饰+修复卡 / 反链面板 / 改名·移动·外部改名重写 / 删除守卫——
-  ui-demo（`ec6c73d`）全有，app 无。
-- **U7 doc-id 修复锚**：两侧都未落盘 meta（ui-demo 修复候选只用同名，app 待做）。
+- ~~**U4 消费面**：悬停预览卡 / 断链装饰 / 断链修复卡~~ **已落 app**（本 PR，`editor/linkview.js`）。
+- ~~**U5 改名/移动重写**：app 内改名·移动 + 外部改名探测 + 撤销~~ **已全落 app**（`main/link-rewrite.js` 字节保真 + ipc orchestration + sidebar 撤销/外部探测 + 打开中文档内存改）。**仅剩小欠账**：移动专属 toast 文案（现统一「已更新 N 篇」）、md 引用式链接定义行（inline 已支持）。
+- ~~**U6 反链面板 + 删除守卫**：标题下「N 篇链到这里」+ 删除前引用告警~~ **已落 app**（`shell.js` 反链面板 + `sidebar.js` doDelete 守卫 + `link-index.dirBacklinks`）。
+- ~~**U7 doc-id 修复锚**~~ **已落 app**（`src/lib/doc-id.js` 保存补 meta + `link-index` docId 快照/carry-forward + 修复卡 doc-id 全库反查现址置顶）。Colin 2026-07-12 批准「保存时改用户文件」。⚠md frontmatter doc-id + 无 head 野生 HTML 记欠账。
 - **N1 back/forward**：ui-demo 已做并上 live（PR #146，`mock/nav.ts`）。真 app **决定挂到浏览器 feature 的
   统一导航移植上做**（Colin 2026-07-11 拍板）——**不单独在 doc-header 建一套**。理由：ui-demo 的文档
   back/forward 复用侧栏箭头，而浏览器 feature（`docs/browser-feature-spec.md`）在真 app 也要建一套侧栏导航
