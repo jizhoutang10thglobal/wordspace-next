@@ -629,3 +629,22 @@ test('P2-3 地址栏打字中键盘切标签:残留字丢弃复位为新标签 u
   await page.evaluate(() => window.__webChromeSync()); // 同标签,key 没变
   await expect(page.locator('#omni-input')).toHaveValue('control-typing');
 });
+
+test('P3-01 星标只在网页标签显形:文档标签态地址栏可见但星标真隐藏(不是 CSS 压过 [hidden] 的死按钮)', async () => {
+  await launch();
+  // 开工作区 + 文档 → 激活一个文档标签（地址栏此时可见、显本地路径,但不该有收藏星标）
+  const wsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2star-'));
+  await fs.writeFile(path.join(wsDir, 'a.html'), '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>a</title></head><body><h1>AAA</h1></body></html>', 'utf8');
+  await app.evaluate(({ app: a }, dir) => { process.env.WS2_FOLDER_IN = dir; }, wsDir);
+  await page.locator('#home-open-folder').click();
+  await page.locator('.sb-file[data-rel="a.html"]').click();
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  // 先确认地址栏(星标的祖先)可见 → 星标是否隐藏就取决于它自己的样式,不是祖先被藏(防哑门)
+  await expect(page.locator('#omni-input')).toBeVisible();
+  // 文档标签态:收藏星标应真隐藏。旧 bug: .sb-omni-star{display:inline-flex} 压过 UA [hidden]
+  // {display:none} → JS 设了 hidden 也隐不掉,露出点了无效的死星标。
+  await expect(page.locator('#omni-star')).toBeHidden();
+  // 正向对照:开网页标签 → 星标显形
+  await openWebViaModal(base + '/');
+  await expect(page.locator('#omni-star')).toBeVisible();
+});

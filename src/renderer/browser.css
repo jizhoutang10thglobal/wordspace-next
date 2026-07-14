@@ -421,8 +421,12 @@ body.is-sb-collapsed .sb-reopen { z-index: 70; }
 }
 .sb-cm-para.is-on { color: var(--c-accent); border-color: var(--c-accent); background: var(--c-accent-tint); opacity: 1; }
 
-/* hidden 属性必须赢过上面的 display 声明（.web-error 的 flex 曾把隐藏态干掉——隐形全屏层拦点击） */
-.web-newtab[hidden], .web-error[hidden], .web-page[hidden], .web-findbar[hidden], .sb-omni-sug[hidden] { display: none !important; }
+/* hidden 属性必须赢过上面的 display 声明（.web-error 的 flex 曾把隐藏态干掉——隐形全屏层拦点击）。
+   P3-01：凡是「display:(inline-)flex + JS 会 toggle hidden」的类都得进这份清单,否则 flex 压过
+   UA 的 [hidden]{display:none}，JS 设了 hidden 也隐不掉 → 死按钮/空 flex 行。
+   .sb-omni-star（文档/起始页上死星标）、.web-nt-pins（无置顶时空 flex 行）、.wp-search-x（空搜索框的死清除钮）。 */
+.web-newtab[hidden], .web-error[hidden], .web-page[hidden], .web-findbar[hidden], .sb-omni-sug[hidden],
+.sb-omni-star[hidden], .web-nt-pins[hidden], .wp-search-x[hidden] { display: none !important; }
 
 /* web 态隐藏文档编辑 chrome（#8）：⋯菜单(z65)/文档面包屑本浮在 web surface(z60) 之上,
    起始页/子页面右上角会露出对不可见后台文档的操作按钮。web 激活时整体隐藏。 */
