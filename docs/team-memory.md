@@ -14,6 +14,13 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-15 — ui-demo 常驻 worktree 有 3+ 并发 session,必须各开独立 worktree
+
+**是什么**：ui-demo 常驻 worktree（.../wordspace-next-ui-demo）此刻被 3+ 个 session 同时抢（feat/ui-demo-doc-images 图片块 / feat/ui-demo-template-v1 用户自定义模板 / feat/ui-demo-company-templates）。实测撞车：我在里面 checkout 自己分支后,另一 session 把工作树切到 doc-images,我的未提交改动被带到他们分支、和他们 Canvas.tsx/image.ts 混一起,险些被 git add -A 一并提交。
+**怎么 apply**：① 动 ui-demo 前先 `git -C <worktree> branch --show-current` 确认分支没被别人换走;② 多 session 同时改 ui-demo 一律各开独立 worktree（`git worktree add <新路径> <你的分支>`,如我用了 .../wordspace-next-template）,别共用那个常驻 worktree——共用时任何一方切分支都会劫持彼此未提交改动;③ 收尾清干净自己在共享树里的污染,别连累别人。
+**来源**：feat/ui-demo-template-v1（用户自定义模板 U1 实施途中）
+
+
 ## 2026-07-14 — 探索测试 p1（错误页死路）已修 PR #201；动 browser.js/web-tabs.js 前先看
 
 **是什么**：错误页恢复死路修复合入中（PR #201,分支 fix/browser-error-page-recover）。根因比计划更深:错误页**自身会提交**(did-navigate→everCommitted 藏起始页)+showError 摘 view(attachedKey=null)→ everCommitted 重挂分支与 error-clear 分支双双够不着。修法=主进程给 web 标签加 **navSeq 提交序号**(每 did-navigate 自增,随 web-tab-updated 推),renderer 认 s.navSeq>prev.navSeq 的**提交沿**重挂 view。
