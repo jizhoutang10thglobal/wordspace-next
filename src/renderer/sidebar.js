@@ -846,6 +846,20 @@
   // 全程守卫两根的 reconcile（crossMoveGuard）：移动落盘到标签 retarget 之间有 IPC 往返窗口，期间
   // watcher 事件不能抢跑 reconcile（否则源根找不到已搬走文件的 inode → 误删标签）。
   async function doMoveAcross(node, toRootId, destDirRel) {
+    // U-CR0 跨根移动守卫：跨根自动重写要等 C 阶段，在此之前先拦一道——移去别的根会静默断链
+    //（源根里指向它的引用 + 它自己指向源根的内部链接都会断）。有会断的链接才弹、确认才移；无则无感直移。
+    let referrers = [];
+    try {
+      referrers = node.isDir ? await window.ws2.linksDirBacklinks(node.rootId, node.rel)
+                             : await window.ws2.linksBacklinks(node.rootId, node.rel);
+    } catch (e) { referrers = []; }
+    let ownBreak = 0;
+    try { ownBreak = await window.ws2.linksOutlinksCount(node.rootId, node.rel, !!node.isDir); }
+    catch (e) { ownBreak = 0; }
+    if ((referrers && referrers.length) || ownBreak) {
+      const ok = await moveAcrossGuardModal(node, referrers || [], ownBreak);
+      if (!ok) return; // 取消：什么都不动
+    }
     const op = openPath();
     const wasOpen = !node.isDir && op === node.abs;
     const openUnderDir = node.isDir && isUnder(op, node.abs); // 移动的目录含当前打开文档
@@ -919,6 +933,50 @@
       const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(false); } };
       cancel.addEventListener('click', () => close(false));
       del.addEventListener('click', () => close(true));
+      overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); }); // 点遮罩=取消
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(overlay);
+      cancel.focus();
+    });
+  }
+  // U-CR0 跨根移动守卫弹窗（复用删除守卫的壳与 ws-delguard-* 样式）。resolve(true)=仍要移动。
+  // 入向来源列成表（同删除守卫），出向只报计数（是被移文档自己的链接、列出来对用户帮助不大）。
+  function moveAcrossGuardModal(node, referrers, ownBreak) {
+    return new Promise((resolve) => {
+      const N = referrers.length;
+      const overlay = document.createElement('div');
+      overlay.className = 'sb-modal-overlay';
+      const modal = document.createElement('div');
+      modal.className = 'sb-modal ws-delguard';
+      overlay.appendChild(modal);
+      const h = document.createElement('div'); h.className = 'sb-modal-title';
+      h.textContent = '把「' + node.name + '」移到另一个文件夹空间';
+      modal.appendChild(h);
+      const desc = document.createElement('div'); desc.className = 'ws-delguard-desc';
+      const parts = [];
+      if (N) parts.push(N + ' 篇文档里指向它的链接');
+      if (ownBreak) parts.push('它内部的 ' + ownBreak + ' 条链接');
+      desc.textContent = '移动后' + parts.join('、') + '会断开（跨文件夹空间的链接暂不自动维护，可在链接上重新指向或撤销恢复）：';
+      modal.appendChild(desc);
+      if (N) {
+        const list = document.createElement('div'); list.className = 'ws-delguard-list';
+        referrers.slice(0, 5).forEach((s) => {
+          const it = document.createElement('div'); it.className = 'ws-delguard-item'; it.title = s.rel;
+          const t = document.createElement('div'); t.className = 'ws-delguard-item-title'; t.textContent = s.title || s.rel;
+          const p = document.createElement('div'); p.className = 'ws-delguard-item-path'; p.textContent = s.rel;
+          it.appendChild(t); it.appendChild(p); list.appendChild(it);
+        });
+        if (N > 5) { const more = document.createElement('div'); more.className = 'ws-delguard-more'; more.textContent = '… 等 ' + N + ' 篇'; list.appendChild(more); }
+        modal.appendChild(list);
+      }
+      const acts = document.createElement('div'); acts.className = 'ws-delguard-actions';
+      const cancel = document.createElement('button'); cancel.className = 'ws-delguard-btn'; cancel.textContent = '取消';
+      const go = document.createElement('button'); go.className = 'ws-delguard-btn ws-delguard-danger'; go.textContent = '仍要移动';
+      acts.appendChild(cancel); acts.appendChild(go); modal.appendChild(acts);
+      const close = (v) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(v); };
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(false); } };
+      cancel.addEventListener('click', () => close(false));
+      go.addEventListener('click', () => close(true));
       overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); }); // 点遮罩=取消
       document.addEventListener('keydown', onKey, true);
       document.body.appendChild(overlay);

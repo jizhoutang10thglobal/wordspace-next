@@ -217,6 +217,27 @@ function dirBacklinks(rootId, dirRel) {
   return out;
 }
 
+// U-CR0 跨根移动守卫：条目自身「指向源根的出链」计数——移去别的根后这些相对链接会失效
+//（跨根自动重写要等 C 阶段；在此之前先拦一道，别静默损坏）。
+// 文件 = 它全部 outLinks 条数（换根后基准变了、全断）；文件夹 = 夹内文档指向「夹外」的链接条数
+//（夹内互链一起搬、相对路径不变、不算——与 dirBacklinks 的夹外语义对称）。
+function ownOutlinks(rootId, rel, isDir) {
+  const r = index.get(rootId);
+  if (!r || !rel) return 0;
+  if (!isDir) {
+    const e = r.docs.get(rel);
+    return e ? e.outLinks.length : 0;
+  }
+  const prefix = rel + '/';
+  const under = (x) => x.indexOf(prefix) === 0;
+  let n = 0;
+  for (const [drel, e] of r.docs) {
+    if (!under(drel)) continue; // 只看夹内文档的出链
+    for (const l of e.outLinks) if (!under(l.rel)) n++; // 指向夹外 = 换根后会断
+  }
+  return n;
+}
+
 function titleOf(rootId, rel) {
   const r = index.get(rootId);
   const e = r && r.docs.get(rel);
@@ -278,7 +299,7 @@ async function hydrate(storeFile, rootId, rootPath) {
 module.exports = {
   extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
   refreshRoot, rebuildRoot, removeRoot,
-  query, backlinks, dirBacklinks, titleOf, relOfDocId, movedTarget, warm,
+  query, backlinks, dirBacklinks, ownOutlinks, titleOf, relOfDocId, movedTarget, warm,
   save, hydrate,
   _index: index, // 测试用
 };
