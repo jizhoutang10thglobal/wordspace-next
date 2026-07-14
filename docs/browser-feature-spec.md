@@ -670,6 +670,13 @@ main → renderer (push)
 4. 右键菜单：危险 scheme 链接整节不出现；动作 id 白名单收口；拷贝链接先清洗跟踪参数。
 5. 无下载（`will-download` cancel）；权限请求默认全拒；弹窗 deny（转标签）；证书错误不旁路。
 6. 起始页安全提示文案保留（「内置浏览器没有恶意网站防护…」——产品口径，管理预期）。
+7. **User-Agent 归一**（2026-07-14，Wendi 报「网页搜索总弹人机验证」）：`persist:webtabs` session 建立时
+   `setUserAgent` 剥掉 Electron 默认 UA 里的 `Electron/<ver>` 和 app 名 token（`web-tabs.js` `ensureSession`，
+   纯函数 `web-tabs-policy.js` `browserUA()`），归一成标准 Chrome UA。否则 Google 反滥用把非标准 UA 当 bot →
+   `/sorry` 拦截页 + reCAPTCHA。只动这一个 session（不碰主窗口），不伪装 navigator、不引反检测库——内核本就是
+   Chromium，只是把 UA 说实话。残余因素：IP 信誉/冷启动无 cookie 由 Google 侧决定，app 控不了（管理预期，非必现）。
+   实测（e2e `/ua` 真实请求头）：sec-ch-ua 在测试环境未泄漏 Electron 品牌（null）；若将来真机观测到品牌泄漏，
+   Electron 无干净 API 改 UA-CH，记欠账即可（UA 字符串是 Google 的主判定面）。
 
 ---
 
