@@ -33,6 +33,11 @@ function ensureSession() {
   if (sess) return sess;
   sess = session.fromPartition(PARTITION);
 
+  // User-Agent 归一（反 CAPTCHA）：剥掉 Electron 默认 UA 里的 `Electron/…` 和 app 名 token，归一成标准
+  // Chrome UA——否则 Google 反滥用把非标准 UA 当 bot、网页搜索反复弹 /sorry + reCAPTCHA（Wendi 2026-07-14）。
+  // 只动 persist:webtabs 这一个 session，不碰主窗口/默认 session。session 级设置自动覆盖该 session 的所有 view。
+  try { sess.setUserAgent(policy.browserUA(sess.getUserAgent(), app.getName())); } catch { /* 老版本无此 API 就算了 */ }
+
   // 权限：默认拒绝,极小白名单放行（policy）。request + check 两个 handler 都要设。
   sess.setPermissionRequestHandler((_wc, permission, cb) => cb(policy.permissionAllowed(permission)));
   sess.setPermissionCheckHandler((_wc, permission) => policy.permissionAllowed(permission));
