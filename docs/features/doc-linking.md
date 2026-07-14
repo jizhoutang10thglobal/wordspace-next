@@ -84,7 +84,11 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
     **A 遗留欠账**：① 跨根 **doc-id 修复锚**（`readDocMeta` 跨根边不快照目标 docId → 跨根断链只有「同名候选」、无 doc-id 全库反查）；
     ② 修复卡「浏览…手选」仍限当前根（`linkview.doPickAndRepoint`）；③ 软链**别名根**（同一物理文件经两根的软链各有一个 tree 身份）
     下跨根反链可能漏（tree 域已知限制，非嵌套根场景不触发）。
-  - **B 创建面 / C 维护面**：未做（@菜单/拖拽跨根候选；改名/移动/`ws-move-across` 的跨根 fan-out 重写）。
+  - ~~**B 创建面**~~ **已落**：@菜单跨根候选（`ws-links-candidates-all` 所有根分组、源根在前无头、其他空间带空间名分节头
+    `.ws-mention-group`、跨卷根灰字不可选；`mention.js`）+ 侧栏拖拽跨空间建链（`blockedit.dropFileLink`）；插入走 `relHrefAbs`。
+    同卷约束：@菜单 candidates-all 的 sameVol 排除跨卷根、拖拽用 `ws-same-volume`（plan §5，跨卷不给建）。断链修复「重新指向」
+    跨根已在 A 落。**B 遗留欠账**：修复卡「浏览…手选」仍限当前根（`linkview.doPickAndRepoint`，A 记的欠账未变）。
+  - **C 维护面**：未做（改名/移动/`ws-move-across` 的跨根 fan-out 重写；C2 会把 U-CR0 守卫升级成自动重写+撤销）。
   跨根为真 app 独有（ui-demo 单工作区无根概念，不移植不算漂移）。
 
 port 完成一项就从本节清一项、更新对齐锚点。

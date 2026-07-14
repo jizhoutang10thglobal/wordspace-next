@@ -65,6 +65,8 @@
     var baseCount = {};
     st.items.forEach(function (it) { if (it.kind === 'doc') { var b = it.rel.split('/').pop(); baseCount[b] = (baseCount[b] || 0) + 1; } });
     st.items.forEach(function (it, i) {
+      // B 跨根：其他空间组的首项上方插一个空间名分节头（非交互）
+      if (it.groupFirst) { var hd = document.createElement('div'); hd.className = 'ws-mention-group'; hd.textContent = it.rootName || '其他空间'; listEl.appendChild(hd); }
       var row = document.createElement('div');
       row.className = 'ws-mention-item' + (i === st.active ? ' is-active' : '');
       row.setAttribute('data-idx', String(i));
@@ -73,9 +75,9 @@
         var main = document.createElement('div'); main.className = 'ws-mention-main';
         var t = document.createElement('div'); t.className = 'ws-mention-title'; t.textContent = it.title;
         main.appendChild(t);
-        // 同名消歧：子目录文件显示路径；或同名冲突时（同 basename 多个候选）也强制显示，好区分。
+        // 同名消歧：子目录文件显示路径；同名冲突强制显示；**跨根候选恒显示路径**（有分节头给空间名，这里给根内位置）。
         var hasDup = baseCount[it.rel.split('/').pop()] > 1;
-        if (it.rel.indexOf('/') >= 0 || hasDup) { var p = document.createElement('div'); p.className = 'ws-mention-path'; p.textContent = it.rel; main.appendChild(p); }
+        if (!it.current || it.rel.indexOf('/') >= 0 || hasDup) { var p = document.createElement('div'); p.className = 'ws-mention-path'; p.textContent = it.rel; main.appendChild(p); }
         row.appendChild(ico); row.appendChild(main);
       } else {
         var t2 = document.createElement('div'); t2.className = 'ws-mention-title ws-mention-action'; t2.textContent = it.title;
@@ -85,6 +87,12 @@
       row.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); pick(it); });
       listEl.appendChild(row);
     });
+    // B：跨卷根不可建链 → 底部灰字提示（拒绝路径可见，L8）
+    if (st.crossVolNames && st.crossVolNames.length) {
+      var note = document.createElement('div'); note.className = 'ws-mention-volnote';
+      note.textContent = st.crossVolNames.join('、') + '：在另一磁盘卷，暂不支持链接';
+      listEl.appendChild(note);
+    }
     // 让选中项可见
     var active = listEl.querySelector('.is-active');
     if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
@@ -98,23 +106,38 @@
     if (!st) return;
     var rootId = st.rootId;
     st.loading = true; render();
-    Promise.resolve(window.ws2.linksCandidates(rootId)).then(function (res) {
+    // B 跨根：一次拉所有 live 根的候选分组（源根在最前）。单根用户 → 只有一组、行为与现状一致。
+    Promise.resolve(window.ws2.linksCandidatesAll(rootId)).then(function (groups) {
       if (!st || st.rootId !== rootId) return; // 会话已变
-      res = res || { docs: [], others: [] };
-      st.allDocs = (res.docs || []).filter(function (d) { return d.rel !== st.fromRel; });
-      st.allOthers = (res.others || []).filter(function (o) { return o.rel !== st.fromRel; });
+      st.groups = (groups || []).map(function (g) {
+        return { rootId: g.rootId, rootName: g.rootName, current: g.rootId === rootId, sameVol: !!g.sameVol, docs: g.docs || [], others: g.others || [] };
+      });
       st.loading = false;
       applyFilter();
-    }).catch(function () { if (st) { st.allDocs = []; st.allOthers = []; st.loading = false; applyFilter(); } });
+    }).catch(function () { if (st) { st.groups = []; st.loading = false; applyFilter(); } });
   }
   function applyFilter() {
     if (!st) return;
     var q = st.query.trim().toLowerCase();
-    var docs = (st.allDocs || []).filter(function (d) { return matches(d.title, d.rel, q); }).map(function (d) { return { kind: 'doc', rel: d.rel, title: d.title, fileKind: d.kind }; });
-    var others = (st.allOthers || []).filter(function (o) { return matches(o.title, o.rel, q); }).map(function (o) { return { kind: 'doc', rel: o.rel, title: o.title, fileKind: o.kind }; });
-    var out = docs.concat(others).slice(0, 8); // 文档在前、其它文件在后
+    var out = [];
+    var crossVolNames = [];
+    (st.groups || []).forEach(function (g) {
+      // 跨卷根：不给建链（B 拍板）→ 不列候选，只在底部灰字提示（哑失败=用户以为没做，L8）
+      if (!g.current && !g.sameVol) { if (g.docs.length || g.others.length) crossVolNames.push(g.rootName); return; }
+      var self = function (rel) { return g.current && rel === st.fromRel; }; // 自链只在源根内排除（别的根同 rel 是别的文件）
+      var docs = g.docs.filter(function (d) { return !self(d.rel) && matches(d.title, d.rel, q); });
+      var others = g.others.filter(function (o) { return !self(o.rel) && matches(o.title, o.rel, q); });
+      docs.concat(others).forEach(function (f) {
+        out.push({ kind: 'doc', rootId: g.rootId, rootName: g.rootName, current: g.current, rel: f.rel, title: f.title, fileKind: f.kind });
+      });
+    });
+    out = out.slice(0, 12); // 文档在前、其它文件在后；源根组在最前。跨根后放宽到 12，让其他空间候选有机会露出
+    // 标每组首项（渲染分节头用）：源根组不加头；其他空间组首项加空间名头
+    var lastRoot = null;
+    out.forEach(function (it) { it.groupFirst = (!it.current && it.rootId !== lastRoot); lastRoot = it.rootId; });
     if (st.query.trim() && window.__wsCreateLinkedDoc) out.push({ kind: 'create', title: '新建「' + st.query.trim() + '」' });
     out.push({ kind: 'url', title: '网址链接…' });
+    st.crossVolNames = crossVolNames;
     st.items = out;
     if (st.active > out.length - 1) st.active = out.length - 1;
     if (st.active < 0) st.active = 0;
@@ -223,7 +246,15 @@
       });
       return;
     }
-    // 文档：href = 从当前文档到目标的相对路径（U1）
+    // 文档：同根 → 相对路径（U1）；跨根（B）→ 绝对相对（relHrefAbs，经 wsAbs 取两端 abs）
+    if (it.rootId != null && it.rootId !== ctx.rootId) {
+      Promise.all([window.ws2.wsAbs(ctx.rootId, ctx.fromRel), window.ws2.wsAbs(it.rootId, it.rel)]).then(function (ab) {
+        var href = (ab[0] && ab[1]) ? window.WS2Links.relHrefAbs(ab[0], ab[1]) : null;
+        if (!href) { if (window.__wsToast) window.__wsToast('无法建立跨文件夹空间的链接（可能不在同一磁盘卷）'); return; }
+        finish(ctx, href, it.title, false);
+      }).catch(function () {});
+      return;
+    }
     var href2 = window.WS2Links.relHref(ctx.fromRel, it.rel);
     finish(ctx, href2, it.title, false);
   }
