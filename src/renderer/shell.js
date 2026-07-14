@@ -178,28 +178,35 @@ window.__wsBeforeDocEdit = () => { if (undoMgr && undoMgr.checkpoint) undoMgr.ch
 window.__wsAfterDocEdit = () => { markDirty(); if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
 // U5 改名/移动：把 moves 应用到「打开中文档」的内存 DOM（主进程重写时跳过了它，避免和自动保存打架——
 // 内存改 + 走正常保存管线，脏文档也不会被覆盖）。moves=[[oldRel,newRel],…]。返回改的链接数。
+// 主进程重写引用时跳过打开中的文档（怕和自动保存/未存编辑打架），改在这里对它的 DOM 内存改。
+// C：abs 域（movesArr = [[absOld,absNew]...]）——同根写短形式、跨根写 abs 形式（镜像 link-rewrite.rewriteContentAbs）。
 window.__wsApplyMovesToOpenDoc = async (movesArr) => {
   await (window.__wsDocContextReady ? window.__wsDocContextReady() : Promise.resolve()); // retarget 后 rel 重算完
   const ctx = window.__wsDocContext && window.__wsDocContext();
   const doc = frame.contentDocument;
   const L = window.WS2Links;
   if (!ctx || !doc || !L || !Array.isArray(movesArr) || !movesArr.length) return 0;
-  const moves = new Map(movesArr);
+  const moves = new Map(movesArr); // absOld → absNew
   const inv = L.invertMoves(moves);
-  const ownNew = ctx.rel;
-  const ownOld = inv.get(ownNew) || ownNew; // 自己被移动了？用旧 rel 解析既有 href
+  let ownNewAbs, roots;
+  try { [ownNewAbs, roots] = await Promise.all([window.ws2.wsAbs(ctx.rootId, ctx.rel), window.ws2.wsGetRoots().catch(() => [])]); } catch (e) { return 0; }
+  if (!ownNewAbs) return 0;
+  const ownOldAbs = inv.get(ownNewAbs) || ownNewAbs; // 自己被移动了？用旧 abs 解析既有 href
+  const rootDirs = (roots || []).map((r) => r.path);
+  const rootOf = (abs) => { for (const rd of rootDirs) { if (abs === rd || abs.indexOf(rd + '/') === 0) return rd; } return null; };
+  const smart = (fromAbs, toAbs) => { const ro = rootOf(fromAbs), rt = rootOf(toAbs); return (ro && rt && ro === rt) ? L.relHref(fromAbs.slice(ro.length + 1), toAbs.slice(rt.length + 1)) : L.relHrefAbs(fromAbs, toAbs); };
   let n = 0;
   const as = doc.querySelectorAll('a[href]');
   for (let i = 0; i < as.length; i++) {
     const href = as[i].getAttribute('href');
     if (!href || L.classifyScheme(href) !== 'relative') continue;
     const parts = L.splitHrefSuffix(href);
-    const target = L.resolveHref(ownOld, parts[0]);
-    if (target == null) continue;
-    const has = moves.get(target);
-    const tNew = has != null ? has : target;
-    if (tNew === target && ownNew === ownOld) continue;
-    const nh = L.relHref(ownNew, tNew) + parts[1];
+    const absTarget = L.resolveHrefAbs(ownOldAbs, parts[0]);
+    if (absTarget == null || rootOf(absTarget) == null) continue; // 工作区外 → 不碰
+    const has = moves.get(absTarget);
+    const tNew = has != null ? has : absTarget;
+    if (tNew === absTarget && ownNewAbs === ownOldAbs) continue;
+    const nh = smart(ownNewAbs, tNew) + parts[1];
     if (nh === href) continue;
     as[i].setAttribute('href', nh); n++;
   }
