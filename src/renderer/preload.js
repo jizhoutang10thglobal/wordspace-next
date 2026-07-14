@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('ws2', {
   watchDoc: (p) => ipcRenderer.send('watch-doc', p),
   unwatchDoc: () => ipcRenderer.send('unwatch-doc'),
   onDocChanged: (cb) => ipcRenderer.on('doc-changed', (_e, p) => cb(p)),
-  onWsTreeChanged: (cb) => ipcRenderer.on('ws-tree-changed', (_e, rootId) => cb(rootId)),
+  onWsTreeChanged: (cb) => ipcRenderer.on('ws-tree-changed', (_e, rootId, changedDirs) => cb(rootId, changedDirs)), // changedDirs: 受影响目录（子树级重扫）| null=全量
   onLinksUpdated: (cb) => ipcRenderer.on('links-index-updated', (_e, rootId) => cb(rootId)), // U2：索引刷新 → 反链面板/断链装饰刷新
   onWsRootsChanged: (cb) => ipcRenderer.on('ws-roots-changed', () => cb()), // 运行时根状态变化（如拔盘转失联）→ 重拉根列表
   onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, p) => cb(p)),
@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld('ws2', {
   wsReorderRoots: (ids) => ipcRenderer.invoke('ws-reorder-roots', ids),
   wsGetRoots: () => ipcRenderer.invoke('ws-get-roots'),
   wsReadTree: (rootId) => ipcRenderer.invoke('ws-read-tree', rootId),
+  wsReadSubtrees: (rootId, dirs) => ipcRenderer.invoke('ws-read-subtrees', rootId, dirs), // 子树级重扫;null=回落全量
+  wsWatchFlush: (rootId) => ipcRenderer.invoke('ws-watch-flush', rootId), // 聚焦兜底:冲在途去抖,返回 {alive}
   wsNewDoc: (rootId, dirRel, base, html, ext) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html, ext),
   wsSaveDocAs: (base, html, ext, opts) => ipcRenderer.invoke('ws-save-doc-as', base, html, ext, opts), // ext 'md'=写盘前转 md；opts.reveal=导出语义 Finder 高亮
   wsMakeDir: (rootId, dirRel, name) => ipcRenderer.invoke('ws-make-dir', rootId, dirRel, name),

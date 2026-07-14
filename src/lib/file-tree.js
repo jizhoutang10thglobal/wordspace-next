@@ -115,4 +115,67 @@ function cleanLeafName(raw) {
     .trim();
 }
 
-module.exports = { buildFileTree, kindOf, sortNodes, assertInsideWorkspace, cleanLeafName };
+// ===== 扫描跳过规则（workspace.walk 与 workspace-watcher 共用同一份判定——两处不一致会造出
+// 「watcher 为一个树上根本不存在的路径触发全量重扫」的白烧）=====
+
+// 不进树的噪音：隐藏文件 / 依赖·构建·缓存目录 / 原子写的临时文件。
+// B 档只列「工具生成、绝不会是用户文档文件夹名」的目录，且都是文件数炸弹（node_modules 常 10 万+）——
+// 不含 build/dist/out/target 这种普通词（怕误伤真文件夹）。点开头的（.git/.next/.cache/.venv/.gradle/.idea/
+// .svn/.Spotlight-V100…）已被 isSkippedName 的 name.startsWith('.') 覆盖，不用在这重列。
+const IGNORE = new Set([
+  'node_modules', '.git', 'bower_components', '__pycache__', 'Pods', 'DerivedData', 'venv',
+]);
+// macOS 包（package/bundle）：Finder 当单个文件、内部可含上万文件（.app 应用包 / .photoslibrary 照片图库…）。
+// 文档工作区里递归钻进去 → 文件数爆炸、readTree 卡死（Wendi「打开桌面特别卡」根因 = 桌面上的 Minecraft.app，
+// 一个 .app 内部可几千到十几万文件）。学 Finder：树上显示成单个节点、不往里递归。按后缀判定（够用，不引 UTI）。
+const BUNDLE_EXTS = new Set([
+  'app', 'framework', 'bundle', 'plugin', 'kext', 'xpc', 'component', 'mdimporter', 'qlgenerator',
+  'prefpane', 'wdgt', 'dsym', 'pkg', 'mpkg', 'photoslibrary', 'photolibrary', 'fcpbundle',
+  'imovielibrary', 'tvlibrary', 'aplibrary', 'musiclibrary',
+]);
+function isBundleName(name) {
+  const i = String(name).lastIndexOf('.');
+  return i > 0 && BUNDLE_EXTS.has(String(name).slice(i + 1).toLowerCase());
+}
+// 原子写 tmp 命名从 `.ws2tmp` 改成了 `.ws2tmp-<pid>-<seq>`（防并发保存互踩，files.js），endsWith('.ws2tmp')
+// 匹配不上新名字 → 存盘时临时文件漏进侧栏树。用 includes 兜住新旧两种命名（不该给用户看的写盘中间产物）。
+const isSkippedName = (name) => String(name).startsWith('.') || String(name).includes('.ws2tmp') || IGNORE.has(name);
+
+// 整条相对路径（'/' 分隔）是不是「扫描根本不会看见」的噪音——是的话这个磁盘事件不可能改变树，
+// watcher 层直接丢弃（.DS_Store / .git 内部 / node_modules 内部的 churn 占外部事件的大头）。
+// 中间段是 bundle（.app 内部变化）也算噪音；**最后一段是 bundle 不算**——bundle 自身增删/改名会改父目录列表。
+function isNoisePath(relPath) {
+  const parts = String(relPath).split('/').filter(Boolean);
+  for (let i = 0; i < parts.length; i++) {
+    if (isSkippedName(parts[i])) return true;
+    if (i < parts.length - 1 && isBundleName(parts[i])) return true;
+  }
+  return false;
+}
+
+/**
+ * 由 watcher 报来的变化路径列表算「需要重扫的目录」（每条取父目录 = 增删/改名会变的那层列表；
+ * 内容变化事件也落在父目录，重扫它顺带刷新该文件 stat）。祖先归并（a 与 a/b 只留 a）。
+ * 返回 null = 该走全量重扫：任何路径的父目录是根（''，重扫根子树 = 全量）、或归并后仍超 cap（事件太散，
+ * 分头扫不如整扫一次）。
+ */
+function affectedDirsOf(relPaths, cap = 8) {
+  const dirs = new Set();
+  for (const p of relPaths) {
+    const parts = String(p).split('/').filter(Boolean);
+    if (parts.length <= 1) return null; // 根层变化 → 全量
+    dirs.add(parts.slice(0, -1).join('/'));
+  }
+  const sorted = [...dirs].sort((a, b) => a.length - b.length); // 短(浅)的在前,后面的只需对已保留项查前缀
+  const kept = [];
+  for (const d of sorted) {
+    if (!kept.some((k) => d === k || d.startsWith(k + '/'))) kept.push(d);
+  }
+  if (!kept.length || kept.length > cap) return null;
+  return kept;
+}
+
+module.exports = {
+  buildFileTree, kindOf, sortNodes, assertInsideWorkspace, cleanLeafName,
+  isSkippedName, isBundleName, isNoisePath, affectedDirsOf,
+};

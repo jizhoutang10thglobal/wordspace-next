@@ -7,32 +7,14 @@
 const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
-const { buildFileTree, kindOf, assertInsideWorkspace, cleanLeafName } = require('../lib/file-tree');
+const { buildFileTree, kindOf, assertInsideWorkspace, cleanLeafName, isSkippedName, isBundleName } = require('../lib/file-tree');
 const files = require('./files');
 const perfDiag = require('./perf-diag');
 
-// 不进树的噪音：隐藏文件 / 依赖·构建·缓存目录 / 原子写的临时文件。
-// B 档只列「工具生成、绝不会是用户文档文件夹名」的目录，且都是文件数炸弹（node_modules 常 10 万+）——
-// 不含 build/dist/out/target 这种普通词（怕误伤真文件夹）。点开头的（.git/.next/.cache/.venv/.gradle/.idea/
-// .svn/.Spotlight-V100…）已被下面 skip 的 name.startsWith('.') 覆盖，不用在这重列。
-const IGNORE = new Set([
-  'node_modules', '.git', 'bower_components', '__pycache__', 'Pods', 'DerivedData', 'venv',
-]);
-// macOS 包（package/bundle）：Finder 当单个文件、内部可含上万文件（.app 应用包 / .photoslibrary 照片图库…）。
-// 文档工作区里递归钻进去 → 文件数爆炸、readTree 卡死（Wendi「打开桌面特别卡」根因 = 桌面上的 Minecraft.app，
-// 一个 .app 内部可几千到十几万文件）。学 Finder：树上显示成单个节点、不往里递归。按后缀判定（够用，不引 UTI）。
-const BUNDLE_EXTS = new Set([
-  'app', 'framework', 'bundle', 'plugin', 'kext', 'xpc', 'component', 'mdimporter', 'qlgenerator',
-  'prefpane', 'wdgt', 'dsym', 'pkg', 'mpkg', 'photoslibrary', 'photolibrary', 'fcpbundle',
-  'imovielibrary', 'tvlibrary', 'aplibrary', 'musiclibrary',
-]);
-const isBundle = (name) => {
-  const i = name.lastIndexOf('.');
-  return i > 0 && BUNDLE_EXTS.has(name.slice(i + 1).toLowerCase());
-};
-// 原子写 tmp 命名从 `.ws2tmp` 改成了 `.ws2tmp-<pid>-<seq>`（防并发保存互踩，files.js），endsWith('.ws2tmp')
-// 匹配不上新名字 → 存盘时临时文件漏进侧栏树。用 includes 兜住新旧两种命名（不该给用户看的写盘中间产物）。
-const skip = (name) => name.startsWith('.') || name.includes('.ws2tmp') || IGNORE.has(name);
+// 跳过/包 判定挪进 lib/file-tree（isSkippedName / isBundleName / isNoisePath）——
+// workspace-watcher 的噪音事件过滤要用同一份规则，两处不一致会白烧全量重扫。
+const isBundle = isBundleName;
+const skip = isSkippedName;
 
 async function listNames(absDir) {
   try {
@@ -63,7 +45,8 @@ function uniqueLeaf(taken, base, ext) {
 }
 
 // 递归走盘 → { files:[{path,kind}], dirs:[rel] }，path/rel 均为工作区内 '/' 分隔相对路径。
-async function walk(root) {
+// startRel 非空 = 只走该子树（watcher 报了变化目录时的子树级重扫，见 readSubtrees）。
+async function walk(root, startRel = '') {
   const filesOut = [];
   const dirsOut = [];
   async function rec(absDir, rel) {
@@ -85,8 +68,27 @@ async function walk(root) {
       }
     }
   }
-  await rec(root, '');
+  await rec(startRel ? path.join(root, startRel.split('/').join(path.sep)) : root, startRel);
   return { files: filesOut, dirs: dirsOut };
+}
+
+// 并发限流的逐文件 stat 取 ino——无界 Promise.all 在大根上会同时压几万个 stat 进 libuv 线程池
+// （默认 4 线程），打开/保存文档的 fs 操作全排在后面 → 整个 app 卡住（Wendi 卡顿病根之一）。
+// 分批限流总耗时几乎不变，但别的 I/O 能插队。
+const STAT_BATCH = 64;
+async function fillInos(rootAbs, fl) {
+  for (let i = 0; i < fl.length; i += STAT_BATCH) {
+    await Promise.all(
+      fl.slice(i, i + STAT_BATCH).map(async (f) => {
+        try {
+          const st = await fs.stat(path.join(rootAbs, f.path.split('/').join(path.sep)), { bigint: true });
+          f.ino = String(st.ino);
+        } catch {
+          f.ino = undefined;
+        }
+      }),
+    );
+  }
 }
 
 // 给每个节点补绝对路径（主进程算路径，渲染层不做路径运算——点 .html 直接用 abs 喂 openDoc）。
@@ -113,18 +115,56 @@ async function readTree(root) {
   // 标签+置顶全被 reconcile 清光。根层 readdir 探一次，抛错即 null；子目录级失败维持吞掉（局部问题局部退化）。
   try { await fs.readdir(r); } catch { return null; }
   const { files: fl, dirs } = await walk(r);
-  await Promise.all(
-    fl.map(async (f) => {
-      try {
-        const st = await fs.stat(path.join(r, f.path.split('/').join(path.sep)), { bigint: true });
-        f.ino = String(st.ino);
-      } catch {
-        f.ino = undefined;
-      }
-    }),
-  );
+  await fillInos(r, fl);
   perfDiag.recordRead(r, Number(process.hrtime.bigint() - __t0) / 1e6, fl.length);
   return { root: r, name: path.basename(r), tree: addAbs(buildFileTree(fl, dirs), r) };
+}
+
+// 子树级重扫（watcher 报得出变化路径时的便宜路径，替代全量 readTree）：只重扫受影响目录，
+// 返回每个目录排好序的 children，节点形状与 readTree 完全一致（rel/abs/ino/kind，rel 均相对根）。
+// 目录在事件与扫描之间被删/改名 → 上移到最近还存在的祖先目录；上移到根 → 返回 null（调用方回落全量）。
+// 段里带 skip/bundle 的目录直接略过（扫描本来就看不见它，patch 进树反而引入全量扫不出的幽灵节点）。
+async function readSubtrees(root, dirRels) {
+  const r = path.resolve(root);
+  const __t0 = process.hrtime.bigint();
+  const resolved = new Set();
+  for (const d of dirRels || []) {
+    let rel = String(d || '');
+    if (!rel) return null; // '' 属全量，不该走这条路
+    assertInsideWorkspace(r, rel);
+    if (rel.split('/').some((s) => isSkippedName(s) || isBundleName(s))) continue;
+    while (rel) {
+      try {
+        const st = await fs.stat(path.join(r, rel.split('/').join(path.sep)));
+        if (st.isDirectory()) break;
+      } catch { /* 不存在 → 上移一层 */ }
+      rel = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
+    }
+    if (!rel) return null; // 波及根层 → 全量
+    resolved.add(rel);
+  }
+  // 祖先归并（上移后可能出现包含关系，a 与 a/b 只扫 a）
+  const kept = [];
+  for (const d of [...resolved].sort((a, b) => a.length - b.length)) {
+    if (!kept.some((k) => d === k || d.startsWith(k + '/'))) kept.push(d);
+  }
+  const subtrees = [];
+  for (const dirRel of kept) {
+    const { files: fl, dirs } = await walk(r, dirRel);
+    await fillInos(r, fl);
+    // buildFileTree 吃根相对路径 → 结果树含 dirRel 的祖先链；把 dirRel 自己也报成已知目录（空目录也有节点），
+    // 然后顺链取到 dirRel 节点的 children。
+    let nodes = buildFileTree(fl, [...dirs, dirRel]);
+    let node = null;
+    for (const part of dirRel.split('/')) {
+      node = nodes.find((n) => n.isDir && n.name === part);
+      if (!node) break;
+      nodes = node.children;
+    }
+    subtrees.push({ dir: dirRel, children: node ? addAbs(node.children, r) : [] });
+  }
+  perfDiag.recordScoped(r, Number(process.hrtime.bigint() - __t0) / 1e6);
+  return { subtrees };
 }
 
 // 在 dirRel 目录里新建一个 .html（内容由调用方给——模板 HTML）。dirRel '' = 工作区根。
@@ -278,6 +318,7 @@ async function sweepBackups(backupRoot, maxAgeMs = 24 * 60 * 60 * 1000) {
 
 module.exports = {
   readTree,
+  readSubtrees,
   listDocs,
   newDoc,
   makeDir,
