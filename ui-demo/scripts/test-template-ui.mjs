@@ -79,6 +79,18 @@ await page.evaluate(() => window.__wsUI.getState().setPreviewCss(null))
 await page.waitForTimeout(120)
 ok(await page.$('.ws-doc.ws-tpl-on') === null, '预览: 清除后复原素颜')
 
+// —— U4/AE5：从黄金标书模板新建 → 新文档带主题 + 骨架 ——
+await page.evaluate(() => window.__wsStore.getState().createFromTemplate('t-proposal-formal', '')) // 自动 openDoc
+await page.waitForTimeout(150)
+ok(await page.$('.ws-doc.ws-tpl-on') !== null, 'AE5: 从标书模板新建 → ws-tpl-on')
+const newH1 = await page.$eval('.ws-doc.ws-tpl-on .ws-blocks h1', (el) => ({ color: getComputedStyle(el).color, text: el.textContent }))
+ok(newH1.color === NAVY && newH1.text.includes('商务标书'), `AE5: 新文档带主题+骨架（h1=${newH1.text} ${newH1.color}）`)
+
+// —— U4：从纯骨架模板（无 css）新建 → 有骨架无主题 ——
+await page.evaluate(() => window.__wsStore.getState().createFromTemplate('t-blog', ''))
+await page.waitForTimeout(150)
+ok(await page.$('.ws-doc.ws-tpl-on') === null, 'U4: 纯骨架模板新建 → 无 ws-tpl-on（有骨架无主题）')
+
 await browser.close()
 console.log(fail === 0 ? '\ntemplate UI smoke: ALL PASS' : `\ntemplate UI smoke: ${fail} FAILURES`)
 process.exit(fail ? 1 : 0)

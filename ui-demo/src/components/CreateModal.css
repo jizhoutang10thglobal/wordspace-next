@@ -178,6 +178,18 @@
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* 「版式」标记：卡片带主题 CSS（非纯骨架）时出现，一眼看出这个模板自带样式 */
+.cm-card-styled {
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
 }
 
 /* 空文档 — the always-fast escape hatch, visually distinct + leading */

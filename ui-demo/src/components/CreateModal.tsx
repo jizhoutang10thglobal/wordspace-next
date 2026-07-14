@@ -210,6 +210,7 @@ export default function CreateModal() {
                     >
                       <span className="cm-card-kind" style={{ color: t.accent }}>
                         {kindLabel(t.kind)}
+                        {t.css && <span className="cm-card-styled" style={{ background: t.accent }}>版式</span>}
                       </span>
                       <span className="cm-card-name">{t.name}</span>
                       <span className="cm-card-desc">{t.description}</span>

@@ -1174,6 +1174,8 @@ export const useStore = create<State>()(
           emoji: '📄',
           kind: tpl.kind,
           pageFormat: tpl.pageFormat, // 格式模板把纸张版面带到新文档（普通模板为 undefined）
+          templateId: tpl.css ? tpl.id : undefined, // 带版式的模板把主题盖章到新文档（骨架模板为 undefined）
+          templateCss: tpl.css,
           folderId: inFolder ? root!.id : folderId,
           blocks: tpl.blocks.map((b) => ({ ...b, id: uid('b') })),
           visibility: 'private',
