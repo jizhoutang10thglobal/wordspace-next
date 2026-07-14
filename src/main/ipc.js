@@ -322,6 +322,7 @@ function registerIpc() {
   });
   ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureLinkIndex(rootId); return linkIndex.backlinks(rootId, rel); });
   ipcMain.handle('ws-links-dir-backlinks', async (_e, rootId, dirRel) => { await ensureLinkIndex(rootId); return linkIndex.dirBacklinks(rootId, dirRel); }); // U6 删除守卫（文件夹=夹外引用）
+  ipcMain.handle('ws-links-outlinks-count', async (_e, rootId, rel, isDir) => { await ensureLinkIndex(rootId); return linkIndex.ownOutlinks(rootId, rel, isDir); }); // U-CR0 跨根移动守卫：条目自身会断的出链数
   ipcMain.handle('ws-links-moved-target', async (_e, rootId, sourceRel, targetRel) => { await ensureLinkIndex(rootId); return linkIndex.movedTarget(rootId, sourceRel, targetRel); }); // U7 修复卡：断链目标靠 doc-id 反查现址
   ipcMain.handle('ws-links-rebuild', async (_e, rootId) => {
     await queueLink(rootId, async () => {
