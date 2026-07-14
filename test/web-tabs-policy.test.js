@@ -69,3 +69,31 @@ test('pickFavicon 取第一个 http(s)(P2-4)：data: 在首位时跳过、取后
   assert.strictEqual(P.pickFavicon(['data:x', 'data:y'], null), null); // 全 data: → null
   assert.strictEqual(P.pickFavicon(['https://a.com/f.ico'], 'https://a.com/f.ico'), null); // 命中的没变 → 去重
 });
+
+test('browserUA：剥 Electron/app 标识，归一成标准 Chrome UA（反 CAPTCHA）', () => {
+  // dev 形态（app 名 = 'wordspace-next'）
+  const dev = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) wordspace-next/0.8.3 Chrome/126.0.6478.36 Electron/31.0.0 Safari/537.36';
+  const outDev = P.browserUA(dev, 'wordspace-next');
+  assert.ok(!/Electron\//i.test(outDev), 'Electron token 应被剥掉：' + outDev);
+  assert.ok(!/wordspace-next/i.test(outDev), 'app 名 token 应被剥掉：' + outDev);
+  assert.ok(/Chrome\/126/.test(outDev) && /Safari\/537\.36/.test(outDev) && /AppleWebKit/.test(outDev), '仍是标准 Chrome UA：' + outDev);
+  assert.ok(!/\s{2,}/.test(outDev), '不留多余双空格：' + outDev);
+
+  // 打包形态（app 名含空格 = 'Wordspace Next'）
+  const pkg = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Wordspace Next/0.8.3 Chrome/126.0.6478.36 Electron/31.0.0 Safari/537.36';
+  const outPkg = P.browserUA(pkg, 'Wordspace Next');
+  assert.ok(!/Electron\//i.test(outPkg) && !/Wordspace Next\//i.test(outPkg), '含空格的 app 名也被剥：' + outPkg);
+  assert.ok(/Chrome\/126/.test(outPkg), outPkg);
+
+  // 幂等
+  assert.strictEqual(P.browserUA(outDev, 'wordspace-next'), outDev, '归一后再跑一次不变（幂等）');
+
+  // app 名含正则特殊字符不崩、不误伤
+  assert.doesNotThrow(() => P.browserUA(dev, 'a.b+c(x)'));
+
+  // 空/非字符串兜底
+  assert.strictEqual(P.browserUA('', 'x'), '');
+  assert.strictEqual(P.browserUA(null, 'x'), '');
+  assert.strictEqual(P.browserUA(undefined), '');
+  assert.strictEqual(P.browserUA(42, 'x'), '');
+});

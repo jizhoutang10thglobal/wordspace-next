@@ -135,17 +135,38 @@ test('UX3: Cmd+Shift+F 聚焦筛选框 + 无文档时 Cmd+F 回退到筛选框',
   await expect.poll(() => page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('sb-filter-input');
 });
 
-// UX4（Wendi F6-①）：点标签时文件树自动展开并定位到该文件。
-test('UX4: 点标签 → 文件树展开定位到该文件', async () => {
+// UX4v3（2026-07-14 Colin 定）：点标签**展开**到该文件 + 高亮，但**不滚动视口**。
+// 原 UX4「点标签自动展开+滚动定位」是 Wendi 2026-07-03 的 F6-①；Wendi 报滚动刺眼（同滚动容器 #sb-body 里
+// scrollIntoView 会把上方标签区顶走）→ 拆成「展开保留、滚动去掉」。scrollIntoView 探针做强门：既证展开
+// （折叠行重新可见），又证没滚（探针没被调）。
+test('UX4v3: 点标签展开定位但不滚动视口（展开+高亮=有，scrollIntoView=无）', async () => {
   await openWorkspace();
   await page.locator('.sb-dir[data-rel="数据"]').click();            // 展开"数据"
-  await page.click('.sb-file[data-rel="数据/b.html"]');             // 开 b.html
+  await page.click('.sb-file[data-rel="数据/b.html"]');             // 开 b.html（进标签）
   await expect(tabRow('数据/b.html')).toBeVisible();
+  await page.click('.sb-file[data-rel="a.html"]');                  // 开 a.html 并激活（b 失去高亮）
   await page.locator('.sb-dir[data-rel="数据"]').click();            // 收起"数据" → b.html 在树里隐藏
   await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toHaveCount(0);
-  // 点 b.html 标签 → 文件树重新展开"数据"、b.html 可见（定位）
-  await tabRow('数据/b.html').click();
+
+  // 装 scrollIntoView 探针（只盯文件行——expandToFile 滚的就是它）
+  await page.evaluate(() => {
+    window.__fileScrolled = false;
+    const orig = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (...a) {
+      if (this.classList && this.classList.contains('sb-file')) window.__fileScrolled = true;
+      return orig && orig.apply(this, a);
+    };
+  });
+
+  await tabRow('数据/b.html').click();                              // 点折叠着的 b.html 标签
+  // 展开发生：b.html 行重新露出来 + 高亮（Colin：折叠也要展开露出来）
   await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toHaveClass(/is-active/);
+  await expect(tabRow('数据/b.html')).toHaveClass(/is-active/);
+  // 但视口没被滚走（Wendi：不往下跳）——scrollIntoView 探针没被文件行触发
+  expect(await page.evaluate(() => window.__fileScrolled)).toBe(false);
+  // 变异①去掉 expandToFile 的 scroll 门（恒滚）→ 探针 true → 末行翻红；
+  // 变异②把 openTabRow(entry,'expand') 改回不展开 → b.html 行不可见 → 上面 toBeVisible 翻红。
 });
 
 // UX5（Wendi F1）：侧栏宽度可鼠标拖拽 + 持久化。

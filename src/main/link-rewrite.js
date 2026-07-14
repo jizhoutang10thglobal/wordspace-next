@@ -91,10 +91,27 @@ function collectMdUrlSpans(raw, tree) {
   return spans;
 }
 
-// 重写一个文件的内容（纯字符串进出）。ownOldRel = 文件重写前的根内路径（解析既有 href 的基准）；
-// ownNewRel = 重写后的路径（自己被移动时 != old）。moves = Map(oldRel → newRel)。
-// 返回 { content, changed, count }。解析失败 / 无命中 → 原样返回、changed=false。
-async function rewriteContent(raw, ownOldRel, ownNewRel, moves, isMd) {
+// ---- C 跨根：绝对路径域重写引擎 ----
+// rel 包装（rewriteContent）用的虚拟根：把 rel 抬成 abs 走同一引擎；单根 → relHrefSmart 恒同根 → 短形式，
+// 与旧 rel 域输出逐字节相同（既有 14 字节保真单测继续走 rewriteContent 验证同一引擎）。
+const VIRTUAL_ROOT = '/__ws2rewrite_root__';
+
+function rootOf(abs, rootDirs) {
+  for (const rd of rootDirs) { if (abs === rd || abs.indexOf(rd + '/') === 0) return rd; }
+  return null;
+}
+// 目标新址 → href：同根写**短形式**（relHref，N5：同根别写成绕出根顶的长形式，否则被判断成断链）；
+// 跨根写 abs 形式（relHrefAbs）。目标不在任何根下 → 外部链接、不该由本机器动（调用方已先跳过）。
+function relHrefSmart(ownNewAbs, targetAbs, rootDirs) {
+  const ro = rootOf(ownNewAbs, rootDirs), rt = rootOf(targetAbs, rootDirs);
+  if (ro && rt && ro === rt) return wsLinks.relHref(ownNewAbs.slice(ro.length + 1), targetAbs.slice(rt.length + 1));
+  return wsLinks.relHrefAbs(ownNewAbs, targetAbs);
+}
+
+// abs 域重写引擎：ownOldAbs/ownNewAbs = 文件重写前/后的绝对路径（自己被移动时 old != new，跨根移动 old/new 在不同根）；
+// movesAbs = Map(absOld → absNew)；rootDirs = 所有 live 根的绝对路径（判短/长形式 + 只重写「解析到某根下」的目标）。
+// **只重写目标落在某个根下的链接**——外部链接（解析到无根处）一律不碰（这条同时让 rel 包装保持旧「越界不动」语义）。
+async function rewriteContentAbs(raw, ownOldAbs, ownNewAbs, movesAbs, isMd, rootDirs) {
   const src = String(raw == null ? '' : raw);
   let tree;
   try {
@@ -105,12 +122,13 @@ async function rewriteContent(raw, ownOldRel, ownNewRel, moves, isMd) {
   const splices = [];
   for (const sp of spans) {
     const parts = wsLinks.splitHrefSuffix(sp.rawUrl); // [path, 尾缀]
-    const target = wsLinks.resolveHref(ownOldRel, parts[0]); // 外链/锚点/越界 → null
-    if (target == null) continue;
-    const has = moves.get(target);
-    const targetNew = has != null ? has : target;
-    if (targetNew === target && ownNewRel === ownOldRel) continue; // 两头都没动
-    const newHref = wsLinks.relHref(ownNewRel, targetNew) + parts[1];
+    const absTarget = wsLinks.resolveHrefAbs(ownOldAbs, parts[0]); // 同根/跨根统一 abs 解析；外链/锚点/根绝对 → null
+    if (absTarget == null) continue;
+    if (rootOf(absTarget, rootDirs) == null) continue; // 目标在工作区外 → 不碰（保「越界不动」语义）
+    const has = movesAbs.get(absTarget);
+    const absTargetNew = has != null ? has : absTarget;
+    if (absTargetNew === absTarget && ownNewAbs === ownOldAbs) continue; // 两头都没动
+    const newHref = relHrefSmart(ownNewAbs, absTargetNew, rootDirs) + parts[1];
     if (newHref === sp.rawUrl) continue; // 子树内部互链等：算出来没变 → 不写
     splices.push({ start: sp.start, end: sp.end, text: newHref });
   }
@@ -118,4 +136,13 @@ async function rewriteContent(raw, ownOldRel, ownNewRel, moves, isMd) {
   return { content: applySplices(src, splices), changed: true, count: splices.length };
 }
 
-module.exports = { rewriteContent, applySplices, collectHtmlHrefSpans, collectMdUrlSpans, loadHtmlParser, loadMdParser };
+// rel 域包装（保留原签名/语义，既有单测走它）。ownOldRel/ownNewRel = 单根内路径；moves = Map(oldRel → newRel)。
+// 虚拟根 → 引擎里恒同根 → 短形式，逐字节等于旧实现。
+async function rewriteContent(raw, ownOldRel, ownNewRel, moves, isMd) {
+  const R = VIRTUAL_ROOT;
+  const movesAbs = new Map();
+  for (const [o, n] of moves) movesAbs.set(R + '/' + o, R + '/' + n);
+  return rewriteContentAbs(raw, R + '/' + ownOldRel, R + '/' + ownNewRel, movesAbs, isMd, [R]);
+}
+
+module.exports = { rewriteContent, rewriteContentAbs, relHrefSmart, applySplices, collectHtmlHrefSpans, collectMdUrlSpans, loadHtmlParser, loadMdParser };

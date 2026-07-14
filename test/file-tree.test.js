@@ -5,7 +5,23 @@ const {
   kindOf,
   assertInsideWorkspace,
   cleanLeafName,
+  isSkippedName,
 } = require('../src/lib/file-tree.js');
+
+test('isSkippedName：dotfile / .ws2tmp / 依赖目录 / Windows·云盘垃圾都跳过；形似合法名保留', () => {
+  // 原有三类
+  for (const skip of ['.DS_Store', '.git', '.hidden.md', 'a.html.ws2tmp-9-0', 'old.html.ws2tmp', 'node_modules']) {
+    assert.ok(isSkippedName(skip), '应跳过：' + skip);
+  }
+  // Windows/云盘垃圾（非点号，大小写不敏感）
+  for (const junk of ['desktop.ini', 'Desktop.INI', 'DESKTOP.INI', 'Thumbs.db', 'ehthumbs.db', '$RECYCLE.BIN', 'System Volume Information', '~$报告.docx', 'Icon\r']) {
+    assert.ok(isSkippedName(junk), '应跳过垃圾：' + JSON.stringify(junk));
+  }
+  // 反误伤：形似但合法
+  for (const keep of ['desktop.html', 'my-desktop.md', '~波浪号.html', 'Iconography.html', 'Icon.png', 'report.docx']) {
+    assert.ok(!isSkippedName(keep), '不该误伤：' + keep);
+  }
+});
 
 test('buildFileTree nests + puts folders before files at each level', () => {
   const tree = buildFileTree([

@@ -332,6 +332,10 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-kind-slides .sb-ico { color: #b06000; }
 
 .sb-tree-empty { font-size: var(--fs-sm); color: var(--c-text-3); font-style: italic; padding: 4px 8px; }
+/* 两段式添加：大文件夹读盘时的加载占位（安静的呼吸，不弹跳；reduced-motion 下静止） */
+.sb-loading { font-size: var(--fs-sm); color: var(--c-text-3); padding: 4px 8px; animation: ws-breathe 1.4s ease-in-out infinite; }
+@keyframes ws-breathe { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sb-loading { animation: none; opacity: .7; } }
 
 /* ===== 多根：根标题行（每个打开的文件夹一节，对齐 ui-demo arc-root-head）=====
    实底 + 粗体做「节」的视觉锚；层级靠底色差，无阴影（保守口径）。 */
@@ -902,6 +906,9 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-mention-title.ws-mention-action { color: var(--c-accent); }
 .ws-mention-path { font-size: 11px; opacity: 0.55; overflow: hidden; text-overflow: ellipsis; }
 .ws-mention-empty { padding: 8px; opacity: 0.6; font-size: 12px; }
+/* B 跨根：其他空间分节头 + 跨卷根不可链的灰字提示 */
+.ws-mention-group { padding: 5px 8px 2px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; opacity: 0.5; text-transform: none; }
+.ws-mention-volnote { padding: 6px 8px; margin-top: 2px; font-size: 10.5px; opacity: 0.42; border-top: 1px solid var(--c-border); }
 
 /* U4 悬停预览卡 / 断链修复卡（父层浮层，抄 mention 壳；position 由 JS el.style 设——CSP 下 CSSOM setter 安全）*/
 .ws-linkview-card {
@@ -941,6 +948,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-bl-item:hover { background: var(--c-hover); }
 .ws-bl-item-title { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-bl-item-snippet { font-size: 11px; color: var(--c-text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A 跨根反链：来源在别的文件夹空间 → 标空间名小徽标 */
+.ws-bl-item-root { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 10.5px; line-height: 15px; color: var(--c-text-3); background: var(--c-hover); border-radius: var(--r-sm); vertical-align: middle; }
 
 /* U6 删除守卫 modal（沿用 sb-modal / sb-modal-overlay 壳；sb-modal 自身无内边距——padding 本在
    head/body 子容器上，本卡内容是 sb-modal 直接子元素，故这里自己补内边距，否则内容贴边=看着像没样式）*/

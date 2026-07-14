@@ -13,7 +13,7 @@ const perfDiag = require('./perf-diag');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
 const mdAdapter = require('./md-adapter');
 const { pathInfo } = require('../lib/path-url');
-const { assertInsideWorkspace, kindOf } = require('../lib/file-tree');
+const { assertInsideWorkspace, kindOf, isNoisePath, affectedDirsOf } = require('../lib/file-tree');
 const { TEMPLATES } = require('../lib/doc-templates');
 const rootsLib = require('../lib/roots');
 const tabsLib = require('../lib/tabs'); // 吸收时把持久化标签同步 rebase（双导出 IIFE，主进程可 require）
@@ -70,17 +70,20 @@ async function canonReal(p) {
     return resolved;
   }
 }
-// 起对某根的递归监听：外部增删改 → 通知 renderer 重读该根的树 + reconcile 标签（事件带 rootId）。
-// watcher 挂了（拔盘/根被删）→ 复查可达性：真没了标 missing + 广播（renderer 重拉根列表渲染失联态）；
-// 还在（瞬时错误）→ 重新挂监听。没有这步，运行中拔盘的根会「树冻结在旧状态、永不转失联」（MR-ADV-4）。
+// 起对某根的递归监听：外部增删改 → 通知 renderer 重读该根的树 + reconcile 标签（事件带 rootId +
+// 变化目录列表）。watcher 挂了（拔盘/根被删）→ 复查可达性：真没了标 missing + 广播（renderer 重拉根列表
+// 渲染失联态）；还在（瞬时错误）→ 重新挂监听。没有这步，运行中拔盘的根会「树冻结在旧状态、永不转失联」（MR-ADV-4）。
+// 大根性能：噪音事件在 watcher 层直接丢（isNoise）；报得出变化路径就归并成「受影响目录」（affectedDirsOf）
+// 让 renderer 走子树级重扫（ws-read-subtrees），归并不出来（根层变化/路径太散/平台没给路径）才发 null = 全量。
 function startRootWatch(root) {
   workspaceWatcher.watch(
     root.id,
     root.path,
-    () => {
+    (changedRels) => {
       perfDiag.recordWatch(root.path); // 诊断探针：数这个根被 watcher 触发几次（云盘 churn 会很高）
+      const dirs = changedRels ? affectedDirsOf(changedRels) : null;
       for (const w of BrowserWindow.getAllWindows()) {
-        if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id);
+        if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id, dirs);
       }
       refreshLinkIndex(root.id); // U2：外部增删改 → 增量刷新该根链接索引（内部去抖/串行）
     },
@@ -88,6 +91,7 @@ function startRootWatch(root) {
       if (await dirExists(root.path)) { startRootWatch(root); return; }
       markRootMissing(root);
     },
+    { isNoise: isNoisePath, delayMs: () => perfDiag.suggestDebounceMs(root.path) },
   );
 }
 // 运行时转失联（幂等）：标 missing + 广播根列表变化。missing 不持久化（重启时 restoreRoots 重新判定）。
@@ -135,6 +139,11 @@ function ensureLinkIndex(rootId) {
     scheduleLinkSave();
   });
 }
+// 跨根 fan-out 查询（反链/删除守卫）前，确保**所有 live 根**都建过索引——否则源在别的、尚未懒建的根里会漏。
+// 首次可能重（逐根建），之后走增量；用户主动触发的查询，可接受（plan N4）。
+function ensureAllLinkIndexes() {
+  return Promise.all(roots.filter((r) => !r.missing).map((r) => ensureLinkIndex(r.id)));
+}
 // 树变化后增量刷新（只对已建过索引的根——没建过的等被 query 时懒建）。变了才广播 + 存盘。
 // 合并突发（审查 #3）：已排队一次刷新就不再叠加——排队的那次进入执行时会读到最新磁盘、覆盖执行前的全部变更。
 function refreshLinkIndex(rootId) {
@@ -149,52 +158,63 @@ function refreshLinkIndex(rootId) {
   });
 }
 
-// ---- U5 改名/移动 → 自动重写引用（字节保真，handoff §5.4）----
+// ---- U5+C 改名/移动 → 自动重写引用（字节保真，handoff §5.4；C：绝对路径域 + fan-out 所有根，跨根引用也跟着改）----
 const relOf = (root, abs) => path.relative(root, abs).split(path.sep).join('/');
-// 由「一次改名/移动」算出 moves 映射（旧根内 rel → 新 rel）。文件 = 单条；文件夹 = 子树每个文档一条。
-async function computeMoves(root, oldRel, newRel) {
+function liveRootDirs() { return roots.filter((r) => !r.missing).map((r) => r.path); } // 判短/长形式 + fan-out 目标
+// 一次改名/移动 → **abs moves**（absOld → absNew）。文件=单条；文件夹=子树每个文档。fromDir/toDir 可不同根（跨根移动）。
+async function computeMovesAbs(fromDir, oldRel, toDir, newRel) {
   const moves = new Map();
-  const newAbs = path.join(root, newRel.split('/').join(path.sep));
+  const j = (dir, rel) => path.join(dir, rel.split('/').join(path.sep));
+  const newAbs = j(toDir, newRel);
   let isDir = false;
   try { isDir = (await fsp.stat(newAbs)).isDirectory(); } catch (e) {}
-  if (!isDir) { moves.set(oldRel, newRel); return moves; }
-  const docs = await workspace.listDocs(root).catch(() => []);
+  if (!isDir) { moves.set(j(fromDir, oldRel), newAbs); return moves; }
+  const docs = await workspace.listDocs(toDir).catch(() => []);
   for (const r of docs) {
-    if (r === newRel || r.indexOf(newRel + '/') === 0) moves.set(oldRel + r.slice(newRel.length), r);
+    if (r === newRel || r.indexOf(newRel + '/') === 0) moves.set(j(fromDir, oldRel + r.slice(newRel.length)), j(toDir, r));
   }
   return moves;
 }
-// 按 moves 重写全根文档的 href（字节保真）。skipAbs = 打开中的文档（renderer 自己在内存里改、主进程别碰，
-// 免和自动保存打架）。归档旧字节做安全网/撤销源。返回改动的文档数。
-async function rewriteRefsForMoves(root, moves, skipAbs) {
-  const inv = wsLinks.invertMoves(moves); // newRel → oldRel（被移动的文件才有）
-  const skipOld = skipAbs ? relOf(root, skipAbs) : null; // 打开中文档的旧 rel（传的是 op 前 abs）
-  const skipRel = skipOld ? (moves.get(skipOld) || skipOld) : null; // 它自己也可能被移动 → 跳它的新 rel
-  const rels = await workspace.listDocs(root).catch(() => []);
+// 按 abs moves 重写**所有 live 根**的文档（字节保真，C fan-out——跨根引用也修）。skipAbs=打开中文档（renderer 内存改）。
+// 归档旧字节做安全网/撤销源。返回 { count, changedRootIds }。
+async function rewriteRefsForMovesAbs(movesAbs, skipAbs) {
+  const rootDirs = liveRootDirs();
+  const invAbs = new Map(); for (const [o, n] of movesAbs) invAbs.set(n, o); // absNew → absOld（被移动的文件才有）
+  const skipNewAbs = skipAbs ? (movesAbs.get(skipAbs) || skipAbs) : null; // 打开中文档也可能被移动 → 跳它的新 abs
   let count = 0;
-  for (const rel of rels) {
-    if (rel === skipRel) continue; // 打开中的文档交给 renderer 内存改
-    const abs = path.join(root, rel.split('/').join(path.sep));
-    let raw;
-    try { raw = await fsp.readFile(abs, 'utf8'); } catch (e) { continue; }
-    const ownOld = inv.get(rel) || rel;
-    const isMd = mdAdapter.isMdPath(abs);
-    let res;
-    try { res = await linkRewrite.rewriteContent(raw, ownOld, rel, moves, isMd); } catch (e) { continue; }
-    if (!res.changed) continue;
-    const prev = await files.readDocBuffer(abs).catch(() => null);
-    if (prev !== null) await history.archive(historyRoot(), abs, prev).catch(() => {}); // 安全网/撤销源
-    try { await files.writeDocSafe(abs, res.content, { allowWhitespaceOnly: isMd }); count++; } catch (e) {}
+  const changedRootIds = new Set();
+  for (const r of roots.filter((x) => !x.missing)) {
+    const rels = await workspace.listDocs(r.path).catch(() => []);
+    for (const rel of rels) {
+      const abs = path.join(r.path, rel.split('/').join(path.sep));
+      if (abs === skipNewAbs) continue; // 打开中的文档交给 renderer 内存改
+      let raw;
+      try { raw = await fsp.readFile(abs, 'utf8'); } catch (e) { continue; }
+      const ownOldAbs = invAbs.get(abs) || abs; // 自己被移动了？用旧 abs 解析既有 href
+      const isMd = mdAdapter.isMdPath(abs);
+      let res;
+      try { res = await linkRewrite.rewriteContentAbs(raw, ownOldAbs, abs, movesAbs, isMd, rootDirs); } catch (e) { continue; }
+      if (!res.changed) continue;
+      const prev = await files.readDocBuffer(abs).catch(() => null);
+      if (prev !== null) await history.archive(historyRoot(), abs, prev).catch(() => {}); // 安全网/撤销源
+      try { await files.writeDocSafe(abs, res.content, { allowWhitespaceOnly: isMd }); count++; changedRootIds.add(r.id); } catch (e) {}
+    }
   }
-  return count;
+  return { count, changedRootIds };
 }
-// 改名/移动收口：算 moves → 重写非打开文档 → 刷索引 → 返回 { rewritten, moves }（moves 给 renderer 改打开中文档）。
-async function rewriteAfterMove(root, rootId, oldRel, newRel, openAbs) {
-  if (newRel === oldRel) return { rewritten: 0, moves: [] }; // 同名 no-op
-  const moves = await computeMoves(root, oldRel, newRel);
-  const rewritten = await rewriteRefsForMoves(root, moves, openAbs);
-  refreshLinkIndex(rootId); // 引用变了 → 刷索引（反链/断链装饰跟上）
-  return { rewritten, moves: [...moves] };
+// 改名/移动收口（同根 fromDir===toDir / 跨根不同）：算 abs moves → fan-out 重写 → 刷受影响根索引 →
+// 返回 { rewritten, moves }（moves = abs，给 renderer 改打开中文档）。
+async function rewriteAfterMoveAbs(fromDir, fromRootId, oldRel, toDir, toRootId, newRel, openAbs) {
+  if (fromDir === toDir && newRel === oldRel) return { rewritten: 0, moves: [] }; // 同名 no-op
+  const movesAbs = await computeMovesAbs(fromDir, oldRel, toDir, newRel);
+  const { count, changedRootIds } = await rewriteRefsForMovesAbs(movesAbs, openAbs);
+  changedRootIds.add(fromRootId); changedRootIds.add(toRootId); // 移动本身也让两根索引变
+  for (const id of changedRootIds) refreshLinkIndex(id);
+  return { rewritten: count, moves: [...movesAbs] };
+}
+// 同根改名/移动的收口（ws-rename/ws-move 用；fromDir===toDir===root）。
+function rewriteAfterMove(root, rootId, oldRel, newRel, openAbs) {
+  return rewriteAfterMoveAbs(root, rootId, oldRel, root, rootId, newRel, openAbs);
 }
 
 // 启动恢复（幂等，首次 ws-get-roots 触发）：store 里的每个根检查可达性，失联的标 missing 不悄悄丢。
@@ -316,8 +336,37 @@ function registerIpc() {
     const others = root ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
     return { docs: linkIndex.query(rootId), others };
   });
-  ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureLinkIndex(rootId); return linkIndex.backlinks(rootId, rel); });
-  ipcMain.handle('ws-links-dir-backlinks', async (_e, rootId, dirRel) => { await ensureLinkIndex(rootId); return linkIndex.dirBacklinks(rootId, dirRel); }); // U6 删除守卫（文件夹=夹外引用）
+  // B @菜单跨根候选：所有 live 根分组返回。sourceRootId = 触发 @ 的文档所在根 → 排在最前（组内行为与单根现状一致，单根用户零感知）。
+  // sameVol = 与源根同磁盘卷（stat().dev 相等）；跨卷根不给建链（B 层可见拒绝，renderer 灰字提示、不列候选）。
+  ipcMain.handle('ws-links-candidates-all', async (_e, sourceRootId) => {
+    await ensureAllLinkIndexes();
+    const live = roots.filter((r) => !r.missing);
+    const devOf = async (p) => { try { return (await fsp.stat(p)).dev; } catch { return null; } };
+    const srcRoot = live.find((r) => r.id === sourceRootId);
+    const srcDev = srcRoot ? await devOf(srcRoot.path) : null;
+    const ordered = srcRoot ? [srcRoot, ...live.filter((r) => r.id !== sourceRootId)] : live;
+    const groups = [];
+    for (const r of ordered) {
+      const dev = await devOf(r.path);
+      groups.push({
+        rootId: r.id,
+        rootName: rootInfo(r).name,
+        sameVol: srcDev != null && dev != null && dev === srcDev,
+        docs: linkIndex.query(r.id),
+        others: await linkIndex.listNonDocFiles(r.path).catch(() => []),
+      });
+    }
+    return groups;
+  });
+  // B：两根是否同一磁盘卷（stat().dev）。跨根建链（@菜单/拖拽）的同卷约束（plan §5）；拖拽路径用它（@菜单在 candidates-all 里已算）。
+  ipcMain.handle('ws-same-volume', async (_e, aId, bId) => {
+    const a = liveRoot(aId), b = liveRoot(bId);
+    if (!a || !b) return false;
+    try { const [sa, sb] = await Promise.all([fsp.stat(a.path), fsp.stat(b.path)]); return sa.dev === sb.dev; } catch { return false; }
+  });
+  ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureAllLinkIndexes(); return linkIndex.backlinks(rootId, rel); }); // A：fan-out 所有根（跨根反链）
+  ipcMain.handle('ws-links-dir-backlinks', async (_e, rootId, dirRel) => { await ensureAllLinkIndexes(); return linkIndex.dirBacklinks(rootId, dirRel); }); // U6 删除守卫 + A 跨根夹外引用
+  ipcMain.handle('ws-links-outlinks-count', async (_e, rootId, rel, isDir) => { await ensureLinkIndex(rootId); return linkIndex.ownOutlinks(rootId, rel, isDir); }); // U-CR0 跨根移动守卫：条目自身会断的出链数
   ipcMain.handle('ws-links-moved-target', async (_e, rootId, sourceRel, targetRel) => { await ensureLinkIndex(rootId); return linkIndex.movedTarget(rootId, sourceRel, targetRel); }); // U7 修复卡：断链目标靠 doc-id 反查现址
   ipcMain.handle('ws-links-rebuild', async (_e, rootId) => {
     await queueLink(rootId, async () => {
@@ -472,7 +521,8 @@ function registerIpc() {
         r.missing = false;
         r.real = await canonReal(r.path);
         startRootWatch(r);
-        return { status: 'revived', root: rootInfo(r), tree: await workspace.readTree(r.path) };
+        // 两段式（见 'added' 分支说明）：不带 tree，renderer 渲染加载态后走 wsReadTree 填。
+        return { status: 'revived', root: rootInfo(r) };
       }
       return { status: 'same', root: rootInfo(r) };
     }
@@ -494,7 +544,11 @@ function registerIpc() {
     roots.push(root);
     await persistRoots();
     startRootWatch(root);
-    return { status: 'added', root: rootInfo(root), tree: await workspace.readTree(root.path) };
+    // 两段式返回：先回根（不带 tree），renderer 立刻渲染根 + 「正在读取…」加载行，再走 wsReadTree 填树。
+    // 大文件夹（桌面/云盘）全量扫描 4-5s 阻塞在这条 IPC 回复上时，用户干等无反馈（Wendi 2026-07-14）。
+    // watcher 已 startRootWatch 注册；加载期间（renderer 的 st.tree 仍为 null）watcher 事件被 doTreeScan
+    // 的 `!st.tree` 守卫自然 no-op，不与第二段的 wsReadTree 打架。
+    return { status: 'added', root: rootInfo(root) };
   });
   // 「并入并添加」确认：吸收子根（子根注销、标签 rebase 进新父根——文件都还在磁盘原处，只换归属）。
   ipcMain.handle('ws-absorb-confirm', async (_e, token) => {
@@ -614,6 +668,22 @@ function registerIpc() {
     if (!tree && !(await dirExists(r.path))) markRootMissing(r);
     return tree;
   });
+  // 子树级重扫（watcher 报得出变化目录时的便宜路径）：只重扫受影响目录。返回 null = 让 renderer 回落全量
+  // readTree（目录波及根层/参数不对/根失联）。dirs 由主进程 affectedDirsOf 产生，但按「渲染层传来的路径
+  // 一律不可信」的既有威胁模型，readSubtrees 内部仍逐条 assertInsideWorkspace。
+  ipcMain.handle('ws-read-subtrees', async (_e, rootId, dirs) => {
+    const r = roots.find((x) => x.id === rootId);
+    if (!r || r.missing) return null;
+    if (!Array.isArray(dirs) || !dirs.length || dirs.length > 8 || dirs.some((d) => typeof d !== 'string' || !d)) return null;
+    try {
+      return await workspace.readSubtrees(r.path, dirs);
+    } catch {
+      return null; // 越权路径/瞬时 IO 错 → 回落全量，别把树搞半残
+    }
+  });
+  // 聚焦兜底的便宜版：冲掉该根 watcher 的在途去抖（有变化立即走正常事件管线），返回 watcher 是否活着——
+  // 不活（平台不支持递归 watch/挂了）的根，renderer 才需要聚焦全量刷新。
+  ipcMain.handle('ws-watch-flush', (_e, rootId) => ({ alive: workspaceWatcher.flush(rootId) }));
   ipcMain.handle('ws-new-doc', (_e, rootId, dirRel, base, html, ext) =>
     workspace.newDoc(rootById(rootId), dirRel, base, html, ext),
   );
@@ -673,25 +743,31 @@ function registerIpc() {
   // U5 外部改名/移动探测「一键更新」：rename 已在外部（Finder）发生，这里只按 moves 重写引用（不做 rename）。
   ipcMain.handle('ws-rewrite-moves', async (_e, rootId, movesArr, openAbs) => {
     const root = rootById(rootId);
-    const rewritten = await rewriteRefsForMoves(root, new Map(movesArr), openAbs);
-    refreshLinkIndex(rootId);
-    return { rewritten };
+    const j = (rel) => path.join(root, rel.split('/').join(path.sep));
+    const movesAbs = new Map(); for (const [o, n] of movesArr) movesAbs.set(j(o), j(n)); // 外部改名探测给的是同根 rel 对 → 抬成 abs
+    const { count, changedRootIds } = await rewriteRefsForMovesAbs(movesAbs, openAbs);
+    changedRootIds.add(rootId);
+    for (const id of changedRootIds) refreshLinkIndex(id);
+    return { rewritten: count, moves: [...movesAbs] };
   });
   // 跨根移动（v1 便宜档）：同文件系统 rename 快路径成功即返回新 rel；真跨盘 EXDEV → 结构化 {crossDevice:true}
   // 让 renderer 出 toast（不做复制回退，Colin 2026-07-08 拍板）。其他错误（EACCES/ENOENT）原样抛，renderer 有 catch。
   // WS2_FORCE_EXDEV 测试 seam（仅非打包态，同 WS2_FOLDER_IN/WS2_PDF_OUT 先例）：真 tmp 造不出跨文件系统，
   // 设了就直接走 EXDEV 分支，e2e 才测得到 toast。打包态忽略（生产进程继承到也不改行为）。
-  ipcMain.handle('ws-move-across', async (_e, fromRootId, relPath, toRootId, destDirRel) => {
+  ipcMain.handle('ws-move-across', async (_e, fromRootId, relPath, toRootId, destDirRel, openAbs) => {
     const from = rootById(fromRootId); // 未注册/失联根抛错（树都不渲染、拖不出节点，正常到不了）
     const to = rootById(toRootId);
     if (!app.isPackaged && process.env.WS2_FORCE_EXDEV) return { crossDevice: true };
     try {
       const r = await workspace.movePathAcross(from, relPath, to, destDirRel);
+      // C2：跨根移动后自动重写所有根里的引用（源根指向它的 href + 它自己指向源根兄弟的出链），返回 abs moves 给 renderer 改打开中文档。
+      // from/to 是 rootById 返回的**路径字符串**（不是对象），直接当 fromDir/toDir 传。
+      const rw = await rewriteAfterMoveAbs(from, fromRootId, relPath, to, toRootId, r.rel, openAbs);
       // 测试 seam（仅非打包）：落盘后、reply 前拖延，给 renderer 一个窗口触发 onTreeChanged——确定性复现
       // 「源根 watcher 抢在标签 retarget 之前 reconcile」的竞态，验证 crossMoveGuard 挡住误清（对抗审查 P2）。
       const slow = !app.isPackaged ? +process.env.WS2_SLOW_MOVE_MS || 0 : 0;
       if (slow) await new Promise((res) => setTimeout(res, slow));
-      return r;
+      return { ...r, rewritten: rw.rewritten, moves: rw.moves };
     } catch (err) {
       if (err && err.code === 'EXDEV') return { crossDevice: true };
       throw err;

@@ -19,7 +19,8 @@
   let rootsState = []; // [{ id, path, name, missing, tree }] 有序 = 侧栏显示序；missing 根 tree=null
   let query = '';
   let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，全局单一集合持久化）
-  let suppressRevealOnce = false; // 一次性:关标签回落时置真,onOpen 消费它抑制树定位（Colin：关标签不滚树）
+  let suppressRevealOnce = false; // 一次性:关标签回落时置真,onOpen 消费它整个抑制树定位（Colin：关标签不滚树）
+  let suppressScrollOnce = false; // 一次性:点标签时置真,onOpen 消费它让 expandToFile 展开但不滚（Colin 2026-07-14）
   let diagRenderStart = 0; // 诊断探针：一次 render/renderRoot 的起点，afterRender 里结算
   const diagRender = { lastMs: 0, maxMs: 0, count: 0 }; // 诊断探针：renderer 渲染耗时（Cmd+Shift+D 看）
   // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复根 + 标签」
@@ -157,17 +158,38 @@
     } else if (r.status === 'parent') {
       openAbsorbConfirm(r);
     } else if (r.status === 'revived') {
-      // 选的是失联根的路径且现在可达 → 主进程顺手复活了它
+      // 选的是失联根的路径且现在可达 → 主进程顺手复活了它。两段式：先转非失联 + 加载态渲染，再填树。
       const st = rootOf(r.root.id);
-      if (st) { st.missing = false; st.path = r.root.path; st.name = r.root.name; st.tree = annotateTree(r.tree.tree, st.id); collectDirRels(st.tree, st.id, collapsed); }
+      if (st) { st.missing = false; st.path = r.root.path; st.name = r.root.name; st.tree = null; st.loading = true; }
       syncChrome();
       render();
-      validateRootEntries(r.root.id);
-      showToast('「' + r.root.name + '」已重新连接');
+      await loadRootTree(r.root.id, { validate: true, toast: '「' + r.root.name + '」已重新连接' });
     } else if (r.status === 'added') {
-      adoptRoot(r.root, r.tree);
-      showToast('已打开文件夹「' + r.root.name + '」');
+      // 两段式：先把根装进 rootsState（tree=null + loading），立刻渲染根 + 加载行；再异步 wsReadTree 填树。
+      const st = adoptRoot(r.root, null);
+      st.loading = true;
+      render();
+      await loadRootTree(r.root.id, { toast: '已打开文件夹「' + r.root.name + '」' });
     }
+  }
+  // 两段式添加/复活的第二段：异步读该根的树填进去、清 loading。期间根被移除/吸收 → rootOf 返回 null，放弃。
+  // 读不到树（不可达）→ 转失联灰态（别当空树，否则 reconcile 会把标签清光——workspace.readTree 的 null 契约）。
+  async function loadRootTree(rootId, opts = {}) {
+    let data = null;
+    try { data = await window.ws2.wsReadTree(rootId); } catch (e) { data = null; }
+    const st = rootOf(rootId);
+    if (!st) return; // 加载期间该根被移除/吸收
+    st.loading = false;
+    if (data) {
+      st.tree = annotateTree(data.tree, rootId);
+      collectDirRels(st.tree, rootId, collapsed);
+    } else {
+      st.missing = true; // 不可达 → 失联灰态，不当空树
+    }
+    syncChrome();
+    render();
+    if (opts.validate) validateRootEntries(rootId);
+    if (opts.toast) showToast(opts.toast);
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
   // 吸收后子根的标签不关、整体 rebase 进新根（文件都在磁盘原处，只换归属）。
@@ -554,6 +576,14 @@
     };
     parent.appendChild(head);
     if (!open) return true;
+    if (root.loading) {
+      // 两段式添加：树还在读盘（大文件夹/云盘 4-5s）→ 加载行占位，别显示成「空文件夹」。
+      const e = document.createElement('div');
+      e.className = 'sb-loading';
+      e.textContent = '正在读取文件夹…';
+      parent.appendChild(e);
+      return true;
+    }
     if (!nodes.length) {
       const e = document.createElement('div');
       e.className = 'sb-tree-empty';
@@ -807,10 +837,12 @@
     const label = names.length === 1 ? '「' + names[0] + '」' : (names.length + ' 个文件');
     showToast('检测到' + label + '改名/移动，' + total + ' 篇文档的链接指向旧路径', '一键更新', async () => {
       const openAbs = window.__shellDocPath ? window.__shellDocPath() : null;
-      let n = 0;
-      try { const res = await window.ws2.wsRewriteMoves(rootId, [...moves], openAbs); n = (res && res.rewritten) || 0; } catch (e) {}
-      const openN = window.__wsApplyMovesToOpenDoc ? await window.__wsApplyMovesToOpenDoc([...moves]) : 0;
-      showToast('已更新 ' + (n + openN) + ' 篇文档里的链接');
+      try {
+        const res = await window.ws2.wsRewriteMoves(rootId, [...moves], openAbs); // C：返回 abs moves + fan-out（跨根引用也修）
+        const n = (res && res.rewritten) || 0;
+        const openN = (res && res.moves && window.__wsApplyMovesToOpenDoc) ? await window.__wsApplyMovesToOpenDoc(res.moves) : 0;
+        showToast('已更新 ' + (n + openN) + ' 篇文档里的链接');
+      } catch (e) {}
     });
   }
   async function doMove(node, destDirRel) {
@@ -846,14 +878,16 @@
   // 全程守卫两根的 reconcile（crossMoveGuard）：移动落盘到标签 retarget 之间有 IPC 往返窗口，期间
   // watcher 事件不能抢跑 reconcile（否则源根找不到已搬走文件的 inode → 误删标签）。
   async function doMoveAcross(node, toRootId, destDirRel) {
+    // C2：跨根移动 = 自动重写所有根里的引用 + toast 撤销（不再弹 U-CR0 守卫；守卫是 C 落地前的临时保护）。
     const op = openPath();
     const wasOpen = !node.isDir && op === node.abs;
     const openUnderDir = node.isDir && isUnder(op, node.abs); // 移动的目录含当前打开文档
+    markInAppFileOp(); // 抑制外部改名探测二次提示（跨根重写会动多根、别被 watcher 当外部改名）
     guardRoot(node.rootId);
     guardRoot(toRootId);
     try {
       let r;
-      try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel); }
+      try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel, op); } // op=打开中文档 abs，主进程重写时跳过它
       catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
       if (r && r.crossDevice) { // 真跨盘：不搬，明确告知（此前没动任何状态）
         showToast('这两个文件夹在不同的磁盘上，暂不支持直接拖动移动——先在访达里复制过去');
@@ -878,6 +912,11 @@
       }
       await refreshRoot(node.rootId); // 源根：文件走了
       await refreshRoot(toRootId); // 目标根：文件来了
+      // C2 撤销：把它移回原根原目录（走同一套 doMoveAcross → 引用反向重写 + 标签/retarget 自然反转，L4）。
+      const origDir = node.rel.indexOf('/') >= 0 ? node.rel.slice(0, node.rel.lastIndexOf('/')) : '';
+      const fromRootId = node.rootId, oldAbs = node.abs, newRel = r.rel;
+      const reverse = () => undoMoveOp(newRel, oldAbs, toRootId, (nn) => doMoveAcross(nn, fromRootId, origDir));
+      await notifyRefsRewritten(r, reverse); // C2：更新打开中文档 + toast「已更新 N 篇 · 撤销」（有引用被改才弹）
       // 移动的正是激活标签对应文件 → 在目标根树里展开定位
       const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
       if (act && act.rootId === toRootId && act.rel) expandToFile(toRootId, act.rel);
@@ -925,6 +964,7 @@
       cancel.focus();
     });
   }
+  // （U-CR0 的跨根移动守卫弹窗已退役：C2 让跨根移动自动重写引用 + 撤销，不再需要「移动会断链」的事前警告。）
   async function doDelete(node) {
     // U6 删除守卫：先查引用（文件→backlinks，文件夹→夹外引用）。有引用才弹守卫、用户确认才删；无引用直接删。
     let referrers = [];
@@ -1640,8 +1680,9 @@
   // ---- 渲染两区 ----
   // 点标签开它：内部文件走树节点 openNode；外部文件(无 rel)按 kind 分发 abs（跟「打开」按钮一条路，
   // shell.js 的 openDoc/showViewer 已支持纯 abs）。
-  // UX4（Wendi F6-①）：把文件树展开到 (rootId, rel) 指向的文件（展开根节 + 逐级删父文件夹 collapsed）并滚动定位。
-  function expandToFile(rootId, rel) {
+  // 把文件树展开到 (rootId, rel) 指向的文件（展开根节 + 逐级删父文件夹 collapsed）。scroll=true 时再滚动定位。
+  // scroll 拆出来：点标签要「展开+高亮但不滚动视口」（Colin 2026-07-14），滚动才是刺眼的「往下跳」本体。
+  function expandToFile(rootId, rel, scroll = true) {
     let changed = false;
     if (rootClosed.has(rootId)) { rootClosed.delete(rootId); changed = true; } // 根节整个收着也要先展开
     const parts = rel.split('/'); parts.pop(); // 去掉文件名，只留父文件夹链
@@ -1652,14 +1693,19 @@
       if (collapsed.has(key)) { collapsed.delete(key); changed = true; }
     }
     if (changed) renderRoot(rootId); // 只重建该文件所在的根（性能）
+    if (!scroll) return; // 点标签：只展开+高亮，不 scrollIntoView（不把上方标签区顶走）
     const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel && el.dataset.root === rootId);
     if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   }
-  // reveal=true（默认，点标签）：把文件树展开到该文件并滚动定位。reveal=false（关标签后回落到相邻标签）：
-  // 只切编辑器 + 高亮，不滚树——Colin 2026-07-09：关一个标签不该让文件树跳到相邻文件所在的文件夹。
-  // ⚠ 树定位有两条路：①这里自己 expandToFile——覆盖「点的正是已载入文档的标签」时 openDoc 短路、
-  // onOpen 不触发的情形；②openNode→openDoc→onOpen 里那次 expandToFile——覆盖真重载的情形。reveal=true 时
-  // 两条都跑（幂等、无害）；reveal=false 时这里跳过 + suppressRevealOnce 让 onOpen 那次也跳过，两条都不定位。
+  // reveal 三态（口径 2026-07-14）：
+  //  • true（默认）：展开到该文件 + 滚动定位——程序化重激活（drag-rebase / 冷启动恢复 / 外部删除回落）用。
+  //  • 'expand'：展开到该文件 + 高亮，但**不滚动视口**——**点标签**用（Colin：折叠着也要展开露出来，
+  //    只是别把视口往下跳；scrollIntoView 才是刺眼的「往下跳」本体）。原 UX4/F6-①（Wendi 2026-07-03）是
+  //    「展开+滚动」，2026-07-14 Wendi 报滚动刺眼 → 拆成「展开保留、滚动去掉」。
+  //  • false：只切编辑器 + 高亮，连展开都不做——关标签回落（Colin 2026-07-09）/ Ctrl+Tab 循环用。
+  // ⚠ 树定位有两条路：①这里自己 expandToFile——覆盖「点的正是已载入文档的标签」时 openDoc 短路、onOpen
+  // 不触发的情形；②openNode→openDoc→onOpen 里那次 expandToFile——覆盖真重载的情形。reveal 三态经
+  // suppressRevealOnce / suppressScrollOnce 两个一次性开关让 onOpen 那条路跟这条保持一致（幂等、无害）。
   function openTabRow(entry, reveal = true) {
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
       if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry)); // renderTemp 内部摘 web view（canLeaveActive 取消则不摘,网页态保留,P2-1）
@@ -1683,9 +1729,13 @@
       if (root && root.missing) { showToast('「' + root.name + '」失联了，重新定位后才能打开'); return; }
       const n = findNode(entry.rootId, entry.rel);
       if (n) {
-        if (!reveal) suppressRevealOnce = true; // 抑制 onOpen 里那次 expandToFile（真重载路径）
+        // onOpen 那条路（真重载）的一次性开关：false → 整个不定位；'expand' → 定位但不滚。
+        if (reveal === false) suppressRevealOnce = true;
+        else if (reveal === 'expand') suppressScrollOnce = true;
         openNode(n);
-        if (reveal) expandToFile(entry.rootId, entry.rel); // 已载入文档点标签时 onOpen 不触发，靠这句定位
+        // 已载入文档点标签时 openDoc 短路、onOpen 不触发，靠这句定位（点标签走 'expand' = 展开不滚）。
+        if (reveal === true) expandToFile(entry.rootId, entry.rel);
+        else if (reveal === 'expand') expandToFile(entry.rootId, entry.rel, false);
       }
       return;
     }
@@ -1763,7 +1813,7 @@
       (zone === 'pinned' ? removeTabRel : closeTabRel)(key);
     };
     row.append(x);
-    row.onclick = () => openTabRow(entry);
+    row.onclick = () => openTabRow(entry, 'expand'); // 点标签：展开到该文件+高亮，但不滚动视口（Colin 2026-07-14 定）
     row.ondragstart = (e) => {
       dragTabRel = key;
       e.dataTransfer.effectAllowed = 'move';
@@ -2195,11 +2245,59 @@
       openTabEntry({ rel: null, abs, kind: meta.kind || 'other', title: meta.name || baseName(abs) });
     }
   }
-  // 某根的外部磁盘变化（主进程 per-root watcher 去抖后发 ws-tree-changed 带 rootId）：重读该根的树 +
-  // reconcile 该根的标签，别的根纹丝不动。
+  // ===== 子树补丁（大根性能）：watcher 报得出「受影响目录」时不再全量 readTree，只向主进程要那些
+  // 目录的新 children（ws-read-subtrees），路径拷贝替换进旧树。路径拷贝 = 沿途节点浅拷贝、其余分支共享，
+  // 旧树对象保持完好——detectExternalRenames 要拿「变化前的 ino」，原地改 children 会把旧树一起改坏。
+  // 任何挂不上（目录不在旧树里 = 树漂移）→ 返回 null，调用方回落全量。 =====
+  function replaceSubtreeAt(nodes, parts, children) {
+    if (!parts.length) return null; // dir '' 不该到这（上游已回落全量）——防御
+    const i = nodes.findIndex((n) => n.isDir && n.name === parts[0]);
+    if (i < 0) return null;
+    const kids = parts.length > 1 ? replaceSubtreeAt(nodes[i].children || [], parts.slice(1), children) : children;
+    if (!kids) return null;
+    const copy = nodes.slice();
+    copy[i] = { ...nodes[i], children: kids };
+    return copy;
+  }
+  function patchSubtrees(tree, subtrees) {
+    let cur = tree;
+    for (const s of subtrees) {
+      if (!s || typeof s.dir !== 'string' || !s.dir || !Array.isArray(s.children)) return null;
+      cur = replaceSubtreeAt(cur, s.dir.split('/').filter(Boolean), s.children);
+      if (!cur) return null;
+    }
+    return cur;
+  }
+
+  // 某根的外部磁盘变化（主进程 per-root watcher 去抖后发 ws-tree-changed 带 rootId + 受影响目录）：
+  // 重读该根的树（能子树级就子树级）+ reconcile 该根的标签，别的根纹丝不动。
+  // 单飞（大根性能）：同根扫描在飞时新事件只并进 pending，飞完补跑一次——以前事件风暴会叠着跑
+  // 多个全量 readTree。pending 合并语义：null（全量）吸收一切；目录列表取并集，超 8 个升级全量。
+  const treeScanInFlight = new Set(); // rootId
+  const treeScanPending = new Map(); // rootId → dirs|null
+  async function onTreeChanged(rootId, changedDirs) {
+    const dirs = Array.isArray(changedDirs) && changedDirs.length ? changedDirs : null;
+    if (treeScanInFlight.has(rootId)) {
+      const prev = treeScanPending.has(rootId) ? treeScanPending.get(rootId) : [];
+      const merged = prev === null || dirs === null ? null : [...new Set([...prev, ...dirs])];
+      treeScanPending.set(rootId, merged && merged.length > 8 ? null : merged);
+      return;
+    }
+    treeScanInFlight.add(rootId);
+    try {
+      await doTreeScan(rootId, dirs);
+    } finally {
+      treeScanInFlight.delete(rootId);
+      if (treeScanPending.has(rootId)) {
+        const p = treeScanPending.get(rootId);
+        treeScanPending.delete(rootId);
+        onTreeChanged(rootId, p); // 扫描期间又有变化 → 补跑一次（fire-and-forget，同样受单飞管）
+      }
+    }
+  }
   // 关键：先用「变化前的内存旧树」（st.tree，此刻磁盘已变但内存还列着消失的文件）给该根内部标签补 inode，
   // 再读新树——这样不用在每处建标签时穿 ino，消失文件的 ino 也一定取得到，给「改名/移动→标签跟随」做匹配。
-  async function onTreeChanged(rootId) {
+  async function doTreeScan(rootId, dirs) {
     const st = rootOf(rootId);
     if (!st || st.missing || !st.tree) return;
     // 跨根移动在飞（对抗审查 P2）：跳过 reconcile。跨根移动把文件的 inode 从源根移到目标根——若源根的
@@ -2210,8 +2308,18 @@
     for (const e of tabState.entries) {
       if (e.rel && e.rootId === rootId) { const n = findNode(rootId, e.rel); if (n && n.ino != null) e.ino = n.ino; }
     }
-    const data = await window.ws2.wsReadTree(rootId);
-    if (!data || rootOf(rootId) !== st) return; // 期间该根被移除/重定位 → 放弃
+    let newTree = null;
+    if (dirs) {
+      const res = await window.ws2.wsReadSubtrees(rootId, dirs);
+      if (rootOf(rootId) !== st) return; // 期间该根被移除/重定位 → 放弃
+      if (res && Array.isArray(res.subtrees)) newTree = patchSubtrees(st.tree, res.subtrees);
+      // newTree 仍 null（主进程判全量/挂点丢失）→ 下面回落全量
+    }
+    if (!newTree) {
+      const data = await window.ws2.wsReadTree(rootId);
+      if (!data || rootOf(rootId) !== st) return; // 期间该根被移除/重定位 → 放弃
+      newTree = data.tree;
+    }
     const relSet = new Set();
     const inoToRel = new Map();
     (function w(nodes) {
@@ -2219,13 +2327,13 @@
         if (n.isDir) w(n.children || []);
         else { relSet.add(n.rel); if (n.ino != null) inoToRel.set(String(n.ino), n.rel); }
       }
-    })(data.tree);
+    })(newTree);
     // 文件集合没变（只是某文件内容被改了，如保存）→ 不重渲染树：免得打断进行中的内联改名/拖拽，也省 DOM 重建。
     const oldRels = new Set();
     (function w(nodes) { for (const n of nodes) { if (n.isDir) w(n.children || []); else oldRels.add(n.rel); } })(st.tree);
     const sameStructure = oldRels.size === relSet.size && [...relSet].every((r) => oldRels.has(r));
     const oldTree = st.tree; // U5：捕获旧树（带 ino），给外部改名探测做 inode 匹配（下一行就被新树覆盖）
-    st.tree = annotateTree(data.tree, rootId); // 总更新：保持树/ino 新鲜（即使不重渲染）
+    st.tree = annotateTree(newTree, rootId); // 总更新：保持树/ino 新鲜（即使不重渲染）
     if (sameStructure) return;
     // 结构变了（增/删/改名/移动）→ reconcile 该根标签 + 重渲染 + 同步编辑器
     const prevEntry = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
@@ -2341,12 +2449,15 @@
       // 已经先载入了，这里只补标签，不影响打开速度。
       await restoreReady;
       const node = abs ? findNodeByAbs(abs) : null;
-      // reveal 一次性开关：关标签回落走 openTabRow(e,false) 会置 suppressRevealOnce，这里消费它——
-      // 抑制「展开到所在文件夹 + 滚动定位」（Colin：关标签不该让树跳走）。其余入口（点标签/命令面板/
-      // 「打开」按钮/Finder 双击）不置标记 → reveal 恒 true，行为不变。
+      // reveal 一次性开关（见 openTabRow 三态说明）：关标签回落走 openTabRow(e,false) 置 suppressRevealOnce
+      // → 这里整个不定位（Colin：关标签不该让树跳走）；点标签走 openTabRow(e,'expand') 置 suppressScrollOnce
+      // → 展开定位但不滚（Colin 2026-07-14）。其余入口（命令面板/「打开」按钮/Finder 双击）不置标记 →
+      // reveal 恒 true、scroll 恒 true，行为不变。
       const reveal = !suppressRevealOnce;
+      const scroll = !suppressScrollOnce;
       suppressRevealOnce = false;
-      // Wendi 2026-07-03：外部（Finder 双击等）打开根内文件 → 树展开到所在文件夹并滚动定位。
+      suppressScrollOnce = false;
+      // Wendi 2026-07-03：外部（Finder 双击等）打开根内文件 → 树展开到所在文件夹（scroll 时再滚动定位）。
       // 树默认全收起，不展开的话文件在树里根本不可见、也高亮不上（is-active 行没渲染出来）。
       // 先展开（内部会 render 重建行）再高亮，顺序不能反。命令面板/「打开」按钮同走此路，行为一致。
       if (node && reveal) {
@@ -2359,7 +2470,7 @@
           if (fc) fc.hidden = true;
           render();
         }
-        expandToFile(node.rootId, node.rel);
+        expandToFile(node.rootId, node.rel, scroll);
       }
       highlightActive(abs);
       if (node) {
@@ -2409,12 +2520,24 @@
     findPalette: () => openFindPalette(),                                              // Cmd+P：命令面板（模糊搜文件跳转）
     openSaveModal: (closeAfter) => openSaveModal(closeAfter),                          // shell.save() 遇临时文档 → 弹「保存到哪里」
   };
-  // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
-  // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。
+  // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底。
   if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
   // 运行时根状态变化（拔盘/根被删 → 主进程转失联并广播）：重拉根列表，失联节灰态即刻可见。
   if (window.ws2.onWsRootsChanged) window.ws2.onWsRootsChanged(() => resyncRoots());
-  window.addEventListener('focus', () => { for (const st of rootsState) { if (!st.missing) onTreeChanged(st.id); } });
+  // 聚焦兜底收口（大根性能）：以前每次 focus 对所有根全量重扫——大根一次几万个 stat，「切回 app 就卡」
+  // 的直接来源。现在 focus 只做两件便宜事：① 冲掉该根 watcher 的在途去抖（改完盘马上切回来 → 立即走
+  // 正常事件管线，e2e 的 focus 触发保持确定性）；② watcher 不活（平台不支持递归 watch/挂了）的根才
+  // 全量重扫——watcher 活着时它本来就会推事件，focus 重扫是纯白烧。wsWatchFlush 缺失（旧 preload）回落老行为。
+  window.addEventListener('focus', async () => {
+    for (const st of rootsState) {
+      if (st.missing) continue;
+      if (!window.ws2.wsWatchFlush) { onTreeChanged(st.id); continue; }
+      try {
+        const r = await window.ws2.wsWatchFlush(st.id);
+        if (!r || !r.alive) onTreeChanged(st.id);
+      } catch { onTreeChanged(st.id); }
+    }
+  });
 
   // ── 性能诊断模式（隐藏，菜单「Wordspace Next → 性能诊断…」或 Cmd+Shift+D 手动开）────────────
   // 普通用户零感知：默认不显示任何 debug 内容，只有主动从菜单打开才出面板。Wendi 报「两文件夹贼卡」，我们本地
@@ -2453,7 +2576,7 @@
       L.push('根' + (i + 1) + '「' + name + '」  ' + (r.cloud ? '☁ ' + r.cloud + ' 云盘' : '本地'));
       L.push('   ' + r.path);
       L.push('   文件数 ' + r.fileCount.toLocaleString() +
-        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（读 ' + r.reads + ' 次）' +
+        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（全量 ' + r.reads + ' 次 / 子树 ' + (r.scopedReads || 0) + ' 次）' +
         '  ·  watcher 触发 ' + r.watchEvents + ' 次');
     });
     L.push('');
