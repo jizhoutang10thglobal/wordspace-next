@@ -14,6 +14,8 @@ const ROOT = path.join(__dirname, '..');
 const SHOT_DIR = path.join(__dirname, 'screenshots');
 
 let app, page, tmpDir, server, base;
+let lastUA = null; // /ua 路由记下 server 真实收到的 User-Agent 头（反 CAPTCHA 强门：查线上字节，非 API 返回值）
+let lastSecChUa = null; // 顺带记 sec-ch-ua（U3 核查用，只打印不断言）
 
 // 本地测试站：A 页红底带标题/链接/长文,B 页绿底,/dl 下发附件（验下载 cancel）。
 function startServer() {
@@ -28,6 +30,12 @@ function startServer() {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end('<!DOCTYPE html><html><head><title>Slow</title></head><body style="background:#1e5a8a;color:#fff"><h1>slow page</h1></body></html>');
         }, 3000);
+      } else if (req.url.startsWith('/ua')) {
+        // 反 CAPTCHA 强门：记下 server 真实收到的 UA / sec-ch-ua（不是查 session API 返回值）。
+        lastUA = req.headers['user-agent'] || '';
+        lastSecChUa = req.headers['sec-ch-ua'] || null;
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end('<!DOCTYPE html><html><head><title>UA</title></head><body style="background:#888"><pre id="ua">' + lastUA.replace(/[<>&]/g, '_') + '</pre></body></html>');
       } else if (req.url.startsWith('/dl')) {
         res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="evil.bin"' });
         res.end('xx');
@@ -140,6 +148,25 @@ test('⌘T 地址栏开网页：真加载(像素级红底上屏) + 标签行/omn
   expect(v.bounds.height).toBe(v.content.h); // 全高
   // 无网页头：内容区里没有任何 Wordspace chrome 罩在网页上（§3.2 决策——连元素都不存在）
   expect(await page.locator('#web-header, .web-chrome, .web-bmbar').count()).toBe(0);
+});
+
+test('反 CAPTCHA：webtabs UA 无 Electron/app 标识（主进程 session 门 + 真实请求头强门）', async () => {
+  await launch();
+  // 主进程门：persist:webtabs session 的 UA 已归一（去 Electron/app 名、留标准 Chrome UA）
+  const sessUA = await app.evaluate(({ session }) => session.fromPartition('persist:webtabs').getUserAgent());
+  expect(sessUA).not.toMatch(/Electron\//i);
+  expect(sessUA).not.toMatch(/wordspace/i);
+  expect(sessUA).toMatch(/Chrome\//);
+  // 强门（S4 口径：查线上真实发出的请求头，不是查 API 返回值）：开网页标签访问 /ua，server 记下真实 UA
+  lastUA = null;
+  await openWebViaModal(base + '/ua');
+  await expect.poll(() => lastUA, { timeout: 8000 }).not.toBe(null);
+  expect(lastUA).not.toMatch(/Electron\//i);
+  expect(lastUA).not.toMatch(/wordspace/i);
+  expect(lastUA).toMatch(/Chrome\//);
+  // U3 核查（不断言，仅记录到测试输出供 PR）：sec-ch-ua 是否也暴露 Electron 品牌
+  console.log('[UA e2e] real request User-Agent =', lastUA);
+  console.log('[UA e2e] real request sec-ch-ua =', lastSecChUa);
 });
 
 test('闪回文档回归门：新标签慢首载期间起始页 surface 撑住,导航提交后才切网页(Colin 实测 bug)', async () => {
