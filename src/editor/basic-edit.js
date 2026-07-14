@@ -3,7 +3,7 @@
 //
 // 跑在父层、操作 doc-frame 的 contentDocument（iframe sandbox 不跑文档 JS）。三能力：
 //   A 富就地文字（B/I/U/S + 文字色/高亮/清除）· B 删整块 · C 空间切块（方向键按渲染几何）。
-// 编辑器 chrome（格式条/焦点框/悬停删除/🔒）全走**宿主浮层**（append 到 document.body、position:fixed、
+// 编辑器 chrome（格式条/焦点框）全走**宿主浮层**（append 到 document.body、position:fixed、
 // 视口坐标），绝不注进 iframe DOM（KD-b）。唯一注进 iframe 的是编辑态：body.contentEditable + cursor
 // —— cursor 走 adoptedStyleSheets（不写 body.style、不进序列化），contentEditable 由序列化前的剥除契约摘掉。
 // 保存不走 block 编辑器的 Schema 规整；结构级保真（KD-c）。色/高亮用 CSSOM span（WS2Format.wrapInlineStyle）
@@ -125,7 +125,6 @@
     let mode = 'text';          // 'text' 点字改 | 'block' 方向键切块
     let blocks = collectBlocks(body);
     let focusEl = null;
-    let hoverEl = null;
 
     // ==== A：富文字格式条 ====
     const bar = el('div', 'ws-fmtbar nce-bubble');
@@ -179,15 +178,8 @@
     focusBox.appendChild(focusDel);
     document.body.appendChild(focusBox);
 
-    const hoverBox = el('div', 'nce-hover'); hoverBox.hidden = true;
-    const hoverDel = el('button', 'nce-hover-del', TRASH); hoverDel.title = '删除这一块';
-    hoverDel.addEventListener('mousedown', (e) => e.preventDefault());
-    hoverDel.addEventListener('click', () => { if (hoverEl) removeBlock(hoverEl, false); });
-    const hoverLock = el('span', 'nce-lock', '🔒'); hoverLock.title = '只读（不是可编辑文字）';
-    hoverBox.append(hoverDel, hoverLock);
-    document.body.appendChild(hoverBox);
-
-    let hoverTimer = 0;
+    // 悬停虚线框+🗑 已撤（Wendi 2026-07-14：整表/整页大块被框成巨型蓝框、🗑 在视口外，读作渲染 bug）。
+    // 删块走 Esc 块模式（主动进入）或 contenteditable 原生选中删除。见 docs/features/basic-edit.md。
     function placeBox(box, elm) { const h = toHost(elm.getBoundingClientRect()); box.style.top = h.top + 'px'; box.style.left = h.left + 'px'; box.style.width = h.width + 'px'; box.style.height = h.height + 'px'; }
     function setFocus(elm) {
       focusEl = elm || null;
@@ -196,24 +188,9 @@
       placeBox(focusBox, focusEl); focusBox.hidden = false;
     }
     function clearFocus() { focusEl = null; focusBox.hidden = true; }
-    function showHover(elm) {
-      hoverEl = elm; placeBox(hoverBox, elm);
-      hoverLock.style.display = isReadOnly(elm) ? '' : 'none';
-      hoverBox.hidden = false;
-    }
-    function clearHover() { hoverEl = null; hoverBox.hidden = true; }
-
-    function blockAt(target) {
-      if (!target || target.nodeType !== 1 && !target.parentElement) return null;
-      const t = target.nodeType === 1 ? target : target.parentElement;
-      const hits = blocks.filter((b) => b === t || b.contains(t));
-      if (!hits.length) return null;
-      // 命中多个（嵌套）→ 取面积最小的（最贴近光标的那层）
-      return hits.reduce((a, b) => { const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(); return (ra.width * ra.height <= rb.width * rb.height) ? a : b; });
-    }
 
     function enterBlockMode(fromEl) {
-      mode = 'block'; hideBar(); clearHover();
+      mode = 'block'; hideBar();
       try { body.contentEditable = 'false'; } catch (e) {}
       setFocus(fromEl || blocks[0] || null);
     }
@@ -235,7 +212,7 @@
       const next = keepNext ? (nearestInDir(elm, 'down', blocks) || nearestInDir(elm, 'up', blocks)) : null;
       elm.remove();
       blocks = collectBlocks(body);
-      clearHover(); markDirty();
+      markDirty();
       if (keepNext) setFocus(next && blocks.includes(next) ? next : blocks[0] || null);
       else if (focusEl === elm) clearFocus();
     }
@@ -244,15 +221,7 @@
     const onSelChange = () => refreshBubble();
     const onInput = () => markDirty();
     const onMouseDown = () => { if (mode === 'block') enterTextMode(); };
-    const onMouseMove = (e) => {
-      if (mode !== 'text') return;
-      const blk = blockAt(e.target);
-      if (!blk) { clearTimeout(hoverTimer); hoverTimer = setTimeout(clearHover, 160); return; }
-      clearTimeout(hoverTimer);
-      if (blk !== hoverEl) showHover(blk);
-    };
-    const onBodyLeave = () => { clearTimeout(hoverTimer); hoverTimer = setTimeout(clearHover, 160); };
-    const onScroll = () => { refreshBubble(); if (focusEl) placeBox(focusBox, focusEl); clearHover(); };
+    const onScroll = () => { refreshBubble(); if (focusEl) placeBox(focusBox, focusEl); };
     const DIR = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
@@ -273,10 +242,8 @@
     doc.addEventListener('keyup', onSelChange);
     doc.addEventListener('input', onInput);
     doc.addEventListener('mousedown', onMouseDown, true);
-    doc.addEventListener('mousemove', onMouseMove, true);
     doc.addEventListener('keydown', onKeyDown, true);
     doc.addEventListener('scroll', onScroll, true);
-    body.addEventListener('mouseleave', onBodyLeave);
 
     return {
       detach() {
@@ -285,14 +252,12 @@
         doc.removeEventListener('keyup', onSelChange);
         doc.removeEventListener('input', onInput);
         doc.removeEventListener('mousedown', onMouseDown, true);
-        doc.removeEventListener('mousemove', onMouseMove, true);
         doc.removeEventListener('keydown', onKeyDown, true);
         doc.removeEventListener('scroll', onScroll, true);
-        body.removeEventListener('mouseleave', onBodyLeave);
-        bar.remove(); focusBox.remove(); hoverBox.remove();
+        bar.remove(); focusBox.remove();
         try { body.removeAttribute('contenteditable'); body.removeAttribute(CE_MARK); } catch (e) {}
       },
-      reposition() { if (barShown) refreshBubble(); if (focusEl) placeBox(focusBox, focusEl); if (hoverEl) placeBox(hoverBox, hoverEl); },
+      reposition() { if (barShown) refreshBubble(); if (focusEl) placeBox(focusBox, focusEl); },
       serialize() { return serialize(doc); },
     };
   }
