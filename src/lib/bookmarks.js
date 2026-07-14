@@ -64,11 +64,15 @@ function update(state, id, patch) {
 }
 function addFolder(state, name, ts) {
   const id = uid('bmf', ts);
-  return { state: { folders: [...state.folders, { id, name: name || '新文件夹' }], bookmarks: state.bookmarks }, id };
+  // 撞名自动加「名字 2」后缀（与导入路径同口径,P3-09；不弹错、低摩擦）
+  const finalName = uniqueName(new Set(state.folders.map((f) => f.name)), name || '新文件夹');
+  return { state: { folders: [...state.folders, { id, name: finalName }], bookmarks: state.bookmarks }, id };
 }
 function renameFolder(state, id, name) {
   if (id === BM_BAR || !name) return state; // 书签栏固定
-  return { folders: state.folders.map((f) => (f.id === id ? { ...f, name } : f)), bookmarks: state.bookmarks };
+  // 撞别的文件夹名 → 加后缀（排除自己：改成自己现名不该被加后缀,P3-09）
+  const finalName = uniqueName(new Set(state.folders.filter((f) => f.id !== id).map((f) => f.name)), name);
+  return { folders: state.folders.map((f) => (f.id === id ? { ...f, name: finalName } : f)), bookmarks: state.bookmarks };
 }
 // 删文件夹连同其中书签；BM_BAR 拒绝。
 function removeFolder(state, id) {

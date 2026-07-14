@@ -412,6 +412,9 @@ localStorage（key `ws-fav-open`）。`openBookmark(url,title)`：先按 url 找
   说明行：「导入 / 导出用的是浏览器通用的 HTML 书签格式（Netscape），可以和 Chrome、Safari、Firefox、Edge 互相搬。」
 - 按文件夹分区：文件夹名**就地改名**（输入框失焦提交，空值回退原名）；「书签栏」固定不可改名不可删
   （title 提示「书签栏（固定）」）；其他文件夹可删（**连同其中书签**，title 已警告）。每区显示书签数，空文件夹显示「空」。
+  **手动建/改名撞名（P3-09）**：新建「新文件夹」或改名撞现有名 → 自动加「名字 2」式后缀（与导入路径同口径、
+  不弹错、低摩擦）；改成自己现名不加后缀。纯逻辑在 `bookmarks.js` `addFolder`/`renameFolder`（复用 `uniqueName`），
+  IPC 只调用。
 - 每条书签一行：`Globe2` + 标题（就地改，失焦提交，空值回退为 url）+ url（去 scheme，title 提示全 url）+
   **文件夹下拉**（选中即移动）+ 打开 `ExternalLink`（**同 §4.3 语义：已开则聚焦，否则新标签+记历史**）+ 删除 `Trash2`。
 - **导出**：生成 `bookmarks.html` 下载（demo 用 Blob；真 app 用保存对话框），toast
