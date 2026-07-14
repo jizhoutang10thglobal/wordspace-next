@@ -14,6 +14,12 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-14 — 基础编辑器悬停蓝框（.nce-hover/🗑/🔒）整体撤除（app+ui-demo，PR #180）
+
+**是什么**：Wendi 报非合规文档里出现巨型蓝色虚线框——那是基础编辑器的「悬停删除」浮层：整篇一张 `<table>` 的文档（Word 导出常态）悬停即框住整表、🗑 锚在框右上角视口外不可见，用户读作渲染 bug。Colin 拍板把悬停 chrome（虚线框/🗑/只读🔒）整体撤掉；删块保留 Esc 块模式 + contenteditable 原生选中删除。
+**怎么 apply**：别再往基础编辑器加 mousemove 悬停浮层；`.nce-hover`/`.nce-lock` 选择器已不存在（e2e 有反向门「悬停不出块 chrome」守着，变异自检过）。基础编辑的行为契约新家 = `docs/features/basic-edit.md`，动基础编辑（app 或 ui-demo 侧）先读它。
+**来源**：分支 fix/basic-edit-hover-box / PR #180 / spec docs/features/basic-edit.md
+
 ## 2026-07-13 — 侧栏收藏区 header 口径变更：栏标化 + 对齐网格，两侧已同步（spec §4.3 已更新）
 
 **是什么**：Wendi 反馈收藏区「视觉乱」，根因 = 收藏 header 穿「文件夹行」的衣服（行首 caret +
