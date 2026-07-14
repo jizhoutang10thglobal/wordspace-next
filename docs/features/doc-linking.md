@@ -73,11 +73,18 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
   **一并建一套统一的前进后退（网页+文档共用）**，照 ui-demo 模型（箭头按当前标签类型分派 web→浏览器历史 /
   doc→文档导航历史）。眼下文档"回上一篇"靠标签页兜（上一篇标签还开着）。仅当浏览器移植遥遥无期 + "回不去"
   痛感急时，才退而求其次建最小 doc-header 独立版、后并。
-- **跨根互链（A/B/C）**：互链全套目前只在**单个文件夹空间内**成立（同根跨子目录 OK，跨并列打开的根不行）。
-  跨根方案见 `docs/plans/2026-07-14-001-feat-cross-root-linking-plan.md`（A 消费 / B 创建 / C 维护，未做）。
-  ⚠ **已先行**：`ws-move-across`（跨根移动）在跨根自动重写落地前**零重写、静默断链**是数据损坏级缺口——
-  **U-CR0 跨根移动守卫**已落（`sidebar.js` doMoveAcross 前置守卫 + `link-index.ownOutlinks` + `ws-links-outlinks-count`）：
-  有会断的链接（入向引用 or 被移文档自身出向链接）才弹守卫、确认才移，零引用无感直移。C2 落地跨根真重写时
-  本守卫改造成自动重写 + 撤销 toast、守卫文案退役。跨根为真 app 独有（ui-demo 单工作区无根概念，不移植不算漂移）。
+- **跨根互链（A/B/C）**：让链接跨越「文件夹空间」（并列打开的多个根）。方案见
+  `docs/plans/2026-07-14-001-feat-cross-root-linking-plan.md`（A 消费 / B 创建 / C 维护）。磁盘 href 仍是纯相对路径
+  （`relHrefAbs`/`resolveHrefAbs` 绝对路径域，复用同一套 property；tree 域，非 realpath——见 links.js 注释），只支持同磁盘卷。
+  - ~~**U-CR0 跨根移动守卫**~~ **已落**：`ws-move-across` 零重写、静默断链是数据损坏缺口 → 移动前有会断的链接才弹守卫
+    （`sidebar.js` doMoveAcross + `link-index.ownOutlinks` + `ws-links-outlinks-count`）。C2 落地真重写时改造成自动重写+撤销、守卫退役。
+  - ~~**A 消费面**~~ **已落**：跨根链接点得开/悬停卡/断链红线（`resolveDocLink` 多根归属，本就 fan-out）；反链面板显示跨根来源
+    +空间名徽标+跳转（`link-index.backlinks/dirBacklinks` fan-out 所有根、带 rootId；`shell.js` `.ws-bl-item-root`）；删除守卫看得见跨根引用；
+    断链修复卡「重新指向」跨根写 `relHrefAbs`。索引 version 1→2（v1 缓存丢弃重建）。
+    **A 遗留欠账**：① 跨根 **doc-id 修复锚**（`readDocMeta` 跨根边不快照目标 docId → 跨根断链只有「同名候选」、无 doc-id 全库反查）；
+    ② 修复卡「浏览…手选」仍限当前根（`linkview.doPickAndRepoint`）；③ 软链**别名根**（同一物理文件经两根的软链各有一个 tree 身份）
+    下跨根反链可能漏（tree 域已知限制，非嵌套根场景不触发）。
+  - **B 创建面 / C 维护面**：未做（@菜单/拖拽跨根候选；改名/移动/`ws-move-across` 的跨根 fan-out 重写）。
+  跨根为真 app 独有（ui-demo 单工作区无根概念，不移植不算漂移）。
 
 port 完成一项就从本节清一项、更新对齐锚点。

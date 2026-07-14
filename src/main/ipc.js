@@ -139,6 +139,11 @@ function ensureLinkIndex(rootId) {
     scheduleLinkSave();
   });
 }
+// 跨根 fan-out 查询（反链/删除守卫）前，确保**所有 live 根**都建过索引——否则源在别的、尚未懒建的根里会漏。
+// 首次可能重（逐根建），之后走增量；用户主动触发的查询，可接受（plan N4）。
+function ensureAllLinkIndexes() {
+  return Promise.all(roots.filter((r) => !r.missing).map((r) => ensureLinkIndex(r.id)));
+}
 // 树变化后增量刷新（只对已建过索引的根——没建过的等被 query 时懒建）。变了才广播 + 存盘。
 // 合并突发（审查 #3）：已排队一次刷新就不再叠加——排队的那次进入执行时会读到最新磁盘、覆盖执行前的全部变更。
 function refreshLinkIndex(rootId) {
@@ -320,8 +325,8 @@ function registerIpc() {
     const others = root ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
     return { docs: linkIndex.query(rootId), others };
   });
-  ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureLinkIndex(rootId); return linkIndex.backlinks(rootId, rel); });
-  ipcMain.handle('ws-links-dir-backlinks', async (_e, rootId, dirRel) => { await ensureLinkIndex(rootId); return linkIndex.dirBacklinks(rootId, dirRel); }); // U6 删除守卫（文件夹=夹外引用）
+  ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureAllLinkIndexes(); return linkIndex.backlinks(rootId, rel); }); // A：fan-out 所有根（跨根反链）
+  ipcMain.handle('ws-links-dir-backlinks', async (_e, rootId, dirRel) => { await ensureAllLinkIndexes(); return linkIndex.dirBacklinks(rootId, dirRel); }); // U6 删除守卫 + A 跨根夹外引用
   ipcMain.handle('ws-links-outlinks-count', async (_e, rootId, rel, isDir) => { await ensureLinkIndex(rootId); return linkIndex.ownOutlinks(rootId, rel, isDir); }); // U-CR0 跨根移动守卫：条目自身会断的出链数
   ipcMain.handle('ws-links-moved-target', async (_e, rootId, sourceRel, targetRel) => { await ensureLinkIndex(rootId); return linkIndex.movedTarget(rootId, sourceRel, targetRel); }); // U7 修复卡：断链目标靠 doc-id 反查现址
   ipcMain.handle('ws-links-rebuild', async (_e, rootId) => {
