@@ -15,9 +15,9 @@
 | [p2-3-omnibox-stale-switch](p2-3-omnibox-stale-switch.md) | P2 | 地址栏打字中切标签,残留文字误导航 | browser.js |
 | [p2-4-colon-search-blocked](p2-4-colon-search-blocked.md) | P2 | `note:hello` 被误当危险协议拦截 | url-input.js |
 | [p2-5-sticky-row-drop](p2-5-sticky-row-drop.md) | P2 | 吸顶祖先行是拖放死区 | sidebar.js |
-| [p2-6-dirty-doc-deleted-rescue](p2-6-dirty-doc-deleted-rescue.md) | P2 | 外部删除未保存文档,改动静默丢弃(Colin 已条件同意:好实现→做) | sidebar.js |
+| [p2-6-dirty-doc-deleted-rescue](p2-6-dirty-doc-deleted-rescue.md) | P2 | 外部删除未保存文档,改动静默丢弃(**已拍板做**) | sidebar.js |
 | [p3-01-dead-star-on-doc-tab](p3-01-dead-star-on-doc-tab.md) | P3 | 文档标签/起始页出现死的收藏星标 | browser.css |
-| [p3-02-pinned-tab-close-button](p3-02-pinned-tab-close-button.md) | P3 | 置顶标签关闭钮:spec 与实现打架(**含拍板项**) | spec 或 sidebar.js |
+| [p3-02-pinned-tab-close-button](p3-02-pinned-tab-close-button.md) | P3 | 置顶标签关闭钮:**已拍板保留 ×**,纯 docs 改 spec | browser-feature-spec.md |
 | [p3-03-rename-extension](p3-03-rename-extension.md) | P3 | 改名强制保留原后缀出「火箭.md.html」 | sidebar.js(+ipc) |
 | [p3-04-external-dir-auto-expand](p3-04-external-dir-auto-expand.md) | P3 | 外部新建文件夹默认展开,不一致 | sidebar.js |
 | [p3-05-pin-lost-after-undo](p3-05-pin-lost-after-undo.md) | P3 | 置顶→删除→撤销,置顶状态丢 | sidebar.js |
