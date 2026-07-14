@@ -74,6 +74,9 @@ scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
 - **改名不改格式**（P3-03）：内联改名时用户输入若自带文档后缀（`.html`/`.htm`/`.md`），剥掉再拼回**原**后缀——
   不叠双后缀（`火箭.md` 落 `火箭.html`、不是 `火箭.md.html`）。想真换格式请走「另存为 / 导出」，v1 不在改名里做
   md↔html 转换。判定在 `src/main/workspace.js` `renamePath`（`DOC_EXTS`），换了后缀时回 `formatKept` 让侧栏 toast 提示。
+- **失联根自动复活探测**（P3-08，`src/main/ipc.js`）：根转失联（外部改名/拔盘）后挂 5s 一次的 `dirExists`
+  轮询（`scheduleReviveProbe`/`reviveTimers`）；路径改回原样 / 外置盘插回即自愈——清 `missing`、重挂 watcher、
+  广播 `ws-roots-changed` + 该根全量 `ws-tree-changed`，免手点「重新定位」。根移除/重定位/复活/退出取消 timer。
 
 ## 文件映射
 
