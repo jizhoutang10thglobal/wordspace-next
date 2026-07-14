@@ -330,6 +330,28 @@ test('右键文件夹 → 删除整棵子树 → 撤销整棵回来', async () =
   await expect.poll(() => exists(path.join(wsDir, '数据', 'c.png'))).toBe(true); // poll：撤销恢复是异步的，别用即时断言（flaky）
 });
 
+test('P2-2 连删两个文件：两条撤销 toast 并存，各撤各的（变异敏感）', async () => {
+  await openWorkspace();
+  // 删 a.html
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  // 紧接着删 README（旧行为：这一步会把 a 的撤销 toast 顶掉）
+  await page.click('.sb-file[data-rel="README"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'README'))).toBe(false);
+  // 两条撤销 toast 同时在（旧行为只剩 1 条）
+  await expect(page.locator('.sb-toast-action', { hasText: '撤销' })).toHaveCount(2);
+  // 先撤 a.html（含「已删除「a.html」」文案的那条），另一条不受影响
+  await page.locator('.sb-toast', { hasText: 'a.html' }).locator('.sb-toast-action').click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(true);
+  await expect.poll(() => exists(path.join(wsDir, 'README'))).toBe(false); // README 仍删着
+  await expect(page.locator('.sb-toast-action', { hasText: '撤销' })).toHaveCount(1); // 只剩 README 那条
+  // 再撤 README
+  await page.locator('.sb-toast', { hasText: 'README' }).locator('.sb-toast-action').click();
+  await expect.poll(() => exists(path.join(wsDir, 'README'))).toBe(true);
+});
+
 // ============================ 内联改名取消 ============================
 
 test('内联改名 Escape 取消 → 文件名不变', async () => {

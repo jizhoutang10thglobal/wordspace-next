@@ -1971,7 +1971,11 @@
   document.addEventListener('dragend', () => { window.__wsDragFile = null; }, true);
 
   // ---- 轻量 toast（删除「撤销」用）。CSP 安全：classes，无 inline style。----
-  let toastTimer = null;
+  // p2-2：栈式堆叠。每条 toast 是独立 DOM + 独立超时 + 独立撤销闭包——连删多个时上一条不再被顶掉，
+  // 各撤各的（删除撤销 token 一删一个，堆叠后天然独立，不用动删除逻辑）。host 是底部锚定的纵向 flex，
+  // 新条 append 到底、旧条被顶上去。带撤销的条超时放宽（15s），无撤销的短（6.5s）；超上限先挤掉最旧的
+  // 无撤销条（带撤销的保命，别丢用户的撤销机会）。
+  const TOAST_CAP = 4;
   // shell.js（先加载、无自己的 toast）复用这个：U0 断链/工作区外等占位提示，及后续互链 toast。
   window.__wsToast = (message, actionLabel, onAction) => showToast(message, actionLabel, onAction);
   function showToast(message, actionLabel, onAction) {
@@ -1982,28 +1986,31 @@
       host.className = 'sb-toast-host';
       document.body.appendChild(host);
     }
-    host.innerHTML = '';
+    const hasAction = !!(actionLabel && onAction);
     const t = document.createElement('div');
     t.className = 'sb-toast';
+    if (hasAction) t.dataset.action = '1';
     const msg = document.createElement('span');
     msg.textContent = message;
     t.appendChild(msg);
-    if (actionLabel && onAction) {
+    let timer = null;
+    const dismiss = () => { clearTimeout(timer); if (t.parentNode) t.remove(); };
+    if (hasAction) {
       const btn = document.createElement('button');
       btn.className = 'sb-toast-action';
       btn.textContent = actionLabel;
-      btn.onclick = () => {
-        clearTimeout(toastTimer);
-        host.innerHTML = '';
-        onAction();
-      };
+      btn.onclick = () => { dismiss(); onAction(); };
       t.appendChild(btn);
     }
     host.appendChild(t);
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      host.innerHTML = '';
-    }, 6500);
+    // 超上限：挤掉最旧的无撤销条（找不到则挤最旧那条——全是撤销条时的兜底）。
+    while (host.children.length > TOAST_CAP) {
+      const victim = [...host.children].find((c) => c.dataset.action !== '1') || host.firstElementChild;
+      if (!victim) break;
+      victim.remove();
+    }
+    timer = setTimeout(dismiss, hasAction ? 15000 : 6500);
+    return t;
   }
 
   // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。----

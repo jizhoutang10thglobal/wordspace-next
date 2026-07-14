@@ -83,6 +83,9 @@ scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
 - **吸顶祖先行接受拖放**（P2-5）：`renderSticky` 的克隆行照 `oncontextmenu` 转发模式补 `ondragover`/
   `ondragleave`/`ondrop`——转发给真行既有 handler（读模块级 `dragNode`），高亮反馈同步到克隆行。吸顶行拖放
   行为等同真行，不再是死区。
+- **多条删除各自可撤销（toast 堆叠）**（P2-2）：`showToast` 改栈式——每条独立 DOM + 独立超时 + 独立撤销
+  闭包，不再 `innerHTML=''` 顶掉上一条。连删多个时每条的「撤销」各撤各的（删除 token 一删一个）。带撤销条
+  超时 15s、无撤销 6.5s；上限 4 条、超出先挤最旧的无撤销条。host 是底部锚定纵向 flex（shell.css 已有）。
 
 ## 文件映射
 
