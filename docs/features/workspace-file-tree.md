@@ -86,6 +86,11 @@ scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
 - **多条删除各自可撤销（toast 堆叠）**（P2-2）：`showToast` 改栈式——每条独立 DOM + 独立超时 + 独立撤销
   闭包，不再 `innerHTML=''` 顶掉上一条。连删多个时每条的「撤销」各撤各的（删除 token 一删一个）。带撤销条
   超时 15s、无撤销 6.5s；上限 4 条、超出先挤最旧的无撤销条。host 是底部锚定纵向 flex（shell.css 已有）。
+  ⚠ 堆叠后 `.sb-toast` 不再是单例，断言要按文案 scope（e2e 里 `.sb-toast', { hasText }`）。
+- **外部删除 dirty 文档 → 挽救式另存提示**（P2-6，Colin 2026-07-14 拍板）：`doTreeScan` 的 `activeRelGone`
+  分支在回落/关文档前先过 `__shellIsDirty()`；脏就 `__shellRescueDeletedDirty()` 把编辑器当前内容转成临时
+  文档（`docPath` 清空、掐自动保存）+ 建临时标签 + 弹 `openSaveModal(true)`。取消 = 保留为未保存临时文档
+  （可稍后再存/关，不丢数据）。非脏照旧回落/空态。
 
 ## 文件映射
 

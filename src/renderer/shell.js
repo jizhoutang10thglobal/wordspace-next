@@ -748,6 +748,21 @@ function shellNewTemp(base, html) {
   renderTemp(id);
   return id;
 }
+// p2-6：外部删除了「打开中且脏」的真文档 → 别静默丢改动。把编辑器当前内容原地转挂成临时文档语义
+// （docPath 清空、脱离已删磁盘文件、掐掉在途自动保存），返回 {id, base} 让侧栏建临时标签 + 弹 SaveModal
+// 挽救。不走 canLeaveActive（那会弹「丢弃?」确认——这里正是要救它，不能问）。
+function shellRescueDeletedDirty() {
+  if (tempDoc || !docPath) return null; // 已是临时文档 / 没有真文件在开：不该走到这
+  let html;
+  try { html = WS2Serialize.serializeDocument(frame.contentDocument); }
+  catch (e) { return null; } // 序列化失败：救不了，交给调用方回落
+  const base = String((docInfo && docInfo.name) || docName.textContent || '未命名').replace(/\.[^.]+$/, '');
+  discardPendingAutoSave(); // 文件已被删，在途自动保存写它只会 ENOENT，先掐掉
+  const id = genTempId();
+  tempStore.set(id, { base, html });
+  renderTemp(id); // 转成活跃临时文档（asDirty），docPath 清空 + unwatchDoc
+  return { id, base };
+}
 // 切回一个已存在的临时文档（点它的标签）。
 function shellReopenTemp(id) {
   if (!tempStore.has(id)) return false;
@@ -911,6 +926,7 @@ window.__shellIsDirty = () => dirty; // 给侧栏关标签时的脏检查
 window.__shellDiscard = () => setDirty(false); // 已确认丢弃 → 清脏，切下一个时不再追问
 // 临时文档桥（侧栏 sidebar.js 用）：建/切/取快照/落盘就位/丢弃。
 window.__shellNewTemp = shellNewTemp;
+window.__shellRescueDeletedDirty = shellRescueDeletedDirty; // p2-6：外部删脏文档 → 转临时文档挽救
 window.__shellReopenTemp = shellReopenTemp;
 window.__shellStashActiveTemp = () => stashActiveTemp(); // 切到网页标签前 stash 活跃临时文档（不关闭,切回即恢复）
 window.__shellActiveTemp = shellActiveTemp;

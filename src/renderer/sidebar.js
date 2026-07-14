@@ -2381,8 +2381,16 @@
         const n = findNode(rootId, newRel); // 激活文档被外部改名/移动 → 编辑器重指向（保内容/脏态），不重载
         if (n && window.__shellRetargetDoc) window.__shellRetargetDoc(n.abs, n.name);
       } else {
-        const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
-        if (e) openTabRow(e); // 激活文档被外部删 → 回落到新激活项
+        // p2-6：激活文档被外部删。回落到别的标签 / 关文档都会换掉编辑器内容——先过 dirty 检查：有未保存
+        // 改动就别静默丢，转成临时文档 + 建临时标签 + 弹「保存到哪里」挽救（取消 = 保留为未保存临时文档，
+        // 可稍后再存/关，不丢数据）。非 dirty 才照旧回落/空态。
+        const fallback = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+        const rescued = (window.__shellIsDirty && window.__shellIsDirty() && window.__shellRescueDeletedDirty)
+          ? window.__shellRescueDeletedDirty() : null;
+        if (rescued) {
+          openTabEntry({ abs: rescued.id, kind: 'html', title: rescued.base }); // 临时标签（temp: 身份），设为激活
+          openSaveModal(true);
+        } else if (fallback) openTabRow(fallback); // 回落到新激活项
         else if (window.__shellCloseDoc) window.__shellCloseDoc(); // 没得回落 → 空态
       }
     }
