@@ -540,7 +540,7 @@ test('U6：删除守卫 — 删无引用文件不弹守卫、直接删', async (
   await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
   await expect.poll(() => fs.readFile(path.join(wsDir, 'D.html'), 'utf8').then(() => true).catch(() => false), { timeout: 5000 }).toBe(false);
   await expect(page.locator('.ws-delguard')).toHaveCount(0); // 全程无守卫
-  await expect(page.locator('.sb-toast')).toContainText('已删除');
+  await expect(page.locator('.sb-toast', { hasText: '已删除' })).toBeVisible();
 });
 
 test('U5：改名时打开中的链接文档 → 内存改 href + toast + 落盘（不和自动保存打架）', async () => {
@@ -554,7 +554,7 @@ test('U5：改名时打开中的链接文档 → 内存改 href + toast + 落盘
   await page.locator('.sb-rename').press('Enter');
   // 打开中的 A：主进程跳过、renderer 内存改 → href 立即更新
   await expect(frame.locator('a[href="BB.html"]')).toBeVisible();
-  await expect(page.locator('.sb-toast')).toContainText('已更新'); // toast「已更新 N 篇」（A 内存 + M + N）
+  await expect(page.locator('.sb-toast', { hasText: '已更新' })).toBeVisible(); // toast「已更新 N 篇」（A 内存 + M + N）
   // 落盘：等自动保存，A.html disk 也变（内存改走正常保存管线，不被覆盖）
   await page.waitForTimeout(1700);
   const a = await fs.readFile(path.join(wsDir, 'A.html'), 'utf8');

@@ -95,7 +95,7 @@ test('P2-1b 目录拖进自己的子孙：被拒，磁盘纹丝不动（前端 d
   await expandDir(ra, '父'); // 露出 父/子
   await dnd(`.sb-dir[data-root="${ra}"][data-rel="父"]`, `.sb-dir[data-root="${ra}"][data-rel="父/子"]`);
   // 拒绝：结构原样（父/子/k.html 仍在，没冒出 父/子/父/…）
-  await expect(page.locator('.sb-toast')).toContainText('不能把文件夹移动到它自己里面');
+  await expect(page.locator('.sb-toast', { hasText: '不能把文件夹移动到它自己里面' })).toBeVisible();
   expect(await onDisk(path.join(wsA, '父', '子', 'k.html'))).toBe(true);
   expect(await onDisk(path.join(wsA, '父', '子', '父'))).toBe(false);
 });
