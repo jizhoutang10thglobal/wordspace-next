@@ -191,6 +191,9 @@ interface State {
   // 返回新文件根内路径。ext 缺省 .html；断链修复的「原地新建」对 .md 断链传 .md（建出来的才接得上）。
   createLinkedDoc: (rootId: string, dir: string, title: string, ext?: '.html' | '.md') => string | null
   createFromTemplate: (templateId: string, folderId: string, target?: { rootId: string; dir: string } | null, unsaved?: boolean) => string
+  // 换装：把模板 CSS 快照盖章到文档（templateId 记来源、templateCss 记快照，对齐入盘自包含）。
+  // templateId=null → 卸装回素颜。快照旧值 + toast 撤销（照 deleteFileWithUndo 形状，不进 Cmd+Z 栈）。
+  applyTemplate: (docId: string, templateId: string | null) => void
   // Cmd+S / 保存：临时文档弹「保存到哪里」modal；已保存的只提示
   saveActiveDoc: () => void
   // 把临时文档保存到指定根的指定文件夹（dir=''=根目录；rootId 空 = 云空间）
@@ -1197,6 +1200,31 @@ export const useStore = create<State>()(
         return id
       },
 
+      applyTemplate: (docId, templateId) => {
+        const s = get()
+        const doc = s.docs.find((d) => d.id === docId)
+        if (!doc) return
+        const prev = { templateId: doc.templateId, templateCss: doc.templateCss } // 撤销快照
+        const tpl = templateId ? s.templates.find((t) => t.id === templateId) : null
+        const nextId = tpl ? tpl.id : undefined
+        const nextCss = tpl ? tpl.css : undefined // 盖章 = 快照 CSS 拷贝（模板事后改不影响本文档）
+        set((st) => ({
+          docs: st.docs.map((d) =>
+            d.id === docId ? { ...d, templateId: nextId, templateCss: nextCss, updatedAt: Date.now() } : d,
+          ),
+        }))
+        const msg = tpl ? `已应用模板「${tpl.name}」` : '已移除模板'
+        get().toast(msg, 'neutral', {
+          label: '撤销',
+          run: () =>
+            set((st) => ({
+              docs: st.docs.map((d) =>
+                d.id === docId ? { ...d, templateId: prev.templateId, templateCss: prev.templateCss } : d,
+              ),
+            })),
+        })
+      },
+
       renameDoc: (docId, title) =>
         set((s) => ({
           docs: s.docs.map((d) => (d.id === docId ? { ...d, title } : d)),
@@ -1397,4 +1425,8 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem('wordspace-browser')
     location.reload()
   }
+  // 测试 seam（同 __resetWordspace 惯例）：让 Playwright 门脚本直接驱动 store/ui 状态、
+  // 断言真实渲染（scripts/test-template-ui.mjs）。仅暴露引用，不改任何行为。
+  ;(window as unknown as Record<string, unknown>).__wsStore = useStore
+  ;(window as unknown as Record<string, unknown>).__wsUI = useUI
 }

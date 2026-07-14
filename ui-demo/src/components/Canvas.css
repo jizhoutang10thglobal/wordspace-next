@@ -399,6 +399,14 @@
 .ws-docmenu-danger svg { color: var(--c-danger); }
 .ws-docmenu-danger:hover { background: var(--c-danger-tint); }
 .ws-docmenu-sep { height: 1px; background: var(--c-divider); margin: 4px 6px; }
+/* 换装禁用态：原因常驻小字（键盘/读屏可达，不只 title），两行故 height:auto。 */
+.ws-docmenu-item.is-disabled {
+  height: auto; align-items: flex-start; padding: 7px 10px;
+  color: var(--c-text-3); cursor: default; background: none;
+}
+.ws-docmenu-item.is-disabled svg { margin-top: 2px; opacity: 0.6; }
+.ws-docmenu-disabled-wrap { display: flex; flex-direction: column; gap: 2px; }
+.ws-docmenu-hint { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.4; max-width: 220px; }
 
 /* ------------------------------------------------------------------ */
 /* inline format toolbar                                               */

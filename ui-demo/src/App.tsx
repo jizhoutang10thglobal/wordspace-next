@@ -20,6 +20,7 @@ import ShortcutsPanel from './components/ShortcutsPanel'
 import FindPalette from './components/FindPalette'
 import SaveModal from './components/SaveModal'
 import PageSetupModal from './components/PageSetupModal'
+import TemplateGalleryModal from './components/TemplateGalleryModal'
 import CloseConfirmModal from './components/CloseConfirmModal'
 import DeleteLinkedModal from './components/DeleteLinkedModal'
 import MarkdownSourcePanel from './components/MarkdownSourcePanel'
@@ -97,6 +98,7 @@ export default function App() {
       <FindPalette />
       <SaveModal />
       <PageSetupModal />
+      <TemplateGalleryModal />
       <CloseConfirmModal />
       <DeleteLinkedModal />
       <MarkdownSourcePanel />
