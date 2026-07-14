@@ -77,6 +77,12 @@ scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
 - **失联根自动复活探测**（P3-08，`src/main/ipc.js`）：根转失联（外部改名/拔盘）后挂 5s 一次的 `dirExists`
   轮询（`scheduleReviveProbe`/`reviveTimers`）；路径改回原样 / 外置盘插回即自愈——清 `missing`、重挂 watcher、
   广播 `ws-roots-changed` + 该根全量 `ws-tree-changed`，免手点「重新定位」。根移除/重定位/复活/退出取消 timer。
+- **文件夹可拖拽移动**（P2-1）：目录行 `draggable=true`，dragstart 记 `dragNode=dir`，复用文件行 / dir 行 /
+  根标题的既有 drop（同根走 `doMove`、跨根走 `doMoveAcross`，标签/collapsed 键跟随）。**禁入自身子树**：前端
+  `dropWouldNest` 拒绝 + toast，后端 `movePath` 兜底。右键「移动到…」不做（新交互另过 Wendi）。
+- **吸顶祖先行接受拖放**（P2-5）：`renderSticky` 的克隆行照 `oncontextmenu` 转发模式补 `ondragover`/
+  `ondragleave`/`ondrop`——转发给真行既有 handler（读模块级 `dragNode`），高亮反馈同步到克隆行。吸顶行拖放
+  行为等同真行，不再是死区。
 
 ## 文件映射
 

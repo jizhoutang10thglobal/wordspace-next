@@ -738,6 +738,14 @@
           e.preventDefault();
           el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY }));
         };
+        // p2-5：拖放三件同样要转发——否则吸顶的祖先行是拖放死区（.sb-sticky-row 是 pointer-events:auto，
+        // 拖拽事件被克隆行截获、死在这里）。真行 drop handler 读的是模块级 dragNode（非 dataTransfer），
+        // 把克隆行的真实拖拽事件直接喂进真行同一个 handler；高亮反馈另在克隆行同步（真行滚出视口、加在它
+        // 身上用户看不见），并即时清掉真行的临时 class 免污染下一次 cloneNode。
+        const cleanEl = () => el.classList.remove('sb-drop', 'sb-insert-before', 'sb-insert-after');
+        clone.ondragover = (e) => { if (typeof el.ondragover === 'function') el.ondragover(e); clone.classList.toggle('sb-drop', e.defaultPrevented); cleanEl(); };
+        clone.ondragleave = (e) => { if (typeof el.ondragleave === 'function') el.ondragleave(e); clone.classList.remove('sb-drop'); cleanEl(); };
+        clone.ondrop = (e) => { if (typeof el.ondrop === 'function') el.ondrop(e); clone.classList.remove('sb-drop'); cleanEl(); };
         stickyEl.appendChild(clone);
       }
       stickyEl.classList.toggle('has-pins', pins.length > 0);
@@ -755,6 +763,9 @@
     const i = rel.lastIndexOf('/');
     return i >= 0 ? rel.slice(0, i) : '';
   };
+  // p2-1：拖一个目录进它自己 / 自己的子孙 = 非法（后端 movePath 也有守卫兜底，前端先拒免出无效高亮）。
+  const dropWouldNest = (dn, destRootId, destRel) =>
+    !!dn && dn.isDir && dn.rootId === destRootId && (destRel === dn.rel || destRel.indexOf(dn.rel + '/') === 0);
   const openPath = () => (window.__shellDocPath ? window.__shellDocPath() : null);
   function isUnder(child, parentAbs) {
     if (!child || !parentAbs) return false;
@@ -1081,6 +1092,7 @@
       row.className = 'sb-row sb-dir';
       row.setAttribute('role', 'button');
       row.tabIndex = 0;
+      row.draggable = true; // p2-1：目录可拖拽移动（同根/跨根），复用文件行的 dragNode + dir/根标题的既有 drop
       row.dataset.rel = dir.rel;
       row.dataset.root = dir.rootId; // 多根：行归属哪个根（e2e/高亮/折叠都靠它限定）
       row.dataset.depth = depth; // sticky ancestor：按 depth 算祖先链
@@ -1133,9 +1145,18 @@
           { label: '删除', danger: true, run: () => doDelete(dir) },
         ]);
       };
+      row.ondragstart = (e) => {
+        dragNode = dir; // p2-1：拖的是目录（compact 链落最深那级 tail = dir）
+        e.dataTransfer.effectAllowed = 'all';
+        e.dataTransfer.setData('text/plain', dir.rel);
+        window.__wsDragFile = null; // 目录不能作为链接插进正文，别喂给文档 drop
+      };
+      row.ondragend = () => { dragNode = null; };
       row.ondragover = (e) => {
-        // 跨根移动已放开（v1 便宜档：同盘 rename、跨盘 toast）。只挡「同根且已在此文件夹」的 no-op。
+        // 跨根移动已放开（v1 便宜档：同盘 rename、跨盘 toast）。挡「同根且已在此文件夹」的 no-op +
+        // p2-1：目录拖进自己/自己的子孙（会造环）。
         if (!dragNode || (dragNode.rootId === dir.rootId && parentDirOf(dragNode.rel) === dir.rel)) return;
+        if (dropWouldNest(dragNode, dir.rootId, dir.rel)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         row.classList.add('sb-drop');
@@ -1148,6 +1169,7 @@
         e.preventDefault();
         e.stopPropagation();
         row.classList.remove('sb-drop');
+        if (dropWouldNest(dragNode, dir.rootId, dir.rel)) { showToast('不能把文件夹移动到它自己里面'); dragNode = null; return; }
         // 同根→doMove(rename)；跨根→doMoveAcross(换根)
         if (dragNode.rootId === dir.rootId) doMove(dragNode, dir.rel);
         else doMoveAcross(dragNode, dir.rootId, dir.rel);
