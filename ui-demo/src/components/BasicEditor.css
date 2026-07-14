@@ -126,29 +126,3 @@
   transition: background-color var(--dur-fast) var(--ease);
 }
 .nce-focus-del:hover { background: var(--c-ink-hover); }
-
-/* ---- 悬停某块 → 右上角 🗑（鼠标删除路径） ---- */
-.nce-hover {
-  position: absolute;
-  z-index: 50;
-  pointer-events: none;
-  border: 1.5px dashed color-mix(in srgb, var(--c-accent) 55%, transparent);
-  border-radius: 6px;
-}
-.nce-hover-del {
-  position: absolute;
-  top: -13px;
-  right: -13px;
-  pointer-events: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  background: var(--c-accent);
-  color: #fff;
-  border-radius: 50%;
-  box-shadow: 0 3px 10px color-mix(in srgb, var(--c-accent) 45%, transparent);
-  transition: background-color var(--dur-fast) var(--ease);
-}
-.nce-hover-del:hover { background: var(--c-accent-hover); }
