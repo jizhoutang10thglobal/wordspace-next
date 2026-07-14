@@ -70,6 +70,26 @@ function schedule(c) {
   if (c.timer) clearTimeout(c.timer);
   c.timer = setTimeout(() => { c.timer = null; writeCell(c); }, DEBOUNCE_MS);
 }
+
+// ---- 变更通知（P3-11）----
+// 收藏是用户数据 → **不设条数上限**（静默丢弃比膨胀更糟）。唯一要防的放大器是「每次变更把全量 state
+// 灌 renderer」：改成 leading-edge 防抖合并——首次变更立即推（单次操作零延迟、星标即时反馈,与旧行为一致）,
+// NOTIFY_MS 窗口内的后续变更合并成一次 trailing 推。磁盘写早已防抖（schedule），这里补上「推送」这一半。
+const NOTIFY_MS = 200;
+const subs = {}; // name -> { fn, timer, pending }
+function subscribe(name, fn) {
+  subs[name] = { fn: typeof fn === 'function' ? fn : null, timer: null, pending: false };
+}
+function notify(name) {
+  const s = subs[name];
+  if (!s || !s.fn) return;
+  if (s.timer) { s.pending = true; return; }   // 窗口内：合并,等 trailing 一次推
+  s.fn(cell(name).data);                        // leading：立即推（不延迟单次变更）
+  s.timer = setTimeout(() => {
+    s.timer = null;
+    if (s.pending) { s.pending = false; s.fn(cell(name).data); } // trailing：窗口内有更多变更 → 补推最终态
+  }, NOTIFY_MS);
+}
 // 退出前同步冲盘（before-quit）：防抖窗内的最后变更不能丢。用独立 `.sync.tmp`,不与 async 撞。
 function flushSync() {
   for (const name of Object.keys(cells)) {
@@ -94,6 +114,7 @@ function setBookmarks(state) {
   const c = cell('bookmarks');
   c.data = state;
   schedule(c);
+  notify('bookmarks'); // 防抖合并推 renderer（P3-11）
   return c.data;
 }
 // ---- 历史 ----
@@ -113,4 +134,4 @@ function setEngine(key) {
   return { ...c.data };
 }
 
-module.exports = { init, flushSync, getBookmarks, setBookmarks, getHistory, setHistory, getSettings, setEngine };
+module.exports = { init, flushSync, subscribe, getBookmarks, setBookmarks, getHistory, setHistory, getSettings, setEngine };
