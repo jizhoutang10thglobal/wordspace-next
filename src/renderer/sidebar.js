@@ -1781,6 +1781,15 @@
     if (entry.kind === 'html' || entry.kind === 'md') openDoc(entry.abs); // 外部标签的可编辑文档（含 md）
     else if (window.__shellShowViewer) window.__shellShowViewer({ abs: entry.abs, rel: null, kind: entry.kind, name: entry.title });
   }
+  // p3-06：同名跨根消歧。工作区内标签统一给 title=「根名 / rel」；仅当渲染中的标签（open||pinned）里出现
+  // 「同名不同根」冲突时，冲突各方名字后加淡色「— 根名」后缀（无冲突不加，别把所有标签搞长）。
+  const rootNameOf = (rootId) => { const st = rootOf(rootId); return st ? st.name : ''; };
+  function sameNameConflict(entry) {
+    if (!entry.rel || !entry.rootId) return false; // 只管工作区内标签（外部/网页/临时不算）
+    const base = entry.rel.split('/').pop();
+    return tabState.entries.some((e) => e.rel && e.rootId && (e.open || e.pinned)
+      && e.rootId !== entry.rootId && e.rel.split('/').pop() === base);
+  }
   function tabRow(entry, zone) {
     const key = keyOf(entry);
     const temp = isTempEntry(entry);
@@ -1812,7 +1821,15 @@
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
-    name.title = web && entry.url ? entry.url : external ? entry.abs : entry.title; // 网页悬停显 URL；外部显绝对路径
+    // 网页悬停显 URL；外部显绝对路径；工作区内标签显「根名 / rel」（p3-06：普适有益，一眼看清是哪个根的哪个文件）
+    name.title = web && entry.url ? entry.url : external ? entry.abs : (entry.rel && entry.rootId ? rootNameOf(entry.rootId) + ' / ' + entry.rel : entry.title);
+    // p3-06：同名不同根冲突时，名字尾部补淡色「— 根名」后缀消歧（VS Code 收敛；置顶区同款，因 tabRow 两区共用）
+    if (sameNameConflict(entry)) {
+      const suffix = document.createElement('span');
+      suffix.className = 'sb-tab-rootsuffix';
+      suffix.textContent = ' — ' + rootNameOf(entry.rootId);
+      name.append(suffix);
+    }
     row.append(ico, name);
     if (external) {
       const ext = document.createElement('span');
