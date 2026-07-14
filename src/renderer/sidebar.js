@@ -991,6 +991,12 @@
     }
     const op = openPath();
     const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
+    // p3-05：删除前快照被删 rel（目录则含级联子孙）的标签 entry（pinned/open/kind/title）——removeTabsUnder
+    // 会把这些整个删掉，撤销只还原磁盘、reconcile 当新文件，置顶/打开状态本会丢一半。撤销成功后按此恢复。
+    const underRel = (rel) => rel === node.rel || rel.indexOf(node.rel + '/') === 0;
+    const tabSnapshot = tabState.entries
+      .filter((e) => e.rel && e.rootId === node.rootId && (node.isDir ? underRel(e.rel) : e.rel === node.rel))
+      .map((e) => ({ rootId: e.rootId, rel: e.rel, kind: e.kind, title: e.title, open: !!e.open, pinned: !!e.pinned }));
     let r;
     try { r = await window.ws2.wsDelete(node.rootId, node.rel); }
     catch (e) { showToast('删除失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
@@ -1005,6 +1011,15 @@
     showToast('已删除「' + node.name + '」', '撤销', async () => {
       await window.ws2.wsUndoDelete(node.rootId, r.token);
       await refreshRoot(node.rootId);
+      // p3-05：撤销 = 回到删前，恢复置顶/打开状态。文件真回来了（findNode）才恢复对应 entry。
+      let next = tabState;
+      for (const s of tabSnapshot) {
+        if (!findNode(s.rootId, s.rel)) continue; // 撤销去重改了名（原位被占）→ 该 rel 没回来，跳过
+        const file = { rootId: s.rootId, rel: s.rel, kind: s.kind || 'other', title: s.title };
+        if (s.open) next = window.WS2Tabs.openEntry(next, file);
+        if (s.pinned) next = window.WS2Tabs.pinEntry(next, file);
+      }
+      applyTabs(next);
     });
   }
   async function newSubfolder(rootId, dirRel) {

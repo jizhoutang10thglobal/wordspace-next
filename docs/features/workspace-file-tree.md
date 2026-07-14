@@ -87,6 +87,9 @@ scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
   闭包，不再 `innerHTML=''` 顶掉上一条。连删多个时每条的「撤销」各撤各的（删除 token 一删一个）。带撤销条
   超时 15s、无撤销 6.5s；上限 4 条、超出先挤最旧的无撤销条。host 是底部锚定纵向 flex（shell.css 已有）。
   ⚠ 堆叠后 `.sb-toast` 不再是单例，断言要按文案 scope（e2e 里 `.sb-toast', { hasText }`）。
+- **撤销恢复置顶/打开状态**（P3-05）：删除动作发起时把被删 rel（目录则含级联子孙）的标签 entry 快照
+  （pinned/open/kind/title）存进 undo 闭包；撤销成功后按快照 `openEntry`/`pinEntry` 恢复（文件真回来才恢复）。
+  否则 `removeTabsUnder` 删掉 pinned，撤销只还原磁盘、reconcile 当新文件，置顶少还原一半。
 - **新目录默认收起，外部/内建一致**（P3-04）：watcher 路径（`doTreeScan`）原本漏了 `collectDirRels`，
   外部 `mkdir` 出来的目录因新 rel 不在 `collapsed` 而渲染成展开。修法：reconcile 后把「真·新目录」（新树有、
   旧树无该 rel，且子树无从旧树挪来的文件 ino＝非改名/移动目的地）加进 `collapsed`。dir 无 ino，靠子文件 ino 判改名。
