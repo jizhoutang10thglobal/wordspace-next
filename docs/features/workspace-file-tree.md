@@ -87,6 +87,11 @@ scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
   闭包，不再 `innerHTML=''` 顶掉上一条。连删多个时每条的「撤销」各撤各的（删除 token 一删一个）。带撤销条
   超时 15s、无撤销 6.5s；上限 4 条、超出先挤最旧的无撤销条。host 是底部锚定纵向 flex（shell.css 已有）。
   ⚠ 堆叠后 `.sb-toast` 不再是单例，断言要按文案 scope（e2e 里 `.sb-toast', { hasText }`）。
+- **树展开态跨重启持久化（缓存语义，rel 失效即弃）**（P3-07）：`workspace-store` 加 `treeState`
+  字段 `{ expandedByRoot: {rootId:[rel...]}, collapsedRoots: [rootId] }`——存「偏离默认」的部分（目录默认收起→
+  存被展开的目录 rel、cap 500/根；根默认展开→存被收起的根），走既有防抖原子写（`ws-set-tree-state`，写盘前滤
+  掉不在册的 rootId）。启动 `restoreTreeState()` 在 `mkRootState`（已全收起）之后、首次渲染前灌回；rel 不在
+  当前树即弃。失联/未加载根的展开态用内存 `persistedExpanded` 沿用，别被别根 toggle 的 save 清空。
 - **同名跨根消歧**（P3-06）：所有工作区内标签（含置顶区，`tabRow` 两区共用）的 `title` tooltip = `根名 / rel`；
   仅当渲染中的标签（open||pinned）里出现「同名不同根」冲突时，冲突各方名字尾补淡色 `— 根名` 后缀
   （`.sb-tab-rootsuffix` = `--c-text-3`）。无冲突不加、别把标签搞长。`sameNameConflict` 按 basename 分组判定。

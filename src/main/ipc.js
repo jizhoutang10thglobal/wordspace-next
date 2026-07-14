@@ -828,6 +828,17 @@ function registerIpc() {
       : [];
     return workspaceStore.setTabs(workspaceFile(), { entries, activeRel: state && state.activeRel });
   });
+  // P3-07 树展开态持久化（缓存语义，rel 失效即弃）：写盘前把已不在注册表的 rootId 滤掉（同 ws-set-tabs 的
+  // 移除根竞态防御）。失联根的条目保留——重新定位后展开态原样回来。
+  ipcMain.handle('ws-get-tree-state', () => workspaceStore.getTreeState(workspaceFile()));
+  ipcMain.handle('ws-set-tree-state', (_e, ts) => {
+    const known = new Set(roots.map((r) => r.id));
+    const expandedByRoot = {};
+    const src = ts && ts.expandedByRoot;
+    if (src && typeof src === 'object') for (const id of Object.keys(src)) if (known.has(id)) expandedByRoot[id] = src[id];
+    const collapsedRoots = Array.isArray(ts && ts.collapsedRoots) ? ts.collapsedRoots.filter((id) => known.has(id)) : [];
+    return workspaceStore.setTreeState(workspaceFile(), { expandedByRoot, collapsedRoots });
+  });
   // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
   ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
   // 新建文档模板（含空文档，第一项）。

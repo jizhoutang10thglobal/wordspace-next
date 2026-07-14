@@ -34,6 +34,47 @@
   const rootClosed = new Set(); // 收起的根（整节折叠，rootId）
   const colKey = (rootId, rel) => rootId + ':' + rel;
   const rootOf = (rootId) => rootsState.find((r) => r.id === rootId) || null;
+
+  // P3-07 树展开态持久化（缓存语义，rel 失效即弃）。存「偏离默认」的部分：目录默认收起→存被展开的目录 rel；
+  // 根默认展开→存被收起的根。防抖原子写（走 workspace.json 的既有 serialized 写）。失联/未加载根的展开态
+  // 用 persistedExpanded 沿用，别在别的根 toggle 触发的 save 里把它清空。
+  let persistedExpanded = {}; // rootId -> [rel...]（最近一次持久化的展开集，给失联/未加载根兜底）
+  let treeStateSaveTimer = null;
+  function computeTreeState() {
+    const expandedByRoot = {};
+    for (const st of rootsState) {
+      if (st.tree) {
+        const rels = [];
+        (function w(nodes) { for (const n of nodes) if (n.isDir) { if (!collapsed.has(colKey(st.id, n.rel))) rels.push(n.rel); w(n.children || []); } })(st.tree);
+        expandedByRoot[st.id] = rels.slice(0, 500);
+      } else if (persistedExpanded[st.id]) {
+        expandedByRoot[st.id] = persistedExpanded[st.id]; // 失联/未加载：沿用上次，别丢
+      }
+    }
+    persistedExpanded = expandedByRoot;
+    const collapsedRoots = rootsState.filter((st) => rootClosed.has(st.id)).map((st) => st.id);
+    return { expandedByRoot, collapsedRoots };
+  }
+  function scheduleTreeStateSave() {
+    if (!window.ws2.wsSetTreeState) return; // 旧 preload 兜底
+    if (treeStateSaveTimer) clearTimeout(treeStateSaveTimer);
+    treeStateSaveTimer = setTimeout(() => { treeStateSaveTimer = null; window.ws2.wsSetTreeState(computeTreeState()); }, 400);
+  }
+  async function restoreTreeState() {
+    if (!window.ws2.wsGetTreeState) return;
+    let ts = null;
+    try { ts = await window.ws2.wsGetTreeState(); } catch (e) { return; }
+    if (!ts) return;
+    persistedExpanded = ts.expandedByRoot || {};
+    for (const rootId of Object.keys(persistedExpanded)) {
+      const st = rootOf(rootId);
+      if (!st || !st.tree) continue;
+      const existing = new Set();
+      (function w(nodes) { for (const n of nodes) if (n.isDir) { existing.add(n.rel); w(n.children || []); } })(st.tree);
+      for (const rel of persistedExpanded[rootId]) if (existing.has(rel)) collapsed.delete(colKey(rootId, rel)); // 默认全收起，把持久化展开的删掉；rel 失效即弃
+    }
+    for (const rootId of (ts.collapsedRoots || [])) if (rootOf(rootId)) rootClosed.add(rootId);
+  }
   const liveRootCount = () => rootsState.filter((r) => !r.missing).length;
 
   // 树节点出厂时不带根归属 → 装进 rootsState 前逐节点标 rootId（右键/拖拽/打开在任何深度都要知道归属根）。
@@ -516,6 +557,7 @@
     head.onclick = () => {
       if (rootClosed.has(root.id)) rootClosed.delete(root.id);
       else rootClosed.add(root.id);
+      scheduleTreeStateSave(); // P3-07：根折叠态 → 持久化（防抖）
       renderRoot(root.id); // 只重建这个根（性能）
     };
     head.oncontextmenu = (e) => {
@@ -1149,6 +1191,7 @@
         // 否则残留的祖先折叠键会在链日后断开（外部往中间级加文件）时命中新 tail、把已展开的链无声重折叠。
         if (collapsed.has(colKey(dir.rootId, dir.rel))) chain.rels.forEach((r) => collapsed.delete(colKey(dir.rootId, r)));
         else chain.rels.forEach((r) => collapsed.add(colKey(dir.rootId, r)));
+        scheduleTreeStateSave(); // P3-07：展开/收起 → 持久化（防抖）
         renderRoot(dir.rootId); // 只重建该文件所在的根（性能）
       };
       row.oncontextmenu = (e) => {
@@ -2736,6 +2779,7 @@
         rootsState = infos.map((r, i) => mkRootState(r, trees[i]));
         rootsGen++;
         if (filterInput) filterInput.value = '';
+        await restoreTreeState(); // P3-07：mkRootState 已 collectDirRels 全收起，这里把上次展开的目录/收起的根灌回，首次渲染前
         syncChrome();
         render();
       }

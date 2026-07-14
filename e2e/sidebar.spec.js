@@ -525,6 +525,52 @@ test('P3-05 目录级联：置顶的文件在被删目录里 → 撤销后置顶
   await expect(page.locator('#sb-pinned .sb-tab[data-rel="数据/b.html"]')).toBeVisible();
 });
 
+test('P3-07 展开的子文件夹重启后仍展开（变异敏感）', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click(); // 展开 数据
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect.poll(async () => {
+    try { const j = JSON.parse(await fs.readFile(wsJson, 'utf8')); return !!j.treeState && Object.values(j.treeState.expandedByRoot || {}).some((a) => a.includes('数据')); } catch { return false; }
+  }, { timeout: 4000 }).toBe(true);
+  await app.close();
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible(); // 无需再点，展开态自动恢复
+});
+
+test('P3-07 收起的根重启后仍收起', async () => {
+  await openWorkspace();
+  await page.click('.sb-root-head'); // 收起整个根
+  await expect(page.locator('.sb-root-head .sb-caret.is-open')).toHaveCount(0);
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toHaveCount(0); // 收起 → 文件隐藏
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect.poll(async () => {
+    try { const j = JSON.parse(await fs.readFile(wsJson, 'utf8')); return !!(j.treeState && (j.treeState.collapsedRoots || []).length); } catch { return false; }
+  }, { timeout: 4000 }).toBe(true);
+  await app.close();
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-root-head .sb-caret.is-open')).toHaveCount(0); // 仍收起
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toHaveCount(0);
+});
+
+test('P3-07 缓存语义：磁盘上已展开的目录被删 → 重启无残留报错（rel 失效即弃）', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect.poll(async () => {
+    try { const j = JSON.parse(await fs.readFile(wsJson, 'utf8')); return !!j.treeState && Object.values(j.treeState.expandedByRoot || {}).some((a) => a.includes('数据')); } catch { return false; }
+  }, { timeout: 4000 }).toBe(true);
+  await app.close();
+  await fs.rm(path.join(wsDir, '数据'), { recursive: true, force: true }); // 外部删掉已持久化展开的目录
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible(); // 树正常渲染
+  await expect(page.locator('.sb-dir[data-rel="数据"]')).toHaveCount(0); // 死 rel 被弃、不残留
+});
+
 test('收起态不再有竖排图标轨（Wendi B2：去掉）', async () => {
   await openWorkspace();
   await page.keyboard.press('Control+\\'); // 收起（真收起）
