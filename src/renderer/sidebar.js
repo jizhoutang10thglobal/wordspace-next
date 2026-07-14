@@ -2365,6 +2365,22 @@
     const sameStructure = oldRels.size === relSet.size && [...relSet].every((r) => oldRels.has(r));
     const oldTree = st.tree; // U5：捕获旧树（带 ino），给外部改名探测做 inode 匹配（下一行就被新树覆盖）
     st.tree = annotateTree(newTree, rootId); // 总更新：保持树/ino 新鲜（即使不重渲染）
+    // p3-04：外部新增的目录默认收起（与 app 内建 wsMakeDir / 重启一致——watcher 路径原本漏了 collectDirRels，
+    // 新 rel 不在 collapsed 就渲染成展开）。只收「真·新目录」：新树有、旧树无该 rel，且子树里没有从旧树挪来的
+    // 文件 inode（有 = 外部改名/移动来的目的地，展开态维持现状、不误收）。dir 节点自身无 ino，靠子文件 ino 判定。
+    {
+      const oldDirRels = new Set();
+      const oldFileInos = new Set();
+      (function w(nodes) { for (const n of nodes) { if (n.isDir) { oldDirRels.add(n.rel); w(n.children || []); } else if (n.ino != null) oldFileInos.add(String(n.ino)); } })(oldTree);
+      const cameFromOld = (nodes) => nodes.some((n) => (n.isDir ? cameFromOld(n.children || []) : (n.ino != null && oldFileInos.has(String(n.ino)))));
+      (function w(nodes) {
+        for (const n of nodes) {
+          if (!n.isDir) continue;
+          if (!oldDirRels.has(n.rel) && !cameFromOld(n.children || [])) collapsed.add(colKey(rootId, n.rel));
+          w(n.children || []);
+        }
+      })(st.tree);
+    }
     if (sameStructure) return;
     // 结构变了（增/删/改名/移动）→ reconcile 该根标签 + 重渲染 + 同步编辑器
     const prevEntry = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);

@@ -113,6 +113,28 @@ test('外部删除一个打开的文件 → 树更新 + 标签消失', async () 
   await expect(page.locator('#home')).toBeVisible({ timeout: W }); // 唯一打开的文档被删 → 编辑器回空态
 });
 
+test('P3-04 外部新建的文件夹默认收起（与 app 内建/重启一致，变异敏感）', async () => {
+  await openWorkspace();
+  await fs.mkdir(path.join(wsDir, '新夹'), { recursive: true });
+  await fs.writeFile(path.join(wsDir, '新夹', 'inside.html'), HTML('IN'), 'utf8');
+  await nudge();
+  // 目录行出现，但收起态：caret 非 is-open + 子文件行没渲染
+  await expect(page.locator('.sb-dir[data-rel="新夹"]')).toBeVisible({ timeout: W });
+  await expect(page.locator('.sb-dir[data-rel="新夹"] .sb-caret.is-open')).toHaveCount(0);
+  await expect(page.locator('.sb-file[data-rel="新夹/inside.html"]')).toHaveCount(0);
+});
+
+test('P3-04 外部改名一个已展开的目录 → 仍展开（不误收改名来的目录）', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click(); // 展开 数据
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
+  await fs.rename(path.join(wsDir, '数据'), path.join(wsDir, '数据档')); // 外部改名（b.html 的 ino 带过来）
+  await nudge();
+  await expect(page.locator('.sb-dir[data-rel="数据档"]')).toBeVisible({ timeout: W });
+  await expect(page.locator('.sb-dir[data-rel="数据档"] .sb-caret.is-open')).toBeVisible(); // 仍展开
+  await expect(page.locator('.sb-file[data-rel="数据档/b.html"]')).toBeVisible(); // 子行照显
+});
+
 test('P2-6 外部删除「打开中且脏」的文档 → 弹挽救式 SaveModal，能把未保存改动存下（变异敏感）', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');
