@@ -325,6 +325,34 @@ function registerIpc() {
     const others = root ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
     return { docs: linkIndex.query(rootId), others };
   });
+  // B @菜单跨根候选：所有 live 根分组返回。sourceRootId = 触发 @ 的文档所在根 → 排在最前（组内行为与单根现状一致，单根用户零感知）。
+  // sameVol = 与源根同磁盘卷（stat().dev 相等）；跨卷根不给建链（B 层可见拒绝，renderer 灰字提示、不列候选）。
+  ipcMain.handle('ws-links-candidates-all', async (_e, sourceRootId) => {
+    await ensureAllLinkIndexes();
+    const live = roots.filter((r) => !r.missing);
+    const devOf = async (p) => { try { return (await fsp.stat(p)).dev; } catch { return null; } };
+    const srcRoot = live.find((r) => r.id === sourceRootId);
+    const srcDev = srcRoot ? await devOf(srcRoot.path) : null;
+    const ordered = srcRoot ? [srcRoot, ...live.filter((r) => r.id !== sourceRootId)] : live;
+    const groups = [];
+    for (const r of ordered) {
+      const dev = await devOf(r.path);
+      groups.push({
+        rootId: r.id,
+        rootName: rootInfo(r).name,
+        sameVol: srcDev != null && dev != null && dev === srcDev,
+        docs: linkIndex.query(r.id),
+        others: await linkIndex.listNonDocFiles(r.path).catch(() => []),
+      });
+    }
+    return groups;
+  });
+  // B：两根是否同一磁盘卷（stat().dev）。跨根建链（@菜单/拖拽）的同卷约束（plan §5）；拖拽路径用它（@菜单在 candidates-all 里已算）。
+  ipcMain.handle('ws-same-volume', async (_e, aId, bId) => {
+    const a = liveRoot(aId), b = liveRoot(bId);
+    if (!a || !b) return false;
+    try { const [sa, sb] = await Promise.all([fsp.stat(a.path), fsp.stat(b.path)]); return sa.dev === sb.dev; } catch { return false; }
+  });
   ipcMain.handle('ws-links-backlinks', async (_e, rootId, rel) => { await ensureAllLinkIndexes(); return linkIndex.backlinks(rootId, rel); }); // A：fan-out 所有根（跨根反链）
   ipcMain.handle('ws-links-dir-backlinks', async (_e, rootId, dirRel) => { await ensureAllLinkIndexes(); return linkIndex.dirBacklinks(rootId, dirRel); }); // U6 删除守卫 + A 跨根夹外引用
   ipcMain.handle('ws-links-outlinks-count', async (_e, rootId, rel, isDir) => { await ensureLinkIndex(rootId); return linkIndex.ownOutlinks(rootId, rel, isDir); }); // U-CR0 跨根移动守卫：条目自身会断的出链数
