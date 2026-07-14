@@ -109,3 +109,57 @@
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 回弹:switch 滑块、关闭钮、盖章式反馈 */
   --ease-smooth: cubic-bezier(0.45, 0, 0.15, 1);    /* 平滑对称:折叠/展开、滑块拖动 */
 }
+
+/* ==== 暗色变体（「纸方墨圆」dark，初稿待 Wendi 拍板 · 见 docs/style.md 暗色列 + R12）====
+   语义映射:纸=暖黑 stone 深灰(非冷黑,守 §1 暖墨基底);墨色控件反转为亮墨;
+   accent 墨青蓝提亮一档保证对比度(链接在暗纸上 ≥4.5:1);投影用更重的黑透明,不发光(§0-4 禁 glow)。
+   只覆盖 color + shadow token——type/radius/metrics/motion 是主题无关量,刻意不重复(不是遗漏)。
+   文本×背景对比度由 test/appearance-contrast-pairs.js 清单 + U7 门把关(正文≥4.5:1、大字≥3:1)。 */
+:root[data-theme="dark"] {
+  /* ---- color:纸(暖黑 stone 深灰,四层拉开明度差防糊) ---- */
+  --c-bg: #2b2724;            /* 文档纸面(暗) */
+  --c-bg-sunken: #1f1b18;     /* side panes */
+  --c-bg-rail: #17130f;       /* far-left icon rail(最深) */
+  --c-bg-chrome: #262220;     /* titlebar + tab strip */
+  --c-surface: #2b2724;
+
+  --c-border: #3a3531;
+  --c-border-strong: #4a4440;
+  --c-divider: #332e2b;
+
+  /* ---- color:墨(暗态=亮墨) ---- */
+  --c-text: #ede9e6;
+  --c-text-2: #b3aca6;        /* secondary */
+  --c-text-3: #78716c;        /* tertiary / placeholder(对比度豁免) */
+  --c-text-invert: #1c1917;   /* 亮墨控件上的文字=暗 */
+  --c-ink: #ece7e3;           /* 墨色控件反转为亮墨(primary 按钮/switch on/tooltip) */
+  --c-ink-hover: #f7f3f0;
+
+  --c-accent: #5c9fdf;        /* 墨青蓝提亮一档(链接/选区/焦点圈,不做大面积底色) */
+  --c-accent-hover: #7ab0e6;
+  --c-accent-press: #4a8ed0;
+  --c-accent-tint: #1c2c3a;   /* selection / active tint(暗蓝) */
+  --c-accent-tint-2: #24384a;
+
+  --c-hover: rgba(237, 233, 230, 0.06);
+  --c-active: rgba(237, 233, 230, 0.10);
+  --c-selected: #1c2c3a;
+
+  --c-success: #46b366;
+  --c-success-tint: #16281c;
+  --c-warning: #d98a3a;
+  --c-warning-tint: #2e2314;
+  --c-danger: #e5645f;
+  --c-danger-tint: #2e1a1a;
+
+  /* visibility accents (subtle) */
+  --c-private: #8a827c;
+  --c-invited: #5c9fdf;
+  --c-internal: #d98a3a;
+  --c-public: #46b366;
+
+  /* ---- shadow:暗态用更重的黑透明做层分离,绝不发光(§0-4) ---- */
+  --shadow-menu: 0 4px 12px rgba(0, 0, 0, 0.36);
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.44);
+  --shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.52);
+}
