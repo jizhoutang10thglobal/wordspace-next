@@ -2253,11 +2253,59 @@
       openTabEntry({ rel: null, abs, kind: meta.kind || 'other', title: meta.name || baseName(abs) });
     }
   }
-  // 某根的外部磁盘变化（主进程 per-root watcher 去抖后发 ws-tree-changed 带 rootId）：重读该根的树 +
-  // reconcile 该根的标签，别的根纹丝不动。
+  // ===== 子树补丁（大根性能）：watcher 报得出「受影响目录」时不再全量 readTree，只向主进程要那些
+  // 目录的新 children（ws-read-subtrees），路径拷贝替换进旧树。路径拷贝 = 沿途节点浅拷贝、其余分支共享，
+  // 旧树对象保持完好——detectExternalRenames 要拿「变化前的 ino」，原地改 children 会把旧树一起改坏。
+  // 任何挂不上（目录不在旧树里 = 树漂移）→ 返回 null，调用方回落全量。 =====
+  function replaceSubtreeAt(nodes, parts, children) {
+    if (!parts.length) return null; // dir '' 不该到这（上游已回落全量）——防御
+    const i = nodes.findIndex((n) => n.isDir && n.name === parts[0]);
+    if (i < 0) return null;
+    const kids = parts.length > 1 ? replaceSubtreeAt(nodes[i].children || [], parts.slice(1), children) : children;
+    if (!kids) return null;
+    const copy = nodes.slice();
+    copy[i] = { ...nodes[i], children: kids };
+    return copy;
+  }
+  function patchSubtrees(tree, subtrees) {
+    let cur = tree;
+    for (const s of subtrees) {
+      if (!s || typeof s.dir !== 'string' || !s.dir || !Array.isArray(s.children)) return null;
+      cur = replaceSubtreeAt(cur, s.dir.split('/').filter(Boolean), s.children);
+      if (!cur) return null;
+    }
+    return cur;
+  }
+
+  // 某根的外部磁盘变化（主进程 per-root watcher 去抖后发 ws-tree-changed 带 rootId + 受影响目录）：
+  // 重读该根的树（能子树级就子树级）+ reconcile 该根的标签，别的根纹丝不动。
+  // 单飞（大根性能）：同根扫描在飞时新事件只并进 pending，飞完补跑一次——以前事件风暴会叠着跑
+  // 多个全量 readTree。pending 合并语义：null（全量）吸收一切；目录列表取并集，超 8 个升级全量。
+  const treeScanInFlight = new Set(); // rootId
+  const treeScanPending = new Map(); // rootId → dirs|null
+  async function onTreeChanged(rootId, changedDirs) {
+    const dirs = Array.isArray(changedDirs) && changedDirs.length ? changedDirs : null;
+    if (treeScanInFlight.has(rootId)) {
+      const prev = treeScanPending.has(rootId) ? treeScanPending.get(rootId) : [];
+      const merged = prev === null || dirs === null ? null : [...new Set([...prev, ...dirs])];
+      treeScanPending.set(rootId, merged && merged.length > 8 ? null : merged);
+      return;
+    }
+    treeScanInFlight.add(rootId);
+    try {
+      await doTreeScan(rootId, dirs);
+    } finally {
+      treeScanInFlight.delete(rootId);
+      if (treeScanPending.has(rootId)) {
+        const p = treeScanPending.get(rootId);
+        treeScanPending.delete(rootId);
+        onTreeChanged(rootId, p); // 扫描期间又有变化 → 补跑一次（fire-and-forget，同样受单飞管）
+      }
+    }
+  }
   // 关键：先用「变化前的内存旧树」（st.tree，此刻磁盘已变但内存还列着消失的文件）给该根内部标签补 inode，
   // 再读新树——这样不用在每处建标签时穿 ino，消失文件的 ino 也一定取得到，给「改名/移动→标签跟随」做匹配。
-  async function onTreeChanged(rootId) {
+  async function doTreeScan(rootId, dirs) {
     const st = rootOf(rootId);
     if (!st || st.missing || !st.tree) return;
     // 跨根移动在飞（对抗审查 P2）：跳过 reconcile。跨根移动把文件的 inode 从源根移到目标根——若源根的
@@ -2268,8 +2316,18 @@
     for (const e of tabState.entries) {
       if (e.rel && e.rootId === rootId) { const n = findNode(rootId, e.rel); if (n && n.ino != null) e.ino = n.ino; }
     }
-    const data = await window.ws2.wsReadTree(rootId);
-    if (!data || rootOf(rootId) !== st) return; // 期间该根被移除/重定位 → 放弃
+    let newTree = null;
+    if (dirs) {
+      const res = await window.ws2.wsReadSubtrees(rootId, dirs);
+      if (rootOf(rootId) !== st) return; // 期间该根被移除/重定位 → 放弃
+      if (res && Array.isArray(res.subtrees)) newTree = patchSubtrees(st.tree, res.subtrees);
+      // newTree 仍 null（主进程判全量/挂点丢失）→ 下面回落全量
+    }
+    if (!newTree) {
+      const data = await window.ws2.wsReadTree(rootId);
+      if (!data || rootOf(rootId) !== st) return; // 期间该根被移除/重定位 → 放弃
+      newTree = data.tree;
+    }
     const relSet = new Set();
     const inoToRel = new Map();
     (function w(nodes) {
@@ -2277,13 +2335,13 @@
         if (n.isDir) w(n.children || []);
         else { relSet.add(n.rel); if (n.ino != null) inoToRel.set(String(n.ino), n.rel); }
       }
-    })(data.tree);
+    })(newTree);
     // 文件集合没变（只是某文件内容被改了，如保存）→ 不重渲染树：免得打断进行中的内联改名/拖拽，也省 DOM 重建。
     const oldRels = new Set();
     (function w(nodes) { for (const n of nodes) { if (n.isDir) w(n.children || []); else oldRels.add(n.rel); } })(st.tree);
     const sameStructure = oldRels.size === relSet.size && [...relSet].every((r) => oldRels.has(r));
     const oldTree = st.tree; // U5：捕获旧树（带 ino），给外部改名探测做 inode 匹配（下一行就被新树覆盖）
-    st.tree = annotateTree(data.tree, rootId); // 总更新：保持树/ino 新鲜（即使不重渲染）
+    st.tree = annotateTree(newTree, rootId); // 总更新：保持树/ino 新鲜（即使不重渲染）
     if (sameStructure) return;
     // 结构变了（增/删/改名/移动）→ reconcile 该根标签 + 重渲染 + 同步编辑器
     const prevEntry = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
@@ -2467,12 +2525,24 @@
     findPalette: () => openFindPalette(),                                              // Cmd+P：命令面板（模糊搜文件跳转）
     openSaveModal: (closeAfter) => openSaveModal(closeAfter),                          // shell.save() 遇临时文档 → 弹「保存到哪里」
   };
-  // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底（从 Finder 切回来时补刷一次，
-  // 兼顾 watcher 在某平台失灵 / 偶尔漏事件）。
+  // 外部磁盘变化实时跟随：watcher 推送（mac/win 原生）+ 窗口重新聚焦兜底。
   if (window.ws2.onWsTreeChanged) window.ws2.onWsTreeChanged(onTreeChanged);
   // 运行时根状态变化（拔盘/根被删 → 主进程转失联并广播）：重拉根列表，失联节灰态即刻可见。
   if (window.ws2.onWsRootsChanged) window.ws2.onWsRootsChanged(() => resyncRoots());
-  window.addEventListener('focus', () => { for (const st of rootsState) { if (!st.missing) onTreeChanged(st.id); } });
+  // 聚焦兜底收口（大根性能）：以前每次 focus 对所有根全量重扫——大根一次几万个 stat，「切回 app 就卡」
+  // 的直接来源。现在 focus 只做两件便宜事：① 冲掉该根 watcher 的在途去抖（改完盘马上切回来 → 立即走
+  // 正常事件管线，e2e 的 focus 触发保持确定性）；② watcher 不活（平台不支持递归 watch/挂了）的根才
+  // 全量重扫——watcher 活着时它本来就会推事件，focus 重扫是纯白烧。wsWatchFlush 缺失（旧 preload）回落老行为。
+  window.addEventListener('focus', async () => {
+    for (const st of rootsState) {
+      if (st.missing) continue;
+      if (!window.ws2.wsWatchFlush) { onTreeChanged(st.id); continue; }
+      try {
+        const r = await window.ws2.wsWatchFlush(st.id);
+        if (!r || !r.alive) onTreeChanged(st.id);
+      } catch { onTreeChanged(st.id); }
+    }
+  });
 
   // ── 性能诊断模式（隐藏，菜单「Wordspace Next → 性能诊断…」或 Cmd+Shift+D 手动开）────────────
   // 普通用户零感知：默认不显示任何 debug 内容，只有主动从菜单打开才出面板。Wendi 报「两文件夹贼卡」，我们本地
@@ -2511,7 +2581,7 @@
       L.push('根' + (i + 1) + '「' + name + '」  ' + (r.cloud ? '☁ ' + r.cloud + ' 云盘' : '本地'));
       L.push('   ' + r.path);
       L.push('   文件数 ' + r.fileCount.toLocaleString() +
-        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（读 ' + r.reads + ' 次）' +
+        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（全量 ' + r.reads + ' 次 / 子树 ' + (r.scopedReads || 0) + ' 次）' +
         '  ·  watcher 触发 ' + r.watchEvents + ' 次');
     });
     L.push('');

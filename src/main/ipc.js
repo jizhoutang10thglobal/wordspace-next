@@ -13,7 +13,7 @@ const perfDiag = require('./perf-diag');
 const { exportPdf, exportPdfFromHtml } = require('./pdf-export');
 const mdAdapter = require('./md-adapter');
 const { pathInfo } = require('../lib/path-url');
-const { assertInsideWorkspace, kindOf } = require('../lib/file-tree');
+const { assertInsideWorkspace, kindOf, isNoisePath, affectedDirsOf } = require('../lib/file-tree');
 const { TEMPLATES } = require('../lib/doc-templates');
 const rootsLib = require('../lib/roots');
 const tabsLib = require('../lib/tabs'); // 吸收时把持久化标签同步 rebase（双导出 IIFE，主进程可 require）
@@ -70,17 +70,20 @@ async function canonReal(p) {
     return resolved;
   }
 }
-// 起对某根的递归监听：外部增删改 → 通知 renderer 重读该根的树 + reconcile 标签（事件带 rootId）。
-// watcher 挂了（拔盘/根被删）→ 复查可达性：真没了标 missing + 广播（renderer 重拉根列表渲染失联态）；
-// 还在（瞬时错误）→ 重新挂监听。没有这步，运行中拔盘的根会「树冻结在旧状态、永不转失联」（MR-ADV-4）。
+// 起对某根的递归监听：外部增删改 → 通知 renderer 重读该根的树 + reconcile 标签（事件带 rootId +
+// 变化目录列表）。watcher 挂了（拔盘/根被删）→ 复查可达性：真没了标 missing + 广播（renderer 重拉根列表
+// 渲染失联态）；还在（瞬时错误）→ 重新挂监听。没有这步，运行中拔盘的根会「树冻结在旧状态、永不转失联」（MR-ADV-4）。
+// 大根性能：噪音事件在 watcher 层直接丢（isNoise）；报得出变化路径就归并成「受影响目录」（affectedDirsOf）
+// 让 renderer 走子树级重扫（ws-read-subtrees），归并不出来（根层变化/路径太散/平台没给路径）才发 null = 全量。
 function startRootWatch(root) {
   workspaceWatcher.watch(
     root.id,
     root.path,
-    () => {
+    (changedRels) => {
       perfDiag.recordWatch(root.path); // 诊断探针：数这个根被 watcher 触发几次（云盘 churn 会很高）
+      const dirs = changedRels ? affectedDirsOf(changedRels) : null;
       for (const w of BrowserWindow.getAllWindows()) {
-        if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id);
+        if (!w.webContents.isDestroyed()) w.webContents.send('ws-tree-changed', root.id, dirs);
       }
       refreshLinkIndex(root.id); // U2：外部增删改 → 增量刷新该根链接索引（内部去抖/串行）
     },
@@ -88,6 +91,7 @@ function startRootWatch(root) {
       if (await dirExists(root.path)) { startRootWatch(root); return; }
       markRootMissing(root);
     },
+    { isNoise: isNoisePath, delayMs: () => perfDiag.suggestDebounceMs(root.path) },
   );
 }
 // 运行时转失联（幂等）：标 missing + 广播根列表变化。missing 不持久化（重启时 restoreRoots 重新判定）。
@@ -615,6 +619,22 @@ function registerIpc() {
     if (!tree && !(await dirExists(r.path))) markRootMissing(r);
     return tree;
   });
+  // 子树级重扫（watcher 报得出变化目录时的便宜路径）：只重扫受影响目录。返回 null = 让 renderer 回落全量
+  // readTree（目录波及根层/参数不对/根失联）。dirs 由主进程 affectedDirsOf 产生，但按「渲染层传来的路径
+  // 一律不可信」的既有威胁模型，readSubtrees 内部仍逐条 assertInsideWorkspace。
+  ipcMain.handle('ws-read-subtrees', async (_e, rootId, dirs) => {
+    const r = roots.find((x) => x.id === rootId);
+    if (!r || r.missing) return null;
+    if (!Array.isArray(dirs) || !dirs.length || dirs.length > 8 || dirs.some((d) => typeof d !== 'string' || !d)) return null;
+    try {
+      return await workspace.readSubtrees(r.path, dirs);
+    } catch {
+      return null; // 越权路径/瞬时 IO 错 → 回落全量，别把树搞半残
+    }
+  });
+  // 聚焦兜底的便宜版：冲掉该根 watcher 的在途去抖（有变化立即走正常事件管线），返回 watcher 是否活着——
+  // 不活（平台不支持递归 watch/挂了）的根，renderer 才需要聚焦全量刷新。
+  ipcMain.handle('ws-watch-flush', (_e, rootId) => ({ alive: workspaceWatcher.flush(rootId) }));
   ipcMain.handle('ws-new-doc', (_e, rootId, dirRel, base, html, ext) =>
     workspace.newDoc(rootById(rootId), dirRel, base, html, ext),
   );
