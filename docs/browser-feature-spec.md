@@ -584,10 +584,11 @@ localStorage（key `ws-fav-open`）。`openBookmark(url,title)`：先按 url 找
 | 事件 | 动作 |
 |---|---|
 | `page-title-updated` | 更新标签行/地址栏标题；补写历史头条目标题（§4.8） |
-| `did-navigate` / `did-navigate-in-page` | push `webtab:state{url,title,canGoBack,canGoForward}`；主进程记历史 |
+| `did-navigate` / `did-navigate-in-page` | push `webtab:state{url,title,canGoBack,canGoForward,everCommitted,navSeq}`；主进程记历史。**`navSeq` 每次真提交自增**——renderer 拿它认「新页刚真提交」的沿（错误页恢复重挂 view 靠它，见下方「加载失败占位与恢复」） |
 | `page-favicon-updated` | 下载并缓存 favicon（§10.4），推给 renderer（标签行/收藏/历史图标） |
-| `did-start/stop-loading` | （增强项）标签行 loading 态 |
-| `render-process-gone` | （增强项）内容区崩溃占位 + 重新加载按钮 |
+| `did-start/stop-loading` | 标签行 loading 态。**注意**：`did-start-loading` 会清 `error`；加载**收尾**（stop）**不等于提交**——中止型导航（-3 ERR_ABORTED：下载被 cancel、被后续导航打断、204）照样收尾但没提交,恢复重挂只认 `navSeq` 提交沿、绝不认 stop 沿（否则会把脱挂 view 里的失败页残帧盖上） |
+| `did-fail-load`（主 frame，非 -3） | 分类为 error-page → push `error{code,desc,url}`；renderer 显 `#web-error` 占位 + 重试钮，并**摘掉空白 view**（`attachedKey=null`，别拿失败的空 view 盖内容区）。**-3(ERR_ABORTED)/子 frame 不算**（`classifyLoadFailure='ignore'`,不置 error、不换页面） |
+| `render-process-gone` | 内容区崩溃占位 + 重新加载按钮（同 `#web-error` 通道） |
 | `setWindowOpenHandler` | **deny** 弹窗；`target=_blank`/window.open 的 http(s) 链接 → 转成**前台新 web 标签**（浏览器惯例）；其余 scheme 丢弃 |
 | `session.on('will-download')` | `item.cancel()` + toast「不支持下载」（下载已砍，§12） |
 | `setPermissionRequestHandler` | **默认全拒**（摄像头/麦克风/地理位置/通知），v1 不做授权 UI |
