@@ -19,7 +19,8 @@
   let rootsState = []; // [{ id, path, name, missing, tree }] 有序 = 侧栏显示序；missing 根 tree=null
   let query = '';
   let tabState = { entries: [], activeRel: null }; // 标签/置顶模型（src/lib/tabs.js → window.WS2Tabs，全局单一集合持久化）
-  let suppressRevealOnce = false; // 一次性:关标签回落时置真,onOpen 消费它抑制树定位（Colin：关标签不滚树）
+  let suppressRevealOnce = false; // 一次性:关标签回落时置真,onOpen 消费它整个抑制树定位（Colin：关标签不滚树）
+  let suppressScrollOnce = false; // 一次性:点标签时置真,onOpen 消费它让 expandToFile 展开但不滚（Colin 2026-07-14）
   let diagRenderStart = 0; // 诊断探针：一次 render/renderRoot 的起点，afterRender 里结算
   const diagRender = { lastMs: 0, maxMs: 0, count: 0 }; // 诊断探针：renderer 渲染耗时（Cmd+Shift+D 看）
   // 启动恢复完成信号：冷启动（app 没开就双击 .html）时，open-file 建标签必须等「恢复根 + 标签」
@@ -1679,8 +1680,9 @@
   // ---- 渲染两区 ----
   // 点标签开它：内部文件走树节点 openNode；外部文件(无 rel)按 kind 分发 abs（跟「打开」按钮一条路，
   // shell.js 的 openDoc/showViewer 已支持纯 abs）。
-  // UX4（Wendi F6-①）：把文件树展开到 (rootId, rel) 指向的文件（展开根节 + 逐级删父文件夹 collapsed）并滚动定位。
-  function expandToFile(rootId, rel) {
+  // 把文件树展开到 (rootId, rel) 指向的文件（展开根节 + 逐级删父文件夹 collapsed）。scroll=true 时再滚动定位。
+  // scroll 拆出来：点标签要「展开+高亮但不滚动视口」（Colin 2026-07-14），滚动才是刺眼的「往下跳」本体。
+  function expandToFile(rootId, rel, scroll = true) {
     let changed = false;
     if (rootClosed.has(rootId)) { rootClosed.delete(rootId); changed = true; } // 根节整个收着也要先展开
     const parts = rel.split('/'); parts.pop(); // 去掉文件名，只留父文件夹链
@@ -1691,14 +1693,19 @@
       if (collapsed.has(key)) { collapsed.delete(key); changed = true; }
     }
     if (changed) renderRoot(rootId); // 只重建该文件所在的根（性能）
+    if (!scroll) return; // 点标签：只展开+高亮，不 scrollIntoView（不把上方标签区顶走）
     const row = [...document.querySelectorAll('.sb-file')].find((el) => el.dataset.rel === rel && el.dataset.root === rootId);
     if (row && row.scrollIntoView) row.scrollIntoView({ block: 'nearest' });
   }
-  // reveal=true（默认，点标签）：把文件树展开到该文件并滚动定位。reveal=false（关标签后回落到相邻标签）：
-  // 只切编辑器 + 高亮，不滚树——Colin 2026-07-09：关一个标签不该让文件树跳到相邻文件所在的文件夹。
-  // ⚠ 树定位有两条路：①这里自己 expandToFile——覆盖「点的正是已载入文档的标签」时 openDoc 短路、
-  // onOpen 不触发的情形；②openNode→openDoc→onOpen 里那次 expandToFile——覆盖真重载的情形。reveal=true 时
-  // 两条都跑（幂等、无害）；reveal=false 时这里跳过 + suppressRevealOnce 让 onOpen 那次也跳过，两条都不定位。
+  // reveal 三态（口径 2026-07-14）：
+  //  • true（默认）：展开到该文件 + 滚动定位——程序化重激活（drag-rebase / 冷启动恢复 / 外部删除回落）用。
+  //  • 'expand'：展开到该文件 + 高亮，但**不滚动视口**——**点标签**用（Colin：折叠着也要展开露出来，
+  //    只是别把视口往下跳；scrollIntoView 才是刺眼的「往下跳」本体）。原 UX4/F6-①（Wendi 2026-07-03）是
+  //    「展开+滚动」，2026-07-14 Wendi 报滚动刺眼 → 拆成「展开保留、滚动去掉」。
+  //  • false：只切编辑器 + 高亮，连展开都不做——关标签回落（Colin 2026-07-09）/ Ctrl+Tab 循环用。
+  // ⚠ 树定位有两条路：①这里自己 expandToFile——覆盖「点的正是已载入文档的标签」时 openDoc 短路、onOpen
+  // 不触发的情形；②openNode→openDoc→onOpen 里那次 expandToFile——覆盖真重载的情形。reveal 三态经
+  // suppressRevealOnce / suppressScrollOnce 两个一次性开关让 onOpen 那条路跟这条保持一致（幂等、无害）。
   function openTabRow(entry, reveal = true) {
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
       if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry)); // renderTemp 内部摘 web view（canLeaveActive 取消则不摘,网页态保留,P2-1）
@@ -1722,9 +1729,13 @@
       if (root && root.missing) { showToast('「' + root.name + '」失联了，重新定位后才能打开'); return; }
       const n = findNode(entry.rootId, entry.rel);
       if (n) {
-        if (!reveal) suppressRevealOnce = true; // 抑制 onOpen 里那次 expandToFile（真重载路径）
+        // onOpen 那条路（真重载）的一次性开关：false → 整个不定位；'expand' → 定位但不滚。
+        if (reveal === false) suppressRevealOnce = true;
+        else if (reveal === 'expand') suppressScrollOnce = true;
         openNode(n);
-        if (reveal) expandToFile(entry.rootId, entry.rel); // 已载入文档点标签时 onOpen 不触发，靠这句定位
+        // 已载入文档点标签时 openDoc 短路、onOpen 不触发，靠这句定位（点标签走 'expand' = 展开不滚）。
+        if (reveal === true) expandToFile(entry.rootId, entry.rel);
+        else if (reveal === 'expand') expandToFile(entry.rootId, entry.rel, false);
       }
       return;
     }
@@ -1802,7 +1813,7 @@
       (zone === 'pinned' ? removeTabRel : closeTabRel)(key);
     };
     row.append(x);
-    row.onclick = () => openTabRow(entry);
+    row.onclick = () => openTabRow(entry, 'expand'); // 点标签：展开到该文件+高亮，但不滚动视口（Colin 2026-07-14 定）
     row.ondragstart = (e) => {
       dragTabRel = key;
       e.dataTransfer.effectAllowed = 'move';
@@ -2438,12 +2449,15 @@
       // 已经先载入了，这里只补标签，不影响打开速度。
       await restoreReady;
       const node = abs ? findNodeByAbs(abs) : null;
-      // reveal 一次性开关：关标签回落走 openTabRow(e,false) 会置 suppressRevealOnce，这里消费它——
-      // 抑制「展开到所在文件夹 + 滚动定位」（Colin：关标签不该让树跳走）。其余入口（点标签/命令面板/
-      // 「打开」按钮/Finder 双击）不置标记 → reveal 恒 true，行为不变。
+      // reveal 一次性开关（见 openTabRow 三态说明）：关标签回落走 openTabRow(e,false) 置 suppressRevealOnce
+      // → 这里整个不定位（Colin：关标签不该让树跳走）；点标签走 openTabRow(e,'expand') 置 suppressScrollOnce
+      // → 展开定位但不滚（Colin 2026-07-14）。其余入口（命令面板/「打开」按钮/Finder 双击）不置标记 →
+      // reveal 恒 true、scroll 恒 true，行为不变。
       const reveal = !suppressRevealOnce;
+      const scroll = !suppressScrollOnce;
       suppressRevealOnce = false;
-      // Wendi 2026-07-03：外部（Finder 双击等）打开根内文件 → 树展开到所在文件夹并滚动定位。
+      suppressScrollOnce = false;
+      // Wendi 2026-07-03：外部（Finder 双击等）打开根内文件 → 树展开到所在文件夹（scroll 时再滚动定位）。
       // 树默认全收起，不展开的话文件在树里根本不可见、也高亮不上（is-active 行没渲染出来）。
       // 先展开（内部会 render 重建行）再高亮，顺序不能反。命令面板/「打开」按钮同走此路，行为一致。
       if (node && reveal) {
@@ -2456,7 +2470,7 @@
           if (fc) fc.hidden = true;
           render();
         }
-        expandToFile(node.rootId, node.rel);
+        expandToFile(node.rootId, node.rel, scroll);
       }
       highlightActive(abs);
       if (node) {
