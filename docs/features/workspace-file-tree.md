@@ -67,6 +67,14 @@ no-op，不与第二段的 wsReadTree 打架。
 （原 e2e `UX4`）；Wendi 2026-07-14 报滚动刺眼，Colin 拍板拆成「展开保留、滚动去掉」（e2e 改写为 `UX4v3`，
 scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
 
+## 树交互契约（bug-hunt 2026-07-15）
+
+一批 P2/P3 探索测试修复沉淀的行为契约（实现均在 `src/renderer/sidebar.js`，除注明外）：
+
+- **改名不改格式**（P3-03）：内联改名时用户输入若自带文档后缀（`.html`/`.htm`/`.md`），剥掉再拼回**原**后缀——
+  不叠双后缀（`火箭.md` 落 `火箭.html`、不是 `火箭.md.html`）。想真换格式请走「另存为 / 导出」，v1 不在改名里做
+  md↔html 转换。判定在 `src/main/workspace.js` `renamePath`（`DOC_EXTS`），换了后缀时回 `formatKept` 让侧栏 toast 提示。
+
 ## 文件映射
 
 | 维度 | ui-demo | 真 app |
