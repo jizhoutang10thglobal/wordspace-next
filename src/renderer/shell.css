@@ -842,6 +842,11 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-docmenu-item:hover { background-size: 100% 100%; }
 .ws-docmenu-item:disabled { opacity: .45; background-size: 0% 100%; }
 .ws-docmenu-sep { height: 1px; background: var(--c-divider); margin: 3px 6px; }
+.ws-docmenu-label { padding: 4px 10px 2px; font-size: var(--fs-xs); color: var(--c-text-3); letter-spacing: 0.04em; }
+/* 外观三项:✓ 占固定宽,当前态才显(未选留位对齐,像原生 radio 组) */
+.ws-appearance-check { width: 14px; flex: none; text-align: center; color: var(--c-accent); opacity: 0; font-size: var(--fs-sm); }
+.ws-appearance-item.is-active .ws-appearance-check { opacity: 1; }
+.ws-appearance-item.is-active { color: var(--c-text); font-weight: var(--fw-medium); }
 /* 文字钮：墨条滑入 */
 .ta-ghost {
   height: 30px; padding: 0 12px; border-radius: var(--r-pill); color: var(--c-text-2); font-size: var(--fs-base);

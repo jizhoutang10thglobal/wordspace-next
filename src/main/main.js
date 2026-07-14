@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, nativeTheme } = require('electron');
 const path = require('path');
 const { registerIpc } = require('./ipc');
+const appearanceStore = require('./appearance-store');
 const docWatcher = require('./doc-watcher');
 const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
@@ -107,10 +108,25 @@ function sendMenu(cmd) {
 // 看不到其他人的报告。别换成数据库页链接（那会暴露所有人的 bug）。
 const BUG_REPORT_URL = 'https://humble-blanket-79b.notion.site/11f77f0ceeb647f899bcbe2798963b42?pvs=105';
 
+// 外观三态的唯一枢纽：偏好持久化 + nativeTheme.themeSource（驱动 renderer prefers-color-scheme /
+// mac 窗框 / 系统菜单 / 网页标签）+ 重建菜单勾选态 + 广播 renderer（⋯菜单/settings 同步 + 切换过渡）。
+// 三入口（菜单栏 radio / ⋯菜单子菜单 / settings 面）都调这一个，状态永远一致。
+function applyAppearance(pref) {
+  const p = appearanceStore.setPref(pref);
+  nativeTheme.themeSource = p; // 'system' | 'light' | 'dark'
+  buildMenu(); // 重建以更新「外观」radio 勾选
+  if (win && !win.isDestroyed()) win.webContents.send('appearance-changed', p);
+  return p;
+}
+
 function buildMenu() {
+  const appearancePref = appearanceStore.getPref();
+  const appearanceItem = (label, value) => ({
+    label, type: 'radio', checked: appearancePref === value, click: () => applyAppearance(value),
+  });
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { label: 'AI 接入…', click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: '性能诊断…', click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { label: 'AI 接入…', click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: '外观', submenu: [appearanceItem('跟随系统', 'system'), appearanceItem('浅色', 'light'), appearanceItem('深色', 'dark')] }, { label: '性能诊断…', click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
     {
       label: '文件',
       submenu: [
@@ -295,6 +311,11 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    // 外观:启动读偏好 → 设 nativeTheme.themeSource(在 buildMenu/createWindow 前,让首个窗口首帧就对)。
+    appearanceStore.init(app.getPath('userData'));
+    nativeTheme.themeSource = appearanceStore.getPref();
+    ipcMain.handle('get-appearance', () => appearanceStore.getPref());
+    ipcMain.on('set-appearance', (_e, pref) => applyAppearance(pref));
     registerIpc();
     buildMenu();
     createWindow();
