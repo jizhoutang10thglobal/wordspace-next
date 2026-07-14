@@ -1,7 +1,8 @@
 ---
 title: 跨根互链——链接跨越「文件夹空间」这道墙（A 消费 / B 创建 / C 维护 + 先行移动守卫）
-status: active
+status: completed
 date: 2026-07-14
+completed: 2026-07-14（U-CR0 #185 / A 消费 #188 / B 创建 #190 / C 维护 #191 全合 main。C2 已让 U-CR0 守卫退役。现状与欠账见 docs/features/doc-linking.md「跨根互链」段。）
 origin:
   - 互链 v1（同根全套，已随 v0.8.3 发版）：docs/plans/2026-07-08-001-feat-doc-linking-app-plan.md
   - 现状勘察：2026-07-14 对 main（b19e382）的全量代码调查（本文 §2 全部 file:line 据此）
