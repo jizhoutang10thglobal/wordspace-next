@@ -478,6 +478,13 @@ localStorage（key `ws-fav-open`）。`openBookmark(url,title)`：先按 url 找
 3. 含空格 **或** 不含 `.` → 当搜索词：`searchUrl(raw)`（当前默认引擎模板 + `encodeURIComponent`）。
 4. 其余（裸域名/路径）→ 补 `https://`。
 
+**真 app 的含冒号输入判定（`url-input.js`，P2-4 收窄）**：真 app 除了带 `//` 的 authority scheme（只放行
+`http`/`https`，其余 `file://`/自定义 `foo://` → **blocked**），还要判「无 `//` 的 opaque 冒号输入」。只有**已知
+危险/不支持协议**才 blocked，名单 = `{ javascript, data, file, vbscript, blob, chrome, about, ws, wss, ftp,
+mailto, tel, intent }`；**名单外的含冒号输入一律落搜索**（`note:hello`/`todo:fix`/`re:报价`/自定义 `myapp:token`
+都是搜索词，不是网址——「非网址即搜索」）。端口写法（冒号后是数字，如 `localhost:8080`）不进 scheme 判定、走
+域名/IP 真验证。`mailto:`/`tel:` v1 不外呼、维持 blocked。
+
 **`resolve(url) → { kind, title, ... }`**（ui-demo 专用的渲染分类；真 app 简化）
 - 空 / `wordspace://newtab|home` → 起始页。
 - `glass://…` → demo 内置搜索结果页（虚构引擎）。
