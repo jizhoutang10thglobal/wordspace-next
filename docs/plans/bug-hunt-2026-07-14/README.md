@@ -25,7 +25,7 @@
 | [p3-07-tree-expand-persist](p3-07-tree-expand-persist.md) | P3 | 树展开/折叠状态重启不记忆 | sidebar.js+workspace-store |
 | [p3-08-missing-root-self-heal](p3-08-missing-root-self-heal.md) | P3 | 失联根改回原路径不自愈 | ipc.js |
 | [p3-09-manual-folder-dup](p3-09-manual-folder-dup.md) | P3 | 收藏手动建/改文件夹允许同名 | browser.js(+bookmarks) |
-| [p3-10-import-folder-double](p3-10-import-folder-double.md) | P3 | 导出→导入文件夹翻倍(拍板行为,建议复议) | bookmarks.js |
+| [p3-10-import-folder-double](p3-10-import-folder-double.md) | P3 | 导出→导入文件夹翻倍(**已拍板:温和修正**——同内容跳过,异内容加后缀) | bookmarks.js |
 | [p3-11-bookmark-cap](p3-11-bookmark-cap.md) | P3 | 收藏无条数上限 | browser-store.js |
 
 ## 执行纪律(每条计划的执行 session 都要遵守)
