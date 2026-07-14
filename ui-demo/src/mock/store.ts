@@ -33,7 +33,7 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 26 // 26: 分页测试的表格/代码改成可编辑 'table'/'code' 块（Phase 1 可编辑性）
+const SEED_VERSION = 27 // 27: 模板加 css/origin 维度 + Doc.templateId/templateCss + 黄金标书模板（用户自定义模板 feature）
 
 // A directory entry under one opened root. 身份 = (rootId, path)。
 type DirEntry = { rootId: string; path: string }

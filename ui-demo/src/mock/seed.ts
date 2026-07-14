@@ -11,6 +11,7 @@ import type {
 import { NON_CONFORM_SAMPLES } from '../lib/nonConformSamples'
 import { PAGED_SAMPLE_DOCS, PAGED_SAMPLE_FILES } from './pagedSamples'
 import { mdToBlocks } from '../lib/markdown'
+import { CSS_MINUTES, CSS_PROPOSAL, CSS_WEEKLY, CSS_PROPOSAL_FORMAL } from '../lib/builtinTemplateCss'
 
 // 示例 Markdown 文件（Feature: markdown 文件阅读编辑器）。后端是 .md，前端用同一个块编辑器渲染。
 // 覆盖「干净映射」（标题/列表/引用/粗斜删码链）+「HTML 岛」（高亮/文字色/下划线/callout）。
@@ -289,8 +290,8 @@ export const seedDocs: Doc[] = [
 export const seedTemplates: Template[] = [
   // —— 公司文档模板 ——
   {
-    id: 't-minutes', name: '会议纪要', kind: 'doc', category: '纪要', pool: 'private',
-    description: '主题 / 参会 / 议题 / 决议 / 待办,五段式,开会即用。', accent: '#1a73e8',
+    id: 't-minutes', name: '会议纪要', kind: 'doc', category: '纪要', pool: 'private', origin: 'official',
+    description: '主题 / 参会 / 议题 / 决议 / 待办,五段式,开会即用。', accent: '#1a73e8', css: CSS_MINUTES,
     blocks: [
       { id: 'mn1', type: 'heading', level: 1, html: '会议纪要' },
       { id: 'mn2', type: 'callout', html: '主题：______　·　日期：2026-00-00　·　主持：______　·　记录：______' },
@@ -305,8 +306,8 @@ export const seedTemplates: Template[] = [
     ],
   },
   {
-    id: 't-proposal', name: '项目方案', kind: 'doc', category: '方案', pool: 'private',
-    description: '背景 / 目标 / 方案 / 里程碑 / 风险,立项与评审通用。', accent: '#e8710a',
+    id: 't-proposal', name: '项目方案', kind: 'doc', category: '方案', pool: 'private', origin: 'official',
+    description: '背景 / 目标 / 方案 / 里程碑 / 风险,立项与评审通用。', accent: '#e8710a', css: CSS_PROPOSAL,
     blocks: [
       { id: 'pr1', type: 'heading', level: 1, html: '项目方案：______' },
       { id: 'pr2', type: 'callout', html: '一句话目标：______' },
@@ -323,8 +324,8 @@ export const seedTemplates: Template[] = [
     ],
   },
   {
-    id: 't-weekly-plan', name: '周计划', kind: 'doc', category: '周计划', pool: 'private',
-    description: 'Weekly Plan / 例会节奏 / End of Week Update,团队周节奏标准格式（Wendi）。', accent: '#d4356b',
+    id: 't-weekly-plan', name: '周计划', kind: 'doc', category: '周计划', pool: 'private', origin: 'official',
+    description: 'Weekly Plan / 例会节奏 / End of Week Update,团队周节奏标准格式（Wendi）。', accent: '#d4356b', css: CSS_WEEKLY,
     blocks: [
       { id: 'wp1', type: 'heading', level: 1, html: 'Weekly Plan　MM/DD – MM/DD' },
       { id: 'wp2', type: 'callout', html: '注：Deliverable 需是明确、可衡量、可验证的「结果」,不是推进的「动作」。' },
@@ -345,9 +346,26 @@ export const seedTemplates: Template[] = [
       { id: 'wp17', type: 'callout', html: '⏱ 例会严格 20 分钟,只聊推进不聊内容；单议题讨论超 2 分钟另约时间。' },
     ],
   },
+  // —— 黄金标书模板：内嵌 data:font 字体 + data:image logo + 正式封面观感（表达力验收 AE8）——
+  {
+    id: 't-proposal-formal', name: '商务标书', kind: 'doc', category: '标书', pool: 'private', origin: 'official',
+    description: '衬线封面 / 内嵌品牌字体与 logo / 正式版式,投标与对外正式文档。', accent: '#14213d', css: CSS_PROPOSAL_FORMAL,
+    blocks: [
+      { id: 'bf1', type: 'heading', level: 1, html: '商务标书' },
+      { id: 'bf2', type: 'callout', html: '项目名称：______　·　招标编号：______　·　投标单位：______' },
+      { id: 'bf3', type: 'heading', level: 2, html: '一、公司简介' },
+      { id: 'bf4', type: 'text', html: '______' },
+      { id: 'bf5', type: 'heading', level: 2, html: '二、技术方案' },
+      { id: 'bf6', type: 'text', html: '______' },
+      { id: 'bf7', type: 'heading', level: 2, html: '三、报价明细' },
+      { id: 'bf8', type: 'table', html: '<table><thead><tr><th>项目</th><th>数量</th><th>单价</th><th>金额</th></tr></thead><tbody><tr><td>______</td><td>__</td><td>__</td><td>__</td></tr></tbody></table>' },
+      { id: 'bf9', type: 'heading', level: 2, html: '四、服务承诺' },
+      { id: 'bf10', type: 'list', listStyle: 'bulleted', html: '<li>______</li><li>______</li>' },
+    ],
+  },
   // —— 公开池（联网内容,不归我们维护）——
-  { id: 't-blog', name: '博客文章', kind: 'page', category: '网页', pool: 'public', description: '通用图文排版,适合对外发布。', accent: '#0b8793', blocks: [{ id: 'tg1', type: 'heading', level: 1, html: '文章标题' }] },
-  { id: 't-readme', name: '产品说明', kind: 'doc', category: '文档', pool: 'public', description: '简洁的产品说明文档结构。', accent: '#5a5f66', blocks: [{ id: 'tr1', type: 'heading', level: 1, html: '产品说明' }] },
+  { id: 't-blog', name: '博客文章', kind: 'page', category: '网页', pool: 'public', origin: 'official', description: '通用图文排版,适合对外发布。', accent: '#0b8793', blocks: [{ id: 'tg1', type: 'heading', level: 1, html: '文章标题' }] },
+  { id: 't-readme', name: '产品说明', kind: 'doc', category: '文档', pool: 'public', origin: 'official', description: '简洁的产品说明文档结构。', accent: '#5a5f66', blocks: [{ id: 'tr1', type: 'heading', level: 1, html: '产品说明' }] },
 ]
 
 // ---------------------------------------------------------------------------
