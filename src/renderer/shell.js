@@ -80,22 +80,25 @@ async function refreshBacklinks() {
   const c = docContext;
   const g = ++blGen;
   if (!c) { hideBacklinks(); return; }
-  let list;
-  try { list = await window.ws2.linksBacklinks(c.rootId, c.rel); } catch (e) { return; }
+  let list, roots;
+  try { [list, roots] = await Promise.all([window.ws2.linksBacklinks(c.rootId, c.rel), window.ws2.wsGetRoots().catch(() => [])]); } catch (e) { return; }
   if (g !== blGen || docContext !== c) return; // 又刷了一次 / 切了文档 → 本次作废
   if (!list || !list.length) { hideBacklinks(); return; }
+  const rootName = new Map((roots || []).map((r) => [r.id, r.name])); // A：跨根来源标空间名
   blCountEl.textContent = list.length + ' 篇文档链接到这里';
   blListEl.textContent = '';
   for (let i = 0; i < list.length; i++) {
     const src = list[i];
+    const crossRoot = src.rootId != null && src.rootId !== c.rootId; // A：来源在别的文件夹空间
     const item = document.createElement('button');
     item.className = 'ws-bl-item';
-    item.title = src.rel;
+    item.title = (crossRoot ? (rootName.get(src.rootId) || '') + ' · ' : '') + src.rel;
     const t = document.createElement('div'); t.className = 'ws-bl-item-title'; t.textContent = src.title || src.rel;
+    if (crossRoot) { const badge = document.createElement('span'); badge.className = 'ws-bl-item-root'; badge.textContent = rootName.get(src.rootId) || '其他空间'; t.appendChild(badge); }
     item.appendChild(t);
     if (src.snippet) { const sn = document.createElement('div'); sn.className = 'ws-bl-item-snippet'; sn.textContent = blClamp(src.snippet); item.appendChild(sn); }
-    item.addEventListener('click', async () => { // 点来源 = 应用内打开
-      try { const abs = await window.ws2.wsAbs(c.rootId, src.rel); if (abs) openDoc(abs); } catch (e) {}
+    item.addEventListener('click', async () => { // 点来源 = 应用内打开（跨根用来源自己的 rootId）
+      try { const abs = await window.ws2.wsAbs(src.rootId != null ? src.rootId : c.rootId, src.rel); if (abs) openDoc(abs); } catch (e) {}
     });
     blListEl.appendChild(item);
   }

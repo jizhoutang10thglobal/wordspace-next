@@ -941,6 +941,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-bl-item:hover { background: var(--c-hover); }
 .ws-bl-item-title { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-bl-item-snippet { font-size: 11px; color: var(--c-text-3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A 跨根反链：来源在别的文件夹空间 → 标空间名小徽标 */
+.ws-bl-item-root { display: inline-block; margin-left: 6px; padding: 0 5px; font-size: 10.5px; line-height: 15px; color: var(--c-text-3); background: var(--c-hover); border-radius: var(--r-sm); vertical-align: middle; }
 
 /* U6 删除守卫 modal（沿用 sb-modal / sb-modal-overlay 壳；sb-modal 自身无内边距——padding 本在
    head/body 子容器上，本卡内容是 sb-modal 直接子元素，故这里自己补内边距，否则内容贴边=看着像没样式）*/
