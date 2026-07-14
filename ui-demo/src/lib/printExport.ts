@@ -6,6 +6,7 @@
 
 import type { Block, Doc } from '../types'
 import { buildPrintCss, type PageConfig } from './page'
+import { scopeTemplateCss } from './templateScope'
 
 /** 单块 → 打印 HTML（与 Canvas 渲染的标签一一对应，样式走下面的 print 基线）。 */
 function blockToHtml(b: Block): string {
@@ -75,6 +76,20 @@ const PRINT_BASE_CSS = `
  * 打印导出：建隐藏 iframe → 写入文档 HTML + @page CSS → print()。
  * 打印对话框关闭后移除 iframe（afterprint + 兜底定时器）。
  */
+/** 打印 HTML 字符串构造（纯逻辑，node 可测）。模板版式随导出走（屏显 = 导出，KD2 自包含）：
+ *  作用域化到 .ws-doc.ws-tpl-on，故 body 包一层同款容器，否则 scoped 选择器一条都不命中。 */
+export function buildPrintHtml(doc: Doc, cfg: PageConfig): string {
+  const tplCss = doc.templateCss ? scopeTemplateCss(doc.templateCss) : ''
+  const docClass = 'ws-doc' + (tplCss ? ' ws-tpl-on' : '')
+  return (
+    `<!doctype html><html><head><meta charset="utf-8"><title>${doc.title.replace(/</g, '&lt;')}</title>` +
+    `<style>${PRINT_BASE_CSS}\n${buildPrintCss(cfg)}\n${tplCss}</style></head><body>` +
+    `<article class="${docClass}">` +
+    doc.blocks.map(blockToHtml).join('\n') +
+    '</article></body></html>'
+  )
+}
+
 export function printPagedDoc(doc: Doc, cfg: PageConfig): void {
   const iframe = document.createElement('iframe')
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden'
@@ -86,12 +101,7 @@ export function printPagedDoc(doc: Doc, cfg: PageConfig): void {
     return
   }
   idoc.open()
-  idoc.write(
-    `<!doctype html><html><head><meta charset="utf-8"><title>${doc.title.replace(/</g, '&lt;')}</title>` +
-      `<style>${PRINT_BASE_CSS}\n${buildPrintCss(cfg)}</style></head><body>` +
-      doc.blocks.map(blockToHtml).join('\n') +
-      '</body></html>',
-  )
+  idoc.write(buildPrintHtml(doc, cfg))
   idoc.close()
   const cleanup = () => iframe.remove()
   iwin.addEventListener('afterprint', cleanup)

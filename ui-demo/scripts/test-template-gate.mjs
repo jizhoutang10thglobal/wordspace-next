@@ -14,11 +14,13 @@ writeFileSync(
   `export { templateCheck } from ${JSON.stringify(new URL('../src/lib/templateCheck.ts', import.meta.url).pathname)}
 export { scopeTemplateCss, TPL_SCOPE } from ${JSON.stringify(new URL('../src/lib/templateScope.ts', import.meta.url).pathname)}
 export { CSS_PROPOSAL_FORMAL, CSS_MINUTES } from ${JSON.stringify(new URL('../src/lib/builtinTemplateCss.ts', import.meta.url).pathname)}
+export { buildPrintHtml } from ${JSON.stringify(new URL('../src/lib/printExport.ts', import.meta.url).pathname)}
+export { DEFAULT_PAGE_CONFIG } from ${JSON.stringify(new URL('../src/lib/page.ts', import.meta.url).pathname)}
 `,
 )
 const out = join(dir, 'bundle.mjs')
 await build({ entryPoints: [entry], bundle: true, format: 'esm', outfile: out, platform: 'node' })
-const { templateCheck, scopeTemplateCss, TPL_SCOPE, CSS_PROPOSAL_FORMAL, CSS_MINUTES } = await import(pathToFileURL(out))
+const { templateCheck, scopeTemplateCss, TPL_SCOPE, CSS_PROPOSAL_FORMAL, CSS_MINUTES, buildPrintHtml, DEFAULT_PAGE_CONFIG } = await import(pathToFileURL(out))
 
 let fail = 0
 const rulesOf = (css, opts) => templateCheck(css, opts).violations.map((v) => v.rule).sort()
@@ -96,6 +98,17 @@ passes(CSS_MINUTES, '会议纪要主题过门')
 {
   const scoped = scopeTemplateCss('@media (max-width: 600px) { h1 { color: red } }')
   truthy(scoped.startsWith(TPL_SCOPE + ' {'), 'scope: @media 留在 wrapped 块内（原生 nesting 合法）')
+}
+
+// ---- R9：导出 HTML 携带模板 CSS 且容器类命中 ----
+{
+  const docWithTpl = { title: '标书', templateCss: CSS_MINUTES, blocks: [{ id: 'x', type: 'heading', level: 1, html: '标题' }] }
+  const html = buildPrintHtml(docWithTpl, DEFAULT_PAGE_CONFIG)
+  truthy(html.includes('class="ws-doc ws-tpl-on"'), 'R9: 导出 body 包 .ws-doc.ws-tpl-on 容器（否则 scoped CSS 不命中）')
+  truthy(html.includes(TPL_SCOPE + ' {'), 'R9: 导出 <style> 含作用域化的模板 CSS')
+  const docNoTpl = { title: '普通', blocks: [{ id: 'y', type: 'text', html: '正文' }] }
+  const html2 = buildPrintHtml(docNoTpl, DEFAULT_PAGE_CONFIG)
+  truthy(html2.includes('class="ws-doc"') && !html2.includes('ws-tpl-on'), 'R9: 无模板文档导出容器只有 ws-doc、不带 ws-tpl-on')
 }
 
 console.log(fail === 0 ? 'template gate test: ALL PASS' : `template gate test: ${fail} FAILURES`)

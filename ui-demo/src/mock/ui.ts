@@ -80,6 +80,11 @@ interface UI {
   pageSetupFor: string | null
   openPageSetup: (docId: string) => void
   closePageSetup: () => void
+
+  // 换装预览：画廊里 hover / 键盘聚焦某模板时，把它的 CSS 临时喂给 Canvas（真实内容实时套，
+  // 未落章）。App 里 Canvas 无 props、画廊弹层在另一子树，store 是唯一干净通道。null = 无预览。
+  previewCss: string | null
+  setPreviewCss: (css: string | null) => void
 }
 
 export const useUI = create<UI>((set) => ({
@@ -150,6 +155,9 @@ export const useUI = create<UI>((set) => ({
   pageSetupFor: null,
   openPageSetup: (docId) => set({ pageSetupFor: docId }),
   closePageSetup: () => set({ pageSetupFor: null }),
+
+  previewCss: null,
+  setPreviewCss: (css) => set({ previewCss: css }),
 }))
 
 /**
