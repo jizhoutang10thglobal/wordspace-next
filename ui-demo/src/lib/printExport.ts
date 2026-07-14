@@ -26,7 +26,9 @@ function blockToHtml(b: Block): string {
     case 'divider':
       return '<hr>'
     case 'image':
-      return `<figure class="ws-image">${b.html}</figure>`
+      // block.html 已是 canonical 形态（裸 <img> / <figure><img><figcaption>），原样输出；
+      // 旧占位 stub（纯文本）没有图可打，跳过。
+      return b.html.includes('<img') ? b.html : ''
     case 'table':
       // block.html 已是完整 <table>（内联样式），原样输出
       return b.html
@@ -57,7 +59,9 @@ const PRINT_BASE_CSS = `
   .ws-callout { margin: 0.8em 0; padding: 12px 14px; background: #f5f5f4; border-radius: 6px; }
   hr { border: none; border-top: 1px solid #e7e5e4; margin: 1.4em 0; }
   a { color: #1d6fbf; }
-  img { max-width: 100%; }
+  img { max-width: 100%; height: auto; border-radius: 6px; break-inside: avoid; }
+  figure { margin: 0.8em 0; break-inside: avoid; }
+  figcaption { color: #78716c; font-size: 0.875em; text-align: center; margin-top: 6px; }
   h1, h2, h3 { break-after: avoid; }
   li, blockquote, .ws-callout { break-inside: avoid; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
