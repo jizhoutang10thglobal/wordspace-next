@@ -68,6 +68,28 @@ test('外部在子文件夹里新增 → 展开后能看到（递归监听）', 
   await expect(page.locator('.sb-file[data-rel="数据/sub-new.html"]')).toBeVisible({ timeout: W });
 });
 
+// 大根性能（Wendi 卡顿修复）的负断言门：噪音磁盘事件（.DS_Store / node_modules 内部——扫描本来就
+// 看不见的路径）必须在 watcher 层被丢弃，不换来任何重扫；watcher 活着时聚焦也不再全量重扫。
+// 判定用主进程诊断探针（perf-diag）的扫描计数：全量 reads + 子树 scopedReads 前后必须一个没涨。
+// 这是 F0（噪音丢弃）+F2（聚焦收口）唯一的行为门——没有它，isNoisePath 全废/聚焦重扫回归都测不出来。
+test('噪音事件（.DS_Store / node_modules）不触发重扫；watcher 活着时聚焦也不重扫', async () => {
+  await openWorkspace();
+  const scans = async () => (await page.evaluate(() => window.ws2.wsDiag()))
+    .reduce((n, r) => n + r.reads + (r.scopedReads || 0), 0);
+  const before = await scans();
+  await fs.writeFile(path.join(wsDir, '.DS_Store'), 'x', 'utf8');
+  await fs.mkdir(path.join(wsDir, 'node_modules', 'pkg'), { recursive: true });
+  await fs.writeFile(path.join(wsDir, 'node_modules', 'pkg', 'index.js'), 'x', 'utf8');
+  await page.waitForTimeout(1200); // 给足去抖窗口——假阳性（噪音没被丢、排了重扫）有充分机会露头
+  await nudge(); // watcher 活着 + 无在途去抖 → 聚焦必须是 no-op（旧行为是全量重扫所有根）
+  await page.waitForTimeout(300);
+  expect(await scans()).toBe(before);
+  // 门自身没坏的对照：真文件变化照常触发重扫
+  await fs.writeFile(path.join(wsDir, '数据', 'real.html'), HTML('R'), 'utf8');
+  await nudge();
+  await expect.poll(scans, { timeout: W }).toBeGreaterThan(before);
+});
+
 test('外部改名一个打开的文件 → 树更新 + 标签跟随到新名（inode 匹配）', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]'); // 打开 a → 标签

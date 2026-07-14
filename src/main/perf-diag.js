@@ -19,7 +19,7 @@ function cloudKind(p) {
 function entryOf(p) {
   let e = byPath.get(p);
   if (!e) {
-    e = { fileCount: 0, lastReadMs: 0, maxReadMs: 0, reads: 0, watchEvents: 0, cloud: cloudKind(p) };
+    e = { fileCount: 0, lastReadMs: 0, maxReadMs: 0, reads: 0, scopedReads: 0, lastScopedMs: 0, watchEvents: 0, cloud: cloudKind(p), lastCostMs: 0 };
     byPath.set(p, e);
   }
   return e;
@@ -31,14 +31,31 @@ function recordRead(rootPath, ms, fileCount) {
   e.maxReadMs = Math.max(e.maxReadMs, Math.round(ms));
   e.fileCount = fileCount;
   e.reads++;
+  e.lastCostMs = Math.round(ms);
+}
+
+// 子树级重扫（readSubtrees）跟全量分开记——fileCount/lastReadMs 保持「全量」语义，诊断面板别被子树数污染。
+function recordScoped(rootPath, ms) {
+  const e = entryOf(rootPath);
+  e.scopedReads++;
+  e.lastScopedMs = Math.round(ms);
+  e.lastCostMs = Math.round(ms);
 }
 
 function recordWatch(rootPath) {
   entryOf(rootPath).watchEvents++;
 }
 
+// 自适应去抖：上次扫描（全量或子树）花了多久，去抖至少给它 2 倍喘息、封顶 3s——大根全量扫一次
+// 要几秒时别 200ms 一趟趟排队；扫描便宜（子树级）时自动回落 200ms 的灵敏度。
+function suggestDebounceMs(rootPath) {
+  const e = byPath.get(rootPath);
+  const last = e ? e.lastCostMs : 0;
+  return Math.min(3000, Math.max(200, last * 2));
+}
+
 function snapshot() {
   return [...byPath.entries()].map(([p, e]) => ({ path: p, ...e }));
 }
 
-module.exports = { recordRead, recordWatch, snapshot, cloudKind };
+module.exports = { recordRead, recordScoped, recordWatch, suggestDebounceMs, snapshot, cloudKind };
