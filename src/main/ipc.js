@@ -521,7 +521,8 @@ function registerIpc() {
         r.missing = false;
         r.real = await canonReal(r.path);
         startRootWatch(r);
-        return { status: 'revived', root: rootInfo(r), tree: await workspace.readTree(r.path) };
+        // 两段式（见 'added' 分支说明）：不带 tree，renderer 渲染加载态后走 wsReadTree 填。
+        return { status: 'revived', root: rootInfo(r) };
       }
       return { status: 'same', root: rootInfo(r) };
     }
@@ -543,7 +544,11 @@ function registerIpc() {
     roots.push(root);
     await persistRoots();
     startRootWatch(root);
-    return { status: 'added', root: rootInfo(root), tree: await workspace.readTree(root.path) };
+    // 两段式返回：先回根（不带 tree），renderer 立刻渲染根 + 「正在读取…」加载行，再走 wsReadTree 填树。
+    // 大文件夹（桌面/云盘）全量扫描 4-5s 阻塞在这条 IPC 回复上时，用户干等无反馈（Wendi 2026-07-14）。
+    // watcher 已 startRootWatch 注册；加载期间（renderer 的 st.tree 仍为 null）watcher 事件被 doTreeScan
+    // 的 `!st.tree` 守卫自然 no-op，不与第二段的 wsReadTree 打架。
+    return { status: 'added', root: rootInfo(root) };
   });
   // 「并入并添加」确认：吸收子根（子根注销、标签 rebase 进新父根——文件都还在磁盘原处，只换归属）。
   ipcMain.handle('ws-absorb-confirm', async (_e, token) => {
