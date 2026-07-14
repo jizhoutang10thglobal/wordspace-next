@@ -246,8 +246,30 @@
       newtabEl.hidden = true;
       if (attachedKey === null) { attachedKey = s.key; window.ws2.webShow(s.key, viewBounds()); }
     }
-    if (s.error && isWebActive() && keyOf(activeEntry()) === s.key) showError(s.key, s.error);
-    else if (!s.error && attachedKey === s.key) errEl.hidden = true;
+    if (s.error && isWebActive() && keyOf(activeEntry()) === s.key) {
+      showError(s.key, s.error);
+    } else if (!s.error && attachedKey === s.key) {
+      errEl.hidden = true; // 原地导航离开错误态且 view 一直挂着：只收占位（view 没被摘）
+    } else if (
+      !s.error && s.navSeq > (prev.navSeq || 0) && s.url &&
+      isWebActive() && keyOf(activeEntry()) === s.key && attachedKey !== s.key
+    ) {
+      // P1 错误页恢复：出错时 showError 摘了 view（attachedKey=null）、错误页自身的提交又藏了起始页
+      // （newtabEl.hidden=true）——于是 everCommitted 分支（!newtabEl.hidden 已 false）和上面的
+      // error-clear 分支（attachedKey!==key）都够不着，占位 + 脱挂的 view 永久卡死（只有切标签靠 activate 复活）。
+      // 补这条第三路：认「新页真提交」的沿——s.navSeq > prev.navSeq（主进程每 did-navigate 自增序号）。
+      // 为什么不是 loading true→false 沿：那个沿会被 abort/-3（204 / 下载被 cancel / 被后续导航打断）也触发,
+      // 但那些**没有提交**,此刻脱挂 view 里还是失败页残帧,重挂 = 露出原生错误页且丢了重试钮（对抗审查
+      // CONFIRMED P2）。navSeq 沿只在真 did-navigate 亮:新文档已提交,首绘前是白底（view setBackgroundColor
+      // '#fff'）绝不透出失败页,重挂零残帧闪回——与上方 everCommitted 起始页分支同一「提交沿挂」哲学。
+      // 只认激活标签防后台标签的提交推把它的 view 盖上来；attachedKey!==key 是冗余澄清位（走到这条时
+      // !s.error 且非 arm2 已蕴含 attachedKey!==key,留着标意图）。覆盖 omnibox 原地换址 + 导航条 reload 两条
+      // 恢复路（都走 loadURL → did-navigate → navSeq++）；提交后不收尾的流式页也能挂上（不再卡死等 stop）。
+      errEl.hidden = true;
+      attachedKey = s.key;
+      setVeil(true);
+      window.ws2.webShow(s.key, viewBounds());
+    }
     syncChrome();
   });
   window.ws2.onWebOpenRequest(async (r) => { // window.open / 右键「新标签页打开」/ 搜索选中 / 系统递来的链接（默认浏览器）
