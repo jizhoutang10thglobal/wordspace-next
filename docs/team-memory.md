@@ -14,6 +14,14 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-14 — Wendi 卡顿病根定位：磁盘事件响应成本 O(整棵树)；本 session 接手修复（perf/scoped-tree-watch）
+
+**是什么**：Wendi 在 v0.8.3 上仍卡（cpuprofile 行号对上 v0.8.3——上一轮 .app 包/IGNORE 修复没治住她的场景）。renderer profile：热点 = sidebar.js `onTreeChanged` 全树递归走两遍、递归深 20+，但 idle 占 ~82% → renderer 不是 CPU 打满，卡感来自主进程 I/O 饱和 + 周期性长任务。病根链路：任意磁盘事件（`workspace-watcher.js` 的 fs.watch recursive 回调**把 filename 参数直接扔了**）→ 全根 readdir + 每文件 bigint stat（`readTree`）+ 整树 IPC 序列化 + renderer 三遍全树走 + `refreshLinkIndex` 再全量 stat 一遍文档；另外 sidebar.js 里窗口每次 focus 对**所有根**全量重扫。大根 + 云盘 churn = 每 200ms 排一次全量风暴，libuv 线程池（默认 4 线程）被 stat 塞满 → 打开/保存文档全排队 → 整个 app 卡，不只侧栏。
+
+**怎么 apply**：① 别往「限制文件夹大小/禁止大根」方向做——产品模型没错（Finder/VS Code/Obsidian 全靠懒枚举+增量响应活下来），修的是「对事件的反应成本」；② 修复五点已由本 session 接手，在分支 `perf/scoped-tree-watch` 实现中：F0 噪音事件（路径含 dot/IGNORE/bundle 段）在 watcher 层直接丢弃、F1 用事件路径做子树级重扫+delta（拿不到路径才回落全量）、F2 focus 全量重扫收口（改为 flush 去抖 + 仅 watcher 失活的根重扫）、F3 每根单飞+自适应去抖、F4 stat 只做文档类+标签引用文件；**其他 session 这段时间别并行动 `workspace-watcher.js` / `workspace.js` 的 readTree / `sidebar.js` 的 onTreeChanged**，要动先看该分支/PR；③ 懒枚举（只扫展开目录+后台索引）是终局方案，这轮不做，1-4 不够再上。
+
+**来源**：Wendi cpuprofile（2026-07-14 Slack）+ 本 session 链路分析；她的诊断面板（Cmd+Shift+D，perf-diag）数据暂时要不到，拿到后可校准收益。
+
 ## 2026-07-13 — 侧栏收藏区 header 口径变更：栏标化 + 对齐网格，两侧已同步（spec §4.3 已更新）
 
 **是什么**：Wendi 反馈收藏区「视觉乱」，根因 = 收藏 header 穿「文件夹行」的衣服（行首 caret +
