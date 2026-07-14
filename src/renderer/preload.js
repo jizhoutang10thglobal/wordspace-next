@@ -63,7 +63,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsRename: (rootId, relPath, newLeaf, openAbs) => ipcRenderer.invoke('ws-rename', rootId, relPath, newLeaf, openAbs),
   wsMove: (rootId, relPath, destDirRel, openAbs) => ipcRenderer.invoke('ws-move', rootId, relPath, destDirRel, openAbs),
   wsRewriteMoves: (rootId, moves, openAbs) => ipcRenderer.invoke('ws-rewrite-moves', rootId, moves, openAbs), // U5 外部改名探测「一键更新」
-  wsMoveAcross: (fromRootId, relPath, toRootId, destDirRel) => ipcRenderer.invoke('ws-move-across', fromRootId, relPath, toRootId, destDirRel),
+  wsMoveAcross: (fromRootId, relPath, toRootId, destDirRel, openAbs) => ipcRenderer.invoke('ws-move-across', fromRootId, relPath, toRootId, destDirRel, openAbs), // C2：openAbs=打开中文档 abs（主进程重写时跳过它，renderer 内存改）
   wsDelete: (rootId, relPath) => ipcRenderer.invoke('ws-delete', rootId, relPath),
   wsUndoDelete: (rootId, token) => ipcRenderer.invoke('ws-undo-delete', rootId, token),
   wsOpenExternal: (rootId, relPath) => ipcRenderer.invoke('ws-open-external', rootId, relPath),

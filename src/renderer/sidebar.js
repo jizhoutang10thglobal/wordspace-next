@@ -807,10 +807,12 @@
     const label = names.length === 1 ? '「' + names[0] + '」' : (names.length + ' 个文件');
     showToast('检测到' + label + '改名/移动，' + total + ' 篇文档的链接指向旧路径', '一键更新', async () => {
       const openAbs = window.__shellDocPath ? window.__shellDocPath() : null;
-      let n = 0;
-      try { const res = await window.ws2.wsRewriteMoves(rootId, [...moves], openAbs); n = (res && res.rewritten) || 0; } catch (e) {}
-      const openN = window.__wsApplyMovesToOpenDoc ? await window.__wsApplyMovesToOpenDoc([...moves]) : 0;
-      showToast('已更新 ' + (n + openN) + ' 篇文档里的链接');
+      try {
+        const res = await window.ws2.wsRewriteMoves(rootId, [...moves], openAbs); // C：返回 abs moves + fan-out（跨根引用也修）
+        const n = (res && res.rewritten) || 0;
+        const openN = (res && res.moves && window.__wsApplyMovesToOpenDoc) ? await window.__wsApplyMovesToOpenDoc(res.moves) : 0;
+        showToast('已更新 ' + (n + openN) + ' 篇文档里的链接');
+      } catch (e) {}
     });
   }
   async function doMove(node, destDirRel) {
@@ -846,28 +848,16 @@
   // 全程守卫两根的 reconcile（crossMoveGuard）：移动落盘到标签 retarget 之间有 IPC 往返窗口，期间
   // watcher 事件不能抢跑 reconcile（否则源根找不到已搬走文件的 inode → 误删标签）。
   async function doMoveAcross(node, toRootId, destDirRel) {
-    // U-CR0 跨根移动守卫：跨根自动重写要等 C 阶段，在此之前先拦一道——移去别的根会静默断链
-    //（源根里指向它的引用 + 它自己指向源根的内部链接都会断）。有会断的链接才弹、确认才移；无则无感直移。
-    let referrers = [];
-    try {
-      referrers = node.isDir ? await window.ws2.linksDirBacklinks(node.rootId, node.rel)
-                             : await window.ws2.linksBacklinks(node.rootId, node.rel);
-    } catch (e) { referrers = []; }
-    let ownBreak = 0;
-    try { ownBreak = await window.ws2.linksOutlinksCount(node.rootId, node.rel, !!node.isDir); }
-    catch (e) { ownBreak = 0; }
-    if ((referrers && referrers.length) || ownBreak) {
-      const ok = await moveAcrossGuardModal(node, referrers || [], ownBreak);
-      if (!ok) return; // 取消：什么都不动
-    }
+    // C2：跨根移动 = 自动重写所有根里的引用 + toast 撤销（不再弹 U-CR0 守卫；守卫是 C 落地前的临时保护）。
     const op = openPath();
     const wasOpen = !node.isDir && op === node.abs;
     const openUnderDir = node.isDir && isUnder(op, node.abs); // 移动的目录含当前打开文档
+    markInAppFileOp(); // 抑制外部改名探测二次提示（跨根重写会动多根、别被 watcher 当外部改名）
     guardRoot(node.rootId);
     guardRoot(toRootId);
     try {
       let r;
-      try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel); }
+      try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel, op); } // op=打开中文档 abs，主进程重写时跳过它
       catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
       if (r && r.crossDevice) { // 真跨盘：不搬，明确告知（此前没动任何状态）
         showToast('这两个文件夹在不同的磁盘上，暂不支持直接拖动移动——先在访达里复制过去');
@@ -892,6 +882,11 @@
       }
       await refreshRoot(node.rootId); // 源根：文件走了
       await refreshRoot(toRootId); // 目标根：文件来了
+      // C2 撤销：把它移回原根原目录（走同一套 doMoveAcross → 引用反向重写 + 标签/retarget 自然反转，L4）。
+      const origDir = node.rel.indexOf('/') >= 0 ? node.rel.slice(0, node.rel.lastIndexOf('/')) : '';
+      const fromRootId = node.rootId, oldAbs = node.abs, newRel = r.rel;
+      const reverse = () => undoMoveOp(newRel, oldAbs, toRootId, (nn) => doMoveAcross(nn, fromRootId, origDir));
+      await notifyRefsRewritten(r, reverse); // C2：更新打开中文档 + toast「已更新 N 篇 · 撤销」（有引用被改才弹）
       // 移动的正是激活标签对应文件 → 在目标根树里展开定位
       const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
       if (act && act.rootId === toRootId && act.rel) expandToFile(toRootId, act.rel);
@@ -939,50 +934,7 @@
       cancel.focus();
     });
   }
-  // U-CR0 跨根移动守卫弹窗（复用删除守卫的壳与 ws-delguard-* 样式）。resolve(true)=仍要移动。
-  // 入向来源列成表（同删除守卫），出向只报计数（是被移文档自己的链接、列出来对用户帮助不大）。
-  function moveAcrossGuardModal(node, referrers, ownBreak) {
-    return new Promise((resolve) => {
-      const N = referrers.length;
-      const overlay = document.createElement('div');
-      overlay.className = 'sb-modal-overlay';
-      const modal = document.createElement('div');
-      modal.className = 'sb-modal ws-delguard';
-      overlay.appendChild(modal);
-      const h = document.createElement('div'); h.className = 'sb-modal-title';
-      h.textContent = '把「' + node.name + '」移到另一个文件夹空间';
-      modal.appendChild(h);
-      const desc = document.createElement('div'); desc.className = 'ws-delguard-desc';
-      const parts = [];
-      if (N) parts.push(N + ' 篇文档里指向它的链接');
-      if (ownBreak) parts.push('它内部的 ' + ownBreak + ' 条链接');
-      desc.textContent = '移动后' + parts.join('、') + '会断开（跨文件夹空间的链接暂不自动维护，可在链接上重新指向或撤销恢复）：';
-      modal.appendChild(desc);
-      if (N) {
-        const list = document.createElement('div'); list.className = 'ws-delguard-list';
-        referrers.slice(0, 5).forEach((s) => {
-          const it = document.createElement('div'); it.className = 'ws-delguard-item'; it.title = s.rel;
-          const t = document.createElement('div'); t.className = 'ws-delguard-item-title'; t.textContent = s.title || s.rel;
-          const p = document.createElement('div'); p.className = 'ws-delguard-item-path'; p.textContent = s.rel;
-          it.appendChild(t); it.appendChild(p); list.appendChild(it);
-        });
-        if (N > 5) { const more = document.createElement('div'); more.className = 'ws-delguard-more'; more.textContent = '… 等 ' + N + ' 篇'; list.appendChild(more); }
-        modal.appendChild(list);
-      }
-      const acts = document.createElement('div'); acts.className = 'ws-delguard-actions';
-      const cancel = document.createElement('button'); cancel.className = 'ws-delguard-btn'; cancel.textContent = '取消';
-      const go = document.createElement('button'); go.className = 'ws-delguard-btn ws-delguard-danger'; go.textContent = '仍要移动';
-      acts.appendChild(cancel); acts.appendChild(go); modal.appendChild(acts);
-      const close = (v) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(v); };
-      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(false); } };
-      cancel.addEventListener('click', () => close(false));
-      go.addEventListener('click', () => close(true));
-      overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); }); // 点遮罩=取消
-      document.addEventListener('keydown', onKey, true);
-      document.body.appendChild(overlay);
-      cancel.focus();
-    });
-  }
+  // （U-CR0 的跨根移动守卫弹窗已退役：C2 让跨根移动自动重写引用 + 撤销，不再需要「移动会断链」的事前警告。）
   async function doDelete(node) {
     // U6 删除守卫：先查引用（文件→backlinks，文件夹→夹外引用）。有引用才弹守卫、用户确认才删；无引用直接删。
     let referrers = [];

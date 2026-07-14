@@ -76,8 +76,8 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
 - **跨根互链（A/B/C）**：让链接跨越「文件夹空间」（并列打开的多个根）。方案见
   `docs/plans/2026-07-14-001-feat-cross-root-linking-plan.md`（A 消费 / B 创建 / C 维护）。磁盘 href 仍是纯相对路径
   （`relHrefAbs`/`resolveHrefAbs` 绝对路径域，复用同一套 property；tree 域，非 realpath——见 links.js 注释），只支持同磁盘卷。
-  - ~~**U-CR0 跨根移动守卫**~~ **已落**：`ws-move-across` 零重写、静默断链是数据损坏缺口 → 移动前有会断的链接才弹守卫
-    （`sidebar.js` doMoveAcross + `link-index.ownOutlinks` + `ws-links-outlinks-count`）。C2 落地真重写时改造成自动重写+撤销、守卫退役。
+  - ~~**U-CR0 跨根移动守卫**~~ **已落 → C2 已退役**：曾是 `ws-move-across` 零重写、静默断链缺口的临时保护（弹守卫）；
+    C2 落地跨根真重写后守卫弹窗已删（`ownOutlinks`/`ws-links-outlinks-count` 保留为工具函数、暂无消费者）。
   - ~~**A 消费面**~~ **已落**：跨根链接点得开/悬停卡/断链红线（`resolveDocLink` 多根归属，本就 fan-out）；反链面板显示跨根来源
     +空间名徽标+跳转（`link-index.backlinks/dirBacklinks` fan-out 所有根、带 rootId；`shell.js` `.ws-bl-item-root`）；删除守卫看得见跨根引用；
     断链修复卡「重新指向」跨根写 `relHrefAbs`。索引 version 1→2（v1 缓存丢弃重建）。
@@ -88,7 +88,13 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
     `.ws-mention-group`、跨卷根灰字不可选；`mention.js`）+ 侧栏拖拽跨空间建链（`blockedit.dropFileLink`）；插入走 `relHrefAbs`。
     同卷约束：@菜单 candidates-all 的 sameVol 排除跨卷根、拖拽用 `ws-same-volume`（plan §5，跨卷不给建）。断链修复「重新指向」
     跨根已在 A 落。**B 遗留欠账**：修复卡「浏览…手选」仍限当前根（`linkview.doPickAndRepoint`，A 记的欠账未变）。
-  - **C 维护面**：未做（改名/移动/`ws-move-across` 的跨根 fan-out 重写；C2 会把 U-CR0 守卫升级成自动重写+撤销）。
+  - ~~**C 维护面**~~ **已落**：改名/移动/跨根移动 → 引用**字节保真自动重写、fan-out 所有根**（跨空间引用也跟着改），撤销往返。
+    引擎升级到绝对路径域：`link-rewrite.rewriteContentAbs`（+`relHrefSmart`：同根写短形式、跨根写 abs 形式，N5）；旧 `rewriteContent`
+    保留为 rel 包装（14 字节保真单测继续走它、验证同一引擎逐字节）。编排 `ipc.rewriteAfterMoveAbs`/`rewriteRefsForMovesAbs` fan-out；
+    `ws-move-across` 收 openAbs、返回 abs moves；`shell.__wsApplyMovesToOpenDoc` 升级 abs 域改打开中文档；外部改名探测（`ws-rewrite-moves`）
+    也 fan-out。C2 拆掉 U-CR0 守卫、跨根移动改为自动重写+撤销。**C 遗留欠账**：md 引用式链接定义行、`<img src>`/`<area>`/SVG 相对路径
+    不重写（同 U5 既有欠账，非跨根新增）。
+  **跨根互链 A/B/C + U-CR0 全部落地**；剩余小欠账：跨根 doc-id 修复锚、修复卡浏览手选限当前根、软链别名根反链可能漏。
   跨根为真 app 独有（ui-demo 单工作区无根概念，不移植不算漂移）。
 
 port 完成一项就从本节清一项、更新对齐锚点。
