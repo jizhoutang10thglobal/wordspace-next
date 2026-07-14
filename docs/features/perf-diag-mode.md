@@ -8,3 +8,7 @@
 除非将来产品化，否则无需补全 spec 四段（行为契约/文件映射/有意分歧/对齐锚点）。
 
 来源：PR #147（已合 main、发版 v0.6.5）；实现在 `src/main/perf-diag.js` + `src/renderer/sidebar.js`（面板）+ `src/main/main.js`（菜单项）。
+
+2026-07-14（`perf/scoped-tree-watch`）：面板每根统计从「读 N 次」细分成「全量 N 次 / 子树 N 次」
+（子树级重扫落地后，看这两个数就知道修复在不在生效）；perf-diag 新增 `recordScoped`/`suggestDebounceMs`
+（自适应去抖的数据源）。
