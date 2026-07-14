@@ -90,6 +90,11 @@ interface UI {
   templateGalleryFor: string | null
   openTemplateGallery: (docId: string) => void
   closeTemplateGallery: () => void
+
+  // 「存为模板」modal：值 = 要存的 doc id。null = 关闭。
+  saveTemplateFor: string | null
+  openSaveTemplate: (docId: string) => void
+  closeSaveTemplate: () => void
 }
 
 export const useUI = create<UI>((set) => ({
@@ -167,6 +172,10 @@ export const useUI = create<UI>((set) => ({
   templateGalleryFor: null,
   openTemplateGallery: (docId) => set({ templateGalleryFor: docId }),
   closeTemplateGallery: () => set({ templateGalleryFor: null, previewCss: null }),
+
+  saveTemplateFor: null,
+  openSaveTemplate: (docId) => set({ saveTemplateFor: docId }),
+  closeSaveTemplate: () => set({ saveTemplateFor: null }),
 }))
 
 /**
@@ -186,6 +195,7 @@ export function anyOverlayOpen(s: UI): boolean {
     s.agentsOpen || // 「AI 接入」是全屏 modal，开着时壳/编辑器快捷键不该穿透（docFindOpen 是非模态查找条，有意不加）
     s.publishDocId ||
     s.pageSetupFor ||
-    s.templateGalleryFor // 换装画廊侧挂面板：Esc 归它、快捷键不穿透
+    s.templateGalleryFor || // 换装画廊侧挂面板：Esc 归它、快捷键不穿透
+    s.saveTemplateFor
   )
 }

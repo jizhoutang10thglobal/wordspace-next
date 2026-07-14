@@ -20,6 +20,7 @@ import type {
 } from '../types'
 import { useUI } from './ui'
 import { rewriteDocsForMoves, invertMoves, dirOf } from '../lib/links'
+import { templateCheck } from '../lib/templateCheck'
 import {
   ME_ID,
   seedAgentEvents,
@@ -194,6 +195,14 @@ interface State {
   // 换装：把模板 CSS 快照盖章到文档（templateId 记来源、templateCss 记快照，对齐入盘自包含）。
   // templateId=null → 卸装回素颜。快照旧值 + toast 撤销（照 deleteFileWithUndo 形状，不进 Cmd+Z 栈）。
   applyTemplate: (docId: string, templateId: string | null) => void
+  // 模板库 CRUD（用户自定义模板，origin:'user'）：
+  // 存当前文档为模板（含骨架勾选）；v1 是派生通道——css 取文档已应用的快照，素颜文档存出纯骨架。
+  saveDocAsTemplate: (docId: string, name: string, includeSkeleton: boolean) => void
+  renameTemplate: (id: string, name: string) => void
+  deleteTemplateWithUndo: (id: string) => void
+  // 编辑模板 CSS / 导入模板：都过 templateCheck 安全门，返回违规清单（UI 展示人话原因）。
+  updateTemplateCss: (id: string, css: string) => { ok: boolean; violations: { rule: string; msg: string }[] }
+  importTemplate: (raw: unknown) => { ok: boolean; error?: string }
   // Cmd+S / 保存：临时文档弹「保存到哪里」modal；已保存的只提示
   saveActiveDoc: () => void
   // 把临时文档保存到指定根的指定文件夹（dir=''=根目录；rootId 空 = 云空间）
@@ -1225,6 +1234,95 @@ export const useStore = create<State>()(
               ),
             })),
         })
+      },
+
+      saveDocAsTemplate: (docId, name, includeSkeleton) => {
+        const s = get()
+        const doc = s.docs.find((d) => d.id === docId)
+        if (!doc) return
+        const clean = name.trim() || '未命名模板'
+        // v1 派生通道：css = 文档已应用模板的快照（素颜文档 undefined → 存出纯骨架模板）。
+        const css = doc.templateCss
+        const skeleton = includeSkeleton
+          ? doc.blocks.map((b) => ({ ...b, id: uid('b') }))
+          : [{ id: uid('b'), type: 'heading' as const, level: 1 as const, html: clean }]
+        const tpl: Template = {
+          id: uid('t'),
+          name: clean,
+          kind: doc.kind,
+          category: '我的',
+          pool: 'private',
+          origin: 'user',
+          description: [css ? '含版式' : '纯骨架', includeSkeleton ? '含内容骨架' : ''].filter(Boolean).join(' · '),
+          accent: '#1d6fbf',
+          css,
+          blocks: skeleton,
+        }
+        set((st) => ({ templates: [...st.templates, tpl] }))
+        get().toast(`已存为模板「${clean}」`, 'success')
+      },
+
+      renameTemplate: (id, name) => {
+        const clean = name.trim()
+        if (!clean) return
+        set((s) => ({ templates: s.templates.map((t) => (t.id === id ? { ...t, name: clean } : t)) }))
+      },
+
+      deleteTemplateWithUndo: (id) => {
+        const s = get()
+        const idx = s.templates.findIndex((t) => t.id === id)
+        if (idx < 0) return
+        const removed = s.templates[idx] // 撤销快照（连同原位置）
+        set((st) => ({ templates: st.templates.filter((t) => t.id !== id) }))
+        get().toast(`已删除模板「${removed.name}」`, 'neutral', {
+          label: '撤销',
+          run: () =>
+            set((st) => {
+              const next = st.templates.slice()
+              next.splice(Math.min(idx, next.length), 0, removed)
+              return { templates: next }
+            }),
+        })
+      },
+
+      updateTemplateCss: (id, css) => {
+        const r = templateCheck(css)
+        if (!r.ok) return { ok: false, violations: r.violations.map((v) => ({ rule: v.rule, msg: v.msg })) }
+        set((s) => ({ templates: s.templates.map((t) => (t.id === id ? { ...t, css } : t)) }))
+        get().toast('模板样式已更新', 'success')
+        return { ok: true, violations: [] }
+      },
+
+      importTemplate: (raw) => {
+        // 形状校验（不受信输入）：必须是对象、name/kind 合理，css 若有则过安全门。
+        if (!raw || typeof raw !== 'object') return { ok: false, error: '不是有效的模板文件' }
+        const o = raw as Record<string, unknown>
+        const name = typeof o.name === 'string' ? o.name.trim() : ''
+        if (!name) return { ok: false, error: '模板缺少名称' }
+        const css = typeof o.css === 'string' ? o.css : undefined
+        if (css) {
+          const r = templateCheck(css)
+          if (!r.ok) return { ok: false, error: '模板 CSS 未通过安全门：' + r.violations.map((v) => v.msg).join('；') }
+        }
+        const kind: DocKind = o.kind === 'page' || o.kind === 'slides' ? o.kind : 'doc'
+        const blocks = Array.isArray(o.blocks) && o.blocks.length
+          ? (o.blocks as Block[]).map((b) => ({ ...b, id: uid('b') }))
+          : [{ id: uid('b'), type: 'heading' as const, level: 1 as const, html: name }]
+        const tpl: Template = {
+          id: uid('t'),
+          name,
+          kind,
+          category: typeof o.category === 'string' ? o.category : '我的',
+          pool: 'private',
+          origin: 'user',
+          description: typeof o.description === 'string' ? o.description : (css ? '导入 · 含版式' : '导入 · 纯骨架'),
+          accent: typeof o.accent === 'string' ? o.accent : '#1d6fbf',
+          css,
+          blocks,
+        }
+        set((st) => ({ templates: [...st.templates, tpl] }))
+        get().toast(`已导入模板「${name}」`, 'success')
+        return { ok: true }
       },
 
       renameDoc: (docId, title) =>

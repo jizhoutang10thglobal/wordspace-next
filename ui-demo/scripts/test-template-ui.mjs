@@ -91,6 +91,56 @@ await page.evaluate(() => window.__wsStore.getState().createFromTemplate('t-blog
 await page.waitForTimeout(150)
 ok(await page.$('.ws-doc.ws-tpl-on') === null, 'U4: 纯骨架模板新建 → 无 ws-tpl-on（有骨架无主题）')
 
+// —— U5：存为模板（含版式+骨架）——
+const savedOk = await page.evaluate(() => {
+  const s = window.__wsStore.getState()
+  s.applyTemplate('d-handbook', 't-proposal-formal')
+  s.saveDocAsTemplate('d-handbook', '我的标书', true)
+  const t = window.__wsStore.getState().templates.find((x) => x.origin === 'user' && x.name === '我的标书')
+  return !!t && !!t.css && t.blocks.length > 1
+})
+ok(savedOk, 'U5 存为模板：用户模板含版式 + 骨架')
+
+// —— U5/AE2：导入合规加、违规（!important / 外链）整份拒 ——
+const imp = await page.evaluate(() => {
+  const s = window.__wsStore.getState()
+  return {
+    good: s.importTemplate({ name: '导入测试', css: 'h1{color:teal}' }).ok,
+    badImp: s.importTemplate({ name: '坏!important', css: 'p{color:red !important}' }).ok,
+    badUrl: s.importTemplate({ name: '外链', css: 'h1{background:url(http://x.com/a.png)}' }).ok,
+    noName: s.importTemplate({ css: 'h1{color:red}' }).ok,
+  }
+})
+ok(imp.good && !imp.badImp && !imp.badUrl && !imp.noName, `AE2 导入过门：合规加 / 违规+缺名拒（${JSON.stringify(imp)}）`)
+
+// —— U5：编辑模板 CSS 引入 !important → 保存被拒 ——
+const editRej = await page.evaluate(() => {
+  const s = window.__wsStore.getState()
+  const t = s.templates.find((x) => x.origin === 'user')
+  return s.updateTemplateCss(t.id, 'h1{color:red !important}').ok
+})
+ok(!editRej, 'U5 编辑 CSS：!important 保存被拒')
+
+// —— U5：删除 + 撤销（清空 toast 保证点对撤销）——
+const delUndo = await page.evaluate(() => {
+  const s = window.__wsStore.getState()
+  const t = s.templates.find((x) => x.origin === 'user' && x.name === '导入测试')
+  const before = s.templates.length
+  window.__wsStore.setState({ toasts: [] })
+  s.deleteTemplateWithUndo(t.id)
+  const afterDel = window.__wsStore.getState().templates.length
+  const toast = window.__wsStore.getState().toasts.filter((z) => z.action).pop()
+  toast.action.run()
+  return { before, afterDel, afterUndo: window.__wsStore.getState().templates.length }
+})
+ok(delUndo.afterDel === delUndo.before - 1 && delUndo.afterUndo === delUndo.before, `U5 删除+撤销（${JSON.stringify(delUndo)}）`)
+
+// —— U5：/templates 管理页渲染（HashRouter）——
+await page.goto(URL + '#/templates', { waitUntil: 'networkidle' })
+await page.waitForSelector('.tplp-page')
+ok((await page.$$('.tplp-group-label')).length >= 2, 'U5 /templates 页渲染（官方/我的分组）')
+ok(await page.$('.tplp-card') !== null, 'U5 /templates 页有模板卡片')
+
 await browser.close()
 console.log(fail === 0 ? '\ntemplate UI smoke: ALL PASS' : `\ntemplate UI smoke: ${fail} FAILURES`)
 process.exit(fail ? 1 : 0)

@@ -37,6 +37,7 @@ export default function DocMenu({
   const toast = useStore((s) => s.toast)
   const deleteDoc = useStore((s) => s.deleteDoc)
   const openTemplateGallery = useUI((s) => s.openTemplateGallery)
+  const openSaveTemplate = useUI((s) => s.openSaveTemplate)
   const applyTemplate = useStore((s) => s.applyTemplate)
 
   // 换装可用性：非合规文档（走基础编辑）与 .md（头部样式无法持久化、Q3 挪后）都禁用，分别给因由。
@@ -134,6 +135,16 @@ export default function DocMenu({
         >
           <Palette size={15} strokeWidth={1.8} />
           移除版式（回素颜）
+        </button>
+      )}
+      {!restyleDisabled && (
+        <button
+          className="ws-docmenu-item"
+          role="menuitem"
+          onClick={() => run(() => openSaveTemplate(doc.id))}
+        >
+          <Palette size={15} strokeWidth={1.8} />
+          将当前文档存为模板…
         </button>
       )}
       <button
