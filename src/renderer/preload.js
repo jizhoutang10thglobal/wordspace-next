@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('ws2', {
   resolveDocLink: (fromAbs, href) => ipcRenderer.invoke('ws-resolve-doc-link', fromAbs, href), // 相对链接解析（abs/rel/kind/exists）
   linksQuery: (rootId) => ipcRenderer.invoke('ws-links-query', rootId), // U2：全部文档 rel/title/kind
   linksCandidates: (rootId) => ipcRenderer.invoke('ws-links-candidates', rootId), // U3：@菜单候选（文档 + 非文档文件）
+  linksCandidatesAll: (sourceRootId) => ipcRenderer.invoke('ws-links-candidates-all', sourceRootId), // B：@菜单跨根候选（所有根分组）
+  wsSameVolume: (aId, bId) => ipcRenderer.invoke('ws-same-volume', aId, bId), // B：两根是否同磁盘卷（拖拽跨根建链约束）
   linksBacklinks: (rootId, rel) => ipcRenderer.invoke('ws-links-backlinks', rootId, rel), // U2：反链来源
   linksDirBacklinks: (rootId, dirRel) => ipcRenderer.invoke('ws-links-dir-backlinks', rootId, dirRel), // U6：文件夹夹外反链（删除守卫）
   linksOutlinksCount: (rootId, rel, isDir) => ipcRenderer.invoke('ws-links-outlinks-count', rootId, rel, isDir), // U-CR0：条目自身会断的出链数（跨根移动守卫）
@@ -61,7 +63,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsRename: (rootId, relPath, newLeaf, openAbs) => ipcRenderer.invoke('ws-rename', rootId, relPath, newLeaf, openAbs),
   wsMove: (rootId, relPath, destDirRel, openAbs) => ipcRenderer.invoke('ws-move', rootId, relPath, destDirRel, openAbs),
   wsRewriteMoves: (rootId, moves, openAbs) => ipcRenderer.invoke('ws-rewrite-moves', rootId, moves, openAbs), // U5 外部改名探测「一键更新」
-  wsMoveAcross: (fromRootId, relPath, toRootId, destDirRel) => ipcRenderer.invoke('ws-move-across', fromRootId, relPath, toRootId, destDirRel),
+  wsMoveAcross: (fromRootId, relPath, toRootId, destDirRel, openAbs) => ipcRenderer.invoke('ws-move-across', fromRootId, relPath, toRootId, destDirRel, openAbs), // C2：openAbs=打开中文档 abs（主进程重写时跳过它，renderer 内存改）
   wsDelete: (rootId, relPath) => ipcRenderer.invoke('ws-delete', rootId, relPath),
   wsUndoDelete: (rootId, token) => ipcRenderer.invoke('ws-undo-delete', rootId, token),
   wsOpenExternal: (rootId, relPath) => ipcRenderer.invoke('ws-open-external', rootId, relPath),

@@ -73,11 +73,28 @@ Notion 式文档间链接 + 点错能回上一篇的导航。三个面：
   **一并建一套统一的前进后退（网页+文档共用）**，照 ui-demo 模型（箭头按当前标签类型分派 web→浏览器历史 /
   doc→文档导航历史）。眼下文档"回上一篇"靠标签页兜（上一篇标签还开着）。仅当浏览器移植遥遥无期 + "回不去"
   痛感急时，才退而求其次建最小 doc-header 独立版、后并。
-- **跨根互链（A/B/C）**：互链全套目前只在**单个文件夹空间内**成立（同根跨子目录 OK，跨并列打开的根不行）。
-  跨根方案见 `docs/plans/2026-07-14-001-feat-cross-root-linking-plan.md`（A 消费 / B 创建 / C 维护，未做）。
-  ⚠ **已先行**：`ws-move-across`（跨根移动）在跨根自动重写落地前**零重写、静默断链**是数据损坏级缺口——
-  **U-CR0 跨根移动守卫**已落（`sidebar.js` doMoveAcross 前置守卫 + `link-index.ownOutlinks` + `ws-links-outlinks-count`）：
-  有会断的链接（入向引用 or 被移文档自身出向链接）才弹守卫、确认才移，零引用无感直移。C2 落地跨根真重写时
-  本守卫改造成自动重写 + 撤销 toast、守卫文案退役。跨根为真 app 独有（ui-demo 单工作区无根概念，不移植不算漂移）。
+- **跨根互链（A/B/C）**：让链接跨越「文件夹空间」（并列打开的多个根）。方案见
+  `docs/plans/2026-07-14-001-feat-cross-root-linking-plan.md`（A 消费 / B 创建 / C 维护）。磁盘 href 仍是纯相对路径
+  （`relHrefAbs`/`resolveHrefAbs` 绝对路径域，复用同一套 property；tree 域，非 realpath——见 links.js 注释），只支持同磁盘卷。
+  - ~~**U-CR0 跨根移动守卫**~~ **已落 → C2 已退役**：曾是 `ws-move-across` 零重写、静默断链缺口的临时保护（弹守卫）；
+    C2 落地跨根真重写后守卫弹窗已删（`ownOutlinks`/`ws-links-outlinks-count` 保留为工具函数、暂无消费者）。
+  - ~~**A 消费面**~~ **已落**：跨根链接点得开/悬停卡/断链红线（`resolveDocLink` 多根归属，本就 fan-out）；反链面板显示跨根来源
+    +空间名徽标+跳转（`link-index.backlinks/dirBacklinks` fan-out 所有根、带 rootId；`shell.js` `.ws-bl-item-root`）；删除守卫看得见跨根引用；
+    断链修复卡「重新指向」跨根写 `relHrefAbs`。索引 version 1→2（v1 缓存丢弃重建）。
+    **A 遗留欠账**：① 跨根 **doc-id 修复锚**（`readDocMeta` 跨根边不快照目标 docId → 跨根断链只有「同名候选」、无 doc-id 全库反查）；
+    ② 修复卡「浏览…手选」仍限当前根（`linkview.doPickAndRepoint`）；③ 软链**别名根**（同一物理文件经两根的软链各有一个 tree 身份）
+    下跨根反链可能漏（tree 域已知限制，非嵌套根场景不触发）。
+  - ~~**B 创建面**~~ **已落**：@菜单跨根候选（`ws-links-candidates-all` 所有根分组、源根在前无头、其他空间带空间名分节头
+    `.ws-mention-group`、跨卷根灰字不可选；`mention.js`）+ 侧栏拖拽跨空间建链（`blockedit.dropFileLink`）；插入走 `relHrefAbs`。
+    同卷约束：@菜单 candidates-all 的 sameVol 排除跨卷根、拖拽用 `ws-same-volume`（plan §5，跨卷不给建）。断链修复「重新指向」
+    跨根已在 A 落。**B 遗留欠账**：修复卡「浏览…手选」仍限当前根（`linkview.doPickAndRepoint`，A 记的欠账未变）。
+  - ~~**C 维护面**~~ **已落**：改名/移动/跨根移动 → 引用**字节保真自动重写、fan-out 所有根**（跨空间引用也跟着改），撤销往返。
+    引擎升级到绝对路径域：`link-rewrite.rewriteContentAbs`（+`relHrefSmart`：同根写短形式、跨根写 abs 形式，N5）；旧 `rewriteContent`
+    保留为 rel 包装（14 字节保真单测继续走它、验证同一引擎逐字节）。编排 `ipc.rewriteAfterMoveAbs`/`rewriteRefsForMovesAbs` fan-out；
+    `ws-move-across` 收 openAbs、返回 abs moves；`shell.__wsApplyMovesToOpenDoc` 升级 abs 域改打开中文档；外部改名探测（`ws-rewrite-moves`）
+    也 fan-out。C2 拆掉 U-CR0 守卫、跨根移动改为自动重写+撤销。**C 遗留欠账**：md 引用式链接定义行、`<img src>`/`<area>`/SVG 相对路径
+    不重写（同 U5 既有欠账，非跨根新增）。
+  **跨根互链 A/B/C + U-CR0 全部落地**；剩余小欠账：跨根 doc-id 修复锚、修复卡浏览手选限当前根、软链别名根反链可能漏。
+  跨根为真 app 独有（ui-demo 单工作区无根概念，不移植不算漂移）。
 
 port 完成一项就从本节清一项、更新对齐锚点。
