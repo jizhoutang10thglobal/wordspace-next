@@ -62,6 +62,11 @@ interface BmFolder { id: string; name: string }
 const BM_BAR = 'bm-bar'   // 「书签栏」固定文件夹：☆/⌘D 默认落这里；不可改名/删除
 ```
 
+**容量语义（真 app，P3-11）**：收藏是用户数据 → **不设条数上限**（静默丢弃比膨胀更糟；导入超大文件 toast
+报净新增数即可）。放大器只有一个——「每次变更把全量 state 灌 renderer」：磁盘写早已防抖（`browser-store`
+`schedule` ~500ms 原子写），**推送 renderer 走 leading-edge 防抖合并**（`browser-store.subscribe`：单次变更
+立即推、星标即时；`NOTIFY_MS`≈200ms 窗口内的多次变更合并成一次 trailing 推）。见 §10.4。
+
 ### 2.3 历史（`ui-demo/src/mock/history.ts`）
 
 ```ts
