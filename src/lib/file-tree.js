@@ -137,9 +137,19 @@ function isBundleName(name) {
   const i = String(name).lastIndexOf('.');
   return i > 0 && BUNDLE_EXTS.has(String(name).slice(i + 1).toLowerCase());
 }
+// Windows / 云盘垃圾文件：靠「隐藏属性」藏身、名字不带点。跨系统同步（共享云盘上的 Windows 同事，
+// Wendi 2026-07-14 报的场景）后隐藏属性丢失 → 在 macOS 上现形进树。大小写不敏感（Windows 文件系统
+// 保留任意大小写、比较不敏感）。desktop.ini / Thumbs.db（Windows）、$RECYCLE.BIN / System Volume
+// Information（外置盘/同步盘残留目录）。`~$xxx.docx` 是 Office 打开文档时的锁文件（`~$` 前缀）。
+// `Icon\r` 是 macOS 自定义文件夹图标文件（名字是 "Icon"+回车、靠 UF_HIDDEN 隐藏、也不带点）。
+// 已知限制：任意文件上的 macOS chflags hidden（UF_HIDDEN）按名字判不出来，Node fs 读不到 BSD flags——
+// 见 docs/features/workspace-file-tree.md 欠账。
+const JUNK = new Set(['desktop.ini', 'thumbs.db', 'ehthumbs.db', '$recycle.bin', 'system volume information']);
 // 原子写 tmp 命名从 `.ws2tmp` 改成了 `.ws2tmp-<pid>-<seq>`（防并发保存互踩，files.js），endsWith('.ws2tmp')
 // 匹配不上新名字 → 存盘时临时文件漏进侧栏树。用 includes 兜住新旧两种命名（不该给用户看的写盘中间产物）。
-const isSkippedName = (name) => String(name).startsWith('.') || String(name).includes('.ws2tmp') || IGNORE.has(name);
+const isSkippedName = (name) =>
+  String(name).startsWith('.') || String(name).includes('.ws2tmp') || IGNORE.has(name) ||
+  JUNK.has(String(name).toLowerCase()) || String(name).startsWith('~$') || name === 'Icon\r';
 
 // 整条相对路径（'/' 分隔）是不是「扫描根本不会看见」的噪音——是的话这个磁盘事件不可能改变树，
 // watcher 层直接丢弃（.DS_Store / .git 内部 / node_modules 内部的 churn 占外部事件的大头）。
