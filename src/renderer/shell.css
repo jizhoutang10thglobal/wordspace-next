@@ -332,6 +332,10 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-kind-slides .sb-ico { color: #b06000; }
 
 .sb-tree-empty { font-size: var(--fs-sm); color: var(--c-text-3); font-style: italic; padding: 4px 8px; }
+/* 两段式添加：大文件夹读盘时的加载占位（安静的呼吸，不弹跳；reduced-motion 下静止） */
+.sb-loading { font-size: var(--fs-sm); color: var(--c-text-3); padding: 4px 8px; animation: ws-breathe 1.4s ease-in-out infinite; }
+@keyframes ws-breathe { 0%, 100% { opacity: .5; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sb-loading { animation: none; opacity: .7; } }
 
 /* ===== 多根：根标题行（每个打开的文件夹一节，对齐 ui-demo arc-root-head）=====
    实底 + 粗体做「节」的视觉锚；层级靠底色差，无阴影（保守口径）。 */

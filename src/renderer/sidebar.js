@@ -157,17 +157,38 @@
     } else if (r.status === 'parent') {
       openAbsorbConfirm(r);
     } else if (r.status === 'revived') {
-      // 选的是失联根的路径且现在可达 → 主进程顺手复活了它
+      // 选的是失联根的路径且现在可达 → 主进程顺手复活了它。两段式：先转非失联 + 加载态渲染，再填树。
       const st = rootOf(r.root.id);
-      if (st) { st.missing = false; st.path = r.root.path; st.name = r.root.name; st.tree = annotateTree(r.tree.tree, st.id); collectDirRels(st.tree, st.id, collapsed); }
+      if (st) { st.missing = false; st.path = r.root.path; st.name = r.root.name; st.tree = null; st.loading = true; }
       syncChrome();
       render();
-      validateRootEntries(r.root.id);
-      showToast('「' + r.root.name + '」已重新连接');
+      await loadRootTree(r.root.id, { validate: true, toast: '「' + r.root.name + '」已重新连接' });
     } else if (r.status === 'added') {
-      adoptRoot(r.root, r.tree);
-      showToast('已打开文件夹「' + r.root.name + '」');
+      // 两段式：先把根装进 rootsState（tree=null + loading），立刻渲染根 + 加载行；再异步 wsReadTree 填树。
+      const st = adoptRoot(r.root, null);
+      st.loading = true;
+      render();
+      await loadRootTree(r.root.id, { toast: '已打开文件夹「' + r.root.name + '」' });
     }
+  }
+  // 两段式添加/复活的第二段：异步读该根的树填进去、清 loading。期间根被移除/吸收 → rootOf 返回 null，放弃。
+  // 读不到树（不可达）→ 转失联灰态（别当空树，否则 reconcile 会把标签清光——workspace.readTree 的 null 契约）。
+  async function loadRootTree(rootId, opts = {}) {
+    let data = null;
+    try { data = await window.ws2.wsReadTree(rootId); } catch (e) { data = null; }
+    const st = rootOf(rootId);
+    if (!st) return; // 加载期间该根被移除/吸收
+    st.loading = false;
+    if (data) {
+      st.tree = annotateTree(data.tree, rootId);
+      collectDirRels(st.tree, rootId, collapsed);
+    } else {
+      st.missing = true; // 不可达 → 失联灰态，不当空树
+    }
+    syncChrome();
+    render();
+    if (opts.validate) validateRootEntries(rootId);
+    if (opts.toast) showToast(opts.toast);
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
   // 吸收后子根的标签不关、整体 rebase 进新根（文件都在磁盘原处，只换归属）。
@@ -554,6 +575,14 @@
     };
     parent.appendChild(head);
     if (!open) return true;
+    if (root.loading) {
+      // 两段式添加：树还在读盘（大文件夹/云盘 4-5s）→ 加载行占位，别显示成「空文件夹」。
+      const e = document.createElement('div');
+      e.className = 'sb-loading';
+      e.textContent = '正在读取文件夹…';
+      parent.appendChild(e);
+      return true;
+    }
     if (!nodes.length) {
       const e = document.createElement('div');
       e.className = 'sb-tree-empty';
