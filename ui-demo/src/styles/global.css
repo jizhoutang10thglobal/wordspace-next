@@ -4,6 +4,20 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 html { -webkit-text-size-adjust: 100%; }
+html { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+/* 主题切换时给 chrome 一层短过渡（§4 动是反馈）。只在切换窗口内生效（data-theme-switching
+   由 appearance.ts 挂 ~200ms 后摘），不常驻——否则会跟 hover 等自有过渡打架。
+   reduced-motion 下整段关掉。 */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme-switching] * {
+    transition: background-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease),
+      fill var(--dur-fast) var(--ease) !important;
+  }
+}
 
 body {
   margin: 0;
