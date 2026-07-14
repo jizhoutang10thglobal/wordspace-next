@@ -165,24 +165,44 @@ function parseNetscapeHtml(html, ts) {
   return { folders, bookmarks };
 }
 
-// 导入合并（Colin 2026-07-10 拍板）：对方书签栏并入我们的书签栏；其他文件夹**追加为新文件夹，
-// 重名不合并**——重名加「名字 2」式后缀；同文件夹同 url 跳过；返回 { state, parsed, added }。
+// 文件夹名去重：撞车加「名字 2」式后缀。导入 + 手动建/改名共用同一口径（P3-09）。takenSet 只读。
+function uniqueName(takenSet, base) {
+  let name = base;
+  let n = 2;
+  while (takenSet.has(name)) name = `${base} ${n++}`;
+  return name;
+}
+
+// 导入合并（Colin 2026-07-10 拍板 + 2026-07-14 温和修正 P3-10）：对方书签栏并入我们的书签栏；
+// 其他文件夹**追加为新文件夹，重名不合并**——但**内容完全相同**（名同 + 内含书签 url 集合相等）的
+// 文件夹视为「重复导入同一份」→ 跳过不造副本（导出→原样导回零翻倍）；内容有差异才加「名字 2」后缀。
+// 同文件夹同 url 的书签始终去重；返回 { state, parsed, added }。
 function importNetscape(state, html, ts) {
   const { folders, bookmarks } = parseNetscapeHtml(html, ts);
   if (!bookmarks.length) return { state, parsed: 0, added: 0 };
+  const urlsIn = (list, fid) => new Set(list.filter((b) => b.folderId === fid).map((b) => b.url));
+  const setEq = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+  const existingByName = new Map(); // name -> [existing folderIds]
+  for (const f of state.folders) {
+    if (!existingByName.has(f.name)) existingByName.set(f.name, []);
+    existingByName.get(f.name).push(f.id);
+  }
   const taken = new Set(state.folders.map((f) => f.name));
-  const renamed = folders.map((f) => {
-    let name = f.name;
-    let n = 2;
-    while (taken.has(name)) name = `${f.name} ${n++}`;
+  const addedFolders = [];
+  const skipped = new Set(); // parsed folderId 被判为「重复导入同一份」→ 连同其书签整体跳过
+  for (const f of folders) {
+    const pUrls = urlsIn(bookmarks, f.id);
+    const dup = (existingByName.get(f.name) || []).some((eid) => setEq(pUrls, urlsIn(state.bookmarks, eid)));
+    if (dup) { skipped.add(f.id); continue; } // 名同 + 内容同 → 同一份,不再造副本（P3-10）
+    const name = uniqueName(taken, f.name); // 名同但内容不同（或无同名）→ 加后缀（原口径）
     taken.add(name);
-    return name === f.name ? f : { ...f, name };
-  });
-  // 同文件夹同 url 去重（实际只会命中书签栏——非书签栏导入文件夹是全新 id）
+    addedFolders.push(name === f.name ? f : { ...f, name });
+  }
+  // 同文件夹同 url 去重（书签栏并入天然命中）；被跳过文件夹的书签不导入。
   const existing = new Set(state.bookmarks.map((b) => b.folderId + '|' + b.url));
-  const fresh = bookmarks.filter((b) => !existing.has(b.folderId + '|' + b.url));
+  const fresh = bookmarks.filter((b) => !skipped.has(b.folderId) && !existing.has(b.folderId + '|' + b.url));
   return {
-    state: { folders: [...state.folders, ...renamed], bookmarks: [...state.bookmarks, ...fresh] },
+    state: { folders: [...state.folders, ...addedFolders], bookmarks: [...state.bookmarks, ...fresh] },
     parsed: bookmarks.length,
     added: fresh.length,
   };

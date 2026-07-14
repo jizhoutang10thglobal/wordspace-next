@@ -176,6 +176,59 @@ test('导入去重：同文件夹同 url 跳过，toast 数字 = 净新增；全
   assert.strictEqual(B.importNetscape(s, '<p>not bookmarks</p>', T0).parsed, 0);
 });
 
+test('P3-10 温和修正：导出→原样导回零翻倍（同名同内容跳过,不造副本）', () => {
+  const { s } = withData(); // [书签栏, 工作(周报)] + 书签栏 Bing
+  const html = B.toNetscapeHtml(s);
+  const r = B.importNetscape(s, html, T0 + 100);
+  assert.strictEqual(r.added, 0); // 全是同一份 → 零新增
+  assert.strictEqual(r.state.folders.length, s.folders.length); // 没多出「工作 2」
+  assert.strictEqual(r.state.folders.filter((f) => f.name === '工作').length, 1);
+  assert.ok(!r.state.folders.some((f) => f.name === '工作 2'));
+});
+
+test('P3-10 内容有差异仍加后缀（不误跳）', () => {
+  const { s } = withData(); // 工作(周报=a.com/weekly)
+  const diff = [
+    '<DL><p><DT><H3>工作</H3>',
+    '  <DL><p><DT><A HREF="https://other.com/x" ADD_DATE="1700000000">别的</A></DL><p>',
+    '</DL><p>',
+  ].join('\n');
+  const r = B.importNetscape(s, diff, T0 + 200);
+  assert.ok(r.state.folders.some((f) => f.name === '工作 2')); // 内容不同 → 加后缀
+  assert.strictEqual(r.added, 1);
+});
+
+test('P3-10 空文件夹同名跳过（内容都空即同份）', () => {
+  let s = B.emptyState();
+  s = B.addFolder(s, '空夹', T0).state; // 现有空文件夹「空夹」
+  const html = [
+    '<DL><p>',
+    '  <DT><H3>空夹</H3><DL><p></DL><p>',       // 导入的同名空文件夹
+    '  <DT><A HREF="https://real.com/">Real</A>', // 顺带一条书签让 bookmarks.length>0
+    '</DL><p>',
+  ].join('\n');
+  const r = B.importNetscape(s, html, T0 + 300);
+  assert.strictEqual(r.state.folders.filter((f) => f.name === '空夹').length, 1); // 无「空夹 2」
+  assert.ok(!r.state.folders.some((f) => f.name === '空夹 2'));
+});
+
+test('P3-10 嵌套文件夹往返零新增（Chrome 式导两次,第二次 0）', () => {
+  const chrome = [
+    '<DL><p>',
+    '  <DT><H3 PERSONAL_TOOLBAR_FOLDER="true">书签栏</H3>',
+    '  <DL><p>',
+    '    <DT><A HREF="https://top.com/" ADD_DATE="1700000000">Top</A>',
+    '    <DT><H3>子夹</H3><DL><p><DT><A HREF="https://sub.com/" ADD_DATE="1700000000">Sub</A></DL><p>',
+    '  </DL><p>',
+    '</DL><p>',
+  ].join('\n');
+  const r1 = B.importNetscape(B.emptyState(), chrome, T0);
+  assert.ok(r1.added > 0);
+  const r2 = B.importNetscape(r1.state, chrome, T0 + 1000); // 再导同一份
+  assert.strictEqual(r2.added, 0); // 零新增
+  assert.strictEqual(r2.state.folders.filter((f) => f.name === '子夹').length, 1); // 无「子夹 2」
+});
+
 test('导入实体解码：&amp; 等在标题/URL 还原', () => {
   const html = '<DL><p><DT><A HREF="https://x.com/?a=1&amp;b=2">A &amp; B</A></DL><p>';
   const r = B.importNetscape(B.emptyState(), html, T0);
