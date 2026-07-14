@@ -1354,8 +1354,8 @@
     function dropFileLink(e, file) {
       const ctx = docCtx();
       if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast('临时 / 工作区外文档暂不支持拖入链接'); return; }
-      if (file.rootId !== ctx.rootId) { if (global.__wsToast) global.__wsToast('跨文件夹的链接暂不支持——把文件拖进同一个文件夹的文档里'); return; }
-      if (file.rel === ctx.rel) { if (global.__wsToast) global.__wsToast('不能链接到文档自己'); return; }
+      const crossRoot = file.rootId !== ctx.rootId; // B：跨文件夹空间拖入 → relHrefAbs（同卷才建）
+      if (!crossRoot && file.rel === ctx.rel) { if (global.__wsToast) global.__wsToast('不能链接到文档自己'); return; }
       let range = caretRangeAtPoint(doc, e.clientX, e.clientY);
       let host = range && (range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement);
       let blk = host ? blockOf(host) : null;
@@ -1378,15 +1378,27 @@
         const li = lis.length ? lis[lis.length - 1] : null;
         if (li) { range = doc.createRange(); range.selectNodeContents(li); range.collapse(false); }
       }
-      const href = global.WS2Links.relHref(ctx.rel, file.rel);
-      const a = doc.createElement('a');
-      a.setAttribute('href', href); // 纯净：只有 href
-      a.textContent = (file.title || file.rel).replace(/\.[^.]+$/, ''); // 文件名去扩展当链接文字
-      range.insertNode(a);
-      const space = doc.createTextNode(' '); a.parentNode.insertBefore(space, a.nextSibling);
-      const after = doc.createRange(); after.setStartAfter(space); after.collapse(true);
-      const sel = doc.getSelection(); if (sel) { sel.removeAllRanges(); sel.addRange(after); }
-      markDirty(); if (undoMgr) undoMgr.checkpoint();
+      const label = (file.title || file.rel).replace(/\.[^.]+$/, ''); // 文件名去扩展当链接文字
+      const insertAt = (href) => { // 落点已定；href 算好（同根同步 / 跨根异步）后插入
+        const a = doc.createElement('a');
+        a.setAttribute('href', href); // 纯净：只有 href
+        a.textContent = label;
+        range.insertNode(a);
+        const space = doc.createTextNode(' '); a.parentNode.insertBefore(space, a.nextSibling);
+        const after = doc.createRange(); after.setStartAfter(space); after.collapse(true);
+        const sel = doc.getSelection(); if (sel) { sel.removeAllRanges(); sel.addRange(after); }
+        markDirty(); if (undoMgr) undoMgr.checkpoint();
+      };
+      if (!crossRoot) { insertAt(global.WS2Links.relHref(ctx.rel, file.rel)); return; }
+      // 跨根（B）：同卷才建；两端 abs 经 wsAbs 取 → relHrefAbs
+      Promise.resolve(global.ws2.wsSameVolume ? global.ws2.wsSameVolume(ctx.rootId, file.rootId) : true).then((ok) => {
+        if (!ok) { if (global.__wsToast) global.__wsToast('这两个文件夹在不同磁盘卷，暂不支持链接'); return; }
+        return Promise.all([global.ws2.wsAbs(ctx.rootId, ctx.rel), global.ws2.wsAbs(file.rootId, file.rel)]).then((ab) => {
+          const href = (ab[0] && ab[1]) ? global.WS2Links.relHrefAbs(ab[0], ab[1]) : null;
+          if (!href) { if (global.__wsToast) global.__wsToast('无法建立跨文件夹空间的链接'); return; }
+          insertAt(href);
+        });
+      }).catch(() => {});
     }
 
     buildFmtbar();

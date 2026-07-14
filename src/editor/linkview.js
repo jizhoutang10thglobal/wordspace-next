@@ -340,6 +340,8 @@
     scan(frame);
   }
   // 重新指向：flush 待定编辑 → 保留原 href 尾缀 → relHref 重算只改这一条 <a> → 标脏+checkpoint → 装饰自愈。
+  // candRel 属于 r.rootId（linksMovedTarget / linksQuery 都查的 r.rootId）。目标与当前文档同根 → 同根 relHref；
+  // 跨根（A）→ relHrefAbs（两端 abs 经 wsAbs 取，tree 域）。跨根算不出（不同磁盘卷）→ 提示、不动。
   function doRepoint(a, r, candRel) {
     var ctx = window.__wsDocContext && window.__wsDocContext();
     var d = cd();
@@ -349,13 +351,24 @@
     }
     var Links = window.WS2Links;
     var suffix = Links.splitHrefSuffix(a.getAttribute('href') || '')[1]; // #锚点/?查询 尾缀保留（L2）
-    var newHref = Links.relHref(ctx.rel, candRel) + suffix;
-    if (window.__wsBeforeDocEdit) window.__wsBeforeDocEdit();
-    a.setAttribute('href', newHref);
-    if (window.__wsAfterDocEdit) window.__wsAfterDocEdit();
-    if (window.__wsToast) window.__wsToast('已重新指向 ' + candRel);
-    closeCard();
-    scan(frame); // 即时自愈，别等存盘/reindex
+    var targetRoot = (r.rootId != null) ? r.rootId : ctx.rootId;
+    var hrefP;
+    if (targetRoot === ctx.rootId) {
+      hrefP = Promise.resolve(Links.relHref(ctx.rel, candRel) + suffix);
+    } else { // 跨根重新指向：绝对相对（A）
+      hrefP = Promise.all([window.ws2.wsAbs(ctx.rootId, ctx.rel), window.ws2.wsAbs(targetRoot, candRel)])
+        .then(function (ab) { var h = ab[0] && ab[1] ? Links.relHrefAbs(ab[0], ab[1]) : null; return h ? h + suffix : null; });
+    }
+    hrefP.then(function (newHref) {
+      if (!newHref) { if (window.__wsToast) window.__wsToast('无法计算跨文件夹空间的链接（可能不在同一磁盘卷）'); closeCard(); return; }
+      if (!d.contains(a)) { if (window.__wsToast) window.__wsToast('链接已不在当前文档，未能重新指向'); closeCard(); return; } // 异步窗口内切走了
+      if (window.__wsBeforeDocEdit) window.__wsBeforeDocEdit();
+      a.setAttribute('href', newHref);
+      if (window.__wsAfterDocEdit) window.__wsAfterDocEdit();
+      if (window.__wsToast) window.__wsToast('已重新指向 ' + candRel);
+      closeCard();
+      scan(frame); // 即时自愈，别等存盘/reindex
+    }).catch(function () { closeCard(); });
   }
   // 新建：目录=断链目标目录、名=目标名去扩展、扩展名按断链后缀（.md→.md 否则 .html）。不切走当前标签页。
   function doCreate(a, r) {

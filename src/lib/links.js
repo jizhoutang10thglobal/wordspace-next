@@ -116,6 +116,27 @@
     return 'relative';
   }
 
+  /**
+   * 跨根（A/B/C）：绝对路径域的相对 href 计算/解析。用于两个「文件夹空间」之间的链接
+   *（同盘约束由主进程 stat().dev 把关，纯逻辑层不碰 fs）。
+   *
+   * 复用久经考验的 relHref/resolveHref：把 POSIX 绝对路径去掉前导 '/' 当成「从文件系统根算的 rel」，
+   * normalizePath 天然拦 '..' 越过根（位置 0），roundtrip 由同一套 50 断言 property 免费保证：
+   *   resolveHrefAbs(fromAbs, relHrefAbs(fromAbs, toAbs)) === toAbs。
+   * 域一致性（plan N1）：调用方传进来的 abs 必须与 ownerOf/resolveDocLink 同一域（根用 real||path），
+   * 否则软链根场景 roundtrip 破。⚠ 仅 POSIX（'/' 开头）；Windows '\\'+盘符 待跨盘支持时再做（plan §5 同盘约束）。
+   */
+  function absToRel(abs) { return abs.replace(/^\/+/, ''); }
+  function relHrefAbs(fromAbs, toAbs) {
+    if (typeof fromAbs !== 'string' || typeof toAbs !== 'string' || fromAbs[0] !== '/' || toAbs[0] !== '/') return null;
+    return relHref(absToRel(fromAbs), absToRel(toAbs));
+  }
+  function resolveHrefAbs(fromAbs, href) {
+    if (typeof fromAbs !== 'string' || fromAbs[0] !== '/') return null;
+    const rel = resolveHref(absToRel(fromAbs), href);
+    return rel == null ? null : '/' + rel;
+  }
+
   /** moved 映射反向（撤销重写用）。 */
   function invertMoves(moved) {
     const inv = new Map();
@@ -125,7 +146,7 @@
 
   const api = {
     dirOf, baseOf, normalizePath, splitHrefSuffix, resolveHref, relHref, linkTarget, classifyScheme,
-    invertMoves, escSeg, unescSeg,
+    relHrefAbs, resolveHrefAbs, invertMoves, escSeg, unescSeg,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.WS2Links = api;
