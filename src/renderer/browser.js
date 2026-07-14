@@ -347,9 +347,21 @@
   navHistory.onclick = () => { if (subPage === 'history') closeSubPage(); else openSubPage('history'); };
 
   // 同步导航条 disabled + omnibox 值/图标/星标。sidebar 每次 renderZones 结束都会调（__webChromeSync）。
+  let lastSyncKey = null; // 上次同步时的激活标签 key——只在「激活标签真变了」时强制结束打字态（P2-3）
   function syncChrome() {
     const e = activeEntry();
     const web = !!(e && T.isWebEntry(e));
+    // 键盘切标签(Ctrl+Tab/⌘1-9)不触发 omnibox blur → omniTyping 一直 true → syncOmni 被守卫吞掉、
+    // 地址栏残留上个标签打的半截字,回车在新标签误导航（P2-3）。切标签 = 明确离开输入上下文:强制结束
+    // 打字态、丢弃未提交输入。**只在 key 真变时做**——同标签的状态更新(后台 title 推送)不能碰,否则
+    // 打字被 title 事件冲掉的老 bug(守卫存在的原因)会回来。
+    const curKey = e ? keyOf(e) : null;
+    if (curKey !== lastSyncKey) {
+      lastSyncKey = curKey;
+      omniTyping = false;
+      if (blurTimer) { clearTimeout(blurTimer); blurTimer = null; }
+      hideSug();
+    }
     const st = web ? webState[keyOf(e)] : null;
     navBack.disabled = !(web && st && st.canGoBack); // 文档标签暂无导航历史 → 恒灰（§4.1 注）
     navFwd.disabled = !(web && st && st.canGoForward);

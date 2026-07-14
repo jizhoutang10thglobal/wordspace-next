@@ -608,3 +608,24 @@ test('P2-4 含冒号词组落搜索不误拦：note:hello 开成 Bing 搜索页(
   await expect.poll(() => registrySnapshot().then((s) => s.map((x) => x.url).join(' ')), { timeout: 8000 })
     .toContain('bing.com/search?q=note%3Ahello');
 });
+
+test('P2-3 地址栏打字中键盘切标签:残留字丢弃复位为新标签 url;同标签 title 更新不冲掉打字', async () => {
+  await launch();
+  await openWebViaModal(base + '/');
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-web .sb-name')).toHaveText('Page A', { timeout: 8000 });
+  await openWebViaModal(base + '/b'); // 标签 B 激活
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-web')).toHaveCount(2);
+  await expect(page.locator('#omni-input')).toHaveValue(base + '/b', { timeout: 8000 });
+  // 在 B 的地址栏打半截字(不回车)
+  await page.locator('#omni-input').fill('zzz-half-typed');
+  // 键盘切标签(synthetic Ctrl+Tab 走 renderer 全局 handler,不触发 omnibox blur)
+  await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', ctrlKey: true, bubbles: true, cancelable: true })));
+  // 修后:地址栏复位为新激活标签的真实 url,残留 zzz-half-typed 丢弃
+  const activeUrl = await page.evaluate(() => { const e = window.__sbWeb.active(); return e ? (e.url || '') : ''; });
+  expect(activeUrl).not.toBe('zzz-half-typed');
+  await expect(page.locator('#omni-input')).toHaveValue(activeUrl);
+  // 对照组(守住原守卫):同标签的 syncChrome(后台 title 更新)不冲掉正在打的字
+  await page.locator('#omni-input').fill('control-typing');
+  await page.evaluate(() => window.__webChromeSync()); // 同标签,key 没变
+  await expect(page.locator('#omni-input')).toHaveValue('control-typing');
+});
