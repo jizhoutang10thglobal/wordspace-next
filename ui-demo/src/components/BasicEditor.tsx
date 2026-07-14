@@ -5,9 +5,10 @@ import { DocHeader } from './Canvas'
 import './BasicEditor.css'
 
 // 打开「不符合 Schema」的野生 HTML 时的基础编辑视图。见 docs/brainstorms/2026-07-01-nonconform-html-editing-requirements.md。
-// 文件在沙箱 iframe 里全保真渲染（<style> 隔离、<script> 不执行）；编辑器 chrome（格式条 / 焦点框 / 悬停删除）
+// 文件在沙箱 iframe 里全保真渲染（<style> 隔离、<script> 不执行）；编辑器 chrome（格式条 / 焦点框）
 // 一律走**宿主浮层**、绝不注进 iframe DOM。三个能力：A 富就地文字（B/I/U/S + 文字色/高亮/清除）· B 删整块
-// （悬停右上角 🗑，或 Esc 选块后 Delete）· C 空间切块（Esc 后方向键按渲染几何找最近的块）。
+// （Esc 选块后 Delete；悬停虚线框+🗑 已撤，Wendi 2026-07-14，见 docs/features/basic-edit.md）
+// · C 空间切块（Esc 后方向键按渲染几何找最近的块）。
 // 编辑/删除 keyed 到节点身份；导航用 getBoundingClientRect 的渲染矩形做 nearestInDirection，不依赖 DOM 顺序。
 
 // 跟正规编辑器（components/canvas/FormatToolbar.tsx）同一套调色板。
@@ -67,15 +68,12 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
   const [bubble, setBubble] = useState<Bubble | null>(null)
   const [menu, setMenu] = useState<'color' | 'hilite' | null>(null)
   const [focus, setFocus] = useState<Rect | null>(null)
-  const [hover, setHover] = useState<Rect | null>(null)
   // C 方案：编辑态（默认）= 不跑 JS + 展开全部（reveal-all）；预览态 = 跑文档 JS 看交互原貌、只读。
   const [view, setView] = useState<'edit' | 'preview'>('edit')
 
   const blocksRef = useRef<HTMLElement[]>([])
   const focusElRef = useRef<HTMLElement | null>(null)
-  const hoverElRef = useRef<HTMLElement | null>(null)
   const modeRef = useRef<'text' | 'block'>('text')
-  const hoverTimer = useRef<number>(0)
 
   useEffect(() => {
     const f = frameRef.current
@@ -83,7 +81,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
     if (!f || !host) return
 
     // 预览态：iframe 用 allow-scripts（跑文档 JS、隔离），只读，不挂任何编辑 chrome。
-    if (view === 'preview') { setBubble(null); setMenu(null); setFocus(null); setHover(null); return }
+    if (view === 'preview') { setBubble(null); setMenu(null); setFocus(null); return }
 
     const docOf = () => f.contentDocument
     const bodyOf = () => f.contentDocument?.body
@@ -114,8 +112,6 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       focusElRef.current = el
       if (el) { el.scrollIntoView({ block: 'nearest' }); setFocus(toHost(el)) } else setFocus(null)
     }
-    const clearHover = () => { hoverElRef.current = null; setHover(null) }
-
     const refreshBubble = () => {
       const d = docOf(); const sel = d?.getSelection()
       if (modeRef.current !== 'text' || !sel || sel.isCollapsed || sel.rangeCount === 0) { setBubble(null); setMenu(null); return }
@@ -127,7 +123,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
 
     const toBlock = (from?: HTMLElement | null) => {
       const b = bodyOf(); if (!b) return
-      setBubble(null); setMenu(null); clearHover(); b.contentEditable = 'false'; modeRef.current = 'block'
+      setBubble(null); setMenu(null); b.contentEditable = 'false'; modeRef.current = 'block'
       setFocusEl(from || blocksRef.current[0] || null)
     }
     const caretTo = (el: HTMLElement) => {
@@ -143,28 +139,12 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
         : null
       el.remove()
       const body = bodyOf(); blocksRef.current = body ? collectBlocks(body) : []
-      clearHover()
       if (keepFocusNext) setFocusEl(next && blocksRef.current.includes(next) ? next : blocksRef.current[0] || null)
       else if (focusElRef.current === el) clearFocus()
     }
 
-    const blockAt = (target: EventTarget | null): HTMLElement | null => {
-      const t = target as Element | null; if (!t) return null
-      const hits = blocksRef.current.filter((b) => b === t || b.contains(t))
-      if (!hits.length) return null
-      return hits.reduce((a, b) => (a.getBoundingClientRect().width * a.getBoundingClientRect().height <=
-        b.getBoundingClientRect().width * b.getBoundingClientRect().height ? a : b))
-    }
-
     const onMouseDown = () => {
       if (modeRef.current === 'block') { const b = bodyOf(); if (b) b.contentEditable = 'true'; modeRef.current = 'text'; clearFocus() }
-    }
-    const onMouseMove = (e: MouseEvent) => {
-      if (modeRef.current !== 'text') return
-      const blk = blockAt(e.target)
-      if (!blk) { window.clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(clearHover, 160); return }
-      window.clearTimeout(hoverTimer.current)
-      if (blk !== hoverElRef.current) { hoverElRef.current = blk; setHover(toHost(blk)) }
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -190,18 +170,14 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       d.addEventListener('mouseup', refreshBubble)
       d.addEventListener('keyup', refreshBubble)
       d.addEventListener('mousedown', onMouseDown, true)
-      d.addEventListener('mousemove', onMouseMove, true)
       d.addEventListener('keydown', onKeyDown, true)
-      d.addEventListener('scroll', () => { refreshBubble(); if (focusElRef.current) setFocus(toHost(focusElRef.current)); clearHover() }, true)
-      d.body.addEventListener('mouseleave', () => { window.clearTimeout(hoverTimer.current); hoverTimer.current = window.setTimeout(clearHover, 160) })
+      d.addEventListener('scroll', () => { refreshBubble(); if (focusElRef.current) setFocus(toHost(focusElRef.current)) }, true)
     }
 
     f.addEventListener('load', wire)
     if (f.contentDocument?.readyState === 'complete') wire()
     ;(host as unknown as { _nce?: unknown })._nce = {
-      deleteHovered: () => { if (hoverElRef.current) removeBlock(hoverElRef.current, false) },
       deleteFocused: () => { if (focusElRef.current) removeBlock(focusElRef.current, true) },
-      cancelHoverClear: () => window.clearTimeout(hoverTimer.current),
     }
 
     return () => {
@@ -213,7 +189,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
     }
   }, [html, view])
 
-  const api = () => (hostRef.current as unknown as { _nce?: { deleteHovered(): void; deleteFocused(): void; cancelHoverClear(): void } })?._nce
+  const api = () => (hostRef.current as unknown as { _nce?: { deleteFocused(): void } })?._nce
   const exec = (cmd: string, val?: string) => {
     const d = frameRef.current?.contentDocument; if (!d) return
     try { d.execCommand('styleWithCSS', false, 'true') } catch { /* noop */ }
@@ -249,21 +225,6 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
         <Info size={15} />
         <span>该文件不符合 Wordspace Schema，仅支持基础编辑。</span>
       </div>
-
-      {/* 悬停某块 → 右上角删除（鼠标路径，不用记 Esc） */}
-      {hover && (
-        <div className="nce-hover" style={{ top: hover.top, left: hover.left, width: hover.width, height: hover.height }}>
-          <button
-            className="nce-hover-del"
-            title="删除这一块"
-            onMouseEnter={() => api()?.cancelHoverClear()}
-            onMouseDown={guard}
-            onClick={() => api()?.deleteHovered()}
-          >
-            <Trash2 size={13} />
-          </button>
-        </div>
-      )}
 
       {/* 焦点框 + 删除（Esc 块模式 / 键盘） */}
       {focus && (
