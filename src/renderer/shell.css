@@ -313,6 +313,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 }
 /* compact folders 合并链的段间「/」分隔符：淡墨、不抢眼 */
 .sb-seg-sep { color: var(--c-text-3); margin: 0 3px; opacity: 0.7; font-weight: var(--fw-regular); }
+/* p3-06 同名跨根消歧：标签名尾的「— 根名」淡色后缀（纸方墨圆 --c-text-3，弱于文件名本体） */
+.sb-tab-rootsuffix { color: var(--c-text-3); font-weight: var(--fw-regular); }
 .sb-dir { color: var(--c-text-2); font-weight: var(--fw-medium); }
 .sb-caret { flex: none; display: inline-flex; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
 .sb-caret.is-open { transform: rotate(90deg); }

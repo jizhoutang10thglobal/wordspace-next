@@ -255,7 +255,7 @@ test('保存改名：SaveModal 文件名输入改「我的笔记」→ 以新名
   await page.locator('.sb-modal-save .sb-btn-primary').click();
   await expect.poll(() => exists(path.join(wsDir, '我的笔记.html'))).toBe(true);
   await expect(page.locator('#sb-tabs .sb-tab[data-rel="我的笔记.html"]')).toHaveClass(/is-active/);
-  await expect(page.locator('.sb-toast')).toContainText('已保存到'); // 保存成功正反馈 toast
+  await expect(page.locator('.sb-toast', { hasText: '已保存到' })).toBeVisible(); // 保存成功正反馈 toast
 });
 
 test('浏览…保存到工作区外（WS2_SAVE_AS_OUT seam）→ 区外落盘 + 转外部标签', async () => {
@@ -274,7 +274,7 @@ test('浏览…保存到工作区外（WS2_SAVE_AS_OUT seam）→ 区外落盘 +
   await expect.poll(() => exists(outPath)).toBe(true);                                 // 真写到工作区外
   await expect(page.locator('#sb-tabs .sb-tab.sb-tab-temp')).toHaveCount(0);           // 临时标签没了
   await expect(page.locator('#sb-tabs .sb-tab.sb-tab-ext')).toHaveClass(/is-active/);  // 转外部标签（↗）
-  await expect(page.locator('.sb-toast')).toContainText('已保存到');
+  await expect(page.locator('.sb-toast', { hasText: '已保存到' })).toBeVisible();
 });
 
 test('临时文档 Cmd+Z：打字 → 菜单 undo → 还原到模板基线（srcdoc 路径撤销）', async () => {

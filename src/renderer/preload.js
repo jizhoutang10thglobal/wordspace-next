@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('ws2', {
   wsReorderRoots: (ids) => ipcRenderer.invoke('ws-reorder-roots', ids),
   wsGetRoots: () => ipcRenderer.invoke('ws-get-roots'),
   wsReadTree: (rootId) => ipcRenderer.invoke('ws-read-tree', rootId),
+  wsGetTreeState: () => ipcRenderer.invoke('ws-get-tree-state'), // P3-07 树展开态持久化（缓存语义）
+  wsSetTreeState: (ts) => ipcRenderer.invoke('ws-set-tree-state', ts),
   wsReadSubtrees: (rootId, dirs) => ipcRenderer.invoke('ws-read-subtrees', rootId, dirs), // 子树级重扫;null=回落全量
   wsWatchFlush: (rootId) => ipcRenderer.invoke('ws-watch-flush', rootId), // 聚焦兜底:冲在途去抖,返回 {alive}
   wsNewDoc: (rootId, dirRel, base, html, ext) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html, ext),
