@@ -39,7 +39,6 @@
   // 根默认展开→存被收起的根。防抖原子写（走 workspace.json 的既有 serialized 写）。失联/未加载根的展开态
   // 用 persistedExpanded 沿用，别在别的根 toggle 触发的 save 里把它清空。
   let persistedExpanded = {}; // rootId -> [rel...]（最近一次持久化的展开集，给失联/未加载根兜底）
-  let treeStateSaveTimer = null;
   function computeTreeState() {
     const expandedByRoot = {};
     for (const st of rootsState) {
@@ -57,8 +56,9 @@
   }
   function scheduleTreeStateSave() {
     if (!window.ws2.wsSetTreeState) return; // 旧 preload 兜底
-    if (treeStateSaveTimer) clearTimeout(treeStateSaveTimer);
-    treeStateSaveTimer = setTimeout(() => { treeStateSaveTimer = null; window.ws2.wsSetTreeState(computeTreeState()); }, 400);
+    // 立即存（不防抖）——与 persistTabs 同步落盘一致。折叠/展开是点击频率、不是逐帧,一次 computeTreeState
+    // + 一次 IPC 可接受;而 400ms 防抖有「toggle 后立刻退出(<400ms)丢这次改动」的缺口（对抗审查 P3）。
+    window.ws2.wsSetTreeState(computeTreeState());
   }
   async function restoreTreeState() {
     if (!window.ws2.wsGetTreeState) return;
@@ -1051,16 +1051,24 @@
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
     showToast('已删除「' + node.name + '」', '撤销', async () => {
-      await window.ws2.wsUndoDelete(node.rootId, r.token);
+      const undo = await window.ws2.wsUndoDelete(node.rootId, r.token); // { rel, abs }：真实恢复位置（原位被占会去重改名）
       await refreshRoot(node.rootId);
-      // p3-05：撤销 = 回到删前，恢复置顶/打开状态。文件真回来了（findNode）才恢复对应 entry。
+      // p3-05：撤销 = 回到删前，恢复置顶/打开状态。两个坑（对抗审查 CONFIRMED）：
+      // ① 用 undo.rel 重映射快照 rel——撤销时原位被占会去重改名（文件回到新 rel），快照里存的是旧 rel，
+      //    直接按旧 rel 找会「找不到=丢置顶」，更糟「旧 rel 现被别的文件占=置顶落到错文件」。
+      // ② 恢复 open **别用会抢激活的 openEntry**——applyTabs 不载入编辑器，抢了激活只会让「高亮的激活标签
+      //    ≠编辑器内容」。删前的激活项 activeBefore 在恢复后原样钉回，只补 open/pinned 标记、不动激活/编辑器。
+      const remap = (rel) => (undo && undo.rel != null) ? undo.rel + rel.slice(node.rel.length) : rel;
       let next = tabState;
+      const activeBefore = next.activeRel;
       for (const s of tabSnapshot) {
-        if (!findNode(s.rootId, s.rel)) continue; // 撤销去重改了名（原位被占）→ 该 rel 没回来，跳过
-        const file = { rootId: s.rootId, rel: s.rel, kind: s.kind || 'other', title: s.title };
+        const rel = remap(s.rel);
+        if (!findNode(s.rootId, rel)) continue; // 文件没真回来 → 跳过，不硬塞不存在的 entry
+        const file = { rootId: s.rootId, rel, kind: s.kind || 'other', title: s.title };
         if (s.open) next = window.WS2Tabs.openEntry(next, file);
         if (s.pinned) next = window.WS2Tabs.pinEntry(next, file);
       }
+      next = { entries: next.entries, activeRel: activeBefore }; // 激活/编辑器原样不动，只恢复标记
       applyTabs(next);
     });
   }
@@ -2078,9 +2086,13 @@
       t.appendChild(btn);
     }
     host.appendChild(t);
-    // 超上限：挤掉最旧的无撤销条（找不到则挤最旧那条——全是撤销条时的兜底）。
+    // 超上限：只挤「最旧的无撤销信息条」,且**绝不挤掉刚建的这条 t**、也**绝不挤撤销条**。
+    // 撤销条保命（各自 15s 自行过期，别丢用户的撤销机会）；4 条撤销条占满时新来的错误/保存提示更不能被
+    // 自己的清理逻辑当场吞掉（对抗审查 P2：那样失败的删除/保存会「视觉报成功、错误消失」，连删第 5 个也
+    // 不该把最旧撤销条挤走=撤销机会丢失）。没有可挤的旧信息条（全是撤销条 / 只剩 t）→ 让它们暂时超限、
+    // 各自超时收，不强挤。
     while (host.children.length > TOAST_CAP) {
-      const victim = [...host.children].find((c) => c.dataset.action !== '1') || host.firstElementChild;
+      const victim = [...host.children].find((c) => c !== t && c.dataset.action !== '1');
       if (!victim) break;
       victim.remove();
     }

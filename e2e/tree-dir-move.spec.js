@@ -134,6 +134,18 @@ test('P2-5 拖到吸顶祖先行 = 拖到真行：文件真的移进该文件夹
   await page.evaluate(() => { const b = document.getElementById('sb-body'); b.scrollTop = 400; b.dispatchEvent(new Event('scroll')); });
   const sticky = page.locator(`.sb-sticky-row[data-root="${ra}"][data-rel="档案"]`);
   await expect(sticky).toBeVisible({ timeout: 4000 });
+  // ondragover 的门（对抗审查：合成 drop 无视 dragover 照样命中,单靠下面 dnd 测不出 clone.ondragover 被删/坏）：
+  // 真行 ondragover 会 preventDefault 让吸顶克隆行成为合法 drop 靶——先 dragstart 设 dragNode,再 dispatch
+  // dragover 到吸顶行,被 cancel（dispatchEvent 返回 false）才说明转发生效。删掉 clone.ondragover 这条必翻红。
+  const overCanceled = await page.evaluate(([srcSel, stkSel]) => {
+    const src = document.querySelector(srcSel); const stk = document.querySelector(stkSel);
+    const dt = new DataTransfer();
+    src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const canceled = !stk.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    src.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    return canceled;
+  }, [`.sb-file[data-root="${ra}"][data-rel="外部.html"]`, `.sb-sticky-row[data-root="${ra}"][data-rel="档案"]`]);
+  expect(overCanceled).toBe(true);
   // 把 外部.html 拖到吸顶的「档案」行 → 应移进 档案/
   await dnd(`.sb-file[data-root="${ra}"][data-rel="外部.html"]`, `.sb-sticky-row[data-root="${ra}"][data-rel="档案"]`);
   await expect.poll(() => onDisk(path.join(wsA, '档案', '外部.html')), { timeout: 4000 }).toBe(true);
