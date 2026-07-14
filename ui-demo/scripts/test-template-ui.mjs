@@ -141,6 +141,19 @@ await page.waitForSelector('.tplp-page')
 ok((await page.$$('.tplp-group-label')).length >= 2, 'U5 /templates 页渲染（官方/我的分组）')
 ok(await page.$('.tplp-card') !== null, 'U5 /templates 页有模板卡片')
 
+// —— U6：AI 生成区（复制 Prompt + 粘贴导入，真 UI 点击）——
+await page.click('.tplp-ai-toggle')
+await page.waitForSelector('.tplp-ai-paste')
+const beforeAi = await page.evaluate(() => window.__wsStore.getState().templates.length)
+await page.fill('.tplp-ai-paste', '{"name":"AI 生成测试","css":"h2{color:purple}"}')
+await page.click('.tplp-ai .tplp-save-css')
+await page.waitForTimeout(150)
+const afterAi = await page.evaluate(() => {
+  const ts = window.__wsStore.getState().templates
+  return { n: ts.length, has: ts.some((t) => t.name === 'AI 生成测试' && t.origin === 'user') }
+})
+ok(afterAi.n === beforeAi + 1 && afterAi.has, `U6 AI 粘贴导入：新模板入库（${JSON.stringify(afterAi)}）`)
+
 await browser.close()
 console.log(fail === 0 ? '\ntemplate UI smoke: ALL PASS' : `\ntemplate UI smoke: ${fail} FAILURES`)
 process.exit(fail ? 1 : 0)

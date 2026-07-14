@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, Upload, Download, Trash2, FilePlus2, Check } from 'lucide-react'
+import { ChevronLeft, Upload, Download, Trash2, FilePlus2, Check, Copy, Sparkles } from 'lucide-react'
 import { useStore } from '../mock/store'
 import type { Template } from '../types'
+import TEMPLATE_PROMPT from '../lib/template-prompt.md?raw'
 import './TemplatesPage.css'
 
 /** 「模板」管理页：分组列表（官方 / 我的）+ 详情面板（改名 / 编辑 CSS / 导出 / 删除 / 试用）+ 导入。 */
@@ -72,6 +73,28 @@ export default function TemplatesPage() {
     navigate('/docs')
   }
 
+  // AI 生成（外部通道，衔接现有「复制 Prompt / 粘贴导入」形态）
+  const [aiOpen, setAiOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [paste, setPaste] = useState('')
+  const copyPrompt = () => {
+    void navigator.clipboard?.writeText(TEMPLATE_PROMPT)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1800)
+  }
+  const importPaste = () => {
+    let obj: unknown
+    try {
+      obj = JSON.parse(paste)
+    } catch {
+      toast('粘贴的不是有效 JSON', 'danger')
+      return
+    }
+    const r = importTemplate(obj)
+    if (r.ok) setPaste('')
+    else toast(r.error ?? '导入失败', 'danger')
+  }
+
   const Card = ({ t }: { t: Template }) => (
     <button className={'tplp-card' + (t.id === selId ? ' is-sel' : '')} onClick={() => setSelId(t.id)}>
       <span className="tplp-swatch" style={{ background: t.accent }} />
@@ -100,6 +123,30 @@ export default function TemplatesPage() {
 
       <div className="tplp-body">
         <div className="tplp-list">
+          {/* AI 生成模板：外部通道（复制 Prompt → 让 AI 产 JSON → 粘贴导入，过安全门）。 */}
+          <button className={'tplp-ai-toggle' + (aiOpen ? ' is-open' : '')} onClick={() => setAiOpen((v) => !v)}>
+            <Sparkles size={15} strokeWidth={1.8} /> 用 AI 生成模板
+          </button>
+          {aiOpen && (
+            <div className="tplp-ai">
+              <button className="tplp-btn tplp-ai-copy" onClick={copyPrompt}>
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+                {copied ? '已复制' : '复制创作 Prompt'}
+              </button>
+              <div className="tplp-ai-hint">把 Prompt 发给任意 AI，让它产出模板 JSON，粘贴到下面导入（会过安全门）。</div>
+              <textarea
+                className="tplp-ai-paste"
+                value={paste}
+                onChange={(e) => setPaste(e.target.value)}
+                placeholder='粘贴 AI 产出的模板 JSON，如 {"name":"…","css":"…"}'
+                spellCheck={false}
+              />
+              <button className="tplp-save-css" onClick={importPaste} disabled={!paste.trim()}>
+                导入粘贴的模板
+              </button>
+            </div>
+          )}
+
           <div className="tplp-group-label">官方</div>
           {official.map((t) => (
             <Card key={t.id} t={t} />
