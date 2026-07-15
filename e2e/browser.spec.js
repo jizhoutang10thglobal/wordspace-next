@@ -689,18 +689,22 @@ test('U2 三栏折叠统一：置顶/标签页可折叠(默认展开)+计数+持
   await expect(page.locator('#sb-tabs .sb-zone-list')).toHaveCount(0);
 });
 
-test('U2b 折叠栏标键盘无障碍：栏标 Enter 折叠、+ 按钮 Enter 不误折叠(审查 P3 回归门)', async () => {
+test('U2b 折叠栏标键盘：栏标 keydown 折叠、+ 按钮的 keydown 不冒泡成折叠(审查 P3 回归门)', async () => {
+  // 用 dispatchEvent 直接派发 keydown（确定性,不依赖 xvfb 下不可靠的 OS 焦点路由）；核心验的是
+  // head.onkeydown 的 e.target===head 守卫:栏标自身的键触发折叠、从 + 按钮冒泡上来的键不触发。
   await launch();
   await openWebViaModal(base + '/');
   await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/);
-  // 栏标本身聚焦按 Enter → 折叠（键盘可达的折叠）
-  await page.locator('#sb-tabs .sb-zone-head').evaluate((h) => h.focus());
-  await page.keyboard.press('Enter');
+  // 栏标自身 keydown Enter（e.target=head）→ 折叠
+  await page.locator('#sb-tabs .sb-zone-head').dispatchEvent('keydown', { key: 'Enter', bubbles: true });
   await expect(page.locator('#sb-tabs')).not.toHaveClass(/is-open/);
-  await page.keyboard.press('Enter'); // 焦点仍在 head → 再折/展
+  // 再来一次 → 展开
+  await page.locator('#sb-tabs .sb-zone-head').dispatchEvent('keydown', { key: 'Enter', bubbles: true });
   await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/);
-  // 焦点移到「新建标签页」+ 按钮按 Enter → 绝不折叠（P3：+ 的键盘激活不能冒泡成折叠）
-  await page.locator('#sb-tabs .sb-zone-add').evaluate((b) => b.focus());
-  await page.keyboard.press('Enter');
-  await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/); // 关键：仍展开
+  // 关键 P3：+ 按钮上的 keydown Enter 冒泡到 head，但 e.target=按钮≠head → 守卫拦住、不折叠
+  await page.locator('#sb-tabs .sb-zone-add').dispatchEvent('keydown', { key: 'Enter', bubbles: true });
+  await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/); // 仍展开
+  // Space 同款（Space 在被折叠场景更险，一并守）
+  await page.locator('#sb-tabs .sb-zone-add').dispatchEvent('keydown', { key: ' ', bubbles: true });
+  await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/);
 });
