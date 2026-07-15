@@ -708,3 +708,27 @@ test('U2b 折叠栏标键盘：栏标 keydown 折叠、+ 按钮的 keydown 不�
   await page.locator('#sb-tabs .sb-zone-add').dispatchEvent('keydown', { key: ' ', bubbles: true });
   await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/);
 });
+
+test('U3 导航加载反馈：慢站导航期标签行转圈(spinner 真动画,非查 class)、旧页保留、提交后消失', async () => {
+  await launch();
+  await openWebViaModal(base + '/'); // Page A(快)先加载好
+  await expect(page.locator('#sb-tabs .sb-tab.sb-tab-web .sb-name')).toHaveText('Page A', { timeout: 8000 });
+  const key = await activeWebKey();
+  await expect.poll(async () => { const v = await viewInfo(key); return v && v.attached && isRed(v.pixel); }, { timeout: 8000 }).toBe(true);
+  const tab = page.locator('#sb-tabs .sb-tab.sb-tab-web');
+  await expect(tab).not.toHaveClass(/is-loading/); // Page A 已加载完,不转圈
+  // 原地导航到慢站 /slow（同标签,view 不摘,旧红页保留 = Chrome 语义）
+  await page.locator('#omni-input').fill(base + '/slow');
+  await page.locator('#omni-input').press('Enter');
+  // 加载窗口内:标签行 is-loading + spinner 真有旋转动画（强断言:查 computed ::after animation-name,非查 class 名——哑门自检）
+  await expect(tab).toHaveClass(/is-loading/, { timeout: 3000 });
+  const spinAnim = await tab.locator('.sb-ico').evaluate((el) => getComputedStyle(el, '::after').animationName);
+  expect(spinAnim).toContain('ws-spin');
+  // 旧页保留:加载期渲染区仍是旧红页 view（未摘），不是空白/新页——这是 Wendi「跳转旧页面」感知的正解(旧页+转圈=正常加载)
+  const v = await viewInfo(key);
+  expect(v.attached).toBe(true);
+  expect(isRed(v.pixel)).toBe(true); // 仍显示旧红页
+  // 提交后:spinner 熄灭 + 新蓝页上屏
+  await expect(tab).not.toHaveClass(/is-loading/, { timeout: 12000 });
+  await expect.poll(async () => { const v2 = await viewInfo(key); return v2 && v2.pixel && v2.pixel.b > 120 && v2.pixel.r < 90; }, { timeout: 8000 }).toBe(true); // 蓝底 /slow 上屏
+});
