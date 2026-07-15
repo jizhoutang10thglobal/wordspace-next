@@ -219,6 +219,9 @@
     let fmtShown = false;    // 格式气泡是否显示——「粘住」用：选区折叠后不立即关，直到离开该块
     let dragStart = null;    // 拖拽选择起点 {x,y}（mousedown 记、mouseup 清）；用来分辨「点击」vs「拖选」
     let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
+    let captionEl = null;    // 正在编辑的图片说明 figcaption（不同于 editingEl/selectedEl：块级破坏性键盘分支对它 inert）
+    let captionOrig = '';    // 进说明编辑时的原文本（判是否真变、决定要不要 checkpoint）
+    let captionWasNew = false; // 本次说明由「加说明」新建（空白失焦即撤销=降回裸 img，且不留空撤销步）
 
     // ---- 覆盖层节点（data-ws2-ui，存盘剥除）----
     function mk(tag, cls) { const n = doc.createElement(tag); n.setAttribute('data-ws2-ui', WS2_OVERLAY); n.setAttribute('contenteditable', 'false'); if (cls) n.className = cls; return n; }
@@ -540,6 +543,53 @@
       if (!live || !picked || !picked.length) return;
       const files = picked.map((p) => { try { return base64ToFile(p.name, p.mime, p.base64); } catch (e) { return null; } }).filter(Boolean);
       await insertImages(files, anchorEl, replaceEmpty);
+    }
+
+    // ---- 图片说明（figcaption，U5）：加说明 → figure；空说明失焦 → 降回裸 <img>（canonical 双向收敛）----
+    // 「加说明」：裸 <img> 包成 <figure><img><figcaption>，进说明编辑。el 可为 <img> 或已有 <figure>。
+    function addCaption(el) {
+      let figure, img;
+      if (el.tagName === 'IMG') {
+        img = el; figure = doc.createElement('figure');
+        img.replaceWith(figure); figure.appendChild(img); // figure 占 img 原位，img 移进去
+      } else if (el.tagName === 'FIGURE') {
+        figure = el; img = figure.querySelector('img');
+      } else return;
+      let cap = figure.querySelector('figcaption');
+      const wasNew = !cap;
+      if (!cap) { cap = doc.createElement('figcaption'); figure.appendChild(cap); }
+      enterCaptionEdit(cap, wasNew);
+    }
+    // 进说明编辑：只给 figcaption 开 contenteditable + data-ws2-ce（serialize 据此移除 contenteditable→入盘干净），
+    // 不设 editingEl/selectedEl——让块级破坏性键盘分支保持 inert（对齐 ui-demo「说明里 Backspace 不删整块」）。
+    function enterCaptionEdit(cap, wasNew) {
+      if (captionEl && captionEl !== cap) captionEl.blur(); // 收尾上一个
+      clearSelectedAttr(); selectedEl = null; closeBlockMenu();
+      captionEl = cap; captionOrig = cap.textContent || ''; captionWasNew = !!wasNew;
+      cap.setAttribute('contenteditable', 'true');
+      cap.setAttribute('data-ws2-ce', '');
+      cap.addEventListener('blur', persistCaption, { once: true });
+      cap.focus();
+      const r = doc.createRange(); r.selectNodeContents(cap); r.collapse(false); // 光标落末尾
+      const sel = doc.getSelection(); if (sel) { sel.removeAllRanges(); sel.addRange(r); }
+    }
+    function persistCaption() {
+      if (!captionEl) return;
+      const cap = captionEl; captionEl = null;
+      cap.removeAttribute('contenteditable'); cap.removeAttribute('data-ws2-ce');
+      const figure = cap.parentElement;
+      if (!figure || figure.tagName !== 'FIGURE') return;
+      const text = (cap.textContent || '').trim();
+      const img = figure.querySelector('img');
+      if (!text) {
+        if (img) { figure.replaceWith(img); selectBlock(img); positionGrip(img); } // 空说明 → 降回裸 img
+        // 新建又清空 = 净无变化，不 checkpoint（不留空撤销步）；原本有说明被清空才算一步
+        if (!captionWasNew) { if (undoMgr) undoMgr.checkpoint(); markDirty(); }
+      } else {
+        cap.textContent = text; // 归一去首尾空白
+        selectBlock(figure); positionGrip(figure);
+        if (captionWasNew || text !== (captionOrig || '').trim()) { if (undoMgr) undoMgr.checkpoint(); markDirty(); }
+      }
     }
 
     function turnInto(el, item) {
@@ -873,6 +923,10 @@
         sub('转为正文', itemByKey('text'), 'text'); sub('转为标题', itemByKey('h2'), 'heading'); sub('转为引用', itemByKey('quote'), 'quote');
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       }
+      // 图片块（无说明）：加说明 → figure/figcaption + 进说明编辑（doc-images U5）
+      if (classify(el) === 'image' && !(el.querySelector && el.querySelector('figcaption'))) {
+        add('加说明', () => { closeBlockMenu(); addCaption(el); }, false, 'text');
+      }
       add('在下方插入', () => { const nx = insertAfter(el, itemByKey('text')); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); }, false, 'plus');
       add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); }, false, 'copy');
       add('删除', () => { closeBlockMenu(); removeBlock(el); }, true, 'trash');
@@ -1016,6 +1070,7 @@
     function onMouseDown(e) {
       if (e.button !== 0) return; // 只管左键
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      if (e.target && e.target.closest && e.target.closest('figcaption')) return; // 说明编辑：交原生放光标/选词，不启块拖选
       // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
       // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
       const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
@@ -1083,6 +1138,9 @@
       // 否则会把选区折叠掉、气泡闪退（这是用户报的根因）。纯点击时 mousedown 已先把选区折叠成光标，不受影响。
       const _sel = doc.getSelection();
       if (_sel && !_sel.isCollapsed && _sel.rangeCount > 0) return;
+      // 点图片说明（figcaption）→ 进说明编辑；不走块选中（否则 blockOf 上卷到 figure、选中整张图）。
+      const capT = e.target && e.target.closest && e.target.closest('figcaption');
+      if (capT && classify(capT.parentElement) === 'image') { if (captionEl !== capT) enterCaptionEdit(capT, false); return; }
       const el = blockOf(e.target);
       if (!el) {
         // 文末续写：点最后一块下方、且在文档列水平范围内的空白 → 进末块(若空可编辑)或末尾新建正文块
@@ -1106,6 +1164,12 @@
       } else { selectBlock(el); positionGrip(el); }
     }
     function onKeyDown(e) {
+      // 图片说明（figcaption）编辑中：Enter/Esc 收尾失焦，其它键交原生编辑文字——绝不落到块级
+      // Enter 新建块 / Backspace 删块分支（ui-demo 踩过：说明里退格删了整张图）。
+      if (captionEl) {
+        if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); captionEl.blur(); }
+        return;
+      }
       // 提及菜单开着时：导航键（↑↓Enter/Esc/Backspace/query 字符）先给它，消费了就不再走块编辑（IME 组字键它会放行）
       { const M = mentionApi(); if (M && M.isOpen() && M.handleKey(e)) return; }
       // 斜杠菜单开启时：导航
@@ -1525,6 +1589,7 @@
 
     function detach() {
       live = false; // 停掉 in-flight 图片摄入的插入（见 insertImages）
+      if (captionEl) { captionEl.removeAttribute('contenteditable'); captionEl.removeAttribute('data-ws2-ce'); captionEl = null; } // 别把编辑态属性留给下个文档
       doc.documentElement.removeEventListener('mouseleave', onDocLeave);
       doc.removeEventListener('mousedown', onMouseDown, true);
       doc.removeEventListener('mousemove', onMouseMove);
@@ -1545,7 +1610,7 @@
     // 撤销/重做后 body.innerHTML 被整体重写，旧的元素引用全失效 → 清空状态、收起所有覆盖层。
     function reset() {
       slash = null; slashMenu.style.display = 'none';
-      editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false;
+      editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false; captionEl = null; // undo/redo 重写 body → 旧 figcaption 引用失效
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
       blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标（空块占高度用，非装饰）
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
@@ -1571,6 +1636,7 @@
 
   [contenteditable='true']{outline:none;}
   p[data-ws2-editing]:empty::before{content:'输入正文,或按 / 插入';color:#8a8f96;pointer-events:none;}
+  figcaption[data-ws2-ce]:empty::before{content:'图片说明';color:#8a8f96;pointer-events:none;}
   /* 空块也占一行高度——否则非编辑态的空块（没占位符）塌成 0 高，连按 Enter 建的空白行全叠在一处、看着「换不了行」。
      用 em 跟字号缩放（空标题行更高）。纯渲染、不进序列化。 */
   [data-ws2-root] > p:empty, [data-ws2-root] > h1:empty, [data-ws2-root] > h2:empty,
