@@ -197,20 +197,36 @@ async function makeDir(root, dirRel, name) {
   return { rel: toRel(r, abs), abs };
 }
 
+// 编辑器能打开的文档后缀——改名不改格式（P3-03）的判定用同一份。
+const DOC_EXTS = new Set(['.html', '.htm', '.md']);
+
 // 改名：保留扩展名(文件)，同目录去重，剥非法字符。
+// P3-03「改名不改格式」：文档文件（原后缀 ∈ DOC_EXTS）时，若用户输入本身以某个已知文档后缀结尾，
+// 剥掉它再拼回原后缀——避免「火箭.md」落成「火箭.md.html」双后缀，也避免「火箭.html」变「火箭.html.html」。
+// 输入后缀与原后缀不同（想换格式）→ v1 不做真转换（md↔html 是格式转换、乱改会坏文件），仍保原后缀 +
+// 回 formatKept=true 让上层 toast 引导走「另存为/导出」。非文档后缀（.txt）继续当 base 一部分、维持现状。
 async function renamePath(root, relPath, newLeaf) {
   const r = path.resolve(root);
   const abs = assertInsideWorkspace(r, relPath);
-  const base = cleanLeafName(newLeaf);
+  let base = cleanLeafName(newLeaf);
   if (!base) throw new Error('empty name');
   const isDir = (await fs.stat(abs)).isDirectory();
   const ext = isDir ? '' : path.extname(abs);
+  let formatKept = false;
+  if (!isDir && DOC_EXTS.has(ext.toLowerCase())) {
+    const typedExt = path.extname(base);
+    if (DOC_EXTS.has(typedExt.toLowerCase())) {
+      base = base.slice(0, base.length - typedExt.length);
+      if (typedExt.toLowerCase() !== ext.toLowerCase()) formatKept = true;
+    }
+  }
+  if (!base) throw new Error('empty name'); // 剥后只剩空（用户只输了「.md」）——拒绝
   const dir = path.dirname(abs);
   const taken = new Set((await listNames(dir)).filter((n) => n !== path.basename(abs)));
   const dest = assertInsideWorkspace(r, path.join(dir, uniqueLeaf(taken, base, ext)));
-  if (dest === abs) return { rel: relPath, abs };
+  if (dest === abs) return { rel: relPath, abs, formatKept };
   await fs.rename(abs, dest);
-  return { rel: toRel(r, dest), abs: dest };
+  return { rel: toRel(r, dest), abs: dest, formatKept };
 }
 
 // 移动到 destDirRel（'' = 根）。同目录 = no-op；不许移进自己子树；目标内去重。

@@ -34,46 +34,50 @@ async function exportPdf(srcPath, outPath, exportOpts) {
     if (!exportOpts.paged) {
       try { selfPaged = isSelfPaged(await fs.readFile(srcPath, 'utf8')); } catch (e) { /* 读不了按普通文档 */ }
     }
-    // 分页文档：标准分页导出。纸张/方向/边距全由文档自带的 @page 决定（preferCSSPageSize），
-    // 不量高、不走连续单页——「按页分页」正是分页文档的导出语义。不传 margins（交给 CSS @page）。
-    // 页码走 Chromium 页眉页脚模板（MVP：只做页码，文档内页眉页脚不做）。
-    if (exportOpts.paged || selfPaged) {
-      const popts = { printBackground: true, preferCSSPageSize: true };
-      if (exportOpts.pageNumbers) {
-        popts.displayHeaderFooter = true;
-        popts.headerTemplate = '<span></span>'; // 必须给非空模板，否则 Chromium 印默认标题/日期
-        popts.footerTemplate = '<div style="width:100%;text-align:center;font-size:9px;color:#777;font-family:-apple-system,sans-serif;">'
-          + '<span class="pageNumber"></span> / <span class="totalPages"></span></div>';
-      }
-      const pdfPaged = await wc.printToPDF(popts);
-      await fs.writeFile(outPath, pdfPaged);
-      return;
-    }
-    // 量内容总高（CSS px）：CDP Page.getLayoutMetrics——带外协议、不依赖页面 JS（我们关了 JS）。
-    // CDP 失败直接抛错（外层 finally 销窗、handler 转成 {error} 弹给用户）——绝不静默退视口高，
-    // 那会把长文档截成一页却报成功 = 用户察觉不到的数据丢失。
+    // R8 恒浅色：nativeTheme.themeSource 是进程级的，导出隐藏窗口的 prefers-color-scheme 同样会翻暗——
+    // 自带 @media (prefers-color-scheme: dark) 的野生文档（含自分页公函）可能把暗色排版印进 PDF。
+    // 整条导出统一 debugger.attach + Emulation 强制 prefers-color-scheme:light，printToPDF 完成后才 detach
+    // （两坑：①分页分支原本无 attach ②非分页分支原本量高后即 detach、早于 printToPDF，emulation 随 detach 复位）。
     wc.debugger.attach('1.3');
-    let h;
     try {
-      // 先切到 print 媒介再量：printToPDF 是在 print 媒介下渲染的，文档若带 @media print
-      //（藏元素/去间隙），screen 下量出的高会偏大 → 页尾多出一段空白。同媒介量高=页高恰合内容。
-      await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { media: 'print' });
+      // 分页文档：标准分页导出。纸张/方向/边距全由文档自带的 @page 决定（preferCSSPageSize），
+      // 不量高、不走连续单页。强制 light（media 交给 printToPDF 的 print 渲染）。页码走 Chromium 页眉页脚模板。
+      if (exportOpts.paged || selfPaged) {
+        await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
+        const popts = { printBackground: true, preferCSSPageSize: true };
+        if (exportOpts.pageNumbers) {
+          popts.displayHeaderFooter = true;
+          popts.headerTemplate = '<span></span>'; // 必须给非空模板，否则 Chromium 印默认标题/日期
+          popts.footerTemplate = '<div style="width:100%;text-align:center;font-size:9px;color:#777;font-family:-apple-system,sans-serif;">'
+            + '<span class="pageNumber"></span> / <span class="totalPages"></span></div>';
+        }
+        const pdfPaged = await wc.printToPDF(popts);
+        await fs.writeFile(outPath, pdfPaged);
+        return;
+      }
+      // 量内容总高（CSS px）：CDP Page.getLayoutMetrics——带外协议、不依赖页面 JS（我们关了 JS）。
+      // CDP 失败直接抛错（外层 finally 销窗、handler 转成 {error} 弹给用户）——绝不静默退视口高。
+      // 先切 print 媒介再量：printToPDF 在 print 媒介渲染，文档带 @media print 时 screen 量高会偏大。
+      // media:'print' 与 prefers-color-scheme:light 必须并进同一次 setEmulatedMedia——该命令整体替换 emulation 状态。
+      await wc.debugger.sendCommand('Emulation.setEmulatedMedia', {
+        media: 'print',
+        features: [{ name: 'prefers-color-scheme', value: 'light' }],
+      });
       const m = await wc.debugger.sendCommand('Page.getLayoutMetrics');
       const sz = m.cssContentSize || m.contentSize;
-      h = sz && sz.height ? Math.ceil(sz.height) : A4_HEIGHT_PX; // 真量不到（空文档）→ 一个视口高，合理
-    } finally { try { wc.debugger.detach(); } catch (e) {} }
+      const h = sz && sz.height ? Math.ceil(sz.height) : A4_HEIGHT_PX; // 真量不到（空文档）→ 一个视口高，合理
 
-    const heightIn = Math.max(h, 96) / 96; // px→in，下限 1in 防空文档 0 高
-    const opts = { printBackground: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } }; // 边距交给文档自身 padding（所见即所得）
-    if (heightIn <= MAX_PAGE_IN) {
-      opts.pageSize = { width: A4_WIDTH_IN, height: heightIn }; // 连续单页：页高=内容高
-    } else {
-      // 太长撑不进单页（超 Chromium ~200in 上限会被钳掉、底部丢内容）→ 退标准 A4 分页，保证内容一段不丢
-      // （从「连续单页」降级成分页，是不丢内容的唯一选择）。
-      opts.pageSize = 'A4';
-    }
-    const pdf = await wc.printToPDF(opts);
-    await fs.writeFile(outPath, pdf);
+      const heightIn = Math.max(h, 96) / 96; // px→in，下限 1in 防空文档 0 高
+      const opts = { printBackground: true, margins: { top: 0, bottom: 0, left: 0, right: 0 } }; // 边距交给文档自身 padding
+      if (heightIn <= MAX_PAGE_IN) {
+        opts.pageSize = { width: A4_WIDTH_IN, height: heightIn }; // 连续单页：页高=内容高
+      } else {
+        // 太长撑不进单页（超 Chromium ~200in 上限会被钳掉、底部丢内容）→ 退标准 A4 分页，保证内容一段不丢。
+        opts.pageSize = 'A4';
+      }
+      const pdf = await wc.printToPDF(opts);
+      await fs.writeFile(outPath, pdf);
+    } finally { try { wc.debugger.detach(); } catch (e) {} }
   } finally {
     win.destroy();
   }

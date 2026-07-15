@@ -181,6 +181,30 @@ test('并发 saveRoots + setTabs 不互相 clobber（rmw 串行化）', async ()
   assert.equal(s.tabs.entries.length, 1); // setTabs 没被冲掉
 });
 
+test('P3-07 setTreeState then getTreeState round-trips 展开目录 + 收起根', async () => {
+  const f = await tmpStore();
+  await store.saveRoots(f, [{ id: 'r1', path: '/w1' }], 2); // 与 tabs 共存于同一文件
+  await store.setTabs(f, { entries: [{ rootId: 'r1', rel: 'a.html', kind: 'html', title: 'a', open: true, pinned: false }], activeRel: 'r1:a.html' });
+  await store.setTreeState(f, { expandedByRoot: { r1: ['素材', '素材/深'] }, collapsedRoots: ['r2'] });
+  const ts = await store.getTreeState(f);
+  assert.deepEqual(ts, { expandedByRoot: { r1: ['素材', '素材/深'] }, collapsedRoots: ['r2'] });
+  // 不冲掉 roots / tabs（同文件写一角）
+  const s = await store.loadState(f);
+  assert.equal(s.roots.length, 1);
+  assert.equal(s.tabs.entries.length, 1);
+});
+
+test('P3-07 getTreeState 缺失/损坏 → 空态（不抛）；sanitize 丢坏数据 + cap 500', async () => {
+  const f = await tmpStore();
+  assert.deepEqual(await store.getTreeState(f), { expandedByRoot: {}, collapsedRoots: [] }); // 文件不存在
+  const big = Array.from({ length: 600 }, (_, i) => 'd' + i);
+  await store.setTreeState(f, { expandedByRoot: { r1: big, r2: [1, 'ok', null] }, collapsedRoots: ['r3', 42] });
+  const ts = await store.getTreeState(f);
+  assert.equal(ts.expandedByRoot.r1.length, 500); // cap
+  assert.deepEqual(ts.expandedByRoot.r2, ['ok']); // 非字符串丢弃
+  assert.deepEqual(ts.collapsedRoots, ['r3']); // 非字符串丢弃
+});
+
 test('clear removes the store', async () => {
   const f = await tmpStore();
   await store.saveRoots(f, [{ id: 'r1', path: '/x' }], 2);
