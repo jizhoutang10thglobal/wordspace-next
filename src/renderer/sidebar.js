@@ -1974,20 +1974,42 @@
     };
     return list;
   }
-  function zoneHeader(text, onPlus) {
+  // key 给了 → 栏标可折叠（caret 右置 + 计数，抄收藏区 §4.3；点栏标翻转 localStorage 键、重渲）。
+  // 默认展开（键值 '0' = 收起，缺省视为展开）；与收藏「默认收起」相反是拍板（置顶/标签页是主导航，别一装就藏）。
+  function zoneHeader(text, key, count, onPlus) {
     const head = document.createElement('div');
     head.className = 'sb-zone-head';
+    if (key) { head.setAttribute('role', 'button'); head.tabIndex = 0; }
     const label = document.createElement('span');
     label.className = 'sb-sec-label';
     label.textContent = text;
     head.appendChild(label);
+    if (key) {
+      const cnt = document.createElement('span');
+      cnt.className = 'sb-zone-count';
+      cnt.textContent = count ? String(count) : '';
+      head.appendChild(cnt);
+    }
     if (onPlus) {
       const plus = document.createElement('button');
       plus.className = 'sb-zone-add';
       plus.title = '新建文档';
       plus.innerHTML = PLUS_SVG;
-      plus.onclick = onPlus;
+      plus.onclick = (e) => { e.stopPropagation(); onPlus(); }; // 别冒泡触发栏标折叠
       head.appendChild(plus);
+    }
+    if (key) {
+      const caret = document.createElement('span');
+      caret.className = 'sb-zone-caret';
+      caret.innerHTML = SVG.chevron;
+      head.appendChild(caret);
+      const toggle = () => {
+        const open = localStorage.getItem(key) !== '0'; // 默认展开
+        localStorage.setItem(key, open ? '0' : '1');
+        renderZones();
+      };
+      head.onclick = toggle;
+      head.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
     }
     return head;
   }
@@ -2004,21 +2026,31 @@
     if (!pinnedEl || !tabsEl) return;
     const pinned = window.WS2Tabs.pinnedEntries(tabState.entries);
     const tabs = window.WS2Tabs.tabEntries(tabState.entries);
+    // 折叠态每次从 localStorage 现读（renderZones 全重建，内存变量会随重渲丢失）。默认展开。
+    const pinnedOpen = localStorage.getItem('ws-pinned-open') !== '0';
+    const tabsOpen = localStorage.getItem('ws-tabs-open') !== '0';
+
     pinnedEl.innerHTML = '';
     pinnedEl.hidden = false;
-    pinnedEl.appendChild(zoneHeader('置顶', null));
-    const plist = zoneList('pinned');
-    if (pinned.length) for (const e of pinned) plist.appendChild(tabRow(e, 'pinned'));
-    else plist.appendChild(zoneHint('把标签页拖到这里置顶', 'sb-zone-hint-drop')); // 虚线框空态（对齐 ui-demo arc-tabs-empty：看得出是可拖入目标）
-    pinnedEl.appendChild(plist);
+    pinnedEl.classList.toggle('is-open', pinnedOpen);
+    pinnedEl.appendChild(zoneHeader('置顶', 'ws-pinned-open', pinned.length, null));
+    if (pinnedOpen) {
+      const plist = zoneList('pinned');
+      if (pinned.length) for (const e of pinned) plist.appendChild(tabRow(e, 'pinned'));
+      else plist.appendChild(zoneHint('把标签页拖到这里置顶', 'sb-zone-hint-drop')); // 虚线框空态（对齐 ui-demo arc-tabs-empty：看得出是可拖入目标）
+      pinnedEl.appendChild(plist);
+    }
 
     tabsEl.innerHTML = '';
     tabsEl.hidden = false;
-    tabsEl.appendChild(zoneHeader('标签页', () => openCreateModal(null, '', { temp: true })));
-    const tlist = zoneList('tabs');
-    if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
-    else tlist.appendChild(zoneHint('没有打开的标签'));
-    tabsEl.appendChild(tlist);
+    tabsEl.classList.toggle('is-open', tabsOpen);
+    tabsEl.appendChild(zoneHeader('标签页', 'ws-tabs-open', tabs.length, () => openCreateModal(null, '', { temp: true })));
+    if (tabsOpen) {
+      const tlist = zoneList('tabs');
+      if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
+      else tlist.appendChild(zoneHint('没有打开的标签'));
+      tabsEl.appendChild(tlist);
+    }
     // 浏览器 feature：无工作区也能开网页标签——第一个 web 标签要能点亮侧栏（syncChrome 只在根变化时跑）。
     const sbEl = document.getElementById('sidebar');
     if (sbEl) sbEl.classList.toggle('sb-on', rootsState.length > 0 || tabState.entries.length > 0);
