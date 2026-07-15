@@ -37,6 +37,7 @@ import { useBrowser } from '../mock/browser'
 import { useBookmarks, BM_BAR } from '../mock/bookmarks'
 import { useHistory } from '../mock/history'
 import { useNav } from '../mock/nav'
+import { useT } from '../i18n'
 import { Avatar } from '../ui/primitives'
 import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
 import { computeBacklinks, computeDirBacklinks } from '../lib/links'
@@ -113,6 +114,7 @@ function TabRow({
   insert: InsertPos | null
   onRowDragOver: (e: React.DragEvent) => void
 }) {
+  const t = useT()
   const { activeTabId, setActiveTab, closeTab, togglePin } = useStore()
   const active = tab.id === activeTabId
   const pinned = !!tab.pinned
@@ -141,10 +143,10 @@ function TabRow({
         {tab.kind === 'web' ? <Globe2 size={13} /> : <FileText size={13} />}
       </span>
       <span className="arc-tab-title ws-truncate">{tab.title}</span>
-      {unsaved && <span className="arc-tab-dot" title="未保存（还没存进文件夹）" />}
+      {unsaved && <span className="arc-tab-dot" title={t('sidebar.unsavedTabHint')} />}
       <button
         className="arc-tab-act"
-        title={pinned ? '取消置顶' : '置顶'}
+        title={pinned ? t('sidebar.unpin') : t('sidebar.pin')}
         onClick={(e) => {
           e.stopPropagation()
           togglePin(tab.id)
@@ -155,7 +157,7 @@ function TabRow({
       {!pinned && (
         <button
           className="arc-tab-act arc-tab-close"
-          title="关闭"
+          title={t('common.close')}
           onClick={(e) => {
             e.stopPropagation()
             // 未保存的临时文档 → 弹确认；否则直接关。切换标签页不走这里（不提示）。
@@ -320,6 +322,7 @@ function FileBranch({
   rootId: string
   forceOpen?: boolean
 }) {
+  const t = useT()
   const navigate = useNavigate()
   const openFileTab = useStore((s) => s.openFileTab)
   const renameFile = useStore((s) => s.renameFile)
@@ -413,10 +416,10 @@ function FileBranch({
             y={menu.y}
             onClose={() => setMenu(null)}
             items={[
-              { label: '打开', onClick: openIt },
-              { label: '重命名', onClick: () => setRenaming(true) },
+              { label: t('common.open'), onClick: openIt },
+              { label: t('common.rename'), onClick: () => setRenaming(true) },
               {
-                label: '删除',
+                label: t('common.delete'),
                 danger: true,
                 onClick: () => {
                   // 互链守卫：有反链的文件删除前弹确认（列出谁链接到它），没有就直接删（保留 toast 撤销）
@@ -514,7 +517,7 @@ function FileBranch({
         </span>
         <button
           className="arc-folder-add"
-          title="在此文件夹新建文档"
+          title={t('sidebar.newDocHere')}
           onClick={(e) => {
             e.stopPropagation()
             newDocHere()
@@ -529,11 +532,11 @@ function FileBranch({
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            { label: '新建文档', onClick: newDocHere },
-            { label: '新建子文件夹', onClick: () => createSubfolder(rootId, path) },
-            { label: '重命名', onClick: () => setRenaming(true) },
+            { label: t('sidebar.newDoc'), onClick: newDocHere },
+            { label: t('sidebar.newSubfolder'), onClick: () => createSubfolder(rootId, path) },
+            { label: t('common.rename'), onClick: () => setRenaming(true) },
             {
-              label: '删除',
+              label: t('common.delete'),
               danger: true,
               onClick: () => {
                 // 互链守卫（文件夹版）：夹外文档链接着夹内文件时先确认（夹内互链一起删、不算断链）
@@ -560,7 +563,7 @@ function FileBranch({
           ))
         ) : (
           <div className="arc-tree-empty" style={{ paddingLeft: treeIndent(26, depth + 1) }}>
-            空文件夹
+            {t('sidebar.emptyFolder')}
           </div>
         ))}
     </div>
@@ -572,6 +575,7 @@ function FileBranch({
 // indented inside a rail. The header is (a) the "drop file here to move to this
 // root's top level" target and (b) draggable itself, to reorder roots（顺序持久化）。
 function RootSection({ root, index, query }: { root: MountRoot; index: number; query: string }) {
+  const t = useT()
   const files = useStore((s) => s.files)
   const dirs = useStore((s) => s.dirs)
   const moveFile = useStore((s) => s.moveFile)
@@ -597,7 +601,7 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
           className="arc-root-head"
           role="button"
           tabIndex={0}
-          title={`${root.path} · 失联（文件夹不可达）`}
+          title={t('sidebar.rootMissingTitle', { path: root.path })}
           onContextMenu={(e) => {
             e.preventDefault()
             setMenu({ x: e.clientX, y: e.clientY })
@@ -605,16 +609,16 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
         >
           <AlertCircle size={12} className="arc-root-miss-ic" />
           <span className="ws-truncate arc-root-name">{root.name}</span>
-          <span className="arc-root-miss-tag">失联</span>
+          <span className="arc-root-miss-tag">{t('sidebar.missingTag')}</span>
         </div>
         <div className="arc-root-miss-note">
-          <span className="ws-truncate">文件夹不可达（可能被移动、删除，或所在磁盘未连接）</span>
+          <span className="ws-truncate">{t('sidebar.missingNote')}</span>
           <span className="arc-root-miss-acts">
             <button className="arc-root-miss-act" onClick={() => relocateRoot(root.id)}>
-              重新定位
+              {t('sidebar.relocate')}
             </button>
             <button className="arc-root-miss-act" onClick={() => removeRoot(root.id)}>
-              移除
+              {t('sidebar.remove')}
             </button>
           </span>
         </div>
@@ -624,8 +628,8 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
             y={menu.y}
             onClose={() => setMenu(null)}
             items={[
-              { label: '重新定位…', onClick: () => relocateRoot(root.id) },
-              { label: '移除', danger: true, onClick: () => removeRoot(root.id) },
+              { label: t('sidebar.relocateEllipsis'), onClick: () => relocateRoot(root.id) },
+              { label: t('sidebar.remove'), danger: true, onClick: () => removeRoot(root.id) },
             ]}
           />
         )}
@@ -647,7 +651,7 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
         }
         role="button"
         tabIndex={0}
-        title={`${root.path} · 拖动可调整文件夹顺序`}
+        title={t('sidebar.rootDragTitle', { path: root.path })}
         draggable
         onDragStart={(e) => {
           dragRootId = root.id
@@ -721,11 +725,11 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
-            { label: '新建文档', onClick: () => openCreate({ rootId: root.id, dir: '' }) },
+            { label: t('sidebar.newDoc'), onClick: () => openCreate({ rootId: root.id, dir: '' }) },
             ...(index > 0
-              ? [{ label: '移到最上面', onClick: () => reorderRoots(root.id, 0) }]
+              ? [{ label: t('sidebar.moveToTop'), onClick: () => reorderRoots(root.id, 0) }]
               : []),
-            { label: '移除（磁盘文件不动）', danger: true, onClick: () => removeRoot(root.id) },
+            { label: t('sidebar.removeKeepDisk'), danger: true, onClick: () => removeRoot(root.id) },
           ]}
         />
       )}
@@ -736,7 +740,7 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
               <FileBranch key={i} node={n} depth={0} path={n.name} rootId={root.id} forceOpen={!!q} />
             ))
           ) : (
-            <div className="arc-lib-empty">{q ? '没有匹配的文件' : '这个文件夹还没有文件'}</div>
+            <div className="arc-lib-empty">{q ? t('sidebar.noMatchFiles') : t('sidebar.rootEmpty')}</div>
           )}
         </div>
       )}
@@ -748,6 +752,7 @@ function RootSection({ root, index, query }: { root: MountRoot; index: number; q
 // independent tree, draggable to reorder. 没有「工作区 / Space」外壳、没有切换器；
 // 云盘（团队/私有）是「之后上云」的内容，当前不在这里。
 function Library({ query }: { query: string }) {
+  const t = useT()
   const roots = useStore((s) => s.roots)
   const openAddFolder = useUI((s) => s.openAddFolder)
   const q = query.trim().toLowerCase()
@@ -757,15 +762,15 @@ function Library({ query }: { query: string }) {
       {roots.map((r, i) => (
         <RootSection key={r.id} root={r} index={i} query={query} />
       ))}
-      {!roots.length && !q && <div className="arc-lib-empty">还没有打开任何文件夹。</div>}
+      {!roots.length && !q && <div className="arc-lib-empty">{t('sidebar.noFolders')}</div>}
       {!q && (
         <button
           className="arc-add-root"
           onClick={openAddFolder}
-          title="再打开一个文件夹，和现有的并排显示"
+          title={t('sidebar.addRootTitle')}
         >
           <FolderPlus size={13} />
-          <span>添加文件夹…</span>
+          <span>{t('sidebar.addFolderEllipsis')}</span>
         </button>
       )}
     </div>
@@ -773,6 +778,7 @@ function Library({ query }: { query: string }) {
 }
 
 export default function ArcSidebar() {
+  const t = useT()
   const navigate = useNavigate()
   const location = useLocation()
   const {
@@ -846,8 +852,8 @@ export default function ArcSidebar() {
   const toggleBookmark = () => {
     if (!isWebTab || !activeTab) return
     const bm = useBookmarks.getState()
-    if (bm.isBookmarked(activeTab.url)) { bm.removeByUrl(activeTab.url); useStore.getState().toast('已移出收藏') }
-    else { bm.add({ title: activeTab.title || activeTab.url, url: activeTab.url }); useStore.getState().toast('已加入收藏', 'success') }
+    if (bm.isBookmarked(activeTab.url)) { bm.removeByUrl(activeTab.url); useStore.getState().toast(t('sidebar.bookmarkRemoved')) }
+    else { bm.add({ title: activeTab.title || activeTab.url, url: activeTab.url }); useStore.getState().toast(t('sidebar.bookmarkAdded'), 'success') }
   }
   // 侧栏收藏区点书签：已开着该网址的网页标签就聚焦过去（含置顶），否则新标签打开 + 记历史
   //（Colin 2026-07-10 拍板：聚焦已开，别连点连开重复标签）。
@@ -986,8 +992,8 @@ export default function ArcSidebar() {
         if (!tab || tab.kind !== 'web' || !tab.url || tab.url === 'wordspace://newtab') return
         e.preventDefault()
         const b = useBookmarks.getState()
-        if (b.isBookmarked(tab.url)) { b.removeByUrl(tab.url); st.toast('已移出收藏') }
-        else { b.add({ title: tab.title || tab.url, url: tab.url }); st.toast('已加入收藏', 'success') }
+        if (b.isBookmarked(tab.url)) { b.removeByUrl(tab.url); st.toast(t('sidebar.bookmarkRemoved')) }
+        else { b.add({ title: tab.title || tab.url, url: tab.url }); st.toast(t('sidebar.bookmarkAdded'), 'success') }
       } else if (!e.shiftKey && (e.key === 'l' || e.key === 'L')) {
         // Cmd+L 聚焦地址栏
         e.preventDefault()
@@ -1015,7 +1021,7 @@ export default function ArcSidebar() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [toggleSidebar, openNewTab, saveActiveDoc, openFind, navigate])
+  }, [toggleSidebar, openNewTab, saveActiveDoc, openFind, navigate, t])
 
   // F6：切到某个文件标签页时，在左侧树展开它所在根 + 祖先文件夹并滚动定位（高亮由 is-active 负责）。
   useEffect(() => {
@@ -1090,14 +1096,14 @@ export default function ArcSidebar() {
   }
 
   const util = [
-    { to: '/settings', icon: Settings2, label: '设置' },
+    { to: '/settings', icon: Settings2, label: t('sidebar.settings') },
   ]
 
   if (collapsed) {
     return (
       <aside className="arc-sidebar is-collapsed">
         <div className="arc-top arc-top-collapsed">
-          <button className="arc-ico" title="展开侧栏" onClick={toggleSidebar}>
+          <button className="arc-ico" title={t('sidebar.expandSidebar')} onClick={toggleSidebar}>
             <PanelLeft size={15} />
           </button>
         </div>
@@ -1107,7 +1113,7 @@ export default function ArcSidebar() {
 
   return (
     <aside className="arc-sidebar" ref={asideRef} style={{ width: `${sbWidth}px` }}>
-      <div className="arc-resize" onMouseDown={startResize} title="拖拽调整侧栏宽度" />
+      <div className="arc-resize" onMouseDown={startResize} title={t('sidebar.resizeHint')} />
       <div className="arc-top">
         <div className="arc-traffic">
           <span style={{ background: '#ff5f57' }} />
@@ -1115,12 +1121,12 @@ export default function ArcSidebar() {
           <span style={{ background: '#28c840' }} />
         </div>
         <div className="arc-top-nav">
-          <button className="arc-ico" title="收起侧栏" onClick={toggleSidebar}><PanelLeft size={15} /></button>
-          <button className="arc-ico" title="后退" onClick={goBack} disabled={!canBack}><ChevronLeft size={16} /></button>
-          <button className="arc-ico" title="前进" onClick={goForward} disabled={!canFwd}><ChevronRight size={16} /></button>
-          <button className="arc-ico" title="刷新" onClick={reload}><RotateCw size={13} /></button>
-          <button className="arc-ico" title="历史记录" onClick={() => navigate('/history')}><HistoryIcon size={15} /></button>
-          <button className="arc-ico" title={IS_MAC ? '查找文件 ⌘P' : '查找文件 Ctrl+P'} onClick={openFind}><Search size={14} /></button>
+          <button className="arc-ico" title={t('sidebar.collapseSidebar')} onClick={toggleSidebar}><PanelLeft size={15} /></button>
+          <button className="arc-ico" title={t('sidebar.navBack')} onClick={goBack} disabled={!canBack}><ChevronLeft size={16} /></button>
+          <button className="arc-ico" title={t('sidebar.navForward')} onClick={goForward} disabled={!canFwd}><ChevronRight size={16} /></button>
+          <button className="arc-ico" title={t('sidebar.reload')} onClick={reload}><RotateCw size={13} /></button>
+          <button className="arc-ico" title={t('sidebar.history')} onClick={() => navigate('/history')}><HistoryIcon size={15} /></button>
+          <button className="arc-ico" title={t('sidebar.findFileHint', { key: IS_MAC ? '⌘P' : 'Ctrl+P' })} onClick={openFind}><Search size={14} /></button>
         </div>
       </div>
 
@@ -1146,19 +1152,19 @@ export default function ArcSidebar() {
           }}
           onFocus={(e) => e.currentTarget.select()}
           onBlur={() => window.setTimeout(() => setOmniOpen(false), 150)}
-          placeholder="搜索,或输入网址"
+          placeholder={t('sidebar.searchOrUrl')}
           spellCheck={false}
         />
         {isWebTab && (
           <button
             className={`arc-omni-star ${bookmarked ? 'is-on' : ''}`}
-            title={bookmarked ? '已收藏（⌘D 移出）' : '加入收藏 ⌘D'}
+            title={bookmarked ? t('sidebar.bookmarkedTitle') : t('sidebar.addBookmarkTitle')}
             onClick={toggleBookmark}
           >
             <Star size={14} fill={bookmarked ? 'currentColor' : 'none'} />
           </button>
         )}
-        {isLocal && activeTab?.kind !== 'web' && <span className="arc-omni-tag">本地</span>}
+        {isLocal && activeTab?.kind !== 'web' && <span className="arc-omni-tag">{t('sidebar.localTag')}</span>}
         {omniOpen && omniSug.length > 0 && (
           <div className="arc-omni-sug">
             {omniSug.map((s, i) => (
@@ -1181,12 +1187,12 @@ export default function ArcSidebar() {
         {/* 收藏（默认收起，点标题行展开）——放在置顶上方，同 Arc 的 Favorites 在最顶 */}
         <div className={`arc-fav ${favOpen ? 'is-open' : ''}`}>
           <div className="arc-fav-head" onClick={toggleFav}>
-            <span className="arc-fav-title">收藏</span>
+            <span className="arc-fav-title">{t('sidebar.favorites')}</span>
             {bmList.length > 0 && <span className="arc-fav-count">{bmList.length}</span>}
             <span className="arc-fav-spacer" />
             <button
               className="arc-ico arc-ico-sm"
-              title="管理收藏 · 导入导出"
+              title={t('sidebar.manageBookmarks')}
               onClick={(e) => { e.stopPropagation(); navigate('/bookmarks') }}
             >
               <Bookmark size={13} />
@@ -1210,34 +1216,34 @@ export default function ArcSidebar() {
                   </div>
                 )
               })}
-              {!bmList.length && <div className="arc-fav-empty">点地址栏的 ☆ 收藏网页</div>}
+              {!bmList.length && <div className="arc-fav-empty">{t('sidebar.favEmptyHint')}</div>}
             </div>
           )}
         </div>
 
-        <div className="arc-section-label">置顶</div>
-        <TabStrip pinned emptyHint="把标签页拖到这里置顶" />
+        <div className="arc-section-label">{t('sidebar.pinnedSection')}</div>
+        <TabStrip pinned emptyHint={t('sidebar.dragToPinHint')} />
 
         <div className="arc-section-label arc-tabs-label">
-          <span>标签页</span>
-          <button className="arc-ico arc-ico-sm" title="新建标签页" onClick={onNewTab}>
+          <span>{t('sidebar.tabs')}</span>
+          <button className="arc-ico arc-ico-sm" title={t('sidebar.newTab')} onClick={onNewTab}>
             <Plus size={14} />
           </button>
         </div>
         <TabStrip pinned={false} />
 
-        <div className="arc-section-label">文档</div>
+        <div className="arc-section-label">{t('sidebar.documents')}</div>
         <div className="arc-filter">
           <Search size={13} className="arc-filter-ico" />
           <input
             className="arc-filter-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="筛选文件"
+            placeholder={t('sidebar.filterFiles')}
             spellCheck={false}
           />
           {query && (
-            <button className="arc-filter-clear" title="清除" onClick={() => setQuery('')}>
+            <button className="arc-filter-clear" title={t('sidebar.clear')} onClick={() => setQuery('')}>
               <X size={12} />
             </button>
           )}
@@ -1250,7 +1256,7 @@ export default function ArcSidebar() {
           {/* AI 接入：浮动 modal（不再是整页路由） */}
           <button
             className="arc-util-btn"
-            title="AI 接入"
+            title={t('sidebar.aiAccess')}
             onClick={() => useUI.getState().openAgents()}
           >
             <Bot size={16} />
@@ -1268,14 +1274,14 @@ export default function ArcSidebar() {
           {/* 快捷键速查（⌘/ 或 Ctrl+/）+ 完整键位文档入口（Wendi review 用） */}
           <button
             className="arc-util-btn"
-            title={IS_MAC ? '快捷键 ⌘/' : '快捷键 Ctrl+/'}
+            title={t('sidebar.shortcutsHint', { key: IS_MAC ? '⌘/' : 'Ctrl+/' })}
             onClick={() => useUI.getState().openShortcuts()}
           >
             <Keyboard size={16} />
           </button>
           <div className="arc-util-spacer" />
           {me && (
-            <button className="arc-util-me" title={`${me.name} · 账户设置`} onClick={() => navigate('/settings')}>
+            <button className="arc-util-me" title={t('sidebar.accountSettings', { name: me.name })} onClick={() => navigate('/settings')}>
               <Avatar member={me} size={24} />
             </button>
           )}

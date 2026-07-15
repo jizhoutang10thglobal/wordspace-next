@@ -50,8 +50,19 @@ for (const file of walkFiles(SRC)) {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
   const lines = text.split('\n')
 
+  // 区域豁免：`// i18n-exempt-start` … `// i18n-exempt-end` 之间的行整段跳过（给成块的演示/种子数据，
+  // 免得每行一个 // i18n-exempt）。start/end 那两行本身也在区域内。
+  const exemptRegion = new Set()
+  let inRegion = false
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('i18n-exempt-start')) inRegion = true
+    if (inRegion) exemptRegion.add(i)
+    if (lines[i].includes('i18n-exempt-end')) inRegion = false
+  }
+
   const report = (node, raw) => {
     const { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf))
+    if (exemptRegion.has(line)) return // 区域豁免
     if ((lines[line] || '').includes('i18n-exempt')) return // 行内豁免
     const snippet = raw.replace(/\s+/g, ' ').trim().slice(0, 50)
     violations.push({ rel, line: line + 1, col: character + 1, snippet })

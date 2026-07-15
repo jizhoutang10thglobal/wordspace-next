@@ -8,6 +8,7 @@ import {
   Trash2,
   BookOpen,
 } from 'lucide-react'
+import { useT } from '../../i18n'
 import { useStore } from '../../mock/store'
 import { useUI } from '../../mock/ui'
 import { usePaged } from '../../mock/paged'
@@ -28,6 +29,7 @@ export default function DocMenu({
   onClose: () => void
   onRename: () => void
 }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   const exportDoc = useStore((s) => s.exportDoc)
   const openPageSetup = useUI((s) => s.openPageSetup)
@@ -68,7 +70,7 @@ export default function DocMenu({
         }
       >
         <FileText size={15} strokeWidth={1.8} />
-        导出为 PDF
+        {t('editor.exportPdf')}
       </button>
       <button
         className="ws-docmenu-item"
@@ -76,7 +78,7 @@ export default function DocMenu({
         onClick={() => run(() => exportDoc(doc.id, 'docx'))}
       >
         <FileType2 size={15} strokeWidth={1.8} />
-        导出为 Word(.docx)
+        {t('editor.exportWord')}
       </button>
       <button
         className="ws-docmenu-item"
@@ -84,7 +86,7 @@ export default function DocMenu({
         onClick={() => run(() => exportDoc(doc.id, 'pptx'))}
       >
         <Presentation size={15} strokeWidth={1.8} />
-        导出为演示文稿(.pptx)
+        {t('editor.exportPptx')}
       </button>
       <div className="ws-docmenu-sep" />
       <button
@@ -93,15 +95,15 @@ export default function DocMenu({
         onClick={() => run(() => openPageSetup(doc.id))}
       >
         <BookOpen size={15} strokeWidth={1.8} />
-        页面设置…
+        {t('editor.pageSetupMenu')}
       </button>
       <button
         className="ws-docmenu-item"
         role="menuitem"
-        onClick={() => run(() => toast('链接已复制', 'success'))}
+        onClick={() => run(() => toast(t('editor.linkCopied'), 'success'))}
       >
         <Link2 size={15} strokeWidth={1.8} />
-        复制链接
+        {t('editor.copyLink')}
       </button>
       <button
         className="ws-docmenu-item"
@@ -109,7 +111,7 @@ export default function DocMenu({
         onClick={() => run(onRename)}
       >
         <PenLine size={15} strokeWidth={1.8} />
-        重命名
+        {t('common.rename')}
       </button>
       <div className="ws-docmenu-sep" />
       <button
@@ -132,7 +134,7 @@ export default function DocMenu({
         }
       >
         <Trash2 size={15} strokeWidth={1.8} />
-        删除
+        {t('common.delete')}
       </button>
     </div>
   )

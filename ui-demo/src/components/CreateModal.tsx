@@ -4,12 +4,14 @@ import { FileText, X, Blocks, Lock, Globe, CornerDownLeft } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
+import { useT, type TFunc } from '../i18n'
 import type { DocKind } from '../types'
 import './CreateModal.css'
 
 const DRAFTS = 'f-drafts'
 
-const kindLabel = (k: DocKind) => (k === 'page' ? '网页' : k === 'slides' ? '演示' : '文档')
+const kindLabelWith = (t: TFunc) => (k: DocKind) =>
+  k === 'page' ? t('modals.kindPage') : k === 'slides' ? t('modals.kindSlides') : t('modals.kindDoc')
 
 // 新建文档分两层：先选「范式」（编辑范式 / 内核），范式下面才是各种模板。
 // 目前只有「类 Notion」一个范式，范式 2 / 3 留 placeholder——代表将来会有多个范式，每个范式各有多套模板。
@@ -20,10 +22,10 @@ interface Paradigm {
   desc: string
   soon: boolean
 }
-const PARADIGMS: Paradigm[] = [
-  { id: 'notion', name: '类 Notion', tag: '当前', desc: '分块编辑的结构化文档', soon: false },
-  { id: 'p2', name: '范式 2', desc: '敬请期待', soon: true },
-  { id: 'p3', name: '范式 3', desc: '敬请期待', soon: true },
+const paradigmsWith = (t: TFunc): Paradigm[] => [
+  { id: 'notion', name: t('modals.paradigmNotion'), tag: t('modals.paradigmCurrent'), desc: t('modals.paradigmNotionDesc'), soon: false },
+  { id: 'p2', name: t('modals.paradigm2'), desc: t('modals.comingSoon'), soon: true },
+  { id: 'p3', name: t('modals.paradigm3'), desc: t('modals.comingSoon'), soon: true },
 ]
 
 /**
@@ -34,6 +36,9 @@ const PARADIGMS: Paradigm[] = [
  * （「用 AI 生成」已挪出，未来集成进右下角 Agent 接入。）
  */
 export default function CreateModal() {
+  const t = useT()
+  const PARADIGMS = paradigmsWith(t)
+  const kindLabel = kindLabelWith(t)
   const navigate = useNavigate()
   const createOpen = useUI((s) => s.createOpen)
   const closeCreate = useUI((s) => s.closeCreate)
@@ -78,8 +83,8 @@ export default function CreateModal() {
   const firstRoot = roots.find((r) => !r.missing)
   const targetRoot = target ? roots.find((r) => r.id === target.rootId) : undefined
   const where = target
-    ? `${targetRoot?.name ?? firstRoot?.name ?? '文档'}${target.dir ? ` / ${target.dir}` : ''}`
-    : (firstRoot?.name ?? '文档')
+    ? `${targetRoot?.name ?? firstRoot?.name ?? t('modals.docFallback')}${target.dir ? ` / ${target.dir}` : ''}`
+    : (firstRoot?.name ?? t('modals.docFallback'))
   const active = PARADIGMS.find((p) => p.id === paradigm) ?? PARADIGMS[0]
 
   const done = () => {
@@ -88,7 +93,7 @@ export default function CreateModal() {
   }
   // omni（从「标签页 +」进）→ 临时文档，不进文件树/库，手动保存才落地。
   const blank = () => {
-    createDoc(DRAFTS, 'doc', '无标题文档', target, omni)
+    createDoc(DRAFTS, 'doc', t('sidebar.untitledDoc'), target, omni)
     done()
   }
   const fromTemplate = (id: string) => {
@@ -111,7 +116,7 @@ export default function CreateModal() {
         className={'ws-modal cm-new' + (omni ? ' cm-omni' : '')}
         role="dialog"
         aria-modal="true"
-        aria-label={omni ? '新建标签页或文档' : '新建文档'}
+        aria-label={omni ? t('modals.newTabOrDoc') : t('modals.newDoc')}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {omni ? (
@@ -126,25 +131,25 @@ export default function CreateModal() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') submitUrl()
               }}
-              placeholder="搜索，或输入网址"
+              placeholder={t('modals.searchOrUrl')}
               spellCheck={false}
             />
             {url.trim() && (
               <span className="cm-omnibar-kbd">
-                <CornerDownLeft size={12} /> 打开
+                <CornerDownLeft size={12} /> {t('common.open')}
               </span>
             )}
-            <button className="ws-modal-x cm-omnibar-x" onClick={closeCreate} aria-label="关闭">
+            <button className="ws-modal-x cm-omnibar-x" onClick={closeCreate} aria-label={t('common.close')}>
               <X size={16} />
             </button>
           </div>
         ) : (
           <header className="ws-modal-head">
             <div className="ws-modal-head-text">
-              <div className="ws-modal-title">新建文档</div>
-              <div className="cm-where">在 {where}</div>
+              <div className="ws-modal-title">{t('modals.newDoc')}</div>
+              <div className="cm-where">{t('modals.inLocation', { where })}</div>
             </div>
-            <button className="ws-modal-x" onClick={closeCreate} aria-label="关闭">
+            <button className="ws-modal-x" onClick={closeCreate} aria-label={t('common.close')}>
               <X size={16} />
             </button>
           </header>
@@ -153,7 +158,7 @@ export default function CreateModal() {
         <div className="cm-split">
           {/* 左：范式 */}
           <div className="cm-rail">
-            <div className="cm-rail-label">范式</div>
+            <div className="cm-rail-label">{t('modals.paradigm')}</div>
             {PARADIGMS.map((p) => (
               <button
                 key={p.id}
@@ -174,7 +179,7 @@ export default function CreateModal() {
                 </span>
               </button>
             ))}
-            <div className="cm-rail-foot">未来每个范式有各自的编辑方式与模板</div>
+            <div className="cm-rail-foot">{t('modals.paradigmRailFoot')}</div>
           </div>
 
           {/* 右：该范式下的模板 */}
@@ -184,21 +189,21 @@ export default function CreateModal() {
                 <div className="cm-soon-ico">
                   <Lock size={22} />
                 </div>
-                <div className="cm-soon-title">{active.name} · 还在路上</div>
+                <div className="cm-soon-title">{t('modals.paradigmSoon', { name: active.name })}</div>
                 <div className="cm-soon-desc">
-                  每个范式是一套独立的编辑内核与文档结构。这个范式上线后，会在这里列出它自己的模板。
+                  {t('modals.paradigmSoonDesc')}
                 </div>
               </div>
             ) : (
               <>
-                <div className="cm-pane-label">{active.name} 模板</div>
+                <div className="cm-pane-label">{t('modals.templatesOf', { name: active.name })}</div>
                 <div className="cm-grid">
                   <button className="cm-card cm-card-blank" onClick={blank}>
                     <span className="cm-card-ico">
                       <FileText size={18} />
                     </span>
-                    <span className="cm-card-name">空白文档</span>
-                    <span className="cm-card-desc">从一张白纸开始</span>
+                    <span className="cm-card-name">{t('modals.blankDoc')}</span>
+                    <span className="cm-card-desc">{t('modals.blankDocDesc')}</span>
                   </button>
 
                   {companyTemplates.map((t) => (

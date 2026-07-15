@@ -2,7 +2,7 @@
 // 纯逻辑在 core.ts（可移植进真app）；这里只做 React/DOM/存储的胶水。
 import { useMemo } from 'react'
 import { create } from 'zustand'
-import { normalizeLangPref, effectiveLang, makeT } from './core'
+import { normalizeLangPref, effectiveLang, makeT, configureI18n, setActiveLang, getActiveLang, t as coreT } from './core'
 import type { LangPref, Lang, Dict, TFunc } from './types'
 
 import zhCommon from './zh/common'
@@ -52,6 +52,9 @@ const EN: Dict = merge(
 // 供扫描门/一致性检查读（不参与运行时）。
 export const DICTS = { zh: ZH, en: EN }
 
+// 把合并好的字典推进 core（模块 init 时一次），让纯模块的 imperative t() 拿得到文案。
+configureI18n(ZH, EN)
+
 function systemLocale(): string | null {
   return typeof navigator !== 'undefined' ? navigator.language : null
 }
@@ -86,12 +89,14 @@ interface LangState {
 export const useLang = create<LangState>((set) => {
   const pref = readPref()
   const lang = effectiveLang(pref, systemLocale())
+  setActiveLang(lang) // 同步进 core，让 imperative t() 一开始就对
   return {
     pref,
     lang,
     setPref: (p) => {
       writePref(p)
       const l = effectiveLang(p, systemLocale())
+      setActiveLang(l)
       applyLang(l)
       set({ pref: p, lang: l })
     },
@@ -104,16 +109,14 @@ export function useT(): TFunc {
   return useMemo(() => makeT(ZH, EN, lang), [lang])
 }
 
-// 非 React 调用方用（zustand store 里的 toast / 磁盘默认名 / lib 函数）：读当前生效语言、即时求值。
-// 不订阅——这些地方本就在事件/动作里一次性调用，不需要响应式。
-export function t(key: string, params?: Record<string, string | number>): string {
-  return makeT(ZH, EN, useLang.getState().lang)(key, params)
-}
-export function currentLang(): Lang {
-  return useLang.getState().lang
-}
+// 非 React 调用方用（store 里的 toast / 磁盘默认名 / lib 函数）：读当前生效语言、即时求值，不订阅。
+// 委托给 core 的纯 t（core 的 _lang 由上面 setActiveLang 同步）——纯模块可直接 import from './core' 免 React。
+export const t = coreT
+export const currentLang = getActiveLang
 
-// 首屏在 render 前调（main.tsx），把 <html lang> 设对。
+// 首屏在 render 前调（main.tsx），把 <html lang> 设对 + core 语言就位。
 export function initLang(): void {
-  applyLang(effectiveLang(readPref(), systemLocale()))
+  const lang = effectiveLang(readPref(), systemLocale())
+  setActiveLang(lang)
+  applyLang(lang)
 }

@@ -31,3 +31,24 @@ export function makeT(zh: Dict, en: Dict, lang: Lang): TFunc {
     return s
   }
 }
+
+// ---- 模块级当前状态 + 纯 imperative t ----
+// index.ts（React 外壳）在启动/切换语言时把 dict 和当前语言推进来；这样**纯逻辑模块**（如 schema 校验器、
+// 真 app 的 vanilla renderer / Electron 主进程）能直接 `import { t } from './core'` 拿当前语言翻译，
+// 不必 import React 外壳（index.ts 会连带引入 react+zustand）。未 configure 时字典空 → t 回退显示 key 名。
+let _zh: Dict = {}
+let _en: Dict = {}
+let _lang: Lang = 'zh'
+export function configureI18n(zh: Dict, en: Dict): void {
+  _zh = zh
+  _en = en
+}
+export function setActiveLang(lang: Lang): void {
+  _lang = lang
+}
+export function getActiveLang(): Lang {
+  return _lang
+}
+export function t(key: string, params?: Record<string, string | number>): string {
+  return makeT(_zh, _en, _lang)(key, params)
+}

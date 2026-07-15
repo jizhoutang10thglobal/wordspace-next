@@ -1,2 +1,222 @@
-// editor 命名空间文案（提取时填）。
-export default {}
+// editor 命名空间文案（提取时填）。原文照搬、一字不改。
+export default {
+  // 块类型 / 斜杠 / 转为 菜单标签
+  text: '正文',
+  heading1: '标题 1',
+  heading2: '标题 2',
+  heading3: '标题 3',
+  bulletedList: '无序列表',
+  numberedList: '编号列表',
+  todoList: '待办列表',
+  quote: '引用',
+  callout: '提示',
+  table: '表格',
+  code: '代码',
+  image: '图片',
+  divider: '分隔线',
+  slashDoclink: '🔗 链接到文档',
+  slashAi: '✦ AI 生成（开发中）',
+
+  // 图片块
+  captionPlaceholder: '图片说明',
+  addCaption: '加说明',
+
+  // 块行
+  textPlaceholder: '输入正文,或按 / 插入',
+  addRow: '+ 加一行',
+  deleteRow: '删除此行',
+  blockGripTitle: '拖动重排 · 点击打开菜单',
+
+  // 分页
+  pageN: '第 {n} 页',
+
+  // 文档头
+  unsavedDraft: '未保存的草稿',
+  docFallback: '文档',
+  editedBy: '{name} 编辑于 {time}',
+
+  // Canvas 提示 / 弹窗 / toast
+  imgTooLarge: '图片太大：压缩后仍超过 1.5MB 上限',
+  imgUnsupported: '不支持的图片格式',
+  imgDecodeFail: '图片无法解码',
+  createNamed: '新建「{name}」',
+  urlLink: '网址链接…',
+  linkAddressPrompt: '链接地址',
+  untitledDoc: '无标题文档',
+  createdAndLinked: '已新建「{name}」并链接',
+  createdNamed: '已新建「{name}」',
+  dropImageOnly: '只支持拖入图片文件（png / jpg / webp / gif / avif）',
+  crossFolderLink: '跨文件夹的链接暂不支持——把文件拖进同一个文件夹的文档里',
+  noTextBlock: '这篇文档没有可放链接的文字块',
+  linkGone: '链接已不在当前文档，未能重新指向',
+  repointedTo: '已重新指向 {path}',
+  emptyDoc: '从左侧选择一篇文档,或新建一篇。',
+  unsavedNewDoc: '未保存的新文档 · ⌘S（或右上角「保存」）存进当前空间',
+  localHtmlFile: '这是一个本地 HTML 文件 · {path}',
+
+  // 格式工具栏
+  turnIntoTitle: '转换块类型',
+  turnInto: '转为',
+  bold: '加粗',
+  italic: '斜体',
+  underline: '下划线',
+  strikethrough: '删除线',
+  inlineCode: '行内代码',
+  textColor: '文字颜色',
+  highlight: '背景高亮',
+  link: '链接',
+  askAiTitle: '让 AI 重排这一块（开发中）',
+
+  // 链接预览 / 断链修复卡
+  linkTargetMissing: '链接目标不存在',
+  targetMovedHint: '目标可能被移动、改名，或已删除。',
+  repointTo: '重新指向 {path}',
+  createInDir: '在 {dir} 新建「{name}」',
+  rootDir: '根目录',
+  nonDocFileHint: '非文档文件，打开后转交系统对应程序。',
+
+  // 文档内查找
+  findInDoc: '在文档中查找',
+  noResults: '无结果',
+  prevMatchTitle: '上一个 (Shift+Enter)',
+  prevMatch: '上一个匹配',
+  nextMatchTitle: '下一个 (Enter)',
+  nextMatch: '下一个匹配',
+  closeFindTitle: '关闭 (Esc)',
+  closeFind: '关闭查找',
+
+  // 文档 … 菜单
+  exportPdf: '导出为 PDF',
+  exportWord: '导出为 Word(.docx)',
+  exportPptx: '导出为演示文稿(.pptx)',
+  pageSetupMenu: '页面设置…',
+  linkCopied: '链接已复制',
+  copyLink: '复制链接',
+
+  // 块操作菜单
+  turnIntoText: '转为正文',
+  turnIntoHeading: '转为标题',
+  turnIntoQuote: '转为引用',
+  insertBelow: '在下方插入',
+
+  // AI 占位弹窗
+  aiComingTitle: 'AI 功能开发中',
+  aiComingDesc: '「让 AI 生成 / 重排这一块」即将上线,敬请期待。',
+  gotIt: '知道了',
+
+  // 提及菜单
+  linkToDoc: '链接到文档',
+  mentionQuerySuffix: '：“{query}”',
+  mentionFilterHint: '（输入文字筛选）',
+  noMatchingDoc: '没有匹配的文档',
+
+  // 反向链接
+  backlinkCount: '{n} 篇文档链接到这里',
+
+  // 斜杠菜单
+  noMatch: '没有匹配项',
+
+  // 基础编辑器
+  preview: '预览',
+  nonconformNotice: '该文件不符合 Wordspace Schema，仅支持基础编辑。',
+  deleteBlockTitle: '删除此块 (Delete)',
+  deleteBlock: '删除此块',
+  clearFormat: '清除格式',
+
+  // PDF 查看器（示意内容）
+  readonlyPdf: 'PDF · 只读',
+  pdfEyebrow: 'TENTH GLOBAL · 报告',
+  pdfMeta1: '2026 年 6 月 · 第 1 页 / 共 2 页',
+  pdfIntro: '这是一份 PDF 文档。Wordspace 作为浏览器,可以直接在标签页里阅读它,不用切到别的程序。PDF 是只读的,需要编辑时再用默认程序打开。',
+  pdfOverview: '概述',
+  pdfOverviewBody: '本季度核心业务保持稳健增长,新签客户与复购同步提升。下面是关键指标与各业务线的分项说明。',
+  pdfChartCap: '图 1 · 各业务线季度表现',
+  pdfBreakdown: '分项说明',
+  pdfItem1: '咨询交付:现金流稳定,毛利率维持在 40% 以上',
+  pdfItem2: '培训与内容:方法论持续沉淀,转化率提升',
+  pdfItem3: 'AI 产品:从内部工具孵化,进入验证阶段',
+  pdfClosing: '详细数据见附录。本页为示意内容,用于演示 PDF 在 Wordspace 中的阅读体验。',
+  pdfMeta2: '第 2 页 / 共 2 页',
+
+  // 图片查看器
+  readonlyImage: '图片 · 只读',
+
+  // Markdown 源码栏
+  mdSource: 'Markdown 源码',
+  mdLive: '实时',
+  mdSourceHint: '这是当前文档的 Markdown 后端（块模型 → .md）。在左边编辑，这里实时更新——证明块模型 ↔ Markdown 双向可逆。',
+
+  // 查找文件面板
+  findFile: '查找文件',
+  findFilePlaceholder: '按文件名查找…',
+  noMatchingFile: '没有匹配的文件',
+
+  // 页面设置
+  pageSetupTitle: '页面设置',
+  pageSetupSub: '「{title}」· 分页显示与导出 PDF 的纸张版式',
+  pagedDoc: '分页文档',
+  pagedDocNote: '像 Word 那样按纸张分页显示，导出 PDF 同版式',
+  paper: '纸张',
+  orientation: '方向',
+  portrait: '纵向',
+  landscape: '横向',
+  margins: '边距',
+  marginsAria: '边距预设',
+  custom: '自定义',
+  marginTop: '上',
+  marginBottom: '下',
+  marginLeft: '左',
+  marginRight: '右',
+  pageNumbers: '导出 PDF 页脚页码',
+  pageNumbersNote: '形如「2 / 5」，居中页脚',
+
+  // 边距预设（page.ts）
+  marginNormal: '普通',
+  marginNarrow: '窄',
+  marginWide: '宽',
+
+  // Schema 校验违规（title + detail）
+  vParseTitle: '无法解析为 HTML',
+  vParseDetail: '输入不是可解析的 HTML 文档。',
+  vScriptTitle: '含 <script> 脚本',
+  vScriptDetail: 'Schema 文档不跑文档 JS（iframe 无 allow-scripts），任何 <script> 都不符合。',
+  vEmbedTitle: '含 <{tag}> 嵌入',
+  vEmbedDetail: '受限范式不允许 iframe/object/embed 这类活嵌入元素。',
+  vBaseTitle: '含 <base>',
+  vBaseDetail: '骨架禁止 <base>（会改写所有相对链接的解析）。',
+  vExternalCssTitle: '含外链样式表 <link>',
+  vExternalCssDetail: '装饰样式属于 Template，不进 Schema 文档；外链 CSS 不允许。',
+  vAuthorStyleTitle: '含作者排版 <style>',
+  vAuthorStyleDetail: '显示按 .html 原生、装饰=Template；除编辑器托管的语义 CSS（data-ws-schema-css）外，作者 <style> 不在 Schema 内。',
+  vFormTitle: '含表单元素',
+  vFormDetail: '<form>/<input>/<button> 等表单控件不在 Schema #1 的块集合里。',
+  vHeadingMaxTitle: '含 <{tag}> 标题',
+  vHeadingMaxDetail: 'Heading 封顶 h4；h5/h6 不符合 Schema（不静默压成 h4，走基础编辑）。',
+  vPositioningTitle: '用了绝对定位',
+  vPositioningDetail: '所有块留在文档流、能 reflow；绝不写 position:absolute/fixed。',
+  vBlockStyleTitle: '块上写了 style 属性',
+  vBlockStyleDetail: '块级元素不写 style（颜色等走固定 class 调色板 + data-ws-schema-css）；内联 style 不符合。',
+  vInlineHandlerTitle: '含 on* 事件处理器',
+  vInlineHandlerDetail: '不跑文档 JS：on click/onload 等内联事件属性不允许。',
+  vMergedCellsTitle: '表格有合并单元格',
+  vMergedCellsDetail: '禁 colspan/rowspan（像 Notion，保持矩形表）。',
+  vNestedTableTitle: '表格里嵌套了表格',
+  vNestedTableDetail: '单元格不可嵌块/表，更不能嵌套表格。',
+  vCellBlockTitle: '单元格里塞了块级内容',
+  vCellBlockDetail: '表格单元格 = phrasing-only（纯文字 + 行内标记）。',
+  vListLiTitle: '列表直接子不是 <li>',
+  vListLiDetail: 'ul/ol 的直接子只能是 <li>；裸文本/其它标签直挂列表不符合。',
+  vInlineWrapsBlockTitle: '行内元素包了块级内容',
+  vInlineWrapsBlockDetail: '行内标记里不能放块级元素（如 <a> 包 <h2>）。',
+  vDegenerateTitle: 'body 不是扁平挂块',
+  vDegenerateDetail: '顶层用 <{tag}> 等布局容器包了多层结构（canonical = 扁平直接挂块、blockRoot 唯一）；多容器嵌套不符合。',
+  vNoMarkerTitle: '缺 wordspace-schema 标记',
+  vNoMarkerDetail: 'marker 只是快速线索（非权威）。手写的合法文档也可以没有它，不影响合规判定。',
+  // 新建块的默认占位内容（插入时按当前语言生成，同磁盘默认名的口径；已存文档内容不变）。
+  newHeading: '新标题',
+  newListItem: '列表项',
+  newQuote: '引用内容',
+  newCallout: '提示内容',
+  tableColumn: '列 {n}',
+  tableCell: '单元格',
+}

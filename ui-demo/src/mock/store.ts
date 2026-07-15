@@ -19,6 +19,7 @@ import type {
   Workspace,
 } from '../types'
 import { useUI } from './ui'
+import { t } from '../i18n'
 import { rewriteDocsForMoves, invertMoves, dirOf } from '../lib/links'
 import {
   ME_ID,
@@ -296,6 +297,7 @@ function sampleConnectedFolder(
     const file: FileEntry = { rootId, path, kind: 'html', docId: id }
     return { doc, file }
   }
+  // i18n-exempt-start —— 演示用「连接的文件夹」种子数据（假文件树 + 文档正文），同 mock/seed.ts 类，不翻。
   const home = mkHtml('首页.html', '首页', [
     '这是从你刚选的文件夹里加载进来的本地文档。在 Wordspace 里编辑它,就是在改硬盘上这份 .html 文件。',
     '左边把鼠标移到任意文件夹上,点那个 + 就能在该文件夹里新建一篇并直接打开编辑;右键文件夹还能改名 / 新建子文件夹 / 删除。',
@@ -315,6 +317,7 @@ function sampleConnectedFolder(
     { rootId, path: '文档/会议纪要.docx', kind: 'word' },
   ]
   const dirs: DirEntry[] = ['方案', '素材', '文档'].map((p) => ({ rootId, path: p }))
+  // i18n-exempt-end
   return { docs, files, dirs }
 }
 
@@ -343,12 +346,13 @@ const cloneDocs = (docs: Doc[]): Doc[] =>
 // 单元格可直接 contentEditable）；代码用 <div class="ws-code-line"> 按行元素（Phase 2 可对行加 margin 推挤）。
 const TD = 'border:1px solid #e4e6e9;padding:6px 10px;'
 const TH = TD + 'background:#f5f5f4;text-align:left;'
-const DEFAULT_TABLE_HTML =
+// 默认表格：单元格占位文案按当前语言生成（新建时求值，故用函数而非 const，否则模块 init 时冻结语言）。
+const defaultTableHtml = (): string =>
   `<table style="border-collapse:collapse;width:100%;font-size:14px;">` +
-  `<thead><tr><th style="${TH}">列 1</th><th style="${TH}">列 2</th></tr></thead>` +
+  `<thead><tr><th style="${TH}">${t('editor.tableColumn', { n: 1 })}</th><th style="${TH}">${t('editor.tableColumn', { n: 2 })}</th></tr></thead>` +
   `<tbody>` +
-  `<tr><td style="${TD}">单元格</td><td style="${TD}">单元格</td></tr>` +
-  `<tr><td style="${TD}">单元格</td><td style="${TD}">单元格</td></tr>` +
+  `<tr><td style="${TD}">${t('editor.tableCell')}</td><td style="${TD}">${t('editor.tableCell')}</td></tr>` +
+  `<tr><td style="${TD}">${t('editor.tableCell')}</td><td style="${TD}">${t('editor.tableCell')}</td></tr>` +
   `</tbody></table>`
 const DEFAULT_CODE_HTML =
   `<div class="ws-code-line">function hello() {</div>` +
@@ -357,15 +361,15 @@ const DEFAULT_CODE_HTML =
 
 const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
   const base: Record<BlockType, Partial<Block>> = {
-    heading: { level: 2, html: '新标题' },
+    heading: { level: 2, html: t('editor.newHeading') },
     text: { html: '' },
-    list: { html: '<li>列表项</li>' },
-    quote: { html: '引用内容' },
+    list: { html: `<li>${t('editor.newListItem')}</li>` },
+    quote: { html: t('editor.newQuote') },
     image: { html: '' }, // 图片块永远带 html 种子创建（imageBlockHtml），空串只是防御缺省
     divider: { html: '' },
-    callout: { html: '提示内容' },
+    callout: { html: t('editor.newCallout') },
     embed: { html: '' },
-    table: { html: DEFAULT_TABLE_HTML },
+    table: { html: defaultTableHtml() },
     code: { html: DEFAULT_CODE_HTML },
   }
   const block = { id: uid('b'), type, ...base[type] } as Block
@@ -382,6 +386,7 @@ export const useStore = create<State>()(
 
       meId: ME_ID,
       // 标签页是全局单一集合（不再按空间分组）：置顶组 + 普通组，全部同时可见。
+      // i18n-exempt-start —— 开局种子标签页（演示文档/网页标题），演示数据不翻。
       tabs: [
         // 置顶 (pinned)
         { id: 'tab-1', docId: 'd-handbook', kind: 'doc', pinned: true, title: '员工手册', url: 'https://team.tenthglobal.com/handbook' },
@@ -393,6 +398,7 @@ export const useStore = create<State>()(
         // 不可编辑，用户在上面试 @/工具栏/拖拽会全体没反应（Colin 实测）
         { id: 'tab-local', kind: 'doc', docId: 'd-r2-plan', title: '产品规划.html', url: '产品规划.html', fileName: '产品规划.html', fileKind: 'html', rootId: 'r-docs' },
       ],
+      // i18n-exempt-end
       activeTabId: 'tab-local',
       closedTabs: [],
       toasts: [],
@@ -486,8 +492,8 @@ export const useStore = create<State>()(
           docs: rewrite.changed.length ? rewrite.docs : s.docs,
         }))
         if (rewrite.changed.length) {
-          get().toast(`已更新 ${rewrite.changed.length} 篇文档里的链接`, 'success', {
-            label: '撤销',
+          get().toast(t('sidebar.linksUpdated', { count: rewrite.changed.length }), 'success', {
+            label: t('common.undo'),
             // 撤销 = 名字改回 + **反向再重写一遍**（只动 href，不回滚用户内容——存 blocks 快照整体
             // 回滚会把撤销窗口内用户的编辑一起吞掉，对抗审查抓到的坑）。执行前校验前提：文件还在
             // 新路径、旧路径没被占——否则已被后续操作覆盖，放弃并明说，不做半套撤销。
@@ -496,7 +502,7 @@ export const useStore = create<State>()(
               const still = s.files.some((f) => f.rootId === file.rootId && f.path === newPath)
               const occupied = s.files.some((f) => f.rootId === file.rootId && f.path === file.path)
               if (!still || occupied) {
-                s.toast('文件已被后续操作改动，无法撤销这次链接更新', 'neutral')
+                s.toast(t('sidebar.undoRenameFailed'), 'neutral')
                 return
               }
               const back = rewriteDocsForMoves(s.docs, s.files, file.rootId, invertMoves(moved))
@@ -545,8 +551,8 @@ export const useStore = create<State>()(
           return { files, docs, tabs, activeTabId }
         })
         const name = file.path.split('/').pop() ?? file.path
-        get().toast(`已删除「${name}」`, 'neutral', {
-          label: '撤销',
+        get().toast(t('sidebar.deletedName', { name }), 'neutral', {
+          label: t('common.undo'),
           run: () =>
             set((st) => ({
               files: [...st.files, file],
@@ -563,7 +569,7 @@ export const useStore = create<State>()(
       createSubfolder: (rootId, dirPath) => {
         const root = get().roots.find((r) => r.id === rootId)
         if (!root || root.missing) return
-        const path = uniqueDirPath(get().files, get().dirs, rootId, dirPath, '新建文件夹')
+        const path = uniqueDirPath(get().files, get().dirs, rootId, dirPath, t('sidebar.newFolder'))
         set((s) => ({ dirs: [...s.dirs, { rootId, path }] }))
       },
 
@@ -614,7 +620,7 @@ export const useStore = create<State>()(
         }))
         if (rewrite.changed.length) {
           // 文件夹改名本身没有撤销（与现状一致），这里只告知链接已跟上
-          get().toast(`已更新 ${rewrite.changed.length} 篇文档里的链接`, 'success')
+          get().toast(t('sidebar.linksUpdated', { count: rewrite.changed.length }), 'success')
         }
       },
 
@@ -662,10 +668,10 @@ export const useStore = create<State>()(
         const leaf = dirPath.split('/').pop() ?? dirPath
         const cnt = removedFiles.length
         get().toast(
-          cnt ? `已删除文件夹「${leaf}」(${cnt} 个文件)` : `已删除文件夹「${leaf}」`,
+          cnt ? t('sidebar.folderDeletedWithCount', { name: leaf, count: cnt }) : t('sidebar.folderDeleted', { name: leaf }),
           'neutral',
           {
-            label: '撤销',
+            label: t('common.undo'),
             run: () =>
               set((st) => ({
                 files: [...st.files, ...removedFiles],
@@ -708,17 +714,17 @@ export const useStore = create<State>()(
         }))
         // 撤销 = 移回去 + 反向重写（与 renameFile 同一套语义——同一个承诺同一种兑现）
         get().toast(
-          `已移动「${leaf}」到 ${destDir || '根目录'}` +
-            (rewrite.changed.length ? ` · 已更新 ${rewrite.changed.length} 篇文档里的链接` : ''),
+          t('sidebar.movedTo', { name: leaf, dest: destDir || t('sidebar.rootDir') }) +
+            (rewrite.changed.length ? t('sidebar.movedLinksSuffix', { count: rewrite.changed.length }) : ''),
           'neutral',
           {
-            label: '撤销',
+            label: t('common.undo'),
             run: () => {
               const s = get()
               const still = s.files.some((f) => f.rootId === file.rootId && f.path === newPath)
               const occupied = s.files.some((f) => f.rootId === file.rootId && f.path === file.path)
               if (!still || occupied) {
-                s.toast('文件已被后续操作改动，无法撤销移动', 'neutral')
+                s.toast(t('sidebar.undoMoveFailed'), 'neutral')
                 return
               }
               const back = rewriteDocsForMoves(s.docs, s.files, file.rootId, invertMoves(moved))
@@ -737,7 +743,7 @@ export const useStore = create<State>()(
       },
 
       newBrowserTab: () => {
-        const tab: Tab = { id: uid('tab'), kind: 'web', title: '新标签页', url: '' }
+        const tab: Tab = { id: uid('tab'), kind: 'web', title: t('sidebar.newTabTitle'), url: '' }
         set((s) => ({ tabs: [...s.tabs, tab], activeTabId: tab.id }))
       },
 
@@ -759,7 +765,7 @@ export const useStore = create<State>()(
           files: [...s.files, ...sample.files],
           dirs: [...s.dirs, ...sample.dirs],
         }))
-        get().toast(`已打开文件夹「${root.name}」`, 'success')
+        get().toast(t('sidebar.folderOpened', { name: root.name }), 'success')
       },
 
       // 父目录吸收（嵌套裁决：打开一个「包住了已打开子根」的父目录时，把子根并入父根，避免同一批文件两次出现）。
@@ -800,7 +806,7 @@ export const useStore = create<State>()(
             activeTabId,
           }
         })
-        get().toast(`「${root.name}」已并入，含原来的子文件夹`, 'success')
+        get().toast(t('sidebar.folderAbsorbed', { name: root.name }), 'success')
       },
 
       // 从侧栏移除一个根：文件/目录/标签页整组撤走，磁盘文件不动（remove ≠ delete）。
@@ -840,8 +846,8 @@ export const useStore = create<State>()(
             activeTabId,
           }
         })
-        get().toast(`已移除「${root.name}」（磁盘文件不受影响）`, 'neutral', {
-          label: '撤销',
+        get().toast(t('sidebar.rootRemoved', { name: root.name }), 'neutral', {
+          label: t('common.undo'),
           run: () =>
             set((st) => {
               const roots = [...st.roots]
@@ -880,7 +886,7 @@ export const useStore = create<State>()(
           files: sample ? [...s.files, ...sample.files] : s.files,
           dirs: sample ? [...s.dirs, ...sample.dirs] : s.dirs,
         }))
-        get().toast(`「${root.name}」已重新连接`, 'success')
+        get().toast(t('sidebar.rootReconnected', { name: root.name }), 'success')
       },
 
       closeTab: (tabId) =>
@@ -1048,7 +1054,7 @@ export const useStore = create<State>()(
           }
         }),
 
-      createDoc: (folderId, kind = 'doc', title = '无标题文档', target, unsaved = false) => {
+      createDoc: (folderId, kind = 'doc', title = t('sidebar.untitledDoc'), target, unsaved = false) => {
         const id = uid('d')
         // 目标根 = target 指定的根（且非失联）；没有则落云盘（folderId=我的草稿）。
         const root = target?.rootId ? get().roots.find((r) => r.id === target.rootId && !r.missing) : undefined
@@ -1067,7 +1073,7 @@ export const useStore = create<State>()(
           visibility: 'private',
           localPath: inFolder
             ? `${root!.path}/${fileName}`
-            : `~/Wordspace/我的草稿/${title}.html`,
+            : `~/Wordspace/我的草稿/${title}.html`, // i18n-exempt（mock 云盘草稿路径，演示数据）
           updatedAt: Date.now(),
           updatedBy: get().meId,
           collaborators: [get().meId],
@@ -1092,7 +1098,7 @@ export const useStore = create<State>()(
       createLinkedDoc: (rootId, dir, title, ext = '.html') => {
         const root = get().roots.find((r) => r.id === rootId && !r.missing)
         if (!root) return null
-        const clean = cleanName(title) || '无标题文档'
+        const clean = cleanName(title) || t('sidebar.untitledDoc')
         const path = uniqueFileInDir(get().files, rootId, dir, clean, ext)
         const id = uid('d')
         const doc: Doc = {
@@ -1122,7 +1128,7 @@ export const useStore = create<State>()(
         const tab = st.tabs.find((t) => t.id === st.activeTabId)
         const doc = tab?.docId ? st.getDoc(tab.docId) : undefined
         if (!doc || !doc.unsaved) {
-          st.toast('已保存', 'success')
+          st.toast(t('sidebar.saved'), 'success')
           return
         }
         useUI.getState().openSave(doc.id)
@@ -1146,11 +1152,11 @@ export const useStore = create<State>()(
             ),
             files: [...s.files, file],
           }))
-          st.toast(`已保存到 ${root.name}${dir ? ` / ${dir}` : ''}`, 'success')
+          st.toast(t('sidebar.savedTo', { where: `${root.name}${dir ? ` / ${dir}` : ''}` }), 'success')
         } else {
           // 没有打开任何文件夹的极端情形——只清 unsaved，不落盘。
           set((s) => ({ docs: s.docs.map((d) => (d.id === docId ? { ...d, unsaved: false } : d)) }))
-          st.toast('已保存', 'success')
+          st.toast(t('sidebar.saved'), 'success')
         }
       },
 
@@ -1178,7 +1184,7 @@ export const useStore = create<State>()(
           visibility: 'private',
           localPath: inFolder
             ? `${root!.path}/${fileName}`
-            : `~/Wordspace/我的草稿/${tpl.name}.html`,
+            : `~/Wordspace/我的草稿/${tpl.name}.html`, // i18n-exempt（mock 云盘草稿路径，演示数据）
           updatedAt: Date.now(),
           updatedBy: get().meId,
           collaborators: [get().meId],
@@ -1195,7 +1201,7 @@ export const useStore = create<State>()(
           set((s) => ({ docs: [doc, ...s.docs] }))
           get().openDoc(id)
         }
-        get().toast(`已从模板「${tpl.name}」创建`, 'success')
+        get().toast(t('sidebar.createdFromTemplate', { name: tpl.name }), 'success')
         return id
       },
 
@@ -1218,7 +1224,7 @@ export const useStore = create<State>()(
         set({ aiBusy: true })
         await sleep(1700)
         const id = uid('d')
-        const title = prompt.slice(0, 18) || 'AI 生成的文档'
+        const title = prompt.slice(0, 18) || t('sidebar.aiGeneratedDoc')
         const root = target?.rootId ? get().roots.find((r) => r.id === target.rootId && !r.missing) : undefined
         const inFolder = !!root
         const dir = target?.dir ?? ''
@@ -1231,6 +1237,7 @@ export const useStore = create<State>()(
           emoji: '✨',
           kind: 'doc',
           folderId: inFolder ? root!.id : folderId,
+          // i18n-exempt-start —— 假 AI 生成的文档正文（演示数据；真 AI 输出是用户内容，本就不该按 UI 语言翻）。
           blocks: [
             { id: uid('b'), type: 'heading', level: 1, html: title },
             { id: uid('b'), type: 'text', html: '这是 Wordspace 根据你的描述生成的初稿。下面的结构和文字都可以直接改,或再让 AI 调整。' },
@@ -1239,10 +1246,11 @@ export const useStore = create<State>()(
             { id: uid('b'), type: 'list', html: '<li>第一点</li><li>第二点</li><li>第三点</li>' },
             { id: uid('b'), type: 'callout', html: '需要更正式的版式,可以让 AI 把某一段做成带设计的区域。' },
           ],
+          // i18n-exempt-end
           visibility: 'private',
           localPath: inFolder
             ? `${root!.path}/${fileName}`
-            : `~/Wordspace/我的草稿/${title}.html`,
+            : `~/Wordspace/我的草稿/${title}.html`, // i18n-exempt（mock 云盘草稿路径，演示数据）
           updatedAt: Date.now(),
           updatedBy: get().meId,
           collaborators: [get().meId],
@@ -1255,18 +1263,20 @@ export const useStore = create<State>()(
           set((s) => ({ docs: [doc, ...s.docs], aiBusy: false }))
           get().openDoc(id)
         }
-        get().toast('AI 已生成初稿', 'success')
+        get().toast(t('sidebar.aiDraftCreated'), 'success')
         return id
       },
 
       redesignBlock: async (docId, blockId, prompt) => {
         set({ aiBusy: true })
         await sleep(1500)
+        /* i18n-exempt-start —— 假 AI 重新设计输出的装饰块（演示数据，用户文档内容不翻）。 */
         const designed = `<div style="background:linear-gradient(135deg,#16307a,#2f6fe0 60%,#5b93f2);color:#fff;border-radius:12px;padding:40px 36px;">
           <div style="font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.85;">由 AI 重新设计</div>
           <div style="font-size:28px;font-weight:800;margin:10px 0 8px;">${prompt || '重点板块'}</div>
           <div style="font-size:15px;opacity:.92;max-width:460px;line-height:1.6;">这一块被 AI 改成了带背景和版式的设计区域。文字仍可就地编辑,整块也能继续让 AI 调整。</div>
         </div>`
+        /* i18n-exempt-end */
         set((s) => ({
           aiBusy: false,
           docs: s.docs.map((d) =>
@@ -1283,7 +1293,7 @@ export const useStore = create<State>()(
                 },
           ),
         }))
-        get().toast('AI 已重排这一块', 'success')
+        get().toast(t('sidebar.aiBlockRestyled'), 'success')
       },
 
       setVisibility: (docId, v) =>
@@ -1294,7 +1304,7 @@ export const useStore = create<State>()(
       publishDoc: async (docId, v) => {
         const doc = get().getDoc(docId)
         if (!doc) return
-        get().toast('正在部署到 ' + get().workspace.deployTarget + ' …', 'progress')
+        get().toast(t('sidebar.deploying', { target: get().workspace.deployTarget }), 'progress')
         await sleep(1600)
         const slug = doc.title.replace(/\s+/g, '-')
         const url =
@@ -1315,7 +1325,7 @@ export const useStore = create<State>()(
         }))
         get().dismissAllProgress()
         get().toast(
-          v === 'public' || v === 'internal' ? '已发布,链接已生成' : '可见范围已更新',
+          v === 'public' || v === 'internal' ? t('sidebar.published') : t('sidebar.visibilityUpdated'),
           'success',
         )
       },
@@ -1333,10 +1343,10 @@ export const useStore = create<State>()(
 
       exportDoc: async (docId, format) => {
         const labels = { pdf: 'PDF', docx: 'Word', pptx: 'PPT' }
-        get().toast(`正在导出为 ${labels[format]} …`, 'progress')
+        get().toast(t('sidebar.exporting', { format: labels[format] }), 'progress')
         await sleep(1400)
         get().dismissAllProgress()
-        get().toast(`已导出为 ${labels[format]}`, 'success')
+        get().toast(t('sidebar.exported', { format: labels[format] }), 'success')
       },
 
       setPresence: (p) => set({ presence: p }),
@@ -1363,7 +1373,7 @@ export const useStore = create<State>()(
 
       resetAll: () => {
         set({ ...freshData() })
-        get().toast('已重置为初始数据', 'neutral')
+        get().toast(t('sidebar.resetDone'), 'neutral')
       },
 
       // internal helper exposed on the object for convenience

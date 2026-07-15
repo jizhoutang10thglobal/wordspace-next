@@ -3,6 +3,10 @@
 // There is no backend. Everything below lives in the browser (zustand + a
 // localStorage snapshot) and is mutated through the store in src/mock/store.ts.
 // ============================================================================
+// i18n：下面几个「显示标签」常量（可见性 / 外部程序 / 纸张名）用 getter 走 t()——
+// getter 让求值推迟到读取时（按当前语言出字、切语言即更新），且不改任何读取方（仍是
+// VISIBILITY_META[v].label 这样访问），也避免模块初始化期就调用 t()。
+import { t } from './i18n'
 
 export type Section = 'docs' | 'templates' | 'agents' | 'settings'
 
@@ -26,7 +30,7 @@ export const PAGE_FORMAT_META: Record<
   A4: { label: 'A4', size: '210 × 297 mm', widthPx: 794, ratio: 210 / 297 },
   A3: { label: 'A3', size: '297 × 420 mm', widthPx: 1123, ratio: 297 / 420 },
   A5: { label: 'A5', size: '148 × 210 mm', widthPx: 559, ratio: 148 / 210 },
-  letter: { label: '书信', size: '215 × 279 mm', widthPx: 816, ratio: 216 / 279 },
+  letter: { get label() { return t('misc.pageLetter') }, size: '215 × 279 mm', widthPx: 816, ratio: 216 / 279 },
 }
 
 export type BlockType =
@@ -150,11 +154,11 @@ export interface MountRoot {
  *  'html' 和 'md' 都在应用内编辑器打开（不外部），故排除。 */
 export const EXTERNAL_APP: Record<Exclude<FileKind, 'html' | 'md'>, string> = {
   word: 'Microsoft Word',
-  pdf: '预览',
-  image: '预览',
+  get pdf() { return t('misc.extPreview') },
+  get image() { return t('misc.extPreview') },
   sheet: 'Numbers',
   slides: 'Keynote',
-  other: '默认程序',
+  get other() { return t('misc.extDefaultApp') },
 }
 
 /** A simulated remote collaborator caret living inside the open document. */
@@ -202,27 +206,27 @@ export const VISIBILITY_META: Record<
   { label: string; short: string; desc: string; color: string }
 > = {
   private: {
-    label: '仅自己',
-    short: '私有',
-    desc: '只存在你的本地仓库,只有你能看到。',
+    get label() { return t('misc.visPrivateLabel') },
+    get short() { return t('misc.visPrivateShort') },
+    get desc() { return t('misc.visPrivateDesc') },
     color: 'var(--c-private)',
   },
   invited: {
-    label: '受邀协作者',
-    short: '协作',
-    desc: '邀请指定成员共同编辑或查看。',
+    get label() { return t('misc.visInvitedLabel') },
+    get short() { return t('misc.visInvitedShort') },
+    get desc() { return t('misc.visInvitedDesc') },
     color: 'var(--c-invited)',
   },
   internal: {
-    label: '公司内网',
-    short: '内网',
-    desc: '部署到公司内网,组织内成员可访问。',
+    get label() { return t('misc.visInternalLabel') },
+    get short() { return t('misc.visInternalShort') },
+    get desc() { return t('misc.visInternalDesc') },
     color: 'var(--c-internal)',
   },
   public: {
-    label: '互联网公开',
-    short: '公开',
-    desc: '生成公开地址,任何人都能打开,等同一处对外站点。',
+    get label() { return t('misc.visPublicLabel') },
+    get short() { return t('misc.visPublicShort') },
+    get desc() { return t('misc.visPublicDesc') },
     color: 'var(--c-public)',
   },
 }
