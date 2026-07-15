@@ -2006,10 +2006,14 @@
       const toggle = () => {
         const open = localStorage.getItem(key) !== '0'; // 默认展开
         localStorage.setItem(key, open ? '0' : '1');
-        renderZones();
+        renderZones(); // 全重建栏标 → 焦点会丢；把焦点还给重建后的新栏标（键盘用户连续折/展）
+        const zoneEl = document.getElementById(key === 'ws-pinned-open' ? 'sb-pinned' : 'sb-tabs');
+        const nh = zoneEl && zoneEl.querySelector('.sb-zone-head');
+        if (nh) nh.focus();
       };
       head.onclick = toggle;
-      head.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+      // 只在栏标自身获焦时才折叠——别拦截冒泡上来的 + 按钮键盘激活（否则键盘用户按 + 会折叠分区而非新建，审查 P3）。
+      head.onkeydown = (e) => { if (e.target === head && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(); } };
     }
     return head;
   }

@@ -688,3 +688,19 @@ test('U2 三栏折叠统一：置顶/标签页可折叠(默认展开)+计数+持
   await expect(page.locator('#sb-tabs')).not.toHaveClass(/is-open/); // 折叠态活过重启
   await expect(page.locator('#sb-tabs .sb-zone-list')).toHaveCount(0);
 });
+
+test('U2b 折叠栏标键盘无障碍：栏标 Enter 折叠、+ 按钮 Enter 不误折叠(审查 P3 回归门)', async () => {
+  await launch();
+  await openWebViaModal(base + '/');
+  await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/);
+  // 栏标本身聚焦按 Enter → 折叠（键盘可达的折叠）
+  await page.locator('#sb-tabs .sb-zone-head').evaluate((h) => h.focus());
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#sb-tabs')).not.toHaveClass(/is-open/);
+  await page.keyboard.press('Enter'); // 焦点仍在 head → 再折/展
+  await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/);
+  // 焦点移到「新建标签页」+ 按钮按 Enter → 绝不折叠（P3：+ 的键盘激活不能冒泡成折叠）
+  await page.locator('#sb-tabs .sb-zone-add').evaluate((b) => b.focus());
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#sb-tabs')).toHaveClass(/is-open/); // 关键：仍展开
+});
