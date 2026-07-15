@@ -14,6 +14,12 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-15 — v0.9.0 已发版（深色模式 + 探索测试 18 条修复）
+
+**是什么**：main 打 tag `v0.9.0` 已发版（gate 全量 e2e + macOS 签名公证 + Windows 全过，Release 页产物齐全含自动更新清单 latest*.yml）。本版 = 三态深色模式（浅/深/跟随系统，新功能，PR #209）+ AI 探索测试产出的 18 条文件树/浏览器修复（p1 错误页恢复 #201、浏览器批 7 条 #206、文件树/侧栏批 10 条 #207、补针对性门 #208）。版本 v0.8.4→0.9.0（有新功能走 minor）。
+**怎么 apply**：动 `src/renderer/browser.js` / `sidebar.js` / `shell.js` / `src/main/web-tabs.js` / `ipc.js` 前先 `/sync-main`——这几个共享核心本版被大改（18 条修复 + 深色），别基于旧代码动手。深色模式对文档内容做「屏幕反色但存盘字节不变」：改任何序列化/保存路径（serializeActiveDoc、WS2Serialize、md-adapter…）必须保证深色态**不污染磁盘字节**，否则回退浅色会脏。
+**来源**：tag v0.9.0；PR #201/#206/#207/#208/#209/#210
+
 ## 2026-07-15 — ui-demo 常驻 worktree 有 3+ 并发 session,必须各开独立 worktree
 
 **是什么**：ui-demo 常驻 worktree（.../wordspace-next-ui-demo）此刻被 3+ 个 session 同时抢（feat/ui-demo-doc-images 图片块 / feat/ui-demo-template-v1 用户自定义模板 / feat/ui-demo-company-templates）。实测撞车：我在里面 checkout 自己分支后,另一 session 把工作树切到 doc-images,我的未提交改动被带到他们分支、和他们 Canvas.tsx/image.ts 混一起,险些被 git add -A 一并提交。
