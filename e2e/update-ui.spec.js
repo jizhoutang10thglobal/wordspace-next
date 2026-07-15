@@ -93,7 +93,7 @@ test('自动路径：全程不弹面板，侧栏 pill 跟进度；就绪后 toas
   await sim({ type: 'downloaded', version: '8.8.8' });
   await expect(page.locator('#sb-update-txt')).toContainText('更新已就绪');
   // 低打扰提示：toast 出现且 action 是重启安装
-  await expect(page.locator('.sb-toast')).toContainText('新版本已就绪');
+  await expect(page.locator('.sb-toast', { hasText: '新版本已就绪' })).toBeVisible();
   await expect(page.locator('.sb-toast-action')).toHaveText('重启安装');
 
   const installBefore = (await simCalls()).install;

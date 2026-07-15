@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell, nativeTheme } = require('electron');
 const path = require('path');
 const { registerIpc } = require('./ipc');
+const appearanceStore = require('./appearance-store');
 const docWatcher = require('./doc-watcher');
 const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
@@ -107,10 +108,33 @@ function sendMenu(cmd) {
 // 看不到其他人的报告。别换成数据库页链接（那会暴露所有人的 bug）。
 const BUG_REPORT_URL = 'https://humble-blanket-79b.notion.site/11f77f0ceeb647f899bcbe2798963b42?pvs=105';
 
+// 外观三态的唯一枢纽：偏好持久化 + nativeTheme.themeSource（驱动 mac 窗框/系统菜单/对话框/网页标签，
+// R3/R6）+ 重建菜单勾选态 + 广播 renderer（chrome data-theme + ⋯菜单/settings 同步 + 切换过渡）。
+// ⚠ renderer chrome 走 data-theme 属性而非 prefers-color-scheme：Electron 里 themeSource 改变不 live 更新
+// 已加载 renderer 的 prefers-color-scheme（实测），故广播 effective 主题让 renderer 自己挂 data-theme。
+// 三入口（菜单栏 radio / ⋯菜单子菜单 / settings 面）都调这一个，状态永远一致。
+function effectiveTheme() {
+  return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+}
+function broadcastAppearance(pref) {
+  if (win && !win.isDestroyed()) win.webContents.send('appearance-changed', { pref, effective: effectiveTheme() });
+}
+function applyAppearance(pref) {
+  const p = appearanceStore.setPref(pref);
+  nativeTheme.themeSource = p; // 'system' | 'light' | 'dark'
+  buildMenu(); // 重建以更新「外观」radio 勾选
+  broadcastAppearance(p);
+  return p;
+}
+
 function buildMenu() {
+  const appearancePref = appearanceStore.getPref();
+  const appearanceItem = (label, value) => ({
+    label, type: 'radio', checked: appearancePref === value, click: () => applyAppearance(value),
+  });
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { label: 'AI 接入…', click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: '性能诊断…', click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { label: 'AI 接入…', click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: '外观', submenu: [appearanceItem('跟随系统', 'system'), appearanceItem('浅色', 'light'), appearanceItem('深色', 'dark')] }, { label: '性能诊断…', click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
     {
       label: '文件',
       submenu: [
@@ -295,6 +319,14 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    // 外观:启动读偏好 → 设 nativeTheme.themeSource(在 buildMenu/createWindow 前,让首个窗口首帧就对)。
+    appearanceStore.init(app.getPath('userData'));
+    nativeTheme.themeSource = appearanceStore.getPref();
+    ipcMain.handle('get-appearance', () => appearanceStore.getPref());
+    ipcMain.handle('get-effective-theme', () => effectiveTheme());
+    ipcMain.on('set-appearance', (_e, pref) => applyAppearance(pref));
+    // OS 主题变化（pref=system 时 shouldUseDarkColors 翻转）→ 重播 effective，让 renderer 实时跟随。
+    nativeTheme.on('updated', () => broadcastAppearance(appearanceStore.getPref()));
     registerIpc();
     buildMenu();
     createWindow();

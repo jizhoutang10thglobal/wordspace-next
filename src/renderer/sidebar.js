@@ -34,6 +34,47 @@
   const rootClosed = new Set(); // 收起的根（整节折叠，rootId）
   const colKey = (rootId, rel) => rootId + ':' + rel;
   const rootOf = (rootId) => rootsState.find((r) => r.id === rootId) || null;
+
+  // P3-07 树展开态持久化（缓存语义，rel 失效即弃）。存「偏离默认」的部分：目录默认收起→存被展开的目录 rel；
+  // 根默认展开→存被收起的根。防抖原子写（走 workspace.json 的既有 serialized 写）。失联/未加载根的展开态
+  // 用 persistedExpanded 沿用，别在别的根 toggle 触发的 save 里把它清空。
+  let persistedExpanded = {}; // rootId -> [rel...]（最近一次持久化的展开集，给失联/未加载根兜底）
+  function computeTreeState() {
+    const expandedByRoot = {};
+    for (const st of rootsState) {
+      if (st.tree) {
+        const rels = [];
+        (function w(nodes) { for (const n of nodes) if (n.isDir) { if (!collapsed.has(colKey(st.id, n.rel))) rels.push(n.rel); w(n.children || []); } })(st.tree);
+        expandedByRoot[st.id] = rels.slice(0, 500);
+      } else if (persistedExpanded[st.id]) {
+        expandedByRoot[st.id] = persistedExpanded[st.id]; // 失联/未加载：沿用上次，别丢
+      }
+    }
+    persistedExpanded = expandedByRoot;
+    const collapsedRoots = rootsState.filter((st) => rootClosed.has(st.id)).map((st) => st.id);
+    return { expandedByRoot, collapsedRoots };
+  }
+  function scheduleTreeStateSave() {
+    if (!window.ws2.wsSetTreeState) return; // 旧 preload 兜底
+    // 立即存（不防抖）——与 persistTabs 同步落盘一致。折叠/展开是点击频率、不是逐帧,一次 computeTreeState
+    // + 一次 IPC 可接受;而 400ms 防抖有「toggle 后立刻退出(<400ms)丢这次改动」的缺口（对抗审查 P3）。
+    window.ws2.wsSetTreeState(computeTreeState());
+  }
+  async function restoreTreeState() {
+    if (!window.ws2.wsGetTreeState) return;
+    let ts = null;
+    try { ts = await window.ws2.wsGetTreeState(); } catch (e) { return; }
+    if (!ts) return;
+    persistedExpanded = ts.expandedByRoot || {};
+    for (const rootId of Object.keys(persistedExpanded)) {
+      const st = rootOf(rootId);
+      if (!st || !st.tree) continue;
+      const existing = new Set();
+      (function w(nodes) { for (const n of nodes) if (n.isDir) { existing.add(n.rel); w(n.children || []); } })(st.tree);
+      for (const rel of persistedExpanded[rootId]) if (existing.has(rel)) collapsed.delete(colKey(rootId, rel)); // 默认全收起，把持久化展开的删掉；rel 失效即弃
+    }
+    for (const rootId of (ts.collapsedRoots || [])) if (rootOf(rootId)) rootClosed.add(rootId);
+  }
   const liveRootCount = () => rootsState.filter((r) => !r.missing).length;
 
   // 树节点出厂时不带根归属 → 装进 rootsState 前逐节点标 rootId（右键/拖拽/打开在任何深度都要知道归属根）。
@@ -516,6 +557,7 @@
     head.onclick = () => {
       if (rootClosed.has(root.id)) rootClosed.delete(root.id);
       else rootClosed.add(root.id);
+      scheduleTreeStateSave(); // P3-07：根折叠态 → 持久化（防抖）
       renderRoot(root.id); // 只重建这个根（性能）
     };
     head.oncontextmenu = (e) => {
@@ -738,6 +780,14 @@
           e.preventDefault();
           el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY }));
         };
+        // p2-5：拖放三件同样要转发——否则吸顶的祖先行是拖放死区（.sb-sticky-row 是 pointer-events:auto，
+        // 拖拽事件被克隆行截获、死在这里）。真行 drop handler 读的是模块级 dragNode（非 dataTransfer），
+        // 把克隆行的真实拖拽事件直接喂进真行同一个 handler；高亮反馈另在克隆行同步（真行滚出视口、加在它
+        // 身上用户看不见），并即时清掉真行的临时 class 免污染下一次 cloneNode。
+        const cleanEl = () => el.classList.remove('sb-drop', 'sb-insert-before', 'sb-insert-after');
+        clone.ondragover = (e) => { if (typeof el.ondragover === 'function') el.ondragover(e); clone.classList.toggle('sb-drop', e.defaultPrevented); cleanEl(); };
+        clone.ondragleave = (e) => { if (typeof el.ondragleave === 'function') el.ondragleave(e); clone.classList.remove('sb-drop'); cleanEl(); };
+        clone.ondrop = (e) => { if (typeof el.ondrop === 'function') el.ondrop(e); clone.classList.remove('sb-drop'); cleanEl(); };
         stickyEl.appendChild(clone);
       }
       stickyEl.classList.toggle('has-pins', pins.length > 0);
@@ -755,6 +805,9 @@
     const i = rel.lastIndexOf('/');
     return i >= 0 ? rel.slice(0, i) : '';
   };
+  // p2-1：拖一个目录进它自己 / 自己的子孙 = 非法（后端 movePath 也有守卫兜底，前端先拒免出无效高亮）。
+  const dropWouldNest = (dn, destRootId, destRel) =>
+    !!dn && dn.isDir && dn.rootId === destRootId && (destRel === dn.rel || destRel.indexOf(dn.rel + '/') === 0);
   const openPath = () => (window.__shellDocPath ? window.__shellDocPath() : null);
   function isUnder(child, parentAbs) {
     if (!child || !parentAbs) return false;
@@ -772,6 +825,8 @@
     let r;
     try { r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf, op); } // op=打开中文档 abs，主进程重写时跳过它
     catch (e) { showToast('重命名失败：' + shortErr(e)); await refreshRoot(node.rootId); return; } // 根刚失联/文件没了：别未捕获 rejection 把改名框晾在原地
+    // P3-03：用户在改名框里换了文档后缀（如 .html 输成 .md）——改名不改格式，保原后缀并提示走另存为。
+    if (r.formatKept) showToast('改名不改格式：要转 Markdown 请用「另存为 / 导出」');
     if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     else if (openUnderDir && window.__shellRetargetDoc) {
       const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 已确认 op 以 node.abs+分隔符 开头）
@@ -978,6 +1033,12 @@
     }
     const op = openPath();
     const affectsOpen = op && (op === node.abs || (node.isDir && isUnder(op, node.abs)));
+    // p3-05：删除前快照被删 rel（目录则含级联子孙）的标签 entry（pinned/open/kind/title）——removeTabsUnder
+    // 会把这些整个删掉，撤销只还原磁盘、reconcile 当新文件，置顶/打开状态本会丢一半。撤销成功后按此恢复。
+    const underRel = (rel) => rel === node.rel || rel.indexOf(node.rel + '/') === 0;
+    const tabSnapshot = tabState.entries
+      .filter((e) => e.rel && e.rootId === node.rootId && (node.isDir ? underRel(e.rel) : e.rel === node.rel))
+      .map((e) => ({ rootId: e.rootId, rel: e.rel, kind: e.kind, title: e.title, open: !!e.open, pinned: !!e.pinned }));
     let r;
     try { r = await window.ws2.wsDelete(node.rootId, node.rel); }
     catch (e) { showToast('删除失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
@@ -990,8 +1051,25 @@
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
     showToast('已删除「' + node.name + '」', '撤销', async () => {
-      await window.ws2.wsUndoDelete(node.rootId, r.token);
+      const undo = await window.ws2.wsUndoDelete(node.rootId, r.token); // { rel, abs }：真实恢复位置（原位被占会去重改名）
       await refreshRoot(node.rootId);
+      // p3-05：撤销 = 回到删前，恢复置顶/打开状态。两个坑（对抗审查 CONFIRMED）：
+      // ① 用 undo.rel 重映射快照 rel——撤销时原位被占会去重改名（文件回到新 rel），快照里存的是旧 rel，
+      //    直接按旧 rel 找会「找不到=丢置顶」，更糟「旧 rel 现被别的文件占=置顶落到错文件」。
+      // ② 恢复 open **别用会抢激活的 openEntry**——applyTabs 不载入编辑器，抢了激活只会让「高亮的激活标签
+      //    ≠编辑器内容」。删前的激活项 activeBefore 在恢复后原样钉回，只补 open/pinned 标记、不动激活/编辑器。
+      const remap = (rel) => (undo && undo.rel != null) ? undo.rel + rel.slice(node.rel.length) : rel;
+      let next = tabState;
+      const activeBefore = next.activeRel;
+      for (const s of tabSnapshot) {
+        const rel = remap(s.rel);
+        if (!findNode(s.rootId, rel)) continue; // 文件没真回来 → 跳过，不硬塞不存在的 entry
+        const file = { rootId: s.rootId, rel, kind: s.kind || 'other', title: s.title };
+        if (s.open) next = window.WS2Tabs.openEntry(next, file);
+        if (s.pinned) next = window.WS2Tabs.pinEntry(next, file);
+      }
+      next = { entries: next.entries, activeRel: activeBefore }; // 激活/编辑器原样不动，只恢复标记
+      applyTabs(next);
     });
   }
   async function newSubfolder(rootId, dirRel) {
@@ -1079,6 +1157,7 @@
       row.className = 'sb-row sb-dir';
       row.setAttribute('role', 'button');
       row.tabIndex = 0;
+      row.draggable = true; // p2-1：目录可拖拽移动（同根/跨根），复用文件行的 dragNode + dir/根标题的既有 drop
       row.dataset.rel = dir.rel;
       row.dataset.root = dir.rootId; // 多根：行归属哪个根（e2e/高亮/折叠都靠它限定）
       row.dataset.depth = depth; // sticky ancestor：按 depth 算祖先链
@@ -1120,6 +1199,7 @@
         // 否则残留的祖先折叠键会在链日后断开（外部往中间级加文件）时命中新 tail、把已展开的链无声重折叠。
         if (collapsed.has(colKey(dir.rootId, dir.rel))) chain.rels.forEach((r) => collapsed.delete(colKey(dir.rootId, r)));
         else chain.rels.forEach((r) => collapsed.add(colKey(dir.rootId, r)));
+        scheduleTreeStateSave(); // P3-07：展开/收起 → 持久化（防抖）
         renderRoot(dir.rootId); // 只重建该文件所在的根（性能）
       };
       row.oncontextmenu = (e) => {
@@ -1131,9 +1211,18 @@
           { label: '删除', danger: true, run: () => doDelete(dir) },
         ]);
       };
+      row.ondragstart = (e) => {
+        dragNode = dir; // p2-1：拖的是目录（compact 链落最深那级 tail = dir）
+        e.dataTransfer.effectAllowed = 'all';
+        e.dataTransfer.setData('text/plain', dir.rel);
+        window.__wsDragFile = null; // 目录不能作为链接插进正文，别喂给文档 drop
+      };
+      row.ondragend = () => { dragNode = null; };
       row.ondragover = (e) => {
-        // 跨根移动已放开（v1 便宜档：同盘 rename、跨盘 toast）。只挡「同根且已在此文件夹」的 no-op。
+        // 跨根移动已放开（v1 便宜档：同盘 rename、跨盘 toast）。挡「同根且已在此文件夹」的 no-op +
+        // p2-1：目录拖进自己/自己的子孙（会造环）。
         if (!dragNode || (dragNode.rootId === dir.rootId && parentDirOf(dragNode.rel) === dir.rel)) return;
+        if (dropWouldNest(dragNode, dir.rootId, dir.rel)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         row.classList.add('sb-drop');
@@ -1146,6 +1235,7 @@
         e.preventDefault();
         e.stopPropagation();
         row.classList.remove('sb-drop');
+        if (dropWouldNest(dragNode, dir.rootId, dir.rel)) { showToast('不能把文件夹移动到它自己里面'); dragNode = null; return; }
         // 同根→doMove(rename)；跨根→doMoveAcross(换根)
         if (dragNode.rootId === dir.rootId) doMove(dragNode, dir.rel);
         else doMoveAcross(dragNode, dir.rootId, dir.rel);
@@ -1742,6 +1832,15 @@
     if (entry.kind === 'html' || entry.kind === 'md') openDoc(entry.abs); // 外部标签的可编辑文档（含 md）
     else if (window.__shellShowViewer) window.__shellShowViewer({ abs: entry.abs, rel: null, kind: entry.kind, name: entry.title });
   }
+  // p3-06：同名跨根消歧。工作区内标签统一给 title=「根名 / rel」；仅当渲染中的标签（open||pinned）里出现
+  // 「同名不同根」冲突时，冲突各方名字后加淡色「— 根名」后缀（无冲突不加，别把所有标签搞长）。
+  const rootNameOf = (rootId) => { const st = rootOf(rootId); return st ? st.name : ''; };
+  function sameNameConflict(entry) {
+    if (!entry.rel || !entry.rootId) return false; // 只管工作区内标签（外部/网页/临时不算）
+    const base = entry.rel.split('/').pop();
+    return tabState.entries.some((e) => e.rel && e.rootId && (e.open || e.pinned)
+      && e.rootId !== entry.rootId && e.rel.split('/').pop() === base);
+  }
   function tabRow(entry, zone) {
     const key = keyOf(entry);
     const temp = isTempEntry(entry);
@@ -1773,7 +1872,15 @@
     const name = document.createElement('span');
     name.className = 'sb-name ws-truncate';
     name.textContent = entry.title;
-    name.title = web && entry.url ? entry.url : external ? entry.abs : entry.title; // 网页悬停显 URL；外部显绝对路径
+    // 网页悬停显 URL；外部显绝对路径；工作区内标签显「根名 / rel」（p3-06：普适有益，一眼看清是哪个根的哪个文件）
+    name.title = web && entry.url ? entry.url : external ? entry.abs : (entry.rel && entry.rootId ? rootNameOf(entry.rootId) + ' / ' + entry.rel : entry.title);
+    // p3-06：同名不同根冲突时，名字尾部补淡色「— 根名」后缀消歧（VS Code 收敛；置顶区同款，因 tabRow 两区共用）
+    if (sameNameConflict(entry)) {
+      const suffix = document.createElement('span');
+      suffix.className = 'sb-tab-rootsuffix';
+      suffix.textContent = ' — ' + rootNameOf(entry.rootId);
+      name.append(suffix);
+    }
     row.append(ico, name);
     if (external) {
       const ext = document.createElement('span');
@@ -1947,7 +2054,11 @@
   document.addEventListener('dragend', () => { window.__wsDragFile = null; }, true);
 
   // ---- 轻量 toast（删除「撤销」用）。CSP 安全：classes，无 inline style。----
-  let toastTimer = null;
+  // p2-2：栈式堆叠。每条 toast 是独立 DOM + 独立超时 + 独立撤销闭包——连删多个时上一条不再被顶掉，
+  // 各撤各的（删除撤销 token 一删一个，堆叠后天然独立，不用动删除逻辑）。host 是底部锚定的纵向 flex，
+  // 新条 append 到底、旧条被顶上去。带撤销的条超时放宽（15s），无撤销的短（6.5s）；超上限先挤掉最旧的
+  // 无撤销条（带撤销的保命，别丢用户的撤销机会）。
+  const TOAST_CAP = 4;
   // shell.js（先加载、无自己的 toast）复用这个：U0 断链/工作区外等占位提示，及后续互链 toast。
   window.__wsToast = (message, actionLabel, onAction) => showToast(message, actionLabel, onAction);
   function showToast(message, actionLabel, onAction) {
@@ -1958,28 +2069,35 @@
       host.className = 'sb-toast-host';
       document.body.appendChild(host);
     }
-    host.innerHTML = '';
+    const hasAction = !!(actionLabel && onAction);
     const t = document.createElement('div');
     t.className = 'sb-toast';
+    if (hasAction) t.dataset.action = '1';
     const msg = document.createElement('span');
     msg.textContent = message;
     t.appendChild(msg);
-    if (actionLabel && onAction) {
+    let timer = null;
+    const dismiss = () => { clearTimeout(timer); if (t.parentNode) t.remove(); };
+    if (hasAction) {
       const btn = document.createElement('button');
       btn.className = 'sb-toast-action';
       btn.textContent = actionLabel;
-      btn.onclick = () => {
-        clearTimeout(toastTimer);
-        host.innerHTML = '';
-        onAction();
-      };
+      btn.onclick = () => { dismiss(); onAction(); };
       t.appendChild(btn);
     }
     host.appendChild(t);
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
-      host.innerHTML = '';
-    }, 6500);
+    // 超上限：只挤「最旧的无撤销信息条」,且**绝不挤掉刚建的这条 t**、也**绝不挤撤销条**。
+    // 撤销条保命（各自 15s 自行过期，别丢用户的撤销机会）；4 条撤销条占满时新来的错误/保存提示更不能被
+    // 自己的清理逻辑当场吞掉（对抗审查 P2：那样失败的删除/保存会「视觉报成功、错误消失」，连删第 5 个也
+    // 不该把最旧撤销条挤走=撤销机会丢失）。没有可挤的旧信息条（全是撤销条 / 只剩 t）→ 让它们暂时超限、
+    // 各自超时收，不强挤。
+    while (host.children.length > TOAST_CAP) {
+      const victim = [...host.children].find((c) => c !== t && c.dataset.action !== '1');
+      if (!victim) break;
+      victim.remove();
+    }
+    timer = setTimeout(dismiss, hasAction ? 15000 : 6500);
+    return t;
   }
 
   // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。----
@@ -2334,6 +2452,22 @@
     const sameStructure = oldRels.size === relSet.size && [...relSet].every((r) => oldRels.has(r));
     const oldTree = st.tree; // U5：捕获旧树（带 ino），给外部改名探测做 inode 匹配（下一行就被新树覆盖）
     st.tree = annotateTree(newTree, rootId); // 总更新：保持树/ino 新鲜（即使不重渲染）
+    // p3-04：外部新增的目录默认收起（与 app 内建 wsMakeDir / 重启一致——watcher 路径原本漏了 collectDirRels，
+    // 新 rel 不在 collapsed 就渲染成展开）。只收「真·新目录」：新树有、旧树无该 rel，且子树里没有从旧树挪来的
+    // 文件 inode（有 = 外部改名/移动来的目的地，展开态维持现状、不误收）。dir 节点自身无 ino，靠子文件 ino 判定。
+    {
+      const oldDirRels = new Set();
+      const oldFileInos = new Set();
+      (function w(nodes) { for (const n of nodes) { if (n.isDir) { oldDirRels.add(n.rel); w(n.children || []); } else if (n.ino != null) oldFileInos.add(String(n.ino)); } })(oldTree);
+      const cameFromOld = (nodes) => nodes.some((n) => (n.isDir ? cameFromOld(n.children || []) : (n.ino != null && oldFileInos.has(String(n.ino)))));
+      (function w(nodes) {
+        for (const n of nodes) {
+          if (!n.isDir) continue;
+          if (!oldDirRels.has(n.rel) && !cameFromOld(n.children || [])) collapsed.add(colKey(rootId, n.rel));
+          w(n.children || []);
+        }
+      })(st.tree);
+    }
     if (sameStructure) return;
     // 结构变了（增/删/改名/移动）→ reconcile 该根标签 + 重渲染 + 同步编辑器
     const prevEntry = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
@@ -2350,8 +2484,16 @@
         const n = findNode(rootId, newRel); // 激活文档被外部改名/移动 → 编辑器重指向（保内容/脏态），不重载
         if (n && window.__shellRetargetDoc) window.__shellRetargetDoc(n.abs, n.name);
       } else {
-        const e = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
-        if (e) openTabRow(e); // 激活文档被外部删 → 回落到新激活项
+        // p2-6：激活文档被外部删。回落到别的标签 / 关文档都会换掉编辑器内容——先过 dirty 检查：有未保存
+        // 改动就别静默丢，转成临时文档 + 建临时标签 + 弹「保存到哪里」挽救（取消 = 保留为未保存临时文档，
+        // 可稍后再存/关，不丢数据）。非 dirty 才照旧回落/空态。
+        const fallback = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
+        const rescued = (window.__shellIsDirty && window.__shellIsDirty() && window.__shellRescueDeletedDirty)
+          ? window.__shellRescueDeletedDirty() : null;
+        if (rescued) {
+          openTabEntry({ abs: rescued.id, kind: 'html', title: rescued.base }); // 临时标签（temp: 身份），设为激活
+          openSaveModal(true);
+        } else if (fallback) openTabRow(fallback); // 回落到新激活项
         else if (window.__shellCloseDoc) window.__shellCloseDoc(); // 没得回落 → 空态
       }
     }
@@ -2649,6 +2791,7 @@
         rootsState = infos.map((r, i) => mkRootState(r, trees[i]));
         rootsGen++;
         if (filterInput) filterInput.value = '';
+        await restoreTreeState(); // P3-07：mkRootState 已 collectDirRels 全收起，这里把上次展开的目录/收起的根灌回，首次渲染前
         syncChrome();
         render();
       }

@@ -14,6 +14,21 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-15 — ui-demo 常驻 worktree 有 3+ 并发 session,必须各开独立 worktree
+
+**是什么**：ui-demo 常驻 worktree（.../wordspace-next-ui-demo）此刻被 3+ 个 session 同时抢（feat/ui-demo-doc-images 图片块 / feat/ui-demo-template-v1 用户自定义模板 / feat/ui-demo-company-templates）。实测撞车：我在里面 checkout 自己分支后,另一 session 把工作树切到 doc-images,我的未提交改动被带到他们分支、和他们 Canvas.tsx/image.ts 混一起,险些被 git add -A 一并提交。
+**怎么 apply**：① 动 ui-demo 前先 `git -C <worktree> branch --show-current` 确认分支没被别人换走;② 多 session 同时改 ui-demo 一律各开独立 worktree（`git worktree add <新路径> <你的分支>`,如我用了 .../wordspace-next-template）,别共用那个常驻 worktree——共用时任何一方切分支都会劫持彼此未提交改动;③ 收尾清干净自己在共享树里的污染,别连累别人。
+**来源**：feat/ui-demo-template-v1（用户自定义模板 U1 实施途中）
+
+
+## 2026-07-14 — 探索测试 p1（错误页死路）已修 PR #201；动 browser.js/web-tabs.js 前先看
+
+**是什么**：错误页恢复死路修复合入中（PR #201,分支 fix/browser-error-page-recover）。根因比计划更深:错误页**自身会提交**(did-navigate→everCommitted 藏起始页)+showError 摘 view(attachedKey=null)→ everCommitted 重挂分支与 error-clear 分支双双够不着。修法=主进程给 web 标签加 **navSeq 提交序号**(每 did-navigate 自增,随 web-tab-updated 推),renderer 认 s.navSeq>prev.navSeq 的**提交沿**重挂 view。
+
+**怎么 apply**：① 认领 bug-hunt 别的浏览器条目、或任何动 `src/main/web-tabs.js` / `src/renderer/browser.js onWebTabUpdated` 的 session:**先拉 PR #201**,它给 pushUpdate 加了 navSeq 字段、给 onWebTabUpdated 加了第三条恢复分支——别覆盖或与之冲突。② 硬教训(可复用):**「loading 收尾沿」≠「提交」**——abort/-3(下载被cancel/204/被后续导航打断)照样 loading 收尾但没提交,拿收尾沿做 view 重挂会盖上失败页残帧(对抗审查 CONFIRMED P2);要「新页真提交」信号就用 did-navigate,别用 did-stop-loading。③ 测试硬教训:纯新标签失败**不是死路**(起始页还在→everCommitted 分支自愈),复现死路必须「已提交过的标签」或「切走再切回」——写错误页恢复的 e2e 别用纯新标签(会写出自测绿但没测到东西的空门,变异自检才逮出来)。
+
+**来源**：探索测试计划 docs/plans/bug-hunt-2026-07-14/p1-error-page-dead-end.md;PR #201(含 5 e2e+三向变异自检+正本 §10.2 记账)。
+
 ## 2026-07-14 — 基础编辑器悬停蓝框（.nce-hover/🗑/🔒）整体撤除（app+ui-demo，PR #180）
 
 **是什么**：Wendi 报非合规文档里出现巨型蓝色虚线框——那是基础编辑器的「悬停删除」浮层：整篇一张 `<table>` 的文档（Word 导出常态）悬停即框住整表、🗑 锚在框右上角视口外不可见，用户读作渲染 bug。Colin 拍板把悬停 chrome（虚线框/🗑/只读🔒）整体撤掉；删块保留 Esc 块模式 + contenteditable 原生选中删除。

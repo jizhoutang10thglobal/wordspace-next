@@ -246,8 +246,30 @@
       newtabEl.hidden = true;
       if (attachedKey === null) { attachedKey = s.key; window.ws2.webShow(s.key, viewBounds()); }
     }
-    if (s.error && isWebActive() && keyOf(activeEntry()) === s.key) showError(s.key, s.error);
-    else if (!s.error && attachedKey === s.key) errEl.hidden = true;
+    if (s.error && isWebActive() && keyOf(activeEntry()) === s.key) {
+      showError(s.key, s.error);
+    } else if (!s.error && attachedKey === s.key) {
+      errEl.hidden = true; // 原地导航离开错误态且 view 一直挂着：只收占位（view 没被摘）
+    } else if (
+      !s.error && s.navSeq > (prev.navSeq || 0) && s.url &&
+      isWebActive() && keyOf(activeEntry()) === s.key && attachedKey !== s.key
+    ) {
+      // P1 错误页恢复：出错时 showError 摘了 view（attachedKey=null）、错误页自身的提交又藏了起始页
+      // （newtabEl.hidden=true）——于是 everCommitted 分支（!newtabEl.hidden 已 false）和上面的
+      // error-clear 分支（attachedKey!==key）都够不着，占位 + 脱挂的 view 永久卡死（只有切标签靠 activate 复活）。
+      // 补这条第三路：认「新页真提交」的沿——s.navSeq > prev.navSeq（主进程每 did-navigate 自增序号）。
+      // 为什么不是 loading true→false 沿：那个沿会被 abort/-3（204 / 下载被 cancel / 被后续导航打断）也触发,
+      // 但那些**没有提交**,此刻脱挂 view 里还是失败页残帧,重挂 = 露出原生错误页且丢了重试钮（对抗审查
+      // CONFIRMED P2）。navSeq 沿只在真 did-navigate 亮:新文档已提交,首绘前是白底（view setBackgroundColor
+      // '#fff'）绝不透出失败页,重挂零残帧闪回——与上方 everCommitted 起始页分支同一「提交沿挂」哲学。
+      // 只认激活标签防后台标签的提交推把它的 view 盖上来；attachedKey!==key 是冗余澄清位（走到这条时
+      // !s.error 且非 arm2 已蕴含 attachedKey!==key,留着标意图）。覆盖 omnibox 原地换址 + 导航条 reload 两条
+      // 恢复路（都走 loadURL → did-navigate → navSeq++）；提交后不收尾的流式页也能挂上（不再卡死等 stop）。
+      errEl.hidden = true;
+      attachedKey = s.key;
+      setVeil(true);
+      window.ws2.webShow(s.key, viewBounds());
+    }
     syncChrome();
   });
   window.ws2.onWebOpenRequest(async (r) => { // window.open / 右键「新标签页打开」/ 搜索选中 / 系统递来的链接（默认浏览器）
@@ -325,9 +347,21 @@
   navHistory.onclick = () => { if (subPage === 'history') closeSubPage(); else openSubPage('history'); };
 
   // 同步导航条 disabled + omnibox 值/图标/星标。sidebar 每次 renderZones 结束都会调（__webChromeSync）。
+  let lastSyncKey = null; // 上次同步时的激活标签 key——只在「激活标签真变了」时强制结束打字态（P2-3）
   function syncChrome() {
     const e = activeEntry();
     const web = !!(e && T.isWebEntry(e));
+    // 键盘切标签(Ctrl+Tab/⌘1-9)不触发 omnibox blur → omniTyping 一直 true → syncOmni 被守卫吞掉、
+    // 地址栏残留上个标签打的半截字,回车在新标签误导航（P2-3）。切标签 = 明确离开输入上下文:强制结束
+    // 打字态、丢弃未提交输入。**只在 key 真变时做**——同标签的状态更新(后台 title 推送)不能碰,否则
+    // 打字被 title 事件冲掉的老 bug(守卫存在的原因)会回来。
+    const curKey = e ? keyOf(e) : null;
+    if (curKey !== lastSyncKey) {
+      lastSyncKey = curKey;
+      omniTyping = false;
+      if (blurTimer) { clearTimeout(blurTimer); blurTimer = null; }
+      hideSug();
+    }
     const st = web ? webState[keyOf(e)] : null;
     navBack.disabled = !(web && st && st.canGoBack); // 文档标签暂无导航历史 → 恒灰（§4.1 注）
     navFwd.disabled = !(web && st && st.canGoForward);
@@ -904,6 +938,37 @@
   // 设置页（§4.10）：浏览器区只有默认搜索引擎一行；「主页」设置已删（拍板#2），不要加回来。
   function renderSettingsPage() {
     const wrap = pageShell('设置');
+
+    // 外观三态（与菜单栏 radio / ⋯菜单同一真相源，都从 main 查；这是 Colin 追认的第三入口）
+    const appSec = document.createElement('div');
+    appSec.className = 'wp-sec';
+    appSec.textContent = '外观';
+    wrap.appendChild(appSec);
+    const arow = document.createElement('div');
+    arow.className = 'wp-set-row';
+    const alabel = document.createElement('span');
+    alabel.className = 'wp-set-label';
+    alabel.textContent = '主题';
+    const adesc = document.createElement('span');
+    adesc.className = 'wp-set-desc';
+    adesc.textContent = '跟随系统时，系统切换深浅色会实时跟随';
+    const actl = document.createElement('span');
+    actl.className = 'wp-set-ctl';
+    const asel = document.createElement('select');
+    asel.id = 'wp-appearance-select';
+    for (const [val, name] of [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']]) {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = name;
+      asel.appendChild(opt);
+    }
+    if (window.ws2 && window.ws2.getAppearance) {
+      window.ws2.getAppearance().then((p) => { asel.value = p || 'system'; }).catch(() => {});
+    }
+    asel.onchange = () => { if (window.ws2 && window.ws2.setAppearance) window.ws2.setAppearance(asel.value); };
+    actl.appendChild(asel);
+    arow.append(alabel, adesc, actl);
+    wrap.appendChild(arow);
+
     const sec = document.createElement('div');
     sec.className = 'wp-sec';
     sec.textContent = '浏览器';

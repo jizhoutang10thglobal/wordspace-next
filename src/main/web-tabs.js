@@ -9,7 +9,7 @@
 //  - url/title/favicon 权威副本在这（registry）,renderer 只做 UI 镜像（webtab:state 推送驱动）。
 //  - 主进程永不自行 attach view：show() 是唯一 attach 入口,由 renderer 的激活漏斗驱动。
 //  - 历史只由这里的导航事件写（spec §10.3：历史写入无 renderer 入口）；back/forward 不记（§4.8）。
-const { WebContentsView, session, net, dialog, Menu, clipboard, app, shell } = require('electron');
+const { WebContentsView, session, net, dialog, Menu, clipboard, app, shell, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const policy = require('../lib/web-tabs-policy');
@@ -74,6 +74,7 @@ function pushUpdate(key) {
     key, url: rec.url, title: rec.title, favicon: rec.favicon,
     loading: rec.loading, canGoBack: rec.canGoBack, canGoForward: rec.canGoForward, error: rec.error || null,
     everCommitted: !!rec.everCommitted, // 首次 did-navigate 才置位——renderer 拿它判「起始页可以让位了」（navigate() 会提前写 url,不能当提交信号）
+    navSeq: rec.navSeq || 0, // 提交序号（每 did-navigate +1）：renderer 识别真提交沿 → 错误页恢复只在真提交后重挂 view（P1）
   });
 }
 
@@ -118,8 +119,26 @@ async function fetchFavicon(key, url) {
 }
 
 // ---- 建 view（惰性,首次导航才调；起始页是 renderer 本地 surface,不建 view）----
+// 首绘底色按当前有效主题(暗态深底,亮态白底)。view 是长命的,主题切换后要刷新所有存活 view,
+// 否则「先开标签、后切主题」这条常见路径上闪错色（暗态闪白 / 亮态闪黑）。
+function viewBgColor() {
+  return nativeTheme.shouldUseDarkColors ? '#262220' : '#ffffff';
+}
+let themeSubscribed = false;
+function subscribeTheme() {
+  if (themeSubscribed) return;
+  themeSubscribed = true;
+  nativeTheme.on('updated', () => {
+    const bg = viewBgColor();
+    for (const rec of registry.values()) {
+      try { rec.view.setBackgroundColor(bg); } catch { /* view 可能已销毁 */ }
+    }
+  });
+}
+
 function createView(key, url) {
   if (registry.get(key)) return registry.get(key).view;
+  subscribeTheme();
   ensureSession();
   const view = new WebContentsView({
     webPreferences: {
@@ -131,9 +150,9 @@ function createView(key, url) {
     },
   });
   // 首绘前的 WebContentsView 是透明的——不设底色,新标签首次加载的几秒里会把底下的文档透出来
-  // （Colin 实测报的「加载中闪回文档」bug 的根因之一;白底=正常浏览器的加载观感）。
-  try { view.setBackgroundColor('#ffffff'); } catch { /* 老版本无此 API 就算了 */ }
-  const rec = { view, url: url || null, title: '新标签页', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, userZoom: null, _skipRecord: false };
+  // （Colin 实测报的「加载中闪回文档」bug 的根因之一）。底色按当前有效主题取,否则暗态切网页标签闪白。
+  try { view.setBackgroundColor(viewBgColor()); } catch { /* 老版本无此 API 就算了 */ }
+  const rec = { view, url: url || null, title: '新标签页', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, navSeq: 0, userZoom: null, _skipRecord: false };
   registry.set(key, rec);
   wireViewEvents(key, view);
   return view;
@@ -171,7 +190,10 @@ function wireViewEvents(key, view) {
       // _faviconSrc 也清,否则同 URL 首次 fetch 失败后被 pickFavicon 永久去重、reload 不再拉。
       r.favicon = null; r._faviconSrc = null;
     }
-    r.url = url; r.everCommitted = true; syncNav(key); pushUpdate(key);
+    // navSeq 每次真提交（did-navigate/-in-page）自增——renderer 拿它认「新页刚提交」的沿；
+    // did-start-loading / navigate() 的乐观推都不动它,失败载(did-fail-load)与 abort(-3) 更不会 → 恢复
+    // 重挂 view 只认这个沿,不会被 204/下载/中止那种「loading 收尾但没提交」的假沿误触发（P1 审查 CONFIRMED）。
+    r.url = url; r.everCommitted = true; r.navSeq = (r.navSeq || 0) + 1; syncNav(key); pushUpdate(key);
     // 历史：主动导航才记；back/forward 前 nav() 打了 _skipRecord 标志（§4.8 契约）。用后即清,别泄漏。
     if (r._skipRecord) { r._skipRecord = false; return; }
     // ⚠ did-navigate 时 r.title 还是**上一页**的标题（page-title-updated 晚于 did-navigate）——
