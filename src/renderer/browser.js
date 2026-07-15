@@ -239,6 +239,12 @@
     if (sb() && (prev.url !== s.url || prev.title !== s.title || prev.favicon !== s.favicon)) {
       sb().updateWeb(s.key, { url: s.url, title: s.title || s.url || '新标签页' });
     }
+    // U3 导航加载反馈（治「渲染区闪回旧页面 1-2 秒」= 导航期零反馈）：loading 变化 → 轻量刷该标签行的 spinner。
+    // 不走 updateWeb（那会落盘 + 整区 renderZones）；每个 s.key 都收，后台标签加载也转圈（Chrome 语义）。
+    // 旧页面保留是原地导航现有行为（view 不摘、attachedKey 不变），不动导航模型——只补「正在加载」的可见反馈。
+    if (sb() && sb().setTabLoading && prev.loading !== s.loading) {
+      sb().setTabLoading(s.key, !!s.loading);
+    }
     // 起始页 → 真网页的切换点：导航**真提交**（everCommitted,首次 did-navigate）才藏起始页 surface。
     // navigate() 会提前把 url 写进推送（地址栏要即时显示）,不能当提交信号——慢站的响应头没来之前
     // 起始页要一直盖着（submitNavigate 不再提前藏——fresh view 首绘前藏掉它会透出底下的文档,闪回 bug）。
@@ -347,9 +353,21 @@
   navHistory.onclick = () => { if (subPage === 'history') closeSubPage(); else openSubPage('history'); };
 
   // 同步导航条 disabled + omnibox 值/图标/星标。sidebar 每次 renderZones 结束都会调（__webChromeSync）。
+  let lastSyncKey = null; // 上次同步时的激活标签 key——只在「激活标签真变了」时强制结束打字态（P2-3）
   function syncChrome() {
     const e = activeEntry();
     const web = !!(e && T.isWebEntry(e));
+    // 键盘切标签(Ctrl+Tab/⌘1-9)不触发 omnibox blur → omniTyping 一直 true → syncOmni 被守卫吞掉、
+    // 地址栏残留上个标签打的半截字,回车在新标签误导航（P2-3）。切标签 = 明确离开输入上下文:强制结束
+    // 打字态、丢弃未提交输入。**只在 key 真变时做**——同标签的状态更新(后台 title 推送)不能碰,否则
+    // 打字被 title 事件冲掉的老 bug(守卫存在的原因)会回来。
+    const curKey = e ? keyOf(e) : null;
+    if (curKey !== lastSyncKey) {
+      lastSyncKey = curKey;
+      omniTyping = false;
+      if (blurTimer) { clearTimeout(blurTimer); blurTimer = null; }
+      hideSug();
+    }
     const st = web ? webState[keyOf(e)] : null;
     navBack.disabled = !(web && st && st.canGoBack); // 文档标签暂无导航历史 → 恒灰（§4.1 注）
     navFwd.disabled = !(web && st && st.canGoForward);
@@ -926,6 +944,37 @@
   // 设置页（§4.10）：浏览器区只有默认搜索引擎一行；「主页」设置已删（拍板#2），不要加回来。
   function renderSettingsPage() {
     const wrap = pageShell('设置');
+
+    // 外观三态（与菜单栏 radio / ⋯菜单同一真相源，都从 main 查；这是 Colin 追认的第三入口）
+    const appSec = document.createElement('div');
+    appSec.className = 'wp-sec';
+    appSec.textContent = '外观';
+    wrap.appendChild(appSec);
+    const arow = document.createElement('div');
+    arow.className = 'wp-set-row';
+    const alabel = document.createElement('span');
+    alabel.className = 'wp-set-label';
+    alabel.textContent = '主题';
+    const adesc = document.createElement('span');
+    adesc.className = 'wp-set-desc';
+    adesc.textContent = '跟随系统时，系统切换深浅色会实时跟随';
+    const actl = document.createElement('span');
+    actl.className = 'wp-set-ctl';
+    const asel = document.createElement('select');
+    asel.id = 'wp-appearance-select';
+    for (const [val, name] of [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']]) {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = name;
+      asel.appendChild(opt);
+    }
+    if (window.ws2 && window.ws2.getAppearance) {
+      window.ws2.getAppearance().then((p) => { asel.value = p || 'system'; }).catch(() => {});
+    }
+    asel.onchange = () => { if (window.ws2 && window.ws2.setAppearance) window.ws2.setAppearance(asel.value); };
+    actl.appendChild(asel);
+    arow.append(alabel, adesc, actl);
+    wrap.appendChild(arow);
+
     const sec = document.createElement('div');
     sec.className = 'wp-sec';
     sec.textContent = '浏览器';

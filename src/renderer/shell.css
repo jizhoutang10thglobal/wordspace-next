@@ -10,7 +10,7 @@
 :root {
   /* 修 VC-16（最低成本）：锁原生控件（confirm/alert、原生菜单、滚动条、文件框）为浅色，消除 mac 暗色模式下
      浅色 UI + 深色系统框的混搭割裂。真正的暗色主题另议——这里只是不让系统把控件反色。 */
-  color-scheme: light;
+  color-scheme: light dark;
 
   /* ---- color：纸（stone 暖灰阶） ---- */
   --c-bg: #ffffff;            /* 文档纸面 */
@@ -106,6 +106,83 @@
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);          /* 退场：直接撤走 */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 回弹：关闭钮、盖章式反馈 */
   --ease-smooth: cubic-bezier(0.45, 0, 0.15, 1);    /* 平滑对称：折叠/展开、拖动 */
+}
+
+/* ---------------------------------------------------------------- dark tokens
+   三态外观模式（浅色/深色/跟随系统）的 chrome 暗色变体。由 renderer 的 [data-theme="dark"] 属性驱动
+   （appearance-ui.js 按主进程广播的 effective 主题挂/摘），与 ui-demo 同款机制。
+   ⚠ 为什么不用 @media (prefers-color-scheme)：实测 Electron 里 nativeTheme.themeSource 改变**不会**
+   live 更新已加载 renderer 的 prefers-color-scheme（只在下次 navigation 生效），in-app 切主题不刷新=UX bug。
+   nativeTheme.themeSource 仍设（驱动 mac 窗框/系统菜单/对话框/网页标签，R3/R6），只是 chrome 走 data-theme。
+   值 = ui-demo tokens.css 的 :root[data-theme="dark"]（palette 单一来源 = docs/style.md，初稿待 Wendi 拍板 R12）。
+   type/radius/metrics/motion 是主题无关量，不重复。 */
+:root { color-scheme: light dark; } /* 支持双态 → 原生控件(滚动条/表单)跟随;VC-16 的锁 light 已解 */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+
+    --c-bg: #2b2724;
+    --c-bg-sunken: #1f1b18;
+    --c-bg-rail: #17130f;
+    --c-bg-chrome: #262220;
+    --c-surface: #2b2724;
+
+    --c-border: #3a3531;
+    --c-border-strong: #4a4440;
+    --c-divider: #332e2b;
+
+    --c-text: #ede9e6;
+    --c-text-2: #b3aca6;
+    --c-text-3: #78716c;
+    --c-text-invert: #1c1917;
+    --c-ink: #ece7e3;           /* 墨色控件反转为亮墨 */
+    --c-ink-hover: #f7f3f0;
+
+    --c-accent: #5c9fdf;        /* 墨青蓝提亮一档保对比度 */
+    --c-accent-hover: #7ab0e6;
+    --c-accent-press: #4a8ed0;
+    --c-accent-tint: #1c2c3a;
+    --c-accent-tint-2: #24384a;
+
+    --c-hover: rgba(237, 233, 230, 0.06);
+    --c-active: rgba(237, 233, 230, 0.10);
+    --c-selected: #1c2c3a;
+
+    --c-success: #46b366;
+    --c-success-tint: #16281c;
+    --c-warning: #d98a3a;
+    --c-warning-tint: #2e2314;
+    --c-danger: #e5645f;
+    --c-danger-tint: #2e1a1a;
+
+    --c-public: #46b366;
+    --c-internal: #d98a3a;
+
+    /* 暗态阴影用更重的黑透明做层分离，绝不发光（§0-4） */
+    --shadow-menu: 0 4px 12px rgba(0, 0, 0, 0.36);
+    --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.44);
+    --shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.52);
+}
+
+/* chrome 里 token 够不到的硬编码色的暗态收编（file 图标/save hover/pdf 舞台）。
+   暗色值与 R12 palette 同源、随之走 Wendi 拍板；不改亮态视觉值。 */
+:root[data-theme="dark"] .sb-kind-image .sb-ico { color: #a97bff; }
+:root[data-theme="dark"] .sb-kind-pdf .sb-ico { color: #e5645f; }
+:root[data-theme="dark"] .sb-kind-word .sb-ico { color: #5c9fdf; }
+:root[data-theme="dark"] .sb-kind-sheet .sb-ico { color: #46b366; }
+:root[data-theme="dark"] .sb-kind-slides .sb-ico { color: #d98a3a; }
+:root[data-theme="dark"] .sb-save-name:hover { background-color: var(--c-active); }
+/* PDF 舞台是 chrome（页面外的灰底），暗态给深底；PDF 页本身白纸不动（不反色 PDF 查看器） */
+:root[data-theme="dark"] .pdfv-stage { background: var(--c-bg-sunken); }
+
+/* 主题切换短过渡（§4）。只在切换窗口内生效（shell.js 挂 [data-theme-switching] ~200ms 后摘），
+   不常驻——否则跟 hover 自有过渡打架。reduced-motion 下整段关。 */
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme-switching] * {
+    transition: background-color var(--dur-fast) var(--ease),
+      color var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease),
+      fill var(--dur-fast) var(--ease) !important;
+  }
 }
 
 /* ---------------------------------------------------------------- global */
@@ -313,6 +390,8 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 }
 /* compact folders 合并链的段间「/」分隔符：淡墨、不抢眼 */
 .sb-seg-sep { color: var(--c-text-3); margin: 0 3px; opacity: 0.7; font-weight: var(--fw-regular); }
+/* p3-06 同名跨根消歧：标签名尾的「— 根名」淡色后缀（纸方墨圆 --c-text-3，弱于文件名本体） */
+.sb-tab-rootsuffix { color: var(--c-text-3); font-weight: var(--fw-regular); }
 .sb-dir { color: var(--c-text-2); font-weight: var(--fw-medium); }
 .sb-caret { flex: none; display: inline-flex; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
 .sb-caret.is-open { transform: rotate(90deg); }
@@ -402,6 +481,12 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-zone { margin: 0 0 4px; }
 .sb-zone:last-of-type { padding-bottom: 2px; margin-bottom: 0; }
 .sb-zone-head { display: flex; align-items: center; }
+/* 可折叠栏标（置顶/标签页，抄收藏区 §4.3）：整条可点、caret 右置随 is-open 旋转、计数用等宽字 */
+.sb-zone-head[role="button"] { cursor: pointer; }
+.sb-zone-head .sb-sec-label { flex: none; } /* caret/count 在场时 label 不吃满，交给 .sb-zone-count 顶开（对齐 .sb-fav-count 布局） */
+.sb-zone-count { flex: 1; padding-left: 6px; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-3); }
+.sb-zone-caret { flex: none; display: inline-flex; align-items: center; margin-right: 8px; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
+.sb-zone.is-open .sb-zone-caret { transform: rotate(90deg); }
 /* 「文件」段标（独立于 .sb-zone，跟在标签页区之后）：复用段标样式，提供文件区上方留白。 */
 .sb-files-label[hidden] { display: none; }
 /* editorial 分区栏标（docs/style.md §7）：等宽 + 宽字距，像刊物的栏目标记（对齐 ui-demo arc-section-label） */
@@ -762,6 +847,11 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .ws-docmenu-item:hover { background-size: 100% 100%; }
 .ws-docmenu-item:disabled { opacity: .45; background-size: 0% 100%; }
 .ws-docmenu-sep { height: 1px; background: var(--c-divider); margin: 3px 6px; }
+.ws-docmenu-label { padding: 4px 10px 2px; font-size: var(--fs-xs); color: var(--c-text-3); letter-spacing: 0.04em; }
+/* 外观三项:✓ 占固定宽,当前态才显(未选留位对齐,像原生 radio 组) */
+.ws-appearance-check { width: 14px; flex: none; text-align: center; color: var(--c-accent); opacity: 0; font-size: var(--fs-sm); }
+.ws-appearance-item.is-active .ws-appearance-check { opacity: 1; }
+.ws-appearance-item.is-active { color: var(--c-text); font-weight: var(--fw-medium); }
 /* 文字钮：墨条滑入 */
 .ta-ghost {
   height: 30px; padding: 0 12px; border-radius: var(--r-pill); color: var(--c-text-2); font-size: var(--fs-base);
@@ -920,7 +1010,7 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 }
 .ws-linkview-card.is-broken { border-color: #e8b4ae; }
 .ws-linkview-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
-.ws-linkview-title.is-broken { color: #b91c1c; }
+.ws-linkview-title.is-broken { color: var(--c-danger); }
 .ws-linkview-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .ws-linkview-snippet { opacity: 0.72; margin-top: 6px; overflow: hidden; }
 .ws-linkview-note { opacity: 0.72; margin-top: 6px; }

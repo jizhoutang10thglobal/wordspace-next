@@ -1,7 +1,7 @@
 ---
 title: "feat: 浅色/深色/跟随系统三态外观模式（ui-demo + 真 app）"
 type: feat
-status: active
+status: completed
 date: 2026-07-14
 ---
 

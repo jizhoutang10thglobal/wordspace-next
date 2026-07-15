@@ -189,6 +189,37 @@ test('renamePath onto an existing name dedupes, never overwrites the occupant', 
   assert.equal(await fs.readFile(path.join(root, 'b.html'), 'utf8'), '<html>OCCUPANT</html>'); // 原 b.html 没被盖
 });
 
+test('P3-03 renamePath 改名不改格式：输入自带文档后缀不叠出双后缀', async () => {
+  const { root } = await seed();
+  // ① 同后缀重复：a.html 输 b.html → b.html（不是 b.html.html），无格式提示
+  const r1 = await ws.renamePath(root, 'a.html', 'b.html');
+  assert.equal(r1.rel, 'b.html');
+  assert.ok(await isFile(path.join(root, 'b.html')));
+  assert.ok(!(await isFile(path.join(root, 'b.html.html'))));
+  assert.ok(!r1.formatKept);
+  // ② 异文档后缀：b.html 输 火箭.md → 火箭.html（保原格式），formatKept=true 供上层 toast
+  const r2 = await ws.renamePath(root, 'b.html', '火箭.md');
+  assert.equal(r2.rel, '火箭.html');
+  assert.ok(await isFile(path.join(root, '火箭.html')));
+  assert.ok(!(await isFile(path.join(root, '火箭.md'))));
+  assert.equal(r2.formatKept, true);
+  // ③ 非文档后缀：火箭.html 输 notes.txt → notes.txt.html（.txt 当 base 一部分，维持现状）
+  const r3 = await ws.renamePath(root, '火箭.html', 'notes.txt');
+  assert.equal(r3.rel, 'notes.txt.html');
+  assert.ok(!r3.formatKept);
+  // ④ 无后缀：notes.txt.html 输 报告 → 报告.html
+  const r4 = await ws.renamePath(root, 'notes.txt.html', '报告');
+  assert.equal(r4.rel, '报告.html');
+  assert.ok(!r4.formatKept);
+});
+
+test('P3-03 目录名带点不被当后缀剥（只对文档文件生效）', async () => {
+  const { root } = await seed();
+  const rd = await ws.renamePath(root, '数据', '资料.md'); // 目录 ext='' → 不进剥后缀分支
+  assert.equal(rd.rel, '资料.md');
+  assert.ok(await isDir(path.join(root, '资料.md')));
+});
+
 test('movePath into a dir holding a same-name file dedupes, never overwrites', async () => {
   const { root } = await seed();
   await fs.writeFile(path.join(root, '数据', 'a.html'), '<html>OCCUPANT</html>', 'utf8');

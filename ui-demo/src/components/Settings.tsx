@@ -2,13 +2,18 @@ import { useStore } from '../mock/store'
 import { relTime } from '../lib/format'
 import { Avatar } from '../ui/primitives'
 import { useBrowserSettings, SEARCH_ENGINES, type EngineKey } from '../mock/browserSettings'
+import { useAppearance, APPEARANCE_LABELS, type AppearancePref } from '../appearance'
 import './Settings.css'
+
+const APPEARANCE_ORDER: AppearancePref[] = ['system', 'light', 'dark']
 
 export default function Settings() {
   const workspace = useStore((s) => s.workspace)
   const members = useStore((s) => s.members)
   const engine = useBrowserSettings((s) => s.engine)
   const setEngine = useBrowserSettings((s) => s.setEngine)
+  const appearancePref = useAppearance((s) => s.pref)
+  const setAppearancePref = useAppearance((s) => s.setPref)
 
   return (
     <div className="st-scroll">
@@ -44,6 +49,28 @@ export default function Settings() {
                 <span className="st-dot" />
                 已同步 · {relTime(workspace.syncedAt)}
               </span>
+            </div>
+          </div>
+        </section>
+
+        {/* 外观 */}
+        <section className="st-section">
+          <div className="st-label">外观</div>
+          <div className="st-rows">
+            <div className="st-row">
+              <div className="st-row-left">
+                <div className="st-row-label">主题</div>
+                <div className="st-row-note">跟随系统时,macOS 切换深浅色会实时跟随</div>
+              </div>
+              <select
+                className="st-select"
+                value={appearancePref}
+                onChange={(e) => setAppearancePref(e.target.value as AppearancePref)}
+              >
+                {APPEARANCE_ORDER.map((k) => (
+                  <option key={k} value={k}>{APPEARANCE_LABELS[k]}</option>
+                ))}
+              </select>
             </div>
           </div>
         </section>

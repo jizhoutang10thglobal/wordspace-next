@@ -9,7 +9,7 @@
 //  - url/title/favicon 权威副本在这（registry）,renderer 只做 UI 镜像（webtab:state 推送驱动）。
 //  - 主进程永不自行 attach view：show() 是唯一 attach 入口,由 renderer 的激活漏斗驱动。
 //  - 历史只由这里的导航事件写（spec §10.3：历史写入无 renderer 入口）；back/forward 不记（§4.8）。
-const { WebContentsView, session, net, dialog, Menu, clipboard, app, shell } = require('electron');
+const { WebContentsView, session, net, dialog, Menu, clipboard, app, shell, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const policy = require('../lib/web-tabs-policy');
@@ -119,8 +119,26 @@ async function fetchFavicon(key, url) {
 }
 
 // ---- 建 view（惰性,首次导航才调；起始页是 renderer 本地 surface,不建 view）----
+// 首绘底色按当前有效主题(暗态深底,亮态白底)。view 是长命的,主题切换后要刷新所有存活 view,
+// 否则「先开标签、后切主题」这条常见路径上闪错色（暗态闪白 / 亮态闪黑）。
+function viewBgColor() {
+  return nativeTheme.shouldUseDarkColors ? '#262220' : '#ffffff';
+}
+let themeSubscribed = false;
+function subscribeTheme() {
+  if (themeSubscribed) return;
+  themeSubscribed = true;
+  nativeTheme.on('updated', () => {
+    const bg = viewBgColor();
+    for (const rec of registry.values()) {
+      try { rec.view.setBackgroundColor(bg); } catch { /* view 可能已销毁 */ }
+    }
+  });
+}
+
 function createView(key, url) {
   if (registry.get(key)) return registry.get(key).view;
+  subscribeTheme();
   ensureSession();
   const view = new WebContentsView({
     webPreferences: {
@@ -132,8 +150,8 @@ function createView(key, url) {
     },
   });
   // 首绘前的 WebContentsView 是透明的——不设底色,新标签首次加载的几秒里会把底下的文档透出来
-  // （Colin 实测报的「加载中闪回文档」bug 的根因之一;白底=正常浏览器的加载观感）。
-  try { view.setBackgroundColor('#ffffff'); } catch { /* 老版本无此 API 就算了 */ }
+  // （Colin 实测报的「加载中闪回文档」bug 的根因之一）。底色按当前有效主题取,否则暗态切网页标签闪白。
+  try { view.setBackgroundColor(viewBgColor()); } catch { /* 老版本无此 API 就算了 */ }
   const rec = { view, url: url || null, title: '新标签页', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, navSeq: 0, userZoom: null, _skipRecord: false };
   registry.set(key, rec);
   wireViewEvents(key, view);
@@ -192,7 +210,9 @@ function wireViewEvents(key, view) {
   });
   wc.on('render-process-gone', (_e, details) => {
     if (!policy.isRealCrash(details && details.reason)) return;
-    const r = registry.get(key); if (r) { r.error = { code: 'crash', desc: (details && details.reason) || 'crashed', url: r.url }; pushUpdate(key); }
+    // r.loading=false 必须补（对齐 did-fail-load:208）——渲染进程崩了不会再补发 did-stop-loading,
+    // 漏了它 loading 卡 true → U3 标签行 spinner 永久旋转（审查 P2）。
+    const r = registry.get(key); if (r) { r.loading = false; r.error = { code: 'crash', desc: (details && details.reason) || 'crashed', url: r.url }; pushUpdate(key); }
   });
 
   // window.open：deny 原生弹窗；http(s) 链接 → 通知 renderer 建新标签走漏斗（spec §10.2：主进程不直接建 view）。

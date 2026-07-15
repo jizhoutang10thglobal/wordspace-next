@@ -10,6 +10,7 @@ const COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2'
  */
 export default function BlockActionMenu({
   pos,
+  blockType,
   onTurnInto,
   onInsertBelow,
   onDuplicate,
@@ -18,6 +19,7 @@ export default function BlockActionMenu({
   onClose,
 }: {
   pos: { top: number; left: number }
+  blockType?: BlockType // 图片等原子块：转为/颜色不适用（转正文会把 base64 当文字塞进段落）
   onTurnInto: (type: BlockType, level?: 1 | 2 | 3) => void
   onInsertBelow: () => void
   onDuplicate: () => void
@@ -25,6 +27,7 @@ export default function BlockActionMenu({
   onColor: (c: string) => void
   onClose: () => void
 }) {
+  const atomic = blockType === 'image'
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -46,41 +49,45 @@ export default function BlockActionMenu({
       role="menu"
       style={{ position: 'fixed', top: pos.top, left: pos.left }}
     >
-      <button
-        className="ws-blockmenu-item"
-        role="menuitem"
-        onClick={() => {
-          onTurnInto('text')
-          onClose()
-        }}
-      >
-        <Type size={15} strokeWidth={1.8} />
-        <span>转为正文</span>
-      </button>
-      <button
-        className="ws-blockmenu-item"
-        role="menuitem"
-        onClick={() => {
-          onTurnInto('heading', 2)
-          onClose()
-        }}
-      >
-        <Heading size={15} strokeWidth={1.8} />
-        <span>转为标题</span>
-      </button>
-      <button
-        className="ws-blockmenu-item"
-        role="menuitem"
-        onClick={() => {
-          onTurnInto('quote')
-          onClose()
-        }}
-      >
-        <Quote size={15} strokeWidth={1.8} />
-        <span>转为引用</span>
-      </button>
+      {!atomic && (
+        <>
+          <button
+            className="ws-blockmenu-item"
+            role="menuitem"
+            onClick={() => {
+              onTurnInto('text')
+              onClose()
+            }}
+          >
+            <Type size={15} strokeWidth={1.8} />
+            <span>转为正文</span>
+          </button>
+          <button
+            className="ws-blockmenu-item"
+            role="menuitem"
+            onClick={() => {
+              onTurnInto('heading', 2)
+              onClose()
+            }}
+          >
+            <Heading size={15} strokeWidth={1.8} />
+            <span>转为标题</span>
+          </button>
+          <button
+            className="ws-blockmenu-item"
+            role="menuitem"
+            onClick={() => {
+              onTurnInto('quote')
+              onClose()
+            }}
+          >
+            <Quote size={15} strokeWidth={1.8} />
+            <span>转为引用</span>
+          </button>
 
-      <div className="ws-blockmenu-sep" />
+          <div className="ws-blockmenu-sep" />
+        </>
+      )}
 
       <button
         className="ws-blockmenu-item"
@@ -116,22 +123,26 @@ export default function BlockActionMenu({
         <span>删除</span>
       </button>
 
-      <div className="ws-blockmenu-sep" />
+      {!atomic && (
+        <>
+          <div className="ws-blockmenu-sep" />
 
-      <div className="ws-blockmenu-colors">
-        {COLORS.map((c) => (
-          <button
-            key={c}
-            className="ws-blockmenu-swatch"
-            style={{ background: c }}
-            title={c}
-            onClick={() => {
-              onColor(c)
-              onClose()
-            }}
-          />
-        ))}
-      </div>
+          <div className="ws-blockmenu-colors">
+            {COLORS.map((c) => (
+              <button
+                key={c}
+                className="ws-blockmenu-swatch"
+                style={{ background: c }}
+                title={c}
+                onClick={() => {
+                  onColor(c)
+                  onClose()
+                }}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

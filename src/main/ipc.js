@@ -101,6 +101,37 @@ function markRootMissing(root) {
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.webContents.isDestroyed()) w.webContents.send('ws-roots-changed');
   }
+  scheduleReviveProbe(root); // P3-08：挂低频复活探测，路径改回来/外置盘插回时自愈，免手点「重新定位」
+}
+
+// P3-08 失联根自动复活探测：missing 根的 watcher 已注销、没人再看那个路径——把目录改回原路径（或外置盘
+// 插回）不会自愈，必须手点「重新定位」再选一次同一个文件夹。挂 5s 一次的 dirExists 轮询（fs.stat 一次，
+// 便宜），通了 → 清 missing、重挂 watcher、广播根列表 + 该根全量树重扫（null=全量）。用轮询而非 fs.watch
+// 盯父目录——父目录可能也没了 / 是卷根。根移除/重定位/复活/app 退出时取消对应 timer。
+const REVIVE_MS = 5000;
+const reviveTimers = new Map(); // rootId → interval
+function clearReviveTimer(rootId) {
+  const t = reviveTimers.get(rootId);
+  if (t) { clearInterval(t); reviveTimers.delete(rootId); }
+}
+function scheduleReviveProbe(root) {
+  if (reviveTimers.has(root.id)) return; // 幂等：同一根不叠多个 timer
+  const t = setInterval(async () => {
+    const cur = roots.find((x) => x.id === root.id);
+    if (!cur || !cur.missing) { clearReviveTimer(root.id); return; } // 已移除/已复活 → 收 timer
+    if (!(await dirExists(cur.path))) return; // 还没回来，下个 5s 再看
+    clearReviveTimer(cur.id);
+    cur.missing = false;
+    cur.real = await canonReal(cur.path);
+    startRootWatch(cur);
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.webContents.isDestroyed()) continue;
+      w.webContents.send('ws-roots-changed');          // renderer 重拉根列表、根行回彩色
+      w.webContents.send('ws-tree-changed', cur.id, null); // null=全量，renderer 重读整棵树填回来
+    }
+  }, REVIVE_MS);
+  if (t.unref) t.unref(); // 别让这个纯运维轮询挡住 app 退出（= 退出时自然取消）
+  reviveTimers.set(root.id, t);
 }
 // ---- U2 文档互链索引：每根一份可丢弃缓存。懒建（首次 query/backlinks 才建，用户从不互链的根不花代价）；
 // 树变化时增量刷新；根移除时丢弃。所有索引变更按 rootId 串行化（防并发 refresh 竞态改同一 Map）。----
@@ -228,6 +259,7 @@ async function restoreRoots() {
         const root = { id: r.id, path: r.path, real: missing ? r.path : await canonReal(r.path), missing };
         roots.push(root);
         if (!missing) startRootWatch(root);
+        else scheduleReviveProbe(root); // P3-08：启动即失联的根（外置盘没插）也挂复活探测，插回时自愈
       }
     })();
   }
@@ -518,6 +550,7 @@ function registerIpc() {
       const r = roots.find((x) => x.id === cls.rootId);
       // 选的是一个失联根的路径且现在可达了（外置盘插回来）→ 顺手复活，不报「已打开」
       if (r.missing && (await dirExists(r.path))) {
+        clearReviveTimer(r.id); // P3-08：手动重加已抢先复活，收掉复活探测 timer
         r.missing = false;
         r.real = await canonReal(r.path);
         startRootWatch(r);
@@ -572,6 +605,7 @@ function registerIpc() {
       if (!own || !own.rel) return { status: 'stale' };
       rebases.push({ fromRootId: id, toRootId: newRoot.id, prefix: own.rel });
       workspaceWatcher.unwatch(id);
+      clearReviveTimer(id); // P3-08：被吸收的子根不再独立，收掉它可能挂着的复活探测
       dropLinkIndex(id); // U2（审查 #1）：被吸收的子根不再是根，丢它的链接索引（对齐 ws-remove-root）
     }
     roots = roots.filter((x) => !cls.childIds.includes(x.id));
@@ -591,6 +625,7 @@ function registerIpc() {
     if (idx < 0) return null;
     const [root] = roots.splice(idx, 1);
     workspaceWatcher.unwatch(rootId);
+    clearReviveTimer(rootId); // P3-08：根被移除，收掉可能挂着的复活探测
     dropLinkIndex(rootId); // U2：丢弃该根链接索引
     await persistRoots();
     const token = 'rmroot-' + stashSeq++;
@@ -611,6 +646,7 @@ function registerIpc() {
     roots.splice(index, 0, root); // 放回原来的位置（照 ui-demo）
     await persistRoots();
     if (!root.missing) startRootWatch(root);
+    else scheduleReviveProbe(root); // P3-08：撤销复活后仍失联（路径此刻不可达）→ 挂探测，回来时自愈
     return {
       status: 'ok',
       root: rootInfo(root),
@@ -634,6 +670,7 @@ function registerIpc() {
     const others = classifyRoots().filter((x) => x.id !== rootId);
     const cls = rootsLib.classifyRoot(real, others);
     if (cls.rel !== 'independent') return { status: 'overlap' };
+    clearReviveTimer(rootId); // P3-08：手动重定位已复活，收掉复活探测（且新路径可能与旧不同）
     r.path = path.resolve(dir);
     r.real = real;
     r.missing = false;
@@ -790,6 +827,17 @@ function registerIpc() {
       ? state.entries.filter((e) => !(e && typeof e.rel === 'string') || known.has(e.rootId))
       : [];
     return workspaceStore.setTabs(workspaceFile(), { entries, activeRel: state && state.activeRel });
+  });
+  // P3-07 树展开态持久化（缓存语义，rel 失效即弃）：写盘前把已不在注册表的 rootId 滤掉（同 ws-set-tabs 的
+  // 移除根竞态防御）。失联根的条目保留——重新定位后展开态原样回来。
+  ipcMain.handle('ws-get-tree-state', () => workspaceStore.getTreeState(workspaceFile()));
+  ipcMain.handle('ws-set-tree-state', (_e, ts) => {
+    const known = new Set(roots.map((r) => r.id));
+    const expandedByRoot = {};
+    const src = ts && ts.expandedByRoot;
+    if (src && typeof src === 'object') for (const id of Object.keys(src)) if (known.has(id)) expandedByRoot[id] = src[id];
+    const collapsedRoots = Array.isArray(ts && ts.collapsedRoots) ? ts.collapsedRoots.filter((id) => known.has(id)) : [];
+    return workspaceStore.setTreeState(workspaceFile(), { expandedByRoot, collapsedRoots });
   });
   // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
   ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));

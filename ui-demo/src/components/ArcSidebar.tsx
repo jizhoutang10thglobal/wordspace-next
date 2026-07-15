@@ -842,6 +842,17 @@ export default function ArcSidebar() {
       localStorage.setItem('ws-fav-open', v ? '0' : '1')
       return !v
     })
+  // 置顶/标签页折叠（Colin 2026-07-15：三栏折叠统一）。默认展开——与收藏默认收起相反（主导航别一装就藏）。
+  const [pinnedOpen, setPinnedOpen] = useState(() => localStorage.getItem('ws-pinned-open') !== '0')
+  const [tabsOpen, setTabsOpen] = useState(() => localStorage.getItem('ws-tabs-open') !== '0')
+  const zoneTabs = useStore((s) => s.tabs)
+  const pinnedCount = zoneTabs.filter((t) => t.pinned).length
+  const tabsCount = zoneTabs.length - pinnedCount
+  const toggleZone = (key: string, set: (fn: (v: boolean) => boolean) => void) =>
+    set((v) => {
+      localStorage.setItem(key, v ? '0' : '1')
+      return !v
+    })
   const isWebTab = activeTab?.kind === 'web' && !!activeTab.url && activeTab.url !== 'wordspace://newtab'
   const bookmarked = !!isWebTab && bmList.some((b) => b.url === activeTab!.url)
   const toggleBookmark = () => {
@@ -1217,16 +1228,22 @@ export default function ArcSidebar() {
           )}
         </div>
 
-        <div className="arc-section-label">置顶</div>
-        <TabStrip pinned emptyHint="把标签页拖到这里置顶" />
+        <div className={`arc-section-label arc-zone-head ${pinnedOpen ? 'is-open' : ''}`} role="button" onClick={() => toggleZone('ws-pinned-open', setPinnedOpen)}>
+          <span>置顶</span>
+          <span className="arc-zone-count">{pinnedCount || ''}</span>
+          <ChevronRight size={12} className={`arc-caret ${pinnedOpen ? 'is-open' : ''}`} />
+        </div>
+        {pinnedOpen && <TabStrip pinned emptyHint="把标签页拖到这里置顶" />}
 
-        <div className="arc-section-label arc-tabs-label">
+        <div className={`arc-section-label arc-tabs-label arc-zone-head ${tabsOpen ? 'is-open' : ''}`} role="button" onClick={() => toggleZone('ws-tabs-open', setTabsOpen)}>
           <span>标签页</span>
-          <button className="arc-ico arc-ico-sm" title="新建标签页" onClick={onNewTab}>
+          <span className="arc-zone-count">{tabsCount || ''}</span>
+          <button className="arc-ico arc-ico-sm" title="新建标签页" onClick={(e) => { e.stopPropagation(); onNewTab() }}>
             <Plus size={14} />
           </button>
+          <ChevronRight size={12} className={`arc-caret ${tabsOpen ? 'is-open' : ''}`} />
         </div>
-        <TabStrip pinned={false} />
+        {tabsOpen && <TabStrip pinned={false} />}
 
         <div className="arc-section-label">文档</div>
         <div className="arc-filter">
