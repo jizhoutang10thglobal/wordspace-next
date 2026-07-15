@@ -1334,6 +1334,9 @@ window.ws2.onMenu((cmd) => {
   }
   if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+Shift+F
   if (cmd === 'find-palette' && window.__sbHooks && window.__sbHooks.findPalette) window.__sbHooks.findPalette();     // Cmd+P
+  // ⌘\ 切换侧栏（视图菜单加速器,覆盖全焦点域——含文档编辑 iframe 内的原失灵域；主层另有 keydown fallback）。__webMenu 不认领此命令,恒落这里。
+  if (cmd === 'toggle-sidebar' && window.__sbHooks && window.__sbHooks.toggleSidebar) window.__sbHooks.toggleSidebar();
+  // ⌘R 刷新:网页标签由 __webMenu 上面接管（webNav reload）;文档标签落到这里 → 有意 no-op（不重载,防未保存编辑丢失,§2 拍板）。
 });
 
 // 导出 PDF。两条内部路径（单按钮、无 UI 菜单）：

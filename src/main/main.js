@@ -167,6 +167,15 @@ function buildMenu() {
         { label: '在文件名中查找…', accelerator: 'CmdOrCtrl+Shift+F', click: () => sendMenu('find-file') }
       ]
     },
+    {
+      label: '视图',
+      submenu: [
+        // ⌘\ 切换侧栏：菜单加速器覆盖一切焦点域（含文档编辑 iframe 内，keydown 不冒泡的失灵域）。renderer onMenu → toggleCollapsed。
+        { label: '切换侧栏', accelerator: 'CmdOrCtrl+\\', click: () => sendMenu('toggle-sidebar') },
+        // ⌘R 刷新当前网页标签（文档标签 no-op，防未保存编辑丢失）。自建菜单替换了默认 View>Reload，此处显式给回浏览器语义的刷新。
+        { label: '刷新', accelerator: 'CmdOrCtrl+R', click: () => sendMenu('reload') }
+      ]
+    },
     { role: 'windowMenu', label: '窗口' }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
