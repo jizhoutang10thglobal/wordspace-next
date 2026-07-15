@@ -1,7 +1,7 @@
 # 文档图片（Image 块）—— 对齐 spec
 
-状态（2026-07-14）：**设计契约，两侧均未实现**。由插图技术研究落账，三项决策已拍
-（Colin 2026-07-14，见「已拍板」），按「ui-demo 先定稿 → 移植真 app」流程实施。
+状态（2026-07-15）：**两侧均已实现**。ui-demo 定稿（PR #204，Colin 实测 + live），真 app
+移植（本 PR，U1–U6）。三项决策见「已拍板」（Colin 2026-07-14）。
 
 Schema 层早已就位、本 spec 零改动消费：`IMG` 是顶层块、`figure`（恰含一个 `<img>` +
 可选 `<figcaption>`）是 canonical 配字图，都在 Schema #1 校验器里（`src/lib/schema-validate.js`）；
@@ -64,28 +64,36 @@ Schema 层早已就位、本 spec 零改动消费：`IMG` 是顶层块、`figure
 
 | 维度 | ui-demo | 真 app |
 |---|---|---|
-| 图片块渲染/选中态 | 未实现（Canvas.tsx 块模型新块型） | 未实现（`src/editor/blockedit.js` 原子叶子块） |
-| 粘贴/拖放分支 | 未实现 | 未实现（blockedit `onPaste` / ED-A5 白名单分支） |
-| 降采样纯逻辑 | 未实现（建议 `ui-demo/src/lib/image.ts`） | 未实现（建议 `src/lib/image-ingest.js`，脱离 Electron、vitest 直测） |
-| 文件选择器 | 浏览器 `<input type=file>` | 主进程 dialog（`window.ws2` IPC；编辑内核在父层，接线无障碍） |
+| 图片块渲染/选中态 | `Canvas.tsx` `ImageBlockView`（原子块） | `src/editor/blockedit.js`：`classify(<figure>含 img)→'image'`，灰选复用 `data-ws2-selected`（无第二层描边） |
+| 三入口（斜杠/粘贴/拖放） | `Canvas.tsx` `applySlash`/`onBlocksPaste`/`onBlocksDrop` | `src/editor/blockedit.js` `SLASH_ITEMS`+`applySlash`（image 分支）/`onPaste`（文本优先）/`onDragOver`+`onDrop`（image 白名单） |
+| 摄入 + 降采样纯逻辑 | `ui-demo/src/lib/image.ts` | `src/lib/image-ingest.js`（双导出，脱 Electron，`test/image-ingest.test.js` node:test 直测；`ingestImage` 在父层 renderer 跑） |
+| 图片说明 figcaption | `ImageBlockView`（图下方内联「加说明」） | `blockedit.js` 块 ⋮⋮ 菜单「加说明」+ `enterCaptionEdit`/`persistCaption`（见有意分歧） |
+| 文件选择器 | 浏览器 `<input type=file>` | 主进程 `src/main/ipc.js` `ws-pick-images` + `src/renderer/preload.js` `pickImages`（`window.ws2`；shell.js attach 传 `pickImages` dep） |
 | 校验 | —（demo 无校验器） | `src/lib/schema-validate.js`（已就位，零改动） |
+| 验证门 | `ui-demo/scripts/verify-images.mjs` | `e2e/images.spec.js`（磁盘字节过 `registry.classify` 判 conform + 变异自检） |
 
 ## 有意分歧
 
 - 文件选择器：demo 用浏览器 `<input type=file>`，真 app 用原生 dialog——平台能力差异
   （2026-07-14，随本 spec 设立）。
+- **「加说明」入口**：demo 在选中图下方给一个内联按钮；真 app 走块 ⋮⋮ 菜单的「加说明」项
+  ——真 app 的块级操作统一收在 ⋮⋮ 菜单（转为/复制/删除/颜色都在那），平台交互惯例差异
+  （Colin 待 review 时确认；2026-07-15，随真 app 移植设立）。已有说明的图两侧都是直接点
+  figcaption 编辑、清空降回裸 img，一致。
 
 ## 对齐锚点
 
-- ui-demo 侧：未实现
-- app 侧：未实现
+- ui-demo 侧：commit `a454c7d`（2026-07-15，PR #204 merge）
+- app 侧：本 PR `feat/app-doc-images`（U1–U6），合并后 = merge sha
 
 ## 欠账
 
-- 全部：两侧均未实现，本 spec 为纯设计契约。实施顺序按惯例 ui-demo 先定稿。
-- **验证门（实施 PR 必带）**：图片真渲染的强断言（`naturalWidth > 0` + boundingBox 非零，
-  不查 DOM 存在性——S4 纪律：能想出「图挂了断言还过」就是弱门）+ 变异自检（坏 src 必翻红）+
-  降采样护栏单测（超限拒绝、EXIF 归正、SVG 拒）。
-- **体积放大预案**：undo 是 `body.innerHTML` 全量字符串快照、自动保存 1.2s 全量重写文件——
-  多图文档下两者都随内联 base64 放大。Phase 1 靠降采样上限压住 + undo 栈深度设限；
-  Phase 2 sidecar 根治。实现 PR 带多图文档的体积/性能压力用例。
+- **OS 文件拖放入口**：已实现（落点 = Y 最近块），但**靠宿主手测**——Electron 里 OS drop 的
+  `dataTransfer.files` 难在 e2e 合成（recon 亦标为「移植里行为最易断的一环」）。若真机上 iframe
+  的 drop 事件拿不到 files，回退方案 = 把 OS 图片 drop 处理器挂到父层 frame 元素。
+- **EXIF 方向**：沿用 ui-demo 验证过的 `createImageBitmap(file)` 默认行为（未显式传
+  `imageOrientation`）。若在更老 Chromium 上遇到方向不归正，显式传 `{ imageOrientation: 'from-image' }`。
+- **体积放大预案（未做压力用例）**：undo 是 `body.innerHTML` 全量快照、自动保存全量重写文件——
+  多图文档下两者随内联 base64 放大。Phase 1 靠降采样上限（长边 1600 / 单图 1.5MB）压住；
+  多图文档的体积/性能压力用例尚未加（本 PR e2e 只验单图管线），出现卡顿信号时补 + 收 undo 栈深；
+  Phase 2 sidecar 根治。
