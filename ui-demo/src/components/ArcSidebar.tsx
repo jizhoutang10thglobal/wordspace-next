@@ -30,6 +30,7 @@ import {
   Star,
   Bookmark,
   History as HistoryIcon,
+  LayoutTemplate,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
@@ -1101,6 +1102,7 @@ export default function ArcSidebar() {
   }
 
   const util = [
+    { to: '/templates', icon: LayoutTemplate, label: '模板' },
     { to: '/settings', icon: Settings2, label: '设置' },
   ]
 

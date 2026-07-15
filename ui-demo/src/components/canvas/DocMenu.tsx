@@ -7,12 +7,14 @@ import {
   PenLine,
   Trash2,
   BookOpen,
+  Palette,
 } from 'lucide-react'
 import { useStore } from '../../mock/store'
 import { useUI } from '../../mock/ui'
 import { usePaged } from '../../mock/paged'
 import { computeBacklinks } from '../../lib/links'
 import { printPagedDoc } from '../../lib/printExport'
+import { checkSchema } from '../../lib/schemaCheck'
 import type { Doc } from '../../types'
 
 /**
@@ -34,6 +36,15 @@ export default function DocMenu({
   const pagedCfg = usePaged((s) => s.configs[doc.id])
   const toast = useStore((s) => s.toast)
   const deleteDoc = useStore((s) => s.deleteDoc)
+  const openSaveTemplate = useUI((s) => s.openSaveTemplate)
+
+  // 存为模板可用性：非合规文档（走基础编辑）与 .md（头部样式无法持久化）都禁用，分别给因由。
+  const nonConform = !!doc.rawHtml && !checkSchema(doc.rawHtml).conform
+  const isMd = doc.format === 'markdown'
+  const saveDisabled = nonConform || isMd
+  const disabledReason = isMd
+    ? 'Markdown 文档暂不支持模板（头部样式不入盘）'
+    : '此文件不符合 Schema、走基础编辑，模板仅适用于合规文档'
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -95,6 +106,25 @@ export default function DocMenu({
         <BookOpen size={15} strokeWidth={1.8} />
         页面设置…
       </button>
+      {saveDisabled ? (
+        // 禁用态：原因常驻小字（键盘/读屏可达，不只 title）。
+        <div className="ws-docmenu-item is-disabled" role="menuitem" aria-disabled="true">
+          <Palette size={15} strokeWidth={1.8} />
+          <span className="ws-docmenu-disabled-wrap">
+            存为模板
+            <span className="ws-docmenu-hint">{disabledReason}</span>
+          </span>
+        </div>
+      ) : (
+        <button
+          className="ws-docmenu-item"
+          role="menuitem"
+          onClick={() => run(() => openSaveTemplate(doc.id))}
+        >
+          <Palette size={15} strokeWidth={1.8} />
+          将当前文档存为模板…
+        </button>
+      )}
       <button
         className="ws-docmenu-item"
         role="menuitem"

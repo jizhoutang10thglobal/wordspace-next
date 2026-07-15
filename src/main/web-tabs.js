@@ -267,7 +267,8 @@ function shortcutOf(input) {
   if (k === 'l') return 'focus-address';
   if (k === 'd') return 'bookmark-toggle';
   if (k === 'f') return 'web-find';
-  if (k === '\\') return 'toggle-sidebar';
+  // ⌘\ 切换侧栏改由「视图」菜单加速器统一处理（全焦点域，含 web view 聚焦时也触发）——不再这里转发，
+  // 否则菜单加速器 + 本转发会双触发（切两次=no-op）。同 §238 注释：菜单已覆盖的命令不在此重复转发。
   if (k === ',') return 'open-settings';
   if (k === '=' || k === '+') return 'zoom-in';
   if (k === '-') return 'zoom-out';

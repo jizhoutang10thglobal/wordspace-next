@@ -20,6 +20,8 @@ import ShortcutsPanel from './components/ShortcutsPanel'
 import FindPalette from './components/FindPalette'
 import SaveModal from './components/SaveModal'
 import PageSetupModal from './components/PageSetupModal'
+import SaveTemplateModal from './components/SaveTemplateModal'
+import TemplatesPage from './components/TemplatesPage'
 import CloseConfirmModal from './components/CloseConfirmModal'
 import DeleteLinkedModal from './components/DeleteLinkedModal'
 import MarkdownSourcePanel from './components/MarkdownSourcePanel'
@@ -60,6 +62,7 @@ function RoutedView() {
         <Route path="/docs" element={<MainDocs />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/bookmarks" element={<BookmarksPage />} />
+        <Route path="/templates" element={<TemplatesPage />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/docs" replace />} />
       </Routes>
@@ -97,6 +100,7 @@ export default function App() {
       <FindPalette />
       <SaveModal />
       <PageSetupModal />
+      <SaveTemplateModal />
       <CloseConfirmModal />
       <DeleteLinkedModal />
       <MarkdownSourcePanel />

@@ -297,7 +297,6 @@
     if (cmd === 'focus-address') focusOmni();
     else if (cmd === 'bookmark-toggle') toggleBookmark();
     else if (cmd === 'web-find') openFind();
-    else if (cmd === 'toggle-sidebar') { const t = document.getElementById('sb-toggle'); if (t) t.click(); }
     else if (cmd === 'open-settings') openSubPage('settings');
     else if (cmd === 'cycle-next') { if (window.__sbHooks && window.__sbHooks.cycleTab) window.__sbHooks.cycleTab(false); }
     else if (cmd === 'cycle-prev') { if (window.__sbHooks && window.__sbHooks.cycleTab) window.__sbHooks.cycleTab(true); }
@@ -1045,6 +1044,7 @@
     if (cmd === 'export-pdf') { if (e.url) window.ws2.webExportPdf(key); return true; }
     if (cmd === 'undo') { window.ws2.webNav(key, 'undo'); return true; }
     if (cmd === 'redo') { window.ws2.webNav(key, 'redo'); return true; }
+    if (cmd === 'reload') { navReload.click(); return true; } // ⌘R 刷新当前网页标签：复用导航条按钮的 disabled 守卫（起始页 url=null → 按钮禁用 → 点击 no-op，不炸）
     if (cmd === 'save') return true; // 网页无保存目标：no-op（防误存后台文档）
     return false;
   };
