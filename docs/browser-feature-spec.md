@@ -164,6 +164,10 @@ per-tab 栈。刷新 = `navigate(activeTab.url)`（栈有「连续同 url 不重
   `{ tabId, url, title, canGoBack, canGoForward }` **push** 给 renderer（如 `webtab:state` 频道），
   renderer 存进标签状态驱动按钮。不要 renderer 轮询。
 
+**导航加载期的反馈（Wendi 2026-07-15，治「渲染区跳转旧页面 1-2 秒」）**
+- 病根不是闪回（那是 07-12 修的、透出**文档**）：而是**原地导航时旧网页保留绘制到新页提交为止（慢站 1-2s），期间零反馈**——用户以为卡在旧页/缓冲坏了。主进程 `did-start/stop-loading` 一直在推 `loading`，但 renderer 从不消费。
+- **修法 = Chrome-style**：保留旧页（原地导航现有行为，view 不摘、不动导航模型），**补标签行 spinner**——加载中的网页标签，其侧栏行 favicon/地球位换成转圈 spinner（`onWebTabUpdated` 检测 `loading` 翻转 → `__sbWeb.setTabLoading` 轻量刷该行，不落盘/不整区重建；每个标签都收，后台标签也转圈）。提交/`did-stop-loading` 后撤。**不做**全屏遮罩（快站会闪）、不做进度条。spinner 复用 `ws-spin`、描边走主题 token（深浅两态）。
+
 ---
 
 ### 4.2 地址栏 omnibox（+ 自动补全）
