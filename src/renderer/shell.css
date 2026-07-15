@@ -173,6 +173,9 @@
 :root[data-theme="dark"] .sb-save-name:hover { background-color: var(--c-active); }
 /* PDF 舞台是 chrome（页面外的灰底），暗态给深底；PDF 页本身白纸不动（不反色 PDF 查看器） */
 :root[data-theme="dark"] .pdfv-stage { background: var(--c-bg-sunken); }
+/* 页脚 wordmark 是纯灰度 PNG（黑字 + 黑框白挖字，实测色偏=0），暗态直接反相成白字白框——
+   反相对纯灰度不串色，比塞一张白版 PNG 省一个资源文件。 */
+:root[data-theme="dark"] .sb-foot-logo { filter: invert(1); }
 
 /* 主题切换短过渡（§4）。只在切换窗口内生效（shell.js 挂 [data-theme-switching] ~200ms 后摘），
    不常驻——否则跟 hover 自有过渡打架。reduced-motion 下整段关。 */
@@ -481,6 +484,12 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-zone { margin: 0 0 4px; }
 .sb-zone:last-of-type { padding-bottom: 2px; margin-bottom: 0; }
 .sb-zone-head { display: flex; align-items: center; }
+/* 可折叠栏标（置顶/标签页，抄收藏区 §4.3）：整条可点、caret 右置随 is-open 旋转、计数用等宽字 */
+.sb-zone-head[role="button"] { cursor: pointer; }
+.sb-zone-head .sb-sec-label { flex: none; } /* caret/count 在场时 label 不吃满，交给 .sb-zone-count 顶开（对齐 .sb-fav-count 布局） */
+.sb-zone-count { flex: 1; padding-left: 6px; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-3); }
+.sb-zone-caret { flex: none; display: inline-flex; align-items: center; margin-right: 8px; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
+.sb-zone.is-open .sb-zone-caret { transform: rotate(90deg); }
 /* 「文件」段标（独立于 .sb-zone，跟在标签页区之后）：复用段标样式，提供文件区上方留白。 */
 .sb-files-label[hidden] { display: none; }
 /* editorial 分区栏标（docs/style.md §7）：等宽 + 宽字距，像刊物的栏目标记（对齐 ui-demo arc-section-label） */

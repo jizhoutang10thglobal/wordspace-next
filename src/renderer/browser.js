@@ -239,6 +239,12 @@
     if (sb() && (prev.url !== s.url || prev.title !== s.title || prev.favicon !== s.favicon)) {
       sb().updateWeb(s.key, { url: s.url, title: s.title || s.url || '新标签页' });
     }
+    // U3 导航加载反馈（治「渲染区闪回旧页面 1-2 秒」= 导航期零反馈）：loading 变化 → 轻量刷该标签行的 spinner。
+    // 不走 updateWeb（那会落盘 + 整区 renderZones）；每个 s.key 都收，后台标签加载也转圈（Chrome 语义）。
+    // 旧页面保留是原地导航现有行为（view 不摘、attachedKey 不变），不动导航模型——只补「正在加载」的可见反馈。
+    if (sb() && sb().setTabLoading && prev.loading !== s.loading) {
+      sb().setTabLoading(s.key, !!s.loading);
+    }
     // 起始页 → 真网页的切换点：导航**真提交**（everCommitted,首次 did-navigate）才藏起始页 surface。
     // navigate() 会提前把 url 写进推送（地址栏要即时显示）,不能当提交信号——慢站的响应头没来之前
     // 起始页要一直盖着（submitNavigate 不再提前藏——fresh view 首绘前藏掉它会透出底下的文档,闪回 bug）。

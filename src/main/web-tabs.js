@@ -210,7 +210,9 @@ function wireViewEvents(key, view) {
   });
   wc.on('render-process-gone', (_e, details) => {
     if (!policy.isRealCrash(details && details.reason)) return;
-    const r = registry.get(key); if (r) { r.error = { code: 'crash', desc: (details && details.reason) || 'crashed', url: r.url }; pushUpdate(key); }
+    // r.loading=false 必须补（对齐 did-fail-load:208）——渲染进程崩了不会再补发 did-stop-loading,
+    // 漏了它 loading 卡 true → U3 标签行 spinner 永久旋转（审查 P2）。
+    const r = registry.get(key); if (r) { r.loading = false; r.error = { code: 'crash', desc: (details && details.reason) || 'crashed', url: r.url }; pushUpdate(key); }
   });
 
   // window.open：deny 原生弹窗；http(s) 链接 → 通知 renderer 建新标签走漏斗（spec §10.2：主进程不直接建 view）。
