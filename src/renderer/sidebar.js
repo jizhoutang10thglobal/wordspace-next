@@ -2346,6 +2346,12 @@
   function toggleCollapsed() { if (sidebarEl) setSidebarCollapsed(!sidebarEl.classList.contains('is-collapsed')); }
   if (toggleBtn) toggleBtn.onclick = toggleCollapsed;
   if (reopenBtn) reopenBtn.onclick = () => setSidebarCollapsed(false);
+  // ⌘\ 切换侧栏的**主**通道是「视图」菜单加速器（sendMenu('toggle-sidebar') → shell onMenu → __sbHooks.toggleSidebar），
+  // 它覆盖全部焦点域——含文档编辑 iframe 内的原失灵域（keydown 不冒泡出 iframe，靠 keydown 兜不住，必须走菜单）。
+  // 下面这条主层 document keydown 保留作**主层 fallback**：macOS/Electron 真实按键会被原生菜单先吃掉、这条不触发
+  // （所以不与菜单双触发）；只有绕过原生菜单的路径（如 e2e 的 CDP page.keyboard.press，或菜单未覆盖到的平台域）才落它。
+  // ⚠ web view 焦点的 before-input 转发已删（web-tabs.js）——那条会与菜单**真**双触发（before-input 与菜单加速器是两层，
+  // 都吃到=切两次），主层 keydown 不同、无此问题，故留。
   document.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === '\\') {
       e.preventDefault();
@@ -2672,6 +2678,7 @@
     tabByIndex: (n) => tabByIndex(n),             // ⌘1-9
     reopenClosedTab: () => reopenClosedTab(),     // ⌘⇧T（菜单加速器）
     expandSidebar: () => setSidebarCollapsed(false), // ⌘L 侧栏收起时先展开（browser.js 用）
+    toggleSidebar: () => toggleCollapsed(), // ⌘\ 视图菜单加速器 → shell onMenu（覆盖全焦点域，含文档编辑 iframe 内；主层另有 keydown fallback）
     openEntryRow: (entry) => openTabRow(entry),   // browser.js 起始页置顶行/补全「开着的标签」聚焦用
     // Cmd+W：有活跃标签关标签；无标签但还有内容（工作区外查看器 / 单文件模式的文档）先关内容回空态；
     // 真·空态 → 关窗口（Wendi 2026-07-03：macOS=隐藏驻留、后台开着；Windows/Linux 按平台惯例退出）。

@@ -75,6 +75,21 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   （display:flex 压过 UA `[hidden]` 的同款隐患一并补）。门 `e2e/browser.spec.js`。
 - **P3-02 置顶标签保留关闭钮**（Colin 拍板方案 B，纯 docs）：正本 §4.4/§13/§15 记「置顶有×=取消置顶并移除，⌘W 仍守置顶」。
 
+## Wendi 2026-07-15 反馈批（plan `docs/plans/2026-07-15-001-fix-wendi-feedback-sidebar-browser-plan.md`）
+
+- **U4 ⌘\ 切换侧栏——全焦点可发现**：新增「视图」应用菜单加速器作**主通道**（`main.js buildMenu` 新增「视图」子菜单 →
+  `sendMenu('toggle-sidebar')` → `shell.js onMenu` → `sidebar.js __sbHooks.toggleSidebar`）。菜单加速器覆盖**全焦点域**
+  ——尤其**文档编辑 iframe 内的原失灵域**（keydown 不冒泡出 iframe，原来只能靠主层 keydown 兜、兜不到，这是 Wendi 报的 bug）。
+  保留 `sidebar.js` 主层 `document` keydown 作**主层 fallback**（macOS 真实按键被原生菜单先吃、这条不触发=不与菜单双触发；
+  只有绕过原生菜单的 CDP 注入 / 菜单未覆盖平台域才落它——现有 `page.keyboard.press('Control+\\')` e2e 靠它）。
+  **删掉** `web-tabs.js shortcutOf` 的 `'\\'→'toggle-sidebar'` 转发 + `browser.js onWebShortcut` 接收端——web view 焦点下
+  `before-input` 与菜单加速器是两层、会**真**双触发（切两次=no-op），主层 keydown 不同故留。正本 §7 已补「全焦点」契约。
+  门 `e2e/tabs.spec.js`（UX-U4，menu 路由 + iframe 聚焦回归）+ 既有 `workspace.spec.js`/`sidebar.spec.js`（keydown fallback）。
+- **U5 ⌘R 刷新网页标签**：自建菜单替换了默认 `View>Reload`，此处「视图」菜单显式给回 → `sendMenu('reload')`；
+  `browser.js __webMenu` 网页态 → `navReload.click()`（复用导航条按钮 disabled 守卫：起始页 url=null → no-op）；
+  **文档标签有意 no-op**（`shell.js onMenu` 无 reload 分支，防未保存编辑丢失，§2 拍板）。正本 §7 新增 ⌘R 行。
+  门 `e2e/browser.spec.js`（U5 web 刷新=`/rl` 路由 server 命中+1 强断言 + 无目标不炸）+ `e2e/tabs.spec.js`（UX-U5 文档 no-op=易失标记存活）。
+
 ## 欠账
 
 - **打包冒烟 / Windows 未验**（正本 §13「仍开放」；dev 态 mac 全绿，签名打包后的 WebContentsView/
@@ -84,6 +99,11 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   http/https）；**签名发版后需真机闭环**：装新版 → 系统设置把默认浏览器切成 Wordspace → 从别的 app
   点链接验热/冷两路。
 - **⌘/ 快捷键面板**：ui-demo 有、真 app 暂无（app 本无快捷键面板，独立小 feature）。
+- **U4/U5 菜单加速器的 web view 焦点跨平台假设**（2026-07-15 对抗审查记账，非阻塞）：⌘\/⌘R 在**网页标签聚焦**时
+  能生效，依赖「原生应用菜单加速器在焦点落在子 `WebContentsView` 上时也触发」。此点仅 macOS 已由 ⌘W（菜单加速器、
+  不转发、浏览时能关标签）间接实证；**Windows/Linux 未验**（本 feature 整体 Windows 未验，见上「打包冒烟」）。U4 删了
+  跨平台的 `before-input` 转发后，web 焦点下无 fallback——若某平台原生加速器够不到聚焦的子 view，⌘\/⌘R 在浏览时会失灵。
+  主层/文档 iframe 焦点不受影响（走主窗口菜单，且 ⌘\ 有主层 keydown fallback）。真机闭环验放到 Windows 打包冒烟一并做。
 - **错误恢复与弹层并发**（对抗审查记账，非阻塞，极窄路径）：错误页恢复导航**加载期间**打开 ⌘P/⌘T 弹层,
   提交推到时 view 会短暂盖在弹层上——与上方 everCommitted 起始页分支同款既有盲点（弹层观察器在 view 脱挂时
   `attachedKey=null` 不触发暂停）,弹层关掉即自愈。加 `!document.querySelector(OVERLAY_SEL)` 守卫会造出「弹层关掉

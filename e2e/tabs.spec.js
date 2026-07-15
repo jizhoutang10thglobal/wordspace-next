@@ -564,3 +564,43 @@ test('UI 防重叠：编辑器长文件名面包屑不压到右上角浮动 acti
   const bc = await page.locator('.ws-breadcrumb').boundingBox();
   expect(bc.x + bc.width, '面包屑右边缘应在 top-actions 左侧、不重叠').toBeLessThanOrEqual(ta.x);
 });
+
+// U4（Wendi 2026-07-15）：⌘\ 切换侧栏改由「视图」菜单加速器统一处理（sendMenu('toggle-sidebar')）。
+// 菜单加速器覆盖全部焦点域（主层 / 文档编辑 iframe / 网页 view），是唯一通道——旧的主层 document keydown
+// 与 web-tabs before-input 转发都删了，避免双触发。此门验 onMenu 路由（老代码无此菜单路由 → 会漏）；
+// 原生加速器在 iframe 聚焦时真触发是 Electron 保证 + host-verify 真键盘验，e2e 测的是路由契约。
+test('UX-U4: ⌘\\ 视图菜单 toggle-sidebar → 折叠/恢复；文档编辑聚焦时仍生效（原失灵域回归门）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  const toggle = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'toggle-sidebar'));
+  await expect(page.locator('#sidebar')).not.toHaveClass(/is-collapsed/);
+  await toggle();
+  await expect(page.locator('#sidebar')).toHaveClass(/is-collapsed/);
+  await expect(page.locator('#sb-reopen')).toBeVisible(); // 全隐后编辑区悬浮展开按钮现身
+  await toggle();
+  await expect(page.locator('#sidebar')).not.toHaveClass(/is-collapsed/);
+  await expect(page.locator('#sb-reopen')).toBeHidden();
+  // 焦点进文档编辑 iframe（keydown 不冒泡的原失灵域）→ 经菜单加速器仍单次生效（焦点无关，路由恒达）
+  await page.frameLocator('#doc-frame').locator('body').click();
+  await toggle();
+  await expect(page.locator('#sidebar')).toHaveClass(/is-collapsed/);
+  await toggle();
+  await expect(page.locator('#sidebar')).not.toHaveClass(/is-collapsed/);
+});
+
+// U5（Wendi 2026-07-15）：⌘R 对**文档**标签有意 no-op（防未保存编辑丢失，§2 拍板）。web 标签的真刷新在 browser.spec.js。
+test('UX-U5: ⌘R 对文档标签 no-op —— menu reload 不重载 iframe（易失 DOM 标记存活 = 没重载）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]');
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  // 往文档 iframe 塞一个磁盘原文里没有的易失标记——若 ⌘R 真重载 iframe，会被磁盘原文覆盖冲掉
+  await page.frameLocator('#doc-frame').locator('body').evaluate((b) => b.setAttribute('data-u5-marker', 'kept'));
+  // 菜单 reload（= ⌘R）：文档标签 → __webMenu 判非 web、shell onMenu 无 reload 分支 → no-op
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'reload'));
+  await page.waitForTimeout(500); // 给「若误重载」一点发生时间
+  // 标记仍在 = iframe 没被重载；正文不变；标签仍是 a.html（强断言：查存活标记，不是查「没报错」）
+  await expect(page.frameLocator('#doc-frame').locator('body')).toHaveAttribute('data-u5-marker', 'kept');
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('AAA');
+  await expect(tabRow('a.html')).toHaveClass(/is-active/);
+});
