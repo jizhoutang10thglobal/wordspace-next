@@ -30,6 +30,13 @@ import LinkPreview from './canvas/LinkPreview'
 import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
 import { resolveHref, relHref, dirOf, baseOf, splitHrefSuffix } from '../lib/links'
+import {
+  acceptsImageType,
+  imageBlockHtml,
+  ingestImage,
+  parseImageBlockHtml,
+  pickImageFiles,
+} from '../lib/image'
 import { usePageConfig } from '../mock/paged'
 import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
@@ -67,6 +74,7 @@ const SLASH_ITEMS: {
   { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
   { key: 'table', label: '表格', kw: 'table biaoge grid', type: 'table' },
   { key: 'code', label: '代码', kw: 'code daima pre snippet', type: 'code' },
+  { key: 'image', label: '图片', kw: 'image img tupian picture photo zhaopian', type: 'image' },
   { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
   { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
 ]
@@ -173,6 +181,93 @@ function isCaretAtBlockStart(el: HTMLElement): boolean {
 // ---------------------------------------------------------------------------
 // One block. 单击可编辑块 = 进文字编辑（光标落点击处）；单击不可编辑块 = 块级灰选中。
 // 「分块制」只留在数据层（每块离散、忠实 HTML），不再在视觉上做对象框。
+// ---------------------------------------------------------------------------
+// 图片块（doc-images spec）：原子叶子块——光标不可入内、点击=整块灰选（走 BlockRow 的
+// onSelect 路径）。block.html 只有两种 canonical 形态（imageBlockHtml 构造）：裸 <img> /
+// <figure><img><figcaption>。说明（figcaption）是块内唯一可编辑区，点击它不触发块选中；
+// 清空失焦即降回裸 <img>（双向收敛）。
+function ImageBlockView({
+  doc,
+  block,
+  selected,
+  registerEl,
+}: {
+  doc: Doc
+  block: Block
+  selected: boolean
+  registerEl: (id: string, el: HTMLElement | null) => void
+}) {
+  const updateBlockHtml = useStore((s) => s.updateBlockHtml)
+  const checkpoint = useStore((s) => s.checkpoint)
+  const parsed = useMemo(() => parseImageBlockHtml(block.html), [block.html])
+  const [capOpen, setCapOpen] = useState(false) // 「加说明」刚点开、caption 还是空的编辑态
+  const capRef = useRef<HTMLElement | null>(null)
+
+  if (!parsed) {
+    // 旧占位块 / 坏数据：沿用原灰盒占位渲染，不假装是图
+    return (
+      <div className="ws-image ws-image-stub" ref={(el) => registerEl(block.id, el)}>
+        {block.html || '图片'}
+      </div>
+    )
+  }
+  const persistCaption = () => {
+    const text = (capRef.current?.textContent ?? '').trim()
+    if (text !== parsed.caption) {
+      checkpoint()
+      updateBlockHtml(doc.id, block.id, imageBlockHtml(parsed.src, parsed.alt, text))
+    }
+    setCapOpen(false)
+  }
+  const showCaption = capOpen || parsed.caption !== ''
+  return (
+    <figure
+      className="ws-image"
+      data-block={block.id}
+      ref={(el) => registerEl(block.id, el)}
+    >
+      <img src={parsed.src} alt={parsed.alt} draggable={false} />
+      {showCaption && (
+        <figcaption
+          ref={(el) => {
+            capRef.current = el
+          }}
+          contentEditable
+          suppressContentEditableWarning
+          data-placeholder="图片说明"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation() // 别让 Enter/Backspace 漏到文档级快捷键（会插块/删块）
+            if (e.key === 'Enter' || e.key === 'Escape') {
+              e.preventDefault()
+              ;(e.target as HTMLElement).blur()
+            }
+          }}
+          onBlur={persistCaption}
+        >
+          {parsed.caption}
+        </figcaption>
+      )}
+      {selected && !showCaption && (
+        <button
+          type="button"
+          className="ws-image-addcap"
+          contentEditable={false}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            setCapOpen(true)
+            window.setTimeout(() => capRef.current?.focus(), 0)
+          }}
+        >
+          加说明
+        </button>
+      )}
+    </figure>
+  )
+}
+
 // ---------------------------------------------------------------------------
 function BlockRow({
   doc,
@@ -352,9 +447,7 @@ function BlockRow({
     inner = <hr className="ws-hr" ref={(el) => registerEl(block.id, el)} />
   } else if (block.type === 'image') {
     inner = (
-      <div className="ws-image" ref={(el) => registerEl(block.id, el)}>
-        {block.html}
-      </div>
+      <ImageBlockView doc={doc} block={block} selected={selected} registerEl={registerEl} />
     )
   } else if (block.type === 'heading') {
     const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3'
@@ -1058,6 +1151,63 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     [doc, updateBlockHtml, setBlockType, editBlock, deleteBlock, deselect, checkpoint],
   )
 
+  // ===== 图片块插入管线（doc-images spec：斜杠 / 粘贴 / 拖放三入口共用）=====
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const imagePick = useRef<{ anchorId: string; replaceEmpty: boolean } | null>(null)
+  const insertImages = useCallback(
+    async (files: File[], anchorId: string | null, replaceEmpty = false) => {
+      if (!doc || files.length === 0) return
+      let after = anchorId
+      let inserted = 0
+      for (const f of files) {
+        const r = await ingestImage(f) // 降采样护栏：长边≤1600 / base64≤1.5MB / 拒 SVG
+        if (!r.ok) {
+          toast(
+            r.reason === 'budget'
+              ? '图片太大：压缩后仍超过 1.5MB 上限'
+              : r.reason === 'type'
+                ? '不支持的图片格式'
+                : '图片无法解码',
+            'neutral',
+          )
+          continue
+        }
+        if (inserted === 0) checkpoint() // 首张成功才快照：全拒时不留空撤销步
+        const alt = (f.name || '').replace(/\.[a-z0-9]+$/i, '') // 可访问性 + 未来检索
+        const id = addBlock(doc.id, after, 'image', undefined, imageBlockHtml(r.src, alt))
+        selectBlock(id)
+        after = id
+        inserted++
+      }
+      // 已拍板②：锚点是空段落时原地替换（先插后删，撤销合成一步）
+      if (inserted > 0 && replaceEmpty && anchorId) deleteBlock(doc.id, anchorId)
+    },
+    [doc, addBlock, deleteBlock, selectBlock, checkpoint, toast],
+  )
+  // 粘贴图片。已拍板①文本优先：剪贴板有可用文本 → 交还既有文本粘贴路径，这里不拦。
+  const onBlocksPaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const cd = e.clipboardData
+      if (!cd || !doc) return
+      if (cd.getData('text/plain').trim()) return
+      const files = pickImageFiles(cd)
+      if (files.length === 0)
+        for (const item of Array.from(cd.items))
+          if (item.kind === 'file') {
+            const f = item.getAsFile()
+            if (f && acceptsImageType(f.type)) files.push(f)
+          }
+      if (files.length === 0) return
+      e.preventDefault()
+      const anchor = editingId ?? selectedId ?? null
+      const blk = anchor ? doc.blocks.find((b) => b.id === anchor) : undefined
+      const host = anchor ? blockEls.current.get(anchor) : undefined
+      const replaceEmpty = blk?.type === 'text' && !(host?.textContent ?? '').trim()
+      void insertImages(files, anchor, replaceEmpty)
+    },
+    [doc, editingId, selectedId, insertImages],
+  )
+
   // 斜杠菜单选中某项：删掉已输入的「/query」，再插入新块 / 转换当前块 / 弹 AI 占位。
   const applySlash = useCallback(
     (key: string) => {
@@ -1084,10 +1234,17 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         }, 0)
         return
       }
-      checkpoint()
       const el = blockEls.current.get(slash.blockId)
       const empty = !el || (el.textContent ?? '').trim() === ''
-      if (it.type === 'divider' || it.type === 'image') {
+      if (it.type === 'image') {
+        // 图片：开系统文件选择器，真插入在 input onChange（insertImages）。checkpoint 不在
+        // 这打——用户可能取消选择，空快照会留一步无效撤销。空段落原地替换（已拍板②）。
+        imagePick.current = { anchorId: slash.blockId, replaceEmpty: empty }
+        imageInputRef.current?.click()
+        return
+      }
+      checkpoint()
+      if (it.type === 'divider') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
       } else if (it.type === 'table' || it.type === 'code') {
         // 表格/代码：插入带默认内容的新块并进编辑（单元格/代码行随即可点改）
@@ -1461,7 +1618,16 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const onBlocksDragOver = useCallback(
     (e: React.DragEvent) => {
       const f = getDragFile()
-      if (!f || !curRootId || !curPath || f.rootId !== curRootId) return
+      if (!f) {
+        // OS 文件拖入（doc-images）：dragover 阶段只知道 'Files'、看不到 MIME——先放行，
+        // drop 时按图片白名单过滤（非图仍拒 + toast，不静默）。
+        if (e.dataTransfer.types.includes('Files')) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+        }
+        return
+      }
+      if (!curRootId || !curPath || f.rootId !== curRootId) return
       e.preventDefault()
       e.dataTransfer.dropEffect = 'link'
     },
@@ -1470,6 +1636,35 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const onBlocksDrop = useCallback(
     (e: React.DragEvent) => {
       const f = getDragFile()
+      if (!f && e.dataTransfer.types.includes('Files')) {
+        // OS 文件拖入 → 图片块（doc-images）。非图片文件维持拒绝口径，但要说出来。
+        e.preventDefault()
+        e.stopPropagation()
+        if (!doc) return
+        const files = pickImageFiles(e.dataTransfer)
+        if (files.length === 0) {
+          toast('只支持拖入图片文件（png / jpg / webp / gif / avif）', 'neutral')
+          return
+        }
+        // 落点：Y 最近的块；落在其上半且非首块 → 插到它前面，否则插到它后面
+        let best: { id: string; idx: number; mid: number; dist: number } | null = null
+        for (const [id, el] of blockEls.current) {
+          const idx = doc.blocks.findIndex((b) => b.id === id)
+          if (idx < 0 || !document.contains(el)) continue
+          const r = el.getBoundingClientRect()
+          const dist =
+            e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0
+          const mid = (r.top + r.bottom) / 2
+          if (!best || dist < best.dist) best = { id, idx, mid, dist }
+        }
+        const anchor = best
+          ? e.clientY < best.mid && best.idx > 0
+            ? doc.blocks[best.idx - 1].id
+            : best.id
+          : null // 空文档：append
+        void insertImages(files, anchor)
+        return
+      }
       if (!f || !doc) return
       if (!curRootId || !curPath) return
       if (f.rootId !== curRootId) {
@@ -1527,7 +1722,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       const el = blockEls.current.get(bid)
       if (el) updateBlockHtml(doc.id, bid, el.innerHTML)
     },
-    [doc, curRootId, curPath, docs, checkpoint, updateBlockHtml, toast],
+    [doc, curRootId, curPath, docs, checkpoint, updateBlockHtml, toast, insertImages],
   )
 
   // 断链修复①：重新指向候选文件（改这一条链接的 href，落库该块）
@@ -1837,6 +2032,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       // 灰选中态按 Enter：在选中块后插正文块并进编辑（兜底，可在不可编辑块后插块）
       if (e.key === 'Enter' && selectedId && !editingId && doc) {
         if (e.isComposing || e.keyCode === 229) return
+        // 焦点在图片说明（figcaption）里：这是块内编辑，不是选中态操作（防插块）
+        if ((e.target as HTMLElement)?.closest?.('figcaption')) return
         e.preventDefault()
         checkpoint()
         editBlock(addBlock(doc.id, selectedId, 'text'), { mode: 'start' })
@@ -1963,6 +2160,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         !editingId &&
         doc
       ) {
+        // 焦点在图片说明（figcaption）里：删的是说明文字，不是整块（防误删图）
+        if ((e.target as HTMLElement)?.closest?.('figcaption')) return
         e.preventDefault()
         removeBlock(selectedId)
       }
@@ -2334,6 +2533,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             onMouseOut={onBlocksMouseOut}
             onDragOver={onBlocksDragOver}
             onDrop={onBlocksDrop}
+            onPaste={onBlocksPaste}
           >
             {doc.blocks.map((b, i) => {
               let edge: 'top' | 'bottom' | null = null
@@ -2438,9 +2638,29 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
       {aiSoonOpen && <AiSoonModal onClose={() => setAiSoonOpen(false)} />}
 
+      {/* 图片插入的隐藏文件选择器（斜杠菜单「图片」触发；multiple = 一次插多张连续块） */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.currentTarget.files ?? []).filter((f) =>
+            acceptsImageType(f.type),
+          )
+          const ctx = imagePick.current
+          imagePick.current = null
+          e.currentTarget.value = '' // 允许连续两次选同一文件
+          if (ctx && files.length > 0)
+            void insertImages(files, ctx.anchorId, ctx.replaceEmpty)
+        }}
+      />
+
       {blockMenuFor && blockMenuPos && (
         <BlockActionMenu
           pos={blockMenuPos}
+          blockType={doc.blocks.find((b) => b.id === blockMenuFor)?.type}
           onTurnInto={(type, level) => {
             checkpoint()
             setBlockType(doc.id, blockMenuFor, type, level)
