@@ -390,6 +390,7 @@ function wireEditor() {
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   blockEdit = WS2BlockEdit.attach(doc, {
     win: frame.contentWindow, undoMgr, markDirty, onAiSoon: showAiSoon,
+    pickImages: () => window.ws2.pickImages(), // 图片插入：父层原生选图（basicEdit 不接，非合规文档无图片入口）
   });
   // 分页文档：磁盘字节里有可解析的 page 块（routeDoc 已判）→ 挂 V4 分页引擎（引擎样式走
   // adoptedStyleSheets、推挤产物 strip-on-persist，都不入盘）。md 不套页面概念（入盘格式装不下 page 块）。
