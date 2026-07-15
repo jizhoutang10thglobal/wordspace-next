@@ -549,6 +549,44 @@ test('P3-05 目录级联：置顶的文件在被删目录里 → 撤销后置顶
   await expect(page.locator('#sb-pinned .sb-tab[data-rel="数据/b.html"]')).toBeVisible();
 });
 
+test('P3-05 撤销不抢激活：删一个非激活的打开文档→撤销,激活标签/编辑器不被拽走（对抗审查 P2 变异敏感）', async () => {
+  await fs.writeFile(path.join(wsDir, 'c.html'), HTML('CCC'), 'utf8'); // 第二个顶层文档
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]'); // 打开 a
+  await page.click('.sb-file[data-rel="c.html"]'); // 再打开 c（激活=c，a 仍开着但非激活）
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="c.html"].is-active')).toBeVisible();
+  // 删 a.html（非激活的打开文档）
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="a.html"]')).toHaveCount(0);
+  // 撤销 → a 标签回来(open)，但激活仍是 c（编辑器没被拽到 a）。旧逻辑 openEntry 会把激活抢给 a →
+  // applyTabs 不载入编辑器 → 高亮的激活标签≠编辑器内容。
+  await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="a.html"]')).toBeVisible();          // a 回来了
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="c.html"].is-active')).toBeVisible(); // 激活仍是 c
+  await expect(page.locator('#doc-name')).toHaveAttribute('title', 'c.html');               // 编辑器面包屑仍是 c
+});
+
+test('P3-05 撤销去重改名：原位被占时置顶跟到真实恢复位置,不落错文件/不丢（对抗审查 P2 变异敏感）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: /^置顶$/ }).click();
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toBeVisible();
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  // 撤销前：原位被一个**新** a.html 占了 → 撤销时恢复的文件会去重改名成「a 2.html」
+  await fs.writeFile(path.join(wsDir, 'a.html'), HTML('新A'), 'utf8');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus'))); // 让树看见新 a.html
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
+  // 撤销 → 恢复文件落到「a 2.html」；置顶要跟到 a 2.html（旧逻辑用旧 rel → 置顶落到 a.html=新文件 或丢失）
+  await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
+  await expect(page.locator('.sb-file[data-rel="a 2.html"]')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a 2.html"]')).toBeVisible(); // 置顶跟到真实恢复位置
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toHaveCount(0);   // 没落到新文件上
+});
+
 test('P3-07 展开的子文件夹重启后仍展开（变异敏感）', async () => {
   await openWorkspace();
   await page.locator('.sb-dir[data-rel="数据"]').click(); // 展开 数据
