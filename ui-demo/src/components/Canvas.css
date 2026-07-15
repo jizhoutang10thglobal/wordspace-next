@@ -293,11 +293,51 @@
   font-size: var(--fs-md); line-height: 1.65; color: var(--c-text-2);
 }
 .ws-hr { border: none; border-top: 1px solid var(--c-divider); margin: 22px 0; }
+/* 图片块（doc-images）：真图渲染，原子叶子块。figure 归零浏览器默认边距。 */
 .ws-image {
+  margin: 10px 0;
+  position: relative;
+}
+.ws-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-md); /* 纸方墨圆：内容图圆角 */
+  user-select: none;
+}
+.ws-image figcaption {
+  margin-top: 6px;
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+  text-align: center;
+  outline: none;
+  cursor: text;
+}
+.ws-image figcaption:empty::before {
+  content: attr(data-placeholder);
+  color: var(--c-text-3);
+  opacity: 0.6;
+}
+.ws-image-addcap {
+  display: block;
+  margin: 6px auto 0;
+  border: none;
+  background: none;
+  color: var(--c-text-3);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--r-sm);
+}
+.ws-image-addcap:hover { background: var(--c-bg-sunken); color: var(--c-text-2); }
+/* 整块灰选沿用 .ws-block-selected 的块级描边+浅灰底，图上不再叠第二层描边
+   （叠了会双框、中间像有间隙——Colin 2026-07-15 实测拍掉） */
+/* 旧占位 stub（无 <img> 的坏数据兜底）：沿用原灰盒 */
+.ws-image-stub {
   height: 120px; border-radius: var(--r-md);
   background: var(--c-bg-sunken); border: 1px solid var(--c-border);
   display: flex; align-items: center; justify-content: center;
-  color: var(--c-text-3); font-size: var(--fs-sm); margin: 10px 0;
+  color: var(--c-text-3); font-size: var(--fs-sm);
 }
 .ws-placeholder { color: var(--c-text-3); }
 

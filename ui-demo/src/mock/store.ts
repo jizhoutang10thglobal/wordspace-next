@@ -165,6 +165,7 @@ interface State {
     afterId: string | null,
     type: BlockType,
     listStyle?: ListStyle,
+    html?: string, // 初始内容种子（图片块必传：<img>/<figure> outerHTML）
   ) => string
   deleteBlock: (docId: string, blockId: string) => void
   setBlockType: (
@@ -360,7 +361,7 @@ const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
     text: { html: '' },
     list: { html: '<li>列表项</li>' },
     quote: { html: '引用内容' },
-    image: { html: '图片' },
+    image: { html: '' }, // 图片块永远带 html 种子创建（imageBlockHtml），空串只是防御缺省
     divider: { html: '' },
     callout: { html: '提示内容' },
     embed: { html: '' },
@@ -949,8 +950,9 @@ export const useStore = create<State>()(
           }),
         })),
 
-      addBlock: (docId, afterId, type, listStyle) => {
+      addBlock: (docId, afterId, type, listStyle, html) => {
         const block = newBlock(type, listStyle)
+        if (html !== undefined) block.html = html
         set((s) => ({
           docs: s.docs.map((d) => {
             if (d.id !== docId) return d
