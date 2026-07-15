@@ -11,6 +11,7 @@ import { GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { IS_MAC } from '../lib/platform'
+import { scopeTemplateCss } from '../lib/templateScope'
 import {
   VISIBILITY_META,
   type Block,
@@ -791,6 +792,10 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
+
+  // 模板版式：文档已盖章的 templateCss（从模板新建 / 存为模板带来）经 templateScope
+  // 作用域化后注入，只作用文档区、不漏 app 界面。
+  const scopedTplCss = useMemo(() => scopeTemplateCss(doc?.templateCss ?? ''), [doc?.templateCss])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
@@ -2509,7 +2514,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           className={
             `ws-doc ws-doc-${doc.kind}` +
             (doc.pageFormat ? ` ws-fmt ws-fmt-${doc.pageFormat}` : '') +
-            (paged ? ' ws-doc-paged' : '')
+            (paged ? ' ws-doc-paged' : '') +
+            (scopedTplCss ? ' ws-tpl-on' : '')
           }
           // 分页视图：纸宽 = 纸张 px 宽，padding = 页边距（内容列自然收窄为页内容宽）。
           // 页高由内容流 + 块级 PageGap spacer + 末页补白 spacer 自然给出（超高块块内不推挤、
@@ -2525,6 +2531,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               : undefined
           }
         >
+          {/* 模板版式 CSS：已作用域化到 .ws-doc.ws-tpl-on，只作用文档区、不漏 app 界面。 */}
+          {scopedTplCss && <style>{scopedTplCss}</style>}
           {!embedded && <DocHeader doc={doc} />}
           <div
             className="ws-blocks"
