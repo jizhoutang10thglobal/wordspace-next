@@ -481,6 +481,12 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 .sb-zone { margin: 0 0 4px; }
 .sb-zone:last-of-type { padding-bottom: 2px; margin-bottom: 0; }
 .sb-zone-head { display: flex; align-items: center; }
+/* 可折叠栏标（置顶/标签页，抄收藏区 §4.3）：整条可点、caret 右置随 is-open 旋转、计数用等宽字 */
+.sb-zone-head[role="button"] { cursor: pointer; }
+.sb-zone-head .sb-sec-label { flex: none; } /* caret/count 在场时 label 不吃满，交给 .sb-zone-count 顶开（对齐 .sb-fav-count 布局） */
+.sb-zone-count { flex: 1; padding-left: 6px; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-3); }
+.sb-zone-caret { flex: none; display: inline-flex; align-items: center; margin-right: 8px; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
+.sb-zone.is-open .sb-zone-caret { transform: rotate(90deg); }
 /* 「文件」段标（独立于 .sb-zone，跟在标签页区之后）：复用段标样式，提供文件区上方留白。 */
 .sb-files-label[hidden] { display: none; }
 /* editorial 分区栏标（docs/style.md §7）：等宽 + 宽字距，像刊物的栏目标记（对齐 ui-demo arc-section-label） */
