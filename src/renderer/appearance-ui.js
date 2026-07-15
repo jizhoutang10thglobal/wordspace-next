@@ -1,10 +1,21 @@
-// 外观三态的 renderer 侧 UI 胶水。chrome 变暗本身是纯 CSS(nativeTheme 翻 prefers-color-scheme,U4/U5),
-// 这里只管三入口的「入口 UI 勾选态 + 切换过渡类」,不碰主题值:
-//   ① ⋯菜单三项 + settings 选择器同步当前态(都从 main 查,三入口永远一致);
-//   ② 切换时给 documentElement 挂 [data-theme-switching] ~200ms 让 token 过渡(§4,reduced-motion 下 CSS 自动关);
-//   ③ 点 ⋯菜单三项 → ws2.setAppearance(pref)。
+// 外观三态的 renderer 侧胶水。chrome 暗色走 documentElement 的 [data-theme="dark"] 属性
+// （不用 prefers-color-scheme：Electron 里 nativeTheme.themeSource 不 live 更新已加载 renderer 的媒询）。
+// 职责：
+//   ① 按 main 广播的 effective 主题挂/摘 documentElement 的 data-theme（chrome 全站随之变色）;
+//   ② 三入口勾选态同步（⋯菜单三项 + settings 选择器，都从 main 查同一真相源 pref）;
+//   ③ 切换时挂 [data-theme-switching] ~200ms 让 token 过渡（§4，reduced-motion 下 CSS 自动关）;
+//   ④ 派发 window 'ws-theme-changed' 事件让 doc-theme.js 对 iframe 文档注/摘反色滤镜。
+//   ⑤ 点 ⋯菜单三项 → ws2.setAppearance(pref)。
 (function () {
-  let current = 'system';
+  let currentPref = 'system';
+
+  function applyDataTheme(effective) {
+    const root = document.documentElement;
+    if (effective === 'dark') root.setAttribute('data-theme', 'dark');
+    else root.removeAttribute('data-theme');
+    // 通知文档反色滤镜层（doc-theme.js 监听此事件按 data-theme 重判 iframe 滤镜）
+    try { window.dispatchEvent(new CustomEvent('ws-theme-changed', { detail: { effective } })); } catch (e) { /* 老环境无 CustomEvent */ }
+  }
 
   function applySwitchTransition() {
     const root = document.documentElement;
@@ -12,13 +23,13 @@
     setTimeout(() => root.removeAttribute('data-theme-switching'), 200);
   }
 
-  function refreshUI(pref) {
-    current = pref || 'system';
+  function refreshPrefUI(pref) {
+    currentPref = pref || 'system';
     document.querySelectorAll('.ws-appearance-item').forEach((el) => {
-      el.classList.toggle('is-active', el.dataset.pref === current);
+      el.classList.toggle('is-active', el.dataset.pref === currentPref);
     });
     const sel = document.getElementById('wp-appearance-select');
-    if (sel && sel.value !== current) sel.value = current;
+    if (sel && sel.value !== currentPref) sel.value = currentPref;
   }
 
   function wireMenuItems() {
@@ -33,15 +44,21 @@
 
   function boot() {
     wireMenuItems();
-    if (window.ws2 && window.ws2.getAppearance) {
-      window.ws2.getAppearance().then(refreshUI).catch(() => {});
-      window.ws2.onAppearanceChanged((pref) => { applySwitchTransition(); refreshUI(pref); });
+    if (window.ws2 && window.ws2.getEffectiveTheme) {
+      window.ws2.getEffectiveTheme().then(applyDataTheme).catch(() => {});
+      if (window.ws2.getAppearance) window.ws2.getAppearance().then(refreshPrefUI).catch(() => {});
+      window.ws2.onAppearanceChanged((payload) => {
+        const pref = payload && payload.pref;
+        const effective = payload && payload.effective;
+        applySwitchTransition();
+        applyDataTheme(effective);
+        refreshPrefUI(pref);
+      });
     }
   }
 
   if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', boot);
   else boot();
 
-  // 供 settings 页(browser.js)渲染后回读当前态 + 重新 wire(设置项是动态创建的)。
-  window.__wsAppearance = { get: () => current, refresh: refreshUI, wire: wireMenuItems };
+  window.__wsAppearance = { getPref: () => currentPref, refresh: refreshPrefUI, wire: wireMenuItems };
 })();

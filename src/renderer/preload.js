@@ -45,9 +45,11 @@ contextBridge.exposeInMainWorld('ws2', {
   onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, p) => cb(p)),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
   // 外观三态：偏好归 main 管（唯一真相源，驱动 nativeTheme）；renderer 只查/设/听。
+  // chrome 走 data-theme（main 广播 effective），因 themeSource 不 live 更新 renderer prefers-color-scheme。
   getAppearance: () => ipcRenderer.invoke('get-appearance'),
+  getEffectiveTheme: () => ipcRenderer.invoke('get-effective-theme'),
   setAppearance: (pref) => ipcRenderer.send('set-appearance', pref),
-  onAppearanceChanged: (cb) => ipcRenderer.on('appearance-changed', (_e, pref) => cb(pref)),
+  onAppearanceChanged: (cb) => ipcRenderer.on('appearance-changed', (_e, payload) => cb(payload)),
 
   // 本地文件夹工作区 (F06 → 多根)：文件操作一律 (rootId, relPath)，renderer 只用 rootId 引用根、不发路径。
   wsAddFolder: () => ipcRenderer.invoke('ws-add-folder'),

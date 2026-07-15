@@ -10,7 +10,7 @@
 :root {
   /* 修 VC-16（最低成本）：锁原生控件（confirm/alert、原生菜单、滚动条、文件框）为浅色，消除 mac 暗色模式下
      浅色 UI + 深色系统框的混搭割裂。真正的暗色主题另议——这里只是不让系统把控件反色。 */
-  color-scheme: light;
+  color-scheme: light dark;
 
   /* ---- color：纸（stone 暖灰阶） ---- */
   --c-bg: #ffffff;            /* 文档纸面 */
@@ -109,13 +109,15 @@
 }
 
 /* ---------------------------------------------------------------- dark tokens
-   三态外观模式（浅色/深色/跟随系统）的 chrome 暗色变体。由 nativeTheme.themeSource（主进程，U5）
-   驱动 renderer 的 prefers-color-scheme——所以 chrome 变暗是纯 CSS、零 JS。值 = ui-demo tokens.css
-   的 :root[data-theme="dark"]（palette 单一来源 = docs/style.md，初稿待 Wendi 拍板 R12）。
-   VC-16 更正：color-scheme 不再锁 light，随主题输出 dark，否则暗态原生控件（滚动条/表单）仍是亮的。
+   三态外观模式（浅色/深色/跟随系统）的 chrome 暗色变体。由 renderer 的 [data-theme="dark"] 属性驱动
+   （appearance-ui.js 按主进程广播的 effective 主题挂/摘），与 ui-demo 同款机制。
+   ⚠ 为什么不用 @media (prefers-color-scheme)：实测 Electron 里 nativeTheme.themeSource 改变**不会**
+   live 更新已加载 renderer 的 prefers-color-scheme（只在下次 navigation 生效），in-app 切主题不刷新=UX bug。
+   nativeTheme.themeSource 仍设（驱动 mac 窗框/系统菜单/对话框/网页标签，R3/R6），只是 chrome 走 data-theme。
+   值 = ui-demo tokens.css 的 :root[data-theme="dark"]（palette 单一来源 = docs/style.md，初稿待 Wendi 拍板 R12）。
    type/radius/metrics/motion 是主题无关量，不重复。 */
-@media (prefers-color-scheme: dark) {
-  :root {
+:root { color-scheme: light dark; } /* 支持双态 → 原生控件(滚动条/表单)跟随;VC-16 的锁 light 已解 */
+:root[data-theme="dark"] {
     color-scheme: dark;
 
     --c-bg: #2b2724;
@@ -159,21 +161,18 @@
     --shadow-menu: 0 4px 12px rgba(0, 0, 0, 0.36);
     --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.44);
     --shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.52);
-  }
 }
 
 /* chrome 里 token 够不到的硬编码色的暗态收编（file 图标/save hover/pdf 舞台）。
    暗色值与 R12 palette 同源、随之走 Wendi 拍板；不改亮态视觉值。 */
-@media (prefers-color-scheme: dark) {
-  .sb-kind-image .sb-ico { color: #a97bff; }
-  .sb-kind-pdf .sb-ico { color: #e5645f; }
-  .sb-kind-word .sb-ico { color: #5c9fdf; }
-  .sb-kind-sheet .sb-ico { color: #46b366; }
-  .sb-kind-slides .sb-ico { color: #d98a3a; }
-  .sb-save-name:hover { background-color: var(--c-active); }
-  /* PDF 舞台是 chrome（页面外的灰底），暗态给深底；PDF 页本身白纸不动（不反色 PDF 查看器） */
-  .pdfv-stage { background: var(--c-bg-sunken); }
-}
+:root[data-theme="dark"] .sb-kind-image .sb-ico { color: #a97bff; }
+:root[data-theme="dark"] .sb-kind-pdf .sb-ico { color: #e5645f; }
+:root[data-theme="dark"] .sb-kind-word .sb-ico { color: #5c9fdf; }
+:root[data-theme="dark"] .sb-kind-sheet .sb-ico { color: #46b366; }
+:root[data-theme="dark"] .sb-kind-slides .sb-ico { color: #d98a3a; }
+:root[data-theme="dark"] .sb-save-name:hover { background-color: var(--c-active); }
+/* PDF 舞台是 chrome（页面外的灰底），暗态给深底；PDF 页本身白纸不动（不反色 PDF 查看器） */
+:root[data-theme="dark"] .pdfv-stage { background: var(--c-bg-sunken); }
 
 /* 主题切换短过渡（§4）。只在切换窗口内生效（shell.js 挂 [data-theme-switching] ~200ms 后摘），
    不常驻——否则跟 hover 自有过渡打架。reduced-motion 下整段关。 */

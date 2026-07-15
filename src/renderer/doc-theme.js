@@ -8,8 +8,10 @@
   'use strict';
   const FRAME_ID = 'doc-frame';
   function frameEl() { return document.getElementById(FRAME_ID); }
+  // 有效主题读 documentElement 的 data-theme（appearance-ui.js 按 main 广播的 effective 挂），
+  // 不用 prefers-color-scheme（Electron themeSource 不 live 更新 renderer 媒询）。
   function effectiveDark() {
-    return !!(root.matchMedia && root.matchMedia('(prefers-color-scheme: dark)').matches);
+    return document.documentElement.getAttribute('data-theme') === 'dark';
   }
 
   let darkSheet = null; // 绑当前 contentDocument；换文档后 includes() 判不到即重建
@@ -60,13 +62,11 @@
     }
   }
 
-  // 主题实时切换：live 文档注/摘（frame 可见时才动）。
-  if (root.matchMedia) {
-    const mql = root.matchMedia('(prefers-color-scheme: dark)');
-    const onChange = () => { const f = frameEl(); if (f && !f.hidden && f.contentDocument) syncDocDark(); };
-    if (mql.addEventListener) mql.addEventListener('change', onChange);
-    else if (mql.addListener) mql.addListener(onChange);
-  }
+  // 主题实时切换：appearance-ui.js 挂完 data-theme 后派发 ws-theme-changed → 对 live 文档注/摘（不重挂）。
+  root.addEventListener('ws-theme-changed', () => {
+    const f = frameEl();
+    if (f && !f.hidden && f.contentDocument) syncDocDark();
+  });
 
   root.WS2DocTheme = { maskForLoad, syncDocDark, unmask, effectiveDark };
 })(window);
