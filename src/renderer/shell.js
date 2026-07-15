@@ -368,6 +368,7 @@ function attachBasic() {
     setZoom(zoomFactor * (1 - d * 0.01));
   }, { passive: false });
   zoomSheet = null; applyZoom();
+  if (window.WS2DocTheme) window.WS2DocTheme.syncDocDark(); // 深色下注反色滤镜(样式已生效才采样)+ 揭开遮罩
   installLinkGuard(doc); // U0：非合规文档同样收口链接点击
   if (window.WS2LinkView) window.WS2LinkView.scan(frame); // U4：非合规文档也扫断链装饰（§8）
 }
@@ -428,6 +429,7 @@ function wireEditor() {
   // 新 contentDocument → 旧缩放样式表失效，按当前 zoomFactor 重挂（外部重载保留缩放；openDoc 已先复位 100%）
   zoomSheet = null;
   applyZoom();
+  if (window.WS2DocTheme) window.WS2DocTheme.syncDocDark(); // 深色下注反色滤镜(样式已生效才采样)+ 揭开遮罩
   installLinkGuard(doc); // U0：文档内 <a> 点击收口（见下）
   if (window.WS2LinkView) window.WS2LinkView.scan(frame); // U4：合规文档加载完成 → 扫断链装饰
 }
@@ -485,6 +487,7 @@ function prepFrame(asDirty) {
   if (docStatus) docStatus.hidden = false; // 本地状态标
   closeViewer();
   frame.hidden = false;
+  if (window.WS2DocTheme) window.WS2DocTheme.maskForLoad(); // 深色下遮住 frame,防未反色白闪(syncDocDark 揭开)
   docName.textContent = docInfo.name;
   docName.title = docInfo.name; // 名字过长被截断时，悬停显示全名
   exportBtn.disabled = false; // 开了文档就能导出（不像保存要脏才亮）
@@ -655,8 +658,9 @@ async function reloadDoc() {
   // .md：渲染内容不在磁盘文件里（是 read-doc 的转换产物）→ 重载 = 重新 srcdoc（赋值天然重导航，
   // 不需要下面 about:blank 的二段跳）。读盘失败时不拆不换——保留现有编辑器可继续编辑/另存，
   // 而不是「可见但点不动」的悬挂态（loadFromHtml 内部自带 detachEditors）。
-  if (isMdPath(p)) { if (raw != null) loadFromHtml(raw); return; }
+  if (isMdPath(p)) { if (raw != null) loadFromHtml(raw); return; } // md 走 loadFromHtml→prepFrame 已遮
   detachEditors();
+  if (window.WS2DocTheme) window.WS2DocTheme.maskForLoad(); // 非 md reload:遮住防深色闪白(syncDocDark 揭开)
   const gen = ++loadGen;
   const wantUrl = docInfo.fileUrl;
   frame.onload = () => {

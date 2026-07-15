@@ -146,6 +146,19 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
         <span>页面设置…</span>
       </button>
+      <!-- 外观三态（⋯菜单入口 = 三选一，与菜单栏 radio 同一心智模型；当前态 .is-active 显 ✓）。
+           settings 面 + 菜单栏是另两个入口，三处都从 main 查同一真相源。 -->
+      <div class="ws-docmenu-sep"></div>
+      <div class="ws-docmenu-label">外观</div>
+      <button class="ws-docmenu-item ws-appearance-item" data-pref="system">
+        <span class="ws-appearance-check">✓</span><span>跟随系统</span>
+      </button>
+      <button class="ws-docmenu-item ws-appearance-item" data-pref="light">
+        <span class="ws-appearance-check">✓</span><span>浅色</span>
+      </button>
+      <button class="ws-docmenu-item ws-appearance-item" data-pref="dark">
+        <span class="ws-appearance-check">✓</span><span>深色</span>
+      </button>
     </div>
   </div>
 
@@ -262,6 +275,10 @@
 <script src="../lib/links.js"></script>
 <script src="../editor/mention.js"></script>
 <script src="../editor/linkview.js"></script>
+<!-- 外观反色滤镜:配方 + 亮度纯逻辑(UMD 全局)先于 doc-theme/shell 载入 -->
+<script src="../lib/luminance.js"></script>
+<script src="../lib/doc-dark-recipe.js"></script>
+<script src="doc-theme.js"></script>
 <script src="shell.js"></script>
 <script src="../lib/tabs.js"></script>
 <script src="../lib/web-history.js"></script>
@@ -269,5 +286,6 @@
 <script src="sidebar.js"></script>
 <script src="browser.js"></script>
 <script src="update-ui.js"></script>
+<script src="appearance-ui.js"></script>
 </body>
 </html>

@@ -23,7 +23,7 @@
 /* 格式模板（pageFormat）：把画布约束到一张实际纸的宽度，并给出纸张观感
    （白页 + 阴影边框 + 页边距），服务于打印 / 导出 PDF 的版式。 */
 .ws-doc.ws-fmt {
-  background: #fff;
+  background: var(--c-surface); /* 暗态随 token 翻深(Canvas 合规内容 token-based,自然变暗,非反色) */
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   box-shadow: 0 1px 3px rgba(28, 25, 23, 0.05), 0 10px 28px rgba(28, 25, 23, 0.06);
@@ -42,7 +42,7 @@
 .ws-canvas-scroll.is-paged { background: var(--c-bg-sunken); overflow-x: auto; }
 .ws-doc-paged {
   position: relative;
-  background: #fff;
+  background: var(--c-surface);
   border: 1px solid var(--c-border);
   border-radius: 0; /* 纸=方角 */
   box-shadow: var(--shadow-menu);
@@ -94,7 +94,7 @@
    内部灰缝走正常流（margin-top = fill+页底边距），复用 .ws-page-gutter 观感（含页码 chip）。 */
 .ws-inner-void {
   position: absolute;
-  background: #fff;
+  background: var(--c-surface);
   pointer-events: none;
 }
 .ws-page-chip {
@@ -255,9 +255,9 @@
 .ws-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; margin: 8px 0 10px; }
 .ws-h2 { font-size: 20px; margin: 26px 0 8px; }
 .ws-h3 { font-size: 16px; margin: 20px 0 6px; }
-.ws-p { font-size: var(--fs-lg); line-height: var(--lh-doc); color: #2b2d31; margin: 6px 0; }
+.ws-p { font-size: var(--fs-lg); line-height: var(--lh-doc); color: var(--c-text); margin: 6px 0; }
 .ws-ul { margin: 6px 0; padding-left: 22px; }
-.ws-ul li { font-size: var(--fs-lg); line-height: 1.7; color: #2b2d31; list-style: disc; margin: 3px 0; }
+.ws-ul li { font-size: var(--fs-lg); line-height: 1.7; color: var(--c-text); list-style: disc; margin: 3px 0; }
 /* 编号列表：阿拉伯数字 */
 .ws-ul.ws-ol > li { list-style: decimal; }
 /* 待办列表：左侧 CSS 复选框（点击区由 Canvas 的 onToggleCheck 判定），勾选画删除线 */

@@ -938,6 +938,37 @@
   // 设置页（§4.10）：浏览器区只有默认搜索引擎一行；「主页」设置已删（拍板#2），不要加回来。
   function renderSettingsPage() {
     const wrap = pageShell('设置');
+
+    // 外观三态（与菜单栏 radio / ⋯菜单同一真相源，都从 main 查；这是 Colin 追认的第三入口）
+    const appSec = document.createElement('div');
+    appSec.className = 'wp-sec';
+    appSec.textContent = '外观';
+    wrap.appendChild(appSec);
+    const arow = document.createElement('div');
+    arow.className = 'wp-set-row';
+    const alabel = document.createElement('span');
+    alabel.className = 'wp-set-label';
+    alabel.textContent = '主题';
+    const adesc = document.createElement('span');
+    adesc.className = 'wp-set-desc';
+    adesc.textContent = '跟随系统时，系统切换深浅色会实时跟随';
+    const actl = document.createElement('span');
+    actl.className = 'wp-set-ctl';
+    const asel = document.createElement('select');
+    asel.id = 'wp-appearance-select';
+    for (const [val, name] of [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']]) {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = name;
+      asel.appendChild(opt);
+    }
+    if (window.ws2 && window.ws2.getAppearance) {
+      window.ws2.getAppearance().then((p) => { asel.value = p || 'system'; }).catch(() => {});
+    }
+    asel.onchange = () => { if (window.ws2 && window.ws2.setAppearance) window.ws2.setAppearance(asel.value); };
+    actl.appendChild(asel);
+    arow.append(alabel, adesc, actl);
+    wrap.appendChild(arow);
+
     const sec = document.createElement('div');
     sec.className = 'wp-sec';
     sec.textContent = '浏览器';
