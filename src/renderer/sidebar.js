@@ -1861,6 +1861,7 @@
     if (web) {
       // 网页标签：favicon 优先（主进程拉好推来的 data:URL），取不到回落通用地球
       const st = window.__webStatus ? window.__webStatus(key) : null;
+      if (st && st.loading) row.classList.add('is-loading'); // U3：加载中 → spinner 顶掉 favicon/地球（renderZones 重建时也保持）
       if (st && st.favicon) {
         const img = document.createElement('img');
         img.className = 'sb-tab-fav';
@@ -2606,6 +2607,11 @@
     openWeb: openWebTab,
     focusWebByUrl,
     updateWeb: updateWebEntry,
+    // U3：加载态轻量刷（loading 翻转不落盘、不整区 renderZones，直接 toggle 对应标签行的 spinner 类）。
+    setTabLoading: (key, loading) => {
+      const sel = '.sb-tab[data-key="' + (window.CSS && CSS.escape ? CSS.escape(key) : key) + '"]';
+      document.querySelectorAll(sel).forEach((r) => r.classList.toggle('is-loading', !!loading));
+    },
   };
   window.__sbCycleTab = (prev) => cycleTab(prev); // shell 的 iframe keydown 转发（焦点在编辑器里也能切标签）
   window.__sbTabByIndex = (n) => tabByIndex(n);
