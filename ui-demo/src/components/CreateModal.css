@@ -107,6 +107,9 @@
   font-weight: var(--fw-semibold);
   color: var(--c-text-2);
 }
+.cm-pane-label-2 {
+  margin-top: 18px;
+}
 
 .cm-grid {
   display: grid;

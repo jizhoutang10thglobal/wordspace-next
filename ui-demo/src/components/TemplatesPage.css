@@ -1,4 +1,6 @@
 .tplp-page {
+  flex: 1; /* 撑满 .ws-route 的 flex-row 槽位（否则内容宽度收缩、右侧大片留白） */
+  min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -44,12 +46,14 @@
   padding: 20px 24px 40px;
 }
 
+/* 官方 / 自定义 两个大板块的清晰分区标题 */
 .tplp-group-label {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--c-text-3);
-  margin: 20px 2px 12px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--c-text);
+  margin: 26px 2px 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
 }
 .tplp-group-label:first-child {
   margin-top: 0;
@@ -57,8 +61,8 @@
 
 .tplp-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
 }
 
 .tplp-card {
