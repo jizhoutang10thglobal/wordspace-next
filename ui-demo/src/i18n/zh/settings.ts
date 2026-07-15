@@ -22,6 +22,9 @@ export default {
   appearance: '外观',
   theme: '主题',
   themeNote: '跟随系统时，macOS 切换深浅色会实时跟随',
+  themeSystem: '跟随系统',
+  themeLight: '浅色',
+  themeDark: '深色',
   // 浏览器
   browser: '浏览器',
   defaultEngine: '默认搜索引擎',
