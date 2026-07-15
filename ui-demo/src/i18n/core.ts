@@ -9,9 +9,12 @@ export function normalizeLangPref(raw: string | null | undefined): LangPref {
   return PREFS.includes(raw as LangPref) ? (raw as LangPref) : 'system'
 }
 
-// 跟随系统时，把系统 locale 归到我们支持的二态：以 zh 开头 → zh，其余 → en（英文兜底，未来加语言在这扩）。
+// 跟随系统时把系统 locale 归到二态。区分两种「非中文」：
+//  - **无 locale 信息**（null/空，如 node 脚本/测试环境无 navigator）→ zh：源语言、也让现有中文断言的门保绿。
+//  - **有 locale 但不是中文**（如浏览器里 en-US / fr-FR）→ en：英文兜底（未来加语言在这扩）。
 export function langOfSystem(systemLocale: string | null | undefined): Lang {
-  return typeof systemLocale === 'string' && systemLocale.toLowerCase().startsWith('zh') ? 'zh' : 'en'
+  if (typeof systemLocale !== 'string' || !systemLocale) return 'zh'
+  return systemLocale.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 }
 
 export function effectiveLang(pref: LangPref, systemLocale: string | null | undefined): Lang {
