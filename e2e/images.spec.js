@@ -189,6 +189,22 @@ test('重开文档：内联 data: 图冷启动仍真渲染（持久化）', asyn
   await pollImg('重开后图未渲染（data: 持久化坏了）');
 });
 
+test('选中框 accent 蓝（暗色可见）：选中图的 box-shadow 是蓝环、不是暗色下隐身的黑环', async () => {
+  // 暗色文档对 img 施双反色滤镜会把黑阴影翻回黑→暗底隐身；选中框改 accent 蓝规避（明暗两态可见）。
+  // getComputedStyle 返回作者值（滤镜前），断言蓝环规则命中 + 特异度压过通用黑环即可。
+  await openDoc(SIMPLE);
+  await insertViaSlash('p1');
+  await pollImg('插入后图未渲染');
+  await frame.locator('img').click();
+  await page.waitForTimeout(150);
+  const bs = await frame.locator('body').evaluate((b) => {
+    const img = b.ownerDocument.querySelector('img[data-ws2-selected]');
+    return img ? getComputedStyle(img).boxShadow : null;
+  });
+  expect(bs, '选中的图应有 box-shadow 选中框').toBeTruthy();
+  expect(bs, '选中框应是 accent 蓝环(26,115,232)、不是暗色下隐身的黑环').toContain('26, 115, 232');
+});
+
 test('变异自检（门有牙）：把 img.src 打坏后，同一 checkImg 谓词必翻红', async () => {
   await openDoc(SIMPLE);
   await insertViaSlash('p1');
