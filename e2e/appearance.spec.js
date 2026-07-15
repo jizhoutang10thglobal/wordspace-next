@@ -15,11 +15,11 @@ const pairs = require('../test/appearance-contrast-pairs');
 const ROOT = path.join(__dirname, '..');
 let app, page, tmpDir;
 
-async function launch() {
+async function launch(extraEnv) {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2appearance-'));
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_PDF_OUT: path.join(tmpDir, 'export.pdf') },
+    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_PDF_OUT: path.join(tmpDir, 'export.pdf'), ...extraEnv },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
@@ -63,6 +63,74 @@ test('AE1 chrome 暗色亮度门：深色下真 surface 变暗、浅色态变亮
   expect(bodyDark, 'body 深态应暗').toBeLessThan(0.2);
   expect(canvasDark, '编辑区深态应暗').toBeLessThan(0.2);
   expect(bodyDark, '深态必须严格暗于浅态').toBeLessThan(bodyLight);
+});
+
+// 解码 Playwright 元素截图（PNG,8-bit,非隔行,colorType 2/6）→ {亮像素占比, 暗像素占比}。
+// 强断言不查 CSS filter 字符串（invert(0) 也含 "invert"=哑门,S4），直接看渲染出来的像素。
+// logo 背景透明→截图里大片是透出的页脚底色,均值被背景主导没判别力；改数「logo 笔画那批像素」的极性：
+// 暗态反相→出现一批亮像素(白笔画+白框)；浅态→一批暗像素(黑笔画+黑框)。
+function pngPolarity(buf) {
+  const zlib = require('zlib');
+  let p = 8, width, height, colorType, idat = [];
+  while (p < buf.length) {
+    const len = buf.readUInt32BE(p);
+    const type = buf.toString('ascii', p + 4, p + 8);
+    const data = buf.slice(p + 8, p + 8 + len);
+    if (type === 'IHDR') { width = data.readUInt32BE(0); height = data.readUInt32BE(4); colorType = data[9]; }
+    else if (type === 'IDAT') idat.push(data);
+    else if (type === 'IEND') break;
+    p += 12 + len;
+  }
+  const ch = colorType === 6 ? 4 : 3;      // 6=RGBA,2=RGB
+  const stride = width * ch;
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const out = Buffer.alloc(height * stride);
+  const paeth = (a, b, c) => { const q = a + b - c, pa = Math.abs(q - a), pb = Math.abs(q - b), pc = Math.abs(q - c); return pa <= pb && pa <= pc ? a : pb <= pc ? b : c; };
+  for (let y = 0; y < height; y++) {
+    const ft = raw[y * (stride + 1)], row = y * (stride + 1) + 1;
+    for (let x = 0; x < stride; x++) {
+      const rv = raw[row + x];
+      const a = x >= ch ? out[y * stride + x - ch] : 0;
+      const b = y > 0 ? out[(y - 1) * stride + x] : 0;
+      const c = (x >= ch && y > 0) ? out[(y - 1) * stride + x - ch] : 0;
+      let v;
+      if (ft === 0) v = rv; else if (ft === 1) v = rv + a; else if (ft === 2) v = rv + b;
+      else if (ft === 3) v = rv + ((a + b) >> 1); else v = rv + paeth(a, b, c);
+      out[y * stride + x] = v & 255;
+    }
+  }
+  let max = 0, min = 1, n = 0, f40 = 0;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    const i = y * stride + x * ch;
+    const L = relativeLuminance({ r: out[i], g: out[i + 1], b: out[i + 2] });
+    if (L > max) max = L; if (L < min) min = L; n++;
+    if (L > 0.4) f40++;                 // 明显偏亮的像素占比
+  }
+  return { max, min, brightFrac: f40 / n };
+}
+
+test('页脚 wordmark 暗态反相：像素级——深色下 logo 变亮、浅色下变暗（纯灰度 logo 不至埋进暗底）', async () => {
+  // 页脚 wordmark 只在侧栏展开（.sb-on）时可见——先开个工作区。
+  const wsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2appearance-ws-'));
+  await fs.writeFile(path.join(wsDir, 'a.html'), '<!DOCTYPE html><html><body><p>x</p></body></html>', 'utf8');
+  await launch({ WS2_FOLDER_IN: wsDir });
+  await page.click('#home-open-folder');
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-foot-logo')).toBeVisible();
+  const logoShot = async () => Buffer.from(await page.locator('.sb-foot-logo').screenshot());
+  await setTheme('dark');
+  await page.waitForTimeout(300);
+  const dark = pngPolarity(await logoShot());
+  await setTheme('light');
+  await page.waitForTimeout(300);
+  const light = pngPolarity(await logoShot());
+  // 强断言直接看渲染像素（不查 filter 字符串——invert(0) 也含 "invert"=哑门，S4）。
+  // 实测（15px logo, opacity .82）：修复 dark max=0.59/brightFrac=0.12；哑门 invert(0) dark max=0.01/brightFrac=0。
+  // 暗态：反相把纯黑墨迹翻成亮色 → 必有一批明显偏亮的像素。哑门/删规则时整块埋进暗底 → max~0.01 翻红。
+  expect(dark.max, `深态 logo 应有亮像素(墨迹反白),实测 max=${dark.max.toFixed(3)}`).toBeGreaterThan(0.25);
+  expect(dark.brightFrac, `深态反白应覆盖可观面积,实测 brightFrac=${dark.brightFrac.toFixed(3)}`).toBeGreaterThan(0.04);
+  // 浅态：不该反相 → 墨迹仍是深色（存在暗像素）。若误把规则漏进浅态,墨迹变白 → 无暗像素 → 翻红。
+  expect(light.min, `浅态 logo 墨迹应仍为深色(未被误反),实测 min=${light.min.toFixed(3)}`).toBeLessThan(0.15);
 });
 
 test('对比度门：暗色 palette 文本×背景配对全部达标（body≥4.5 / large≥3）', async () => {
