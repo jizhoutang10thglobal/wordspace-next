@@ -13,7 +13,8 @@
     "audit:expect": "node audit/expectations.mjs",
     "audit:prepare": "node audit/expectations.mjs --pair",
     "test:links": "node scripts/test-links.mjs",
-    "test:page": "node scripts/test-page.mjs"
+    "test:page": "node scripts/test-page.mjs",
+    "i18n:scan": "node scripts/i18n-scan.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.439.0",
