@@ -700,11 +700,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
 
-  // 模板版式：换装预览（previewCss，未落章）优先于文档已盖章的 templateCss。
-  // 经 templateScope 作用域化后注入，只作用文档区、不漏 app 界面。
-  const previewCss = useUI((s) => s.previewCss)
-  const effectiveTplCss = previewCss ?? doc?.templateCss ?? ''
-  const scopedTplCss = useMemo(() => scopeTemplateCss(effectiveTplCss), [effectiveTplCss])
+  // 模板版式：文档已盖章的 templateCss（从模板新建 / 存为模板带来）经 templateScope
+  // 作用域化后注入，只作用文档区、不漏 app 界面。
+  const scopedTplCss = useMemo(() => scopeTemplateCss(doc?.templateCss ?? ''), [doc?.templateCss])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())

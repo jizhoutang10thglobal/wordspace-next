@@ -81,16 +81,6 @@ interface UI {
   openPageSetup: (docId: string) => void
   closePageSetup: () => void
 
-  // 换装预览：画廊里 hover / 键盘聚焦某模板时，把它的 CSS 临时喂给 Canvas（真实内容实时套，
-  // 未落章）。App 里 Canvas 无 props、画廊弹层在另一子树，store 是唯一干净通道。null = 无预览。
-  previewCss: string | null
-  setPreviewCss: (css: string | null) => void
-
-  // 换装画廊（贴边侧挂面板）：值 = 正在换装的 doc id。null = 关闭。
-  templateGalleryFor: string | null
-  openTemplateGallery: (docId: string) => void
-  closeTemplateGallery: () => void
-
   // 「存为模板」modal：值 = 要存的 doc id。null = 关闭。
   saveTemplateFor: string | null
   openSaveTemplate: (docId: string) => void
@@ -166,13 +156,6 @@ export const useUI = create<UI>((set) => ({
   openPageSetup: (docId) => set({ pageSetupFor: docId }),
   closePageSetup: () => set({ pageSetupFor: null }),
 
-  previewCss: null,
-  setPreviewCss: (css) => set({ previewCss: css }),
-
-  templateGalleryFor: null,
-  openTemplateGallery: (docId) => set({ templateGalleryFor: docId }),
-  closeTemplateGallery: () => set({ templateGalleryFor: null, previewCss: null }),
-
   saveTemplateFor: null,
   openSaveTemplate: (docId) => set({ saveTemplateFor: docId }),
   closeSaveTemplate: () => set({ saveTemplateFor: null }),
@@ -195,7 +178,6 @@ export function anyOverlayOpen(s: UI): boolean {
     s.agentsOpen || // 「AI 接入」是全屏 modal，开着时壳/编辑器快捷键不该穿透（docFindOpen 是非模态查找条，有意不加）
     s.publishDocId ||
     s.pageSetupFor ||
-    s.templateGalleryFor || // 换装画廊侧挂面板：Esc 归它、快捷键不穿透
     s.saveTemplateFor
   )
 }

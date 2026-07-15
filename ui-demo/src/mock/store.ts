@@ -20,7 +20,6 @@ import type {
 } from '../types'
 import { useUI } from './ui'
 import { rewriteDocsForMoves, invertMoves, dirOf } from '../lib/links'
-import { templateCheck } from '../lib/templateCheck'
 import {
   ME_ID,
   seedAgentEvents,
@@ -192,17 +191,11 @@ interface State {
   // 返回新文件根内路径。ext 缺省 .html；断链修复的「原地新建」对 .md 断链传 .md（建出来的才接得上）。
   createLinkedDoc: (rootId: string, dir: string, title: string, ext?: '.html' | '.md') => string | null
   createFromTemplate: (templateId: string, folderId: string, target?: { rootId: string; dir: string } | null, unsaved?: boolean) => string
-  // 换装：把模板 CSS 快照盖章到文档（templateId 记来源、templateCss 记快照，对齐入盘自包含）。
-  // templateId=null → 卸装回素颜。快照旧值 + toast 撤销（照 deleteFileWithUndo 形状，不进 Cmd+Z 栈）。
-  applyTemplate: (docId: string, templateId: string | null) => void
-  // 模板库 CRUD（用户自定义模板，origin:'user'）：
-  // 存当前文档为模板（含骨架勾选）；v1 是派生通道——css 取文档已应用的快照，素颜文档存出纯骨架。
+  // 存当前文档为模板（含骨架勾选）：css 取文档已应用模板的快照（从官方好看模板起手→连样子一起存），
+  // 素颜文档存出纯骨架。用户模板 origin:'user'。
   saveDocAsTemplate: (docId: string, name: string, includeSkeleton: boolean) => void
   renameTemplate: (id: string, name: string) => void
   deleteTemplateWithUndo: (id: string) => void
-  // 编辑模板 CSS / 导入模板：都过 templateCheck 安全门，返回违规清单（UI 展示人话原因）。
-  updateTemplateCss: (id: string, css: string) => { ok: boolean; violations: { rule: string; msg: string }[] }
-  importTemplate: (raw: unknown) => { ok: boolean; error?: string }
   // Cmd+S / 保存：临时文档弹「保存到哪里」modal；已保存的只提示
   saveActiveDoc: () => void
   // 把临时文档保存到指定根的指定文件夹（dir=''=根目录；rootId 空 = 云空间）
@@ -1211,31 +1204,6 @@ export const useStore = create<State>()(
         return id
       },
 
-      applyTemplate: (docId, templateId) => {
-        const s = get()
-        const doc = s.docs.find((d) => d.id === docId)
-        if (!doc) return
-        const prev = { templateId: doc.templateId, templateCss: doc.templateCss } // 撤销快照
-        const tpl = templateId ? s.templates.find((t) => t.id === templateId) : null
-        const nextId = tpl ? tpl.id : undefined
-        const nextCss = tpl ? tpl.css : undefined // 盖章 = 快照 CSS 拷贝（模板事后改不影响本文档）
-        set((st) => ({
-          docs: st.docs.map((d) =>
-            d.id === docId ? { ...d, templateId: nextId, templateCss: nextCss, updatedAt: Date.now() } : d,
-          ),
-        }))
-        const msg = tpl ? `已应用模板「${tpl.name}」` : '已移除模板'
-        get().toast(msg, 'neutral', {
-          label: '撤销',
-          run: () =>
-            set((st) => ({
-              docs: st.docs.map((d) =>
-                d.id === docId ? { ...d, templateId: prev.templateId, templateCss: prev.templateCss } : d,
-              ),
-            })),
-        })
-      },
-
       saveDocAsTemplate: (docId, name, includeSkeleton) => {
         const s = get()
         const doc = s.docs.find((d) => d.id === docId)
@@ -1283,46 +1251,6 @@ export const useStore = create<State>()(
               return { templates: next }
             }),
         })
-      },
-
-      updateTemplateCss: (id, css) => {
-        const r = templateCheck(css)
-        if (!r.ok) return { ok: false, violations: r.violations.map((v) => ({ rule: v.rule, msg: v.msg })) }
-        set((s) => ({ templates: s.templates.map((t) => (t.id === id ? { ...t, css } : t)) }))
-        get().toast('模板样式已更新', 'success')
-        return { ok: true, violations: [] }
-      },
-
-      importTemplate: (raw) => {
-        // 形状校验（不受信输入）：必须是对象、name/kind 合理，css 若有则过安全门。
-        if (!raw || typeof raw !== 'object') return { ok: false, error: '不是有效的模板文件' }
-        const o = raw as Record<string, unknown>
-        const name = typeof o.name === 'string' ? o.name.trim() : ''
-        if (!name) return { ok: false, error: '模板缺少名称' }
-        const css = typeof o.css === 'string' ? o.css : undefined
-        if (css) {
-          const r = templateCheck(css)
-          if (!r.ok) return { ok: false, error: '模板 CSS 未通过安全门：' + r.violations.map((v) => v.msg).join('；') }
-        }
-        const kind: DocKind = o.kind === 'page' || o.kind === 'slides' ? o.kind : 'doc'
-        const blocks = Array.isArray(o.blocks) && o.blocks.length
-          ? (o.blocks as Block[]).map((b) => ({ ...b, id: uid('b') }))
-          : [{ id: uid('b'), type: 'heading' as const, level: 1 as const, html: name }]
-        const tpl: Template = {
-          id: uid('t'),
-          name,
-          kind,
-          category: typeof o.category === 'string' ? o.category : '我的',
-          pool: 'private',
-          origin: 'user',
-          description: typeof o.description === 'string' ? o.description : (css ? '导入 · 含版式' : '导入 · 纯骨架'),
-          accent: typeof o.accent === 'string' ? o.accent : '#1d6fbf',
-          css,
-          blocks,
-        }
-        set((st) => ({ templates: [...st.templates, tpl] }))
-        get().toast(`已导入模板「${name}」`, 'success')
-        return { ok: true }
       },
 
       renameDoc: (docId, title) =>

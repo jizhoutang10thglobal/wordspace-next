@@ -36,14 +36,12 @@ export default function DocMenu({
   const pagedCfg = usePaged((s) => s.configs[doc.id])
   const toast = useStore((s) => s.toast)
   const deleteDoc = useStore((s) => s.deleteDoc)
-  const openTemplateGallery = useUI((s) => s.openTemplateGallery)
   const openSaveTemplate = useUI((s) => s.openSaveTemplate)
-  const applyTemplate = useStore((s) => s.applyTemplate)
 
-  // 换装可用性：非合规文档（走基础编辑）与 .md（头部样式无法持久化、Q3 挪后）都禁用，分别给因由。
+  // 存为模板可用性：非合规文档（走基础编辑）与 .md（头部样式无法持久化）都禁用，分别给因由。
   const nonConform = !!doc.rawHtml && !checkSchema(doc.rawHtml).conform
   const isMd = doc.format === 'markdown'
-  const restyleDisabled = nonConform || isMd
+  const saveDisabled = nonConform || isMd
   const disabledReason = isMd
     ? 'Markdown 文档暂不支持模板（头部样式不入盘）'
     : '此文件不符合 Schema、走基础编辑，模板仅适用于合规文档'
@@ -108,36 +106,16 @@ export default function DocMenu({
         <BookOpen size={15} strokeWidth={1.8} />
         页面设置…
       </button>
-      {restyleDisabled ? (
+      {saveDisabled ? (
         // 禁用态：原因常驻小字（键盘/读屏可达，不只 title）。
         <div className="ws-docmenu-item is-disabled" role="menuitem" aria-disabled="true">
           <Palette size={15} strokeWidth={1.8} />
           <span className="ws-docmenu-disabled-wrap">
-            套用版式模板
+            存为模板
             <span className="ws-docmenu-hint">{disabledReason}</span>
           </span>
         </div>
       ) : (
-        <button
-          className="ws-docmenu-item"
-          role="menuitem"
-          onClick={() => run(() => openTemplateGallery(doc.id))}
-        >
-          <Palette size={15} strokeWidth={1.8} />
-          {doc.templateId ? '更换版式模板…' : '套用版式模板…'}
-        </button>
-      )}
-      {doc.templateId && !restyleDisabled && (
-        <button
-          className="ws-docmenu-item"
-          role="menuitem"
-          onClick={() => run(() => applyTemplate(doc.id, null))}
-        >
-          <Palette size={15} strokeWidth={1.8} />
-          移除版式（回素颜）
-        </button>
-      )}
-      {!restyleDisabled && (
         <button
           className="ws-docmenu-item"
           role="menuitem"
