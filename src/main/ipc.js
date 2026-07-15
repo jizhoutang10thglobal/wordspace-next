@@ -293,6 +293,30 @@ function registerIpc() {
     });
     return r.canceled ? null : r.filePaths[0];
   });
+  // 图片插入（doc-images）：原生多选图片选择器 → 逐个 fsp.readFile → base64。只读文件返字节，
+  // 降采样/合法性判定在 renderer 父层做（createImageBitmap/canvas）。filter 只列 renderer 会接受的
+  // 位图格式（不列 svg——会被拒，不引诱用户选）。单张坏文件 .catch 跳过，不炸整批。
+  const IMG_EXT_MIME = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif',
+  };
+  ipcMain.handle('ws-pick-images', async () => {
+    const r = await dialog.showOpenDialog({
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'] }],
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths.length) return [];
+    const out = [];
+    for (const abs of r.filePaths) {
+      const mime = IMG_EXT_MIME[path.extname(abs).toLowerCase()];
+      if (!mime) continue; // 不认的扩展名跳过（renderer 也会二次拒）
+      try {
+        const buf = await fsp.readFile(abs);
+        out.push({ name: path.basename(abs), mime, base64: buf.toString('base64') });
+      } catch { /* 单张读失败：跳过，别炸整批 */ }
+    }
+    return out;
+  });
   // 给「打开」按钮选到的任意绝对路径分类：kind（按扩展名）+ 文件名 + 若在某个已打开的根内则算出
   // (rootId, rel)（否则 null=工作区外）。abs 用 realpath 归一化后跟各根的 realpath 比——macOS 上
   // /tmp→/private/tmp 这类软链会让原始 abs 对不上，不归一化的话「根内文件」也会被判成外部、建不出树标签。
