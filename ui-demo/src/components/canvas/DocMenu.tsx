@@ -9,6 +9,7 @@ import {
   BookOpen,
   Palette,
 } from 'lucide-react'
+import { useT } from '../../i18n'
 import { useStore } from '../../mock/store'
 import { useUI } from '../../mock/ui'
 import { usePaged } from '../../mock/paged'
@@ -30,6 +31,7 @@ export default function DocMenu({
   onClose: () => void
   onRename: () => void
 }) {
+  const t = useT()
   const ref = useRef<HTMLDivElement>(null)
   const exportDoc = useStore((s) => s.exportDoc)
   const openPageSetup = useUI((s) => s.openPageSetup)
@@ -43,8 +45,8 @@ export default function DocMenu({
   const isMd = doc.format === 'markdown'
   const saveDisabled = nonConform || isMd
   const disabledReason = isMd
-    ? 'Markdown 文档暂不支持模板（头部样式不入盘）'
-    : '此文件不符合 Schema、走基础编辑，模板仅适用于合规文档'
+    ? t('templates.mdUnsupported')
+    : t('templates.nonConformUnsupported')
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -79,7 +81,7 @@ export default function DocMenu({
         }
       >
         <FileText size={15} strokeWidth={1.8} />
-        导出为 PDF
+        {t('editor.exportPdf')}
       </button>
       <button
         className="ws-docmenu-item"
@@ -87,7 +89,7 @@ export default function DocMenu({
         onClick={() => run(() => exportDoc(doc.id, 'docx'))}
       >
         <FileType2 size={15} strokeWidth={1.8} />
-        导出为 Word(.docx)
+        {t('editor.exportWord')}
       </button>
       <button
         className="ws-docmenu-item"
@@ -95,7 +97,7 @@ export default function DocMenu({
         onClick={() => run(() => exportDoc(doc.id, 'pptx'))}
       >
         <Presentation size={15} strokeWidth={1.8} />
-        导出为演示文稿(.pptx)
+        {t('editor.exportPptx')}
       </button>
       <div className="ws-docmenu-sep" />
       <button
@@ -104,14 +106,14 @@ export default function DocMenu({
         onClick={() => run(() => openPageSetup(doc.id))}
       >
         <BookOpen size={15} strokeWidth={1.8} />
-        页面设置…
+        {t('editor.pageSetupMenu')}
       </button>
       {saveDisabled ? (
         // 禁用态：原因常驻小字（键盘/读屏可达，不只 title）。
         <div className="ws-docmenu-item is-disabled" role="menuitem" aria-disabled="true">
           <Palette size={15} strokeWidth={1.8} />
           <span className="ws-docmenu-disabled-wrap">
-            存为模板
+            {t('templates.saveAsTemplate')}
             <span className="ws-docmenu-hint">{disabledReason}</span>
           </span>
         </div>
@@ -122,16 +124,16 @@ export default function DocMenu({
           onClick={() => run(() => openSaveTemplate(doc.id))}
         >
           <Palette size={15} strokeWidth={1.8} />
-          将当前文档存为模板…
+          {t('templates.saveDocAsTemplate')}
         </button>
       )}
       <button
         className="ws-docmenu-item"
         role="menuitem"
-        onClick={() => run(() => toast('链接已复制', 'success'))}
+        onClick={() => run(() => toast(t('editor.linkCopied'), 'success'))}
       >
         <Link2 size={15} strokeWidth={1.8} />
-        复制链接
+        {t('editor.copyLink')}
       </button>
       <button
         className="ws-docmenu-item"
@@ -139,7 +141,7 @@ export default function DocMenu({
         onClick={() => run(onRename)}
       >
         <PenLine size={15} strokeWidth={1.8} />
-        重命名
+        {t('common.rename')}
       </button>
       <div className="ws-docmenu-sep" />
       <button
@@ -162,7 +164,7 @@ export default function DocMenu({
         }
       >
         <Trash2 size={15} strokeWidth={1.8} />
-        删除
+        {t('common.delete')}
       </button>
     </div>
   )

@@ -32,11 +32,13 @@ export const PAPERS: Record<PaperSize, { label: string; w: number; h: number }> 
   Legal: { label: 'Legal', w: 215.9, h: 355.6 },
 }
 
-/** 边距预设（mm）。宽 = 上下普通、左右加宽（Word 同款语义）。 */
+/** 边距预设（mm）。宽 = 上下普通、左右加宽（Word 同款语义）。label 是 i18n key，
+ *  在渲染处（PageSetupModal）用 t(label) 求值——模块级 const 不能直接 t()（求值时机固定、
+ *  不随语言切换重算），故这里只存 key。 */
 export const MARGIN_PRESETS: { key: string; label: string; margin: PageMargin }[] = [
-  { key: 'normal', label: '普通', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 } },
-  { key: 'narrow', label: '窄', margin: { top: 12.7, right: 12.7, bottom: 12.7, left: 12.7 } },
-  { key: 'wide', label: '宽', margin: { top: 25.4, right: 50.8, bottom: 25.4, left: 50.8 } },
+  { key: 'normal', label: 'editor.marginNormal', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 } },
+  { key: 'narrow', label: 'editor.marginNarrow', margin: { top: 12.7, right: 12.7, bottom: 12.7, left: 12.7 } },
+  { key: 'wide', label: 'editor.marginWide', margin: { top: 25.4, right: 50.8, bottom: 25.4, left: 50.8 } },
 ]
 
 export const DEFAULT_PAGE_CONFIG: PageConfig = {

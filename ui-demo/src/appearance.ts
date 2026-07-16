@@ -91,9 +91,4 @@ export function initAppearance(): void {
   const pref = readPref()
   apply(effectiveTheme(pref, systemDark()), false)
 }
-
-export const APPEARANCE_LABELS: Record<AppearancePref, string> = {
-  system: '跟随系统',
-  light: '浅色',
-  dark: '深色',
-}
+// 选项标签已挪进 i18n（settings.themeSystem/Light/Dark），此处不再导出（避免双份中文）。

@@ -1,0 +1,82 @@
+// browser 命名空间文案（浏览器：网页视图 / 收藏夹 / 历史 / 起始页 / 右键菜单 / mock 结构文案）。
+export default {
+  // 共享
+  glassSearch: 'Glass 搜索',
+
+  // WebView（网页内容区 + 网页内查找 + 右键动作 toast）
+  openedInBackground: '已在后台标签页打开',
+  copiedLink: '已拷贝链接',
+  copiedImage: '已拷贝图片',
+  copiedImageUrl: '已拷贝图片地址',
+  copied: '已拷贝',
+  searchTitle: '搜索:{q}',
+  demoEditAction: '（演示）编辑操作',
+  reloadedPage: '已刷新页面',
+  copiedPageLink: '已拷贝页面链接',
+  exportingPdf: '正在导出 PDF…',
+  iframeBlockedNote: '某些网站不允许内嵌预览,若空白可在系统浏览器打开',
+  findInPage: '在页面中查找',
+  findPrev: '上一个',
+  findNext: '下一个',
+  findClose: '关闭（Esc）',
+
+  // BookmarksPage（收藏夹）
+  bookmarksTitle: '收藏夹',
+  newFolder: '新文件夹',
+  importBtn: '导入',
+  exportBtn: '导出',
+  importExportHint: '导入 / 导出用的是浏览器通用的 HTML 书签格式（Netscape），可以和 Chrome、Safari、Firefox、Edge 互相搬。',
+  bookmarksBarFixed: '书签栏（固定）',
+  renameFolder: '重命名文件夹',
+  deleteFolder: '删除文件夹（含其中书签）',
+  empty: '空',
+  exportedToast: '已导出为 bookmarks.html（Chrome/Safari/Firefox 都能导入）',
+  importNoneRecognized: '没识别到书签（需要浏览器导出的 HTML 书签文件）',
+  importAllExist: '这些书签都已存在，没有新增',
+  importedCount: '已导入 {n} 个书签',
+
+  // HistoryPage（历史记录）
+  historyTitle: '历史记录',
+  searchHistory: '搜索历史记录',
+  today: '今天',
+  yesterday: '昨天',
+  dateMonthDay: '{m} 月 {d} 日',
+  clearBrowsingData: '清除浏览数据',
+  clearLastHour: '最近一小时',
+  clearLast24h: '最近 24 小时',
+  clearLast7d: '最近 7 天',
+  clearAll: '全部清除',
+  noMatch: '没有匹配的历史记录',
+  emptyHistory: '还没有浏览记录',
+  removeFromHistory: '从历史中删除',
+
+  // NewTab（起始页）
+  omniPlaceholder: '搜索,或输入网址',
+  safeNote: '内置浏览器没有恶意网站防护，访问陌生网站请自行留意',
+  careersTile: '招聘页',
+  careersInitial: '招',
+  companyTile: '公司官网',
+  wikipediaTile: '维基百科',
+
+  // webCtxMenu（网页右键菜单）
+  ctxOpenLinkNewTab: '在新标签页打开链接',
+  ctxOpenLinkBgTab: '在后台标签页打开链接',
+  ctxCopyLink: '拷贝链接',
+  ctxCopyImage: '拷贝图片',
+  ctxCopyImageUrl: '拷贝图片地址',
+  ctxCopy: '拷贝',
+  ctxSearchSelection: '用 Glass 搜索「{q}」',
+  ctxCut: '剪切',
+  ctxPaste: '粘贴',
+  ctxSelectAll: '全选',
+  ctxForward: '前进',
+  ctxReload: '重新加载',
+  ctxCopyPageLink: '拷贝页面链接',
+  ctxExportPdf: '导出 PDF',
+
+  // mock 结构文案（默认名 / 标题）
+  newTab: '新标签页',
+  searchResultTitle: '{q} · Glass 搜索',
+  folderBar: '书签栏',
+  folderDefault: '文件夹',
+}

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useStore } from './store'
 import { useHistory } from './history'
 import { useBrowserSettings } from './browserSettings'
+import { t } from '../i18n'
 
 // ---------------------------------------------------------------------------
 // Wordspace's browser side. Wordspace is also a real browser, so it needs the
@@ -48,11 +49,11 @@ function safeUrl(raw: string): URL | null {
 
 /** Pull a human-ish title for the address bar / tab from a resolved url. */
 function titleFor(kind: SiteKind, siteKey: SiteKey | undefined, url: string, query?: string): string {
-  if (kind === 'newtab') return '新标签页'
+  if (kind === 'newtab') return t('browser.newTab')
   if (kind === 'mock') {
     switch (siteKey) {
       case 'search':
-        return query ? `${query} · Glass 搜索` : 'Glass 搜索'
+        return query ? t('browser.searchResultTitle', { q: query }) : t('browser.glassSearch')
       case 'company':
         return 'Tenth Global'
       case 'news':
@@ -74,7 +75,7 @@ export function resolve(url: string): Resolved {
   const raw = (url ?? '').trim()
 
   if (!raw || raw === NEWTAB_URL || raw === 'wordspace://' || raw === 'wordspace://home') {
-    return { kind: 'newtab', title: '新标签页' }
+    return { kind: 'newtab', title: t('browser.newTab') }
   }
 
   // glass:// is our search-engine scheme. glass://search?q=… and glass://home.
