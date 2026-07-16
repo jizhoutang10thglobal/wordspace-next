@@ -14,6 +14,11 @@ export function SiteHeader() {
             height={569}
           />
         </Link>
+        <nav className="site-header__nav">
+          <Link href="/changelog" data-testid="nav-changelog">
+            更新日志
+          </Link>
+        </nav>
       </div>
     </header>
   );
