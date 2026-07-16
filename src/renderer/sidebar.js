@@ -699,20 +699,30 @@
     ids.splice(Math.max(0, Math.min(toIndex, ids.length)), 0, rootId);
     applyRootOrder(ids);
   }
-  // 与主进程注册表重对齐（乐观更新被拒时的兜底）：重拉根列表 + 各根树。
+  // 与主进程注册表重对齐（乐观更新被拒时的兜底 / 运行时根状态变化广播）：重拉根列表。
+  // 修 D2 同款：先按注册表重排 rootsState 并立刻渲染（已有活根保留其已渲染的树 + 展开态，不再 Promise.all
+  // 全量重读把界面门控在大根读树上），再逐根串行只补「新出现 / 刚复活」的根的树——一根巨型不阻塞界面。
+  // 已有活根的树由 watcher/focus 兜底保持新鲜，resync 不必重读它们（重读还会把展开态 collectDirRels 回收起）。
   async function resyncRoots() {
     try {
       const infos = await window.ws2.wsGetRoots();
-      const trees = await Promise.all(infos.map((r) => (r.missing ? null : window.ws2.wsReadTree(r.id))));
-      rootsState = infos.map((r, i) => {
+      const toLoad = [];
+      rootsState = infos.map((r) => {
         const prev = rootOf(r.id);
-        const st = prev || mkRootState(r, trees[i]);
-        if (prev && trees[i]) prev.tree = annotateTree(trees[i].tree, r.id);
-        if (prev) { prev.missing = !!r.missing; prev.path = r.path; prev.name = r.name; }
+        if (prev) {
+          prev.path = r.path; prev.name = r.name;
+          if (r.missing) prev.missing = true;
+          else if (prev.missing) { prev.missing = false; prev.loading = true; toLoad.push(prev.id); } // 复活 → 补树
+          return prev;
+        }
+        const st = mkRootState(r, null);
+        if (!r.missing) { st.loading = true; toLoad.push(st.id); } // 新出现的根 → 补树
         return st;
       });
+      rootsGen++;
       syncChrome();
       render();
+      for (const id of toLoad) await loadRootTree(id);
     } catch (e) { /* ignore */ }
   }
 
@@ -2870,16 +2880,28 @@
     try {
       const infos = await window.ws2.wsGetRoots();
       if (infos && infos.length) {
-        const trees = await Promise.all(infos.map((r) => (r.missing ? Promise.resolve(null) : window.ws2.wsReadTree(r.id))));
-        rootsState = infos.map((r, i) => mkRootState(r, trees[i]));
+        // 修 D2（大根死锁陷阱）：**不再把首帧门控在「全部根读完树」上**。先把根装进 rootsState（loading 态、
+        // tree=null）+ 立刻渲染——根行（含 loading 行）与右键「移除」入口即刻可见可点，即便某根读树巨慢/
+        // 永不返回也救得回来（照抄添加路径 adoptRoot 的两段式形状，见 pickFolder 的 'added' 分支）。
+        rootsState = infos.map((r) => { const st = mkRootState(r, null); if (!r.missing) st.loading = true; return st; });
         rootsGen++;
         if (filterInput) filterInput.value = '';
-        await restoreTreeState(); // P3-07：mkRootState 已 collectDirRels 全收起，这里把上次展开的目录/收起的根灌回，首次渲染前
         syncChrome();
+        render();
+        // 逐根串行读树（不再 Promise.all 并发全量扫）：一根巨型不阻塞其他根的树到货，也不再让读不完的根
+        // 卡死后续的 loadTabs / resolveRestore（U2 的条目预算再给每根读树本身封顶）。加载期间被移除的根由
+        // loadRootTree 的 `rootOf` 守卫自然跳过。
+        for (const st of [...rootsState]) {
+          if (st.missing) continue;
+          await loadRootTree(st.id); // 读树 + 填树/转失联/过大 + 清 loading（与添加路径同一函数）
+        }
+        await restoreTreeState(); // 树到齐后把上次展开的目录/收起的根灌回（loadRootTree 已 collectDirRels 全收起）
         render();
       }
       // loadTabs 在无根时也要跑（对抗审查 MR-ADV-2）：根全移除后外部标签（abs 身份）仍持久化着，
       // 只走「有根才恢复」的分支会让它们重启即丢、还被下一次 persist 从盘上抹掉。
+      // ⚠ 冷启动竞态红线（cold-start.spec）：loadTabs 仍在「树读完」之后跑（findNode 依赖树），resolveRestore
+      // 仍在 loadTabs 之后（finally）——open-file 建标签排在 loadTabs 之后、不被覆盖的语义原封不动，只是首帧提前了。
       await loadTabs(); // 全局标签/置顶恢复 + 上次激活进编辑器（冷启动 open-file 在路上则不抢 viewer）
       syncChrome(); // 恢复出的外部标签要点亮侧栏（sb-on 依赖 tabState.entries）
     } catch (e) {
