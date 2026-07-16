@@ -5,6 +5,7 @@ module.exports = {
   otherSpace: '其他空间',
   nameSep: '、',
   crossVolNote: '{names}：在另一磁盘卷，暂不支持链接',
+  degradedNote: '{names}：文件夹过大，链接功能不可用',
   createNamed: '新建「{query}」',
   urlLink: '网址链接…',
   urlPrompt: '链接地址',

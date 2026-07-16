@@ -342,3 +342,75 @@ test('隐藏文件不进树：Windows/云盘垃圾（非点号，大小写不敏
     assert.ok(names.includes(keep), '误伤了合法文件：' + keep + ' | tree=' + names.join(','));
   }
 });
+
+// ===== P0b V1：readDir 单层读取（lazy 模式浏览）=====
+test('readDir 顶层：只列直接子项、目录带 childrenLoaded=false、文件带 kind、都带 abs、无 ino', async () => {
+  const { root } = await seed();
+  const r = await ws.readDir(root, '');
+  assert.equal(r.dir, '');
+  assert.equal(r.truncated, false);
+  // 目录优先、同组排序（与 readTree 同口径）：数据(dir) 在 a.html(file) 前
+  assert.deepEqual(r.children.map((n) => [n.name, n.isDir]), [['数据', true], ['a.html', false]]);
+  const d = r.children.find((n) => n.name === '数据');
+  assert.equal(d.childrenLoaded, false, '未展开的目录 childrenLoaded=false');
+  assert.deepEqual(d.children, [], '单层读取不含子项');
+  assert.ok(d.abs.endsWith('数据'), '带 abs');
+  const a = r.children.find((n) => n.name === 'a.html');
+  assert.equal(a.kind, 'html');
+  assert.equal(a.ino, undefined, 'lazy 单层不 stat、无 ino');
+  assert.ok(a.abs.endsWith('a.html'));
+});
+
+test('readDir 子层：读一个子目录只返回它这一层', async () => {
+  const { root } = await seed();
+  const r = await ws.readDir(root, '数据');
+  assert.equal(r.dir, '数据');
+  assert.deepEqual(r.children.map((n) => n.name).sort(), ['b.html', 'c.png']);
+  assert.ok(r.children.every((n) => n.rel.indexOf('数据/') === 0), 'rel 带父前缀');
+});
+
+test('readDir 复用跳过规则：.DS_Store / node_modules 不进；.app 标 childrenLoaded=true（不钻进去）', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-rd-'));
+  await fs.writeFile(path.join(root, 'a.html'), HTML, 'utf8');
+  await fs.writeFile(path.join(root, '.DS_Store'), 'x', 'utf8');
+  await fs.mkdir(path.join(root, 'node_modules'), { recursive: true });
+  await fs.mkdir(path.join(root, 'Foo.app', '深'), { recursive: true });
+  await fs.writeFile(path.join(root, 'Foo.app', '深', 'x.html'), HTML, 'utf8');
+  const r = await ws.readDir(root, '');
+  const names = r.children.map((n) => n.name);
+  assert.ok(!names.includes('.DS_Store'), '跳 dotfile');
+  assert.ok(!names.includes('node_modules'), '跳依赖目录');
+  const app = r.children.find((n) => n.name === 'Foo.app');
+  assert.ok(app && app.isDir && app.childrenLoaded === true, '.app 是单节点、childrenLoaded=true（不递归钻进去）');
+});
+
+test('readDir 单层预算（WS2_DIR_BUDGET）：直接子项超预算 → truncated + 恰好等于不截断', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-rdb-'));
+  for (let i = 0; i < 12; i++) await fs.writeFile(path.join(root, `f${i}.html`), HTML, 'utf8'); // 12 != 预算(5)，防哑门
+  const prev = process.env.WS2_DIR_BUDGET;
+  process.env.WS2_DIR_BUDGET = '5';
+  try {
+    const r = await ws.readDir(root, '');
+    assert.equal(r.truncated, true, '12 > 预算 5 → truncated');
+    assert.equal(r.children.length, 5, '只返回预算内的 5 个');
+    // 边界：恰好等于预算不算超
+    process.env.WS2_DIR_BUDGET = '12';
+    const r2 = await ws.readDir(root, '');
+    assert.equal(r2.truncated, false, '恰好 12 == 预算 12 不算超');
+    assert.equal(r2.children.length, 12);
+  } finally {
+    if (prev == null) delete process.env.WS2_DIR_BUDGET; else process.env.WS2_DIR_BUDGET = prev;
+  }
+});
+
+test('readDir 路径守卫：../ 越权抛错', async () => {
+  const { root } = await seed();
+  await assert.rejects(() => ws.readDir(root, '../../../etc'), /escapes workspace/);
+});
+
+test('readDir 不存在的子目录：空层（不崩）', async () => {
+  const { root } = await seed();
+  const r = await ws.readDir(root, '不存在');
+  assert.deepEqual(r.children, []);
+  assert.equal(r.truncated, false);
+});

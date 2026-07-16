@@ -8,7 +8,7 @@
 'use strict';
 const fsp = require('fs/promises');
 const path = require('path');
-const { kindOf } = require('../lib/file-tree');
+const { kindOf, isSkippedName, isBundleName } = require('../lib/file-tree');
 const wsLinks = require('../lib/links'); // resolveHref/relHref（U1）
 const mdAdapter = require('./md-adapter');
 const docIdLib = require('../lib/doc-id'); // U7 双层身份修复锚
@@ -109,28 +109,47 @@ async function readDocMeta(abs, ownRel) {
 }
 function baseNoExt(p) { return path.basename(p).replace(DOC_RE, ''); }
 
-// ---- 递归列出一个根下满足 predicate(name) 的文件，返回 [{rel, abs}]（rel 用 / 分隔）----
+// 链接索引扫描的条目预算（P0b V3）：链接索引也是全量递归扫盘——对超大根（家目录/桌面级）它会把
+// 「树已经靠 lazy 避掉的全量扫」原样再做一遍，@ 菜单/反链一触发就把 app 冻死（诊断 §7 隐雷）。超预算即停、
+// 标 truncated，该根链接功能降级（@ 菜单/反链提示「此文件夹过大，链接功能不可用」）。WS2_LINK_BUDGET 测试 seam。
+const DEFAULT_LINK_BUDGET = 150000;
+function linkBudget() {
+  const v = parseInt(process.env.WS2_LINK_BUDGET, 10);
+  return Number.isInteger(v) && v > 0 ? v : DEFAULT_LINK_BUDGET;
+}
+// ---- 递归列出一个根下满足 predicate(name) 的文件，返回 { files:[{rel, abs}], truncated }（rel 用 / 分隔）----
+// 复用 walk 的跳过规则（isSkippedName 覆盖 dotfile + node_modules/.git 等；isBundleName 不钻 .app）——修隐雷：
+// 以前只跳 dotfile，会一头钻进 node_modules/.app 内部上万文件。加条目预算封顶总遍历量。
 async function listFilesMatching(rootPath, predicate) {
   const out = [];
+  const budget = linkBudget();
+  let count = 0;
+  let truncated = false;
   async function rec(dirAbs, relPrefix) {
+    if (truncated) return;
     let ents;
     try { ents = await fsp.readdir(dirAbs, { withFileTypes: true }); }
     catch { return; }
     for (const e of ents) {
-      if (e.name.startsWith('.')) continue; // 跳隐藏（.git/.ws2-trash 等）
+      if (isSkippedName(e.name)) continue; // dotfile + 依赖/缓存目录 + 垃圾文件（与树扫描同一份规则）
+      if (count >= budget) { truncated = true; return; }
+      count++;
       const abs = path.join(dirAbs, e.name);
       const rel = relPrefix ? relPrefix + '/' + e.name : e.name;
-      if (e.isDirectory()) await rec(abs, rel);
-      else if (e.isFile() && predicate(e.name)) out.push({ rel, abs });
+      if (e.isDirectory()) {
+        if (isBundleName(e.name)) continue; // .app 等包：Finder 当单文件、内部上万文件——不钻进去
+        await rec(abs, rel);
+        if (truncated) return;
+      } else if (e.isFile() && predicate(e.name)) out.push({ rel, abs });
     }
   }
   await rec(rootPath, '');
-  return out;
+  return { files: out, truncated };
 }
-function listDocs(rootPath) { return listFilesMatching(rootPath, (n) => DOC_RE.test(n)); }
+async function listDocs(rootPath) { return (await listFilesMatching(rootPath, (n) => DOC_RE.test(n))).files; }
 // 非文档文件（pdf/图片/表格等）：@菜单里列在文档之后（链接任何文件都合法，点击时非文档走系统程序）。
 async function listNonDocFiles(rootPath) {
-  const files = await listFilesMatching(rootPath, (n) => !DOC_RE.test(n));
+  const { files } = await listFilesMatching(rootPath, (n) => !DOC_RE.test(n));
   return files.map((f) => { const name = path.basename(f.rel); return { rel: f.rel, kind: kindOf(f.rel), title: name.replace(/\.[^.]+$/, '') || name }; }); // 去任意扩展名（baseNoExt 只去 .html/.md）
 }
 
@@ -140,15 +159,21 @@ const index = new Map();
 
 function getRoot(rootId) {
   let r = index.get(rootId);
-  if (!r) { r = { path: null, docs: new Map() }; index.set(rootId, r); }
+  if (!r) { r = { path: null, docs: new Map(), truncated: false }; index.set(rootId, r); }
   return r;
+}
+// 该根链接功能是否降级（扫描超预算 = 超大根）：@菜单/反链据此提示「此文件夹过大，链接功能不可用」。
+function isDegraded(rootId) {
+  const r = index.get(rootId);
+  return !!(r && r.truncated);
 }
 
 // 增量刷新一个根：stat 每个文档，mtime/size/ino 任一变（或新文件）才重读；消失的删掉。返回是否有变更。
 async function refreshRoot(rootId, rootPath) {
   const r = getRoot(rootId);
   r.path = rootPath;
-  const files = await listDocs(rootPath);
+  const { files, truncated } = await listFilesMatching(rootPath, (n) => DOC_RE.test(n));
+  r.truncated = truncated; // 扫描超预算 → 该根链接功能降级（部分文档没进索引，反链/@菜单不完整）
   const live = new Set();
   let changed = false;
   await Promise.all(files.map(async ({ rel, abs }) => {
@@ -318,7 +343,7 @@ async function hydrate(storeFile, rootId, rootPath) {
 }
 
 module.exports = {
-  extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
+  extractDocMeta, readDocMeta, listDocs, listNonDocFiles, isDegraded,
   refreshRoot, rebuildRoot, removeRoot,
   query, backlinks, dirBacklinks, ownOutlinks, titleOf, relOfDocId, movedTarget, warm,
   save, hydrate,

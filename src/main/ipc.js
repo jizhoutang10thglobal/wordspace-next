@@ -441,8 +441,10 @@ function registerIpc() {
   ipcMain.handle('ws-links-candidates', async (_e, rootId) => {
     await ensureLinkIndex(rootId);
     const root = liveRoot(rootId);
-    const others = root ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
-    return { docs: linkIndex.query(rootId), others };
+    const degraded = linkIndex.isDegraded(rootId); // V3：超大根链接功能降级
+    // 降级根不再扫非文档文件（又一次全量扫，正是要避的冻死）；@菜单据 degraded 显示提示、不列候选
+    const others = root && !degraded ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
+    return { docs: linkIndex.query(rootId), others, degraded };
   });
   // B @菜单跨根候选：所有 live 根分组返回。sourceRootId = 触发 @ 的文档所在根 → 排在最前（组内行为与单根现状一致，单根用户零感知）。
   // sameVol = 与源根同磁盘卷（stat().dev 相等）；跨卷根不给建链（B 层可见拒绝，renderer 灰字提示、不列候选）。
@@ -456,12 +458,14 @@ function registerIpc() {
     const groups = [];
     for (const r of ordered) {
       const dev = await devOf(r.path);
+      const degraded = linkIndex.isDegraded(r.id); // V3：超大根链接功能降级
       groups.push({
         rootId: r.id,
         rootName: rootInfo(r).name,
         sameVol: srcDev != null && dev != null && dev === srcDev,
+        degraded,
         docs: linkIndex.query(r.id),
-        others: await linkIndex.listNonDocFiles(r.path).catch(() => []),
+        others: degraded ? [] : await linkIndex.listNonDocFiles(r.path).catch(() => []), // 降级根不再扫非文档（避免二次全量扫）
       });
     }
     return groups;
@@ -771,6 +775,17 @@ function registerIpc() {
       return await workspace.readSubtrees(r.path, dirs);
     } catch {
       return null; // 越权路径/瞬时 IO 错 → 回落全量，别把树搞半残
+    }
+  });
+  // 单层读取（P0b lazy 模式：展开哪层读哪层）。过大根（超 treeBudget 走 lazy）靠它秒级浏览：成本 O(本层)，
+  // 与整棵树规模无关。dirRel '' = 根本身。渲染层路径不可信 → readDir 内部 assertInsideWorkspace 兜。
+  ipcMain.handle('ws-read-dir', async (_e, rootId, dirRel) => {
+    const r = roots.find((x) => x.id === rootId);
+    if (!r || r.missing) return null;
+    try {
+      return await workspace.readDir(r.path, typeof dirRel === 'string' ? dirRel : '');
+    } catch {
+      return null; // 越权路径/瞬时 IO 错 → null，renderer 该层显示空/loading，别崩
     }
   });
   // 聚焦兜底的便宜版：冲掉该根 watcher 的在途去抖（有变化立即走正常事件管线），返回 watcher 是否活着——

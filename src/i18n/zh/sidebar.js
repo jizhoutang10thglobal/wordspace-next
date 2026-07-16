@@ -10,7 +10,9 @@ module.exports = {
   // ---- 添加文件夹 / 根管理 toast ----
   folderAlreadyOpen: '「{name}」已经打开了',
   folderIsChild: '「{name}」已经在「{parent}」里了——不会重复打开，去那个文件夹里展开即可',
-  folderChildParentStuck: '「{name}」在「{parent}」里，但「{parent}」还没能完整打开——在「管理文件夹」里移除它，再单独打开「{name}」',
+  folderChildParentStuck: '「{name}」在你打开的「{parent}」里（{mode}）。可以直接在它里面展开找到，或在「管理文件夹」里移除它后单独打开「{name}」',
+  folderModeLazy: '简化模式的大文件夹',
+  folderModeLoading: '还在加载',
   folderStateChangedRetry: '文件夹状态已变化，请重试',
   folderLimit: '最多同时打开 {max} 个文件夹',
   reconnected: '「{name}」已重新连接',
@@ -35,6 +37,7 @@ module.exports = {
 
   // ---- 根标题行 / 失联根 ----
   rootHeadTitle: '{path} · 拖动可调整文件夹顺序',
+  rootHeadTitleLazy: '{path} · 简化模式（超大文件夹，按需加载）',
   newDoc: '新建文档',
   moveToTop: '移到最上面',
   removeRoot: '移除（磁盘文件不动）',
@@ -53,10 +56,14 @@ module.exports = {
   hugePickAnother: '换一个文件夹',
   hugeOpenAnyway: '仍要打开',
 
-  // ---- 过大根降级行（超条目预算，无法完整打开）----
-  oversizeHeadTitle: '{path} · 过大（暂时无法完整打开）',
-  oversizeTag: '过大',
-  oversizeNote: '此文件夹包含超过 15 万个项目，Wordspace 暂时无法完整打开——建议移除后选择具体的工作文件夹',
+  // ---- 简化模式（lazy）大根：徽标 + 逐层加载占位 + 单层截断提示 ----
+  lazyTag: '简化模式',
+  lazyTagTitle: '这个文件夹很大（超过 15 万个项目），Wordspace 按需逐层加载，筛选/快速打开只覆盖已浏览过的目录',
+  readingLevel: '正在读取…',
+  dirTruncatedNote: '此文件夹的直接项目过多，仅显示前一部分',
+  lazyFilterHint: '简化模式：仅搜索已浏览过的目录',
+  lazyFilterHintTitle: '这个文件夹太大、按需加载。展开更多目录后再筛选，或用「移除后打开具体子文件夹」得到完整搜索',
+  lazyQuickOpenNote: '简化模式的大文件夹未纳入快速打开（在侧栏里逐层展开查找）',
 
   // ---- 逃生门：管理文件夹 modal ----
   manageRootsTitle: '管理文件夹',
@@ -160,7 +167,8 @@ module.exports = {
   diagRootLine: '根{n}「{name}」  {info}',
   diagCloud: '☁ {name} 云盘',
   diagLocal: '本地',
-  diagFileStats: '   文件数 {files}  ·  readTree 上次 {last}ms / 峰值 {max}ms（全量 {reads} 次 / 子树 {scoped} 次）  ·  watcher 触发 {events} 次',
+  diagFileStats: '   文件数 {files} / 目录 {dirs}{kb}  ·  readTree 上次 {last}ms / 峰值 {max}ms（全量 {reads} 次 / 子树 {scoped} 次 / 单层 {dirReads} 次）  ·  watcher 触发 {events} 次',
+  diagIpcPayload: '  ·  IPC 载荷 ≈{kb}KB',
   diagRenderLine: '渲染：上次 {last}ms · 峰值 {max}ms · 共 {count} 次  ·  当前树 DOM 行数 {rows}',
   diagLongTask: '主线程长任务(>50ms 卡帧)：{count} 次 · 累计 {total}ms · 最长单次 {max}ms   ← 滚动/交互卡顿看这行',
   diagMem: 'JS 内存：{mem}',

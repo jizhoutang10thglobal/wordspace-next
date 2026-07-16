@@ -5,6 +5,7 @@ module.exports = {
   otherSpace: 'Other space',
   nameSep: ', ',
   crossVolNote: '{names}: on another disk volume — linking not supported yet',
+  degradedNote: '{names}: folder too large — linking unavailable',
   createNamed: 'Create “{query}”',
   urlLink: 'Web link…',
   urlPrompt: 'Link address',

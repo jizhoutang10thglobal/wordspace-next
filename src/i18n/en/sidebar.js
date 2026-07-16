@@ -10,7 +10,9 @@ module.exports = {
   // ---- add folder / root management toasts ----
   folderAlreadyOpen: '“{name}” is already open',
   folderIsChild: '“{name}” is already inside “{parent}” — it won’t be opened again; just expand it there',
-  folderChildParentStuck: '“{name}” is inside “{parent}”, but “{parent}” couldn’t be fully opened — remove it in Manage Folders, then open “{name}” on its own',
+  folderChildParentStuck: '“{name}” is inside the “{parent}” you opened ({mode}). You can expand it there to find it, or remove it in Manage Folders and open “{name}” on its own',
+  folderModeLazy: 'a large folder in simplified mode',
+  folderModeLoading: 'still loading',
   folderStateChangedRetry: 'The folder state changed — please try again',
   folderLimit: 'You can have at most {max} folders open at once',
   reconnected: '“{name}” reconnected',
@@ -35,6 +37,7 @@ module.exports = {
 
   // ---- root header / disconnected root ----
   rootHeadTitle: '{path} · Drag to reorder folders',
+  rootHeadTitleLazy: '{path} · Simplified mode (very large folder, loaded on demand)',
   newDoc: 'New document',
   moveToTop: 'Move to top',
   removeRoot: 'Remove (files stay on disk)',
@@ -53,10 +56,14 @@ module.exports = {
   hugePickAnother: 'Pick another folder',
   hugeOpenAnyway: 'Open anyway',
 
-  // ---- oversized root degraded row (over the item budget, can’t open fully) ----
-  oversizeHeadTitle: '{path} · Too large (can’t fully open for now)',
-  oversizeTag: 'Too large',
-  oversizeNote: 'This folder holds over 150,000 items and Wordspace can’t fully open it for now — remove it and pick a specific work folder instead',
+  // ---- simplified (lazy) large root: badge + per-level loading placeholder + level-truncation note ----
+  lazyTag: 'Simplified',
+  lazyTagTitle: 'This folder is very large (over 150,000 items). Wordspace loads it level by level on demand; filtering / quick-open only cover directories you’ve already browsed',
+  readingLevel: 'Reading…',
+  dirTruncatedNote: 'This folder has too many direct items — showing only the first portion',
+  lazyFilterHint: 'Simplified mode: only searches directories you’ve already browsed',
+  lazyFilterHintTitle: 'This folder is large and loaded on demand. Expand more directories before filtering, or use “remove it and open a specific subfolder” for a full search',
+  lazyQuickOpenNote: 'Large folders in simplified mode aren’t included in quick-open (expand them level by level in the sidebar)',
 
   // ---- escape hatch: manage-folders modal ----
   manageRootsTitle: 'Manage Folders',
@@ -160,7 +167,8 @@ module.exports = {
   diagRootLine: 'Root {n} “{name}”  {info}',
   diagCloud: '☁ {name} cloud',
   diagLocal: 'Local',
-  diagFileStats: '   Files {files}  ·  readTree last {last}ms / peak {max}ms (full {reads}× / subtree {scoped}×)  ·  watcher fired {events}×',
+  diagFileStats: '   Files {files} / dirs {dirs}{kb}  ·  readTree last {last}ms / peak {max}ms (full {reads}× / subtree {scoped}× / single-level {dirReads}×)  ·  watcher fired {events}×',
+  diagIpcPayload: '  ·  IPC payload ≈{kb}KB',
   diagRenderLine: 'Render: last {last}ms · peak {max}ms · {count} total  ·  current tree DOM rows {rows}',
   diagLongTask: 'Main-thread long tasks (>50ms dropped frames): {count} · total {total}ms · longest {max}ms   ← check this line for scroll/interaction jank',
   diagMem: 'JS memory: {mem}',
