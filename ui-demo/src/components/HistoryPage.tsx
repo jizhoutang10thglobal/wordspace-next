@@ -35,9 +35,9 @@ export default function HistoryPage() {
   const [clearOpen, setClearOpen] = useState(false)
 
   const groups = useMemo(() => {
-    const t = q.trim().toLowerCase()
-    const filtered = t
-      ? entries.filter((e) => e.title.toLowerCase().includes(t) || e.url.toLowerCase().includes(t))
+    const needle = q.trim().toLowerCase()
+    const filtered = needle
+      ? entries.filter((e) => e.title.toLowerCase().includes(needle) || e.url.toLowerCase().includes(needle))
       : entries
     const map = new Map<string, { label: string; items: HistEntry[] }>()
     for (const e of filtered) {
