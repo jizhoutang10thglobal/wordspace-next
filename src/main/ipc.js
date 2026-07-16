@@ -39,6 +39,7 @@ let nextRootId = 1;
 let rootsRestorePromise = null; // 首次 ws-get-roots 从 store 恢复（幂等）
 const MAX_ROOTS = 8; // 每根一个递归 watcher，封顶控资源（JetBrains 官方警告 attach 多了拖性能）
 const pendingAbsorb = new Map(); // token → { path, real } 等确认的「父目录吸收」
+const pendingHuge = new Map(); // token → { dir, real } 等确认的「病灶路径」（~、/、/Users、卷根，诊断 §6.3）
 const removedStash = new Map(); // token → { root, index } 可撤销的「移除根」
 let stashSeq = 1;
 
@@ -69,6 +70,56 @@ async function canonReal(p) {
   } catch {
     return resolved;
   }
+}
+// 病灶根确认（诊断 §6.3，Colin 拍板）：添加 ~/、/、/Users、卷根等海量系统路径前弹确认劝导。
+// WS2_HUGE_PATHS 测试 seam（仅非打包态，path.delimiter 分隔，照 WS2_FOLDER_IN 惯例）：追加病灶路径，
+// 让 e2e 用 tmp 目录复现（真机拿不到 os.homedir 之类的确定性 fixture）。
+function hugeRootReason(real) {
+  const extra = !app.isPackaged && process.env.WS2_HUGE_PATHS
+    ? process.env.WS2_HUGE_PATHS.split(path.delimiter).filter(Boolean)
+    : [];
+  return rootsLib.dangerRootReason(real, { extra });
+}
+// 添加文件夹的 classify + 分流（same/revive/child/parent/limit/independent-register）。抽成独立函数：
+// 病灶确认后走 ws-add-folder-confirm 也复用同一套判定（跳过病灶检查、其余一字不差），不让确认路径漏判嵌套。
+async function resolveAdd(dir, real) {
+  const cls = rootsLib.classifyRoot(real, classifyRoots());
+  if (cls.rel === 'same') {
+    const r = roots.find((x) => x.id === cls.rootId);
+    // 选的是一个失联根的路径且现在可达了（外置盘插回来）→ 顺手复活，不报「已打开」
+    if (r.missing && (await dirExists(r.path))) {
+      clearReviveTimer(r.id); // P3-08：手动重加已抢先复活，收掉复活探测 timer
+      r.missing = false;
+      r.real = await canonReal(r.path);
+      startRootWatch(r);
+      // 两段式（见 'added' 分支说明）：不带 tree，renderer 渲染加载态后走 wsReadTree 填。
+      return { status: 'revived', root: rootInfo(r) };
+    }
+    return { status: 'same', root: rootInfo(r) };
+  }
+  if (cls.rel === 'child') {
+    const parent = roots.find((x) => x.id === cls.parentId);
+    return { status: 'child', name: path.basename(real), parent: rootInfo(parent) };
+  }
+  if (cls.rel === 'parent') {
+    // 新根包住已有根 → 不静默动用户的树，出确认；确认走 ws-absorb-confirm(token)。
+    // childIds 钉死在弹窗时刻：确认框列的是哪几个，吸收的就只能是哪几个（防挂起期间新加的根被连带吸收）。
+    const children = cls.childIds.map((id) => roots.find((x) => x.id === id));
+    const token = 'absorb-' + stashSeq++;
+    pendingAbsorb.set(token, { path: path.resolve(dir), real, childIds: cls.childIds });
+    if (pendingAbsorb.size > 8) pendingAbsorb.delete(pendingAbsorb.keys().next().value); // 取消不通知主进程，防囤积
+    return { status: 'parent', token, name: path.basename(real), children: children.map(rootInfo) };
+  }
+  if (roots.length >= MAX_ROOTS) return { status: 'limit', max: MAX_ROOTS };
+  const root = { id: 'r' + nextRootId++, path: path.resolve(dir), real, missing: false };
+  roots.push(root);
+  await persistRoots();
+  startRootWatch(root);
+  // 两段式返回：先回根（不带 tree），renderer 立刻渲染根 + 「正在读取…」加载行，再走 wsReadTree 填树。
+  // 大文件夹（桌面/云盘）全量扫描阻塞在这条 IPC 回复上时用户干等无反馈（Wendi 2026-07-14）；U2 的条目预算
+  // 再给读树本身封顶，过大根走「过大」态。watcher 已 startRootWatch 注册；加载期间 st.tree 仍 null，
+  // watcher 事件被 doTreeScan 的守卫自然 no-op。
+  return { status: 'added', root: rootInfo(root) };
 }
 // 起对某根的递归监听：外部增删改 → 通知 renderer 重读该根的树 + reconcile 标签（事件带 rootId +
 // 变化目录列表）。watcher 挂了（拔盘/根被删）→ 复查可达性：真没了标 missing + 广播（renderer 重拉根列表
@@ -569,43 +620,22 @@ function registerIpc() {
       dir = r.filePaths[0];
     }
     const real = await canonReal(dir);
-    const cls = rootsLib.classifyRoot(real, classifyRoots());
-    if (cls.rel === 'same') {
-      const r = roots.find((x) => x.id === cls.rootId);
-      // 选的是一个失联根的路径且现在可达了（外置盘插回来）→ 顺手复活，不报「已打开」
-      if (r.missing && (await dirExists(r.path))) {
-        clearReviveTimer(r.id); // P3-08：手动重加已抢先复活，收掉复活探测 timer
-        r.missing = false;
-        r.real = await canonReal(r.path);
-        startRootWatch(r);
-        // 两段式（见 'added' 分支说明）：不带 tree，renderer 渲染加载态后走 wsReadTree 填。
-        return { status: 'revived', root: rootInfo(r) };
-      }
-      return { status: 'same', root: rootInfo(r) };
+    // 病灶路径（~、/、/Users、卷根，诊断 §6.3）→ 先弹确认劝导选具体工作文件夹，确认走 ws-add-folder-confirm(token)。
+    const reason = hugeRootReason(real);
+    if (reason) {
+      const token = 'huge-' + stashSeq++;
+      pendingHuge.set(token, { dir: path.resolve(dir), real });
+      if (pendingHuge.size > 8) pendingHuge.delete(pendingHuge.keys().next().value); // 取消不通知主进程，防囤积
+      return { status: 'confirm-huge', token, path: path.resolve(dir), name: path.basename(real) || real, reason };
     }
-    if (cls.rel === 'child') {
-      const parent = roots.find((x) => x.id === cls.parentId);
-      return { status: 'child', name: path.basename(real), parent: rootInfo(parent) };
-    }
-    if (cls.rel === 'parent') {
-      // 新根包住已有根 → 不静默动用户的树，出确认；确认走 ws-absorb-confirm(token)。
-      // childIds 钉死在弹窗时刻：确认框列的是哪几个，吸收的就只能是哪几个（防挂起期间新加的根被连带吸收）。
-      const children = cls.childIds.map((id) => roots.find((x) => x.id === id));
-      const token = 'absorb-' + stashSeq++;
-      pendingAbsorb.set(token, { path: path.resolve(dir), real, childIds: cls.childIds });
-      if (pendingAbsorb.size > 8) pendingAbsorb.delete(pendingAbsorb.keys().next().value); // 取消不通知主进程，防囤积
-      return { status: 'parent', token, name: path.basename(real), children: children.map(rootInfo) };
-    }
-    if (roots.length >= MAX_ROOTS) return { status: 'limit', max: MAX_ROOTS };
-    const root = { id: 'r' + nextRootId++, path: path.resolve(dir), real, missing: false };
-    roots.push(root);
-    await persistRoots();
-    startRootWatch(root);
-    // 两段式返回：先回根（不带 tree），renderer 立刻渲染根 + 「正在读取…」加载行，再走 wsReadTree 填树。
-    // 大文件夹（桌面/云盘）全量扫描 4-5s 阻塞在这条 IPC 回复上时，用户干等无反馈（Wendi 2026-07-14）。
-    // watcher 已 startRootWatch 注册；加载期间（renderer 的 st.tree 仍为 null）watcher 事件被 doTreeScan
-    // 的 `!st.tree` 守卫自然 no-op，不与第二段的 wsReadTree 打架。
-    return { status: 'added', root: rootInfo(root) };
+    return resolveAdd(dir, real);
+  });
+  // 病灶路径确认「仍要打开」→ 走 resolveAdd（跳过病灶检查，classify 分流一字不差；期间注册表变了照样按新态判）。
+  ipcMain.handle('ws-add-folder-confirm', async (_e, token) => {
+    const pend = pendingHuge.get(token);
+    pendingHuge.delete(token);
+    if (!pend) return { status: 'stale' };
+    return resolveAdd(pend.dir, pend.real);
   });
   // 「并入并添加」确认：吸收子根（子根注销、标签 rebase 进新父根——文件都还在磁盘原处，只换归属）。
   ipcMain.handle('ws-absorb-confirm', async (_e, token) => {

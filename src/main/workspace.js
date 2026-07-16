@@ -44,12 +44,26 @@ function uniqueLeaf(taken, base, ext) {
   return name;
 }
 
-// 递归走盘 → { files:[{path,kind}], dirs:[rel] }，path/rel 均为工作区内 '/' 分隔相对路径。
+// 条目预算（Colin 拍板 15 万；诊断 D3）：walk 遍历中计数「过 skip 后真正进树的条目」（文件 + 目录），
+// 到预算即停止遍历、返回 truncated=true。防大根（家目录/桌面级，几十万~百万条目）把
+// walk → 每文件 stat → 建树 → 几百 MB IPC → renderer 堆一路 O(N) 冻死（Colin/Wendi 病根）。
+// WS2_TREE_BUDGET 是测试 seam：node:test 直接改 process.env、e2e 经 launch env 传小值；生产不设即恒 15 万。
+const DEFAULT_TREE_BUDGET = 150000;
+function treeBudget() {
+  const v = parseInt(process.env.WS2_TREE_BUDGET, 10);
+  return Number.isInteger(v) && v > 0 ? v : DEFAULT_TREE_BUDGET;
+}
+
+// 递归走盘 → { files:[{path,kind}], dirs:[rel], truncated, entryCount }，path/rel 均为工作区内 '/' 分隔相对路径。
 // startRel 非空 = 只走该子树（watcher 报了变化目录时的子树级重扫，见 readSubtrees）。
 async function walk(root, startRel = '') {
   const filesOut = [];
   const dirsOut = [];
+  const budget = treeBudget();
+  let count = 0; // 已进树的条目数（文件 + 目录，过 skip 后）
+  let truncated = false;
   async function rec(absDir, rel) {
+    if (truncated) return;
     let entries;
     try {
       entries = await fs.readdir(absDir, { withFileTypes: true });
@@ -58,18 +72,21 @@ async function walk(root, startRel = '') {
     }
     for (const e of entries) {
       if (skip(e.name)) continue;
+      if (count >= budget) { truncated = true; return; } // 预算用尽即停（恰好等于预算不算超——第 budget+1 个才触发）
+      count++;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         dirsOut.push(childRel);
         if (isBundle(e.name)) continue; // macOS 包：树上显示成一个节点，但不递归进去（否则钻进内部上万文件、卡死）
         await rec(path.join(absDir, e.name), childRel);
+        if (truncated) return;
       } else if (e.isFile()) {
         filesOut.push({ path: childRel, kind: kindOf(e.name) });
       }
     }
   }
   await rec(startRel ? path.join(root, startRel.split('/').join(path.sep)) : root, startRel);
-  return { files: filesOut, dirs: dirsOut };
+  return { files: filesOut, dirs: dirsOut, truncated, entryCount: count };
 }
 
 // 并发限流的逐文件 stat 取 ino——无界 Promise.all 在大根上会同时压几万个 stat 进 libuv 线程池
@@ -114,7 +131,14 @@ async function readTree(root) {
   // stat 只要祖先的 execute 位就能过，walk 对 readdir 失败又静默吞成空树 → 半失联的根被当成「空了」，
   // 标签+置顶全被 reconcile 清光。根层 readdir 探一次，抛错即 null；子目录级失败维持吞掉（局部问题局部退化）。
   try { await fs.readdir(r); } catch { return null; }
-  const { files: fl, dirs } = await walk(r);
+  const { files: fl, dirs, truncated, entryCount } = await walk(r);
+  // 超条目预算（D3）：**不建局部树、不 fillInos**——半棵树比没有更误导，且 15 万次 stat + 几百 MB IPC
+  // + renderer 再存一份正是「卡死」本体。回空树 + truncated 旗标，renderer 据此渲染「过大」提示行 + 移除
+  // 入口、并对该根的 watcher 事件 no-op（不重扫）。tree=[] 保证 IPC 载荷恒定微小。
+  if (truncated) {
+    perfDiag.recordRead(r, Number(process.hrtime.bigint() - __t0) / 1e6, entryCount);
+    return { root: r, name: path.basename(r), tree: [], truncated: true, entryCount };
+  }
   await fillInos(r, fl);
   perfDiag.recordRead(r, Number(process.hrtime.bigint() - __t0) / 1e6, fl.length);
   return { root: r, name: path.basename(r), tree: addAbs(buildFileTree(fl, dirs), r) };

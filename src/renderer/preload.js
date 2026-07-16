@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('ws2', {
 
   // 本地文件夹工作区 (F06 → 多根)：文件操作一律 (rootId, relPath)，renderer 只用 rootId 引用根、不发路径。
   wsAddFolder: () => ipcRenderer.invoke('ws-add-folder'),
+  wsAddFolderConfirm: (token) => ipcRenderer.invoke('ws-add-folder-confirm', token), // 病灶路径「仍要打开」确认（P0a U4）
   wsAbsorbConfirm: (token) => ipcRenderer.invoke('ws-absorb-confirm', token),
   wsRemoveRoot: (rootId) => ipcRenderer.invoke('ws-remove-root', rootId),
   wsUndoRemoveRoot: (token) => ipcRenderer.invoke('ws-undo-remove-root', token),

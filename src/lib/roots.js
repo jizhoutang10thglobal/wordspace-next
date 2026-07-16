@@ -3,6 +3,7 @@
 // Wordspace 的文件身份模型（keyOf=rootId:rel、按根 watch）撑不住重叠根，所以嵌套在入口就拦。
 // 只在主进程消费（renderer 永远不发根路径）；无 fs 依赖，路径先由调用方 resolve/realpath 好再进来。
 const path = require('path');
+const os = require('os');
 
 // 大小写折叠只在默认大小写不敏感的文件系统上做（mac/win）；Linux 区分大小写，折叠反而误判。
 // opts.fold 可显式注入，供测试跨平台确定性。
@@ -68,4 +69,32 @@ function prefixUnder(parentPath, childPath) {
   return c.slice(p.length + 1).split(path.sep).join('/');
 }
 
-module.exports = { canonPath, classifyRoot, ownerOf, prefixUnder };
+// 病灶根路径判定（诊断 §6.3，Colin 2026-07-16 拍板）：家目录 / 文件系统根（'/'、盘符根）/ /Users 及其
+// 直接子目录（各人家目录）/ 卷根（/Volumes/<x>）——这些通常含数十万系统文件，全量扫会非常慢甚至卡死，
+// 添加时该弹确认劝导选具体工作文件夹。返回原因串（'home' | 'volume' | 'users' | 'huge'），非病灶返回 null。
+// 纯函数：homedir 经 opts.homedir 注入（测试确定性）；opts.extra 是测试 seam 追加的病灶路径（e2e 用 tmp 目录）。
+// **永不按 GB 判断**（诊断 §1：上限的单位是条目数不是字节）——这里只拦「一定海量」的系统级路径。
+function dangerRootReason(newPath, opts = {}) {
+  const resolved = path.resolve(newPath);
+  const c = canonPath(newPath, opts);
+  const eq = (p) => p != null && canonPath(p, opts) === c;
+  const fold = opts && 'fold' in opts ? opts.fold : defaultFold();
+  const foldSeg = (s) => (fold ? String(s).toLowerCase() : String(s));
+  const isSeg = (seg, name) => foldSeg(seg) === foldSeg(name);
+  // 测试 seam / 显式追加的病灶路径
+  for (const e of opts.extra || []) if (eq(e)) return 'huge';
+  // 文件系统根 / 盘符根（posix '/'；win 'C:\'）——canonPath 会去尾分隔符，eq 直接可比
+  const fsRoot = path.parse(resolved).root;
+  if (fsRoot && eq(fsRoot)) return 'volume';
+  // 家目录本身
+  const home = opts.homedir !== undefined ? opts.homedir : os.homedir();
+  if (eq(home)) return 'home';
+  // 根前缀之后的路径段：/Users 本身、/Users/<x>（某人家目录）、/Volumes/<x>（挂载卷根）
+  const segs = resolved.slice(fsRoot.length).split(path.sep).filter(Boolean);
+  if (segs.length === 1 && (isSeg(segs[0], 'Users') || isSeg(segs[0], 'Volumes'))) return 'users';
+  if (segs.length === 2 && isSeg(segs[0], 'Users')) return 'home';
+  if (segs.length === 2 && isSeg(segs[0], 'Volumes')) return 'volume';
+  return null;
+}
+
+module.exports = { canonPath, classifyRoot, ownerOf, prefixUnder, dangerRootReason };

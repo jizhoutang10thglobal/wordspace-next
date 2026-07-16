@@ -169,11 +169,13 @@
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.toggle('sb-on', has || tabState.entries.length > 0);
   }
-  // 把主进程返回的 { root:{id,path,name,missing}, tree:{tree:[…]} } 装进 rootsState（tree 标注 rootId + 默认全收起）。
+  // 把主进程返回的 { root:{id,path,name,missing}, tree:{tree:[…], truncated?, entryCount?} } 装进 rootsState
+  //（tree 标注 rootId + 默认全收起）。truncated（超条目预算的过大根，D3）：不建局部树、转「过大」态。
   function mkRootState(info, treeData) {
-    const tree = treeData && treeData.tree ? annotateTree(treeData.tree, info.id) : null;
+    const truncated = !!(treeData && treeData.truncated);
+    const tree = !truncated && treeData && treeData.tree ? annotateTree(treeData.tree, info.id) : null;
     if (tree) collectDirRels(tree, info.id, collapsed);
-    return { id: info.id, path: info.path, name: info.name, missing: !!info.missing, tree };
+    return { id: info.id, path: info.path, name: info.name, missing: !!info.missing, tree, truncated, entryCount: truncated ? (treeData.entryCount || 0) : 0 };
   }
   function adoptRoot(info, treeData, index) {
     const st = mkRootState(info, treeData);
@@ -185,19 +187,34 @@
     return st;
   }
   // 添加文件夹（头部按钮 / 空态按钮 / 树底常驻行 / ⋯ 菜单）：主进程弹框选目录 + classifyRoot 嵌套判定。
-  // same/child 不重复开（toast 解释）；parent 出「并入并添加」确认；independent 正常加。
+  // same/child 不重复开（toast 解释）；parent 出「并入并添加」确认；病灶路径出「仍要打开」确认；independent 正常加。
   async function pickFolder() {
     let r;
     try { r = await window.ws2.wsAddFolder(); } catch (e) { return; }
+    await handleAddResult(r);
+  }
+  // 添加结果分流（ws-add-folder 与病灶确认后的 ws-add-folder-confirm 共用同一套结果处理）。
+  async function handleAddResult(r) {
     if (!r) return; // 用户取消了原生框
     if (r.status === 'same') {
       showToast('「' + r.root.name + '」已经打开了');
     } else if (r.status === 'child') {
-      showToast('「' + r.name + '」已经在「' + r.parent.name + '」里了——不会重复打开，去那个文件夹里展开即可');
+      // 父根非正常态（还在加载 / 过大打不开）→「去那个文件夹里展开」是空头支票（诊断 D5：~ 一注册，所有子
+      // 文件夹全被拒、又展不开）。给出口：引导去「管理文件夹」移除父根后再打开这个子文件夹。正常态保持原文案。
+      const pst = rootOf(r.parent.id);
+      if (pst && (pst.loading || pst.truncated)) {
+        showToast('「' + r.name + '」在你打开的「' + r.parent.name + '」里，但「' + r.parent.name + '」还没加载出来 / 过大打不开。可以先在「管理文件夹」里移除它，再打开「' + r.name + '」', '管理文件夹', () => openManageRootsModal());
+      } else {
+        showToast('「' + r.name + '」已经在「' + r.parent.name + '」里了——不会重复打开，去那个文件夹里展开即可');
+      }
     } else if (r.status === 'limit') {
       showToast('最多同时打开 ' + r.max + ' 个文件夹');
     } else if (r.status === 'parent') {
       openAbsorbConfirm(r);
+    } else if (r.status === 'confirm-huge') {
+      openHugeConfirm(r); // 病灶路径（~、/、/Users、卷根）→ 劝导选具体工作文件夹（诊断 §6.3）
+    } else if (r.status === 'stale') {
+      showToast('文件夹状态已变化，请重试');
     } else if (r.status === 'revived') {
       // 选的是失联根的路径且现在可达 → 主进程顺手复活了它。两段式：先转非失联 + 加载态渲染，再填树。
       const st = rootOf(r.root.id);
@@ -213,6 +230,55 @@
       await loadRootTree(r.root.id, { toast: '已打开文件夹「' + r.root.name + '」' });
     }
   }
+  // 病灶路径确认（诊断 §6.3）：选了整个用户目录 / 磁盘 / 卷根 → 劝导选具体工作文件夹。抄 openAbsorbConfirm
+  // 的 token 模式；「仍要打开」走 ws-add-folder-confirm(token) 继续 resolveAdd（配合 U2 预算，海量根落「过大」态）。
+  function openHugeConfirm(r) {
+    if (document.querySelector('.sb-modal-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay';
+    overlay.id = 'huge-confirm-overlay';
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    const modal = document.createElement('div');
+    modal.className = 'sb-modal sb-modal-confirm';
+    const body = document.createElement('div');
+    body.className = 'sb-cc-body';
+    const ico = document.createElement('div');
+    ico.className = 'sb-cc-ico';
+    ico.innerHTML = WARN_SVG20;
+    const textWrap = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'sb-cc-title';
+    title.textContent = '「' + r.name + '」是一个很大的系统文件夹';
+    const desc = document.createElement('div');
+    desc.className = 'sb-modal-desc';
+    desc.textContent = '你选的是整个用户目录 / 磁盘，通常包含数十万个系统文件，打开会非常慢。建议改选里面具体的工作文件夹（比如某个项目文件夹或「文稿」）。';
+    textWrap.append(title, desc);
+    body.append(ico, textWrap);
+    const foot = document.createElement('div');
+    foot.className = 'sb-modal-foot';
+    const cancel = document.createElement('button');
+    cancel.className = 'sb-btn sb-btn-primary';
+    cancel.textContent = '换一个文件夹';
+    cancel.onclick = () => { close(); pickFolder(); }; // 直接再开选择框换一个（推荐路径，主按钮）
+    const spacer = document.createElement('span');
+    spacer.className = 'sb-modal-spacer';
+    const ok = document.createElement('button');
+    ok.className = 'sb-btn';
+    ok.textContent = '仍要打开';
+    ok.onclick = async () => {
+      close();
+      let res;
+      try { res = await window.ws2.wsAddFolderConfirm(r.token); } catch (e) { return; }
+      await handleAddResult(res);
+    };
+    foot.append(cancel, spacer, ok);
+    modal.append(body, foot);
+    overlay.appendChild(modal);
+    wireOverlayClose(overlay, close);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  }
   // 两段式添加/复活的第二段：异步读该根的树填进去、清 loading。期间根被移除/吸收 → rootOf 返回 null，放弃。
   // 读不到树（不可达）→ 转失联灰态（别当空树，否则 reconcile 会把标签清光——workspace.readTree 的 null 契约）。
   async function loadRootTree(rootId, opts = {}) {
@@ -221,7 +287,12 @@
     const st = rootOf(rootId);
     if (!st) return; // 加载期间该根被移除/吸收
     st.loading = false;
-    if (data) {
+    if (data && data.truncated) {
+      // 过大根（D3）：主进程超条目预算返回空树 + truncated → 不渲染局部树，转「过大」态
+      //（可见 + 可移除 + watcher no-op）。清掉可能残留的旧树/失联标记。
+      st.truncated = true; st.entryCount = data.entryCount || 0; st.tree = null; st.missing = false;
+    } else if (data) {
+      st.truncated = false;
       st.tree = annotateTree(data.tree, rootId);
       collectDirRels(st.tree, rootId, collapsed);
     } else {
@@ -230,7 +301,7 @@
     syncChrome();
     render();
     if (opts.validate) validateRootEntries(rootId);
-    if (opts.toast) showToast(opts.toast);
+    if (opts.toast && !st.truncated) showToast(opts.toast); // 过大根别报「已打开」——与「过大打不开」提示自相矛盾（对抗审查实测）
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
   // 吸收后子根的标签不关、整体 rebase 进新根（文件都在磁盘原处，只换归属）。
@@ -529,6 +600,11 @@
       renderMissingRoot(root, parent);
       return true;
     }
+    if (root.truncated) {
+      if (q) return false; // 过大根无本地树可筛
+      renderOversizeRoot(root, index, parent);
+      return true;
+    }
     const nodes = root.tree ? (q ? filterTree(root.tree, q) : root.tree) : [];
     if (q && !nodes.length) return false; // 筛选时无命中 → 整节隐藏
     const open = q ? true : !rootClosed.has(root.id); // 筛选时自动展开
@@ -682,6 +758,56 @@
     parent.append(head, note);
   }
 
+  // 过大根（D3 止血）：超条目预算的根不渲染局部树（半棵树比没有更误导，且几十万 stat + 巨型 IPC 正是卡死本体）。
+  // 显示「过大」标题行 + 一行提示 + 内联「移除」；根行右键仍可用（移除 / 移到最上面）。复用失联根的降级行样式
+  //（sb-root-miss-*），零新增 CSS。永远可移除是本包的红线（诊断 D4）。
+  function renderOversizeRoot(root, index, parent = treeEl) {
+    const head = document.createElement('div');
+    // 不复用 sb-root-missing 类（避免与「失联」态在 `:not(.sb-root-missing)` / `.sb-root-missing` 选择器里
+    // 混淆）；degraded 观感用内联样式镜像失联行（CSP 安全，不动 shell.css）。note/tag/icon 仍复用 miss-* 类。
+    head.className = 'sb-row sb-root-head sb-root-oversize';
+    head.style.background = 'var(--c-bg-sunken)';
+    head.style.border = '1px dashed var(--c-border-strong)';
+    head.style.color = 'var(--c-text-3)';
+    head.style.cursor = 'default';
+    head.dataset.root = root.id;
+    head.dataset.rel = '';
+    head.dataset.depth = -1;
+    head.title = root.path + ' · 过大（暂时无法完整打开）';
+    const ico = document.createElement('span');
+    ico.className = 'sb-ico sb-root-miss-ic';
+    ico.innerHTML = WARN_SVG20;
+    const name = document.createElement('span');
+    name.className = 'sb-name sb-root-name ws-truncate';
+    name.textContent = root.name;
+    const tag = document.createElement('span');
+    tag.className = 'sb-root-miss-tag';
+    tag.textContent = '过大';
+    head.append(ico, name, tag);
+    head.oncontextmenu = (e) => {
+      e.preventDefault();
+      const items = [];
+      if (index > 0) items.push({ label: '移到最上面', run: () => reorderRootTo(root.id, 0) });
+      items.push({ label: '移除（磁盘文件不动）', danger: true, run: () => removeRootUI(root.id) });
+      showContextMenu(e.clientX, e.clientY, items);
+    };
+    const note = document.createElement('div');
+    note.className = 'sb-root-miss-note';
+    const msg = document.createElement('span');
+    msg.className = 'ws-truncate';
+    msg.textContent = '此文件夹包含超过 15 万个项目，Wordspace 暂时无法完整打开——建议移除后选择具体的工作文件夹';
+    msg.title = msg.textContent; // 侧栏窄、ws-truncate 会截断 → 悬停给全文
+    const acts = document.createElement('span');
+    acts.className = 'sb-root-miss-acts';
+    const rmBtn = document.createElement('button');
+    rmBtn.className = 'sb-root-miss-act';
+    rmBtn.textContent = '移除';
+    rmBtn.onclick = () => removeRootUI(root.id);
+    acts.append(rmBtn);
+    note.append(msg, acts);
+    parent.append(head, note);
+  }
+
   // 应用新根顺序：本地立即生效（乐观），主进程校验持久化；被拒（集合不符=状态漂移）就按主进程真相重拉。
   async function applyRootOrder(ids) {
     const byId = new Map(rootsState.map((r) => [r.id, r]));
@@ -699,20 +825,30 @@
     ids.splice(Math.max(0, Math.min(toIndex, ids.length)), 0, rootId);
     applyRootOrder(ids);
   }
-  // 与主进程注册表重对齐（乐观更新被拒时的兜底）：重拉根列表 + 各根树。
+  // 与主进程注册表重对齐（乐观更新被拒时的兜底 / 运行时根状态变化广播）：重拉根列表。
+  // 修 D2 同款：先按注册表重排 rootsState 并立刻渲染（已有活根保留其已渲染的树 + 展开态，不再 Promise.all
+  // 全量重读把界面门控在大根读树上），再逐根串行只补「新出现 / 刚复活」的根的树——一根巨型不阻塞界面。
+  // 已有活根的树由 watcher/focus 兜底保持新鲜，resync 不必重读它们（重读还会把展开态 collectDirRels 回收起）。
   async function resyncRoots() {
     try {
       const infos = await window.ws2.wsGetRoots();
-      const trees = await Promise.all(infos.map((r) => (r.missing ? null : window.ws2.wsReadTree(r.id))));
-      rootsState = infos.map((r, i) => {
+      const toLoad = [];
+      rootsState = infos.map((r) => {
         const prev = rootOf(r.id);
-        const st = prev || mkRootState(r, trees[i]);
-        if (prev && trees[i]) prev.tree = annotateTree(trees[i].tree, r.id);
-        if (prev) { prev.missing = !!r.missing; prev.path = r.path; prev.name = r.name; }
+        if (prev) {
+          prev.path = r.path; prev.name = r.name;
+          if (r.missing) prev.missing = true;
+          else if (prev.missing) { prev.missing = false; prev.loading = true; toLoad.push(prev.id); } // 复活 → 补树
+          return prev;
+        }
+        const st = mkRootState(r, null);
+        if (!r.missing) { st.loading = true; toLoad.push(st.id); } // 新出现的根 → 补树
         return st;
       });
+      rootsGen++;
       syncChrome();
       render();
+      for (const id of toLoad) await loadRootTree(id);
     } catch (e) { /* ignore */ }
   }
 
@@ -1744,7 +1880,7 @@
       if (e.rel) {
         const root = rootOf(e.rootId);
         if (!root) return Promise.resolve(false); // 根都不在了（store 与注册表漂移）→ 丢
-        if (root.missing) return Promise.resolve(true); // 失联根：保留，等重新定位
+        if (root.missing || root.truncated) return Promise.resolve(true); // 失联/过大根：保留标签（无本地树可 findNode 校验，别当「文件没了」丢弃 + 持久化清除，同失联根）
         return Promise.resolve(!!findNode(e.rootId, e.rel));
       }
       return window.ws2.pathExists(e.abs).catch(() => false);
@@ -1763,7 +1899,7 @@
     if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
       const eRoot = e && e.rel ? rootOf(e.rootId) : null;
-      if (e && !(eRoot && eRoot.missing)) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发
+      if (e && !(eRoot && (eRoot.missing || eRoot.truncated))) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发（失联/过大根的激活项不自动载入，无树会空转）
     }
   }
 
@@ -2535,7 +2671,9 @@
   // 再读新树——这样不用在每处建标签时穿 ino，消失文件的 ino 也一定取得到，给「改名/移动→标签跟随」做匹配。
   async function doTreeScan(rootId, dirs) {
     const st = rootOf(rootId);
-    if (!st || st.missing || !st.tree) return;
+    // 过大根（st.truncated）对 watcher 事件 no-op：它没有本地树、也绝不能触发全量重扫（否则高 churn 的大根
+    // 变永动机——诊断 D3/watcher 风暴）。missing/未加载（tree=null）同样跳过。
+    if (!st || st.missing || st.truncated || !st.tree) return;
     // 跨根移动在飞（对抗审查 P2）：跳过 reconcile。跨根移动把文件的 inode 从源根移到目标根——若源根的
     // watcher 事件抢在 doMoveAcross 的 retargetSubtreeAcross 之前跑，reconcile 在源根树里找不到该 inode
     // → 当成「被删」removeEntry，把用户正在编辑/置顶的标签无声清掉（文件其实已好好搬到目标根）。
@@ -2702,12 +2840,87 @@
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) { e.preventDefault(); tabByIndex(+e.key); }
   });
 
+  // 「管理文件夹…」逃生门（诊断 D4）：唯一的移除入口原本与根行渲染强耦合——根行没渲染出来（D2 死门）
+  // 就没有任何移除路径。这个菜单栏入口**只依赖注册表 IPC（wsGetRoots/wsRemoveRoot），不依赖 rootsState/树**，
+  // 是 D2 修复万一失效时的兜底。复用现有 sb-modal 壳 + modalHead/modalBody；列表行用内联样式（CSP 安全，
+  // 不动 shell.css）。移除走 removeRootUI（顺带清标签 + 撤销 toast），移除后重拉列表。
+  async function openManageRootsModal() {
+    if (document.querySelector('.sb-modal-overlay')) return; // 单例守卫（同其它弹层）
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay';
+    overlay.id = 'manage-roots-overlay';
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    const modal = document.createElement('div');
+    modal.className = 'sb-modal';
+    modal.append(
+      modalHead('管理文件夹', '移除只是从 Wordspace 里关掉，磁盘上的文件不受影响。', close),
+    );
+    const body = modalBody();
+    const list = document.createElement('div');
+    list.id = 'manage-roots-list';
+    body.appendChild(list);
+    modal.appendChild(body);
+    overlay.appendChild(modal);
+    wireOverlayClose(overlay, close);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    async function renderList() {
+      let infos = [];
+      try { infos = await window.ws2.wsGetRoots(); } catch (e) { infos = []; }
+      list.innerHTML = '';
+      if (!infos.length) {
+        const empty = document.createElement('div');
+        empty.className = 'sb-tree-empty';
+        empty.textContent = '没有打开的文件夹';
+        list.appendChild(empty);
+        return;
+      }
+      for (const info of infos) {
+        const row = document.createElement('div');
+        row.className = 'mr-row';
+        row.dataset.root = info.id;
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.gap = '10px';
+        row.style.padding = '8px 2px';
+        row.style.borderBottom = '1px solid var(--c-divider)';
+        const col = document.createElement('div');
+        col.style.flex = '1';
+        col.style.minWidth = '0';
+        const nm = document.createElement('div');
+        nm.className = 'mr-name ws-truncate';
+        nm.style.fontWeight = 'var(--fw-semibold)';
+        nm.textContent = info.name + (info.missing ? '（失联）' : '');
+        const pth = document.createElement('div');
+        pth.className = 'ws-truncate';
+        pth.style.fontSize = 'var(--fs-sm)';
+        pth.style.color = 'var(--c-text-3)';
+        pth.textContent = info.path;
+        pth.title = info.path;
+        col.append(nm, pth);
+        const rm = document.createElement('button');
+        rm.className = 'sb-btn sb-btn-danger mr-remove';
+        rm.dataset.root = info.id;
+        rm.textContent = '移除';
+        rm.onclick = async () => {
+          await removeRootUI(info.id); // 复用：wsRemoveRoot + rootsState/标签清理 + 可撤销 toast
+          await renderList(); // 移除后重拉（不依赖 rootsState 事件）
+        };
+        row.append(col, rm);
+        list.appendChild(row);
+      }
+    }
+    await renderList();
+  }
+
   window.__sbHooks = {
     // shell 脏态变化 → 同步活跃真文件标签的未保存点（T2 arc-tab-dot；临时文档的点常显、不经这里）
     onDirtyChange: (d) => {
       document.querySelectorAll('.sb-tab.is-active:not(.sb-tab-temp):not(.sb-tab-web) .sb-tab-dot').forEach((el) => { el.hidden = !d; });
     },
     pickFolder: () => pickFolder(), // ⋯ 菜单/菜单栏「打开文件夹…」= 添加根（单文件模式也要有开工作区的入口）
+    manageRoots: () => openManageRootsModal(), // 菜单栏「管理文件夹…」= 不依赖树/rootsState 的逃生门（D4 兜底）
     onOpen: async (abs) => {
       // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc
@@ -2911,16 +3124,28 @@
     try {
       const infos = await window.ws2.wsGetRoots();
       if (infos && infos.length) {
-        const trees = await Promise.all(infos.map((r) => (r.missing ? Promise.resolve(null) : window.ws2.wsReadTree(r.id))));
-        rootsState = infos.map((r, i) => mkRootState(r, trees[i]));
+        // 修 D2（大根死锁陷阱）：**不再把首帧门控在「全部根读完树」上**。先把根装进 rootsState（loading 态、
+        // tree=null）+ 立刻渲染——根行（含 loading 行）与右键「移除」入口即刻可见可点，即便某根读树巨慢/
+        // 永不返回也救得回来（照抄添加路径 adoptRoot 的两段式形状，见 pickFolder 的 'added' 分支）。
+        rootsState = infos.map((r) => { const st = mkRootState(r, null); if (!r.missing) st.loading = true; return st; });
         rootsGen++;
         if (filterInput) filterInput.value = '';
-        await restoreTreeState(); // P3-07：mkRootState 已 collectDirRels 全收起，这里把上次展开的目录/收起的根灌回，首次渲染前
         syncChrome();
+        render();
+        // 逐根串行读树（不再 Promise.all 并发全量扫）：一根巨型不阻塞其他根的树到货，也不再让读不完的根
+        // 卡死后续的 loadTabs / resolveRestore（U2 的条目预算再给每根读树本身封顶）。加载期间被移除的根由
+        // loadRootTree 的 `rootOf` 守卫自然跳过。
+        for (const st of [...rootsState]) {
+          if (st.missing) continue;
+          await loadRootTree(st.id); // 读树 + 填树/转失联/过大 + 清 loading（与添加路径同一函数）
+        }
+        await restoreTreeState(); // 树到齐后把上次展开的目录/收起的根灌回（loadRootTree 已 collectDirRels 全收起）
         render();
       }
       // loadTabs 在无根时也要跑（对抗审查 MR-ADV-2）：根全移除后外部标签（abs 身份）仍持久化着，
       // 只走「有根才恢复」的分支会让它们重启即丢、还被下一次 persist 从盘上抹掉。
+      // ⚠ 冷启动竞态红线（cold-start.spec）：loadTabs 仍在「树读完」之后跑（findNode 依赖树），resolveRestore
+      // 仍在 loadTabs 之后（finally）——open-file 建标签排在 loadTabs 之后、不被覆盖的语义原封不动，只是首帧提前了。
       await loadTabs(); // 全局标签/置顶恢复 + 上次激活进编辑器（冷启动 open-file 在路上则不抢 viewer）
       syncChrome(); // 恢复出的外部标签要点亮侧栏（sb-on 依赖 tabState.entries）
     } catch (e) {
