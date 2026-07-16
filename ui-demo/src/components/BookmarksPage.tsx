@@ -4,9 +4,11 @@ import { ChevronLeft, Upload, Download, FolderPlus, Trash2, Globe2, ExternalLink
 import { useBookmarks, BM_BAR } from '../mock/bookmarks'
 import { useStore } from '../mock/store'
 import { useHistory } from '../mock/history'
+import { useT } from '../i18n'
 import './BookmarksPage.css'
 
 export default function BookmarksPage() {
+  const t = useT()
   const navigate = useNavigate()
   const folders = useBookmarks((s) => s.folders)
   const bookmarks = useBookmarks((s) => s.bookmarks)
@@ -32,7 +34,7 @@ export default function BookmarksPage() {
     a.download = 'bookmarks.html'
     a.click()
     setTimeout(() => URL.revokeObjectURL(a.href), 1000)
-    toast('已导出为 bookmarks.html（Chrome/Safari/Firefox 都能导入）', 'success')
+    toast(t('browser.exportedToast'), 'success')
   }
   const onImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -41,10 +43,10 @@ export default function BookmarksPage() {
       const r = useBookmarks.getState().importHtml(txt)
       toast(
         r.parsed === 0
-          ? '没识别到书签（需要浏览器导出的 HTML 书签文件）'
+          ? t('browser.importNoneRecognized')
           : r.added === 0
-            ? '这些书签都已存在，没有新增'
-            : `已导入 ${r.added} 个书签`,
+            ? t('browser.importAllExist')
+            : t('browser.importedCount', { n: r.added }),
         r.added ? 'success' : 'neutral',
       )
     })
@@ -55,15 +57,15 @@ export default function BookmarksPage() {
     <div className="bmp-page">
       <input ref={fileRef} type="file" accept=".html,text/html" hidden onChange={onImportFile} />
       <header className="bmp-top">
-        <button className="bmp-back" onClick={() => navigate('/docs')} title="返回"><ChevronLeft size={18} /></button>
-        <h1>收藏夹</h1>
+        <button className="bmp-back" onClick={() => navigate('/docs')} title={t('common.back')}><ChevronLeft size={18} /></button>
+        <h1>{t('browser.bookmarksTitle')}</h1>
         <div className="bmp-actions">
-          <button className="bmp-btn" onClick={() => bm.addFolder('新文件夹')}><FolderPlus size={14} /> 新文件夹</button>
-          <button className="bmp-btn" onClick={() => fileRef.current?.click()}><Upload size={14} /> 导入</button>
-          <button className="bmp-btn" onClick={doExport}><Download size={14} /> 导出</button>
+          <button className="bmp-btn" onClick={() => bm.addFolder(t('browser.newFolder'))}><FolderPlus size={14} /> {t('browser.newFolder')}</button>
+          <button className="bmp-btn" onClick={() => fileRef.current?.click()}><Upload size={14} /> {t('browser.importBtn')}</button>
+          <button className="bmp-btn" onClick={doExport}><Download size={14} /> {t('browser.exportBtn')}</button>
         </div>
       </header>
-      <p className="bmp-hint">导入 / 导出用的是浏览器通用的 HTML 书签格式（Netscape），可以和 Chrome、Safari、Firefox、Edge 互相搬。</p>
+      <p className="bmp-hint">{t('browser.importExportHint')}</p>
 
       <div className="bmp-body">
         {folders.map((f) => {
@@ -76,14 +78,14 @@ export default function BookmarksPage() {
                   defaultValue={f.name}
                   onBlur={(e) => bm.renameFolder(f.id, e.target.value.trim() || f.name)}
                   disabled={f.id === BM_BAR}
-                  title={f.id === BM_BAR ? '书签栏（固定）' : '重命名文件夹'}
+                  title={f.id === BM_BAR ? t('browser.bookmarksBarFixed') : t('browser.renameFolder')}
                 />
                 <span className="bmp-folder-count">{items.length}</span>
                 {f.id !== BM_BAR && (
-                  <button className="bmp-folder-del" title="删除文件夹（含其中书签）" onClick={() => bm.removeFolder(f.id)}><Trash2 size={14} /></button>
+                  <button className="bmp-folder-del" title={t('browser.deleteFolder')} onClick={() => bm.removeFolder(f.id)}><Trash2 size={14} /></button>
                 )}
               </div>
-              {items.length === 0 && <div className="bmp-empty">空</div>}
+              {items.length === 0 && <div className="bmp-empty">{t('browser.empty')}</div>}
               {items.map((b) => (
                 <div key={b.id} className="bmp-row">
                   <Globe2 size={14} className="bmp-row-ico" />
@@ -92,8 +94,8 @@ export default function BookmarksPage() {
                   <select className="bmp-row-folder" value={b.folderId} onChange={(e) => bm.update(b.id, { folderId: e.target.value })}>
                     {folders.map((ff) => <option key={ff.id} value={ff.id}>{ff.name}</option>)}
                   </select>
-                  <button className="bmp-row-open" title="打开" onClick={() => open(b.url, b.title)}><ExternalLink size={13} /></button>
-                  <button className="bmp-row-del" title="删除" onClick={() => bm.removeOne(b.id)}><Trash2 size={13} /></button>
+                  <button className="bmp-row-open" title={t('common.open')} onClick={() => open(b.url, b.title)}><ExternalLink size={13} /></button>
+                  <button className="bmp-row-del" title={t('common.delete')} onClick={() => bm.removeOne(b.id)}><Trash2 size={13} /></button>
                 </div>
               ))}
             </section>

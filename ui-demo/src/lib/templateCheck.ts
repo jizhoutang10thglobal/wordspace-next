@@ -11,6 +11,8 @@
 // fail-closed：命中任一 block 违规 → ok:false，调用方整份拒绝、不做「部分应用」。
 // ============================================================================
 
+import { t } from '../i18n/core' // 从纯 core 引 t（不碰 index.ts 的 React 外壳），保住本模块「框架无关」+ node 门可 esbuild bundle
+
 export interface TemplateViolation {
   rule: string // 短码，如 'no-external-url'
   msg: string // 一句话人话原因（中文）
@@ -66,41 +68,41 @@ export function templateCheck(rawCss: string, opts: TemplateCheckOpts = {}): Tem
     const okFont = val.startsWith('data:font/')
     const okImage = val.startsWith('data:image/') && !val.startsWith('data:image/svg')
     if (!okFont && !okImage) {
-      bump('no-external-url', '模板 CSS 只允许内嵌资源 url(data:font/*) / url(data:image/*)（拒 svg），禁外链请求（追踪信标 / 外部依赖）。', m[0])
+      bump('no-external-url', t('templates.cssNoExternalUrl'), m[0])
     }
   }
 
   // 2) @import —— 外部样式表拉取，禁。
-  if (/@import\b/i.test(css)) bump('no-import', '禁 @import（会拉取外部样式表，是外链通道）。', '@import')
+  if (/@import\b/i.test(css)) bump('no-import', t('templates.cssNoImport'), '@import')
 
   // 3) 老式执行向量 —— IE expression() / Firefox -moz-binding。
-  if (/\bexpression\s*\(/i.test(css)) bump('no-expression', '禁 CSS expression()（旧 IE 里可执行 JS）。', 'expression(')
-  if (/-moz-binding\b/i.test(css)) bump('no-binding', '禁 -moz-binding（可绑定可执行 XBL/XML）。', '-moz-binding')
+  if (/\bexpression\s*\(/i.test(css)) bump('no-expression', t('templates.cssNoExpression'), 'expression(')
+  if (/-moz-binding\b/i.test(css)) bump('no-binding', t('templates.cssNoBinding'), '-moz-binding')
   // behavior: 是 IE 的 HTC 行为绑定；但 scroll-behavior / overscroll-behavior 合法，前有连字符/字母的排除。
-  if (/(?<![-\w])behavior\s*:/i.test(css)) bump('no-behavior', '禁 behavior: 属性（IE HTC 行为绑定，可执行）。', 'behavior:')
+  if (/(?<![-\w])behavior\s*:/i.test(css)) bump('no-behavior', t('templates.cssNoBehavior'), 'behavior:')
 
   // 4) 覆盖劫持 —— 共享 DOM 下绝对/固定/粘性定位能把「只该上色」的样式变成盖住 app chrome 的覆盖层。
   if (/position\s*:\s*(fixed|sticky|absolute)/i.test(css))
-    bump('no-positioning', '禁 position:fixed/sticky/absolute（文档区与 app 界面同一 DOM，绝对定位能盖住界面 / 点击劫持）。', 'position:absolute')
+    bump('no-positioning', t('templates.cssNoPositioning'), 'position:absolute')
 
   // 5) 层叠纪律 —— !important 会压过用户行内手调（换装后「手动标红仍是红」的不变式靠禁它成立）。
-  if (/!\s*important\b/i.test(css)) bump('no-important', '禁 !important（会覆盖用户的行内手调，破坏「换装保留手调」）。', '!important')
+  if (/!\s*important\b/i.test(css)) bump('no-important', t('templates.cssNoImportant'), '!important')
 
   // 6) 视觉完整性（最简版）—— 禁隐藏正文内容（藏 / 伪造合同条款一类）。content 注入 / 同色检测需真解析，随生产门。
-  if (/display\s*:\s*none\b/i.test(css)) bump('no-hide-content', '禁 display:none（模板不得隐藏正文内容——藏条款一类的视觉欺骗）。', 'display:none')
-  if (/visibility\s*:\s*hidden\b/i.test(css)) bump('no-hide-content', '禁 visibility:hidden（模板不得隐藏正文内容）。', 'visibility:hidden')
+  if (/display\s*:\s*none\b/i.test(css)) bump('no-hide-content', t('templates.cssNoHideDisplay'), 'display:none')
+  if (/visibility\s*:\s*hidden\b/i.test(css)) bump('no-hide-content', t('templates.cssNoHideVisibility'), 'visibility:hidden')
 
   // 7) at-rule 白名单 —— 未知顶层 at-rule 一律拒（作用域化只认得住 font-face/keyframes/条件组）。
   for (const m of css.matchAll(/@([a-z-]+)\b/gi)) {
     const name = (m[1] || '').toLowerCase()
     if (name === 'import') continue // 已由 no-import 专项报
-    if (!ALLOWED_AT_RULES.has(name)) bump('bad-at-rule', `禁 @${name}（模板只允许 @font-face / @keyframes / @media / @supports）。`, m[0])
+    if (!ALLOWED_AT_RULES.has(name)) bump('bad-at-rule', t('templates.cssBadAtRule', { name }), m[0])
   }
 
   // 8) 体积预算 —— 硬上限拒，软上限标记（可存但提示）。
   const overSoftBudget = bytes > softBytes
   if (bytes > hardBytes)
-    bump('over-budget', `模板体积 ${(bytes / 1024).toFixed(0)}KB 超过上限 ${(hardBytes / 1024).toFixed(0)}KB（demo 受 localStorage 配额约束）。`)
+    bump('over-budget', t('templates.cssOverBudget', { size: (bytes / 1024).toFixed(0), max: (hardBytes / 1024).toFixed(0) }))
 
   const violations = Array.from(acc.values())
   return { ok: violations.length === 0, violations, bytes, overSoftBudget }

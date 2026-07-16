@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
+import { useT } from '../i18n'
 import { Avatar, Spinner } from '../ui/primitives'
 import { VISIBILITY_META, type Visibility } from '../types'
 import './PublishDialog.css'
@@ -41,6 +42,7 @@ function urlFor(
 }
 
 export default function PublishDialog() {
+  const t = useT()
   const publishDocId = useUI((s) => s.publishDocId)
   const closePublish = useUI((s) => s.closePublish)
 
@@ -100,7 +102,7 @@ export default function PublishDialog() {
 
   const handleCopy = () => {
     if (liveUrl && navigator.clipboard) navigator.clipboard.writeText(liveUrl)
-    toast('链接已复制', 'success')
+    toast(t('modals.linkCopied'), 'success')
   }
 
   return (
@@ -109,18 +111,18 @@ export default function PublishDialog() {
         className="ws-modal pub"
         role="dialog"
         aria-modal="true"
-        aria-label="分享与发布"
+        aria-label={t('modals.shareAndPublish')}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="ws-modal-head">
           <div className="ws-modal-head-text">
-            <div className="ws-modal-title">分享与发布</div>
+            <div className="ws-modal-title">{t('modals.shareAndPublish')}</div>
             <div className="ws-modal-sub">{doc.title}</div>
           </div>
           <button
             className="ws-modal-x"
             onClick={closePublish}
-            aria-label="关闭"
+            aria-label={t('common.close')}
           >
             <X size={16} />
           </button>
@@ -162,7 +164,7 @@ export default function PublishDialog() {
                 <input
                   className="ws-input"
                   type="email"
-                  placeholder="输入邮箱邀请协作者"
+                  placeholder={t('modals.inviteEmailPlaceholder')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onKeyDown={(e) => {
@@ -170,7 +172,7 @@ export default function PublishDialog() {
                   }}
                 />
                 <button className="ws-btn" onClick={handleInvite}>
-                  邀请
+                  {t('modals.invite')}
                 </button>
               </div>
               {collaborators.length > 0 && (
@@ -196,7 +198,7 @@ export default function PublishDialog() {
                     </span>
                     <button className="ws-btn" onClick={handleCopy}>
                       <Copy size={13} />
-                      复制
+                      {t('common.copy')}
                     </button>
                   </div>
                   <button
@@ -205,10 +207,10 @@ export default function PublishDialog() {
                     disabled={deploying}
                   >
                     {deploying ? <Spinner size={14} /> : null}
-                    {deploying ? '正在部署…' : '重新部署'}
+                    {deploying ? t('modals.deploying') : t('modals.redeploy')}
                   </button>
                   <div className="pub-note">
-                    部署到 {workspace.deployTarget} · 可自托管,数据归你
+                    {t('modals.deployNote', { target: workspace.deployTarget })}
                   </div>
                 </>
               ) : (
@@ -226,10 +228,10 @@ export default function PublishDialog() {
                     disabled={deploying}
                   >
                     {deploying ? <Spinner size={14} /> : null}
-                    {deploying ? '正在部署…' : '发布'}
+                    {deploying ? t('modals.deploying') : t('modals.publish')}
                   </button>
                   <div className="pub-note">
-                    部署到 {workspace.deployTarget} · 可自托管,数据归你
+                    {t('modals.deployNote', { target: workspace.deployTarget })}
                   </div>
                 </>
               )}
@@ -242,7 +244,7 @@ export default function PublishDialog() {
             className="ws-btn ws-btn-primary"
             onClick={closePublish}
           >
-            完成
+            {t('common.done')}
           </button>
         </footer>
       </div>

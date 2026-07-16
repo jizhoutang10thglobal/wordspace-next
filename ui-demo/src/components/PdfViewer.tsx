@@ -1,4 +1,5 @@
 import FileViewerBar from './FileViewerBar'
+import { useT } from '../i18n'
 import type { Tab } from '../types'
 import './PdfViewer.css'
 
@@ -6,41 +7,41 @@ import './PdfViewer.css'
 // Chrome's built-in viewer) instead of handing off to another app. The pages
 // below are mock content — a real build renders the actual PDF.
 export default function PdfViewer({ tab }: { tab: Tab }) {
+  const t = useT()
   const title = (tab.fileName ?? 'PDF').replace(/\.pdf$/i, '')
   return (
     <div className="pdfv">
-      <FileViewerBar fileName={tab.fileName} tag="PDF · 只读" app="预览" />
+      <FileViewerBar fileName={tab.fileName} tag={t('editor.readonlyPdf')} app={t('editor.preview')} />
 
       <div className="pdfv-scroll">
         <div className="pdfv-page">
-          <div className="pdfv-eyebrow">TENTH GLOBAL · 报告</div>
+          <div className="pdfv-eyebrow">{t('editor.pdfEyebrow')}</div>
           <h1 className="pdfv-h1">{title}</h1>
-          <div className="pdfv-meta">2026 年 6 月 · 第 1 页 / 共 2 页</div>
+          <div className="pdfv-meta">{t('editor.pdfMeta1')}</div>
           <p className="pdfv-p">
-            这是一份 PDF 文档。Wordspace 作为浏览器,可以直接在标签页里阅读它,不用切到别的程序。PDF
-            是只读的,需要编辑时再用默认程序打开。
+            {t('editor.pdfIntro')}
           </p>
-          <h2 className="pdfv-h2">概述</h2>
+          <h2 className="pdfv-h2">{t('editor.pdfOverview')}</h2>
           <p className="pdfv-p">
-            本季度核心业务保持稳健增长,新签客户与复购同步提升。下面是关键指标与各业务线的分项说明。
+            {t('editor.pdfOverviewBody')}
           </p>
           <div className="pdfv-chart">
             {[62, 81, 48, 92, 70].map((h, i) => (
               <span key={i} style={{ height: `${h}%` }} />
             ))}
           </div>
-          <p className="pdfv-cap">图 1 · 各业务线季度表现</p>
+          <p className="pdfv-cap">{t('editor.pdfChartCap')}</p>
         </div>
 
         <div className="pdfv-page">
-          <h2 className="pdfv-h2">分项说明</h2>
+          <h2 className="pdfv-h2">{t('editor.pdfBreakdown')}</h2>
           <ul className="pdfv-list">
-            <li>咨询交付:现金流稳定,毛利率维持在 40% 以上</li>
-            <li>培训与内容:方法论持续沉淀,转化率提升</li>
-            <li>AI 产品:从内部工具孵化,进入验证阶段</li>
+            <li>{t('editor.pdfItem1')}</li>
+            <li>{t('editor.pdfItem2')}</li>
+            <li>{t('editor.pdfItem3')}</li>
           </ul>
-          <p className="pdfv-p">详细数据见附录。本页为示意内容,用于演示 PDF 在 Wordspace 中的阅读体验。</p>
-          <div className="pdfv-meta">第 2 页 / 共 2 页</div>
+          <p className="pdfv-p">{t('editor.pdfClosing')}</p>
+          <div className="pdfv-meta">{t('editor.pdfMeta2')}</div>
         </div>
       </div>
     </div>

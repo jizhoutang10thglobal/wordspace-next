@@ -9,6 +9,7 @@ import {
   FileType,
   Globe2,
 } from 'lucide-react'
+import { useT } from '../../i18n'
 import type { FileKind } from '../../types'
 
 /** @提及菜单条目：一个可链接文件（文档在前、其它文件在后）、「新建」或「网址链接」。 */
@@ -60,6 +61,7 @@ export default function MentionMenu({
   query: string
   onPick: (key: string) => void
 }) {
+  const t = useT()
   // portal 到 body：position:fixed 的坐标是视口系，不能被任何带 transform 的祖先
   // （如路由入场动画容器）劫持包含块（见 global.css .ws-anim-view 的注释）。
   return createPortal(
@@ -69,9 +71,9 @@ export default function MentionMenu({
       // left 夹在视口内（菜单 max-width 320）——caret 在行尾时菜单不能伸出屏幕
       style={{ position: 'fixed', top: pos.top, left: Math.min(pos.left, window.innerWidth - 336) }}
     >
-      <div className="ws-mentionmenu-head">链接到文档{query ? `：“${query}”` : '（输入文字筛选）'}</div>
+      <div className="ws-mentionmenu-head">{t('editor.linkToDoc')}{query ? t('editor.mentionQuerySuffix', { query }) : t('editor.mentionFilterHint')}</div>
       {items.length === 0 ? (
-        <div className="ws-mentionmenu-empty">没有匹配的文档</div>
+        <div className="ws-mentionmenu-empty">{t('editor.noMatchingDoc')}</div>
       ) : (
         items.map((it, i) => (
           <button

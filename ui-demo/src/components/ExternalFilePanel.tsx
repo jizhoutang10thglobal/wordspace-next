@@ -7,20 +7,21 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
+import { useT } from '../i18n'
 import { EXTERNAL_APP, type FileKind } from '../types'
 import type { Tab } from '../types'
 import './ExternalFilePanel.css'
 
 // Shown when a non-HTML file is opened from a connected folder. Wordspace can't
 // edit it, so the page says so and hands off to the OS default app.
-const KIND_LABEL: Record<FileKind, string> = {
-  html: 'HTML 文档',
-  word: 'Word 文档',
-  pdf: 'PDF',
-  image: '图片',
-  sheet: '表格',
-  slides: '演示文稿',
-  other: '文件',
+const KIND_KEY: Record<FileKind, string> = {
+  html: 'sidebar.kindHtml',
+  word: 'sidebar.kindWord',
+  pdf: 'sidebar.kindPdf',
+  image: 'sidebar.kindImage',
+  sheet: 'sidebar.kindSheet',
+  slides: 'sidebar.kindSlides',
+  other: 'sidebar.kindOther',
 }
 
 function BigIcon({ kind }: { kind: FileKind }) {
@@ -41,8 +42,9 @@ function BigIcon({ kind }: { kind: FileKind }) {
 
 export default function ExternalFilePanel({ tab }: { tab: Tab }) {
   const toast = useStore((s) => s.toast)
+  const t = useT()
   const kind = (tab.fileKind ?? 'other') as FileKind
-  const app = kind === 'html' ? '浏览器' : EXTERNAL_APP[kind as Exclude<FileKind, 'html'>]
+  const app = kind === 'html' ? t('sidebar.browserApp') : EXTERNAL_APP[kind as Exclude<FileKind, 'html'>]
   return (
     <div className="efp">
       <div className={`efp-card st-${kind}`}>
@@ -51,14 +53,14 @@ export default function ExternalFilePanel({ tab }: { tab: Tab }) {
         </div>
         <div className="efp-name ws-truncate">{tab.fileName}</div>
         <div className="efp-meta">
-          {KIND_LABEL[kind]} · {tab.url}
+          {t(KIND_KEY[kind])} · {tab.url}
         </div>
-        <p className="efp-note">这不是 HTML 文档,Wordspace 不能直接编辑它。你可以一键用默认程序打开。</p>
+        <p className="efp-note">{t('sidebar.notHtmlNote')}</p>
         <button
           className="ws-btn ws-btn-primary efp-open"
-          onClick={() => toast(`正在用 ${app} 打开「${tab.fileName}」`, 'success')}
+          onClick={() => toast(t('sidebar.openingWith', { app, name: tab.fileName ?? '' }), 'success')}
         >
-          <ExternalLink size={15} />用 {app} 打开
+          <ExternalLink size={15} />{t('sidebar.openWithApp', { app })}
         </button>
       </div>
     </div>

@@ -1,3 +1,5 @@
+import { useT } from '../../i18n'
+
 export interface SlashItem {
   key: string
   label: string
@@ -18,6 +20,7 @@ export default function SlashMenu({
   activeIndex: number
   onPick: (key: string) => void
 }) {
+  const t = useT()
   return (
     <div
       className="ws-slashmenu"
@@ -25,7 +28,7 @@ export default function SlashMenu({
       style={{ position: 'fixed', top: pos.top, left: pos.left }}
     >
       {items.length === 0 ? (
-        <div className="ws-slashmenu-empty">没有匹配项</div>
+        <div className="ws-slashmenu-empty">{t('editor.noMatch')}</div>
       ) : (
         items.map((it, i) => (
           <button
