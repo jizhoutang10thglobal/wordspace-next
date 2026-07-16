@@ -162,6 +162,20 @@ test('V3 链接索引降级：超大 lazy 根 @候选返回 degraded（链接功
   expect(groups.find((g) => g.rootId === rootId).degraded).toBe(true);
 });
 
+test('V1 文件操作不抹树：lazy 根已展开层内删文件 → 该文件消失但同层其它节点还在（refreshRoot 不拿空树盖 lazy 树）', async () => {
+  await openBigLazy();
+  await page.locator('.sb-dir[data-rel="子1"]').click();
+  await expect(page.locator('.sb-file[data-rel="子1/inner1.html"]')).toBeVisible({ timeout: W });
+  await expect(page.locator('.sb-dir[data-rel="子1/深"]')).toBeVisible();
+  // 删 inner1.html（无引用 → 直接删 + 撤销 toast）→ refreshRoot。若 refreshRoot 走 wsReadTree（超预算返回空树）
+  // 会把整棵 lazy 树抹空——那样 子1/深 也会消失。
+  await page.locator('.sb-file[data-rel="子1/inner1.html"]').click({ button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect(page.locator('.sb-file[data-rel="子1/inner1.html"]')).toHaveCount(0, { timeout: W }); // 删掉了
+  await expect(page.locator('.sb-dir[data-rel="子1/深"]')).toBeVisible(); // 同层其它节点还在 = lazy 树没被空树抹掉
+  await expect(page.locator('.sb-root-lazy')).toBeVisible();
+});
+
 test('V3 inode 跟随降级不崩：lazy 根内已展开文件被外部改名，app 仍可交互', async () => {
   await openBigLazy();
   await page.locator('.sb-dir[data-rel="子1"]').click();

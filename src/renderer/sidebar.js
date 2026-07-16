@@ -479,7 +479,7 @@
   // 根复活/重定位后校验它的标签：新树里没有的文件（换了位置的旧结构）静默丢，激活回落。
   function validateRootEntries(rootId) {
     const st = rootOf(rootId);
-    if (!st || !st.tree) return;
+    if (!st || !st.tree || st.lazy) return; // lazy 根只加载了部分层，findNode 会误杀未加载层的标签——别校验（同失联根，保留标签）
     const gone = tabState.entries.filter((e) => e.rootId === rootId && e.rel && !findNode(rootId, e.rel));
     for (const e of gone) tabState = window.WS2Tabs.removeEntry(tabState, keyOf(e));
     mergeExternalDupes(rootId);
@@ -515,11 +515,19 @@
   async function refreshRoot(rootId) {
     const st = rootOf(rootId);
     if (!st || st.missing) return;
+    // lazy 根：**绝不**走 wsReadTree（它对超预算根返回空树 truncated → 会把已加载的 lazy 树抹成空）。
+    // 改重读已加载层（doLazyScan(null) = 重读已加载集），文件操作后的新增/删除在已加载层里就能刷出来。
+    if (st.lazy) { await doLazyScan(rootId, null); return; }
     const data = await window.ws2.wsReadTree(rootId);
-    if (data && rootOf(rootId) === st) {
-      st.tree = annotateTree(data.tree, rootId);
-      render();
+    if (!data || rootOf(rootId) !== st) return;
+    if (data.truncated) {
+      // 会话中普通根长过预算（极罕见：文件操作把它推过 15 万）→ 转 lazy，别拿空树盖掉全量树。
+      st.lazy = true; st.entryCount = data.entryCount || 0; st.tree = null;
+      await loadLazyTop(rootId);
+      return;
     }
+    st.tree = annotateTree(data.tree, rootId);
+    render();
   }
   // 兼容旧调用点：不带根的 refresh = 刷新全部活根（少数场景，如落盘新文件后不确定哪根）。
   async function refresh(rootId) {
