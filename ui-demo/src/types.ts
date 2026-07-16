@@ -206,7 +206,7 @@ export interface FileEntry {
 export interface Toast {
   id: string
   message: string
-  tone: 'neutral' | 'success' | 'progress' | 'danger'
+  tone: 'neutral' | 'success' | 'progress' | 'danger' | 'hint'
   // An optional inline action (e.g. 撤销). Toasts with an action stay longer and
   // become clickable; dismissing or acting clears it.
   action?: { label: string; run: () => void }

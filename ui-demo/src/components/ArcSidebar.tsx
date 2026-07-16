@@ -43,6 +43,7 @@ import { Avatar } from '../ui/primitives'
 import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
 import { computeBacklinks, computeDirBacklinks } from '../lib/links'
 import { IS_MAC } from '../lib/platform'
+import { coachOnce } from '../mock/coach'
 import type { FileEntry, FileKind, MountRoot, Tab } from '../types'
 import './ArcSidebar.css'
 
@@ -158,12 +159,13 @@ function TabRow({
       {!pinned && (
         <button
           className="arc-tab-act arc-tab-close"
-          title={t('common.close')}
+          title={t('sidebar.closeTabHint', { key: IS_MAC ? '⌘W' : 'Ctrl+W' })}
           onClick={(e) => {
             e.stopPropagation()
             // 未保存的临时文档 → 弹确认；否则直接关。切换标签页不走这里（不提示）。
             if (unsaved) askCloseTab(tab.id)
             else closeTab(tab.id)
+            coachOnce(useStore.getState().toast, 'close-tab', t('sidebar.coachCloseTab', { key: IS_MAC ? '⌘W' : 'Ctrl+W' }))
           }}
         >
           <X size={12} />
@@ -1106,6 +1108,9 @@ export default function ArcSidebar() {
     if (activeTab?.kind === 'web' && activeTab.url) useBrowser.getState().navigate(activeTab.url)
     navigate('/docs')
   }
+  // 教学气泡：鼠标点了有快捷键的操作 → 弹一次「下次可以按 ⌘X」（每操作只一次，localStorage 记住）。
+  // 只在鼠标 onClick 里调；键盘快捷键触发不调（用户已经会了）。
+  const coach = (op: string, message: string) => coachOnce(useStore.getState().toast, op, message)
 
   const util = [
     { to: '/templates', icon: LayoutTemplate, label: t('sidebar.templates') },
@@ -1116,7 +1121,11 @@ export default function ArcSidebar() {
     return (
       <aside className="arc-sidebar is-collapsed">
         <div className="arc-top arc-top-collapsed">
-          <button className="arc-ico" title={t('sidebar.expandSidebar')} onClick={toggleSidebar}>
+          <button
+            className="arc-ico"
+            title={t('sidebar.expandSidebarHint', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })}
+            onClick={() => { toggleSidebar(); coach('toggle-sidebar', t('sidebar.coachToggleSidebar', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })) }}
+          >
             <PanelLeft size={15} />
           </button>
         </div>
@@ -1134,10 +1143,18 @@ export default function ArcSidebar() {
           <span style={{ background: '#28c840' }} />
         </div>
         <div className="arc-top-nav">
-          <button className="arc-ico" title={t('sidebar.collapseSidebar')} onClick={toggleSidebar}><PanelLeft size={15} /></button>
+          <button
+            className="arc-ico"
+            title={t('sidebar.collapseSidebarHint', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })}
+            onClick={() => { toggleSidebar(); coach('toggle-sidebar', t('sidebar.coachToggleSidebar', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })) }}
+          ><PanelLeft size={15} /></button>
           <button className="arc-ico" title={t('sidebar.navBack')} onClick={goBack} disabled={!canBack}><ChevronLeft size={16} /></button>
           <button className="arc-ico" title={t('sidebar.navForward')} onClick={goForward} disabled={!canFwd}><ChevronRight size={16} /></button>
-          <button className="arc-ico" title={t('sidebar.reload')} onClick={reload}><RotateCw size={13} /></button>
+          <button
+            className="arc-ico"
+            title={t('sidebar.reloadHint', { key: IS_MAC ? '⌘R' : 'Ctrl+R' })}
+            onClick={() => { reload(); coach('reload', t('sidebar.coachReload', { key: IS_MAC ? '⌘R' : 'Ctrl+R' })) }}
+          ><RotateCw size={13} /></button>
           <button className="arc-ico" title={t('sidebar.history')} onClick={() => navigate('/history')}><HistoryIcon size={15} /></button>
           <button className="arc-ico" title={t('sidebar.findFileHint', { key: IS_MAC ? '⌘P' : 'Ctrl+P' })} onClick={openFind}><Search size={14} /></button>
         </div>
@@ -1244,7 +1261,11 @@ export default function ArcSidebar() {
         <div className={`arc-section-label arc-tabs-label arc-zone-head ${tabsOpen ? 'is-open' : ''}`} role="button" onClick={() => toggleZone('ws-tabs-open', setTabsOpen)}>
           <span>{t('sidebar.tabs')}</span>
           <span className="arc-zone-count">{tabsCount || ''}</span>
-          <button className="arc-ico arc-ico-sm" title={t('sidebar.newTab')} onClick={(e) => { e.stopPropagation(); onNewTab() }}>
+          <button
+            className="arc-ico arc-ico-sm"
+            title={t('sidebar.newTabHint', { key: IS_MAC ? '⌘T' : 'Ctrl+T' })}
+            onClick={(e) => { e.stopPropagation(); onNewTab(); coach('new-tab', t('sidebar.coachNewTab', { key: IS_MAC ? '⌘T' : 'Ctrl+T' })) }}
+          >
             <Plus size={14} />
           </button>
           <ChevronRight size={12} className={`arc-caret ${tabsOpen ? 'is-open' : ''}`} />
