@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bold, Italic, Underline, Strikethrough, Eraser, Info, Trash2 } from 'lucide-react'
+import { useT } from '../i18n'
 import type { Doc } from '../types'
 import { DocHeader } from './Canvas'
 import { useAppearance } from '../appearance'
@@ -81,6 +82,7 @@ function nearestInDir(cur: HTMLElement, dir: Dir, all: HTMLElement[]): HTMLEleme
 }
 
 export default function BasicEditor({ doc }: { doc: Doc }) {
+  const t = useT()
   const html = doc.rawHtml ?? ''
   const hostRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
@@ -242,8 +244,8 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       <div className="nce-head">
         <div className="nce-head-doc"><DocHeader doc={doc} /></div>
         <div className="nce-modes" onMouseDown={guard}>
-          <button className={view === 'edit' ? 'on' : ''} onClick={() => setView('edit')}>编辑</button>
-          <button className={view === 'preview' ? 'on' : ''} onClick={() => setView('preview')}>预览</button>
+          <button className={view === 'edit' ? 'on' : ''} onClick={() => setView('edit')}>{t('common.edit')}</button>
+          <button className={view === 'preview' ? 'on' : ''} onClick={() => setView('preview')}>{t('editor.preview')}</button>
         </div>
       </div>
 
@@ -261,14 +263,14 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       {/* 中立、精简的提示，放文档下方 */}
       <div className="nce-notice">
         <Info size={15} />
-        <span>该文件不符合 Wordspace Schema，仅支持基础编辑。</span>
+        <span>{t('editor.nonconformNotice')}</span>
       </div>
 
       {/* 焦点框 + 删除（Esc 块模式 / 键盘） */}
       {focus && (
         <div className="nce-focus" style={{ top: focus.top, left: focus.left, width: focus.width, height: focus.height }}>
-          <button className="nce-focus-del" title="删除此块 (Delete)" onMouseDown={guard} onClick={() => api()?.deleteFocused()}>
-            <Trash2 size={13} /> 删除此块
+          <button className="nce-focus-del" title={t('editor.deleteBlockTitle')} onMouseDown={guard} onClick={() => api()?.deleteFocused()}>
+            <Trash2 size={13} /> {t('editor.deleteBlock')}
           </button>
         </div>
       )}
@@ -276,14 +278,14 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       {/* 富文字浮动格式条 */}
       {bubble && (
         <div className="ws-fmtbar nce-bubble" style={{ top: bubble.top, left: bubble.left }} onMouseDown={guard} role="toolbar">
-          <button className="ws-fmtbar-btn" title="加粗" onMouseDown={guard} onClick={() => exec('bold')}><Bold size={15} /></button>
-          <button className="ws-fmtbar-btn" title="斜体" onMouseDown={guard} onClick={() => exec('italic')}><Italic size={15} /></button>
-          <button className="ws-fmtbar-btn" title="下划线" onMouseDown={guard} onClick={() => exec('underline')}><Underline size={15} /></button>
-          <button className="ws-fmtbar-btn" title="删除线" onMouseDown={guard} onClick={() => exec('strikeThrough')}><Strikethrough size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.bold')} onMouseDown={guard} onClick={() => exec('bold')}><Bold size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.italic')} onMouseDown={guard} onClick={() => exec('italic')}><Italic size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.underline')} onMouseDown={guard} onClick={() => exec('underline')}><Underline size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.strikethrough')} onMouseDown={guard} onClick={() => exec('strikeThrough')}><Strikethrough size={15} /></button>
           <span className="ws-fmtbar-sep" />
 
           <div className="ws-fmtbar-holder">
-            <button className="ws-fmtbar-btn ws-fmtbar-aglyph" title="文字颜色" onMouseDown={guard} onClick={() => setMenu(menu === 'color' ? null : 'color')}>A</button>
+            <button className="ws-fmtbar-btn ws-fmtbar-aglyph" title={t('editor.textColor')} onMouseDown={guard} onClick={() => setMenu(menu === 'color' ? null : 'color')}>A</button>
             {menu === 'color' && (
               <div className="ws-fmtbar-swatches" onMouseDown={guard}>
                 {TEXT_COLORS.map((c) => (
@@ -294,7 +296,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
           </div>
 
           <div className="ws-fmtbar-holder">
-            <button className="ws-fmtbar-btn" title="背景高亮" onMouseDown={guard} onClick={() => setMenu(menu === 'hilite' ? null : 'hilite')}>🖍</button>
+            <button className="ws-fmtbar-btn" title={t('editor.highlight')} onMouseDown={guard} onClick={() => setMenu(menu === 'hilite' ? null : 'hilite')}>🖍</button>
             {menu === 'hilite' && (
               <div className="ws-fmtbar-swatches" onMouseDown={guard}>
                 {HILITE_COLORS.map((c) => (
@@ -305,7 +307,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
           </div>
 
           <span className="ws-fmtbar-sep" />
-          <button className="ws-fmtbar-btn" title="清除格式" onMouseDown={guard} onClick={() => exec('removeFormat')}><Eraser size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.clearFormat')} onMouseDown={guard} onClick={() => exec('removeFormat')}><Eraser size={15} /></button>
         </div>
       )}
     </div>

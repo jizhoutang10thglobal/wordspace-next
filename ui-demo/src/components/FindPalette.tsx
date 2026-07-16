@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, CornerDownLeft, FileText } from 'lucide-react'
+import { useT } from '../i18n'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
 import './FindPalette.css'
@@ -19,6 +20,7 @@ interface Hit {
  * 打开后配合 F6 在左侧树里定位高亮。
  */
 export default function FindPalette() {
+  const t = useT()
   const navigate = useNavigate()
   const open = useUI((s) => s.findOpen)
   const close = useUI((s) => s.closeFind)
@@ -97,7 +99,7 @@ export default function FindPalette() {
         className="fp"
         role="dialog"
         aria-modal="true"
-        aria-label="查找文件"
+        aria-label={t('editor.findFile')}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="fp-bar">
@@ -108,16 +110,16 @@ export default function FindPalette() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="按文件名查找…"
+            placeholder={t('editor.findFilePlaceholder')}
             spellCheck={false}
           />
           <span className="fp-hint">
-            <CornerDownLeft size={12} /> 打开
+            <CornerDownLeft size={12} /> {t('common.open')}
           </span>
         </div>
         <div className="fp-list">
           {hits.length === 0 ? (
-            <div className="fp-empty">没有匹配的文件</div>
+            <div className="fp-empty">{t('editor.noMatchingFile')}</div>
           ) : (
             hits.map((h, i) => (
               <button
