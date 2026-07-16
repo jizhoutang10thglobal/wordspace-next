@@ -43,6 +43,17 @@ export default {
   searchOrUrl: 'Search or enter address',
   localTag: 'Local',
 
+  // Shortcut discoverability (Wendi 2026-07-16): concise tooltips (action + key) + one-time coach bubbles
+  collapseSidebarHint: 'Collapse sidebar {key}',
+  expandSidebarHint: 'Expand sidebar {key}',
+  reloadHint: 'Reload {key}',
+  newTabHint: 'New tab {key}',
+  closeTabHint: 'Close tab {key}',
+  coachToggleSidebar: 'Next time, press {key} to toggle the sidebar',
+  coachReload: 'Next time, press {key} to reload',
+  coachNewTab: 'Next time, press {key} to open a new tab',
+  coachCloseTab: 'Next time, press {key} to close the current tab',
+
   // Bookmarks section
   favorites: 'Bookmarks',
   manageBookmarks: 'Manage bookmarks · Import/Export',

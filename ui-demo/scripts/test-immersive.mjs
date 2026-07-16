@@ -79,7 +79,7 @@ ok(peekHidden === 'hidden' || peekHidden === 'gone', `peek: 移开后收回（vi
 // —— peek 里点「收起侧栏」钮 = 真展开回停靠态 ——
 await page.mouse.move(3, 450)
 await page.waitForTimeout(550)
-await page.click('.arc-peek.is-on button[title="收起侧栏"]')
+await page.click('.arc-peek.is-on button[title^="收起侧栏"]') // 前缀匹配:#227 起 title 带快捷键后缀（如「收起侧栏 ⌘\」）
 await page.waitForTimeout(150)
 const dockedBack = await page.evaluate(() => {
   const el = document.querySelector('.ws-body > .arc-sidebar')

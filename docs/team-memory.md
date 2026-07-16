@@ -14,6 +14,23 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-16 — P0 大根卡死:救援方法 + 「上限是条目数不是 GB」+ sidebar/ipc/workspace 即将大动(撞车预警)
+
+**是什么**:Colin+Wendi 都中招——把巨型目录(家目录/桌面)加为根,app 卡死甚至死锁(根行不渲染、
+移不掉、重启复发)。诊断完成:①上限单位是**文件条目数不是 GB**(readTree 严格线性,25 万条=18s/68MB
+payload;Colin 家目录 191 万条→分钟级扫描+~2GB 双进程堆=renderer OOM 冻死;~/Library 不是隐藏目录、
+现有跳过规则拦不住);②死锁根因=启动路径 `await Promise.all(读树)` 先于 rootsState 赋值
+(sidebar.js:2839)→空态永驻→唯一移除入口(根行右键)不可达;③watcher 高 churn 根 overflow→全量重扫
+永动机。诊断正本=docs/brainstorms/2026-07-16-bigroot-freeze-p0-diagnosis.md(PR #228)。
+**怎么 apply**:①**用户救援**(告诉 Wendi/任何中招者):⌘Q 完全退出→删
+`~/Library/Application Support/Wordspace Next/workspace.json`(或编辑其 roots 数组删大根条目)→重启;
+**别重装,重装不清 userData,白装**。②做 perf 或压测:以条目数为轴造合成树(25 万条只要 35s/250MB 盘),
+别用 GB 填盘。③**撞车预警**:P0a(修死锁+扫描预算 15 万+管理文件夹逃生门)与 P0b(懒加载架构)即将
+大动 `src/renderer/sidebar.js`(启动 IIFE/renderRootSection 区域)、`src/main/ipc.js`(ws-add-folder)、
+`src/main/workspace.js`(walk/readTree)、`main.js`(菜单)——并行 session 动这些文件前先 /sync-main
+看 P0a/P0b PR 状态,改 sidebar 启动时序属高危区。执行 plan=docs/plans/2026-07-16-001/002。
+**来源**:诊断+plan PR #228;拍板=Colin 2026-07-16(P0a 先行、P0b 紧随、预算 15 万条目)。
+
 ## 2026-07-15 — Vercel 部署改造：预览构建关闭 + 只在本目录变更时构建（治连日限流）
 
 **是什么**：仓里两个 Vercel 项目（ui-demo/website）连同一个仓、原本没 vercel.json，导致每次 push 两个项目都构建、每个 PR 分支都出预览——连日撞爆免费日部署限流、卡所有人。已加 `ui-demo/vercel.json` + `website/vercel.json` 的 ignoreCommand（PR #220）：① 预览分支一律不构建（`VERCEL_ENV != production` → 跳过）；② main 只在本项目目录有变更时才构建。Colin 拍板关预览。
