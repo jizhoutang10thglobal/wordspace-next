@@ -306,6 +306,18 @@ function hide(key) {
   } catch { /* 窗口/view 已销毁,无需 detach */ }
 }
 function hideAll() { for (const key of registry.keys()) hide(key); }
+// 弹层快照（Wendi 2026-07-16「更新弹窗背景变白」）：DOM 弹层要摘 view，renderer 摘之前先拍一帧
+// 当垫底背景。必须对 view 自己的 webContents 截（窗口级 capturePage 不合成子 view，实测恒白）。
+async function capture(key) {
+  const rec = registry.get(key);
+  if (!rec) return null;
+  try {
+    if (rec.view.webContents.isDestroyed()) return null;
+    const img = await rec.view.webContents.capturePage();
+    if (img.isEmpty()) return null;
+    return img.toDataURL();
+  } catch { return null; }
+}
 function destroy(key) {
   const rec = registry.get(key); if (!rec) return;
   hide(key);
@@ -482,7 +494,7 @@ let fitTimer = null;
 function scheduleRefit(key) { clearTimeout(fitTimer); fitTimer = setTimeout(() => fitToWidth(key), 250); }
 
 module.exports = {
-  init, setHistoryHook, createView, show, hide, hideAll, setBounds, destroy, destroyAll,
+  init, setHistoryHook, createView, show, hide, hideAll, capture, setBounds, destroy, destroyAll,
   navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setZoom, printToPdf,
   openCtxMenu, executeCtxAction, recordHistory, setAllAudioMuted,
   _registry: registry,
