@@ -14,6 +14,12 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-16 — 沉浸收起(Arc 对标)已全量合 main:sb-reopen 浮钮已删、真 app 换 hiddenInset 窗框
+
+**是什么**:Wendi「零缝隙」反馈落地(ui-demo #230 + 真 app #238)。侧栏收起=流内零渲染(ui-demo 48px 细轨、真 app 52px COLLAPSED_STRIP、#sb-reopen 常驻浮钮**全删**),重开=左缘 hover peek(悬浮盖内容)/Cmd+\;真 app darwin 换 titleBarStyle:hiddenInset,红绿灯进 .sb-head(兼窗口拖拽区)且随收起隐藏。spec=docs/features/immersive-collapse.md。
+**怎么 apply**:① e2e/代码**别再引用 #sb-reopen**(元素已不存在;二次展开的测试口径=mouse.move(3,430) 出 peek 后点 #sb-toggle,或 Ctrl+\,参照 e2e/immersive.spec.js)。② **往 .sb-head / ui-demo .arc-top 加图标前先重算宽度账**(mac 红绿灯让位后 238≤min-width 240,余量 2px——超了最右钮被编辑区 iframe 吞点击,CSS 注释有账本)。③ 宿主 mac 跑 app 看到没有系统标题栏=正常新窗框,不是 bug。
+**来源**:PR #230 / #238,feat/immersive-collapse-app
+
 ## 2026-07-16 — 硬教训：quitAndInstall 不发 before-quit，发 before-quit-for-update（动退出链必读）
 
 **是什么**：Electron `autoUpdater.quitAndInstall()` 的退出时序是——先发 **`before-quit-for-update`**、再逐窗 `close`、全部关完才 `app.quit()`（届时才有 before-quit）。main.js 曾只接 `before-quit` 打「真退出」标志、注释还断言 quitAndInstall 会先发它（假的）——结果 mac「关窗=隐藏驻留」守卫把 quitAndInstall 的关窗 `preventDefault` 吞掉：窗口只是藏起来、app 不退、安装永等不到 `window-all-closed`。用户视角=「点了重启安装没反应」，且这按钮**自上线起从未工作过**（Colin 机器 updater.log 2026-07-15 四连击零重启实锤；此前所谓能更新全靠用户手动 Cmd+Q 触发退出时安装）。同 PR 另修两个：bundle 被提权安装写成 root:wheel 后每次更新都要密码（一次性 chown 修复流程 + `src/lib/mac-bundle-repair.js`）、下载进度面板整卡拆建+抢焦点导致狂闪（改结构签名比对原地更新）。
