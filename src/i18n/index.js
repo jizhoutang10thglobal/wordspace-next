@@ -6,7 +6,7 @@
 'use strict';
 
 const NAMESPACES = [
-  'common', 'menu', 'dialog', 'sidebar', 'shell', 'browser', 'editor',
+  'common', 'menu', 'dialog', 'sidebar', 'shell', 'browser', 'settings', 'editor',
   'link', 'find', 'update', 'schema', 'template', 'bookmark', 'misc',
 ];
 

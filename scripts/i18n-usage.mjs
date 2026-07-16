@@ -17,11 +17,19 @@ const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const SRC = join(ROOT, 'src');
 const I18N = join(SRC, 'i18n');
 
-// 合并 zh 已知 key 集（命名空间前缀）。
-const known = new Set();
-for (const f of readdirSync(join(I18N, 'zh')).filter((n) => n.endsWith('.js'))) {
-  const ns = f.replace(/\.js$/, '');
-  for (const k of Object.keys(require(join(I18N, 'zh', f)))) known.add(ns + '.' + k);
+// 已知 key 集 = **运行时合并的 ZH**（require index.js，跟 app 真正用的一致），不是 readdir 各文件——
+// 否则「字典文件存在但没在 index.js 的 NAMESPACES 里注册」时,readdir 看得到、运行时却没合进去,
+// 门放过、e2e 才炸(settings 命名空间漏注册就栽在这)。同时校验:每个 zh/*.js 都在 NAMESPACES 里(反之亦然)。
+const { ZH, NAMESPACES } = require(join(I18N, 'index.js'));
+const known = new Set(Object.keys(ZH));
+const fileNs = readdirSync(join(I18N, 'zh')).filter((n) => n.endsWith('.js')).map((n) => n.replace(/\.js$/, ''));
+const nsSet = new Set(NAMESPACES);
+const unregistered = fileNs.filter((n) => !nsSet.has(n));
+const missingFile = NAMESPACES.filter((n) => !fileNs.includes(n));
+if (unregistered.length || missingFile.length) {
+  if (unregistered.length) console.error(`✗ i18n-usage: 字典文件未在 index.js NAMESPACES 注册(运行时不会加载,漏翻)：${unregistered.join(', ')}`);
+  if (missingFile.length) console.error(`✗ i18n-usage: NAMESPACES 声明了但没有字典文件：${missingFile.join(', ')}`);
+  process.exit(1);
 }
 
 const CALLEES = new Set(['t', 'wsT', '_t', 'tImperative', 'coreT']);
