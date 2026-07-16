@@ -170,12 +170,13 @@
     if (sb) sb.classList.toggle('sb-on', has || tabState.entries.length > 0);
   }
   // 把主进程返回的 { root:{id,path,name,missing}, tree:{tree:[…], truncated?, entryCount?} } 装进 rootsState
-  //（tree 标注 rootId + 默认全收起）。truncated（超条目预算的过大根，D3）：不建局部树、转「过大」态。
+  //（tree 标注 rootId + 默认全收起）。truncated（超条目预算的过大根，D3/P0b）：转 **lazy 模式**（简化模式）
+  // ——不一次性建全树，st.tree 先留 null，由 loadLazyTop 读顶层、展开哪层读哪层（VS Code 路线）。
   function mkRootState(info, treeData) {
-    const truncated = !!(treeData && treeData.truncated);
-    const tree = !truncated && treeData && treeData.tree ? annotateTree(treeData.tree, info.id) : null;
+    const lazy = !!(treeData && treeData.truncated);
+    const tree = !lazy && treeData && treeData.tree ? annotateTree(treeData.tree, info.id) : null;
     if (tree) collectDirRels(tree, info.id, collapsed);
-    return { id: info.id, path: info.path, name: info.name, missing: !!info.missing, tree, truncated, entryCount: truncated ? (treeData.entryCount || 0) : 0 };
+    return { id: info.id, path: info.path, name: info.name, missing: !!info.missing, tree, lazy, entryCount: lazy ? (treeData.entryCount || 0) : 0 };
   }
   function adoptRoot(info, treeData, index) {
     const st = mkRootState(info, treeData);
@@ -184,6 +185,7 @@
     rootsGen++; // 根集合变了：作废在飞的 loadTabs 结果
     syncChrome();
     render();
+    if (st.lazy && !st.tree) loadLazyTop(st.id); // 吸收/撤销一个过大根 → 顶层懒加载
     return st;
   }
   // 添加文件夹（头部按钮 / 空态按钮 / 树底常驻行 / ⋯ 菜单）：主进程弹框选目录 + classifyRoot 嵌套判定。
@@ -199,11 +201,11 @@
     if (r.status === 'same') {
       showToast('「' + r.root.name + '」已经打开了');
     } else if (r.status === 'child') {
-      // 父根非正常态（还在加载 / 过大打不开）→「去那个文件夹里展开」是空头支票（诊断 D5：~ 一注册，所有子
-      // 文件夹全被拒、又展不开）。给出口：引导去「管理文件夹」移除父根后再打开这个子文件夹。正常态保持原文案。
+      // 父根还在加载 / 是简化模式的大文件夹 →「去那个文件夹里展开」可能太深不好找（诊断 D5：~ 一注册，
+      // 所有子文件夹全被拒）。给出口：引导去「管理文件夹」移除父根后单独打开这个子文件夹。正常态保持原文案。
       const pst = rootOf(r.parent.id);
-      if (pst && (pst.loading || pst.truncated)) {
-        showToast('「' + r.name + '」在你打开的「' + r.parent.name + '」里，但「' + r.parent.name + '」还没加载出来 / 过大打不开。可以先在「管理文件夹」里移除它，再打开「' + r.name + '」', '管理文件夹', () => openManageRootsModal());
+      if (pst && (pst.loading || pst.lazy)) {
+        showToast('「' + r.name + '」在你打开的「' + r.parent.name + '」里' + (pst.lazy ? '（简化模式的大文件夹）' : '（还在加载）') + '。可以直接在它里面展开找到，或在「管理文件夹」里移除它后单独打开「' + r.name + '」', '管理文件夹', () => openManageRootsModal());
       } else {
         showToast('「' + r.name + '」已经在「' + r.parent.name + '」里了——不会重复打开，去那个文件夹里展开即可');
       }
@@ -288,11 +290,12 @@
     if (!st) return; // 加载期间该根被移除/吸收
     st.loading = false;
     if (data && data.truncated) {
-      // 过大根（D3）：主进程超条目预算返回空树 + truncated → 不渲染局部树，转「过大」态
-      //（可见 + 可移除 + watcher no-op）。清掉可能残留的旧树/失联标记。
-      st.truncated = true; st.entryCount = data.entryCount || 0; st.tree = null; st.missing = false;
+      // 过大根（D3/P0b）：超条目预算 → 转 **lazy 模式**（简化模式，可浏览）。清残留旧树；顶层懒加载。
+      st.lazy = true; st.entryCount = data.entryCount || 0; st.tree = null; st.missing = false;
+      syncChrome();
+      await loadLazyTop(rootId); // 读顶层进 st.tree（内部 render）；期间被移除会自然放弃
     } else if (data) {
-      st.truncated = false;
+      st.lazy = false;
       st.tree = annotateTree(data.tree, rootId);
       collectDirRels(st.tree, rootId, collapsed);
     } else {
@@ -301,7 +304,45 @@
     syncChrome();
     render();
     if (opts.validate) validateRootEntries(rootId);
-    if (opts.toast && !st.truncated) showToast(opts.toast); // 过大根别报「已打开」——与「过大打不开」提示自相矛盾（对抗审查实测）
+    if (opts.toast) showToast(opts.toast); // lazy 根现在可浏览了，报「已打开」不再自相矛盾（P0b 升级）
+  }
+  // ── lazy 模式（简化模式）懒加载：展开哪层读哪层，会话内缓存已加载的层 ──
+  // 顶层加载：过大根转 lazy 后第一步，读根目录第一层进 st.tree。
+  async function loadLazyTop(rootId) {
+    const st = rootOf(rootId);
+    if (!st || !st.lazy) return;
+    st.loading = true;
+    renderRoot(rootId); // 顶层读盘期间显示「正在读取…」loading 行
+    let d = null;
+    try { d = await window.ws2.wsReadDir(rootId, ''); } catch (e) { d = null; }
+    const st2 = rootOf(rootId);
+    if (!st2 || !st2.lazy) return; // 期间根被移除/退出 lazy
+    st2.loading = false;
+    st2.tree = d && Array.isArray(d.children) ? annotateTree(d.children, rootId) : [];
+    st2.topTruncated = !!(d && d.truncated); // 根直接子项超单层预算（极罕见）
+    collectDirRels(st2.tree, rootId, collapsed); // 新层默认全收起（展开才读下一层）
+    renderRoot(rootId);
+  }
+  // 展开一个未加载的 lazy 目录：读它这一层的 children 填进节点、标 childrenLoaded；会话内缓存（收起不丢）。
+  async function loadDirChildren(rootId, dirRel) {
+    const st = rootOf(rootId);
+    if (!st || !st.lazy) return;
+    const node = findNode(rootId, dirRel);
+    if (!node || node.childrenLoaded || node._loading) return;
+    node._loading = true;
+    renderRoot(rootId); // 该目录下显示 loading 行
+    let d = null;
+    try { d = await window.ws2.wsReadDir(rootId, dirRel); } catch (e) { d = null; }
+    const st2 = rootOf(rootId);
+    if (!st2 || !st2.lazy) return;
+    const n2 = findNode(rootId, dirRel); // 重新定位（期间 watcher 可能 patch 过树）
+    if (!n2) return; // 该目录已从已加载树里消失（父层外部删除）
+    n2._loading = false;
+    n2.children = d && Array.isArray(d.children) ? annotateTree(d.children, rootId) : [];
+    n2.childrenLoaded = true;
+    n2.dirTruncated = !!(d && d.truncated); // 本目录直接子项超单层预算
+    collectDirRels(n2.children, rootId, collapsed); // 新层默认全收起
+    renderRoot(rootId);
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
   // 吸收后子根的标签不关、整体 rebase 进新根（文件都在磁盘原处，只换归属）。
@@ -438,7 +479,7 @@
   // 根复活/重定位后校验它的标签：新树里没有的文件（换了位置的旧结构）静默丢，激活回落。
   function validateRootEntries(rootId) {
     const st = rootOf(rootId);
-    if (!st || !st.tree) return;
+    if (!st || !st.tree || st.lazy) return; // lazy 根只加载了部分层，findNode 会误杀未加载层的标签——别校验（同失联根，保留标签）
     const gone = tabState.entries.filter((e) => e.rootId === rootId && e.rel && !findNode(rootId, e.rel));
     for (const e of gone) tabState = window.WS2Tabs.removeEntry(tabState, keyOf(e));
     mergeExternalDupes(rootId);
@@ -474,11 +515,19 @@
   async function refreshRoot(rootId) {
     const st = rootOf(rootId);
     if (!st || st.missing) return;
+    // lazy 根：**绝不**走 wsReadTree（它对超预算根返回空树 truncated → 会把已加载的 lazy 树抹成空）。
+    // 改重读已加载层（doLazyScan(null) = 重读已加载集），文件操作后的新增/删除在已加载层里就能刷出来。
+    if (st.lazy) { await doLazyScan(rootId, null); return; }
     const data = await window.ws2.wsReadTree(rootId);
-    if (data && rootOf(rootId) === st) {
-      st.tree = annotateTree(data.tree, rootId);
-      render();
+    if (!data || rootOf(rootId) !== st) return;
+    if (data.truncated) {
+      // 会话中普通根长过预算（极罕见：文件操作把它推过 15 万）→ 转 lazy，别拿空树盖掉全量树。
+      st.lazy = true; st.entryCount = data.entryCount || 0; st.tree = null;
+      await loadLazyTop(rootId);
+      return;
     }
+    st.tree = annotateTree(data.tree, rootId);
+    render();
   }
   // 兼容旧调用点：不带根的 refresh = 刷新全部活根（少数场景，如落盘新文件后不确定哪根）。
   async function refresh(rootId) {
@@ -600,22 +649,19 @@
       renderMissingRoot(root, parent);
       return true;
     }
-    if (root.truncated) {
-      if (q) return false; // 过大根无本地树可筛
-      renderOversizeRoot(root, index, parent);
-      return true;
-    }
+    const lazy = !!root.lazy; // 简化模式（超预算的大根，按层懒加载）
     const nodes = root.tree ? (q ? filterTree(root.tree, q) : root.tree) : [];
-    if (q && !nodes.length) return false; // 筛选时无命中 → 整节隐藏
+    // 筛选时无命中 → 整节隐藏；但 lazy 根即使无命中也要露头 + 提示（否则用户以为文件夹空了/搜漏了，V3）
+    if (q && !nodes.length && !lazy) return false;
     const open = q ? true : !rootClosed.has(root.id); // 筛选时自动展开
     const head = document.createElement('div');
-    head.className = 'sb-row sb-root-head';
+    head.className = 'sb-row sb-root-head' + (lazy ? ' sb-root-lazy' : '');
     head.setAttribute('role', 'button');
     head.tabIndex = 0;
     head.dataset.root = root.id;
     head.dataset.rel = '';
     head.dataset.depth = -1; // sticky ancestor：根标题是最外层祖先
-    head.title = root.path + ' · 拖动可调整文件夹顺序';
+    head.title = root.path + (lazy ? ' · 简化模式（超大文件夹，按需加载）' : ' · 拖动可调整文件夹顺序');
     head.draggable = true;
     const caret = document.createElement('span');
     caret.className = 'sb-caret' + (open ? ' is-open' : '');
@@ -626,10 +672,21 @@
     const name = document.createElement('span');
     name.className = 'sb-name sb-root-name ws-truncate';
     name.textContent = root.name;
-    const pathEl = document.createElement('span');
-    pathEl.className = 'sb-root-path ws-truncate';
-    pathEl.textContent = root.path;
-    head.append(caret, ico, name, pathEl);
+    head.append(caret, ico, name);
+    if (lazy) {
+      // 「简化模式」徽标：告诉用户这个大文件夹按需加载、部分功能受限（hover 解释）。复用失联根的小 tag 样式，
+      // 零新增 CSS；tag 后不再挂 path（省空间），path 进 title。
+      const tag = document.createElement('span');
+      tag.className = 'sb-root-miss-tag';
+      tag.textContent = '简化模式';
+      tag.title = '这个文件夹很大（超过 15 万个项目），Wordspace 按需逐层加载，筛选/快速打开只覆盖已浏览过的目录';
+      head.appendChild(tag);
+    } else {
+      const pathEl = document.createElement('span');
+      pathEl.className = 'sb-root-path ws-truncate';
+      pathEl.textContent = root.path;
+      head.appendChild(pathEl);
+    }
     head.onclick = () => {
       if (rootClosed.has(root.id)) rootClosed.delete(root.id);
       else rootClosed.add(root.id);
@@ -702,14 +759,29 @@
       parent.appendChild(e);
       return true;
     }
-    if (!nodes.length) {
+    if (!nodes.length && !(lazy && q)) {
       const e = document.createElement('div');
       e.className = 'sb-tree-empty';
       e.textContent = '这个文件夹还没有文件';
       parent.appendChild(e);
       return true;
     }
-    for (const n of nodes) renderNode(n, 0, parent, !!q);
+    for (const n of nodes) renderNode(n, 0, parent, !!q, lazy);
+    if (lazy && q) {
+      // 简化模式筛选只覆盖「已浏览过（已加载）的目录」——行尾提示，别让用户以为搜全了（V3）。
+      const hint = document.createElement('div');
+      hint.className = 'sb-tree-empty';
+      hint.textContent = '简化模式：仅搜索已浏览过的目录';
+      hint.title = '这个文件夹太大、按需加载。展开更多目录后再筛选，或用「移除后打开具体子文件夹」得到完整搜索';
+      parent.appendChild(hint);
+    }
+    if (lazy && !q && root.topTruncated) {
+      // 根直接子项超单层预算（极罕见）——顶层只显示了前 N 个，提示一下。
+      const hint = document.createElement('div');
+      hint.className = 'sb-tree-empty';
+      hint.textContent = '此文件夹的直接项目过多，仅显示前一部分';
+      parent.appendChild(hint);
+    }
     return true;
   }
 
@@ -754,56 +826,6 @@
     rmBtn.textContent = '移除';
     rmBtn.onclick = () => removeRootUI(root.id);
     acts.append(relBtn, rmBtn);
-    note.append(msg, acts);
-    parent.append(head, note);
-  }
-
-  // 过大根（D3 止血）：超条目预算的根不渲染局部树（半棵树比没有更误导，且几十万 stat + 巨型 IPC 正是卡死本体）。
-  // 显示「过大」标题行 + 一行提示 + 内联「移除」；根行右键仍可用（移除 / 移到最上面）。复用失联根的降级行样式
-  //（sb-root-miss-*），零新增 CSS。永远可移除是本包的红线（诊断 D4）。
-  function renderOversizeRoot(root, index, parent = treeEl) {
-    const head = document.createElement('div');
-    // 不复用 sb-root-missing 类（避免与「失联」态在 `:not(.sb-root-missing)` / `.sb-root-missing` 选择器里
-    // 混淆）；degraded 观感用内联样式镜像失联行（CSP 安全，不动 shell.css）。note/tag/icon 仍复用 miss-* 类。
-    head.className = 'sb-row sb-root-head sb-root-oversize';
-    head.style.background = 'var(--c-bg-sunken)';
-    head.style.border = '1px dashed var(--c-border-strong)';
-    head.style.color = 'var(--c-text-3)';
-    head.style.cursor = 'default';
-    head.dataset.root = root.id;
-    head.dataset.rel = '';
-    head.dataset.depth = -1;
-    head.title = root.path + ' · 过大（暂时无法完整打开）';
-    const ico = document.createElement('span');
-    ico.className = 'sb-ico sb-root-miss-ic';
-    ico.innerHTML = WARN_SVG20;
-    const name = document.createElement('span');
-    name.className = 'sb-name sb-root-name ws-truncate';
-    name.textContent = root.name;
-    const tag = document.createElement('span');
-    tag.className = 'sb-root-miss-tag';
-    tag.textContent = '过大';
-    head.append(ico, name, tag);
-    head.oncontextmenu = (e) => {
-      e.preventDefault();
-      const items = [];
-      if (index > 0) items.push({ label: '移到最上面', run: () => reorderRootTo(root.id, 0) });
-      items.push({ label: '移除（磁盘文件不动）', danger: true, run: () => removeRootUI(root.id) });
-      showContextMenu(e.clientX, e.clientY, items);
-    };
-    const note = document.createElement('div');
-    note.className = 'sb-root-miss-note';
-    const msg = document.createElement('span');
-    msg.className = 'ws-truncate';
-    msg.textContent = '此文件夹包含超过 15 万个项目，Wordspace 暂时无法完整打开——建议移除后选择具体的工作文件夹';
-    msg.title = msg.textContent; // 侧栏窄、ws-truncate 会截断 → 悬停给全文
-    const acts = document.createElement('span');
-    acts.className = 'sb-root-miss-acts';
-    const rmBtn = document.createElement('button');
-    rmBtn.className = 'sb-root-miss-act';
-    rmBtn.textContent = '移除';
-    rmBtn.onclick = () => removeRootUI(root.id);
-    acts.append(rmBtn);
     note.append(msg, acts);
     parent.append(head, note);
   }
@@ -1283,10 +1305,11 @@
     };
   }
 
-  function renderNode(node, depth, parent, forceOpen) {
+  function renderNode(node, depth, parent, forceOpen, lazy) {
     if (node.isDir) {
-      // compact folders：单子文件夹链合并成一行，身份落最深那级 dir
-      const chain = compactChain(node);
+      // compact folders：单子文件夹链合并成一行，身份落最深那级 dir。lazy 根**不压缩**——子层按需加载，
+      // 压缩会把「还没加载的下一层」误判成单子链、身份/展开都乱（简化模式下每级独立展开更清楚）。
+      const chain = lazy ? { names: [node.name], rels: [node.rel], tail: node } : compactChain(node);
       const dir = chain.tail;
       const open = forceOpen || !collapsed.has(colKey(dir.rootId, dir.rel));
       const row = document.createElement('div');
@@ -1333,10 +1356,13 @@
       row.onclick = () => {
         // 折叠状态按**整条 compact 链**一致处理（不只 tail）：展开=删掉链上每级键、收起=每级都加。
         // 否则残留的祖先折叠键会在链日后断开（外部往中间级加文件）时命中新 tail、把已展开的链无声重折叠。
-        if (collapsed.has(colKey(dir.rootId, dir.rel))) chain.rels.forEach((r) => collapsed.delete(colKey(dir.rootId, r)));
+        const wasCollapsed = collapsed.has(colKey(dir.rootId, dir.rel));
+        if (wasCollapsed) chain.rels.forEach((r) => collapsed.delete(colKey(dir.rootId, r)));
         else chain.rels.forEach((r) => collapsed.add(colKey(dir.rootId, r)));
         scheduleTreeStateSave(); // P3-07：展开/收起 → 持久化（防抖）
-        renderRoot(dir.rootId); // 只重建该文件所在的根（性能）
+        // lazy 根：首次展开一个未加载目录 → 读它这一层（loadDirChildren 内部会 renderRoot）；否则只重建该根。
+        if (lazy && wasCollapsed && !dir.childrenLoaded) loadDirChildren(dir.rootId, dir.rel);
+        else renderRoot(dir.rootId); // 只重建该文件所在的根（性能）
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
@@ -1378,13 +1404,28 @@
       };
       parent.appendChild(row);
       if (open) {
-        if (dir.children.length) {
-          for (const c of dir.children) renderNode(c, depth + 1, parent, forceOpen);
+        if (lazy && dir._loading) {
+          // lazy 目录正在读它这一层 → loading 行占位（别显示成「空文件夹」）
+          const e = document.createElement('div');
+          e.className = 'sb-loading';
+          e.style.paddingLeft = (26 + (depth + 1) * INDENT_STEP) + 'px';
+          e.textContent = '正在读取…';
+          parent.appendChild(e);
+        } else if (lazy && !dir.childrenLoaded) {
+          // 展开了但这一层还没加载（如从持久化展开态恢复）→ 触发加载 + loading 行占位
+          const e = document.createElement('div');
+          e.className = 'sb-loading';
+          e.style.paddingLeft = (26 + (depth + 1) * INDENT_STEP) + 'px';
+          e.textContent = '正在读取…';
+          parent.appendChild(e);
+          loadDirChildren(dir.rootId, dir.rel);
+        } else if (dir.children.length) {
+          for (const c of dir.children) renderNode(c, depth + 1, parent, forceOpen, lazy);
         } else {
           const e = document.createElement('div');
           e.className = 'sb-tree-empty';
           e.style.paddingLeft = (26 + (depth + 1) * INDENT_STEP) + 'px';
-          e.textContent = '空文件夹';
+          e.textContent = lazy && dir.dirTruncated ? '此文件夹的直接项目过多，仅显示前一部分' : '空文件夹';
           parent.appendChild(e);
         }
       }
@@ -1880,7 +1921,7 @@
       if (e.rel) {
         const root = rootOf(e.rootId);
         if (!root) return Promise.resolve(false); // 根都不在了（store 与注册表漂移）→ 丢
-        if (root.missing || root.truncated) return Promise.resolve(true); // 失联/过大根：保留标签（无本地树可 findNode 校验，别当「文件没了」丢弃 + 持久化清除，同失联根）
+        if (root.missing || root.lazy) return Promise.resolve(true); // 失联/lazy 根：保留标签（lazy 只加载了部分层，findNode 校验会误杀未加载层的文件，同失联根别丢）
         return Promise.resolve(!!findNode(e.rootId, e.rel));
       }
       return window.ws2.pathExists(e.abs).catch(() => false);
@@ -1899,7 +1940,7 @@
     if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
       const eRoot = e && e.rel ? rootOf(e.rootId) : null;
-      if (e && !(eRoot && (eRoot.missing || eRoot.truncated))) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发（失联/过大根的激活项不自动载入，无树会空转）
+      if (e && !(eRoot && (eRoot.missing || eRoot.lazy))) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发（失联/lazy 根的激活项不自动载入——lazy 树只有部分层，findNode 可能空转）
     }
   }
 
@@ -2428,8 +2469,10 @@
     if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：SaveModal/关闭确认开着时 Cmd+P 加速器穿透不叠层
     const multi = liveRootCount() > 1;
     const allFiles = []; // 跨全部活根（节点带 rootId；多根时行内路径带根名消歧）
+    let skippedLazy = false; // 有 lazy 根被跳过 → 面板底注提示（V3）
     for (const st of rootsState) {
       if (st.missing || !st.tree) continue;
+      if (st.lazy) { skippedLazy = true; continue; } // lazy 根只加载了部分层，全量扁平化会漏 + 又触发全量扫 → 跳过，底注提示
       (function walk(nodes) { for (const n of nodes) { if (n.isDir) walk(n.children || []); else allFiles.push(n); } })(st.tree);
     }
     let q = '', sel = 0, hits = [];
@@ -2450,6 +2493,18 @@
     const list = document.createElement('div');
     list.className = 'fp-list';
     panel.append(bar, list);
+    if (skippedLazy) {
+      // 底注：简化模式的大文件夹未纳入快速打开（它们只按需加载、没法整根扁平化搜；提示别让用户以为搜漏了，V3）。
+      const foot = document.createElement('div');
+      foot.className = 'fp-foot';
+      foot.id = 'fp-lazy-note';
+      foot.textContent = '简化模式的大文件夹未纳入快速打开（在侧栏里逐层展开查找）';
+      foot.style.padding = '8px 14px';
+      foot.style.fontSize = 'var(--fs-sm)';
+      foot.style.color = 'var(--c-text-3)';
+      foot.style.borderTop = '1px solid var(--c-divider)';
+      panel.append(foot);
+    }
     overlay.appendChild(panel);
     overlay.onmousedown = (e) => { if (e.target === overlay) close(); };
     function computeHits() {
@@ -2671,9 +2726,10 @@
   // 再读新树——这样不用在每处建标签时穿 ino，消失文件的 ino 也一定取得到，给「改名/移动→标签跟随」做匹配。
   async function doTreeScan(rootId, dirs) {
     const st = rootOf(rootId);
-    // 过大根（st.truncated）对 watcher 事件 no-op：它没有本地树、也绝不能触发全量重扫（否则高 churn 的大根
-    // 变永动机——诊断 D3/watcher 风暴）。missing/未加载（tree=null）同样跳过。
-    if (!st || st.missing || st.truncated || !st.tree) return;
+    // missing/未加载（tree=null）跳过。lazy 根走 doLazyScan（只重读**已加载层与变化的交集**，永不全量——
+    // 否则高 churn 的大根变永动机，诊断 D3/watcher 风暴）。
+    if (!st || st.missing || !st.tree) return;
+    if (st.lazy) return doLazyScan(rootId, dirs);
     // 跨根移动在飞（对抗审查 P2）：跳过 reconcile。跨根移动把文件的 inode 从源根移到目标根——若源根的
     // watcher 事件抢在 doMoveAcross 的 retargetSubtreeAcross 之前跑，reconcile 在源根树里找不到该 inode
     // → 当成「被删」removeEntry，把用户正在编辑/置顶的标签无声清掉（文件其实已好好搬到目标根）。
@@ -2754,6 +2810,58 @@
       }
     }
     detectExternalRenames(rootId, oldTree, inoToRel); // U5：外部改名/移动 → 询问式「一键更新」引用（fire-and-forget）
+  }
+
+  // ===== lazy 根的 watcher（V2）：只重读「已加载层 ∩ 变化目录」，永不全量。 =====
+  // 已加载目录集：st.tree 里 childrenLoaded 的目录 rel，外加根本身 ''（顶层永远算已加载）。
+  function loadedLazyDirs(st) {
+    const set = new Set(['']);
+    (function w(nodes) {
+      for (const n of nodes) if (n.isDir) { if (n.childrenLoaded) set.add(n.rel); w(n.children || []); }
+    })(st.tree || []);
+    return set;
+  }
+  // 把某已加载层的新 children 并进树：保留仍存在的子目录的**已加载子树 + 展开态**（否则 watcher 一响就把
+  // 用户展开的深层全重置成未加载）；新出现的子目录默认收起。返回是否成功挂上（目录已从树消失 → false，父层重读会处理）。
+  function patchLazyLevel(st, rootId, dirRel, data) {
+    const fresh = data && Array.isArray(data.children) ? annotateTree(data.children, rootId) : [];
+    const target = dirRel ? findNode(rootId, dirRel) : null;
+    if (dirRel && (!target || !target.isDir)) return false;
+    const old = dirRel ? (target.children || []) : (st.tree || []);
+    const oldByRel = new Map(old.filter((n) => n.isDir).map((n) => [n.rel, n]));
+    for (const n of fresh) {
+      if (!n.isDir) continue;
+      const prev = oldByRel.get(n.rel);
+      if (prev && prev.childrenLoaded) { n.childrenLoaded = true; n.children = prev.children; n.dirTruncated = prev.dirTruncated; }
+      else collapsed.add(colKey(rootId, n.rel)); // 新目录默认收起
+    }
+    if (dirRel) { target.children = fresh; target.dirTruncated = !!(data && data.truncated); }
+    else { st.tree = fresh; st.topTruncated = !!(data && data.truncated); }
+    return true;
+  }
+  async function doLazyScan(rootId, dirs) {
+    const st = rootOf(rootId);
+    if (!st || !st.lazy || !st.tree) return;
+    const loaded = loadedLazyDirs(st);
+    let toReread;
+    if (dirs) {
+      // 受影响目录（affectedDirsOf 已归一成父目录列表）与已加载集求交——变化都在未加载层 → **不扫**（V2 核心，
+      // dirReads 不涨即为证）。
+      toReread = [...new Set(dirs.filter((d) => loaded.has(d)))];
+      if (!toReread.length) return;
+    } else {
+      // overflow / 根层变化 / 平台没给路径 → 只重读**已加载集**，永不全量（否则大根一次几十万条 = 冻死）。
+      toReread = [...loaded];
+    }
+    toReread.sort((a, b) => a.split('/').length - b.split('/').length); // 浅层先（父先于子，父 patch 保留子的已加载子树、子再更新）
+    let dirty = false;
+    for (const dirRel of toReread) {
+      let d = null;
+      try { d = await window.ws2.wsReadDir(rootId, dirRel); } catch (e) { d = null; }
+      if (rootOf(rootId) !== st || !st.lazy) return; // 期间根被移除/退出 lazy
+      if (patchLazyLevel(st, rootId, dirRel, d)) dirty = true;
+    }
+    if (dirty) renderRoot(rootId);
   }
 
   // ===== 浏览器 feature：web 标签桥 + 顺序循环切换 + ⌘⇧T 重开栈（spec §4.4/§7）=====
@@ -3054,8 +3162,9 @@
       const name = r.path.split('/').filter(Boolean).pop() || r.path;
       L.push('根' + (i + 1) + '「' + name + '」  ' + (r.cloud ? '☁ ' + r.cloud + ' 云盘' : '本地'));
       L.push('   ' + r.path);
-      L.push('   文件数 ' + r.fileCount.toLocaleString() +
-        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（全量 ' + r.reads + ' 次 / 子树 ' + (r.scopedReads || 0) + ' 次）' +
+      const kb = r.payloadBytes ? '  ·  IPC 载荷 ≈' + Math.round(r.payloadBytes / 1024).toLocaleString() + 'KB' : '';
+      L.push('   文件数 ' + r.fileCount.toLocaleString() + ' / 目录 ' + (r.dirCount || 0).toLocaleString() + kb +
+        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（全量 ' + r.reads + ' 次 / 子树 ' + (r.scopedReads || 0) + ' 次 / 单层 ' + (r.dirReads || 0) + ' 次）' +
         '  ·  watcher 触发 ' + r.watchEvents + ' 次');
     });
     L.push('');

@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('ws2', {
   wsGetTreeState: () => ipcRenderer.invoke('ws-get-tree-state'), // P3-07 树展开态持久化（缓存语义）
   wsSetTreeState: (ts) => ipcRenderer.invoke('ws-set-tree-state', ts),
   wsReadSubtrees: (rootId, dirs) => ipcRenderer.invoke('ws-read-subtrees', rootId, dirs), // 子树级重扫;null=回落全量
+  wsReadDir: (rootId, dirRel) => ipcRenderer.invoke('ws-read-dir', rootId, dirRel), // P0b lazy 模式：单层读取（展开哪层读哪层）
   wsWatchFlush: (rootId) => ipcRenderer.invoke('ws-watch-flush', rootId), // 聚焦兜底:冲在途去抖,返回 {alive}
   wsNewDoc: (rootId, dirRel, base, html, ext) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html, ext),
   wsSaveDocAs: (base, html, ext, opts) => ipcRenderer.invoke('ws-save-doc-as', base, html, ext, opts), // ext 'md'=写盘前转 md；opts.reveal=导出语义 Finder 高亮
