@@ -563,7 +563,10 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
 
 /* 删除「撤销」toast：书签纸条（纸底墨字 + 左侧 4px 语义色条），从下带回弹升入。
    修 VC-6：toast 提到模态遮罩（400）之上——否则删除撤销 toast 被弹出的模态盖住、6.5s 撤销窗口白流失。 */
-.sb-toast-host { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+/* host 不拦截鼠标（对齐 ui-demo .ws-toasts pointer-events:none）——气泡飘着时底下照点；带按钮的 toast 单独放开 */
+.sb-toast-host { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.sb-toast { pointer-events: auto; }
+.sb-toast-hint { pointer-events: none; } /* 教学气泡无按钮，纯展示、绝不挡操作 */
 .sb-toast {
   position: relative; overflow: hidden;
   display: flex; align-items: center; gap: 10px;
@@ -574,6 +577,9 @@ body.is-sb-collapsed .sb-reopen { display: inline-flex; }
   animation: ws-slide-up var(--dur-slow) var(--ease-spring);
 }
 .sb-toast::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c-ink); }
+/* hint = 快捷键教学气泡（对齐 ui-demo hint tone）：accent 墨蓝色条 + 灯泡，安静不喧宾夺主 */
+.sb-toast-hint::before { background: var(--c-accent); }
+.sb-toast-hint .sb-toast-bulb { display: inline-flex; align-items: center; color: var(--c-accent); flex: none; }
 .sb-toast-action {
   color: var(--c-accent); font-weight: var(--fw-semibold); font-size: var(--fs-md);
   padding: 2px 7px; border-radius: var(--r-pill);
