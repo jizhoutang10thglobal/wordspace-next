@@ -184,6 +184,32 @@ test('UX5: 侧栏宽度可拖拽 + 持久化', async () => {
   expect(saved, '宽度没持久化到 localStorage').toBeGreaterThan(w0 + 40);
 });
 
+// Wendi 2026-07-16：侧栏拖太窄时顶排图标被裁掉「消失」。门=往左怼到极限后宽度夹在 240 下限，
+// 且顶排每个图标钮的几何边界都在侧栏内（坐标断言，不查 class——图标溢出被网页盖掉时 class 照样在）。
+test('侧栏最小宽度 240：拖到最窄顶排图标不被裁切 + 旧存值迁移', async () => {
+  await openWorkspace();
+  const box = await page.locator('#sb-resize').boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 500, box.y + 200, { steps: 5 });
+  await page.mouse.up();
+  const sb = await page.locator('#sidebar').boundingBox();
+  expect(Math.round(sb.width), '拖到极限的宽度不是 240 下限').toBe(240);
+  for (const id of ['sb-toggle', 'nav-back', 'nav-fwd', 'nav-reload', 'nav-history', 'sb-find']) {
+    const b = await page.locator('#' + id).boundingBox();
+    expect(b, `#${id} 拿不到 boundingBox（不可见）`).toBeTruthy();
+    expect(b.x + b.width, `#${id} 超出侧栏右边界被裁切`).toBeLessThanOrEqual(sb.x + sb.width + 0.5);
+    expect(b.x, `#${id} 超出侧栏左边界`).toBeGreaterThanOrEqual(sb.x - 0.5);
+  }
+  // 旧存值迁移：Wendi 老版本可能存着 180 → 重载后夹到 240，不跳回默认 260
+  await page.evaluate(() => localStorage.setItem('ws2-sb-width', '180'));
+  await page.reload();
+  await page.waitForLoadState('domcontentloaded');
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  const w = await page.locator('#sidebar').evaluate((el) => el.getBoundingClientRect().width);
+  expect(Math.round(w), '旧存值 180 没被夹到 240').toBe(240);
+});
+
 test('重复打开同一文件不新增标签', async () => {
   await openWorkspace();
   await page.click('.sb-file[data-rel="a.html"]');
