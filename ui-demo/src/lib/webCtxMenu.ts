@@ -1,6 +1,8 @@
 // 网页右键菜单的纯逻辑 builder（对齐真 app 的 src/lib/web-context-menu.js）。
 // 六分节按序（链接 / 图片 / 选中 / 编辑框 / 导航 / 页面），节内条目无对应上下文时整节不出现；
 // 危险 scheme（javascript:/data:/file:）链接整节不出——只放行 http(s)。
+import { t } from '../i18n'
+
 export type CtxItem = { id: string; label: string; enabled?: boolean } | { sep: true }
 export type CtxInfo = { linkUrl?: string; imgUrl?: string; selection?: string; editable?: boolean }
 export type CtxCtx = { canGoBack: boolean; canGoForward: boolean }
@@ -30,42 +32,42 @@ export function buildWebCtx(info: CtxInfo, ctx: CtxCtx): CtxItem[] {
 
   if (info.linkUrl && isHttp(info.linkUrl)) {
     sections.push([
-      { id: 'open-link', label: '在新标签页打开链接' },
-      { id: 'open-link-bg', label: '在后台标签页打开链接' },
-      { id: 'copy-link', label: '拷贝链接' },
+      { id: 'open-link', label: t('browser.ctxOpenLinkNewTab') },
+      { id: 'open-link-bg', label: t('browser.ctxOpenLinkBgTab') },
+      { id: 'copy-link', label: t('browser.ctxCopyLink') },
     ])
   }
 
   if (info.imgUrl) {
-    const img: CtxItem[] = [{ id: 'copy-image', label: '拷贝图片' }]
-    if (isHttp(info.imgUrl)) img.push({ id: 'copy-image-url', label: '拷贝图片地址' }) // 下载功能已砍(Colin 2026-07-09:不让下载,避免臃肿)
+    const img: CtxItem[] = [{ id: 'copy-image', label: t('browser.ctxCopyImage') }]
+    if (isHttp(info.imgUrl)) img.push({ id: 'copy-image-url', label: t('browser.ctxCopyImageUrl') }) // 下载功能已砍(Colin 2026-07-09:不让下载,避免臃肿)
     sections.push(img)
   }
 
   if (info.selection && info.selection.trim()) {
     sections.push([
-      { id: 'copy-selection', label: '拷贝' },
-      { id: 'search-selection', label: `用 Glass 搜索「${trunc(info.selection)}」` }, // ui-demo 的搜索引擎是虚构的 Glass（不是 Bing，避免误导成"克隆了 Bing"）
+      { id: 'copy-selection', label: t('browser.ctxCopy') },
+      { id: 'search-selection', label: t('browser.ctxSearchSelection', { q: trunc(info.selection) }) }, // ui-demo 的搜索引擎是虚构的 Glass（不是 Bing，避免误导成"克隆了 Bing"）
     ])
   }
 
   if (info.editable) {
     sections.push([
-      { id: 'cut', label: '剪切' },
-      { id: 'copy', label: '拷贝' },
-      { id: 'paste', label: '粘贴' },
-      { id: 'select-all', label: '全选' },
+      { id: 'cut', label: t('browser.ctxCut') },
+      { id: 'copy', label: t('browser.ctxCopy') },
+      { id: 'paste', label: t('browser.ctxPaste') },
+      { id: 'select-all', label: t('browser.ctxSelectAll') },
     ])
   }
 
   sections.push([
-    { id: 'nav-back', label: '返回', enabled: ctx.canGoBack },
-    { id: 'nav-forward', label: '前进', enabled: ctx.canGoForward },
-    { id: 'reload', label: '重新加载' },
+    { id: 'nav-back', label: t('common.back'), enabled: ctx.canGoBack },
+    { id: 'nav-forward', label: t('browser.ctxForward'), enabled: ctx.canGoForward },
+    { id: 'reload', label: t('browser.ctxReload') },
   ])
   sections.push([
-    { id: 'copy-page-url', label: '拷贝页面链接' },
-    { id: 'export-pdf', label: '导出 PDF' },
+    { id: 'copy-page-url', label: t('browser.ctxCopyPageLink') },
+    { id: 'export-pdf', label: t('browser.ctxExportPdf') },
   ])
 
   // 拼成 template：空节丢弃，节间恰一条分隔符。

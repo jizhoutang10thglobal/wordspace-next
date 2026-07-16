@@ -7,7 +7,8 @@ import { chromium } from 'playwright'
 
 const URL = process.argv[2] ?? 'http://localhost:5199/'
 const browser = await chromium.launch()
-const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } })
+// locale 锁 zh-CN:i18n(#223)后 chrome 文案跟随系统语言,断言按中文 title 选钮,别让 CI/无头环境漂到 en
+const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, locale: 'zh-CN' })
 const page = await ctx.newPage()
 let fail = 0
 const ok = (cond, msg) => { if (!cond) { fail++; console.log('FAIL', msg) } else console.log('ok  ', msg) }

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useStore } from './store'
+import { t } from '../i18n'
 import type { Tab } from '../types'
 
 // ---------------------------------------------------------------------------
@@ -51,11 +52,11 @@ function apply(entry: NavEntry) {
   const st = useStore.getState()
   if (entry.kind === 'doc') {
     if (st.getDoc(entry.docId)) st.openDoc(entry.docId)
-    else st.toast('该文档已删除', 'danger')
+    else st.toast(t('sidebar.docDeleted'), 'danger')
   } else {
     const file = st.files.find((f) => f.rootId === entry.rootId && f.path === entry.path)
     if (file) st.openFileTab(file)
-    else st.toast('该文件已移动或删除', 'danger')
+    else st.toast(t('sidebar.fileMovedOrDeleted'), 'danger')
   }
 }
 

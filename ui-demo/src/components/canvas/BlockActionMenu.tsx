@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Type, Heading, Quote, Plus, Copy, Trash2 } from 'lucide-react'
+import { useT } from '../../i18n'
 import type { BlockType } from '../../types'
 
 const COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2']
@@ -27,6 +28,7 @@ export default function BlockActionMenu({
   onColor: (c: string) => void
   onClose: () => void
 }) {
+  const t = useT()
   const atomic = blockType === 'image'
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function BlockActionMenu({
             }}
           >
             <Type size={15} strokeWidth={1.8} />
-            <span>转为正文</span>
+            <span>{t('editor.turnIntoText')}</span>
           </button>
           <button
             className="ws-blockmenu-item"
@@ -71,7 +73,7 @@ export default function BlockActionMenu({
             }}
           >
             <Heading size={15} strokeWidth={1.8} />
-            <span>转为标题</span>
+            <span>{t('editor.turnIntoHeading')}</span>
           </button>
           <button
             className="ws-blockmenu-item"
@@ -82,7 +84,7 @@ export default function BlockActionMenu({
             }}
           >
             <Quote size={15} strokeWidth={1.8} />
-            <span>转为引用</span>
+            <span>{t('editor.turnIntoQuote')}</span>
           </button>
 
           <div className="ws-blockmenu-sep" />
@@ -98,7 +100,7 @@ export default function BlockActionMenu({
         }}
       >
         <Plus size={15} strokeWidth={1.8} />
-        <span>在下方插入</span>
+        <span>{t('editor.insertBelow')}</span>
       </button>
       <button
         className="ws-blockmenu-item"
@@ -109,7 +111,7 @@ export default function BlockActionMenu({
         }}
       >
         <Copy size={15} strokeWidth={1.8} />
-        <span>复制</span>
+        <span>{t('common.copy')}</span>
       </button>
       <button
         className="ws-blockmenu-item ws-blockmenu-danger"
@@ -120,7 +122,7 @@ export default function BlockActionMenu({
         }}
       >
         <Trash2 size={15} strokeWidth={1.8} />
-        <span>删除</span>
+        <span>{t('common.delete')}</span>
       </button>
 
       {!atomic && (

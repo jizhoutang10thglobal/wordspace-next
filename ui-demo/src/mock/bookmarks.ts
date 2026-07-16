@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { t } from '../i18n'
 
 // 收藏夹（mock，无后端，全在 localStorage）。书签 = { url, title, 所属文件夹 }；文件夹分组。
 // 「书签栏」是一个特殊根文件夹(id=BAR),它的书签显示在网页顶部的书签栏上。
@@ -22,8 +23,9 @@ const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 9)}`
 // 固定 seed 时间(避免 SSR/持久化不稳);演示用。
 const T0 = 1_720_000_000_000
 
+// i18n-exempt-start —— 种子书签（文件夹名/条目标题），演示数据不翻。「书签栏」是结构默认名走 t()。
 const seedFolders: BmFolder[] = [
-  { id: BM_BAR, name: '书签栏' },
+  { id: BM_BAR, name: t('browser.folderBar') },
   { id: 'bm-work', name: '工作' },
   { id: 'bm-read', name: '稍后读' },
 ]
@@ -32,6 +34,7 @@ const seedBookmarks: Bookmark[] = [
   { id: 'b2', title: 'FlowDesk', url: 'https://flowdesk.app', folderId: BM_BAR, addedAt: T0 + 1000 },
   { id: 'b3', title: 'Designer News · 行业动态', url: 'https://news.design/today', folderId: 'bm-read', addedAt: T0 + 2000 },
 ]
+// i18n-exempt-end
 
 // ---- Netscape Bookmark File Format ----
 const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -69,7 +72,7 @@ function fromNetscapeHtml(html: string): { folders: BmFolder[]; bookmarks: Bookm
   const seen = new Set<string>()
   const h3s = Array.from(doc.querySelectorAll('h3'))
   for (const h3 of h3s) {
-    const name = (h3.textContent || '文件夹').trim()
+    const name = (h3.textContent || t('browser.folderDefault')).trim()
     const isBar = h3.getAttribute('personal_toolbar_folder') === 'true'
     const folderId = isBar ? BM_BAR : fid()
     if (!isBar) folders.push({ id: folderId, name })
@@ -126,7 +129,7 @@ export const useBookmarks = create<BmState>()(
       removeOne: (id) => set((s) => ({ bookmarks: s.bookmarks.filter((b) => b.id !== id) })),
       isBookmarked: (url) => get().bookmarks.some((b) => b.url === url),
       update: (id, patch) => set((s) => ({ bookmarks: s.bookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)) })),
-      addFolder: (name) => { const id = uid('bmf'); set((s) => ({ folders: [...s.folders, { id, name: name || '新文件夹' }] })); return id },
+      addFolder: (name) => { const id = uid('bmf'); set((s) => ({ folders: [...s.folders, { id, name: name || t('browser.newFolder') }] })); return id },
       renameFolder: (id, name) => set((s) => ({ folders: s.folders.map((f) => (f.id === id ? { ...f, name } : f)) })),
       removeFolder: (id) => { if (id === BM_BAR) return; set((s) => ({ folders: s.folders.filter((f) => f.id !== id), bookmarks: s.bookmarks.filter((b) => b.folderId !== id) })) },
       exportHtml: () => toNetscapeHtml(get().folders, get().bookmarks),

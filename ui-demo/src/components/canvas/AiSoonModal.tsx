@@ -1,5 +1,6 @@
 import { Sparkles, X } from 'lucide-react'
 import { createPortal } from 'react-dom'
+import { useT } from '../../i18n'
 
 /**
  * AI 入口（气泡里的 Ask AI / 斜杠的 /ai）点击后弹出的占位提示。
@@ -9,6 +10,7 @@ import { createPortal } from 'react-dom'
  * 先例：WebContextMenu.tsx。
  */
 export default function AiSoonModal({ onClose }: { onClose: () => void }) {
+  const t = useT()
   return createPortal(
     <div className="ws-aisoon-backdrop" onClick={onClose}>
       <div
@@ -19,7 +21,7 @@ export default function AiSoonModal({ onClose }: { onClose: () => void }) {
       >
         <button
           className="ws-aisoon-x"
-          aria-label="关闭"
+          aria-label={t('common.close')}
           onClick={onClose}
         >
           <X size={16} strokeWidth={1.8} />
@@ -27,12 +29,12 @@ export default function AiSoonModal({ onClose }: { onClose: () => void }) {
         <div className="ws-aisoon-icon">
           <Sparkles size={22} strokeWidth={1.8} />
         </div>
-        <div className="ws-aisoon-title">AI 功能开发中</div>
+        <div className="ws-aisoon-title">{t('editor.aiComingTitle')}</div>
         <div className="ws-aisoon-desc">
-          「让 AI 生成 / 重排这一块」即将上线,敬请期待。
+          {t('editor.aiComingDesc')}
         </div>
         <button className="ws-aisoon-btn" onClick={onClose}>
-          知道了
+          {t('editor.gotIt')}
         </button>
       </div>
     </div>,

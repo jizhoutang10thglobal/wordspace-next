@@ -3,12 +3,14 @@ import { Unlink } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
 import { computeBacklinks, computeDirBacklinks, baseOf } from '../lib/links'
+import { useT } from '../i18n'
 import './CloseConfirmModal.css'
 
 // 删除被引用文档/文件夹的守卫（互链）：有反链时删除前弹确认列出「谁链接到它」。
 // 文件系统删除是即时的（不像 Notion 有 Trash 对象兜底），断链要在删**之前**让用户知道；
 // 真删了也还有删除 toast 的「撤销」窗口可救回（撤销恢复文件 → 链接自然复活）。
 export default function DeleteLinkedModal() {
+  const t = useT()
   const pending = useUI((s) => s.confirmDeleteFile)
   const cancel = useUI((s) => s.cancelDeleteFile)
   const files = useStore((s) => s.files)
@@ -47,7 +49,7 @@ export default function DeleteLinkedModal() {
         className="ws-modal cc-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="删除被引用的文档"
+        aria-label={t('modals.deleteLinkedAria')}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="cc-body">
@@ -55,11 +57,11 @@ export default function DeleteLinkedModal() {
           <div>
             <div className="cc-title">
               {isDir
-                ? `文件夹「${baseOf(pending.path)}」里的文档被 ${referrers.length} 篇外部文档链接`
-                : `「${baseOf(pending.path)}」被 ${referrers.length} 篇文档链接`}
+                ? t('modals.deleteDirLinked', { name: baseOf(pending.path), count: referrers.length })
+                : t('modals.deleteFileLinked', { name: baseOf(pending.path), count: referrers.length })}
             </div>
             <div className="cc-desc">
-              删除后这些文档里指向它的链接会断开（显示为断链，可在链接上重新指向或撤销删除恢复）：
+              {t('modals.deleteLinkedDesc')}
             </div>
             <ul className="cc-reflist">
               {referrers.slice(0, 5).map((r) => (
@@ -67,14 +69,14 @@ export default function DeleteLinkedModal() {
                   {r.doc.title} <span className="cc-refpath">{r.file.path}</span>
                 </li>
               ))}
-              {referrers.length > 5 && <li>… 等 {referrers.length} 篇</li>}
+              {referrers.length > 5 && <li>{t('modals.andMore', { count: referrers.length })}</li>}
             </ul>
           </div>
         </div>
         <div className="ws-modal-foot cc-foot">
           <span className="cc-spacer" />
-          <button className="ws-btn" onClick={cancel}>取消</button>
-          <button className="ws-btn cc-discard" onClick={onDelete}>仍要删除</button>
+          <button className="ws-btn" onClick={cancel}>{t('common.cancel')}</button>
+          <button className="ws-btn cc-discard" onClick={onDelete}>{t('modals.deleteAnyway')}</button>
         </div>
       </div>
     </div>
