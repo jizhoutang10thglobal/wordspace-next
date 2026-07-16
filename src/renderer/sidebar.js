@@ -169,11 +169,13 @@
     const sb = document.getElementById('sidebar');
     if (sb) sb.classList.toggle('sb-on', has || tabState.entries.length > 0);
   }
-  // 把主进程返回的 { root:{id,path,name,missing}, tree:{tree:[…]} } 装进 rootsState（tree 标注 rootId + 默认全收起）。
+  // 把主进程返回的 { root:{id,path,name,missing}, tree:{tree:[…], truncated?, entryCount?} } 装进 rootsState
+  //（tree 标注 rootId + 默认全收起）。truncated（超条目预算的过大根，D3）：不建局部树、转「过大」态。
   function mkRootState(info, treeData) {
-    const tree = treeData && treeData.tree ? annotateTree(treeData.tree, info.id) : null;
+    const truncated = !!(treeData && treeData.truncated);
+    const tree = !truncated && treeData && treeData.tree ? annotateTree(treeData.tree, info.id) : null;
     if (tree) collectDirRels(tree, info.id, collapsed);
-    return { id: info.id, path: info.path, name: info.name, missing: !!info.missing, tree };
+    return { id: info.id, path: info.path, name: info.name, missing: !!info.missing, tree, truncated, entryCount: truncated ? (treeData.entryCount || 0) : 0 };
   }
   function adoptRoot(info, treeData, index) {
     const st = mkRootState(info, treeData);
@@ -221,7 +223,12 @@
     const st = rootOf(rootId);
     if (!st) return; // 加载期间该根被移除/吸收
     st.loading = false;
-    if (data) {
+    if (data && data.truncated) {
+      // 过大根（D3）：主进程超条目预算返回空树 + truncated → 不渲染局部树，转「过大」态
+      //（可见 + 可移除 + watcher no-op）。清掉可能残留的旧树/失联标记。
+      st.truncated = true; st.entryCount = data.entryCount || 0; st.tree = null; st.missing = false;
+    } else if (data) {
+      st.truncated = false;
       st.tree = annotateTree(data.tree, rootId);
       collectDirRels(st.tree, rootId, collapsed);
     } else {
@@ -529,6 +536,11 @@
       renderMissingRoot(root, parent);
       return true;
     }
+    if (root.truncated) {
+      if (q) return false; // 过大根无本地树可筛
+      renderOversizeRoot(root, index, parent);
+      return true;
+    }
     const nodes = root.tree ? (q ? filterTree(root.tree, q) : root.tree) : [];
     if (q && !nodes.length) return false; // 筛选时无命中 → 整节隐藏
     const open = q ? true : !rootClosed.has(root.id); // 筛选时自动展开
@@ -678,6 +690,50 @@
     rmBtn.textContent = '移除';
     rmBtn.onclick = () => removeRootUI(root.id);
     acts.append(relBtn, rmBtn);
+    note.append(msg, acts);
+    parent.append(head, note);
+  }
+
+  // 过大根（D3 止血）：超条目预算的根不渲染局部树（半棵树比没有更误导，且几十万 stat + 巨型 IPC 正是卡死本体）。
+  // 显示「过大」标题行 + 一行提示 + 内联「移除」；根行右键仍可用（移除 / 移到最上面）。复用失联根的降级行样式
+  //（sb-root-miss-*），零新增 CSS。永远可移除是本包的红线（诊断 D4）。
+  function renderOversizeRoot(root, index, parent = treeEl) {
+    const head = document.createElement('div');
+    head.className = 'sb-row sb-root-head sb-root-missing sb-root-oversize';
+    head.dataset.root = root.id;
+    head.dataset.rel = '';
+    head.dataset.depth = -1;
+    head.title = root.path + ' · 过大（暂时无法完整打开）';
+    const ico = document.createElement('span');
+    ico.className = 'sb-ico sb-root-miss-ic';
+    ico.innerHTML = WARN_SVG20;
+    const name = document.createElement('span');
+    name.className = 'sb-name sb-root-name ws-truncate';
+    name.textContent = root.name;
+    const tag = document.createElement('span');
+    tag.className = 'sb-root-miss-tag';
+    tag.textContent = '过大';
+    head.append(ico, name, tag);
+    head.oncontextmenu = (e) => {
+      e.preventDefault();
+      const items = [];
+      if (index > 0) items.push({ label: '移到最上面', run: () => reorderRootTo(root.id, 0) });
+      items.push({ label: '移除（磁盘文件不动）', danger: true, run: () => removeRootUI(root.id) });
+      showContextMenu(e.clientX, e.clientY, items);
+    };
+    const note = document.createElement('div');
+    note.className = 'sb-root-miss-note';
+    const msg = document.createElement('span');
+    msg.className = 'ws-truncate';
+    msg.textContent = '此文件夹包含超过 15 万个项目，Wordspace 暂时无法完整打开——建议移除后选择具体的工作文件夹';
+    msg.title = msg.textContent; // 侧栏窄、ws-truncate 会截断 → 悬停给全文
+    const acts = document.createElement('span');
+    acts.className = 'sb-root-miss-acts';
+    const rmBtn = document.createElement('button');
+    rmBtn.className = 'sb-root-miss-act';
+    rmBtn.textContent = '移除';
+    rmBtn.onclick = () => removeRootUI(root.id);
+    acts.append(rmBtn);
     note.append(msg, acts);
     parent.append(head, note);
   }
@@ -2504,7 +2560,9 @@
   // 再读新树——这样不用在每处建标签时穿 ino，消失文件的 ino 也一定取得到，给「改名/移动→标签跟随」做匹配。
   async function doTreeScan(rootId, dirs) {
     const st = rootOf(rootId);
-    if (!st || st.missing || !st.tree) return;
+    // 过大根（st.truncated）对 watcher 事件 no-op：它没有本地树、也绝不能触发全量重扫（否则高 churn 的大根
+    // 变永动机——诊断 D3/watcher 风暴）。missing/未加载（tree=null）同样跳过。
+    if (!st || st.missing || st.truncated || !st.tree) return;
     // 跨根移动在飞（对抗审查 P2）：跳过 reconcile。跨根移动把文件的 inode 从源根移到目标根——若源根的
     // watcher 事件抢在 doMoveAcross 的 retargetSubtreeAcross 之前跑，reconcile 在源根树里找不到该 inode
     // → 当成「被删」removeEntry，把用户正在编辑/置顶的标签无声清掉（文件其实已好好搬到目标根）。
