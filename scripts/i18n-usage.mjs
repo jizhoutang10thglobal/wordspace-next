@@ -76,8 +76,8 @@ for (const file of walk(SRC)) {
 
 // index.html 的 data-i18n / -title / -ph / -aria 属性值
 const dom = new JSDOM(readFileSync(join(SRC, 'renderer', 'index.html'), 'utf8'));
-for (const el of dom.window.document.querySelectorAll('[data-i18n],[data-i18n-title],[data-i18n-ph],[data-i18n-aria]')) {
-  for (const attr of ['data-i18n', 'data-i18n-title', 'data-i18n-ph', 'data-i18n-aria']) {
+for (const el of dom.window.document.querySelectorAll('[data-i18n],[data-i18n-title],[data-i18n-ph],[data-i18n-aria],[data-i18n-alt]')) {
+  for (const attr of ['data-i18n', 'data-i18n-title', 'data-i18n-ph', 'data-i18n-aria', 'data-i18n-alt']) {
     const key = el.getAttribute(attr);
     if (key && KEY_SHAPE.test(key) && !known.has(key)) missing.push(`index.html(@${attr})  ${key}`);
   }

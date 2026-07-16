@@ -94,7 +94,8 @@ const htmlFile = join(SRC, 'renderer', 'index.html');
 const html = readFileSync(htmlFile, 'utf8');
 const dom = new JSDOM(html);
 const doc = dom.window.document;
-const ATTR_MAP = { title: 'data-i18n-title', placeholder: 'data-i18n-ph', 'aria-label': 'data-i18n-aria' };
+// 承载用户可见文案的属性 → 对应 data-i18n-* 标注。alt 是可见 label(图片说明/无障碍);value 是数据不纳入(避免误报)。
+const ATTR_MAP = { title: 'data-i18n-title', placeholder: 'data-i18n-ph', 'aria-label': 'data-i18n-aria', alt: 'data-i18n-alt' };
 // 文本节点：CJK 且父元素无 data-i18n → 报
 const tw = doc.createTreeWalker(doc.body || doc.documentElement, dom.window.NodeFilter.SHOW_TEXT);
 let n;

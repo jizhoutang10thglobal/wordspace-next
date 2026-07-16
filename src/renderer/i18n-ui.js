@@ -21,6 +21,9 @@
     root.querySelectorAll('[data-i18n-aria]').forEach(function (el) {
       el.setAttribute('aria-label', T(el.getAttribute('data-i18n-aria')));
     });
+    root.querySelectorAll('[data-i18n-alt]').forEach(function (el) {
+      el.setAttribute('alt', T(el.getAttribute('data-i18n-alt')));
+    });
   }
 
   function boot() {

@@ -83,7 +83,8 @@
 
     function visibleItems() {
       const q = query.toLowerCase();
-      return ITEMS.filter(it => !q || itemLabel(it).includes(q) || it.kw.includes(q));
+      // itemLabel 现在可能是英文(如 'Heading 1')——大小写不敏感匹配,否则英文界面按显示名整词搜索失效(对齐 blockedit.filterSlash)。
+      return ITEMS.filter(it => !q || itemLabel(it).toLowerCase().includes(q) || it.kw.includes(q));
     }
 
     function render() {
