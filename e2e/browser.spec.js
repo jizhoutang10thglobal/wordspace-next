@@ -156,6 +156,25 @@ test('⌘T 地址栏开网页：真加载(像素级红底上屏) + 标签行/omn
   expect(await page.locator('#web-header, .web-chrome, .web-bmbar').count()).toBe(0);
 });
 
+test('沉浸收起：侧栏收起 → 网页 view 贴 x=0 全宽（52px COLLAPSED_STRIP 已删 = Wendi 零缝隙）；peek 推让复原', async () => {
+  await launch();
+  await openWebViaModal(base + '/');
+  const key = await activeWebKey();
+  await expect.poll(async () => { const v = await viewInfo(key); return v && v.attached; }, { timeout: 8000 }).toBe(true);
+  await page.click('#sb-toggle'); // 收起
+  await expect(page.locator('#sidebar')).toHaveClass(/is-collapsed/);
+  // 老实现：x=52、width=内容宽-52（给 sb-reopen 留条）→ 这两条必翻红
+  await expect.poll(async () => (await viewInfo(key)).bounds.x, { timeout: 4000 }).toBe(0);
+  const v = await viewInfo(key);
+  expect(v.bounds.width).toBe(v.content.w); // 全宽贴满
+  // peek 推让：__webPeekPush(true) → view 同宽右移一侧栏宽（不 reflow）；false → 复原
+  await page.evaluate(() => window.__webPeekPush(true));
+  await expect.poll(async () => (await viewInfo(key)).bounds.x, { timeout: 4000 }).toBeGreaterThan(150);
+  expect((await viewInfo(key)).bounds.width).toBe(v.bounds.width); // 同宽（右缘出窗被裁，不改网页布局）
+  await page.evaluate(() => window.__webPeekPush(false));
+  await expect.poll(async () => (await viewInfo(key)).bounds.x, { timeout: 4000 }).toBe(0);
+});
+
 test('反 CAPTCHA：webtabs UA 无 Electron/app 标识（主进程 session 门 + 真实请求头强门）', async () => {
   await launch();
   // 主进程门：persist:webtabs session 的 UA 已归一（去 Electron/app 名、留标准 Chrome UA）
