@@ -199,7 +199,14 @@
     if (r.status === 'same') {
       showToast('「' + r.root.name + '」已经打开了');
     } else if (r.status === 'child') {
-      showToast('「' + r.name + '」已经在「' + r.parent.name + '」里了——不会重复打开，去那个文件夹里展开即可');
+      // 父根非正常态（还在加载 / 过大打不开）→「去那个文件夹里展开」是空头支票（诊断 D5：~ 一注册，所有子
+      // 文件夹全被拒、又展不开）。给出口：引导去「管理文件夹」移除父根后再打开这个子文件夹。正常态保持原文案。
+      const pst = rootOf(r.parent.id);
+      if (pst && (pst.loading || pst.truncated)) {
+        showToast('「' + r.name + '」在你打开的「' + r.parent.name + '」里，但「' + r.parent.name + '」还没加载出来 / 过大打不开。可以先在「管理文件夹」里移除它，再打开「' + r.name + '」', '管理文件夹', () => openManageRootsModal());
+      } else {
+        showToast('「' + r.name + '」已经在「' + r.parent.name + '」里了——不会重复打开，去那个文件夹里展开即可');
+      }
     } else if (r.status === 'limit') {
       showToast('最多同时打开 ' + r.max + ' 个文件夹');
     } else if (r.status === 'parent') {
