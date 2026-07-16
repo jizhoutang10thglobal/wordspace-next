@@ -102,13 +102,12 @@
   </div>
 </aside>
 
+<!-- 沉浸收起（Arc 对标）：左缘 6px 隐形热区——hover 滑出悬浮侧栏（peek）。常驻浮钮 sb-reopen
+     已删（Colin 拍板「纯 Arc 式」：零可见 UI，重开=hover peek / Cmd+\）。仅 body.is-sb-collapsed 时显示。 -->
+<div id="sb-edge-hot" class="sb-edge-hot" aria-hidden="true"></div>
+
 <!-- 编辑区（照搬 ui-demo Canvas chrome）。 -->
 <section id="main" class="ws-main-doc">
-  <!-- 侧栏「真收起」（全隐藏）后的悬浮展开入口：钉在编辑区左上角空档（顶栏左内边距 56px 给它留位），
-       仅 body.is-sb-collapsed 时显示。侧栏全隐后 sb-toggle 也没了，靠它 / Cmd+\ 重开。 -->
-  <button id="sb-reopen" class="sb-reopen" title="展开侧栏 ⌘\">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
-  </button>
   <!-- 右上角 ⋯ 菜单（Colin 2026-07-02：三颗外露按钮收进一个三点菜单，像 ui-demo 文档头的 … ）。
        原按钮变菜单项、ID 不变（shell.js 的 disabled 接线与 e2e 选择器沿用）。
        「保存」→「另存为…」（自动保存后保存钮失义；另存为=把当前文档复制存到任意位置）；「导出」→「导出 PDF」。 -->

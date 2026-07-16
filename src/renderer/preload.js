@@ -101,6 +101,12 @@ contextBridge.exposeInMainWorld('ws2', {
   onWebFound: (cb) => ipcRenderer.on('web-found', (_e, r) => cb(r)),
   onWebToast: (cb) => ipcRenderer.on('web-toast', (_e, msg) => cb(msg)),
   onWebShortcut: (cb) => ipcRenderer.on('web-shortcut', (_e, r) => cb(r)),
+
+  // ---- 沉浸窗框（immersive-collapse spec）----
+  platform: process.platform, // renderer 判 is-mac（hiddenInset 红绿灯让位只在 darwin 生效）
+  setWindowButtons: (v) => ipcRenderer.send('ws-window-buttons', !!v),
+  edgeWatch: (on, sbWidth) => ipcRenderer.send('ws-edge-watch', !!on, sbWidth),
+  onEdge: (cb) => ipcRenderer.on('ws-edge', (_e, entering) => cb(!!entering)),
   // 收藏（主进程持久化 + 变更推全量,renderer 内存镜像做逐键补全）
   bmState: () => ipcRenderer.invoke('bm-state'),
   bmAdd: (b) => ipcRenderer.invoke('bm-add', b),

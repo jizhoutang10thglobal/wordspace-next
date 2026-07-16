@@ -2503,19 +2503,58 @@
   // ---- 收起/展开侧栏（真收起 = 全隐藏；Cmd+\ / 头部按钮收，编辑区悬浮按钮 / Cmd+\ 展开）----
   const sidebarEl = document.getElementById('sidebar');
   const toggleBtn = document.getElementById('sb-toggle');
-  const reopenBtn = document.getElementById('sb-reopen');
-  // body.is-sb-collapsed 让编辑区那颗悬浮「展开」按钮现身（侧栏全隐后自己的 toggle 也没了）。
+  const edgeHot = document.getElementById('sb-edge-hot');
+  // 沉浸收起（Arc 对标）：常驻浮钮 sb-reopen 已删（拍板「纯 Arc 式」零可见 UI），重开=左缘 hover peek / Cmd+\。
+  // spec=docs/features/immersive-collapse.md
+  if (window.ws2 && window.ws2.platform === 'darwin') document.body.classList.add('is-mac'); // 红绿灯让位（hiddenInset）
+
+  // peek=完整侧栏悬浮盖在内容上，不推挤布局；进 120ms/出 240ms 缓冲防误触发/闪烁。
+  // 红绿灯随收起藏、peek/展开时现（hiddenInset 下灯浮在内容上，收起不藏=悬空）。
+  let peekTimer = 0;
+  const peekOn = () => document.body.classList.contains('is-sb-peek');
+  function openPeek() {
+    if (!sidebarEl || !sidebarEl.classList.contains('is-collapsed') || peekOn()) return;
+    document.body.classList.add('is-sb-peek');
+    if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true);
+    if (window.__webPeekPush) window.__webPeekPush(true); // web 态：原生 view 同宽右移让出侧栏带（DOM 盖不住它，只能推）
+  }
+  function closePeek(immediate) {
+    if (!peekOn()) return;
+    const done = () => {
+      document.body.classList.remove('is-sb-peek', 'is-sb-peek-out');
+      if (document.body.classList.contains('is-sb-collapsed') && window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(false);
+    };
+    if (immediate) done();
+    else {
+      document.body.classList.add('is-sb-peek-out');
+      setTimeout(done, 340); // --dur-slow 320ms + 余量
+    }
+    if (window.__webPeekPush) window.__webPeekPush(false);
+  }
+  function peekEnter() { clearTimeout(peekTimer); peekTimer = setTimeout(openPeek, 120); }
+  function peekLeave() { clearTimeout(peekTimer); peekTimer = setTimeout(() => closePeek(false), 240); }
+  if (edgeHot) { edgeHot.addEventListener('mouseenter', peekEnter); edgeHot.addEventListener('mouseleave', peekLeave); }
+  if (sidebarEl) {
+    sidebarEl.addEventListener('mouseenter', () => { if (peekOn()) clearTimeout(peekTimer); });
+    sidebarEl.addEventListener('mouseleave', () => { if (peekOn()) peekLeave(); });
+  }
+  // 网页 view 在前台时 DOM 收不到鼠标（原生 view 压着）→ 主进程指针 watcher 代打（ipc.js ws-edge-watch）。
+  if (window.ws2 && window.ws2.onEdge) window.ws2.onEdge((entering) => { if (entering) peekEnter(); else peekLeave(); });
+
   function setSidebarCollapsed(v) {
     if (!sidebarEl) return;
+    closePeek(true); // 状态翻转前清 peek 残留（peek 里点 toggle 展开走这里）
     sidebarEl.classList.toggle('is-collapsed', v);
     document.body.classList.toggle('is-sb-collapsed', v);
+    if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(!v);
+    if (window.__webEdgeWatch) window.__webEdgeWatch(); // browser.js 按 收起×web态 开/关主进程 watcher
     // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
     if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
   }
   function toggleCollapsed() { if (sidebarEl) setSidebarCollapsed(!sidebarEl.classList.contains('is-collapsed')); }
   // 鼠标点按钮 → 顺手教一次快捷键（菜单加速器/keydown 路径直接调 toggleCollapsed，不经这里、不弹）。
+  // （#234 原来还给 sb-reopen 浮钮挂 coach——沉浸收起已删该钮，只剩 toggle 这一条。）
   if (toggleBtn) toggleBtn.onclick = () => { toggleCollapsed(); coachOnce('toggle-sidebar', '下次可以用 ' + kbd('⌘\\') + ' 收起 / 展开侧栏'); };
-  if (reopenBtn) reopenBtn.onclick = () => { setSidebarCollapsed(false); coachOnce('toggle-sidebar', '下次可以用 ' + kbd('⌘\\') + ' 收起 / 展开侧栏'); };
   // ⌘\ 切换侧栏的**主**通道是「视图」菜单加速器（sendMenu('toggle-sidebar') → shell onMenu → __sbHooks.toggleSidebar），
   // 它覆盖全部焦点域——含文档编辑 iframe 内的原失灵域（keydown 不冒泡出 iframe，靠 keydown 兜不住，必须走菜单）。
   // 下面这条主层 document keydown 保留作**主层 fallback**：macOS/Electron 真实按键会被原生菜单先吃掉、这条不触发
