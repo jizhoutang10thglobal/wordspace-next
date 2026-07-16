@@ -142,6 +142,8 @@ function buildMenu() {
         { label: '新建标签页', accelerator: 'CmdOrCtrl+T', click: () => sendMenu('new-tab') },
         { label: '打开文件…', accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
         { label: '打开文件夹…', accelerator: 'CmdOrCtrl+Shift+O', click: () => sendMenu('open-folder') },
+        // 逃生门（诊断 D4）：不依赖侧栏树/根行渲染的「管理/移除文件夹」入口——大根死门时也能移除坏根。
+        { label: '管理文件夹…', click: () => sendMenu('manage-roots') },
         { label: '快速打开…', accelerator: 'CmdOrCtrl+P', click: () => sendMenu('find-palette') },
         { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
         // 浏览器 feature（spec §4.4/§7）：⌘⇧T 重开最近关闭的标签（只记非文档标签,栈容量 15,renderer 管）

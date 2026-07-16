@@ -1319,6 +1319,7 @@ window.ws2.onMenu((cmd) => {
   if (cmd === 'ai-access') openAiAccessModal();
   if (cmd === 'perf-diag' && window.__sbHooks && window.__sbHooks.perfDiag) window.__sbHooks.perfDiag(); // 菜单「性能诊断…」→ 隐藏面板
   if (cmd === 'open-folder' && window.__sbHooks && window.__sbHooks.pickFolder) window.__sbHooks.pickFolder();
+  if (cmd === 'manage-roots' && window.__sbHooks && window.__sbHooks.manageRoots) window.__sbHooks.manageRoots(); // 逃生门（D4）：不依赖树的移除入口
   // 修 SH-5：弹层（SaveModal/关闭确认/命令面板）开着时 Cmd+O 加速器穿透会把活跃文档从弹层底下换走
   // （最坏：SaveModal 点「保存到这里」时 activeTemp 已 null → 静默什么都不存）。有弹层就忽略「打开」。
   if (cmd === 'open' && !document.querySelector('.sb-modal-overlay') && !document.getElementById('fp-overlay')) pickAndOpen();

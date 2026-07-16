@@ -71,3 +71,27 @@ test('prefixUnder：子根相对父根的 rel 前缀（多级用 / 连）', () =
   assert.equal(R.prefixUnder('/Users/me', '/Users/me/Projects/品牌'), 'Projects/品牌');
   assert.equal(R.prefixUnder('/Users/me/Projects', '/Users/me/Projects/品牌'), '品牌');
 });
+
+// U4（P0a）病灶根路径判定：homedir 注入保确定性。
+const HOME = (h) => ({ fold: true, homedir: h });
+test('dangerRootReason：文件系统根 / /Users / 家目录 / 卷根 都判为病灶', () => {
+  assert.equal(R.dangerRootReason('/', HOME('/Users/me')), 'volume');
+  assert.equal(R.dangerRootReason('/Users', HOME('/Users/me')), 'users');
+  assert.equal(R.dangerRootReason('/Users/alice', HOME('/Users/me')), 'home'); // 任何 /Users/<x> = 某人家目录
+  assert.equal(R.dangerRootReason('/Users/me', HOME('/Users/me')), 'home');    // 自己的家目录
+  assert.equal(R.dangerRootReason('/Volumes', HOME('/Users/me')), 'users');
+  assert.equal(R.dangerRootReason('/Volumes/USB móvil', HOME('/Users/me')), 'volume'); // 挂载卷根
+});
+test('dangerRootReason：普通工作文件夹返回 null（不误拦）', () => {
+  assert.equal(R.dangerRootReason('/Users/me/Projects/品牌', HOME('/Users/me')), null);
+  assert.equal(R.dangerRootReason('/Volumes/USB/我的项目', HOME('/Users/me')), null); // 卷里的子文件夹 OK
+  assert.equal(R.dangerRootReason('/Users/me/Desktop/稿子', HOME('/Users/me')), null);
+});
+test('dangerRootReason：fold 下大小写不敏感（mac/win）', () => {
+  assert.equal(R.dangerRootReason('/users', HOME('/Users/me')), 'users');
+  assert.equal(R.dangerRootReason('/USERS/ALICE', HOME('/Users/me')), 'home');
+});
+test('dangerRootReason：opts.extra 测试 seam 追加病灶路径（e2e 用 tmp 目录）', () => {
+  assert.equal(R.dangerRootReason('/tmp/fake-home', { fold: true, homedir: '/Users/nobody', extra: ['/tmp/fake-home'] }), 'huge');
+  assert.equal(R.dangerRootReason('/tmp/other', { fold: true, homedir: '/Users/nobody', extra: ['/tmp/fake-home'] }), null);
+});
