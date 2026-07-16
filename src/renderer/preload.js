@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('ws2', {
   updateCheck: () => ipcRenderer.invoke('update-check'),
   updateDownload: () => ipcRenderer.invoke('update-download'),
   updateInstall: () => ipcRenderer.invoke('update-install'),
+  updateOpenChangelog: () => ipcRenderer.invoke('update-open-changelog'), // 更新日志页 → app 内网页标签
   onUpdateStatus: (cb) => ipcRenderer.on('update-status', (_e, payload) => cb(payload)),
   diagRecordProfile: (ms) => ipcRenderer.invoke('diag-record-profile', ms), // 诊断面板：录 N 毫秒 CPU profile 存桌面
   saveDoc: (p, c) => ipcRenderer.invoke('save-doc', p, c),

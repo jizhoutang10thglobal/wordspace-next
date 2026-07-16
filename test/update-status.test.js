@@ -121,7 +121,7 @@ test('panelModel：各状态的标题/按钮语义', () => {
   const avail = step([{ type: 'checking', manual: true }, { type: 'available', version: '1.2.3' }]);
   const m = U.panelModel(avail, '1.0.0');
   assert.strictEqual(m.title, '发现新版本 v1.2.3');
-  assert.deepStrictEqual(m.buttons.map((b) => b.id), ['download', 'close']);
+  assert.deepStrictEqual(m.buttons.map((b) => b.id), ['download', 'changelog', 'close']); // 更新日志入口常驻
   assert.ok(m.body.length >= 1); // notes 为空时有兜底文案
 
   const dl = U.nextStatus(avail, { type: 'download-started' });
@@ -136,12 +136,13 @@ test('panelModel：各状态的标题/按钮语义', () => {
   assert.strictEqual(noProg.progress.detail, '正在开始下载…');
 
   const ready = U.panelModel(U.nextStatus(withProg, { type: 'downloaded' }), '1.0.0');
-  assert.deepStrictEqual(ready.buttons.map((b) => b.id), ['install', 'close']);
+  assert.deepStrictEqual(ready.buttons.map((b) => b.id), ['install', 'changelog', 'close']);
 
   const err = U.panelModel(U.nextStatus(withProg, { type: 'error', message: 'x' }), '1.0.0');
   assert.strictEqual(err.buttons[0].id, 'download'); // 下载中失败 → 重试=再下载
 
   const upt = U.panelModel(step([{ type: 'checking', manual: true }, { type: 'not-available' }]), '1.0.0');
   assert.ok(upt.body[0].text.includes('v1.0.0'));
+  assert.deepStrictEqual(upt.buttons.map((b) => b.id), ['changelog', 'close']); // 已最新 → 「最近更新了什么」
   assert.strictEqual(U.panelModel(U.initialStatus(), '1.0.0'), null);
 });

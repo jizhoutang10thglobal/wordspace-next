@@ -148,6 +148,7 @@ function panelModel(status, currentVersion) {
         body,
         buttons: [
           { id: 'download', label: '下载并安装', primary: true },
+          { id: 'changelog', label: '更新日志', title: '在 wordspace.ai 查看历史版本更新说明' },
           { id: 'close', label: '以后再说' },
         ],
       };
@@ -172,6 +173,7 @@ function panelModel(status, currentVersion) {
         body: [{ t: 'p', text: (v || '新版本') + ' 已下载完成，重启后生效。' }],
         buttons: [
           { id: 'install', label: '立即重启安装', primary: true },
+          { id: 'changelog', label: '更新日志' },
           { id: 'close', label: '稍后（退出时自动安装）' },
         ],
       };
@@ -180,7 +182,10 @@ function panelModel(status, currentVersion) {
         state: 'uptodate',
         title: '检查更新',
         body: [{ t: 'p', text: '已是最新版本' + (currentVersion ? '（当前 v' + currentVersion + '）' : '') + '。' }],
-        buttons: [{ id: 'close', label: '好' }],
+        buttons: [
+          { id: 'changelog', label: '最近更新了什么' },
+          { id: 'close', label: '好' },
+        ],
       };
     case 'error':
       return {
