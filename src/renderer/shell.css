@@ -291,8 +291,10 @@ ul { list-style: none; }
   -webkit-app-region: drag;
 }
 .sb-head button { -webkit-app-region: no-drag; } /* 控件从拖拽区挖掉，点击不被吞 */
-/* darwin：红绿灯叠在窗口左上（trafficLightPosition x14/y14，占位到 ~76px），侧栏头让位 */
-body.is-mac .sb-head { padding-left: 84px; }
+/* darwin：红绿灯叠在窗口左上（trafficLightPosition x14/y14，占位到 ~70px），侧栏头让位。
+   同时压缩排布（gap 8→2、右 padding 8→6，照 ui-demo arc-top 紧凑口径）——否则 76px 让位 + 六颗
+   28px 钮溢出默认 260px 侧栏，最右的 #sb-find 会被编辑区 iframe 盖住吞点击（e2e T7 实翻）。 */
+body.is-mac .sb-head { padding: 0 6px 0 76px; gap: 2px; }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
 /* 图标钮 = 墨圆 + hover 墨条滑入（对齐 ui-demo .arc-ico） */
 .sb-icobtn {
