@@ -763,7 +763,13 @@
   //（sb-root-miss-*），零新增 CSS。永远可移除是本包的红线（诊断 D4）。
   function renderOversizeRoot(root, index, parent = treeEl) {
     const head = document.createElement('div');
-    head.className = 'sb-row sb-root-head sb-root-missing sb-root-oversize';
+    // 不复用 sb-root-missing 类（避免与「失联」态在 `:not(.sb-root-missing)` / `.sb-root-missing` 选择器里
+    // 混淆）；degraded 观感用内联样式镜像失联行（CSP 安全，不动 shell.css）。note/tag/icon 仍复用 miss-* 类。
+    head.className = 'sb-row sb-root-head sb-root-oversize';
+    head.style.background = 'var(--c-bg-sunken)';
+    head.style.border = '1px dashed var(--c-border-strong)';
+    head.style.color = 'var(--c-text-3)';
+    head.style.cursor = 'default';
     head.dataset.root = root.id;
     head.dataset.rel = '';
     head.dataset.depth = -1;
