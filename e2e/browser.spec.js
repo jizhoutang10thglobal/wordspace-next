@@ -60,7 +60,7 @@ async function launch(extraEnv = {}) {
   tmpDir = tmpDir || (await fs.mkdtemp(path.join(os.tmpdir(), 'ws2web-')));
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_CTXMENU_PROBE: '1', ...extraEnv },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_CTXMENU_PROBE: '1', ...extraEnv },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');

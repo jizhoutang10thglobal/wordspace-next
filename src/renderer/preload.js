@@ -52,6 +52,13 @@ contextBridge.exposeInMainWorld('ws2', {
   setAppearance: (pref) => ipcRenderer.send('set-appearance', pref),
   onAppearanceChanged: (cb) => ipcRenderer.on('appearance-changed', (_e, payload) => cb(payload)),
 
+  // 语言三态：偏好归 main 管（唯一真相源，驱动菜单/对话框/renderer 显示语言）；renderer 查/设/听。
+  // 字典本体经 i18nBoot() 一次性注入（U4），renderer 用全局 window.wsT 翻译、不逐次跨桥。
+  getLanguage: () => ipcRenderer.invoke('get-language'),
+  getEffectiveLang: () => ipcRenderer.invoke('get-effective-lang'),
+  setLanguage: (pref) => ipcRenderer.send('set-language', pref),
+  onLanguageChanged: (cb) => ipcRenderer.on('language-changed', (_e, payload) => cb(payload)),
+
   // 本地文件夹工作区 (F06 → 多根)：文件操作一律 (rootId, relPath)，renderer 只用 rootId 引用根、不发路径。
   wsAddFolder: () => ipcRenderer.invoke('ws-add-folder'),
   wsAbsorbConfirm: (token) => ipcRenderer.invoke('ws-absorb-confirm', token),

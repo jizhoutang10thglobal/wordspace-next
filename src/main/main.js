@@ -6,6 +6,9 @@ const docWatcher = require('./doc-watcher');
 const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
 const webPolicy = require('../lib/web-tabs-policy');
+const i18n = require('../lib/i18n');
+const { ZH, EN } = require('../i18n');
+const languageStore = require('./language-store');
 
 // e2e 测试用：隔离 userData，避免污染真实的最近文档与历史。
 // 修 MP-8：加 !app.isPackaged 闸（对齐 WS2_PDF_OUT 等全部 seam 惯例，这条原来漏了）——
@@ -124,6 +127,30 @@ function applyAppearance(pref) {
   nativeTheme.themeSource = p; // 'system' | 'light' | 'dark'
   buildMenu(); // 重建以更新「外观」radio 勾选
   broadcastAppearance(p);
+  return p;
+}
+
+// 语言三态枢纽（照 appearance 先例；关键差异：系统语言无 nativeTheme.on('updated') 那样的 live 事件，
+// app.getLocale() 只在启动读一次，故「跟随系统」改系统语言要重启 app 才生效——不建对应监听）。
+// WS2_LANG seam（仅非打包态，照 WS2_USERDATA 等惯例的 !app.isPackaged 闸）：强制偏好，优先于持久化与
+// app.getLocale()，给 e2e 锁定语言用（生产包继承到该变量不会劫持用户语言）。
+function langPref() {
+  if (!app.isPackaged && process.env.WS2_LANG) return i18n.normalizeLangPref(process.env.WS2_LANG);
+  return languageStore.getPref();
+}
+function effectiveLangNow() {
+  return i18n.effectiveLang(langPref(), app.getLocale());
+}
+function broadcastLanguage() {
+  if (win && !win.isDestroyed()) win.webContents.send('language-changed', { pref: langPref(), lang: effectiveLangNow() });
+}
+// 用户切语言：持久化 + 更新 imperative t 当前语言 + 重建菜单（label 随语言变，U3 起）+ 广播 renderer。
+// renderer 侧收到广播后弹「重新加载以应用语言」——静态外壳(index.html/工具条)建一次不重建，整窗 reload 最省（见 plan 决策1）。
+function applyLanguage(pref) {
+  const p = languageStore.setPref(pref);
+  i18n.setActiveLang(effectiveLangNow());
+  buildMenu();
+  broadcastLanguage();
   return p;
 }
 
@@ -336,6 +363,14 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('set-appearance', (_e, pref) => applyAppearance(pref));
     // OS 主题变化（pref=system 时 shouldUseDarkColors 翻转）→ 重播 effective，让 renderer 实时跟随。
     nativeTheme.on('updated', () => broadcastAppearance(appearanceStore.getPref()));
+    // 语言:启动读偏好 + 装字典 + 设 imperative t 当前语言(在 buildMenu/createWindow 前，让首个窗口首帧就对)。
+    // 无「OS 语言变化」监听——app.getLocale 只启动读一次，跟随系统改语言要重启(平台限制,plan 决策1)。
+    languageStore.init(app.getPath('userData'));
+    i18n.configureI18n(ZH, EN);
+    i18n.setActiveLang(effectiveLangNow());
+    ipcMain.handle('get-language', () => langPref());
+    ipcMain.handle('get-effective-lang', () => effectiveLangNow());
+    ipcMain.on('set-language', (_e, pref) => applyLanguage(pref));
     registerIpc();
     buildMenu();
     createWindow();
