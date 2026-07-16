@@ -900,14 +900,16 @@ function registerIpc() {
     const width = Math.max(120, Number(sbWidth) || 274);
     let inPeek = false;
     edgeTimer = setInterval(() => {
-      if (w.isDestroyed()) { clearInterval(edgeTimer); edgeTimer = null; return; }
-      if (!w.isFocused()) return;
-      const p = screen.getCursorScreenPoint();
-      const b = w.getContentBounds();
-      const inWin = p.y >= b.y && p.y <= b.y + b.height;
-      const relX = p.x - b.x;
-      if (!inPeek && inWin && relX >= 0 && relX <= 3) { inPeek = true; e.sender.send('ws-edge', true); }
-      else if (inPeek && (!inWin || relX > width + 16)) { inPeek = false; e.sender.send('ws-edge', false); }
+      try {
+        if (w.isDestroyed()) { clearInterval(edgeTimer); edgeTimer = null; return; }
+        if (!w.isFocused()) return;
+        const p = screen.getCursorScreenPoint();
+        const b = w.getContentBounds();
+        const inWin = p.y >= b.y && p.y <= b.y + b.height;
+        const relX = p.x - b.x;
+        if (!inPeek && inWin && relX >= 0 && relX <= 3) { inPeek = true; e.sender.send('ws-edge', true); }
+        else if (inPeek && (!inWin || relX > width + 16)) { inPeek = false; e.sender.send('ws-edge', false); }
+      } catch { /* 平台指针查询偶发抛(xvfb/无显示器) —— watcher 静默跳拍,别把主进程带崩 */ }
     }, 90);
   });
 
