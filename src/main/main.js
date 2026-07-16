@@ -63,7 +63,8 @@ function createWindow() {
     if (forceClose) return;
     // macOS 关窗=隐藏驻留（Wendi 2026-07-03「关掉前台、后台开着」）：红叉 / Cmd+W 空态都走这——
     // 窗口藏起来、进程留在 Dock，点 Dock / 双击文件秒恢复（标签/未保存临时文档/滚动位置全保留）。
-    // 只有真退出（Cmd+Q → before-quit 先行、自动更新 quitAndInstall 同）才继续往下销毁 + 未保存守卫。
+    // 只有真退出（Cmd+Q → before-quit 先行；自动更新 quitAndInstall → before-quit-for-update 先行）
+    // 才继续往下销毁 + 未保存守卫。
     // Windows/Linux 不驻留：按平台惯例关窗即退（走下面守卫 → window-all-closed → quit）。
     if (process.platform === 'darwin' && !quitting) {
       e.preventDefault();
@@ -216,9 +217,12 @@ function setupAutoUpdater() {
     if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.download++; return; }
     pushUpdateEvent({ type: 'download-started' }); // shouldStartDownload 判真 → 真正开下载
   });
-  ipcMain.handle('update-install', () => {
+  ipcMain.handle('update-install', async () => {
     if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.install++; return; }
-    if (autoUpdater) { if (updLog) updLog.info('user chose quitAndInstall'); autoUpdater.quitAndInstall(); }
+    if (!autoUpdater) return;
+    await maybeRepairBundleOwnership(); // 免密修复（一次性）：失败/跳过都不拦安装，最坏回到 ShipIt 提权老路径
+    if (updLog) updLog.info('user chose quitAndInstall');
+    autoUpdater.quitAndInstall();
   });
 
   if (!app.isPackaged) {
@@ -260,6 +264,51 @@ function manualCheckForUpdates() {
   }
   pushUpdateEvent({ type: 'checking', manual: true });
   autoUpdater.checkForUpdates().catch((e) => pushUpdateEvent({ type: 'error', message: e && e.message }));
+}
+
+// 更新免密的一次性修复（仅 mac）。病根（2026-07-16 Colin 机器实锤）：bundle 被某次提权安装写成
+// root:wheel 后，Squirrel ShipIt 每次替换都要管理员授权（密码/指纹），且提权装出的新 bundle 又是
+// root 的 → 每次更新都要密码。这里在 quitAndInstall 前检测 bundle 可写性：不可写 → 解释 + 请求授权
+// 一次，chown 回当前用户 → 此后 ShipIt 恢复无提权替换，更新免密。用户跳过/修复失败都不拦安装
+// （落回 ShipIt 自己的提权弹窗，不比现状差）。全程记 updater.log。
+async function maybeRepairBundleOwnership() {
+  if (process.platform !== 'darwin') return;
+  try {
+    const fs = require('fs');
+    const repair = require('../lib/mac-bundle-repair');
+    const bundle = repair.bundlePathFromExe(app.getPath('exe'));
+    if (!bundle) return;
+    try {
+      // bundle 根 + Contents 都可写才算健康（ShipIt 替换要动整棵树；root:wheel 755 下两者都不可写）
+      await fs.promises.access(bundle, fs.constants.W_OK);
+      await fs.promises.access(path.join(bundle, 'Contents'), fs.constants.W_OK);
+      return;
+    } catch {}
+    if (updLog) updLog.warn('bundle not writable by current user, offering one-time ownership repair: ' + bundle);
+    if (win && !win.isDestroyed() && !win.isVisible()) win.show(); // 隐藏驻留中弹 sheet 会隐形（同脏守卫的教训）
+    const r = await dialog.showMessageBox(win, {
+      type: 'info',
+      buttons: ['修复并继续安装', '跳过（本次仍需输密码）'],
+      defaultId: 0,
+      cancelId: 1,
+      message: '一次性修复：以后更新不再要密码',
+      detail: '此前某次更新以管理员身份完成，应用文件被标成了系统所有——这就是每次更新都要输密码的原因。'
+        + '现在授权修复一次（把应用归属改回你），以后更新就不再需要密码。',
+    });
+    if (r.response !== 0) { if (updLog) updLog.info('ownership repair skipped by user'); return; }
+    await new Promise((resolve) => {
+      const { execFile } = require('child_process');
+      execFile('osascript', repair.buildRepairArgs(process.getuid(), bundle), { timeout: 120000 }, (err, _out, stderr) => {
+        if (updLog) {
+          if (err) updLog.warn('ownership repair failed: ' + ((stderr || '').trim() || err.message)); // 用户取消授权也走这
+          else updLog.info('ownership repair succeeded: ' + bundle);
+        }
+        resolve(); // 成败都继续安装
+      });
+    });
+  } catch (e) {
+    if (updLog) updLog.warn('ownership repair error: ' + (e && e.message));
+  }
 }
 
 // 把外部请求打开的文件路径送进窗口：已就绪则发并聚焦，未就绪则挂起等 did-finish-load。
@@ -354,9 +403,15 @@ if (!app.requestSingleInstanceLock()) {
     // push 队列——让 seam 也过 scheme 白名单，e2e 才能验「file:// 不开标签」这道门。
     if (!app.isPackaged && process.env.WS2_OPEN_URL) openExternalUrlFromOS(process.env.WS2_OPEN_URL);
   });
-  // 真退出的第一信号（Cmd+Q / autoUpdater.quitAndInstall 内部 quit 都会先发 before-quit）：
-  // 打上标志，close 守卫据此放行销毁而不是隐藏。
+  // 真退出的第一信号：打上标志，close 守卫据此放行销毁而不是隐藏。两个事件都要接——
+  // Cmd+Q 走 before-quit；autoUpdater.quitAndInstall() **不走 before-quit**，它发专用的
+  // before-quit-for-update 再逐窗 close、全关后才 app.quit()（electron.d.ts + 实测）。
+  // ⚠ 血教训（2026-07-16）：此前只接 before-quit 并注释称"quitAndInstall 也会先发 before-quit"——
+  // 假的。结果 quitAndInstall 的关窗被 darwin 隐藏驻留守卫 preventDefault 吞掉：窗口只是藏起来、
+  // app 不退、安装永远等不到 window-all-closed →「点了重启没反应」（updater.log 2026-07-15 四连击实锤，
+  // 所谓"成功"的几次全是用户手动 Cmd+Q 救的）。
   app.on('before-quit', () => { quitting = true; });
+  app.on('before-quit-for-update', () => { quitting = true; });
   // macOS：隐藏驻留中点 Dock 图标 → 把窗口带回来（标准 mac 行为）。
   app.on('activate', () => focusWindow());
   app.on('window-all-closed', () => app.quit());
