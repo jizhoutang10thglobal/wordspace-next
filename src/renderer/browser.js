@@ -1047,6 +1047,7 @@
     const ctl = document.createElement('span');
     ctl.className = 'wp-set-ctl';
     const sel = document.createElement('select');
+    sel.id = 'wp-engine-select'; // i18n 加了语言 select 后,设置页有 3 个 select——给引擎 select 显式 id,e2e 精确定位(不再靠 :not 排除)
     for (const eng of (settings.engines || [])) {
       const opt = document.createElement('option');
       opt.value = eng.key;
