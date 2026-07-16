@@ -2729,12 +2729,87 @@
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) { e.preventDefault(); tabByIndex(+e.key); }
   });
 
+  // 「管理文件夹…」逃生门（诊断 D4）：唯一的移除入口原本与根行渲染强耦合——根行没渲染出来（D2 死门）
+  // 就没有任何移除路径。这个菜单栏入口**只依赖注册表 IPC（wsGetRoots/wsRemoveRoot），不依赖 rootsState/树**，
+  // 是 D2 修复万一失效时的兜底。复用现有 sb-modal 壳 + modalHead/modalBody；列表行用内联样式（CSP 安全，
+  // 不动 shell.css）。移除走 removeRootUI（顺带清标签 + 撤销 toast），移除后重拉列表。
+  async function openManageRootsModal() {
+    if (document.querySelector('.sb-modal-overlay')) return; // 单例守卫（同其它弹层）
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay';
+    overlay.id = 'manage-roots-overlay';
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    const modal = document.createElement('div');
+    modal.className = 'sb-modal';
+    modal.append(
+      modalHead('管理文件夹', '移除只是从 Wordspace 里关掉，磁盘上的文件不受影响。', close),
+    );
+    const body = modalBody();
+    const list = document.createElement('div');
+    list.id = 'manage-roots-list';
+    body.appendChild(list);
+    modal.appendChild(body);
+    overlay.appendChild(modal);
+    wireOverlayClose(overlay, close);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    async function renderList() {
+      let infos = [];
+      try { infos = await window.ws2.wsGetRoots(); } catch (e) { infos = []; }
+      list.innerHTML = '';
+      if (!infos.length) {
+        const empty = document.createElement('div');
+        empty.className = 'sb-tree-empty';
+        empty.textContent = '没有打开的文件夹';
+        list.appendChild(empty);
+        return;
+      }
+      for (const info of infos) {
+        const row = document.createElement('div');
+        row.className = 'mr-row';
+        row.dataset.root = info.id;
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.gap = '10px';
+        row.style.padding = '8px 2px';
+        row.style.borderBottom = '1px solid var(--c-divider)';
+        const col = document.createElement('div');
+        col.style.flex = '1';
+        col.style.minWidth = '0';
+        const nm = document.createElement('div');
+        nm.className = 'mr-name ws-truncate';
+        nm.style.fontWeight = 'var(--fw-semibold)';
+        nm.textContent = info.name + (info.missing ? '（失联）' : '');
+        const pth = document.createElement('div');
+        pth.className = 'ws-truncate';
+        pth.style.fontSize = 'var(--fs-sm)';
+        pth.style.color = 'var(--c-text-3)';
+        pth.textContent = info.path;
+        pth.title = info.path;
+        col.append(nm, pth);
+        const rm = document.createElement('button');
+        rm.className = 'sb-btn sb-btn-danger mr-remove';
+        rm.dataset.root = info.id;
+        rm.textContent = '移除';
+        rm.onclick = async () => {
+          await removeRootUI(info.id); // 复用：wsRemoveRoot + rootsState/标签清理 + 可撤销 toast
+          await renderList(); // 移除后重拉（不依赖 rootsState 事件）
+        };
+        row.append(col, rm);
+        list.appendChild(row);
+      }
+    }
+    await renderList();
+  }
+
   window.__sbHooks = {
     // shell 脏态变化 → 同步活跃真文件标签的未保存点（T2 arc-tab-dot；临时文档的点常显、不经这里）
     onDirtyChange: (d) => {
       document.querySelectorAll('.sb-tab.is-active:not(.sb-tab-temp):not(.sb-tab-web) .sb-tab-dot').forEach((el) => { el.hidden = !d; });
     },
     pickFolder: () => pickFolder(), // ⋯ 菜单/菜单栏「打开文件夹…」= 添加根（单文件模式也要有开工作区的入口）
+    manageRoots: () => openManageRootsModal(), // 菜单栏「管理文件夹…」= 不依赖树/rootsState 的逃生门（D4 兜底）
     onOpen: async (abs) => {
       // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc
