@@ -35,15 +35,26 @@
     }
   }
 
+  let cardRefs = null; // 增量渲染缓存：{sig, title, bodyLines, bar, fill, detail}——同构模型只原地改值
+
   function closePanel() {
     if (overlay) overlay.remove();
     overlay = null;
+    cardRefs = null;
     panelOpen = false;
   }
 
   function openPanel() {
     panelOpen = true;
     renderPanel();
+  }
+
+  // 面板结构签名：state + 按钮 + body 行类型 + 有无进度/spinner。签名相同 = 只有文本/进度值在变。
+  function modelSig(model) {
+    return model.state
+      + '|' + (model.buttons || []).map((b) => b.id + ':' + b.label + (b.primary ? '*' : '')).join(',')
+      + '|' + (model.body || []).map((l) => l.t).join(',')
+      + '|' + (model.progress ? 'p' : '') + (model.spinner ? 's' : '');
   }
 
   function renderPanel() {
@@ -59,6 +70,22 @@
       overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) closePanel(); });
       overlay.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); closePanel(); } });
       document.body.appendChild(overlay);
+    }
+    // 增量路径：结构没变（下载进度这类每 ~200ms 一次的推送）只原地改文本/宽度——整卡拆重建 + 每次
+    // 重抢焦点就是「进度框不停闪」的病根（Wendi 2026-07-16）。不拆卡、不动焦点。
+    const sig = modelSig(model);
+    if (cardRefs && cardRefs.sig === sig) {
+      cardRefs.title.textContent = model.title;
+      (model.body || []).forEach((line, i) => {
+        if (cardRefs.bodyLines[i]) cardRefs.bodyLines[i].textContent = line.text;
+      });
+      if (model.progress && cardRefs.fill) {
+        const pct = model.progress.percent;
+        cardRefs.bar.classList.toggle('is-indet', pct == null);
+        if (pct != null) cardRefs.fill.style.width = pct + '%';
+        cardRefs.detail.textContent = (pct != null ? pct + '% · ' : '') + model.progress.detail;
+      }
+      return;
     }
     overlay.textContent = '';
     const card = document.createElement('div');
@@ -89,24 +116,27 @@
       sp.className = 'up-spinner';
       body.appendChild(sp);
     }
+    const bodyLines = [];
     for (const line of model.body || []) {
       const el = document.createElement('div');
       el.className = 'up-line up-line-' + line.t;
       el.textContent = line.text;
       body.appendChild(el);
+      bodyLines.push(el);
     }
+    let bar = null, fill = null, detail = null;
     if (model.progress) {
       const prog = document.createElement('div');
       prog.className = 'up-prog';
-      const bar = document.createElement('div');
+      bar = document.createElement('div');
       bar.className = 'up-prog-bar' + (model.progress.percent == null ? ' is-indet' : '');
-      const fill = document.createElement('div');
+      fill = document.createElement('div');
       fill.className = 'up-prog-fill';
       fill.id = 'up-prog-fill';
       if (model.progress.percent != null) fill.style.width = model.progress.percent + '%';
       bar.appendChild(fill);
       prog.appendChild(bar);
-      const detail = document.createElement('div');
+      detail = document.createElement('div');
       detail.className = 'up-prog-detail';
       detail.textContent = (model.progress.percent != null ? model.progress.percent + '% · ' : '') + model.progress.detail;
       prog.appendChild(detail);
@@ -128,6 +158,8 @@
       card.appendChild(foot);
     }
     overlay.appendChild(card);
+    cardRefs = { sig, title, bodyLines, bar, fill, detail };
+    // 焦点只在结构重建（状态跃迁）时给一次——增量路径绝不抢焦点（每 200ms 抢一次也是闪烁源之一）
     const primary = card.querySelector('.up-btn-primary') || card.querySelector('.up-btn');
     if (primary) primary.focus();
   }

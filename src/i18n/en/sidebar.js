@@ -10,6 +10,8 @@ module.exports = {
   // ---- add folder / root management toasts ----
   folderAlreadyOpen: '“{name}” is already open',
   folderIsChild: '“{name}” is already inside “{parent}” — it won’t be opened again; just expand it there',
+  folderChildParentStuck: '“{name}” is inside “{parent}”, but “{parent}” couldn’t be fully opened — remove it in Manage Folders, then open “{name}” on its own',
+  folderStateChangedRetry: 'The folder state changed — please try again',
   folderLimit: 'You can have at most {max} folders open at once',
   reconnected: '“{name}” reconnected',
   folderOpened: 'Opened folder “{name}”',
@@ -44,6 +46,29 @@ module.exports = {
   missingNote: 'Folder unreachable (it may have been moved or deleted, or its drive isn’t connected)',
   relocate: 'Relocate',
   relocateOverlap: 'That location overlaps a folder that’s already open — pick another',
+
+  // ---- oversized-path confirm modal (picked a whole home dir / disk / volume root) ----
+  hugeTitle: '“{name}” is a very large system folder',
+  hugeDesc: 'You picked an entire home directory / disk, which usually holds hundreds of thousands of system files and will be very slow to open. Pick a specific work folder inside it instead (for example a project folder or “Documents”).',
+  hugePickAnother: 'Pick another folder',
+  hugeOpenAnyway: 'Open anyway',
+
+  // ---- oversized root degraded row (over the item budget, can’t open fully) ----
+  oversizeHeadTitle: '{path} · Too large (can’t fully open for now)',
+  oversizeTag: 'Too large',
+  oversizeNote: 'This folder holds over 150,000 items and Wordspace can’t fully open it for now — remove it and pick a specific work folder instead',
+
+  // ---- escape hatch: manage-folders modal ----
+  manageRootsTitle: 'Manage Folders',
+  manageRootsDesc: 'Removing only closes it in Wordspace; the files on disk are untouched.',
+  noOpenFolders: 'No open folders',
+  missingSuffix: ' (disconnected)',
+
+  // ---- keyboard-shortcut coach bubbles (taught once after the first mouse action) ----
+  coachReload: 'Next time you can use {key} to reload',
+  coachNewTab: 'Next time you can use {key} to open a new tab',
+  coachCloseTab: 'Next time you can use {key} to close the current tab',
+  coachToggleSidebar: 'Next time you can use {key} to collapse / expand the sidebar',
 
   // ---- rename / move / link rewriting ----
   renameFailed: 'Rename failed: {err}',
@@ -102,14 +127,14 @@ module.exports = {
   unsavedDotTemp: 'Unsaved (not saved to a folder yet)',
   unsavedDot: 'Unsaved changes',
   removePin: 'Remove from pinned',
-  closeTab: 'Close tab (Cmd+W)',
+  closeTab: 'Close tab ⌘W',
   rootMissingOpen: '“{name}” is disconnected — relocate it before opening',
 
   // ---- pinned / tabs zones ----
   pinnedZone: 'Pinned',
   pinnedEmptyHint: 'Drag tabs here to pin them',
   tabsZone: 'Tabs',
-  newTabTitle: 'New tab (Cmd+T)',
+  newTabTitle: 'New tab ⌘T',
   tabsEmptyHint: 'No open tabs',
 
   // ---- new document / tab modal ----
@@ -149,12 +174,12 @@ module.exports = {
   diagRecordFailedPkg: 'Recording failed (only works in a packaged build)',
   diagHint: 'Scroll/switch to reproduce jank and watch “long tasks” climb live · refreshes every 1s',
   resizeHint: 'Drag to resize the sidebar',
-  toggleSidebarTitle: 'Collapse/expand sidebar (Cmd+\\)',
+  toggleSidebarTitle: 'Collapse sidebar ⌘\\',
   navBack: 'Back',
   navForward: 'Forward',
-  reloadTitle: 'Reload (Cmd+R)',
-  findFileTitle: 'Find file (Cmd+P)',
-  addBookmarkTitle: 'Bookmark (Cmd+D)',
+  reloadTitle: 'Reload ⌘R',
+  findFileTitle: 'Find file ⌘P',
+  addBookmarkTitle: 'Bookmark ⌘D',
   favorites: 'Bookmarks',
   manageBookmarks: 'Manage bookmarks',
   filesLabel: 'Files',
@@ -163,5 +188,5 @@ module.exports = {
   emptyNote: 'Open a local folder to use it as your workspace',
   emptyOpenBtn: 'Open folder',
   aiAccessTitle: 'AI access',
-  expandSidebarTitle: 'Expand sidebar (Cmd+\\)',
+  expandSidebarTitle: 'Expand sidebar ⌘\\',
 };

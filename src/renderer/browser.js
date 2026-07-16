@@ -348,7 +348,16 @@
   function subPageGuard() { if (subPage) closeSubPage(); } // 在子页面点导航 → 先回主视图
   navBack.onclick = () => { subPageGuard(); const e = activeEntry(); if (e && T.isWebEntry(e)) window.ws2.webNav(keyOf(e), 'back'); };
   navFwd.onclick = () => { subPageGuard(); const e = activeEntry(); if (e && T.isWebEntry(e)) window.ws2.webNav(keyOf(e), 'forward'); };
-  navReload.onclick = () => { subPageGuard(); const e = activeEntry(); if (e && T.isWebEntry(e) && e.url) window.ws2.webNav(keyOf(e), 'reload'); };
+  navReload.onclick = (ev) => {
+    subPageGuard();
+    const e = activeEntry();
+    if (e && T.isWebEntry(e) && e.url) {
+      window.ws2.webNav(keyOf(e), 'reload');
+      // 教学气泡只对真实鼠标点击（isTrusted）——⌘R 菜单路径走 __webMenu → navReload.click()，
+      // 程序化 click isTrusted=false，用户已会快捷键、不弹。
+      if (ev && ev.isTrusted && window.__wsCoach) window.__wsCoach('reload', window.wsT('sidebar.coachReload', { key: (window.__wsKbd ? window.__wsKbd('⌘R') : '⌘R') }));
+    }
+  };
   navHistory.onclick = () => { if (subPage === 'history') closeSubPage(); else openSubPage('history'); };
 
   // 同步导航条 disabled + omnibox 值/图标/星标。sidebar 每次 renderZones 结束都会调（__webChromeSync）。
@@ -409,7 +418,8 @@
     if (web) {
       const on = bmState.bookmarks.some((b) => b.url === e.url);
       omniStar.classList.toggle('is-on', on);
-      omniStar.title = on ? window.wsT('browser.unbookmark') : window.wsT('browser.bookmark');
+      // i18n × #227 快捷键 tooltip：文案走 wsT(字典值含 ⌘ 字形)，再经 __wsKbd 平台归一(mac 保 ⌘/其他 ⌘→Ctrl+)。
+      { const bmT = on ? window.wsT('browser.unbookmark') : window.wsT('browser.bookmark'); omniStar.title = window.__wsKbd ? window.__wsKbd(bmT) : bmT; }
     }
   }
   omniStar.onclick = () => toggleBookmark();

@@ -63,7 +63,7 @@ module.exports = {
   moreActions: 'More actions',
   openFileMenu: 'Open File…',
   openFolderMenu: 'Open Folder…',
-  saveAsTitle: 'Save As (Cmd+Shift+S)',
+  saveAsTitle: 'Save As ⌘⇧S',
   saveAsMenu: 'Save As…',
   exportPdfBtnTitle: 'Export PDF (WYSIWYG)',
   exportPdfMenu: 'Export PDF',

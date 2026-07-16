@@ -63,7 +63,7 @@ module.exports = {
   moreActions: '更多操作',
   openFileMenu: '打开文件…',
   openFolderMenu: '打开文件夹…',
-  saveAsTitle: '另存为 (Cmd+Shift+S)',
+  saveAsTitle: '另存为 ⌘⇧S',
   saveAsMenu: '另存为…',
   exportPdfBtnTitle: '导出 PDF（所见即所得）',
   exportPdfMenu: '导出 PDF',

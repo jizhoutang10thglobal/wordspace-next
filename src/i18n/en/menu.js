@@ -12,6 +12,7 @@ module.exports = {
   newTab: 'New Tab',
   openFile: 'Open File…',
   openFolder: 'Open Folder…',
+  manageRoots: 'Manage Folders…',
   quickOpen: 'Quick Open…',
   closeTab: 'Close Tab',
   reopenTab: 'Reopen Closed Tab',

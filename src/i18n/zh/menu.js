@@ -14,6 +14,7 @@ module.exports = {
   newTab: '新建标签页',
   openFile: '打开文件…',
   openFolder: '打开文件夹…',
+  manageRoots: '管理文件夹…',
   quickOpen: '快速打开…',
   closeTab: '关闭标签页',
   reopenTab: '重新打开关闭的标签页',

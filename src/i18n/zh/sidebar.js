@@ -10,6 +10,8 @@ module.exports = {
   // ---- 添加文件夹 / 根管理 toast ----
   folderAlreadyOpen: '「{name}」已经打开了',
   folderIsChild: '「{name}」已经在「{parent}」里了——不会重复打开，去那个文件夹里展开即可',
+  folderChildParentStuck: '「{name}」在「{parent}」里，但「{parent}」还没能完整打开——在「管理文件夹」里移除它，再单独打开「{name}」',
+  folderStateChangedRetry: '文件夹状态已变化，请重试',
   folderLimit: '最多同时打开 {max} 个文件夹',
   reconnected: '「{name}」已重新连接',
   folderOpened: '已打开文件夹「{name}」',
@@ -44,6 +46,29 @@ module.exports = {
   missingNote: '文件夹不可达（可能被移动、删除，或所在磁盘未连接）',
   relocate: '重新定位',
   relocateOverlap: '选的位置和已打开的文件夹重叠，换一个位置',
+
+  // ---- 病灶路径确认 modal（选了整个用户目录 / 磁盘 / 卷根）----
+  hugeTitle: '「{name}」是一个很大的系统文件夹',
+  hugeDesc: '你选的是整个用户目录 / 磁盘，通常包含数十万个系统文件，打开会非常慢。建议改选里面具体的工作文件夹（比如某个项目文件夹或「文稿」）。',
+  hugePickAnother: '换一个文件夹',
+  hugeOpenAnyway: '仍要打开',
+
+  // ---- 过大根降级行（超条目预算，无法完整打开）----
+  oversizeHeadTitle: '{path} · 过大（暂时无法完整打开）',
+  oversizeTag: '过大',
+  oversizeNote: '此文件夹包含超过 15 万个项目，Wordspace 暂时无法完整打开——建议移除后选择具体的工作文件夹',
+
+  // ---- 逃生门：管理文件夹 modal ----
+  manageRootsTitle: '管理文件夹',
+  manageRootsDesc: '移除只是从 Wordspace 里关掉，磁盘上的文件不受影响。',
+  noOpenFolders: '没有打开的文件夹',
+  missingSuffix: '（失联）',
+
+  // ---- 快捷键教学气泡（首次鼠标操作后教一次）----
+  coachReload: '下次可以用 {key} 刷新',
+  coachNewTab: '下次可以用 {key} 新建标签页',
+  coachCloseTab: '下次可以用 {key} 关闭当前标签',
+  coachToggleSidebar: '下次可以用 {key} 收起 / 展开侧栏',
 
   // ---- 改名 / 移动 / 链接重写 ----
   renameFailed: '重命名失败：{err}',
@@ -102,14 +127,14 @@ module.exports = {
   unsavedDotTemp: '未保存（还没存进文件夹）',
   unsavedDot: '有未保存的修改',
   removePin: '移出置顶',
-  closeTab: '关闭标签页 (Cmd+W)',
+  closeTab: '关闭标签页 ⌘W',
   rootMissingOpen: '「{name}」失联了，重新定位后才能打开',
 
   // ---- 置顶 / 标签页两区 ----
   pinnedZone: '置顶',
   pinnedEmptyHint: '把标签页拖到这里置顶',
   tabsZone: '标签页',
-  newTabTitle: '新建标签页 (Cmd+T)',
+  newTabTitle: '新建标签页 ⌘T',
   tabsEmptyHint: '没有打开的标签',
 
   // ---- 新建文档 / 标签页 modal ----
@@ -149,12 +174,12 @@ module.exports = {
   diagRecordFailedPkg: '录制失败（需在打包版里用）',
   diagHint: '打开后滚动/切换来复现卡顿，看「长任务」实时涨 · 每 1 秒刷新',
   resizeHint: '拖拽调整侧栏宽度',
-  toggleSidebarTitle: '收起/展开侧栏 (Cmd+\\)',
+  toggleSidebarTitle: '收起侧栏 ⌘\\',
   navBack: '后退',
   navForward: '前进',
-  reloadTitle: '刷新 (Cmd+R)',
-  findFileTitle: '查找文件 (Cmd+P)',
-  addBookmarkTitle: '收藏 (Cmd+D)',
+  reloadTitle: '刷新 ⌘R',
+  findFileTitle: '查找文件 ⌘P',
+  addBookmarkTitle: '收藏 ⌘D',
   favorites: '收藏',
   manageBookmarks: '管理收藏',
   filesLabel: '文件',
@@ -163,5 +188,5 @@ module.exports = {
   emptyNote: '打开一个本地文件夹，把这里当工作区',
   emptyOpenBtn: '打开文件夹',
   aiAccessTitle: 'AI 接入',
-  expandSidebarTitle: '展开侧栏 (Cmd+\\)',
+  expandSidebarTitle: '展开侧栏 ⌘\\',
 };

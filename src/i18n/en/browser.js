@@ -9,8 +9,8 @@ module.exports = {
   openedInBackground: 'Opened in a background tab',
   unsupportedUrl: "Can't open this kind of address",
   // Omnibox star
-  bookmark: 'Bookmark (Cmd+D)',
-  unbookmark: 'Remove bookmark (Cmd+D)',
+  bookmark: 'Bookmark ⌘D',
+  unbookmark: 'Remove bookmark ⌘D',
   // Bookmarks bar / start page empty states
   favEmpty: 'Click the ☆ in the address bar to bookmark a page',
   newtabTilesEmpty: 'No bookmarks yet — open a page and click the ☆ in the address bar to add one here',

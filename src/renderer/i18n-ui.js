@@ -6,14 +6,18 @@
 (function () {
   var T = typeof window.wsT === 'function' ? window.wsT : function (k) { return k; };
 
-  // data-i18n=key → textContent；data-i18n-title/ph/aria=key → 对应属性。
+  // 快捷键字形平台归一(#227 kbd:mac 保 ⌘/其他 ⌘→Ctrl+)。i18n-ui 用字典值(含 ⌘)覆盖 title 会撤销
+  // sidebar.js 启动时对静态 title 的归一,故这里对 title 再过一次 kbd(非快捷键文案里没 ⌘/⇧,kbd 无影响)。
+  var kbd = typeof window.__wsKbd === 'function' ? window.__wsKbd : function (s) { return s; };
+
+  // data-i18n=key → textContent；data-i18n-title/ph/aria/alt=key → 对应属性。
   function applyStatic(root) {
     root = root || document;
     root.querySelectorAll('[data-i18n]').forEach(function (el) {
       el.textContent = T(el.getAttribute('data-i18n'));
     });
     root.querySelectorAll('[data-i18n-title]').forEach(function (el) {
-      el.setAttribute('title', T(el.getAttribute('data-i18n-title')));
+      el.setAttribute('title', kbd(T(el.getAttribute('data-i18n-title'))));
     });
     root.querySelectorAll('[data-i18n-ph]').forEach(function (el) {
       el.setAttribute('placeholder', T(el.getAttribute('data-i18n-ph')));

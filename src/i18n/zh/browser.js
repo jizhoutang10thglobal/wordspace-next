@@ -9,8 +9,8 @@ module.exports = {
   openedInBackground: '已在后台标签页打开',
   unsupportedUrl: '不支持打开这类地址',
   // omnibox 星标
-  bookmark: '收藏 (Cmd+D)',
-  unbookmark: '取消收藏 (Cmd+D)',
+  bookmark: '收藏 ⌘D',
+  unbookmark: '取消收藏 ⌘D',
   // 收藏区 / 起始页空态
   favEmpty: '点地址栏的 ☆ 收藏网页',
   newtabTilesEmpty: '还没有收藏——打开网页后点地址栏的 ☆，就会出现在这里',

@@ -8,6 +8,11 @@ module.exports = {
   discardClose: 'Discard Changes and Close',
   unsavedMessage: 'The document has unsaved changes',
   unsavedDetail: 'Unsaved changes will be lost after closing.',
+  // One-time password-free update repair dialog (main.js maybeRepairBundleOwnership, macOS only)
+  repairAndInstall: 'Repair and Continue Installing',
+  skipRepair: 'Skip (you’ll still need your password this time)',
+  repairTitle: 'One-time fix: no password needed for future updates',
+  repairDetail: 'A previous update was completed as an administrator, so the app files ended up owned by the system — that’s why every update asks for your password. Authorize a one-time repair now (changing ownership back to you), and future updates won’t need a password.',
   // File/folder/export dialog titles
   exportPdfTitle: 'Export PDF',
   relocateFolderTitle: 'Relocate Folder',

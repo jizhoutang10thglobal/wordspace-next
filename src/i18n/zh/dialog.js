@@ -9,6 +9,11 @@ module.exports = {
   discardClose: '放弃修改并关闭',
   unsavedMessage: '文档有未保存的修改',
   unsavedDetail: '关闭后未保存的修改将丢失。',
+  // 更新免密一次性修复对话框(main.js maybeRepairBundleOwnership，仅 mac)
+  repairAndInstall: '修复并继续安装',
+  skipRepair: '跳过（本次仍需输密码）',
+  repairTitle: '一次性修复：以后更新不再要密码',
+  repairDetail: '此前某次更新以管理员身份完成，应用文件被标成了系统所有——这就是每次更新都要输密码的原因。现在授权修复一次（把应用归属改回你），以后更新就不再需要密码。',
   // 文件/文件夹/导出对话框 title
   exportPdfTitle: '导出 PDF',
   relocateFolderTitle: '重新定位文件夹',
