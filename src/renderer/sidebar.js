@@ -301,7 +301,7 @@
     syncChrome();
     render();
     if (opts.validate) validateRootEntries(rootId);
-    if (opts.toast) showToast(opts.toast);
+    if (opts.toast && !st.truncated) showToast(opts.toast); // 过大根别报「已打开」——与「过大打不开」提示自相矛盾（对抗审查实测）
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
   // 吸收后子根的标签不关、整体 rebase 进新根（文件都在磁盘原处，只换归属）。
