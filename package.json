@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
+    "i18n:scan": "node scripts/i18n-scan.mjs && node scripts/i18n-parity.mjs && node scripts/i18n-usage.mjs",
     "test:e2e": "playwright test",
     "test:e2e:dot": "playwright test --reporter=dot",
     "dist": "electron-builder --mac"
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
+    "acorn": "^8.17.0",
     "electron": "^42.6.0",
     "electron-builder": "^26.8.1",
     "jsdom": "^29.1.1"

@@ -2,6 +2,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const U = require('../src/lib/update-status');
+// i18n Phase 2：面板/pill 文案改走 t()，配 zh 让下面的中文断言继续成立。
+const _i18n = require('../src/lib/i18n');
+_i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
+_i18n.setActiveLang('zh');
 
 const step = (evts) => evts.reduce((s, e) => U.nextStatus(s, e), U.initialStatus());
 

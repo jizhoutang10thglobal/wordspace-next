@@ -13,6 +13,7 @@ const { WebContentsView, session, net, dialog, Menu, clipboard, app, shell, nati
 const path = require('path');
 const fs = require('fs');
 const policy = require('../lib/web-tabs-policy');
+const i18n = require('../lib/i18n');
 const webHistory = require('../lib/web-history');
 const ctxMenu = require('../lib/web-context-menu');
 const urlInput = require('../lib/url-input');
@@ -48,7 +49,7 @@ function ensureSession() {
   // 下载已砍（spec §12）：一律 cancel + toast 告知,不落任何文件。
   sess.on('will-download', (_e, item) => {
     try { item.cancel(); } catch { /* 已取消 */ }
-    sendToRenderer('web-toast', 'Wordspace 浏览器不支持下载');
+    sendToRenderer('web-toast', i18n.t('dialog.noDownload'));
   });
 
   return sess;
@@ -152,7 +153,7 @@ function createView(key, url) {
   // 首绘前的 WebContentsView 是透明的——不设底色,新标签首次加载的几秒里会把底下的文档透出来
   // （Colin 实测报的「加载中闪回文档」bug 的根因之一）。底色按当前有效主题取,否则暗态切网页标签闪白。
   try { view.setBackgroundColor(viewBgColor()); } catch { /* 老版本无此 API 就算了 */ }
-  const rec = { view, url: url || null, title: '新标签页', favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, navSeq: 0, userZoom: null, _skipRecord: false };
+  const rec = { view, url: url || null, title: i18n.t('dialog.webNewTabTitle'), favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, navSeq: 0, userZoom: null, _skipRecord: false };
   registry.set(key, rec);
   wireViewEvents(key, view);
   return view;
@@ -174,7 +175,7 @@ function wireViewEvents(key, view) {
   wc.on('did-finish-load', () => { fitToWidth(key); }); // 宽页自动缩放适配（Colin 2026-07-08:别让用户横滚）
   wc.on('page-title-updated', (_e, title) => {
     const r = registry.get(key); if (!r) return;
-    r.title = title || r.url || '新标签页'; pushUpdate(key);
+    r.title = title || r.url || i18n.t('dialog.webNewTabTitle'); pushUpdate(key);
     if (title && r.url) touchHistoryTitle(r.url, title); // 晚到的真标题补进历史头条目（§4.8）
   });
   wc.on('page-favicon-updated', (_e, favicons) => {
@@ -395,7 +396,7 @@ async function printToPdf(key) {
       let defDir;
       try { defDir = app.getPath('downloads'); } catch { defDir = app.getPath('home'); }
       const picked = await dialog.showSaveDialog(win, {
-        title: '导出 PDF',
+        title: i18n.t('dialog.exportPdfTitle'),
         defaultPath: path.join(defDir, leaf),
         filters: [{ name: 'PDF', extensions: ['pdf'] }],
       });

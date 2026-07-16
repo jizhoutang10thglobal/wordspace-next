@@ -13,7 +13,7 @@ async function launch() {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2nce-'));
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
@@ -191,7 +191,7 @@ test('回归：关掉最后一个非合规标签 / 文件被外部删 → 空白
   // 用工作区打开（有标签栏才能「关标签」）
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
   await app.close().catch(() => {});
-  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'ud2'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: tmpWs } });
+  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'ud2'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: tmpWs } });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });
