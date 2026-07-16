@@ -147,6 +147,10 @@
 .arc-tabs-label {
   display: flex; align-items: center; justify-content: space-between;
 }
+/* 可折叠分区栏标（置顶/标签页，三栏折叠统一 2026-07-15）：caret 右置随 is-open 旋转、计数用等宽字 */
+.arc-zone-head { display: flex; align-items: center; cursor: pointer; }
+.arc-zone-head .arc-zone-count { flex: 1; padding-left: 6px; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-3); }
+.arc-zone-head .arc-caret { margin-left: 6px; }
 
 /* 置顶 empty state (also the drop target when dragging a tab up to pin it) */
 .arc-tabs.is-drop {

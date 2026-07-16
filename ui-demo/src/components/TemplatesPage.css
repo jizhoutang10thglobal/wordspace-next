@@ -1,0 +1,217 @@
+.tplp-page {
+  flex: 1; /* 撑满 .ws-route 的 flex-row 槽位（否则内容宽度收缩、右侧大片留白） */
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--c-bg-chrome);
+}
+
+.tplp-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--c-border);
+}
+.tplp-top h1 {
+  font-size: 18px;
+  font-weight: 650;
+  color: var(--c-text);
+  margin: 0;
+}
+.tplp-sub {
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  margin-left: 4px;
+}
+.tplp-back {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--c-text-2);
+  cursor: pointer;
+}
+.tplp-back:hover {
+  background: var(--c-hover, rgba(0, 0, 0, 0.05));
+}
+
+.tplp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px 40px;
+}
+
+/* 官方 / 自定义 两个大板块的清晰分区标题 */
+.tplp-group-label {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--c-text);
+  margin: 26px 2px 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--c-border);
+}
+.tplp-group-label:first-child {
+  margin-top: 0;
+}
+
+.tplp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.tplp-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.tplp-card-thumb {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-md, 8px);
+  background: #fff;
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.14s, box-shadow 0.14s, transform 0.14s;
+}
+.tplp-card-thumb:hover {
+  border-color: var(--c-accent);
+  box-shadow: 0 4px 16px rgba(28, 25, 23, 0.1);
+  transform: translateY(-2px);
+}
+
+/* 缩略图 = 把一页文档缩小塞进卡片（真实渲染 + 作用域化模板 CSS）。 */
+.tplp-prev {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 520px; /* 一页近似宽度 */
+  transform: scale(0.365);
+  transform-origin: top left;
+  pointer-events: none;
+}
+.tplp-prev-page {
+  padding: 30px 34px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--c-text);
+}
+.tplp-prev-page h1 {
+  font-size: 1.9em;
+  margin: 0 0 0.5em;
+}
+.tplp-prev-page h2 {
+  font-size: 1.35em;
+  margin: 0.9em 0 0.4em;
+}
+.tplp-prev-page h3 {
+  font-size: 1.1em;
+  margin: 0.7em 0 0.3em;
+}
+.tplp-prev-page p,
+.tplp-prev-page ul,
+.tplp-prev-page ol {
+  margin: 0.5em 0;
+}
+.tplp-prev-page .ws-callout {
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: var(--c-bg-sunken);
+  margin: 0.6em 0;
+}
+.tplp-prev-page table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.tplp-prev-page th,
+.tplp-prev-page td {
+  border: 1px solid var(--c-border);
+  padding: 5px 8px;
+  text-align: left;
+}
+.tplp-prev-page blockquote {
+  margin: 0.6em 0;
+  padding-left: 12px;
+  color: var(--c-text-2);
+}
+
+.tplp-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  min-height: 22px;
+}
+.tplp-card-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tplp-card-rename {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--c-accent);
+  border-radius: 6px;
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  background: var(--c-bg);
+}
+.tplp-card-rename:focus {
+  outline: none;
+}
+.tplp-card-ops {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.14s;
+}
+.tplp-card:hover .tplp-card-ops {
+  opacity: 1;
+}
+.tplp-card-ops button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--c-text-3);
+  cursor: pointer;
+}
+.tplp-card-ops button:hover {
+  background: var(--c-hover, rgba(0, 0, 0, 0.06));
+  color: var(--c-text);
+}
+
+.tplp-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 560px;
+  padding: 16px 18px;
+  border: 1px dashed var(--c-border-strong);
+  border-radius: var(--r-md, 8px);
+  font-size: var(--fs-sm);
+  color: var(--c-text-3);
+  line-height: 1.6;
+}
+.tplp-empty svg {
+  color: var(--c-text-3);
+  flex: none;
+}

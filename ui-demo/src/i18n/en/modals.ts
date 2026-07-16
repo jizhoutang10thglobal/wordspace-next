@@ -22,6 +22,7 @@ export default {
   paradigmSoon: '{name} · on the way',
   paradigmSoonDesc: 'Each paradigm is its own editing core and document structure. Once it ships, its templates will be listed here.',
   templatesOf: '{name} templates',
+  officialTemplates: 'Official templates',
   blankDoc: 'Blank document',
   blankDocDesc: 'Start from scratch',
 

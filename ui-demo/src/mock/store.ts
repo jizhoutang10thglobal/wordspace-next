@@ -34,7 +34,7 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 26 // 26: 分页测试的表格/代码改成可编辑 'table'/'code' 块（Phase 1 可编辑性）
+const SEED_VERSION = 27 // 27: 模板加 css/origin 维度 + Doc.templateId/templateCss + 黄金标书模板（用户自定义模板 feature）
 
 // A directory entry under one opened root. 身份 = (rootId, path)。
 type DirEntry = { rootId: string; path: string }
@@ -193,6 +193,11 @@ interface State {
   // 返回新文件根内路径。ext 缺省 .html；断链修复的「原地新建」对 .md 断链传 .md（建出来的才接得上）。
   createLinkedDoc: (rootId: string, dir: string, title: string, ext?: '.html' | '.md') => string | null
   createFromTemplate: (templateId: string, folderId: string, target?: { rootId: string; dir: string } | null, unsaved?: boolean) => string
+  // 存当前文档为模板（含骨架勾选）：css 取文档已应用模板的快照（从官方好看模板起手→连样子一起存），
+  // 素颜文档存出纯骨架。用户模板 origin:'user'。
+  saveDocAsTemplate: (docId: string, name: string, includeSkeleton: boolean) => void
+  renameTemplate: (id: string, name: string) => void
+  deleteTemplateWithUndo: (id: string) => void
   // Cmd+S / 保存：临时文档弹「保存到哪里」modal；已保存的只提示
   saveActiveDoc: () => void
   // 把临时文档保存到指定根的指定文件夹（dir=''=根目录；rootId 空 = 云空间）
@@ -1179,6 +1184,8 @@ export const useStore = create<State>()(
           emoji: '📄',
           kind: tpl.kind,
           pageFormat: tpl.pageFormat, // 格式模板把纸张版面带到新文档（普通模板为 undefined）
+          templateId: tpl.css ? tpl.id : undefined, // 带版式的模板把主题盖章到新文档（骨架模板为 undefined）
+          templateCss: tpl.css,
           folderId: inFolder ? root!.id : folderId,
           blocks: tpl.blocks.map((b) => ({ ...b, id: uid('b') })),
           visibility: 'private',
@@ -1203,6 +1210,55 @@ export const useStore = create<State>()(
         }
         get().toast(t('sidebar.createdFromTemplate', { name: tpl.name }), 'success')
         return id
+      },
+
+      saveDocAsTemplate: (docId, name, includeSkeleton) => {
+        const s = get()
+        const doc = s.docs.find((d) => d.id === docId)
+        if (!doc) return
+        const clean = name.trim() || t('templates.untitledTemplate')
+        // v1 派生通道：css = 文档已应用模板的快照（素颜文档 undefined → 存出纯骨架模板）。
+        const css = doc.templateCss
+        const skeleton = includeSkeleton
+          ? doc.blocks.map((b) => ({ ...b, id: uid('b') }))
+          : [{ id: uid('b'), type: 'heading' as const, level: 1 as const, html: clean }]
+        const tpl: Template = {
+          id: uid('t'),
+          name: clean,
+          kind: doc.kind,
+          category: t('templates.mine'),
+          pool: 'private',
+          origin: 'user',
+          description: [css ? t('templates.descHasTheme') : t('templates.descSkeletonOnly'), includeSkeleton ? t('templates.descWithSkeleton') : ''].filter(Boolean).join(' · '),
+          accent: '#1d6fbf',
+          css,
+          blocks: skeleton,
+        }
+        set((st) => ({ templates: [...st.templates, tpl] }))
+        get().toast(t('templates.savedToast', { name: clean }), 'success')
+      },
+
+      renameTemplate: (id, name) => {
+        const clean = name.trim()
+        if (!clean) return
+        set((s) => ({ templates: s.templates.map((t) => (t.id === id ? { ...t, name: clean } : t)) }))
+      },
+
+      deleteTemplateWithUndo: (id) => {
+        const s = get()
+        const idx = s.templates.findIndex((t) => t.id === id)
+        if (idx < 0) return
+        const removed = s.templates[idx] // 撤销快照（连同原位置）
+        set((st) => ({ templates: st.templates.filter((t) => t.id !== id) }))
+        get().toast(t('templates.deletedToast', { name: removed.name }), 'neutral', {
+          label: t('common.undo'),
+          run: () =>
+            set((st) => {
+              const next = st.templates.slice()
+              next.splice(Math.min(idx, next.length), 0, removed)
+              return { templates: next }
+            }),
+        })
       },
 
       renameDoc: (docId, title) =>
@@ -1409,4 +1465,8 @@ if (typeof window !== 'undefined') {
     localStorage.removeItem('wordspace-browser')
     location.reload()
   }
+  // 测试 seam（同 __resetWordspace 惯例）：让 Playwright 门脚本直接驱动 store/ui 状态、
+  // 断言真实渲染（scripts/test-template-ui.mjs）。仅暴露引用，不改任何行为。
+  ;(window as unknown as Record<string, unknown>).__wsStore = useStore
+  ;(window as unknown as Record<string, unknown>).__wsUI = useUI
 }

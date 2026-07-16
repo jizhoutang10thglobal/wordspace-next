@@ -100,6 +100,23 @@ export default function CreateModal() {
     createFromTemplate(id, DRAFTS, target, omni)
     done()
   }
+  // 分类：官方模板 / 我的模板（别混在一块；每张卡只标「版式/骨架」，不再重复「文档」）。
+  const officialTpls = companyTemplates.filter((t) => t.origin === 'official')
+  const userTpls = companyTemplates.filter((t) => t.origin === 'user')
+  const tplCard = (tpl: (typeof companyTemplates)[number]) => (
+    <button
+      key={tpl.id}
+      className="cm-card cm-card-tpl"
+      style={{ borderTopColor: tpl.accent }}
+      onClick={() => fromTemplate(tpl.id)}
+    >
+      <span className="cm-card-kind">
+        <span className="cm-card-styled" style={{ background: tpl.accent }}>{tpl.css ? t('templates.kindStyled') : t('templates.kindSkeleton')}</span>
+      </span>
+      <span className="cm-card-name">{tpl.name}</span>
+      <span className="cm-card-desc">{tpl.description}</span>
+    </button>
+  )
 
   // 地址栏：开一个新网页标签页并导航过去（跟侧栏地址栏 submitOmni 同一套）
   const submitUrl = () => {
@@ -196,7 +213,7 @@ export default function CreateModal() {
               </div>
             ) : (
               <>
-                <div className="cm-pane-label">{t('modals.templatesOf', { name: active.name })}</div>
+                <div className="cm-pane-label">{t('modals.officialTemplates')}</div>
                 <div className="cm-grid">
                   <button className="cm-card cm-card-blank" onClick={blank}>
                     <span className="cm-card-ico">
@@ -205,22 +222,14 @@ export default function CreateModal() {
                     <span className="cm-card-name">{t('modals.blankDoc')}</span>
                     <span className="cm-card-desc">{t('modals.blankDocDesc')}</span>
                   </button>
-
-                  {companyTemplates.map((t) => (
-                    <button
-                      key={t.id}
-                      className="cm-card cm-card-tpl"
-                      style={{ borderTopColor: t.accent }}
-                      onClick={() => fromTemplate(t.id)}
-                    >
-                      <span className="cm-card-kind" style={{ color: t.accent }}>
-                        {kindLabel(t.kind)}
-                      </span>
-                      <span className="cm-card-name">{t.name}</span>
-                      <span className="cm-card-desc">{t.description}</span>
-                    </button>
-                  ))}
+                  {officialTpls.map(tplCard)}
                 </div>
+                {userTpls.length > 0 && (
+                  <>
+                    <div className="cm-pane-label cm-pane-label-2">{t('templates.myTemplates')}</div>
+                    <div className="cm-grid">{userTpls.map(tplCard)}</div>
+                  </>
+                )}
               </>
             )}
           </div>

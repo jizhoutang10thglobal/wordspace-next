@@ -14,6 +14,12 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-15 — Vercel 部署改造：预览构建关闭 + 只在本目录变更时构建（治连日限流）
+
+**是什么**：仓里两个 Vercel 项目（ui-demo/website）连同一个仓、原本没 vercel.json，导致每次 push 两个项目都构建、每个 PR 分支都出预览——连日撞爆免费日部署限流、卡所有人。已加 `ui-demo/vercel.json` + `website/vercel.json` 的 ignoreCommand（PR #220）：① 预览分支一律不构建（`VERCEL_ENV != production` → 跳过）；② main 只在本项目目录有变更时才构建。Colin 拍板关预览。
+**怎么 apply**：① **PR 分支不再有 Vercel 预览链接了**——要看效果走「合 main → 看公开 live（wordspace-ui-demo.vercel.app）」，或本地 `npm run dev`。别再等/找预览 URL。② 别删这两个 vercel.json；改 ignoreCommand 前想清楚（写错方向会让 live 不部署或全量构建，exit 0=跳过 / 非0=构建）。③ docs-only PR（team-memory/changelog）现在两个项目都跳过构建，正常。
+**来源**：PR #220（chore/vercel-skip-unchanged）
+
 ## 2026-07-15 — ui-demo 常驻 worktree 有 3+ 并发 session,必须各开独立 worktree
 
 **是什么**：ui-demo 常驻 worktree（.../wordspace-next-ui-demo）此刻被 3+ 个 session 同时抢（feat/ui-demo-doc-images 图片块 / feat/ui-demo-template-v1 用户自定义模板 / feat/ui-demo-company-templates）。实测撞车：我在里面 checkout 自己分支后,另一 session 把工作树切到 doc-images,我的未提交改动被带到他们分支、和他们 Canvas.tsx/image.ts 混一起,险些被 git add -A 一并提交。

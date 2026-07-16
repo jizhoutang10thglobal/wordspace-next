@@ -390,6 +390,7 @@ function wireEditor() {
   if (blockEdit) { blockEdit.detach(); blockEdit = null; }
   blockEdit = WS2BlockEdit.attach(doc, {
     win: frame.contentWindow, undoMgr, markDirty, onAiSoon: showAiSoon,
+    pickImages: () => window.ws2.pickImages(), // 图片插入：父层原生选图（basicEdit 不接，非合规文档无图片入口）
   });
   // 分页文档：磁盘字节里有可解析的 page 块（routeDoc 已判）→ 挂 V4 分页引擎（引擎样式走
   // adoptedStyleSheets、推挤产物 strip-on-persist，都不入盘）。md 不套页面概念（入盘格式装不下 page 块）。
@@ -1334,6 +1335,9 @@ window.ws2.onMenu((cmd) => {
   }
   if (cmd === 'find-file' && window.__sbHooks && window.__sbHooks.focusFilter) window.__sbHooks.focusFilter();        // Cmd+Shift+F
   if (cmd === 'find-palette' && window.__sbHooks && window.__sbHooks.findPalette) window.__sbHooks.findPalette();     // Cmd+P
+  // ⌘\ 切换侧栏（视图菜单加速器,覆盖全焦点域——含文档编辑 iframe 内的原失灵域；主层另有 keydown fallback）。__webMenu 不认领此命令,恒落这里。
+  if (cmd === 'toggle-sidebar' && window.__sbHooks && window.__sbHooks.toggleSidebar) window.__sbHooks.toggleSidebar();
+  // ⌘R 刷新:网页标签由 __webMenu 上面接管（webNav reload）;文档标签落到这里 → 有意 no-op（不重载,防未保存编辑丢失,§2 拍板）。
 });
 
 // 导出 PDF。两条内部路径（单按钮、无 UI 菜单）：

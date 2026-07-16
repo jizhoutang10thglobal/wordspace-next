@@ -30,6 +30,7 @@ import {
   Star,
   Bookmark,
   History as HistoryIcon,
+  LayoutTemplate,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
@@ -847,6 +848,17 @@ export default function ArcSidebar() {
       localStorage.setItem('ws-fav-open', v ? '0' : '1')
       return !v
     })
+  // 置顶/标签页折叠（Colin 2026-07-15：三栏折叠统一）。默认展开——与收藏默认收起相反（主导航别一装就藏）。
+  const [pinnedOpen, setPinnedOpen] = useState(() => localStorage.getItem('ws-pinned-open') !== '0')
+  const [tabsOpen, setTabsOpen] = useState(() => localStorage.getItem('ws-tabs-open') !== '0')
+  const zoneTabs = useStore((s) => s.tabs)
+  const pinnedCount = zoneTabs.filter((t) => t.pinned).length
+  const tabsCount = zoneTabs.length - pinnedCount
+  const toggleZone = (key: string, set: (fn: (v: boolean) => boolean) => void) =>
+    set((v) => {
+      localStorage.setItem(key, v ? '0' : '1')
+      return !v
+    })
   const isWebTab = activeTab?.kind === 'web' && !!activeTab.url && activeTab.url !== 'wordspace://newtab'
   const bookmarked = !!isWebTab && bmList.some((b) => b.url === activeTab!.url)
   const toggleBookmark = () => {
@@ -1096,6 +1108,7 @@ export default function ArcSidebar() {
   }
 
   const util = [
+    { to: '/templates', icon: LayoutTemplate, label: t('sidebar.templates') },
     { to: '/settings', icon: Settings2, label: t('sidebar.settings') },
   ]
 
@@ -1221,16 +1234,22 @@ export default function ArcSidebar() {
           )}
         </div>
 
-        <div className="arc-section-label">{t('sidebar.pinnedSection')}</div>
-        <TabStrip pinned emptyHint={t('sidebar.dragToPinHint')} />
+        <div className={`arc-section-label arc-zone-head ${pinnedOpen ? 'is-open' : ''}`} role="button" onClick={() => toggleZone('ws-pinned-open', setPinnedOpen)}>
+          <span>{t('sidebar.pinnedSection')}</span>
+          <span className="arc-zone-count">{pinnedCount || ''}</span>
+          <ChevronRight size={12} className={`arc-caret ${pinnedOpen ? 'is-open' : ''}`} />
+        </div>
+        {pinnedOpen && <TabStrip pinned emptyHint={t('sidebar.dragToPinHint')} />}
 
-        <div className="arc-section-label arc-tabs-label">
+        <div className={`arc-section-label arc-tabs-label arc-zone-head ${tabsOpen ? 'is-open' : ''}`} role="button" onClick={() => toggleZone('ws-tabs-open', setTabsOpen)}>
           <span>{t('sidebar.tabs')}</span>
-          <button className="arc-ico arc-ico-sm" title={t('sidebar.newTab')} onClick={onNewTab}>
+          <span className="arc-zone-count">{tabsCount || ''}</span>
+          <button className="arc-ico arc-ico-sm" title={t('sidebar.newTab')} onClick={(e) => { e.stopPropagation(); onNewTab() }}>
             <Plus size={14} />
           </button>
+          <ChevronRight size={12} className={`arc-caret ${tabsOpen ? 'is-open' : ''}`} />
         </div>
-        <TabStrip pinned={false} />
+        {tabsOpen && <TabStrip pinned={false} />}
 
         <div className="arc-section-label">{t('sidebar.documents')}</div>
         <div className="arc-filter">

@@ -65,6 +65,7 @@ export default {
   share: 'Share',
 
   // Footer tools
+  templates: 'Templates',
   settings: 'Settings',
   aiAccess: 'AI access',
   shortcutsHint: 'Shortcuts {key}',

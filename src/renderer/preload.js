@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ws2', {
   pickFile: () => ipcRenderer.invoke('pick-file'),
+  pickImages: () => ipcRenderer.invoke('ws-pick-images'), // 图片插入：原生多选 → [{name, mime, base64}]
   classifyFile: (abs) => ipcRenderer.invoke('classify-file', abs),
   fileUrlAbs: (abs) => ipcRenderer.invoke('file-url-abs', abs),
   openExternalAbs: (abs) => ipcRenderer.invoke('open-external-abs', abs),

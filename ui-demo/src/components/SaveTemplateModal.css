@@ -1,0 +1,92 @@
+.ws-modal.stpl {
+  width: 420px;
+  max-width: 92vw;
+  padding: 0 20px 18px;
+}
+
+.stpl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.stpl-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--c-text-2);
+}
+.stpl-input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-md, 8px);
+  font-size: var(--fs-base);
+  color: var(--c-text);
+  background: var(--c-bg);
+}
+.stpl-input:focus {
+  outline: none;
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 3px var(--c-accent-tint);
+}
+
+.stpl-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  cursor: pointer;
+}
+.stpl-check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--c-ink);
+}
+
+.stpl-hint {
+  margin-top: 12px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
+.stpl-warn {
+  color: var(--c-warning, #b5560a);
+}
+
+.stpl-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+.stpl-btn-ghost,
+.stpl-btn-primary {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.stpl-btn-ghost {
+  border: 1px solid var(--c-border-strong);
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+.stpl-btn-ghost:hover {
+  background: var(--c-hover, rgba(0, 0, 0, 0.04));
+}
+.stpl-btn-primary {
+  border: 0;
+  background: var(--c-ink);
+  color: var(--c-text-invert);
+}
+.stpl-btn-primary:hover {
+  background: var(--c-ink-hover);
+}
+.stpl-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

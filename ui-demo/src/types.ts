@@ -68,6 +68,11 @@ export interface Doc {
   emoji?: string
   kind: DocKind
   pageFormat?: PageFormat // 格式模板生成的文档带上纸张版面（A4/A5/书信…）；缺省=默认列宽
+  // 应用的模板（版式）。templateCss 是「盖章快照」——文档携带 CSS 拷贝而不是引用，
+  // 模板事后被改不影响已盖章文档（对齐真 app 入盘自包含契约）。templateId 仅作来源提示。
+  // 渲染时 Canvas 把 templateCss 经 templateScope 作用域化后注入文档区（仅作用文档、不漏 chrome）。
+  templateId?: string
+  templateCss?: string
   folderId: string
   blocks: Block[]
   // 野生 / 非合规 HTML 文件（打开后由校验器判定不符合 Schema → 走基础编辑，不拆成 blocks）。
@@ -110,8 +115,14 @@ export interface Template {
   kind: DocKind
   category: string // 手册 / 标书 / 演示 / 落地页
   pool: 'private' | 'public'
+  // 画廊分组来源：'official' = 内置官方模板；'user' = 用户存为/导入的模板。
+  // 「官方 / 我的」两组由此字段驱动（不复用语义不符的 pool——pool 指公司/公开来源池）。
+  origin: 'official' | 'user'
   description: string
   accent: string
+  // 版式 CSS 包（受管制、过 templateCheck 安全门）。应用时快照进 Doc.templateCss。
+  // 缺省 = 纯骨架模板（无主题，只有起始内容 blocks）。
+  css?: string
   pageFormat?: PageFormat // 设了 = 这是「格式模板」（按纸张版面），卡片显示纸张比例与尺寸
   blocks: Block[]
 }

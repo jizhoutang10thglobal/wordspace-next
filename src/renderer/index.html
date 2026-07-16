@@ -65,10 +65,6 @@
     <!-- sticky ancestor 吸顶浮层（扁平树无法用原生 CSS sticky 正确释放，VS Code 式 JS 浮层）：
          滚动时 sidebar.js 往这里填当前路径的祖先文件夹行、绝对定位在可视区顶部。 -->
     <div class="sb-sticky" id="sb-sticky" aria-hidden="true"></div>
-    <div class="sb-empty" id="sb-empty">
-      <div class="sb-empty-note">打开一个本地文件夹，把这里当工作区</div>
-      <button id="sb-empty-open" class="sb-empty-btn">打开文件夹</button>
-    </div>
     <!-- 置顶区（钉住的文件）：有置顶才显示。sidebar.js 填充。 -->
     <div class="sb-zone" id="sb-pinned" hidden></div>
     <!-- 标签页区（打开记录，浏览器式 tab）：有打开的才显示，头部带 + 新建。sidebar.js 填充。 -->
@@ -84,6 +80,11 @@
       </button>
     </div>
     <div class="sb-tree" id="sb-tree" hidden></div>
+    <!-- 空态 CTA：没打开任何文件夹时的「打开文件夹」。位置在侧栏最底（收藏/置顶/标签页之下，Wendi 2026-07-15）。 -->
+    <div class="sb-empty" id="sb-empty">
+      <div class="sb-empty-note">打开一个本地文件夹，把这里当工作区</div>
+      <button id="sb-empty-open" class="sb-empty-btn">打开文件夹</button>
+    </div>
   </div>
   <!-- 更新 pill：后台下载更新/更新就绪时出现在页脚上方，点击打开更新面板（update-ui.js 驱动）。 -->
   <button class="sb-update" id="sb-update" hidden>
@@ -266,6 +267,7 @@
 <script src="../lib/schema-validate.js"></script>
 <script src="../lib/schema-page.js"></script>
 <script src="../lib/schema-registry.js"></script>
+<script src="../lib/image-ingest.js"></script>
 <script src="../editor/blockedit.js"></script>
 <script src="../editor/pagination.js"></script>
 <script src="../editor/basic-edit.js"></script>

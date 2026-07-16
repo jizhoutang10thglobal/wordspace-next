@@ -12,6 +12,7 @@ import zhBrowser from './zh/browser'
 import zhModals from './zh/modals'
 import zhSettings from './zh/settings'
 import zhShortcuts from './zh/shortcuts'
+import zhTemplates from './zh/templates'
 import zhMisc from './zh/misc'
 import enCommon from './en/common'
 import enSidebar from './en/sidebar'
@@ -20,6 +21,7 @@ import enBrowser from './en/browser'
 import enModals from './en/modals'
 import enSettings from './en/settings'
 import enShortcuts from './en/shortcuts'
+import enTemplates from './en/templates'
 import enMisc from './en/misc'
 
 export type { LangPref, Lang, TFunc } from './types'
@@ -41,12 +43,12 @@ function merge(...parts: Dict[]): Dict {
 const ZH: Dict = merge(
   ns('common', zhCommon), ns('sidebar', zhSidebar), ns('editor', zhEditor),
   ns('browser', zhBrowser), ns('modals', zhModals), ns('settings', zhSettings), ns('shortcuts', zhShortcuts),
-  ns('misc', zhMisc),
+  ns('templates', zhTemplates), ns('misc', zhMisc),
 )
 const EN: Dict = merge(
   ns('common', enCommon), ns('sidebar', enSidebar), ns('editor', enEditor),
   ns('browser', enBrowser), ns('modals', enModals), ns('settings', enSettings), ns('shortcuts', enShortcuts),
-  ns('misc', enMisc),
+  ns('templates', enTemplates), ns('misc', enMisc),
 )
 
 // 供扫描门/一致性检查读（不参与运行时）。

@@ -22,6 +22,7 @@ export default {
   paradigmSoon: '{name} · 还在路上',
   paradigmSoonDesc: '每个范式是一套独立的编辑内核与文档结构。这个范式上线后，会在这里列出它自己的模板。',
   templatesOf: '{name} 模板',
+  officialTemplates: '官方模板',
   blankDoc: '空白文档',
   blankDocDesc: '从一张白纸开始',
 

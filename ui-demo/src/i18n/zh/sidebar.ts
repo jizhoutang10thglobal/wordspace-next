@@ -65,6 +65,7 @@ export default {
   share: '分享',
 
   // 底部工具
+  templates: '模板',
   settings: '设置',
   aiAccess: 'AI 接入',
   shortcutsHint: '快捷键 {key}',
