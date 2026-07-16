@@ -1,4 +1,4 @@
-const { ipcMain, dialog, app, BrowserWindow, shell } = require('electron');
+const { ipcMain, dialog, app, BrowserWindow, shell, screen } = require('electron');
 const fsp = require('fs/promises');
 const path = require('path');
 const { pathToFileURL, fileURLToPath } = require('url');
@@ -880,6 +880,35 @@ function registerIpc() {
   ipcMain.handle('ws-file-url', (_e, rootId, relPath) => {
     const abs = assertInsideWorkspace(rootById(rootId), relPath);
     return pathToFileURL(abs).href;
+  });
+
+  // ---- 沉浸窗框（immersive-collapse，spec=docs/features/immersive-collapse.md）----
+  // 红绿灯随侧栏收起隐藏/展开恢复（darwin 专属；hiddenInset 下灯浮在内容上，收起要跟着藏）。
+  ipcMain.on('ws-window-buttons', (e, visible) => {
+    if (process.platform !== 'darwin') return;
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (w && !w.isDestroyed()) { try { w.setWindowButtonVisibility(!!visible); } catch { /* 非 hiddenInset 窗框会抛 */ } }
+  });
+  // 左缘指针 watcher：侧栏收起 + 网页 view 在前台时，DOM 收不到鼠标（原生 view 压在最上），
+  // hover peek 的进/出只能靠主进程轮询屏幕指针。只在 renderer 显式开启时跑（收起+web 态），90ms 一拍。
+  let edgeTimer = null;
+  ipcMain.on('ws-edge-watch', (e, on, sbWidth) => {
+    clearInterval(edgeTimer); edgeTimer = null;
+    if (!on) return;
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (!w) return;
+    const width = Math.max(120, Number(sbWidth) || 274);
+    let inPeek = false;
+    edgeTimer = setInterval(() => {
+      if (w.isDestroyed()) { clearInterval(edgeTimer); edgeTimer = null; return; }
+      if (!w.isFocused()) return;
+      const p = screen.getCursorScreenPoint();
+      const b = w.getContentBounds();
+      const inWin = p.y >= b.y && p.y <= b.y + b.height;
+      const relX = p.x - b.x;
+      if (!inPeek && inWin && relX >= 0 && relX <= 3) { inPeek = true; e.sender.send('ws-edge', true); }
+      else if (inPeek && (!inWin || relX > width + 16)) { inPeek = false; e.sender.send('ws-edge', false); }
+    }, 90);
   });
 
   // 浏览器 feature 的 IPC 面（webtab:*/bm:*/hist:*/browser-settings）。

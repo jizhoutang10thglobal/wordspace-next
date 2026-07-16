@@ -26,6 +26,13 @@ function createWindow() {
     height: 800,
     minWidth: 720,   // 缩不到比这更小：正文列 + 顶栏（文件名/保存按钮）放得开，避开 Bug3 那种拥挤；720=常见 1440 屏的一半，能并排分屏
     minHeight: 520,  // 顶栏 + 一屏可编辑内容的下限
+    // 沉浸窗框（Arc 对标，Wendi 2026-07-16，spec=docs/features/immersive-collapse.md）：
+    // macOS 去系统标题栏，红绿灯叠进侧栏头（.sb-head 40px 行，y=14 让 12px 灯垂直居中）；
+    // 拖拽区改走 .sb-head 的 -webkit-app-region。Windows/Linux 保持标准窗框（记 spec 欠账）。
+    ...(process.platform === 'darwin' ? {
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 14, y: 14 }
+    } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../renderer/preload.js'),
       contextIsolation: true,

@@ -30,7 +30,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "electron": "^42.0.0",
+    "electron": "^42.6.0",
     "electron-builder": "^26.8.1",
     "jsdom": "^29.1.1"
   },
@@ -40,13 +40,19 @@
     "protocols": [
       {
         "name": "Web 链接",
-        "schemes": ["http", "https"],
+        "schemes": [
+          "http",
+          "https"
+        ],
         "role": "Viewer"
       }
     ],
     "fileAssociations": [
       {
-        "ext": ["html", "htm"],
+        "ext": [
+          "html",
+          "htm"
+        ],
         "name": "HTML 文档",
         "role": "Editor"
       }
@@ -65,8 +71,20 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64", "x64"] },
-        { "target": "zip", "arch": ["arm64", "x64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.productivity",
       "icon": "build-resources/icon.png",

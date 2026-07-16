@@ -101,25 +101,40 @@
   }
 
   // ---- bounds：view = 侧栏右侧整个内容区（§10.2；无网页头 → 无顶部偏移）----
-  // 查找条激活时顶部收缩出条高（原生 view 会盖住 DOM，spec §4.6 推荐方案）；
-  // 侧栏全收起时左侧留 52px 条给悬浮展开钮（对齐 ui-demo「收起留窄轨」的意图）。
+  // 查找条激活时顶部收缩出条高（原生 view 会盖住 DOM，spec §4.6 推荐方案）。
+  // 沉浸收起（Arc 对标，spec=docs/features/immersive-collapse.md）：原来收起时左侧留 52px 条给
+  // 悬浮展开钮（COLLAPSED_STRIP）——钮和条都删了，网页贴 x=0 全宽 = Wendi 要的「零缝隙」。
   const FIND_STRIP = 52;
-  const COLLAPSED_STRIP = 52;
   let toastInset = 0;
+  let peekPush = false; // peek 悬浮打开时：view 同宽右移让出侧栏带（DOM 盖不住原生 view，只能推）
   function viewBounds() {
     const r = mainEl.getBoundingClientRect();
     let x = Math.round(r.left);
     let width = Math.round(r.width);
-    if (document.body.classList.contains('is-sb-collapsed')) { x += COLLAPSED_STRIP; width -= COLLAPSED_STRIP; }
     let y = Math.round(r.top);
     let height = Math.round(r.height);
     if (findOpen) { y += FIND_STRIP; height -= FIND_STRIP; }
     if (toastInset) height -= toastInset;
+    if (peekPush) x += sbWidth(); // 同宽右移（右缘出窗被裁掉）：不改 width → 网页不 reflow，peek 收回瞬间复原
     return { x, y, width: Math.max(0, width), height: Math.max(0, height) };
   }
   function rebound() { if (attachedKey) window.ws2.webSetBounds(attachedKey, viewBounds()); }
   window.__webRebound = rebound;
   try { new ResizeObserver(() => rebound()).observe(mainEl); } catch { window.addEventListener('resize', rebound); }
+
+  // ---- 沉浸收起 × 网页 view 的两个钩子（sidebar.js 调）----
+  const sbWidth = () => {
+    const v = parseInt(getComputedStyle(document.getElementById('sidebar')).getPropertyValue('--sb-width'), 10);
+    return v >= 180 && v <= 520 ? v : 260;
+  };
+  // ① peek 推让：peek 开 → view 右移一侧栏宽；关 → 复原。
+  window.__webPeekPush = (on) => { peekPush = !!on; rebound(); };
+  // ② 主进程左缘指针 watcher 开关：只在「收起 + 网页 view 在前台」时开（DOM 热区被 view 压着收不到鼠标）。
+  function syncEdgeWatch() {
+    const need = !!attachedKey && document.body.classList.contains('is-sb-collapsed');
+    if (window.ws2 && window.ws2.edgeWatch) window.ws2.edgeWatch(need, sbWidth());
+  }
+  window.__webEdgeWatch = syncEdgeWatch;
 
   // web 态给底部 toast 让位：临时把 view 底部收起一条（update-ui.js 等外部模块经 window.__webToastInset 用）。
   function webToastInset() {
@@ -374,6 +389,7 @@
     // web 态（含起始页/子页面）隐藏文档编辑 chrome（⋯菜单 z65 / 文档面包屑）——否则它们浮在 web
     // surface(z60) 之上,起始页点右上角 ⋯ 会对看不见的后台文档导出 PDF（#8）。
     document.body.classList.toggle('ws-web-on', web);
+    syncEdgeWatch(); // 沉浸收起：attach/detach 每个转换点都过这里 → 主进程左缘 watcher 跟随开关
     if (!newtabEl.hidden) renderNewtab(); // 起始页可见时刷新置顶快捷行/瓦片
     syncOmni();
   }

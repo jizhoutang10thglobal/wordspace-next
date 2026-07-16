@@ -287,7 +287,12 @@ ul { list-style: none; }
   gap: 8px;
   height: var(--h-titlebar);
   padding: 0 8px 0 14px;
+  /* 沉浸窗框：系统标题栏没了（darwin hiddenInset），侧栏头兼任窗口拖拽区；框架窗口下此属性被忽略，无副作用 */
+  -webkit-app-region: drag;
 }
+.sb-head button { -webkit-app-region: no-drag; } /* 控件从拖拽区挖掉，点击不被吞 */
+/* darwin：红绿灯叠在窗口左上（trafficLightPosition x14/y14，占位到 ~76px），侧栏头让位 */
+body.is-mac .sb-head { padding-left: 84px; }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
 /* 图标钮 = 墨圆 + hover 墨条滑入（对齐 ui-demo .arc-ico） */
 .sb-icobtn {
@@ -298,24 +303,39 @@ ul { list-style: none; }
 }
 .sb-icobtn:hover { background-size: 100% 100%; color: var(--c-text); }
 
-/* 收起态：真收起（全隐藏，不留细条；图标轨 + hover 气泡早已删）。侧栏整个滑没，编辑区靠悬浮
-   .sb-reopen / Cmd+\ 重开。（ui-demo 留 48px 细条放展开钮；这里按 Colin「收起就是真收起」全隐藏。）*/
+/* 收起态：真收起（全隐藏，不留细条；图标轨 + hover 气泡早已删）。侧栏整个滑没。
+   沉浸收起（Arc 对标，Wendi 2026-07-16）：常驻浮钮 sb-reopen 已删（拍板「纯 Arc 式」零可见 UI），
+   重开=左缘 hover peek / Cmd+\。spec=docs/features/immersive-collapse.md */
 .sb.is-collapsed { width: 0; min-width: 0; overflow: hidden; border-right: none; }
 
-/* 编辑区左上角悬浮「展开侧栏」入口：仅全收起时显示（顶栏左内边距 56px 给它让位，不压面包屑）。
-   扁平控件：细边 + 纸底，零阴影（保守口径）。 */
-.sb-reopen {
-  position: absolute; top: 11px; left: 14px; z-index: 40;
-  width: 30px; height: 30px; display: none;
-  align-items: center; justify-content: center;
-  border: 1px solid var(--c-border-strong); border-radius: var(--r-pill);
-  background: var(--c-surface); color: var(--c-text-2);
-  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-    transform var(--dur-instant) var(--ease);
+/* 左缘热区：6px 隐形条，只在收起态存在；唯一职责=接住「鼠标滑到最左」这个意图。
+   （网页 view 在前台时它收不到鼠标——原生 view 压着 DOM——那半边靠主进程指针 watcher，见 ipc.js。）*/
+.sb-edge-hot { display: none; }
+body.is-sb-collapsed .sb-edge-hot {
+  display: block;
+  position: fixed; top: 0; left: 0; bottom: 0; width: 6px;
+  z-index: 240; /* 压过内容与文档浮层(200)，低于模态(400)/toast(500) */
 }
-.sb-reopen:hover { background: var(--c-bg-chrome); color: var(--c-text); }
-.sb-reopen:active { transform: scale(0.97); }
-body.is-sb-collapsed .sb-reopen { display: inline-flex; }
+
+/* peek 悬浮层：收起态 hover 左缘，完整侧栏盖在内容上滑进滑出、不推挤布局。
+   借 .sb 本体变身（单实例——快捷键/树状态全复用，不另造第二份侧栏）。
+   静止态 transform:none：挂着 translateX(0) 会劫持内部 fixed 弹层（右键菜单等）的包含块。 */
+body.is-sb-peek .sb.is-collapsed {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: var(--sb-width, 260px); min-width: var(--sb-width, 260px);
+  overflow: visible; z-index: 240;
+  border-right: 1px solid var(--c-border-strong);
+  border-radius: 0 var(--r-lg) var(--r-lg) 0; /* 墨圆：悬浮层右侧收圆角 */
+  box-shadow: var(--shadow-pop);
+  transform: none; /* 静止态必须 none（fixed 包含块劫持坑）；入场动画交给 keyframes、不用 fill */
+  animation: sb-peek-in var(--dur-slow) var(--ease-enter);
+  transition: transform var(--dur-slow) var(--ease);
+}
+@keyframes sb-peek-in { from { transform: translateX(-103%); } }
+body.is-sb-peek .sb.is-collapsed .sb-foot { display: flex; }
+body.is-sb-peek .sb.is-collapsed .sb-resize { display: none; } /* 悬浮态不改停靠宽度 */
+/* 滑出：JS 先挂 is-sb-peek-out（transform 过渡到屏外），动画完再一起摘类 */
+body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(-103%); animation: none; }
 
 /* 品牌页脚：wordspace.ai logo + 版本号，钉在左侧栏底部（不在编辑区）。 */
 .sb-foot { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-top: 1px solid var(--c-divider); }
