@@ -187,10 +187,14 @@
     return st;
   }
   // 添加文件夹（头部按钮 / 空态按钮 / 树底常驻行 / ⋯ 菜单）：主进程弹框选目录 + classifyRoot 嵌套判定。
-  // same/child 不重复开（toast 解释）；parent 出「并入并添加」确认；independent 正常加。
+  // same/child 不重复开（toast 解释）；parent 出「并入并添加」确认；病灶路径出「仍要打开」确认；independent 正常加。
   async function pickFolder() {
     let r;
     try { r = await window.ws2.wsAddFolder(); } catch (e) { return; }
+    await handleAddResult(r);
+  }
+  // 添加结果分流（ws-add-folder 与病灶确认后的 ws-add-folder-confirm 共用同一套结果处理）。
+  async function handleAddResult(r) {
     if (!r) return; // 用户取消了原生框
     if (r.status === 'same') {
       showToast('「' + r.root.name + '」已经打开了');
@@ -200,6 +204,10 @@
       showToast('最多同时打开 ' + r.max + ' 个文件夹');
     } else if (r.status === 'parent') {
       openAbsorbConfirm(r);
+    } else if (r.status === 'confirm-huge') {
+      openHugeConfirm(r); // 病灶路径（~、/、/Users、卷根）→ 劝导选具体工作文件夹（诊断 §6.3）
+    } else if (r.status === 'stale') {
+      showToast('文件夹状态已变化，请重试');
     } else if (r.status === 'revived') {
       // 选的是失联根的路径且现在可达 → 主进程顺手复活了它。两段式：先转非失联 + 加载态渲染，再填树。
       const st = rootOf(r.root.id);
@@ -214,6 +222,55 @@
       render();
       await loadRootTree(r.root.id, { toast: '已打开文件夹「' + r.root.name + '」' });
     }
+  }
+  // 病灶路径确认（诊断 §6.3）：选了整个用户目录 / 磁盘 / 卷根 → 劝导选具体工作文件夹。抄 openAbsorbConfirm
+  // 的 token 模式；「仍要打开」走 ws-add-folder-confirm(token) 继续 resolveAdd（配合 U2 预算，海量根落「过大」态）。
+  function openHugeConfirm(r) {
+    if (document.querySelector('.sb-modal-overlay')) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'sb-modal-overlay';
+    overlay.id = 'huge-confirm-overlay';
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    function close() { overlay.remove(); document.removeEventListener('keydown', onKey); }
+    const modal = document.createElement('div');
+    modal.className = 'sb-modal sb-modal-confirm';
+    const body = document.createElement('div');
+    body.className = 'sb-cc-body';
+    const ico = document.createElement('div');
+    ico.className = 'sb-cc-ico';
+    ico.innerHTML = WARN_SVG20;
+    const textWrap = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'sb-cc-title';
+    title.textContent = '「' + r.name + '」是一个很大的系统文件夹';
+    const desc = document.createElement('div');
+    desc.className = 'sb-modal-desc';
+    desc.textContent = '你选的是整个用户目录 / 磁盘，通常包含数十万个系统文件，打开会非常慢。建议改选里面具体的工作文件夹（比如某个项目文件夹或「文稿」）。';
+    textWrap.append(title, desc);
+    body.append(ico, textWrap);
+    const foot = document.createElement('div');
+    foot.className = 'sb-modal-foot';
+    const cancel = document.createElement('button');
+    cancel.className = 'sb-btn sb-btn-primary';
+    cancel.textContent = '换一个文件夹';
+    cancel.onclick = () => { close(); pickFolder(); }; // 直接再开选择框换一个（推荐路径，主按钮）
+    const spacer = document.createElement('span');
+    spacer.className = 'sb-modal-spacer';
+    const ok = document.createElement('button');
+    ok.className = 'sb-btn';
+    ok.textContent = '仍要打开';
+    ok.onclick = async () => {
+      close();
+      let res;
+      try { res = await window.ws2.wsAddFolderConfirm(r.token); } catch (e) { return; }
+      await handleAddResult(res);
+    };
+    foot.append(cancel, spacer, ok);
+    modal.append(body, foot);
+    overlay.appendChild(modal);
+    wireOverlayClose(overlay, close);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
   }
   // 两段式添加/复活的第二段：异步读该根的树填进去、清 loading。期间根被移除/吸收 → rootOf 返回 null，放弃。
   // 读不到树（不可达）→ 转失联灰态（别当空树，否则 reconcile 会把标签清光——workspace.readTree 的 null 契约）。
