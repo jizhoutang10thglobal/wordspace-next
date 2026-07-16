@@ -36,4 +36,5 @@ module.exports = {
   untitled: 'Untitled',
   untitledDoc: 'Untitled document',
   newFolder: 'New Folder',
+  localTag: 'Local',
 };

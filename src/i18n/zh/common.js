@@ -37,4 +37,5 @@ module.exports = {
   untitled: '未命名',
   untitledDoc: '未命名文档',
   newFolder: '新建文件夹',
+  localTag: '本地',
 };

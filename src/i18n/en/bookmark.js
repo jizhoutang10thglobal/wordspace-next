@@ -1,2 +1,6 @@
-// bookmark 命名空间(en)。提取时填充。
-module.exports = {};
+// bookmark namespace (en).
+module.exports = {
+  bar: 'Bookmarks Bar',
+  newFolder: 'New Folder',
+  folder: 'Folder',
+};

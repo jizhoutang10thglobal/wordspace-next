@@ -1,2 +1,51 @@
-// browser 命名空间(zh)。提取时填充。
-module.exports = {};
+// browser 命名空间(zh)。web 标签错误页 / 收藏空态 / toast / 历史页 / 收藏管理页。
+module.exports = {
+  // 错误页
+  pageCrashed: '页面崩溃了',
+  pageLoadFailed: '页面加载失败',
+  errDesc: '{url}（{desc}）',
+  // 标签 / toast
+  newTab: '新标签页',
+  openedInBackground: '已在后台标签页打开',
+  unsupportedUrl: '不支持打开这类地址',
+  // omnibox 星标
+  bookmark: '收藏 (Cmd+D)',
+  unbookmark: '取消收藏 (Cmd+D)',
+  // 收藏区 / 起始页空态
+  favEmpty: '点地址栏的 ☆ 收藏网页',
+  newtabTilesEmpty: '还没有收藏——打开网页后点地址栏的 ☆，就会出现在这里',
+  // 历史页
+  history: '历史记录',
+  clearBrowsingData: '清除浏览数据',
+  lastHour: '最近一小时',
+  last24h: '最近 24 小时',
+  last7d: '最近 7 天',
+  clearAll: '全部清除',
+  searchHistory: '搜索历史记录',
+  noMatchingHistory: '没有匹配的历史记录',
+  noHistory: '还没有浏览记录',
+  today: '今天',
+  yesterday: '昨天',
+  monthDay: '{month} 月 {day} 日',
+  // 收藏管理页
+  newFolder: '新文件夹',
+  import: '导入',
+  importFailed: '导入失败：{error}',
+  importNoneRecognized: '没识别到书签（需要浏览器导出的 HTML 书签文件）',
+  importAllExist: '这些书签都已存在，没有新增',
+  importedCount: '已导入 {count} 个书签',
+  export: '导出',
+  exportedToast: '已导出为 bookmarks.html（Chrome/Safari/Firefox 都能导入）',
+  bookmarks: '收藏夹',
+  bookmarksHint: '导入 / 导出用的是浏览器通用的 HTML 书签格式（Netscape），可以和 Chrome、Safari、Firefox、Edge 互相搬。',
+  bookmarkBarFixed: '书签栏（固定）',
+  renameFolder: '重命名文件夹',
+  deleteFolder: '删除文件夹（含其中书签）',
+  emptyFolder: '空',
+  newtabWarn: '内置浏览器没有恶意网站防护，访问陌生网站请自行留意',
+  errReload: '重新加载',
+  findInPage: '在页面中查找',
+  findPrev: '上一个 (⇧Enter)',
+  findNext: '下一个 (Enter)',
+  findClose: '关闭 (Esc)',
+};

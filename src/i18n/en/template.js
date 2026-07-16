@@ -1,2 +1,11 @@
-// template 命名空间(en)。提取时填充。
-module.exports = {};
+// template namespace (en).
+module.exports = {
+  blankName: 'Blank',
+  blankDesc: 'Start from a blank page',
+  minutesName: 'Meeting Notes',
+  minutesDesc: 'Topic / Attendees / Agenda / Decisions / Action items',
+  proposalName: 'Project Proposal',
+  proposalDesc: 'Background / Goals / Approach / Milestones / Risks',
+  weeklyName: 'Weekly Plan',
+  weeklyDesc: 'Weekly Plan / Meeting cadence / Weekend review',
+};

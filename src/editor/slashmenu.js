@@ -3,6 +3,9 @@
   // 与「+ 插入」面板共用同一条 flow-insert 码路（不再走旧的浏览器命令插入）。bridge 是纯 DOM、
   // 取 (doc, block) 参数，jsdom 可单测；run 处理器只负责把它接上斜杠菜单的 deleteTyped/光标解析。
 
+  // i18n：renderer 全局 t()（node/test 上下文无 wsT 时回退 key，防 require 期崩）。
+  const T = (k, p) => (global.wsT ? global.wsT(k, p) : k);
+
   function getFormat() { return global.WS2Format; }
   function getInsert() { return global.WS2Insert; }
 
@@ -53,14 +56,16 @@
   const ITEMS = [
     // run 接 (doc, block)：block 由 apply() 在 deleteTyped 扰动选区**之前**解析好传进来，
     // 否则 deleteTyped 的 sel.modify/deleteContents 会把选区弄到块外、caretBlock 取不到块。
-    { label: '标题 1', kw: 'h1 biaoti', run: (doc, block) => retagBlock(doc, block, 'h1') },
-    { label: '标题 2', kw: 'h2 biaoti', run: (doc, block) => retagBlock(doc, block, 'h2') },
-    { label: '标题 3', kw: 'h3 biaoti', run: (doc, block) => retagBlock(doc, block, 'h3') },
-    { label: '正文', kw: 'p text zhengwen', run: (doc, block) => retagBlock(doc, block, 'p') },
-    { label: '无序列表', kw: 'ul list liebiao', run: (doc, block) => insertFlowElement(doc, block, makeUl) },
-    { label: '有序列表', kw: 'ol list liebiao', run: (doc, block) => insertFlowElement(doc, block, makeOl) },
-    { label: '分隔线', kw: 'hr divider fengexian', run: (doc, block) => insertFlowElement(doc, block, makeHr) }
+    // labelKey 走 editor 命名空间、展示/过滤时 t() 解析；kw 是拼音/英文检索词（内部、不展示，不翻）。
+    { labelKey: 'blockH1', kw: 'h1 biaoti', run: (doc, block) => retagBlock(doc, block, 'h1') },
+    { labelKey: 'blockH2', kw: 'h2 biaoti', run: (doc, block) => retagBlock(doc, block, 'h2') },
+    { labelKey: 'blockH3', kw: 'h3 biaoti', run: (doc, block) => retagBlock(doc, block, 'h3') },
+    { labelKey: 'blockText', kw: 'p text zhengwen', run: (doc, block) => retagBlock(doc, block, 'p') },
+    { labelKey: 'blockBulletList', kw: 'ul list liebiao', run: (doc, block) => insertFlowElement(doc, block, makeUl) },
+    { labelKey: 'blockOrderedList', kw: 'ol list liebiao', run: (doc, block) => insertFlowElement(doc, block, makeOl) },
+    { labelKey: 'blockDivider', kw: 'hr divider fengexian', run: (doc, block) => insertFlowElement(doc, block, makeHr) }
   ];
+  const itemLabel = (it) => T('editor.' + it.labelKey);
 
   function attach(doc, undoMgr, markDirty) {
     const menu = doc.createElement('div');
@@ -78,7 +83,7 @@
 
     function visibleItems() {
       const q = query.toLowerCase();
-      return ITEMS.filter(it => !q || it.label.includes(q) || it.kw.includes(q));
+      return ITEMS.filter(it => !q || itemLabel(it).includes(q) || it.kw.includes(q));
     }
 
     function render() {
@@ -88,7 +93,7 @@
       menu.innerHTML = '';
       items.forEach((it, i) => {
         const row = doc.createElement('div');
-        row.textContent = it.label;
+        row.textContent = itemLabel(it);
         row.style.cssText = 'padding:6px 10px;border-radius:4px;cursor:pointer;' + (i === active ? 'background:#f0f0f0;' : '');
         row.addEventListener('mousedown', (e) => e.preventDefault());
         row.addEventListener('click', () => apply(it));

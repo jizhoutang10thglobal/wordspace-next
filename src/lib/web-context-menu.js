@@ -5,6 +5,9 @@
 // 安全红线：链接/图片地址类条目只对 http(s) 出现，危险 scheme（javascript:/data:/file:）整节不出现。
 // 砍除项（spec §12，别加回来）：无「下载/存储图片」、无「存为文档」（剪藏）。
 (function () {
+  // node（web-tabs.js require）路径拿真 i18n；无 require 的环境兜底回显 key，绝不崩。
+  var i18n = typeof require === 'function' ? require('./i18n') : { t: function (k) { return k; } };
+
   // 默认的 http(s) 判定——ctx.isAllowedUrl 没注入时用它（main 会注入 policy.isAllowedNavUrl，逻辑等价）。
   function defaultIsAllowedUrl(url) {
     if (typeof url !== 'string') return false;
@@ -40,16 +43,16 @@
 
     var link = [];
     if (params.linkURL && isAllowedUrl(params.linkURL)) {
-      link.push({ id: 'open-link', label: '在新标签页打开链接', args: { url: params.linkURL } });
-      link.push({ id: 'open-link-bg', label: '在后台标签页打开链接', args: { url: params.linkURL } });
-      link.push({ id: 'copy-link', label: '拷贝链接', args: { url: params.linkURL } });
+      link.push({ id: 'open-link', label: i18n.t('misc.openLinkNewTab'), args: { url: params.linkURL } });
+      link.push({ id: 'open-link-bg', label: i18n.t('misc.openLinkBgTab'), args: { url: params.linkURL } });
+      link.push({ id: 'copy-link', label: i18n.t('misc.copyLink'), args: { url: params.linkURL } });
     }
 
     var image = [];
     if (params.mediaType === 'image') {
-      image.push({ id: 'copy-image', label: '拷贝图片', args: { x: params.x, y: params.y } });
+      image.push({ id: 'copy-image', label: i18n.t('misc.copyImage'), args: { x: params.x, y: params.y } });
       if (params.srcURL && isAllowedUrl(params.srcURL)) {
-        image.push({ id: 'copy-image-url', label: '拷贝图片地址', args: { url: params.srcURL } });
+        image.push({ id: 'copy-image-url', label: i18n.t('misc.copyImageUrl'), args: { url: params.srcURL } });
       }
       // 无「下载/存储图片」项（下载已砍，spec §12）
     }
@@ -57,28 +60,28 @@
     var selection = [];
     var selText = String(params.selectionText == null ? '' : params.selectionText);
     if (selText.trim()) {
-      selection.push({ id: 'copy-selection', label: '拷贝', args: { text: selText } });
+      selection.push({ id: 'copy-selection', label: i18n.t('common.copy'), args: { text: selText } });
       // 引擎名跟随设置（spec §4.10：三个搜索入口之一）；没注入时兜底 Bing（真 app 默认引擎）。
-      selection.push({ id: 'search-selection', label: '用 ' + (ctx.engineName || 'Bing') + ' 搜索「' + truncForLabel(selText) + '」', args: { text: selText } });
+      selection.push({ id: 'search-selection', label: i18n.t('misc.searchWith', { engine: ctx.engineName || 'Bing', query: truncForLabel(selText) }), args: { text: selText } });
     }
 
     var editable = [];
     if (params.isEditable) {
-      editable.push({ id: 'cut', label: '剪切' });
-      editable.push({ id: 'copy', label: '拷贝' });
-      editable.push({ id: 'paste', label: '粘贴' });
-      editable.push({ id: 'select-all', label: '全选' });
+      editable.push({ id: 'cut', label: i18n.t('common.cut') });
+      editable.push({ id: 'copy', label: i18n.t('common.copy') });
+      editable.push({ id: 'paste', label: i18n.t('common.paste') });
+      editable.push({ id: 'select-all', label: i18n.t('common.selectAll') });
     }
 
     var nav = [
-      { id: 'nav-back', label: '返回', enabled: !!ctx.canGoBack },
-      { id: 'nav-forward', label: '前进', enabled: !!ctx.canGoForward },
-      { id: 'reload', label: '重新加载' },
+      { id: 'nav-back', label: i18n.t('common.back'), enabled: !!ctx.canGoBack },
+      { id: 'nav-forward', label: i18n.t('misc.navForward'), enabled: !!ctx.canGoForward },
+      { id: 'reload', label: i18n.t('misc.reload') },
     ];
 
     var page = [
-      { id: 'copy-page-url', label: '拷贝页面链接', args: { url: ctx.pageUrl || '' } },
-      { id: 'export-pdf', label: '导出 PDF' },
+      { id: 'copy-page-url', label: i18n.t('misc.copyPageUrl'), args: { url: ctx.pageUrl || '' } },
+      { id: 'export-pdf', label: i18n.t('misc.exportPdf') },
     ];
 
     return joinSections([link, image, selection, editable, nav, page]);

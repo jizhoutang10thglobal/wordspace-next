@@ -1,2 +1,18 @@
-// misc 命名空间(en)。提取时填充。
-module.exports = {};
+// misc namespace (en).
+module.exports = {
+  openLinkNewTab: 'Open Link in New Tab',
+  openLinkBgTab: 'Open Link in Background Tab',
+  copyLink: 'Copy Link',
+  copyImage: 'Copy Image',
+  copyImageUrl: 'Copy Image Address',
+  searchWith: 'Search {engine} for "{query}"',
+  navForward: 'Forward',
+  reload: 'Reload',
+  copyPageUrl: 'Copy Page URL',
+  exportPdf: 'Export PDF',
+  pdfReadonly: 'PDF · Read-only',
+  zoomOut: 'Zoom out',
+  zoomIn: 'Zoom in',
+  fitWidth: 'Fit width',
+  pdfOpenFailed: 'Failed to open PDF: {err}',
+};
