@@ -141,6 +141,17 @@ function langPref() {
 function effectiveLangNow() {
   return i18n.effectiveLang(langPref(), app.getLocale());
 }
+// 把当前生效语言解析成一张扁平字典(en 缺 key fallback zh)发给 preload。
+// 主窗口 preload 是 sandboxed(默认 sandbox:true，不设 sandbox:false)——**不能 require 项目模块**，
+// 故字典在主进程(Node 上下文，require 无碍)解析好、经 sendSync 送过去，preload 只做查表 + 参数替换。
+// 语言切换走整窗 reload，本页生命周期内字典固定。
+function resolvedDict() {
+  const lang = effectiveLangNow();
+  const out = {};
+  for (const k in ZH) out[k] = ZH[k];
+  if (lang === 'en') for (const k in EN) if (EN[k] != null) out[k] = EN[k];
+  return out;
+}
 function broadcastLanguage() {
   if (win && !win.isDestroyed()) win.webContents.send('language-changed', { pref: langPref(), lang: effectiveLangNow() });
 }
@@ -370,6 +381,8 @@ if (!app.requestSingleInstanceLock()) {
     i18n.setActiveLang(effectiveLangNow());
     ipcMain.handle('get-language', () => langPref());
     ipcMain.handle('get-effective-lang', () => effectiveLangNow());
+    // preload 在页面脚本跑之前就要建好 window.wsT(不能异步等)，故 sendSync 一次拿 { 生效语言, 解析好的扁平字典 }。
+    ipcMain.on('get-i18n-boot-sync', (e) => { e.returnValue = { lang: effectiveLangNow(), dict: resolvedDict() }; });
     ipcMain.on('set-language', (_e, pref) => applyLanguage(pref));
     registerIpc();
     buildMenu();

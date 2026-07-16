@@ -943,6 +943,38 @@
   // 设置页（§4.10）：浏览器区只有默认搜索引擎一行；「主页」设置已删（拍板#2），不要加回来。
   function renderSettingsPage() {
     const wrap = pageShell('设置');
+    const T = (k) => (typeof window.wsT === 'function' ? window.wsT(k) : k);
+
+    // 语言三态（偏好归 main 管；切换后整窗 reload 生效——静态外壳建一次不重建，plan 决策1）。
+    const langSec = document.createElement('div');
+    langSec.className = 'wp-sec';
+    langSec.textContent = T('settings.language');
+    wrap.appendChild(langSec);
+    const lrow = document.createElement('div');
+    lrow.className = 'wp-set-row';
+    const llabel = document.createElement('span');
+    llabel.className = 'wp-set-label';
+    llabel.textContent = T('settings.uiLanguage');
+    const ldesc = document.createElement('span');
+    ldesc.className = 'wp-set-desc';
+    ldesc.textContent = T('settings.languageDesc');
+    const lctl = document.createElement('span');
+    lctl.className = 'wp-set-ctl';
+    const lsel = document.createElement('select');
+    lsel.id = 'wp-language-select';
+    for (const [val, key] of [['system', 'settings.langSystem'], ['zh', 'settings.langZh'], ['en', 'settings.langEn']]) {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = T(key);
+      lsel.appendChild(opt);
+    }
+    if (window.ws2 && window.ws2.getLanguage) {
+      window.ws2.getLanguage().then((p) => { lsel.value = p || 'system'; }).catch(() => {});
+    }
+    // 切语言 → main 持久化 + 广播 language-changed → i18n-ui.js 整窗 reload（新语言全量生效）。
+    lsel.onchange = () => { if (window.ws2 && window.ws2.setLanguage) window.ws2.setLanguage(lsel.value); };
+    lctl.appendChild(lsel);
+    lrow.append(llabel, ldesc, lctl);
+    wrap.appendChild(lrow);
 
     // 外观三态（与菜单栏 radio / ⋯菜单同一真相源，都从 main 查；这是 Colin 追认的第三入口）
     const appSec = document.createElement('div');
