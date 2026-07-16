@@ -1418,9 +1418,9 @@ export const useStore = create<State>()(
       toast: (message, tone = 'neutral', action) => {
         const id = uid('toast')
         set((s) => ({ toasts: [...s.toasts, { id, message, tone, action }] }))
-        // actionable toasts (e.g. 撤销) linger so the user can reach the button
+        // actionable toasts (e.g. 撤销) linger so the user can reach the button；hint 教学气泡给足阅读时间
         if (tone !== 'progress')
-          setTimeout(() => get().dismissToast(id), action ? 6500 : 2600)
+          setTimeout(() => get().dismissToast(id), action ? 6500 : tone === 'hint' ? 4200 : 2600)
         return id
       },
 
