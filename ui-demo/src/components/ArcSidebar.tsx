@@ -799,12 +799,14 @@ export default function ArcSidebar() {
   const revealFolders = useUI((s) => s.revealFolders)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // 侧栏宽度可拖拽（F1，对齐真 app 的 .sb-resize）：右边界拖拽柄改宽度（夹 180–520），
+  // 侧栏宽度可拖拽（F1，对齐真 app 的 .sb-resize）：右边界拖拽柄改宽度（夹 240–520），
   // 存 localStorage、刷新恢复；收起态不渲染柄。
+  // 最小 240（Wendi 2026-07-16）：顶排图标行 240 下刚好放得下，再窄图标被裁掉消失；
+  // 想更窄该走「收起侧栏」。旧存值 <240 夹到 240（别跳回默认宽，贴用户原意）。
   const asideRef = useRef<HTMLElement>(null)
   const [sbWidth, setSbWidth] = useState(() => {
     const v = parseInt(localStorage.getItem('ws-arc-width') ?? '', 10)
-    return v >= 180 && v <= 520 ? v : 274
+    return Number.isFinite(v) ? Math.max(240, Math.min(520, v)) : 274
   })
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -812,7 +814,7 @@ export default function ArcSidebar() {
     const startW = asideRef.current?.getBoundingClientRect().width ?? sbWidth
     document.body.style.cursor = 'col-resize'
     const onMove = (ev: MouseEvent) => {
-      const w = Math.max(180, Math.min(520, startW + (ev.clientX - startX)))
+      const w = Math.max(240, Math.min(520, startW + (ev.clientX - startX)))
       if (asideRef.current) asideRef.current.style.width = `${w}px`
     }
     const onUp = () => {

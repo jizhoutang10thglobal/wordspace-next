@@ -2530,11 +2530,13 @@
   });
 
   // 侧栏宽度可拖拽（UX5 / Wendi F1）：右边界拖拽柄改 --sb-width（夹 min/max），存 localStorage、重启恢复。
-  const SB_MIN = 180, SB_MAX = 520, SB_KEY = 'ws2-sb-width';
+  // 最小 240（Wendi 2026-07-16）：.sb-head 顶排 6 图标 + 间距 + padding 需 238px，180 下限会让
+  // 右端图标溢出被网页/编辑区盖掉「消失」。旧存值 <240 夹到 240（贴用户原意，不跳回默认宽）。
+  const SB_MIN = 240, SB_MAX = 520, SB_KEY = 'ws2-sb-width';
   (function initSidebarResize() {
     if (!sidebarEl) return;
     const saved = parseInt(localStorage.getItem(SB_KEY), 10);
-    if (saved >= SB_MIN && saved <= SB_MAX) sidebarEl.style.setProperty('--sb-width', saved + 'px');
+    if (Number.isFinite(saved)) sidebarEl.style.setProperty('--sb-width', Math.max(SB_MIN, Math.min(SB_MAX, saved)) + 'px');
     const handle = document.getElementById('sb-resize');
     if (!handle) return;
     handle.addEventListener('mousedown', (e) => {

@@ -268,6 +268,7 @@ ul { list-style: none; }
 .sb.sb-on {
   flex: none;
   width: var(--sb-width, 260px);
+  min-width: 240px; /* 兜底：.sb-head 顶排需 238px，再窄右端图标被裁（拖拽 JS 同夹 240；收起态在下面归零） */
   position: relative; /* 给宽度拖拽柄 .sb-resize 定位 */
   display: flex;
   flex-direction: column;
