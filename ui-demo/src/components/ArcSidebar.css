@@ -1,5 +1,6 @@
 .arc-sidebar {
   width: 274px;
+  min-width: 240px; /* 兜底：顶排图标行 240 下刚好放得下，再窄图标会被裁掉（拖拽 JS 同夹 240） */
   position: relative; /* 给宽度拖拽柄 .arc-resize 定位 */
   flex: none;
   background: var(--c-bg-sunken);
@@ -9,6 +10,7 @@
   min-height: 0;
   user-select: none;
 }
+/* （沉浸收起后不再有 .is-collapsed 细轨——收起=流内零渲染，见下方 arc-peek 段。） */
 /* 侧栏宽度拖拽柄（F1，对齐真 app 的 .sb-resize）：贴右边界、col-resize；只在展开态渲染。 */
 .arc-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 30; }
 .arc-resize:hover { background: var(--c-accent); opacity: 0.35; }
@@ -51,18 +53,20 @@
 }
 .arc-peek .arc-resize { display: none; } /* 悬浮态不改停靠宽度 */
 
-/* top: traffic + nav */
+/* top: traffic + nav。整行最小内容宽必须 ≤ 侧栏 min-width(240) − 右边框 1，否则窄宽度下右端图标被裁：
+   padding 20 + 红绿灯 48 + gap 8 + 导航 6×26+5 = 237 ≤ 239。往这排加图标前先重算这笔账。 */
 .arc-top {
   height: var(--h-titlebar);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 0 10px;
   flex: none;
 }
-.arc-traffic { display: flex; gap: 8px; flex: none; }
+.arc-traffic { display: flex; gap: 6px; flex: none; }
 .arc-traffic span { width: 12px; height: 12px; border-radius: var(--r-pill); display: block; }
 .arc-top-nav { display: flex; align-items: center; gap: 1px; margin-left: auto; }
+.arc-top-nav .arc-ico { width: 26px; }
 .arc-ico {
   display: flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border-radius: var(--r-pill); color: var(--c-text-2);
