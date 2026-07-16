@@ -49,39 +49,47 @@ function sortNodes(nodes) {
   return nodes;
 }
 
-// 走到（必要时沿途创建）一个目录节点，rel 累积为「a/b/c」。
-function ensureDir(root, parts) {
-  let cur = root;
-  let acc = '';
-  for (const part of parts) {
-    acc = acc ? `${acc}/${part}` : part;
-    let next = cur.children.find((c) => c.isDir && c.name === part);
-    if (!next) {
-      next = { name: part, rel: acc, isDir: true, children: [] };
-      cur.children.push(next);
-    }
-    cur = next;
-  }
-  return cur;
-}
-
 /**
  * 由文件 + 目录列表（均为工作区内相对路径，'/' 分隔）构造排序好的嵌套树。
  * @param files {Array<{path:string, kind?:string}>} 文件，path 形如 '素材/封面.png'
  * @param dirs  {Array<string>} 已知目录（含空目录，让用户显式建的空文件夹也显示——文件夹是一等公民）
  * @returns 顶层节点数组，节点 = { name, rel, isDir, kind?, children }
+ *
+ * ensureDir 的目录查找用 **每节点一张 name→dir 子节点索引（WeakMap）**，消掉旧版 `children.find` 的
+ * O(M²)（诊断 D3：超大扁平目录 15 万同级 → 线性 find 退化成 68 秒主进程冻结，实测）。索引只是查找加速、
+ * 不进树（WeakMap 局部、构造完即弃）——节点创建顺序、children 顺序、末尾 sortNodes 全不变 → 输出与旧版
+ * **逐字节一致**（test/file-tree-fidelity.test.js 对老实现做差分锁）。索引只存 ensureDir 建的目录节点，
+ * 与旧版 `find(c => c.isDir && c.name === part)` 的「只认目录、file/dir 同名不冲突」语义一致。
  */
 function buildFileTree(files, dirs = []) {
   const root = { name: '', rel: '', isDir: true, children: [] };
+  const childIndex = new WeakMap(); // 目录节点 → Map(子目录名 → 子目录节点)
+  const idxOf = (n) => { let m = childIndex.get(n); if (!m) { m = new Map(); childIndex.set(n, m); } return m; };
+  function ensureDir(parts) {
+    let cur = root;
+    let acc = '';
+    for (const part of parts) {
+      acc = acc ? `${acc}/${part}` : part;
+      const m = idxOf(cur);
+      let next = m.get(part);
+      if (!next) {
+        next = { name: part, rel: acc, isDir: true, children: [] };
+        cur.children.push(next);
+        m.set(part, next);
+      }
+      cur = next;
+    }
+    return cur;
+  }
   for (const d of dirs) {
     const parts = String(d).split('/').filter(Boolean);
-    if (parts.length) ensureDir(root, parts);
+    if (parts.length) ensureDir(parts);
   }
   for (const f of files) {
     const parts = String(f.path).split('/').filter(Boolean);
     if (!parts.length) continue;
     const leaf = parts.pop();
-    const parent = parts.length ? ensureDir(root, parts) : root;
+    const parent = parts.length ? ensureDir(parts) : root;
     parent.children.push({
       name: leaf,
       rel: f.path,
