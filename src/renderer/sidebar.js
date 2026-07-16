@@ -1880,7 +1880,7 @@
       if (e.rel) {
         const root = rootOf(e.rootId);
         if (!root) return Promise.resolve(false); // 根都不在了（store 与注册表漂移）→ 丢
-        if (root.missing) return Promise.resolve(true); // 失联根：保留，等重新定位
+        if (root.missing || root.truncated) return Promise.resolve(true); // 失联/过大根：保留标签（无本地树可 findNode 校验，别当「文件没了」丢弃 + 持久化清除，同失联根）
         return Promise.resolve(!!findNode(e.rootId, e.rel));
       }
       return window.ws2.pathExists(e.abs).catch(() => false);
@@ -1899,7 +1899,7 @@
     if (activeRel && !window.__pendingColdOpen) {
       const e = tabState.entries.find((x) => keyOf(x) === activeRel);
       const eRoot = e && e.rel ? rootOf(e.rootId) : null;
-      if (e && !(eRoot && eRoot.missing)) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发
+      if (e && !(eRoot && (eRoot.missing || eRoot.truncated))) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发（失联/过大根的激活项不自动载入，无树会空转）
     }
   }
 
