@@ -98,7 +98,11 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   argv 的 URL 解析，现只解析文件路径）。plist 声明已在本地未签名包字节级实证（CFBundleURLTypes
   http/https）；**签名发版后需真机闭环**：装新版 → 系统设置把默认浏览器切成 Wordspace → 从别的 app
   点链接验热/冷两路。
-- **⌘/ 快捷键面板**：ui-demo 有、真 app 暂无（app 本无快捷键面板，独立小 feature）。
+- **⌘/ 快捷键面板**：ui-demo 有（`ShortcutsPanel.tsx`）、真 app 暂无（app 本无快捷键面板，独立小 feature）。
+- **快捷键可发现性 · 未做的两档**（Wendi 2026-07-16；本次只做了 native `title` tooltip 补全，正本 §7）：
+  ① **主动教学气泡**——鼠标点了有快捷键的操作时弹一次 toast「下次可以按 ⌘X」，每键只弹一次（localStorage 记忆）、
+  只在鼠标触发时弹（键盘触发说明已会）。基础设施现成（`window.__wsToast` 滑入式 toast）。② **⌘/ 快捷键总表面板**
+  ——移植 ui-demo 的 `ShortcutsPanel`。两档 Colin/Wendi 未拍，先记账。
 - **U4/U5 菜单加速器的 web view 焦点跨平台假设**（2026-07-15 对抗审查记账，非阻塞）：⌘\/⌘R 在**网页标签聚焦**时
   能生效，依赖「原生应用菜单加速器在焦点落在子 `WebContentsView` 上时也触发」。此点仅 macOS 已由 ⌘W（菜单加速器、
   不转发、浏览时能关标签）间接实证；**Windows/Linux 未验**（本 feature 整体 Windows 未验，见上「打包冒烟」）。U4 删了

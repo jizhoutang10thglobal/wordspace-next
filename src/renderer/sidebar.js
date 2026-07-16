@@ -1914,7 +1914,7 @@
     // × 关闭：两个区都有。标签页区 = 关标签；置顶区 = 直接移出置顶（Wendi 要的，整条删掉、不只取消钉）。
     const x = document.createElement('button');
     x.className = 'sb-tab-close';
-    x.title = zone === 'pinned' ? '移出置顶' : '关闭';
+    x.title = zone === 'pinned' ? '移出置顶' : '关闭标签页 (Cmd+W)';
     x.innerHTML = X_SVG;
     x.onclick = (e) => {
       e.stopPropagation();
@@ -1977,7 +1977,7 @@
   }
   // key 给了 → 栏标可折叠（caret 右置 + 计数，抄收藏区 §4.3；点栏标翻转 localStorage 键、重渲）。
   // 默认展开（键值 '0' = 收起，缺省视为展开）；与收藏「默认收起」相反是拍板（置顶/标签页是主导航，别一装就藏）。
-  function zoneHeader(text, key, count, onPlus) {
+  function zoneHeader(text, key, count, onPlus, plusTitle) {
     const head = document.createElement('div');
     head.className = 'sb-zone-head';
     if (key) { head.setAttribute('role', 'button'); head.tabIndex = 0; }
@@ -1994,7 +1994,7 @@
     if (onPlus) {
       const plus = document.createElement('button');
       plus.className = 'sb-zone-add';
-      plus.title = '新建文档';
+      plus.title = plusTitle || '新建文档';
       plus.innerHTML = PLUS_SVG;
       plus.onclick = (e) => { e.stopPropagation(); onPlus(); }; // 别冒泡触发栏标折叠
       head.appendChild(plus);
@@ -2049,7 +2049,7 @@
     tabsEl.innerHTML = '';
     tabsEl.hidden = false;
     tabsEl.classList.toggle('is-open', tabsOpen);
-    tabsEl.appendChild(zoneHeader('标签页', 'ws-tabs-open', tabs.length, () => openCreateModal(null, '', { temp: true })));
+    tabsEl.appendChild(zoneHeader('标签页', 'ws-tabs-open', tabs.length, () => openCreateModal(null, '', { temp: true }), '新建标签页 (Cmd+T)'));
     if (tabsOpen) {
       const tlist = zoneList('tabs');
       if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
