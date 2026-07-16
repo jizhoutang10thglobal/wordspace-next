@@ -5,6 +5,7 @@ import type { Tab } from '../types'
 import { resolve, useBrowser } from '../mock/browser'
 import { useStore } from '../mock/store'
 import { buildWebCtx, cleanShareUrl, type CtxInfo, type CtxItem } from '../lib/webCtxMenu'
+import { useT } from '../i18n'
 import NewTab from './NewTab'
 import MockSite from './MockSites'
 import WebContextMenu from './WebContextMenu'
@@ -18,6 +19,7 @@ import './WebView.css'
 // 网页内容直接铺满，无网页头——URL / 安全指示 / 收藏都在左侧栏（地址栏 + 收藏区）。
 // 右键网页内容 → 原生风格 DOM 菜单（对齐真 app 的 WebContentsView 右键菜单）。
 export default function WebView({ tab }: { tab: Tab }) {
+  const t = useT()
   const r = resolve(tab.url)
   const openWebTab = useStore((s) => s.openWebTab)
   const toast = useStore((s) => s.toast)
@@ -66,18 +68,18 @@ export default function WebView({ tab }: { tab: Tab }) {
     const sel = (info.selection || '').trim()
     switch (id) {
       case 'open-link': openWebTab(link, link); navigate('/docs'); break
-      case 'open-link-bg': openWebTab(link, link, true); toast('已在后台标签页打开', 'neutral'); break
-      case 'copy-link': navigator.clipboard?.writeText(cleanShareUrl(link)); toast('已拷贝链接', 'success'); break
-      case 'copy-image': toast('已拷贝图片', 'success'); break
-      case 'copy-image-url': navigator.clipboard?.writeText(info.imgUrl || ''); toast('已拷贝图片地址', 'success'); break
-      case 'copy-selection': navigator.clipboard?.writeText(sel); toast('已拷贝', 'success'); break
-      case 'search-selection': openWebTab(`glass://search?q=${encodeURIComponent(sel)}`, `搜索:${sel.slice(0, 20)}`); navigate('/docs'); break
-      case 'cut': case 'copy': case 'paste': case 'select-all': toast('（演示）编辑操作', 'neutral'); break
+      case 'open-link-bg': openWebTab(link, link, true); toast(t('browser.openedInBackground'), 'neutral'); break
+      case 'copy-link': navigator.clipboard?.writeText(cleanShareUrl(link)); toast(t('browser.copiedLink'), 'success'); break
+      case 'copy-image': toast(t('browser.copiedImage'), 'success'); break
+      case 'copy-image-url': navigator.clipboard?.writeText(info.imgUrl || ''); toast(t('browser.copiedImageUrl'), 'success'); break
+      case 'copy-selection': navigator.clipboard?.writeText(sel); toast(t('browser.copied'), 'success'); break
+      case 'search-selection': openWebTab(`glass://search?q=${encodeURIComponent(sel)}`, t('browser.searchTitle', { q: sel.slice(0, 20) })); navigate('/docs'); break
+      case 'cut': case 'copy': case 'paste': case 'select-all': toast(t('browser.demoEditAction'), 'neutral'); break
       case 'nav-back': useBrowser.getState().back(); break
       case 'nav-forward': useBrowser.getState().forward(); break
-      case 'reload': toast('已刷新页面', 'neutral'); break
-      case 'copy-page-url': navigator.clipboard?.writeText(cleanShareUrl(tab.url)); toast('已拷贝页面链接', 'success'); break
-      case 'export-pdf': toast('正在导出 PDF…', 'neutral'); break
+      case 'reload': toast(t('browser.reloadedPage'), 'neutral'); break
+      case 'copy-page-url': navigator.clipboard?.writeText(cleanShareUrl(tab.url)); toast(t('browser.copiedPageLink'), 'success'); break
+      case 'export-pdf': toast(t('browser.exportingPdf'), 'neutral'); break
     }
   }
 
@@ -93,14 +95,14 @@ export default function WebView({ tab }: { tab: Tab }) {
       <div className="webview">
         <div className="webview-strip">
           <span className="webview-strip-text">
-            某些网站不允许内嵌预览,若空白可在系统浏览器打开
+            {t('browser.iframeBlockedNote')}
           </span>
           <button
             className="webview-strip-open"
             onClick={() => window.open(tab.url, '_blank', 'noopener,noreferrer')}
           >
             <ExternalLink size={13} />
-            打开
+            {t('common.open')}
           </button>
         </div>
         <iframe
@@ -127,12 +129,12 @@ export default function WebView({ tab }: { tab: Tab }) {
               if (e.key === 'Enter') { e.preventDefault(); doFind(e.shiftKey) }
               else if (e.key === 'Escape') { e.preventDefault(); closeFind() }
             }}
-            placeholder="在页面中查找"
+            placeholder={t('browser.findInPage')}
             spellCheck={false}
           />
-          <button className="web-find-btn" title="上一个" onClick={() => doFind(true)}><ChevronUp size={14} /></button>
-          <button className="web-find-btn" title="下一个" onClick={() => doFind(false)}><ChevronDown size={14} /></button>
-          <button className="web-find-btn" title="关闭（Esc）" onClick={closeFind}><X size={14} /></button>
+          <button className="web-find-btn" title={t('browser.findPrev')} onClick={() => doFind(true)}><ChevronUp size={14} /></button>
+          <button className="web-find-btn" title={t('browser.findNext')} onClick={() => doFind(false)}><ChevronDown size={14} /></button>
+          <button className="web-find-btn" title={t('browser.findClose')} onClick={closeFind}><X size={14} /></button>
         </div>
       )}
       <div className="webpage-zoom" style={zoom !== 1 ? { zoom } : undefined}>{content}</div>

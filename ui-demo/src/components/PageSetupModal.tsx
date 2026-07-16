@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { X } from 'lucide-react'
+import { useT } from '../i18n'
 import { useStore } from './../mock/store'
 import { useUI } from '../mock/ui'
 import { usePaged } from '../mock/paged'
@@ -16,6 +17,7 @@ import './PageSetupModal.css'
 // 「页面设置」——文档右上 ⋯ 菜单打开。分页文档开关 + 纸张/方向/边距/导出页码。
 // 所有改动即时生效（关掉弹窗就是「完成」），分页视图在弹窗背后实时变，所见即所得。
 export default function PageSetupModal() {
+  const t = useT()
   const docId = useUI((s) => s.pageSetupFor)
   const close = useUI((s) => s.closePageSetup)
   const getDoc = useStore((s) => s.getDoc)
@@ -64,15 +66,15 @@ export default function PageSetupModal() {
         className="ws-modal pg-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="页面设置"
+        aria-label={t('editor.pageSetupTitle')}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="ws-modal-head">
           <div className="ws-modal-head-text">
-            <div className="ws-modal-title">页面设置</div>
-            <div className="ws-modal-sub">「{doc.title}」· 分页显示与导出 PDF 的纸张版式</div>
+            <div className="ws-modal-title">{t('editor.pageSetupTitle')}</div>
+            <div className="ws-modal-sub">{t('editor.pageSetupSub', { title: doc.title })}</div>
           </div>
-          <button className="ws-modal-x" onClick={close} aria-label="关闭">
+          <button className="ws-modal-x" onClick={close} aria-label={t('common.close')}>
             <X size={16} />
           </button>
         </header>
@@ -81,8 +83,8 @@ export default function PageSetupModal() {
           {/* 分页文档总开关 */}
           <div className="pg-row pg-row-master">
             <div className="pg-row-text">
-              <div className="pg-row-label">分页文档</div>
-              <div className="pg-row-note">像 Word 那样按纸张分页显示，导出 PDF 同版式</div>
+              <div className="pg-row-label">{t('editor.pagedDoc')}</div>
+              <div className="pg-row-note">{t('editor.pagedDocNote')}</div>
             </div>
             <Switch on={effective.on} onToggle={() => patch({ on: !effective.on })} />
           </div>
@@ -90,8 +92,8 @@ export default function PageSetupModal() {
           <div className={'pg-settings' + (off ? ' is-off' : '')}>
             {/* 纸张 */}
             <div className="pg-field">
-              <div className="pg-field-label">纸张</div>
-              <div className="pg-seg" role="radiogroup" aria-label="纸张">
+              <div className="pg-field-label">{t('editor.paper')}</div>
+              <div className="pg-seg" role="radiogroup" aria-label={t('editor.paper')}>
                 {(Object.keys(PAPERS) as PaperSize[]).map((k) => (
                   <button
                     key={k}
@@ -109,12 +111,12 @@ export default function PageSetupModal() {
 
             {/* 方向 */}
             <div className="pg-field">
-              <div className="pg-field-label">方向</div>
-              <div className="pg-seg" role="radiogroup" aria-label="方向">
+              <div className="pg-field-label">{t('editor.orientation')}</div>
+              <div className="pg-seg" role="radiogroup" aria-label={t('editor.orientation')}>
                 {(
                   [
-                    ['portrait', '纵向'],
-                    ['landscape', '横向'],
+                    ['portrait', t('editor.portrait')],
+                    ['landscape', t('editor.landscape')],
                   ] as [Orientation, string][]
                 ).map(([k, label]) => (
                   <button
@@ -133,8 +135,8 @@ export default function PageSetupModal() {
 
             {/* 边距 */}
             <div className="pg-field">
-              <div className="pg-field-label">边距</div>
-              <div className="pg-seg" role="radiogroup" aria-label="边距预设">
+              <div className="pg-field-label">{t('editor.margins')}</div>
+              <div className="pg-seg" role="radiogroup" aria-label={t('editor.marginsAria')}>
                 {MARGIN_PRESETS.map((p) => (
                   <button
                     key={p.key}
@@ -144,22 +146,22 @@ export default function PageSetupModal() {
                     className={'pg-seg-item' + (presetKey === p.key ? ' is-on' : '')}
                     onClick={() => patch({ margin: p.margin })}
                   >
-                    {p.label}
+                    {t(p.label)}
                   </button>
                 ))}
                 <span
                   className={'pg-seg-item pg-seg-ghost' + (presetKey === 'custom' ? ' is-on' : '')}
                 >
-                  自定义
+                  {t('editor.custom')}
                 </span>
               </div>
               <div className="pg-margins">
                 {(
                   [
-                    ['top', '上'],
-                    ['bottom', '下'],
-                    ['left', '左'],
-                    ['right', '右'],
+                    ['top', t('editor.marginTop')],
+                    ['bottom', t('editor.marginBottom')],
+                    ['left', t('editor.marginLeft')],
+                    ['right', t('editor.marginRight')],
                   ] as [keyof PageMargin, string][]
                 ).map(([k, label]) => (
                   <label key={k} className="pg-mm">
@@ -186,8 +188,8 @@ export default function PageSetupModal() {
             {/* 导出页码 */}
             <div className="pg-row">
               <div className="pg-row-text">
-                <div className="pg-row-label">导出 PDF 页脚页码</div>
-                <div className="pg-row-note">形如「2 / 5」，居中页脚</div>
+                <div className="pg-row-label">{t('editor.pageNumbers')}</div>
+                <div className="pg-row-note">{t('editor.pageNumbersNote')}</div>
               </div>
               <Switch
                 on={effective.pageNumbers}
@@ -200,7 +202,7 @@ export default function PageSetupModal() {
 
         <div className="ws-modal-foot">
           <button className="ws-btn ws-btn-primary" onClick={close}>
-            完成
+            {t('common.done')}
           </button>
         </div>
       </div>

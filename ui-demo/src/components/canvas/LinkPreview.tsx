@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { FileText, Unlink, CornerUpRight, FilePlus2 } from 'lucide-react'
+import { useT } from '../../i18n'
 import { useStore } from '../../mock/store'
 import { snippetOf, repairCandidates, dirOf, baseOf } from '../../lib/links'
 import type { FileEntry } from '../../types'
@@ -32,6 +33,7 @@ export default function LinkPreview({
   onRebind: (candidate: FileEntry) => void
   onCreate: () => void
 }) {
+  const t = useT()
   const files = useStore((s) => s.files)
   const docs = useStore((s) => s.docs)
   const openFileTab = useStore((s) => s.openFileTab)
@@ -60,10 +62,10 @@ export default function LinkPreview({
         <>
           <div className="ws-linkpreview-brokenhead">
             <Unlink size={14} />
-            <span>链接目标不存在</span>
+            <span>{t('editor.linkTargetMissing')}</span>
           </div>
           <div className="ws-linkpreview-path">{state.target ?? state.href}</div>
-          <div className="ws-linkpreview-hint">目标可能被移动、改名，或已删除。</div>
+          <div className="ws-linkpreview-hint">{t('editor.targetMovedHint')}</div>
           {candidates.length > 0 && (
             <div className="ws-linkpreview-fixes">
               {candidates.slice(0, 3).map((c) => (
@@ -74,7 +76,7 @@ export default function LinkPreview({
                   title={c.path}
                 >
                   <CornerUpRight size={13} />
-                  <span className="ws-truncate">重新指向 {c.path}</span>
+                  <span className="ws-truncate">{t('editor.repointTo', { path: c.path })}</span>
                 </button>
               ))}
             </div>
@@ -82,7 +84,7 @@ export default function LinkPreview({
           <div className="ws-linkpreview-fixes">
             <button className="ws-linkpreview-fix" onClick={onCreate}>
               <FilePlus2 size={13} />
-              <span>在 {dirOf(state.target ?? '') || '根目录'} 新建「{baseOf(state.target ?? '')}」</span>
+              <span>{t('editor.createInDir', { dir: dirOf(state.target ?? '') || t('editor.rootDir'), name: baseOf(state.target ?? '') })}</span>
             </button>
           </div>
         </>
@@ -108,7 +110,7 @@ export default function LinkPreview({
                 openFileTab(file)
               }}
             >
-              打开
+              {t('common.open')}
             </button>
           </div>
         </>
@@ -119,7 +121,7 @@ export default function LinkPreview({
             <FileText size={14} />
             <span className="ws-truncate">{baseOf(file.path)}</span>
           </div>
-          <div className="ws-linkpreview-hint">非文档文件，打开后转交系统对应程序。</div>
+          <div className="ws-linkpreview-hint">{t('editor.nonDocFileHint')}</div>
           <div className="ws-linkpreview-foot">
             <span className="ws-linkpreview-path ws-truncate">{file.path}</span>
             <button
@@ -129,7 +131,7 @@ export default function LinkPreview({
                 openFileTab(file)
               }}
             >
-              打开
+              {t('common.open')}
             </button>
           </div>
         </>

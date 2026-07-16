@@ -3,12 +3,14 @@ import { X, Keyboard, ExternalLink } from 'lucide-react'
 import { useUI } from '../mock/ui'
 import { shortcutGroupsForPlatform, renderKey } from '../lib/shortcutList'
 import { IS_MAC } from '../lib/platform'
+import { useT } from '../i18n'
 import './ShortcutsPanel.css'
 
 // 快捷键速查面板（Cmd+/ 或左下角 ⌨ 打开）——只列 demo 里真的能用的键位。
 // 完整的调研 / 五项裁决 / UseCase / 与真 app 对照，见写死在 demo 里的
 // public/shortcuts.html（底部链接新开页查看，Wendi review 以那份为准）。
 export default function ShortcutsPanel() {
+  const t = useT()
   const open = useUI((s) => s.shortcutsOpen)
   const close = useUI((s) => s.closeShortcuts)
 
@@ -23,7 +25,8 @@ export default function ShortcutsPanel() {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, close])
 
-  const groups = useMemo(() => shortcutGroupsForPlatform(), [])
+  // 依赖 t：切换语言时 useT 返回新函数 → 重建分组文案。
+  const groups = useMemo(() => shortcutGroupsForPlatform(), [t])
 
   if (!open) return null
 
@@ -33,19 +36,19 @@ export default function ShortcutsPanel() {
         className="ws-modal skp"
         role="dialog"
         aria-modal="true"
-        aria-label="快捷键"
+        aria-label={t('shortcuts.panelTitle')}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="ws-modal-head">
           <div className="ws-modal-head-text">
             <div className="ws-modal-title">
               <Keyboard size={16} className="skp-title-ico" />
-              快捷键
+              {t('shortcuts.panelTitle')}
               <span className="skp-platform">{IS_MAC ? 'macOS' : 'Windows'}</span>
             </div>
-            <div className="ws-modal-sub">同一个键在不同场景下含义不同：弹层 &gt; 编辑器 &gt; 全局壳，Esc 逐层退出</div>
+            <div className="ws-modal-sub">{t('shortcuts.subtitle')}</div>
           </div>
-          <button className="ws-modal-x" onClick={close} aria-label="关闭">
+          <button className="ws-modal-x" onClick={close} aria-label={t('common.close')}>
             <X size={16} />
           </button>
         </header>
@@ -74,9 +77,9 @@ export default function ShortcutsPanel() {
         <div className="ws-modal-foot skp-foot">
           <a className="skp-doc-link" href="/shortcuts.html" target="_blank" rel="noreferrer">
             <ExternalLink size={13} />
-            完整键位文档（调研 · 裁决 · UseCase · 与真 app 对照）
+            {t('shortcuts.docLink')}
           </a>
-          <button className="ws-btn" onClick={close}>关闭</button>
+          <button className="ws-btn" onClick={close}>{t('common.close')}</button>
         </div>
       </div>
     </div>

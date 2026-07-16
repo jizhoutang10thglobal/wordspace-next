@@ -2,65 +2,101 @@ import { useStore } from '../mock/store'
 import { relTime } from '../lib/format'
 import { Avatar } from '../ui/primitives'
 import { useBrowserSettings, SEARCH_ENGINES, type EngineKey } from '../mock/browserSettings'
-import { useAppearance, APPEARANCE_LABELS, type AppearancePref } from '../appearance'
+import { useAppearance, type AppearancePref } from '../appearance'
+import { useLang, useT, LANG_PREFS, type LangPref } from '../i18n'
 import './Settings.css'
 
 const APPEARANCE_ORDER: AppearancePref[] = ['system', 'light', 'dark']
+const THEME_KEY: Record<AppearancePref, string> = { system: 'settings.themeSystem', light: 'settings.themeLight', dark: 'settings.themeDark' }
+const LANG_KEY: Record<LangPref, string> = { system: 'settings.langSystem', zh: 'settings.langZh', en: 'settings.langEn' }
 
 export default function Settings() {
+  const t = useT()
   const workspace = useStore((s) => s.workspace)
   const members = useStore((s) => s.members)
   const engine = useBrowserSettings((s) => s.engine)
   const setEngine = useBrowserSettings((s) => s.setEngine)
   const appearancePref = useAppearance((s) => s.pref)
   const setAppearancePref = useAppearance((s) => s.setPref)
+  const langPref = useLang((s) => s.pref)
+  const lang = useLang((s) => s.lang)
+  const setLangPref = useLang((s) => s.setPref)
 
   return (
     <div className="st-scroll">
       <div className="st-page">
         <header className="st-head">
-          <div className="ws-eyebrow">设置 · SETTINGS</div>
-          <h1 className="st-title">设置</h1>
+          <div className="ws-eyebrow">{t('settings.eyebrow')}</div>
+          <h1 className="st-title">{t('settings.title')}</h1>
         </header>
 
         {/* 存储与归属 */}
         <section className="st-section">
-          <div className="st-label">存储与归属</div>
+          <div className="st-label">{t('settings.storage')}</div>
           <div className="st-rows">
             <div className="st-row">
               <div className="st-row-left">
-                <div className="st-row-label">本地仓库</div>
-                <div className="st-row-note">文件在你机器上,归你所有</div>
+                <div className="st-row-label">{t('settings.localRepo')}</div>
+                <div className="st-row-note">{t('settings.localRepoNote')}</div>
               </div>
               <code className="st-row-value st-mono">{workspace.storagePath}</code>
             </div>
             <div className="st-row">
               <div className="st-row-left">
-                <div className="st-row-label">部署目标</div>
-                <div className="st-row-note">可自托管,由公司掌控</div>
+                <div className="st-row-label">{t('settings.deployTarget')}</div>
+                <div className="st-row-note">{t('settings.deployTargetNote')}</div>
               </div>
               <span className="st-row-value">{workspace.deployTarget}</span>
             </div>
             <div className="st-row">
               <div className="st-row-left">
-                <div className="st-row-label">同步</div>
+                <div className="st-row-label">{t('settings.sync')}</div>
               </div>
               <span className="st-row-value st-sync">
                 <span className="st-dot" />
-                已同步 · {relTime(workspace.syncedAt)}
+                {t('settings.synced', { time: relTime(workspace.syncedAt) })}
               </span>
             </div>
           </div>
         </section>
 
-        {/* 外观 */}
+        {/* 语言 */}
         <section className="st-section">
-          <div className="st-label">外观</div>
+          <div className="st-label">{t('settings.language')}</div>
           <div className="st-rows">
             <div className="st-row">
               <div className="st-row-left">
-                <div className="st-row-label">主题</div>
-                <div className="st-row-note">跟随系统时,macOS 切换深浅色会实时跟随</div>
+                <div className="st-row-label">{t('settings.languageRow')}</div>
+                <div className="st-row-note">{t('settings.languageNote')}</div>
+              </div>
+              <select
+                className="st-select"
+                value={langPref}
+                onChange={(e) => setLangPref(e.target.value as LangPref)}
+              >
+                {LANG_PREFS.map((k) => (
+                  <option key={k} value={k}>{t(LANG_KEY[k])}</option>
+                ))}
+              </select>
+            </div>
+            {langPref === 'system' && (
+              <div className="st-row">
+                <div className="st-row-left">
+                  <div className="st-row-note">{t('settings.langCurrent', { lang: lang === 'zh' ? t('settings.langZh') : t('settings.langEn') })}</div>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* 外观 */}
+        <section className="st-section">
+          <div className="st-label">{t('settings.appearance')}</div>
+          <div className="st-rows">
+            <div className="st-row">
+              <div className="st-row-left">
+                <div className="st-row-label">{t('settings.theme')}</div>
+                <div className="st-row-note">{t('settings.themeNote')}</div>
               </div>
               <select
                 className="st-select"
@@ -68,22 +104,21 @@ export default function Settings() {
                 onChange={(e) => setAppearancePref(e.target.value as AppearancePref)}
               >
                 {APPEARANCE_ORDER.map((k) => (
-                  <option key={k} value={k}>{APPEARANCE_LABELS[k]}</option>
+                  <option key={k} value={k}>{t(THEME_KEY[k])}</option>
                 ))}
               </select>
             </div>
           </div>
         </section>
 
-        {/* 成员 */}
         {/* 浏览器 */}
         <section className="st-section">
-          <div className="st-label">浏览器</div>
+          <div className="st-label">{t('settings.browser')}</div>
           <div className="st-rows">
             <div className="st-row">
               <div className="st-row-left">
-                <div className="st-row-label">默认搜索引擎</div>
-                <div className="st-row-note">在地址栏打一句话（不是网址）时用它搜索</div>
+                <div className="st-row-label">{t('settings.defaultEngine')}</div>
+                <div className="st-row-note">{t('settings.defaultEngineNote')}</div>
               </div>
               <select className="st-select" value={engine} onChange={(e) => setEngine(e.target.value as EngineKey)}>
                 {(Object.keys(SEARCH_ENGINES) as EngineKey[]).map((k) => (
@@ -94,8 +129,9 @@ export default function Settings() {
           </div>
         </section>
 
+        {/* 成员 */}
         <section className="st-section">
-          <div className="st-label">成员</div>
+          <div className="st-label">{t('settings.members')}</div>
           <div className="st-rows">
             {members.map((m) => (
               <div key={m.id} className="st-row st-member">
@@ -104,7 +140,7 @@ export default function Settings() {
                 <span
                   className={`st-chip${m.kind === 'agent' ? ' st-chip-agent' : ''}`}
                 >
-                  {m.kind === 'agent' ? 'Agent' : '成员'}
+                  {m.kind === 'agent' ? t('settings.roleAgent') : t('settings.roleMember')}
                 </span>
                 <span className="st-member-email st-mono">{m.email}</span>
               </div>
@@ -114,17 +150,17 @@ export default function Settings() {
 
         {/* 工作区 */}
         <section className="st-section">
-          <div className="st-label">工作区</div>
+          <div className="st-label">{t('settings.workspace')}</div>
           <div className="st-rows">
             <div className="st-row">
               <div className="st-row-left">
-                <div className="st-row-label">名称</div>
+                <div className="st-row-label">{t('settings.wsName')}</div>
               </div>
               <span className="st-row-value">{workspace.name}</span>
             </div>
             <div className="st-row">
               <div className="st-row-left">
-                <div className="st-row-label">套餐</div>
+                <div className="st-row-label">{t('settings.wsPlan')}</div>
               </div>
               <span className="st-row-value">{workspace.plan}</span>
             </div>

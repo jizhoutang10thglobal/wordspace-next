@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { X, FolderClosed, FolderRoot, Check } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
+import { useT } from '../i18n'
 import './SaveModal.css'
 
 // 「保存到哪里」——临时文档（从「标签页 +」新建、unsaved）手动保存时弹出，选文件夹（默认当前空间根目录）。
 // 也用于「未保存关闭确认」的「保存并关闭」：saveCloseAfterTab 有值时，保存后顺手关掉那个标签页。
 export default function SaveModal() {
+  const t = useT()
   const docId = useUI((s) => s.saveDocId)
   const closeAfterTab = useUI((s) => s.saveCloseAfterTab)
   const closeSave = useUI((s) => s.closeSave)
@@ -21,14 +23,14 @@ export default function SaveModal() {
   const options = useMemo(() => {
     const opts: { rootId: string | null; dir: string; label: string; root: boolean }[] = []
     for (const r of roots.filter((r) => !r.missing)) {
-      opts.push({ rootId: r.id, dir: '', label: `${r.name}（根目录）`, root: true })
+      opts.push({ rootId: r.id, dir: '', label: t('modals.rootDirLabel', { name: r.name }), root: true })
       dirs
         .filter((d) => d.rootId === r.id)
         .sort((a, b) => a.path.localeCompare(b.path, 'zh'))
         .forEach((d) => opts.push({ rootId: r.id, dir: d.path, label: `${r.name} / ${d.path}`, root: false }))
     }
     return opts
-  }, [roots, dirs])
+  }, [roots, dirs, t])
 
   const [sel, setSel] = useState<{ rootId: string | null; dir: string }>({ rootId: null, dir: '' })
   useEffect(() => {
@@ -69,15 +71,15 @@ export default function SaveModal() {
         className="ws-modal sm-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="保存到哪里"
+        aria-label={t('modals.saveWhere')}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="ws-modal-head">
           <div className="ws-modal-head-text">
-            <div className="ws-modal-title">保存到哪里</div>
-            <div className="ws-modal-sub">「{doc.title}」· 默认存到第一个打开的文件夹，也可以选别的位置</div>
+            <div className="ws-modal-title">{t('modals.saveWhere')}</div>
+            <div className="ws-modal-sub">{t('modals.saveWhereSub', { title: doc.title })}</div>
           </div>
-          <button className="ws-modal-x" onClick={closeSave} aria-label="关闭">
+          <button className="ws-modal-x" onClick={closeSave} aria-label={t('common.close')}>
             <X size={16} />
           </button>
         </header>
@@ -100,8 +102,8 @@ export default function SaveModal() {
         </div>
 
         <div className="ws-modal-foot">
-          <button className="ws-btn" onClick={closeSave}>取消</button>
-          <button className="ws-btn ws-btn-primary" onClick={doSave}>保存到这里</button>
+          <button className="ws-btn" onClick={closeSave}>{t('common.cancel')}</button>
+          <button className="ws-btn ws-btn-primary" onClick={doSave}>{t('modals.saveHere')}</button>
         </div>
       </div>
     </div>

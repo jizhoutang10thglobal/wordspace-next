@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from 'react'
 import { Search, Pin } from 'lucide-react'
 import { useBrowser } from '../mock/browser'
 import { useStore } from '../mock/store'
+import { useT } from '../i18n'
 import './NewTab.css'
 
 // The browser start page. App-level UI, so it stays plain like the rest of the
@@ -9,23 +10,26 @@ import './NewTab.css'
 // address/search field, a grid of shortcut tiles, and a thin bookmarks row.
 
 interface Shortcut {
-  name: string
+  name?: string
+  nameKey?: string
   url: string
   initial: string
+  initialKey?: string
   color: string
 }
 
 const shortcuts: Shortcut[] = [
-  { name: '招聘页', url: 'https://tenthglobal.com/careers', initial: '招', color: '#1a73e8' },
-  { name: '公司官网', url: 'https://tenthglobal.com', initial: 'T', color: '#16307a' },
+  { nameKey: 'browser.careersTile', url: 'https://tenthglobal.com/careers', initial: '招', initialKey: 'browser.careersInitial', color: '#1a73e8' }, // i18n-exempt（演示磁贴 initial 回退，真显示走 initialKey）
+  { nameKey: 'browser.companyTile', url: 'https://tenthglobal.com', initial: 'T', color: '#16307a' },
   { name: 'Designer News', url: 'https://news.design/today', initial: 'D', color: '#b8541d' },
-  { name: 'Glass 搜索', url: 'glass://home', initial: 'G', color: '#1e8e3e' },
+  { nameKey: 'browser.glassSearch', url: 'glass://home', initial: 'G', color: '#1e8e3e' },
   { name: 'FlowDesk', url: 'https://flowdesk.app', initial: 'F', color: '#6750c8' },
-  { name: '维基百科', url: 'https://zh.wikipedia.org', initial: 'W', color: '#5a5f66' },
+  { nameKey: 'browser.wikipediaTile', url: 'https://zh.wikipedia.org', initial: 'W', color: '#5a5f66' },
   { name: 'Example', url: 'https://example.com', initial: 'E', color: '#0b8793' },
 ]
 
 export default function NewTab() {
+  const t = useT()
   const [value, setValue] = useState('')
   const pins = useStore((s) => s.tabs.filter((t) => t.pinned))
   const setActiveTab = useStore((s) => s.setActiveTab)
@@ -49,18 +53,18 @@ export default function NewTab() {
             autoFocus
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="搜索,或输入网址"
+            placeholder={t('browser.omniPlaceholder')}
             spellCheck={false}
           />
         </form>
 
         <div className="nt-tiles">
           {shortcuts.map((s) => (
-            <button key={s.name} className="nt-tile" onClick={() => go(s.url)}>
+            <button key={s.url} className="nt-tile" onClick={() => go(s.url)}>
               <span className="nt-chip" style={{ '--chip': s.color } as CSSProperties}>
-                {s.initial}
+                {s.initialKey ? t(s.initialKey) : s.initial}
               </span>
-              <span className="nt-tile-name">{s.name}</span>
+              <span className="nt-tile-name">{s.nameKey ? t(s.nameKey) : s.name}</span>
             </button>
           ))}
         </div>
@@ -77,7 +81,7 @@ export default function NewTab() {
         )}
 
         {/* 安全口径提示（对齐真 app）：内置浏览器无恶意网站防护 */}
-        <div className="nt-safe-note">内置浏览器没有恶意网站防护，访问陌生网站请自行留意</div>
+        <div className="nt-safe-note">{t('browser.safeNote')}</div>
       </div>
     </div>
   )

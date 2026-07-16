@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ChevronRight, CornerUpLeft, FileText } from 'lucide-react'
+import { useT } from '../../i18n'
 import { useStore } from '../../mock/store'
 import { computeBacklinks } from '../../lib/links'
 
@@ -9,6 +10,7 @@ import { computeBacklinks } from '../../lib/links'
  * Craft 把反链写进文档底部的做法与此冲突，不抄）。数据 = 现算（真 app 是可丢弃索引缓存）。
  */
 export default function Backlinks({ rootId, path }: { rootId: string; path: string }) {
+  const t = useT()
   const files = useStore((s) => s.files)
   const docs = useStore((s) => s.docs)
   const openFileTab = useStore((s) => s.openFileTab)
@@ -26,7 +28,7 @@ export default function Backlinks({ rootId, path }: { rootId: string; path: stri
       <button className="ws-backlinks-head" onClick={() => setOpen((o) => !o)}>
         <ChevronRight size={12} className={`ws-backlinks-caret${open ? ' is-open' : ''}`} />
         <CornerUpLeft size={13} />
-        <span>{entries.length} 篇文档链接到这里</span>
+        <span>{t('editor.backlinkCount', { n: entries.length })}</span>
       </button>
       {open && (
         <div className="ws-backlinks-list">

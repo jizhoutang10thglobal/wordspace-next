@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, Pencil, Trash2, Check } from 'lucide-react'
 import { useStore } from '../mock/store'
+import { useT } from '../i18n'
 import { scopeTemplateCss } from '../lib/templateScope'
 import type { Block, Template } from '../types'
 import './TemplatesPage.css'
@@ -43,6 +44,7 @@ function TemplatePreview({ t }: { t: Template }) {
 
 /** 「模板」页：官方 / 我的两组卡片（缩略图预览 + 名字）。点卡片 = 从它新建文档；我的可改名 / 删除。 */
 export default function TemplatesPage() {
+  const tt = useT()
   const navigate = useNavigate()
   const templates = useStore((s) => s.templates)
   const createFromTemplate = useStore((s) => s.createFromTemplate)
@@ -62,7 +64,7 @@ export default function TemplatesPage() {
     const isEditing = editing === t.id
     return (
       <div className="tplp-card">
-        <button className="tplp-card-thumb" onClick={() => use(t)} title="从此模板新建文档">
+        <button className="tplp-card-thumb" onClick={() => use(t)} title={tt('templates.newFromThis')}>
           <TemplatePreview t={t} />
         </button>
         <div className="tplp-card-foot">
@@ -85,10 +87,10 @@ export default function TemplatesPage() {
           )}
           {t.origin === 'user' && !isEditing && (
             <span className="tplp-card-ops">
-              <button title="改名" onClick={() => setEditing(t.id)}>
+              <button title={tt('common.rename')} onClick={() => setEditing(t.id)}>
                 <Pencil size={13} strokeWidth={1.9} />
               </button>
-              <button title="删除" onClick={() => deleteTemplateWithUndo(t.id)}>
+              <button title={tt('common.delete')} onClick={() => deleteTemplateWithUndo(t.id)}>
                 <Trash2 size={13} strokeWidth={1.9} />
               </button>
             </span>
@@ -101,26 +103,26 @@ export default function TemplatesPage() {
   return (
     <div className="tplp-page">
       <header className="tplp-top">
-        <button className="tplp-back" onClick={() => navigate('/docs')} title="返回">
+        <button className="tplp-back" onClick={() => navigate('/docs')} title={tt('common.back')}>
           <ChevronLeft size={18} />
         </button>
-        <h1>模板</h1>
-        <span className="tplp-sub">点模板从它新建文档；把喜欢的文档在其 ⋯ 菜单里「存为模板」，就出现在下面「我的」。</span>
+        <h1>{tt('templates.title')}</h1>
+        <span className="tplp-sub">{tt('templates.subtitle')}</span>
       </header>
 
       <div className="tplp-body">
-        <div className="tplp-group-label">官方</div>
+        <div className="tplp-group-label">{tt('templates.official')}</div>
         <div className="tplp-grid">
           {official.map((t) => (
             <Card key={t.id} t={t} />
           ))}
         </div>
 
-        <div className="tplp-group-label">我的</div>
+        <div className="tplp-group-label">{tt('templates.mine')}</div>
         {mine.length === 0 ? (
           <div className="tplp-empty">
             <Check size={15} strokeWidth={1.8} />
-            还没有自己的模板。在任意文档的 ⋯ 菜单里选「存为模板」，它就会出现在这里，以后一键复用。
+            {tt('templates.emptyMine')}
           </div>
         ) : (
           <div className="tplp-grid">
