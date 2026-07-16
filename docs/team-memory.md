@@ -14,6 +14,12 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-16 — 硬教训：quitAndInstall 不发 before-quit，发 before-quit-for-update（动退出链必读）
+
+**是什么**：Electron `autoUpdater.quitAndInstall()` 的退出时序是——先发 **`before-quit-for-update`**、再逐窗 `close`、全部关完才 `app.quit()`（届时才有 before-quit）。main.js 曾只接 `before-quit` 打「真退出」标志、注释还断言 quitAndInstall 会先发它（假的）——结果 mac「关窗=隐藏驻留」守卫把 quitAndInstall 的关窗 `preventDefault` 吞掉：窗口只是藏起来、app 不退、安装永等不到 `window-all-closed`。用户视角=「点了重启安装没反应」，且这按钮**自上线起从未工作过**（Colin 机器 updater.log 2026-07-15 四连击零重启实锤；此前所谓能更新全靠用户手动 Cmd+Q 触发退出时安装）。同 PR 另修两个：bundle 被提权安装写成 root:wheel 后每次更新都要密码（一次性 chown 修复流程 + `src/lib/mac-bundle-repair.js`）、下载进度面板整卡拆建+抢焦点导致狂闪（改结构签名比对原地更新）。
+**怎么 apply**：① 任何要在「真退出」和「关窗=隐藏」之间做区分的代码（close 守卫/退出清理/防丢数据），**必须同时监听 `before-quit` 和 `before-quit-for-update`**——只接前者=自动更新重启必坏；② 别信注释里对 Electron 事件时序的断言，electron.d.ts + updater.log（`userData/logs/updater.log`，「evt=xxx ∅ -> checking」=新进程启动标记）可实证；③ 面板/弹层类 UI 收高频推送时，禁止每次推送整树重建+refocus——按结构签名做原地更新。
+**来源**：PR #231（fix/updater-ux）；docs/features/app-updater.md 行为契约已更新；随 v0.10.1 发版
+
 ## 2026-07-16 — P0 大根卡死:救援方法 + 「上限是条目数不是 GB」+ sidebar/ipc/workspace 即将大动(撞车预警)
 
 **是什么**:Colin+Wendi 都中招——把巨型目录(家目录/桌面)加为根,app 卡死甚至死锁(根行不渲染、
