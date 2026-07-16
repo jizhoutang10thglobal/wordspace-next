@@ -93,6 +93,12 @@
       note.textContent = st.crossVolNames.join('、') + '：在另一磁盘卷，暂不支持链接';
       listEl.appendChild(note);
     }
+    // V3：超大根（简化模式）链接索引降级 → 底部灰字提示（拒绝路径可见）
+    if (st.degradedNames && st.degradedNames.length) {
+      var dnote = document.createElement('div'); dnote.className = 'ws-mention-volnote';
+      dnote.textContent = st.degradedNames.join('、') + '：文件夹过大，链接功能不可用';
+      listEl.appendChild(dnote);
+    }
     // 让选中项可见
     var active = listEl.querySelector('.is-active');
     if (active && active.scrollIntoView) active.scrollIntoView({ block: 'nearest' });
@@ -110,7 +116,7 @@
     Promise.resolve(window.ws2.linksCandidatesAll(rootId)).then(function (groups) {
       if (!st || st.rootId !== rootId) return; // 会话已变
       st.groups = (groups || []).map(function (g) {
-        return { rootId: g.rootId, rootName: g.rootName, current: g.rootId === rootId, sameVol: !!g.sameVol, docs: g.docs || [], others: g.others || [] };
+        return { rootId: g.rootId, rootName: g.rootName, current: g.rootId === rootId, sameVol: !!g.sameVol, degraded: !!g.degraded, docs: g.docs || [], others: g.others || [] };
       });
       st.loading = false;
       applyFilter();
@@ -121,7 +127,10 @@
     var q = st.query.trim().toLowerCase();
     var out = [];
     var crossVolNames = [];
+    var degradedNames = [];
     (st.groups || []).forEach(function (g) {
+      // V3：超大根链接索引降级 → 不列候选，底部灰字提示「文件夹过大，链接功能不可用」
+      if (g.degraded) { degradedNames.push(g.rootName); return; }
       // 跨卷根：不给建链（B 拍板）→ 不列候选，只在底部灰字提示（哑失败=用户以为没做，L8）
       if (!g.current && !g.sameVol) { if (g.docs.length || g.others.length) crossVolNames.push(g.rootName); return; }
       var self = function (rel) { return g.current && rel === st.fromRel; }; // 自链只在源根内排除（别的根同 rel 是别的文件）
@@ -138,6 +147,7 @@
     if (st.query.trim() && window.__wsCreateLinkedDoc) out.push({ kind: 'create', title: '新建「' + st.query.trim() + '」' });
     out.push({ kind: 'url', title: '网址链接…' });
     st.crossVolNames = crossVolNames;
+    st.degradedNames = degradedNames;
     st.items = out;
     if (st.active > out.length - 1) st.active = out.length - 1;
     if (st.active < 0) st.active = 0;
