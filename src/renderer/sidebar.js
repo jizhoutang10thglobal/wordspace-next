@@ -1914,11 +1914,12 @@
     // × 关闭：两个区都有。标签页区 = 关标签；置顶区 = 直接移出置顶（Wendi 要的，整条删掉、不只取消钉）。
     const x = document.createElement('button');
     x.className = 'sb-tab-close';
-    x.title = zone === 'pinned' ? '移出置顶' : '关闭标签页 (Cmd+W)';
+    x.title = zone === 'pinned' ? '移出置顶' : kbd('关闭标签页 ⌘W');
     x.innerHTML = X_SVG;
     x.onclick = (e) => {
       e.stopPropagation();
       (zone === 'pinned' ? removeTabRel : closeTabRel)(key);
+      if (zone !== 'pinned') coachOnce('close-tab', '下次可以用 ' + kbd('⌘W') + ' 关闭当前标签');
     };
     row.append(x);
     row.onclick = () => openTabRow(entry, 'expand'); // 点标签：展开到该文件+高亮，但不滚动视口（Colin 2026-07-14 定）
@@ -2049,7 +2050,10 @@
     tabsEl.innerHTML = '';
     tabsEl.hidden = false;
     tabsEl.classList.toggle('is-open', tabsOpen);
-    tabsEl.appendChild(zoneHeader('标签页', 'ws-tabs-open', tabs.length, () => openCreateModal(null, '', { temp: true }), '新建标签页 (Cmd+T)'));
+    tabsEl.appendChild(zoneHeader('标签页', 'ws-tabs-open', tabs.length, () => {
+      openCreateModal(null, '', { temp: true });
+      coachOnce('new-tab', '下次可以用 ' + kbd('⌘T') + ' 新建标签页');
+    }, kbd('新建标签页 ⌘T')));
     if (tabsOpen) {
       const tlist = zoneList('tabs');
       if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
@@ -2098,7 +2102,7 @@
   const TOAST_CAP = 4;
   // shell.js（先加载、无自己的 toast）复用这个：U0 断链/工作区外等占位提示，及后续互链 toast。
   window.__wsToast = (message, actionLabel, onAction) => showToast(message, actionLabel, onAction);
-  function showToast(message, actionLabel, onAction) {
+  function showToast(message, actionLabel, onAction, opts) {
     let host = document.getElementById('sb-toast-host');
     if (!host) {
       host = document.createElement('div');
@@ -2107,9 +2111,16 @@
       document.body.appendChild(host);
     }
     const hasAction = !!(actionLabel && onAction);
+    const hint = !!(opts && opts.hint); // 快捷键教学气泡：灯泡 + accent 色条 + 稍长停留（对齐 ui-demo hint tone）
     const t = document.createElement('div');
-    t.className = 'sb-toast';
+    t.className = hint ? 'sb-toast sb-toast-hint' : 'sb-toast';
     if (hasAction) t.dataset.action = '1';
+    if (hint) {
+      const bulb = document.createElement('span');
+      bulb.className = 'sb-toast-bulb';
+      bulb.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.1 14a5 5 0 1 0-6.2 0c.5.4.9 1 .9 1.7V17h4.4v-1.3c0-.7.4-1.3.9-1.7z"/></svg>';
+      t.appendChild(bulb);
+    }
     const msg = document.createElement('span');
     msg.textContent = message;
     t.appendChild(msg);
@@ -2133,8 +2144,30 @@
       if (!victim) break;
       victim.remove();
     }
-    timer = setTimeout(dismiss, hasAction ? 15000 : 6500);
+    timer = setTimeout(dismiss, hasAction ? 15000 : hint ? 4200 : 6500);
     return t;
+  }
+
+  // ---- 快捷键教学气泡（Wendi 2026-07-16，对齐 ui-demo src/mock/coach.ts）----
+  // 用户**用鼠标**做了有快捷键的操作 → 弹一次「下次可以用 ⌘X」，每个操作一辈子只弹一次
+  // （localStorage 记住）。键盘/程序化触发不弹（调用方用 e.isTrusted 过滤——如 ⌘R 菜单路径
+  // 走 navReload.click()，isTrusted=false，不该弹）。
+  const COACH_KEY = 'ws-coached-ops';
+  function coachOnce(op, message) {
+    let seen;
+    try { seen = new Set(JSON.parse(localStorage.getItem(COACH_KEY) || '[]')); } catch { seen = new Set(); }
+    if (seen.has(op)) return;
+    seen.add(op);
+    localStorage.setItem(COACH_KEY, JSON.stringify([...seen]));
+    showToast(message, null, null, { hint: true });
+  }
+  window.__wsCoach = coachOnce; // browser.js（nav-reload）也要用
+  // 平台化快捷键字形：mac 用 ⌘/⇧ 字形，其他平台展开成 Ctrl+/Shift+。（function 形式=提升，行渲染早于本行执行也安全）
+  function kbd(combo) { return (navigator.platform || '').includes('Mac') ? combo : combo.replace('⌘', 'Ctrl+').replace('⇧', 'Shift+'); }
+  window.__wsKbd = kbd;
+  // index.html 静态 title 是 mac 字形（⌘…），非 mac 启动时归一成 Ctrl+…（动态 title 由各创建处用 kbd() 直接生成）。
+  if (!(navigator.platform || '').includes('Mac')) {
+    document.querySelectorAll('[title*="⌘"]').forEach((el) => { el.title = el.title.replace('⌘', 'Ctrl+').replace('⇧', 'Shift+'); });
   }
 
   // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。----
@@ -2383,7 +2416,9 @@
     if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
   }
   function toggleCollapsed() { if (sidebarEl) setSidebarCollapsed(!sidebarEl.classList.contains('is-collapsed')); }
-  if (toggleBtn) toggleBtn.onclick = toggleCollapsed;
+  // 鼠标点按钮 → 顺手教一次快捷键（菜单加速器/keydown 路径直接调 toggleCollapsed，不经这里、不弹）。
+  // （#234 原来还给 sb-reopen 浮钮挂 coach——沉浸收起已删该钮，只剩 toggle 这一条。）
+  if (toggleBtn) toggleBtn.onclick = () => { toggleCollapsed(); coachOnce('toggle-sidebar', '下次可以用 ' + kbd('⌘\\') + ' 收起 / 展开侧栏'); };
   // ⌘\ 切换侧栏的**主**通道是「视图」菜单加速器（sendMenu('toggle-sidebar') → shell onMenu → __sbHooks.toggleSidebar），
   // 它覆盖全部焦点域——含文档编辑 iframe 内的原失灵域（keydown 不冒泡出 iframe，靠 keydown 兜不住，必须走菜单）。
   // 下面这条主层 document keydown 保留作**主层 fallback**：macOS/Electron 真实按键会被原生菜单先吃掉、这条不触发
@@ -2398,11 +2433,13 @@
   });
 
   // 侧栏宽度可拖拽（UX5 / Wendi F1）：右边界拖拽柄改 --sb-width（夹 min/max），存 localStorage、重启恢复。
-  const SB_MIN = 180, SB_MAX = 520, SB_KEY = 'ws2-sb-width';
+  // 最小 240（Wendi 2026-07-16）：.sb-head 顶排 6 图标 + 间距 + padding 需 238px，180 下限会让
+  // 右端图标溢出被网页/编辑区盖掉「消失」。旧存值 <240 夹到 240（贴用户原意，不跳回默认宽）。
+  const SB_MIN = 240, SB_MAX = 520, SB_KEY = 'ws2-sb-width';
   (function initSidebarResize() {
     if (!sidebarEl) return;
     const saved = parseInt(localStorage.getItem(SB_KEY), 10);
-    if (saved >= SB_MIN && saved <= SB_MAX) sidebarEl.style.setProperty('--sb-width', saved + 'px');
+    if (Number.isFinite(saved)) sidebarEl.style.setProperty('--sb-width', Math.max(SB_MIN, Math.min(SB_MAX, saved)) + 'px');
     const handle = document.getElementById('sb-resize');
     if (!handle) return;
     handle.addEventListener('mousedown', (e) => {

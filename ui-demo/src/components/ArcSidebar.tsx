@@ -43,6 +43,7 @@ import { Avatar } from '../ui/primitives'
 import { buildFileTree, compactTree, type FileNode } from '../lib/tree'
 import { computeBacklinks, computeDirBacklinks } from '../lib/links'
 import { IS_MAC } from '../lib/platform'
+import { coachOnce } from '../mock/coach'
 import type { FileEntry, FileKind, MountRoot, Tab } from '../types'
 import './ArcSidebar.css'
 
@@ -158,12 +159,13 @@ function TabRow({
       {!pinned && (
         <button
           className="arc-tab-act arc-tab-close"
-          title={t('common.close')}
+          title={t('sidebar.closeTabHint', { key: IS_MAC ? '⌘W' : 'Ctrl+W' })}
           onClick={(e) => {
             e.stopPropagation()
             // 未保存的临时文档 → 弹确认；否则直接关。切换标签页不走这里（不提示）。
             if (unsaved) askCloseTab(tab.id)
             else closeTab(tab.id)
+            coachOnce(useStore.getState().toast, 'close-tab', t('sidebar.coachCloseTab', { key: IS_MAC ? '⌘W' : 'Ctrl+W' }))
           }}
         >
           <X size={12} />
@@ -797,12 +799,14 @@ export default function ArcSidebar() {
   const revealFolders = useUI((s) => s.revealFolders)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // 侧栏宽度可拖拽（F1，对齐真 app 的 .sb-resize）：右边界拖拽柄改宽度（夹 180–520），
+  // 侧栏宽度可拖拽（F1，对齐真 app 的 .sb-resize）：右边界拖拽柄改宽度（夹 240–520），
   // 存 localStorage、刷新恢复；收起态不渲染柄。
+  // 最小 240（Wendi 2026-07-16）：顶排图标行 240 下刚好放得下，再窄图标被裁掉消失；
+  // 想更窄该走「收起侧栏」。旧存值 <240 夹到 240（别跳回默认宽，贴用户原意）。
   const asideRef = useRef<HTMLElement>(null)
   const [sbWidth, setSbWidth] = useState(() => {
     const v = parseInt(localStorage.getItem('ws-arc-width') ?? '', 10)
-    return v >= 180 && v <= 520 ? v : 274
+    return Number.isFinite(v) ? Math.max(240, Math.min(520, v)) : 274
   })
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -810,7 +814,7 @@ export default function ArcSidebar() {
     const startW = asideRef.current?.getBoundingClientRect().width ?? sbWidth
     document.body.style.cursor = 'col-resize'
     const onMove = (ev: MouseEvent) => {
-      const w = Math.max(180, Math.min(520, startW + (ev.clientX - startX)))
+      const w = Math.max(240, Math.min(520, startW + (ev.clientX - startX)))
       if (asideRef.current) asideRef.current.style.width = `${w}px`
     }
     const onUp = () => {
@@ -1106,6 +1110,9 @@ export default function ArcSidebar() {
     if (activeTab?.kind === 'web' && activeTab.url) useBrowser.getState().navigate(activeTab.url)
     navigate('/docs')
   }
+  // 教学气泡：鼠标点了有快捷键的操作 → 弹一次「下次可以按 ⌘X」（每操作只一次，localStorage 记住）。
+  // 只在鼠标 onClick 里调；键盘快捷键触发不调（用户已经会了）。
+  const coach = (op: string, message: string) => coachOnce(useStore.getState().toast, op, message)
 
   const util = [
     { to: '/templates', icon: LayoutTemplate, label: t('sidebar.templates') },
@@ -1116,7 +1123,11 @@ export default function ArcSidebar() {
     return (
       <aside className="arc-sidebar is-collapsed">
         <div className="arc-top arc-top-collapsed">
-          <button className="arc-ico" title={t('sidebar.expandSidebar')} onClick={toggleSidebar}>
+          <button
+            className="arc-ico"
+            title={t('sidebar.expandSidebarHint', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })}
+            onClick={() => { toggleSidebar(); coach('toggle-sidebar', t('sidebar.coachToggleSidebar', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })) }}
+          >
             <PanelLeft size={15} />
           </button>
         </div>
@@ -1134,10 +1145,18 @@ export default function ArcSidebar() {
           <span style={{ background: '#28c840' }} />
         </div>
         <div className="arc-top-nav">
-          <button className="arc-ico" title={t('sidebar.collapseSidebar')} onClick={toggleSidebar}><PanelLeft size={15} /></button>
+          <button
+            className="arc-ico"
+            title={t('sidebar.collapseSidebarHint', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })}
+            onClick={() => { toggleSidebar(); coach('toggle-sidebar', t('sidebar.coachToggleSidebar', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })) }}
+          ><PanelLeft size={15} /></button>
           <button className="arc-ico" title={t('sidebar.navBack')} onClick={goBack} disabled={!canBack}><ChevronLeft size={16} /></button>
           <button className="arc-ico" title={t('sidebar.navForward')} onClick={goForward} disabled={!canFwd}><ChevronRight size={16} /></button>
-          <button className="arc-ico" title={t('sidebar.reload')} onClick={reload}><RotateCw size={13} /></button>
+          <button
+            className="arc-ico"
+            title={t('sidebar.reloadHint', { key: IS_MAC ? '⌘R' : 'Ctrl+R' })}
+            onClick={() => { reload(); coach('reload', t('sidebar.coachReload', { key: IS_MAC ? '⌘R' : 'Ctrl+R' })) }}
+          ><RotateCw size={13} /></button>
           <button className="arc-ico" title={t('sidebar.history')} onClick={() => navigate('/history')}><HistoryIcon size={15} /></button>
           <button className="arc-ico" title={t('sidebar.findFileHint', { key: IS_MAC ? '⌘P' : 'Ctrl+P' })} onClick={openFind}><Search size={14} /></button>
         </div>
@@ -1244,7 +1263,11 @@ export default function ArcSidebar() {
         <div className={`arc-section-label arc-tabs-label arc-zone-head ${tabsOpen ? 'is-open' : ''}`} role="button" onClick={() => toggleZone('ws-tabs-open', setTabsOpen)}>
           <span>{t('sidebar.tabs')}</span>
           <span className="arc-zone-count">{tabsCount || ''}</span>
-          <button className="arc-ico arc-ico-sm" title={t('sidebar.newTab')} onClick={(e) => { e.stopPropagation(); onNewTab() }}>
+          <button
+            className="arc-ico arc-ico-sm"
+            title={t('sidebar.newTabHint', { key: IS_MAC ? '⌘T' : 'Ctrl+T' })}
+            onClick={(e) => { e.stopPropagation(); onNewTab(); coach('new-tab', t('sidebar.coachNewTab', { key: IS_MAC ? '⌘T' : 'Ctrl+T' })) }}
+          >
             <Plus size={14} />
           </button>
           <ChevronRight size={12} className={`arc-caret ${tabsOpen ? 'is-open' : ''}`} />

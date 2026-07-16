@@ -268,6 +268,7 @@ ul { list-style: none; }
 .sb.sb-on {
   flex: none;
   width: var(--sb-width, 260px);
+  min-width: 240px; /* 兜底：.sb-head 顶排需 238px，再窄右端图标被裁（拖拽 JS 同夹 240；收起态在下面归零） */
   position: relative; /* 给宽度拖拽柄 .sb-resize 定位 */
   display: flex;
   flex-direction: column;
@@ -291,10 +292,12 @@ ul { list-style: none; }
   -webkit-app-region: drag;
 }
 .sb-head button { -webkit-app-region: no-drag; } /* 控件从拖拽区挖掉，点击不被吞 */
-/* darwin：红绿灯叠在窗口左上（trafficLightPosition x14/y14，占位到 ~70px），侧栏头让位。
-   同时压缩排布（gap 8→2、右 padding 8→6，照 ui-demo arc-top 紧凑口径）——否则 76px 让位 + 六颗
-   28px 钮溢出默认 260px 侧栏，最右的 #sb-find 会被编辑区 iframe 盖住吞点击（e2e T7 实翻）。 */
-body.is-mac .sb-head { padding: 0 6px 0 76px; gap: 2px; }
+/* darwin：红绿灯叠在窗口左上（trafficLightPosition x14/y14，占位到 ~66px），侧栏头让位。
+   压缩排布凑最小宽的账（照 ui-demo arc-top 同款口径）：让位 70 + 右 6 + 六钮 6×26 + gap 6×1
+   = 238 ≤ 侧栏 min-width 240（#235 定）。不压缩钮会溢出侧栏、最右的 #sb-find 被编辑区 iframe
+   盖住吞点击（e2e T7 实翻过）。往这排加图标前先重算这笔账（ui-demo .arc-top 处同有一条）。 */
+body.is-mac .sb-head { padding: 0 6px 0 70px; gap: 1px; }
+body.is-mac .sb-head .sb-icobtn { width: 26px; }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
 /* 图标钮 = 墨圆 + hover 墨条滑入（对齐 ui-demo .arc-ico） */
 .sb-icobtn {
@@ -584,7 +587,10 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(-103%); 
 
 /* 删除「撤销」toast：书签纸条（纸底墨字 + 左侧 4px 语义色条），从下带回弹升入。
    修 VC-6：toast 提到模态遮罩（400）之上——否则删除撤销 toast 被弹出的模态盖住、6.5s 撤销窗口白流失。 */
-.sb-toast-host { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+/* host 不拦截鼠标（对齐 ui-demo .ws-toasts pointer-events:none）——气泡飘着时底下照点；带按钮的 toast 单独放开 */
+.sb-toast-host { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); z-index: 500; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+.sb-toast { pointer-events: auto; }
+.sb-toast-hint { pointer-events: none; } /* 教学气泡无按钮，纯展示、绝不挡操作 */
 .sb-toast {
   position: relative; overflow: hidden;
   display: flex; align-items: center; gap: 10px;
@@ -595,6 +601,9 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(-103%); 
   animation: ws-slide-up var(--dur-slow) var(--ease-spring);
 }
 .sb-toast::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c-ink); }
+/* hint = 快捷键教学气泡（对齐 ui-demo hint tone）：accent 墨蓝色条 + 灯泡，安静不喧宾夺主 */
+.sb-toast-hint::before { background: var(--c-accent); }
+.sb-toast-hint .sb-toast-bulb { display: inline-flex; align-items: center; color: var(--c-accent); flex: none; }
 .sb-toast-action {
   color: var(--c-accent); font-weight: var(--fw-semibold); font-size: var(--fs-md);
   padding: 2px 7px; border-radius: var(--r-pill);

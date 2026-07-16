@@ -43,6 +43,17 @@ export default {
   searchOrUrl: '搜索,或输入网址',
   localTag: '本地',
 
+  // 快捷键可发现性（Wendi 2026-07-16）：简洁 tooltip（动作 + 快捷键）+ 教学气泡（每操作只弹一次）
+  collapseSidebarHint: '收起侧栏 {key}',
+  expandSidebarHint: '展开侧栏 {key}',
+  reloadHint: '刷新 {key}',
+  newTabHint: '新建标签页 {key}',
+  closeTabHint: '关闭标签页 {key}',
+  coachToggleSidebar: '下次可以用 {key} 收起 / 展开侧栏',
+  coachReload: '下次可以用 {key} 刷新',
+  coachNewTab: '下次可以用 {key} 新建标签页',
+  coachCloseTab: '下次可以用 {key} 关闭当前标签',
+
   // 收藏区
   favorites: '收藏',
   manageBookmarks: '管理收藏 · 导入导出',
