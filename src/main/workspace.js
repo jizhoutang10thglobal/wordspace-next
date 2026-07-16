@@ -8,6 +8,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const { buildFileTree, kindOf, assertInsideWorkspace, cleanLeafName, isSkippedName, isBundleName } = require('../lib/file-tree');
+const i18n = require('../lib/i18n');
 const files = require('./files');
 const perfDiag = require('./perf-diag');
 
@@ -172,7 +173,7 @@ async function newDoc(root, dirRel, baseName, html, ext) {
   const e = ext === '.md' ? '.md' : '.html'; // U4 断链「新建」尊重断链后缀；默认 .html（@新建/旧调用方不传）
   const r = path.resolve(root);
   const destDir = assertInsideWorkspace(r, dirRel || '.');
-  const base = cleanLeafName(baseName) || '未命名';
+  const base = cleanLeafName(baseName) || i18n.t('common.untitled');
   await fs.mkdir(destDir, { recursive: true });
   const leaf = uniqueLeaf(new Set(await listNames(destDir)), base, e);
   const abs = assertInsideWorkspace(r, path.join(destDir, leaf));
@@ -190,7 +191,7 @@ async function listDocs(root) {
 async function makeDir(root, dirRel, name) {
   const r = path.resolve(root);
   const parent = assertInsideWorkspace(r, dirRel || '.');
-  const base = cleanLeafName(name) || '新建文件夹';
+  const base = cleanLeafName(name) || i18n.t('common.newFolder');
   const leaf = uniqueLeaf(new Set(await listNames(parent)), base, '');
   const abs = assertInsideWorkspace(r, path.join(parent, leaf));
   await fs.mkdir(abs, { recursive: true });
@@ -293,7 +294,7 @@ async function undoDelete(root, token, backupRoot) {
   const r = path.resolve(root);
   // 修 MP-16：token 直接进 path.join，畸形值（含 ../ 或分隔符）能把 backupDir 指出 backupRoot。加固：
   // 只认 deletePath 生成的格式（del-<base36>-<hex>），不符即拒——正常 UI 流不可达，防御 renderer 被攻破。
-  if (!/^del-[0-9a-z]+-[0-9a-f]+$/.test(String(token || ''))) throw new Error('非法的撤销令牌');
+  if (!/^del-[0-9a-z]+-[0-9a-f]+$/.test(String(token || ''))) throw new Error(i18n.t('dialog.errBadUndoToken'));
   const backupDir = path.join(backupRoot, token);
   const manifest = JSON.parse(await fs.readFile(path.join(backupDir, 'manifest.json'), 'utf8'));
   const origAbs = assertInsideWorkspace(r, manifest.rel);

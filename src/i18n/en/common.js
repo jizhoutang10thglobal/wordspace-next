@@ -28,4 +28,12 @@ module.exports = {
   retry: 'Retry',
   discard: 'Discard',
   quit: 'Quit',
+  // Appearance tri-state labels (shared by menu bar / ⋯ docmenu / settings page)
+  apprSystem: 'Follow system',
+  apprLight: 'Light',
+  apprDark: 'Dark',
+  // Disk default names (generated in current language on create; main-process fallback and renderer both use these)
+  untitled: 'Untitled',
+  untitledDoc: 'Untitled document',
+  newFolder: 'New Folder',
 };

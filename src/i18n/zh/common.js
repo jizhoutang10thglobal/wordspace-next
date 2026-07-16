@@ -29,4 +29,12 @@ module.exports = {
   retry: '重试',
   discard: '放弃',
   quit: '退出',
+  // 外观三态标签(菜单栏 / ⋯docmenu / 设置页三处共用)
+  apprSystem: '跟随系统',
+  apprLight: '浅色',
+  apprDark: '深色',
+  // 磁盘默认名(新建时按当前语言生成；主进程兜底与 renderer 都用这几个，保持一致)
+  untitled: '未命名',
+  untitledDoc: '未命名文档',
+  newFolder: '新建文件夹',
 };

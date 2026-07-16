@@ -1,4 +1,5 @@
 const { ipcMain, dialog, app, BrowserWindow, shell } = require('electron');
+const i18n = require('../lib/i18n');
 const fsp = require('fs/promises');
 const path = require('path');
 const { pathToFileURL, fileURLToPath } = require('url');
@@ -44,8 +45,8 @@ let stashSeq = 1;
 
 function rootById(rootId) {
   const r = roots.find((x) => x.id === rootId);
-  if (!r) throw new Error('未知的工作区根: ' + rootId);
-  if (r.missing) throw new Error('工作区文件夹失联: ' + rootId);
+  if (!r) throw new Error(i18n.t('dialog.errUnknownRoot', { id: rootId }));
+  if (r.missing) throw new Error(i18n.t('dialog.errRootMissing', { id: rootId }));
   return r.path;
 }
 function rootInfo(r) {
@@ -276,7 +277,7 @@ async function dirExists(p) {
 // 纵深防御：读写只接受 .html/.htm/.md 路径（可编辑文档；md 走读写两端适配，见 md-adapter）。
 // 这道守卫挡住「篡改 recents.json 注入 /etc/passwd 等任意路径越权读写」的向量，不影响正常流。
 function assertDocPath(p) {
-  if (typeof p !== 'string' || !/\.(html?|md)$/i.test(p)) throw new Error('只支持 .html/.htm/.md 文件：' + p);
+  if (typeof p !== 'string' || !/\.(html?|md)$/i.test(p)) throw new Error(i18n.t('dialog.errUnsupportedFile', { path: p }));
 }
 
 function registerIpc() {
@@ -285,9 +286,9 @@ function registerIpc() {
     //（html→编辑器 / 图片·PDF→应用内查看器 / 其余→默认程序打开）。所有文件在前作默认筛选，HTML 仍单列一项。
     const r = await dialog.showOpenDialog({
       filters: [
-        { name: '所有文件', extensions: ['*'] },
-        { name: 'HTML 文档', extensions: ['html', 'htm'] },
-        { name: 'Markdown 文档', extensions: ['md'] },
+        { name: i18n.t('dialog.filterAll'), extensions: ['*'] },
+        { name: i18n.t('dialog.filterHtml'), extensions: ['html', 'htm'] },
+        { name: i18n.t('dialog.filterMd'), extensions: ['md'] },
       ],
       properties: ['openFile']
     });
@@ -302,7 +303,7 @@ function registerIpc() {
   };
   ipcMain.handle('ws-pick-images', async () => {
     const r = await dialog.showOpenDialog({
-      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'] }],
+      filters: [{ name: i18n.t('dialog.filterImage'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'] }],
       properties: ['openFile', 'multiSelections'],
     });
     if (r.canceled || !r.filePaths || !r.filePaths.length) return [];
@@ -439,7 +440,7 @@ function registerIpc() {
     const text = buf.toString('utf8');
     // 非 UTF-8 文件按 UTF-8 解码会丢字节，保存会损坏内容，直接拒开
     if (!Buffer.from(text, 'utf8').equals(buf)) {
-      throw new Error('此文件不是 UTF-8 编码，为避免损坏内容，暂不支持编辑');
+      throw new Error(i18n.t('dialog.errNotUtf8'));
     }
     // markdown 后端：读盘处 md→html，下游（校验分流/编辑器/渲染）只见 HTML——格式只活在磁盘 IO 两端
     if (mdAdapter.isMdPath(p)) return mdAdapter.mdToHtml(text, { title: path.basename(p).replace(/\.md$/i, '') });
@@ -502,7 +503,7 @@ function registerIpc() {
     if (!outPath) {
       const def = path.basename(p).replace(/\.(html?|md)$/i, '') + '.pdf';
       const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
-        title: '导出 PDF',
+        title: i18n.t('dialog.exportPdfTitle'),
         defaultPath: path.join(path.dirname(p), def),
         filters: [{ name: 'PDF', extensions: ['pdf'] }],
       });
@@ -686,7 +687,7 @@ function registerIpc() {
     const seam = !app.isPackaged ? process.env.WS2_RELOCATE_IN : null;
     let dir = seam;
     if (!dir) {
-      const picked = await dialog.showOpenDialog({ properties: ['openDirectory'], title: '重新定位文件夹' });
+      const picked = await dialog.showOpenDialog({ properties: ['openDirectory'], title: i18n.t('dialog.relocateFolderTitle') });
       if (picked.canceled || !picked.filePaths[0]) return null;
       dir = picked.filePaths[0];
     }
@@ -756,7 +757,7 @@ function registerIpc() {
     // ext='md' 时写盘前 html→md。两个消费方：①另存为保持原格式（KD-6，md 文档存回 .md）；
     // ②「导出为 Markdown」（Colin+Wendi 2026-07-03）——合规 html 文档跨格式产 .md 副本，带 reveal。
     const isMd = ext === 'md';
-    const leaf = (String(base || '').replace(/[\\/:*?"<>|]/g, ' ').trim() || '未命名') + (isMd ? '.md' : '.html');
+    const leaf = (String(base || '').replace(/[\\/:*?"<>|]/g, ' ').trim() || i18n.t('common.untitled')) + (isMd ? '.md' : '.html');
     let out = !app.isPackaged ? process.env.WS2_SAVE_AS_OUT : null;
     const seamUsed = !!out;
     if (!out) {
@@ -764,11 +765,11 @@ function registerIpc() {
       let defDir = firstLive ? firstLive.path : null;
       if (!defDir) { try { defDir = app.getPath('documents'); } catch { defDir = app.getPath('home'); } }
       const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
-        title: '保存文档',
+        title: i18n.t('dialog.saveDocTitle'),
         defaultPath: path.join(defDir, leaf),
         filters: isMd
-          ? [{ name: 'Markdown 文档', extensions: ['md'] }]
-          : [{ name: 'HTML 文档', extensions: ['html', 'htm'] }],
+          ? [{ name: i18n.t('dialog.filterMd'), extensions: ['md'] }]
+          : [{ name: i18n.t('dialog.filterHtml'), extensions: ['html', 'htm'] }],
       });
       if (r.canceled || !r.filePath) return { canceled: true };
       out = r.filePath;

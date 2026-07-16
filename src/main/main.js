@@ -57,8 +57,8 @@ function createWindow() {
     if (details && details.reason === 'clean-exit') return;
     if (!win || win.isDestroyed()) return;
     dialog.showMessageBox(win, {
-      type: 'error', buttons: ['重新加载'], defaultId: 0,
-      message: '编辑器意外崩溃', detail: '未保存到磁盘的临时内容可能已丢失。已保存的文件不受影响。'
+      type: 'error', buttons: [i18n.t('dialog.reloadBtn')], defaultId: 0,
+      message: i18n.t('dialog.crashMessage'), detail: i18n.t('dialog.crashDetail')
     }).then(() => { if (win && !win.isDestroyed()) { rendererReady = false; win.reload(); } }).catch(() => {});
   });
   // 渲染层 beforeunload 在 Electron 里是静默拦截，提示必须由主进程弹
@@ -84,11 +84,11 @@ function createWindow() {
     if (!win.isVisible()) win.show();
     dialog.showMessageBox(win, {
       type: 'warning',
-      buttons: ['取消', '放弃修改并关闭'],
+      buttons: [i18n.t('common.cancel'), i18n.t('dialog.discardClose')],
       defaultId: 0,
       cancelId: 0,
-      message: '文档有未保存的修改',
-      detail: '关闭后未保存的修改将丢失。'
+      message: i18n.t('dialog.unsavedMessage'),
+      detail: i18n.t('dialog.unsavedDetail')
     }).then((r) => {
       if (r.response === 1) {
         forceClose = true;
@@ -166,55 +166,56 @@ function applyLanguage(pref) {
 }
 
 function buildMenu() {
+  const t = i18n.t; // 读 setActiveLang 设的当前语言；applyLanguage 里先 setActiveLang 再 buildMenu，切语言即重建
   const appearancePref = appearanceStore.getPref();
   const appearanceItem = (label, value) => ({
     label, type: 'radio', checked: appearancePref === value, click: () => applyAppearance(value),
   });
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { label: 'AI 接入…', click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: '外观', submenu: [appearanceItem('跟随系统', 'system'), appearanceItem('浅色', 'light'), appearanceItem('深色', 'dark')] }, { label: '性能诊断…', click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: t('menu.checkUpdates'), click: () => manualCheckForUpdates() }, { label: t('menu.settings'), accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: t('menu.reportIssue'), click: () => shell.openExternal(BUG_REPORT_URL) }, { label: t('menu.aiAccess'), click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: t('menu.appearance'), submenu: [appearanceItem(t('common.apprSystem'), 'system'), appearanceItem(t('common.apprLight'), 'light'), appearanceItem(t('common.apprDark'), 'dark')] }, { label: t('menu.perfDiag'), click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: t('common.quit'), accelerator: 'CmdOrCtrl+Q' }] },
     {
-      label: '文件',
+      label: t('menu.file'),
       submenu: [
-        { label: '新建标签页', accelerator: 'CmdOrCtrl+T', click: () => sendMenu('new-tab') },
-        { label: '打开文件…', accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
-        { label: '打开文件夹…', accelerator: 'CmdOrCtrl+Shift+O', click: () => sendMenu('open-folder') },
-        { label: '快速打开…', accelerator: 'CmdOrCtrl+P', click: () => sendMenu('find-palette') },
-        { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
+        { label: t('menu.newTab'), accelerator: 'CmdOrCtrl+T', click: () => sendMenu('new-tab') },
+        { label: t('menu.openFile'), accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
+        { label: t('menu.openFolder'), accelerator: 'CmdOrCtrl+Shift+O', click: () => sendMenu('open-folder') },
+        { label: t('menu.quickOpen'), accelerator: 'CmdOrCtrl+P', click: () => sendMenu('find-palette') },
+        { label: t('menu.closeTab'), accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
         // 浏览器 feature（spec §4.4/§7）：⌘⇧T 重开最近关闭的标签（只记非文档标签,栈容量 15,renderer 管）
-        { label: '重新打开关闭的标签页', accelerator: 'CmdOrCtrl+Shift+T', click: () => sendMenu('reopen-tab') },
-        { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
+        { label: t('menu.reopenTab'), accelerator: 'CmdOrCtrl+Shift+T', click: () => sendMenu('reopen-tab') },
+        { label: t('common.save'), accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
         { type: 'separator' },
-        { label: '导出 PDF…', accelerator: 'CmdOrCtrl+E', click: () => sendMenu('export-pdf') }
+        { label: t('menu.exportPdf'), accelerator: 'CmdOrCtrl+E', click: () => sendMenu('export-pdf') }
       ]
     },
     {
-      label: '编辑',
+      label: t('menu.edit'),
       submenu: [
-        { label: '撤销', accelerator: 'CmdOrCtrl+Z', click: () => sendMenu('undo') },
-        { label: '重做', accelerator: 'CmdOrCtrl+Shift+Z', click: () => sendMenu('redo') },
+        { label: t('common.undo'), accelerator: 'CmdOrCtrl+Z', click: () => sendMenu('undo') },
+        { label: t('common.redo'), accelerator: 'CmdOrCtrl+Shift+Z', click: () => sendMenu('redo') },
         { type: 'separator' },
-        { role: 'cut', label: '剪切' },
-        { role: 'copy', label: '拷贝' },
-        { role: 'paste', label: '粘贴' },
-        { role: 'selectAll', label: '全选' },
+        { role: 'cut', label: t('common.cut') },
+        { role: 'copy', label: t('common.copy') },
+        { role: 'paste', label: t('common.paste') },
+        { role: 'selectAll', label: t('common.selectAll') },
         { type: 'separator' },
         // Cmd+F = 文档内查找（调研裁决：全软件铁律）。shell 判定：块编辑器活跃→查找条，否则回退聚焦文件筛选。
-        { label: '在文档中查找…', accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-in-doc') },
+        { label: t('menu.findInDoc'), accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-in-doc') },
         // Cmd+Shift+F = 按文件名筛选（Cmd+F 让位后下沉到这，抄 VS Code 分层）。复用既有 find-file → focusFilter。
-        { label: '在文件名中查找…', accelerator: 'CmdOrCtrl+Shift+F', click: () => sendMenu('find-file') }
+        { label: t('menu.findInFiles'), accelerator: 'CmdOrCtrl+Shift+F', click: () => sendMenu('find-file') }
       ]
     },
     {
-      label: '视图',
+      label: t('menu.view'),
       submenu: [
         // ⌘\ 切换侧栏：菜单加速器覆盖一切焦点域（含文档编辑 iframe 内，keydown 不冒泡的失灵域）。renderer onMenu → toggleCollapsed。
-        { label: '切换侧栏', accelerator: 'CmdOrCtrl+\\', click: () => sendMenu('toggle-sidebar') },
+        { label: t('menu.toggleSidebar'), accelerator: 'CmdOrCtrl+\\', click: () => sendMenu('toggle-sidebar') },
         // ⌘R 刷新当前网页标签（文档标签 no-op，防未保存编辑丢失）。自建菜单替换了默认 View>Reload，此处显式给回浏览器语义的刷新。
-        { label: '刷新', accelerator: 'CmdOrCtrl+R', click: () => sendMenu('reload') }
+        { label: t('menu.reload'), accelerator: 'CmdOrCtrl+R', click: () => sendMenu('reload') }
       ]
     },
-    { role: 'windowMenu', label: '窗口' }
+    { role: 'windowMenu', label: t('menu.window') }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
