@@ -798,6 +798,26 @@ export default function ArcSidebar() {
     const v = parseInt(localStorage.getItem('ws-arc-width') ?? '', 10)
     return v >= 180 && v <= 520 ? v : 274
   })
+
+  // 收起态 = 沉浸模式（Wendi 对标 Arc，2026-07-16）：不留 48px 细轨，内容四边贴满。
+  // 重开三入口：左缘 hover 滑出悬浮侧栏（peek，盖在内容上不推挤）、Cmd+\、peek 里点收起钮真展开。
+  // peek 做在同一个组件实例里（不另挂 <ArcSidebar overlay/>）——全局快捷键监听在本组件的
+  // effect 上，双实例会双挂监听、Cmd+\ 一次触发两回（开了秒关，见上面 handler 的注释）。
+  const [peek, setPeek] = useState(false)
+  const peekTimer = useRef<number | undefined>(undefined)
+  const peekEnter = () => {
+    window.clearTimeout(peekTimer.current)
+    peekTimer.current = window.setTimeout(() => setPeek(true), 120)
+  }
+  const peekLeave = () => {
+    window.clearTimeout(peekTimer.current)
+    peekTimer.current = window.setTimeout(() => setPeek(false), 240)
+  }
+  useEffect(() => {
+    // 展开/再收起时清残留 peek 态与计时器，避免下次收起瞬间弹出旧 peek
+    setPeek(false)
+    window.clearTimeout(peekTimer.current)
+  }, [collapsed])
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault()
     const startX = e.clientX
@@ -1106,19 +1126,8 @@ export default function ArcSidebar() {
     { to: '/settings', icon: Settings2, label: '设置' },
   ]
 
-  if (collapsed) {
-    return (
-      <aside className="arc-sidebar is-collapsed">
-        <div className="arc-top arc-top-collapsed">
-          <button className="arc-ico" title="展开侧栏" onClick={toggleSidebar}>
-            <PanelLeft size={15} />
-          </button>
-        </div>
-      </aside>
-    )
-  }
-
-  return (
+  // 完整侧栏本体——停靠态与收起态的 peek 悬浮层共用同一份 JSX（单实例，见 peek 注释）
+  const body = (
     <aside className="arc-sidebar" ref={asideRef} style={{ width: `${sbWidth}px` }}>
       <div className="arc-resize" onMouseDown={startResize} title="拖拽调整侧栏宽度" />
       <div className="arc-top">
@@ -1302,4 +1311,23 @@ export default function ArcSidebar() {
       </div>
     </aside>
   )
+
+  if (collapsed) {
+    // 沉浸收起：流内什么都不渲染（内容贴满），只留 6px 左缘热区 + 悬浮 peek 容器
+    return (
+      <>
+        <div className="arc-edge-hot" onMouseEnter={peekEnter} onMouseLeave={peekLeave} />
+        <div
+          className={'arc-peek' + (peek ? ' is-on' : '')}
+          aria-hidden={!peek}
+          onMouseEnter={peekEnter}
+          onMouseLeave={peekLeave}
+        >
+          {body}
+        </div>
+      </>
+    )
+  }
+
+  return body
 }
