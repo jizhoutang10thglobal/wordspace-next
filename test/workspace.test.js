@@ -54,6 +54,48 @@ test('readTree：根「可 stat 不可 readdir」（EACCES 半失联）返回 nu
   assert.ok((await ws.readTree(root)).tree.length > 0); // 权限恢复后树回来（对照：确实是权限导致的 null）
 });
 
+// ===== U2（P0a）条目预算：大根死锁止血。合成扁平 tmp 树（count 只等于文件数，无歧义）驱动，
+// WS2_TREE_BUDGET 环境变量覆盖成小值。别把 fixture 文件数造成与预算相等（哑门）——下面用 25 vs 10。=====
+async function seedFlat(n) {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-budget-'));
+  for (let i = 0; i < n; i++) await fs.writeFile(path.join(root, `f${i}.html`), HTML, 'utf8');
+  return root;
+}
+async function withBudget(v, fn) {
+  const prev = process.env.WS2_TREE_BUDGET;
+  process.env.WS2_TREE_BUDGET = String(v);
+  try { return await fn(); } finally {
+    if (prev == null) delete process.env.WS2_TREE_BUDGET; else process.env.WS2_TREE_BUDGET = prev;
+  }
+}
+
+test('U2 预算：超条目预算 → truncated=true、tree 为空（不建半棵树）、不 fillInos、entryCount 计到预算', async () => {
+  const root = await seedFlat(25);
+  await withBudget(10, async () => {
+    const res = await ws.readTree(root);
+    assert.equal(res.truncated, true);
+    assert.deepEqual(res.tree, []); // 空树：没建局部树 = 也没逐文件 stat（fillInos 被跳过的可观测代理）
+    assert.equal(res.entryCount, 10); // 计到预算即停
+  });
+});
+
+test('U2 预算：恰好等于预算不截断（边界）+ 完整树 + fillInos 照跑', async () => {
+  const root = await seedFlat(10);
+  await withBudget(10, async () => {
+    const res = await ws.readTree(root);
+    assert.ok(!res.truncated); // 恰好 10 == 预算，不算超
+    assert.equal(res.tree.length, 10); // 完整树
+    assert.ok(res.tree.every((n) => n.ino != null)); // 非截断路径 fillInos 照常填 ino（与截断路径对照）
+  });
+});
+
+test('U2 预算：不设环境变量走默认 15 万，普通小树不受影响', async () => {
+  const { root } = await seed();
+  const res = await ws.readTree(root);
+  assert.ok(!res.truncated);
+  assert.ok(res.tree.length > 0);
+});
+
 test('newDoc creates a real .html on disk, uniquifies on collision', async () => {
   const { root } = await seed();
   const a = await ws.newDoc(root, '', '无标题文档', HTML);
