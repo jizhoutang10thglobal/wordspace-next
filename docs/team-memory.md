@@ -14,6 +14,16 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-18 — 浏览器下载进真 app(will-download 真接)+ 工具栏 7 钮尺寸账 + OVERLAY_SEL 竞态修复
+
+**是什么**：浏览器下载(标准档)移植进真 app(PR #278):will-download 从「一律 cancel」换成真接 DownloadItem 落盘 + 下载管理 UI(工具栏进度环 + popover 列表 + 右键存图/链接另存为)。推翻 2026-07-09「不做下载」旧拍板(Colin 2026-07-17 拍板恢复)。附带两处共享核心改动 + 一个潜伏竞态修复。
+**怎么 apply**：
+① **web-tabs.js will-download 不再 cancel**——手上若有 e2e/代码断言旧的「下载被 cancel / 不支持下载 toast」行为,已失效(browser.spec.js:551 改写成真下载落盘)。下载记录持久化=browser-store 第四 cell(browser-downloads.json);纯逻辑=src/lib/downloads.js。
+② **.sb-head 现在 7 颗按钮**(加了下载入口 #nav-downloads),钮宽已收到 22px(mac)/26px(非 mac)+ 非 mac gap 收 4 凑 min-width 240 的账(shell.css .sb-head 处有账本注释)。**再往顶排加图标前先重算这笔账**,否则最右钮溢出被编辑区 iframe 吞点击(e2e T7 栽过)。
+③ **DOM 弹层要盖住网页区(WebContentsView)必须注册进 OVERLAY_SEL**(browser.js:257 的常量 + 快捷键守卫 :1188 两处都加)——原生 view 恒在 DOM 之上,不注册就被盖住;注册后「摘 view+快照垫底」+ veil 关闭直接可用。下载 popover 是最新先例。
+④ **修了 OVERLAY_SEL observer 一个潜伏竞态**(browser.js 迟到的 webCapture .then):原来无条件 webHideAll,快速开关弹层时把已挂回的 view 又藏了→网页区卡空白须切标签恢复。已补取消令牌守卫(overlayPaused/attachedKey,对齐姊妹 __webPeekSnap)。动这段 OVERLAY 逻辑前知道这个先例。
+**来源**：PR #278;plan docs/plans/2026-07-17-003-feat-app-browser-downloads-plan.md;契约 docs/browser-feature-spec.md §4.11。
+
 ## 2026-07-16 — 沉浸收起(Arc 对标)已全量合 main:sb-reopen 浮钮已删、真 app 换 hiddenInset 窗框
 
 **是什么**:Wendi「零缝隙」反馈落地(ui-demo #230 + 真 app #238)。侧栏收起=流内零渲染(ui-demo 48px 细轨、真 app 52px COLLAPSED_STRIP、#sb-reopen 常驻浮钮**全删**),重开=左缘 hover peek(悬浮盖内容)/Cmd+\;真 app darwin 换 titleBarStyle:hiddenInset,红绿灯进 .sb-head(兼窗口拖拽区)且随收起隐藏。spec=docs/features/immersive-collapse.md。
