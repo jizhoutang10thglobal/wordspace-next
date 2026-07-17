@@ -34,7 +34,7 @@ import {
 } from './seed'
 
 // Bump when the shape of seed data changes so a reload reseeds cleanly.
-const SEED_VERSION = 27 // 27: 模板加 css/origin 维度 + Doc.templateId/templateCss + 黄金标书模板（用户自定义模板 feature）
+const SEED_VERSION = 28 // 28: 分页压测文档时间散开(默认屏时间流分组演示); 27: 模板加 css/origin 维度 + Doc.templateId/templateCss + 黄金标书模板（用户自定义模板 feature）
 
 // A directory entry under one opened root. 身份 = (rootId, path)。
 type DirEntry = { rootId: string; path: string }
