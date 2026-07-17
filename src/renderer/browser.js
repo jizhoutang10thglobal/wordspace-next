@@ -263,7 +263,11 @@
         const key = attachedKey;
         const timeout = new Promise((r) => setTimeout(() => r(null), 250));
         Promise.race([window.ws2.webCapture(key).catch(() => null), timeout]).then((dataUrl) => {
-          if (dataUrl && overlayPaused && attachedKey === key) {
+          // 迟到的 capture 取消令牌：capture 期间弹层已关(overlayPaused 翻 false)或标签已切 → else-if 分支
+          // 已把 view 挂回可见,这里绝不能再动它。原来 webHideAll 无条件执行 → 快速开关下载 popover 时把刚
+          // 挂回的 view 又藏了、网页区卡空白须切标签才恢复(对抗审查 P2；姊妹 __webPeekSnap 有同款守卫)。
+          if (!overlayPaused || attachedKey !== key) return;
+          if (dataUrl) {
             if (snapEl) snapEl.remove();
             const b = viewBounds();
             const img = document.createElement('img');
@@ -1216,6 +1220,9 @@
     if (ringBar) { ringBar.style.strokeDasharray = String(RING_C); ringBar.style.strokeDashoffset = String(RING_C); }
 
     let entries = [];        // 最新下载列表（主进程已按 startedAt 倒序）
+    let ringBatch = new Set(); // 进度环「当前批次」的条目 id：在途条目加入,已完成的**留在批次里撑住分母**,
+                               // 直到批次全部落地(无在途)才清空——兑现 spec §4.11「单条先完成环不回退」
+                               // （对齐 ui-demo lib/downloads.ts 的 batchIds；真 app 主进程无 batchIds,批次账放 renderer）。
     let popEl = null;        // .dlp-overlay 根（null=未开）
     let listEl = null, emptyEl = null, clearBtn = null; // popover 持久子元素
     const rowEls = new Map(); // id -> 行 DOM（增量复用）
@@ -1240,13 +1247,18 @@
       const gb = mb / 1024;
       return (gb < 10 ? gb.toFixed(1) : Math.round(gb)) + ' GB';
     }
-    // 聚合进度（工具栏环）：真 app 主进程无 batchIds → 对当前在途条目聚合（active=在途数,pct=Σ收/Σ总）。
+    // 聚合进度（工具栏环，spec §4.11）：批次 = 在途 + 本批已完成条目（已完成的**留在分子分母里**，
+    // 单条先完成时分母不缩小 → 环只前进不回退）。active=在途数（徽标）；active 归零 → 清批次、环隐藏。
+    // ⚠ 别退回「只对 state==='downloading' 求和」：那样某条先完成会被移出分母，环可见地倒退（对抗审查 P2）。
     function aggregateProgress(list) {
-      const dl = list.filter((e) => e.state === 'downloading');
-      const active = dl.length;
-      if (active === 0) return { active: 0, pct: 0 };
-      const recv = dl.reduce((s, e) => s + (e.receivedBytes || 0), 0);
-      const total = dl.reduce((s, e) => s + (e.sizeBytes || 0), 0);
+      const byId = new Map(list.map((e) => [e.id, e]));
+      for (const e of list) if (e.state === 'downloading') ringBatch.add(e.id);
+      const active = list.filter((e) => e.state === 'downloading').length;
+      if (active === 0) { ringBatch.clear(); return { active: 0, pct: 0 }; }
+      // 只算仍存在的批次成员（被移除/清空的条目自然掉出）；已完成条目 sizeBytes 用实收兜底（见 web-tabs done）。
+      const batch = [...ringBatch].map((id) => byId.get(id)).filter(Boolean);
+      const recv = batch.reduce((s, e) => s + (e.receivedBytes || 0), 0);
+      const total = batch.reduce((s, e) => s + (e.sizeBytes || 0), 0);
       return { active: active, pct: total > 0 ? Math.min(1, recv / total) : 0 };
     }
     // 逐状态操作可见性（spec §4.11：downloading→取消；completed→访达+移除；failed/canceled/interrupted→重试+移除；fileMissing→仅移除）

@@ -95,7 +95,11 @@ function ensureSession() {
       const terminal = state === 'completed' ? 'completed' : state === 'cancelled' ? 'canceled' : 'failed';
       if (terminal !== 'completed') { try { fs.unlinkSync(savePath); } catch { /* 半截文件可能已不在 */ } }
       let recv = 0; try { recv = item.getReceivedBytes(); } catch { /* */ }
-      browserStore.setDownloads(browserStore.getDownloads().map((e) => (e.id === id ? { ...e, state: terminal, receivedBytes: recv } : e)));
+      // 完成时 sizeBytes 用实收兜底(Chrome 同款):无 Content-Length 的下载(chunked/动态生成)getTotalBytes 全程为 0,
+      // 不兜底会让 popover 对非空文件显示「已完成 · 0 B」(对抗审查 P3)。非完成态保留原 sizeBytes(实收是半截,不代表文件大小)。
+      browserStore.setDownloads(browserStore.getDownloads().map((e) => (e.id === id
+        ? { ...e, state: terminal, receivedBytes: recv, sizeBytes: terminal === 'completed' ? (e.sizeBytes || recv) : e.sizeBytes }
+        : e)));
       if (terminal === 'completed') sendToRenderer('web-toast', i18n.t('browser.dlDone', { name }));
       else if (terminal === 'failed') sendToRenderer('web-toast', i18n.t('browser.dlFailed', { name }));
       // 取消不 toast（用户正看着,无需打扰）。
