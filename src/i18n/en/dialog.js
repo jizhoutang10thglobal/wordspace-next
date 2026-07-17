@@ -9,6 +9,8 @@ module.exports = {
   unsavedMessage: 'The document has unsaved changes',
   unsavedDetail: 'Unsaved changes will be lost after closing.',
   // One-time password-free update repair dialog (main.js maybeRepairBundleOwnership, macOS only)
+  // Trailing hint when update-panel release notes get truncated (main.js parseReleaseNotes.moreText)
+  updateNotesMore: '… full notes: click "Changelog"',
   repairAndInstall: 'Repair and Continue Installing',
   skipRepair: 'Skip (you’ll still need your password this time)',
   repairTitle: 'One-time fix: no password needed for future updates',

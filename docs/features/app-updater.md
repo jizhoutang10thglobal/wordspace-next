@@ -10,9 +10,10 @@
 
 **手动路径**（菜单「检查更新…」）：全程弹面板跟进。
 - 检查中：spinner +「正在检查更新…」。
-- 发现新版：标题「发现新版本 vX.Y.Z」+ 该版 release notes 的人话段（GitHub release body 里
-  `---` 分隔线以上的部分，见 docs/releasing.md 约定；markdown 归一成纯文本行，绝不 innerHTML）
-  + 按钮「下载并安装」（主）/「以后再说」。
+- 发现新版：标题「发现新版本 vX.Y.Z」+ 该版 release notes 的**简洁版**（GitHub release body 里
+  `---` 分隔线以上的部分——约定即简洁版：1 句导语 + ≤5 条要点，完整版在 CHANGELOG/官网,Wendi
+  2026-07-17；markdown 归一成纯文本行，绝不 innerHTML；硬保险截 8 行 + 尾行「……完整说明点
+  『更新日志』」，见 docs/releasing.md）+ 按钮「下载并安装」（主）/「以后再说」。
 - 下载中：进度条（percent）+ 明细「42% · 55.0 MB / 132.0 MB · 3.2 MB/s」+「后台下载」（关面板留 pill）。
   首个进度事件到达前进度条走不定动画、明细显示「正在开始下载…」。
 - 已就绪：「立即重启安装」（主）/「稍后（退出时自动安装）」。稍后 = electron-updater

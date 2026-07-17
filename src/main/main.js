@@ -328,7 +328,8 @@ function setupAutoUpdater() {
   autoUpdater.on('update-available', (info) => pushUpdateEvent({
     type: 'available',
     version: info && info.version,
-    notes: US.parseReleaseNotes(info && info.releaseNotes), // GitHub release body 顶部的人话说明（docs/releasing.md 约定）
+    // 简洁约定+硬保险(Wendi 2026-07-17):Release 顶部本就该是简洁版;万一贴了全量,截 8 行 + 尾行提示看「更新日志」
+    notes: US.parseReleaseNotes(info && info.releaseNotes, { max: 8, moreText: i18n.t('dialog.updateNotesMore') }),
   }));
   autoUpdater.on('update-not-available', () => pushUpdateEvent({ type: 'not-available' }));
   autoUpdater.on('download-progress', (p) => pushUpdateEvent({
