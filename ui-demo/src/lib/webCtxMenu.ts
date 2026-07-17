@@ -35,12 +35,16 @@ export function buildWebCtx(info: CtxInfo, ctx: CtxCtx): CtxItem[] {
       { id: 'open-link', label: t('browser.ctxOpenLinkNewTab') },
       { id: 'open-link-bg', label: t('browser.ctxOpenLinkBgTab') },
       { id: 'copy-link', label: t('browser.ctxCopyLink') },
+      { id: 'save-link', label: t('browser.ctxSaveLink') }, // 下载恢复(Colin 2026-07-17 拍板,标准档);走同一下载管线
     ])
   }
 
   if (info.imgUrl) {
     const img: CtxItem[] = [{ id: 'copy-image', label: t('browser.ctxCopyImage') }]
-    if (isHttp(info.imgUrl)) img.push({ id: 'copy-image-url', label: t('browser.ctxCopyImageUrl') }) // 下载功能已砍(Colin 2026-07-09:不让下载,避免臃肿)
+    if (isHttp(info.imgUrl)) {
+      img.push({ id: 'copy-image-url', label: t('browser.ctxCopyImageUrl') })
+      img.push({ id: 'save-image', label: t('browser.ctxSaveImage') }) // 同上:2026-07-17 恢复下载;isHttp 门沿用(危险 scheme 不出)
+    }
     sections.push(img)
   }
 
