@@ -609,6 +609,10 @@ function executeCtxAction(key, id, args) {
     case 'copy-link': clipboard.writeText(urlInput.cleanShareUrl(a.url || '')); break;
     case 'copy-image': wc.copyImageAt(a.x, a.y); break;
     case 'copy-image-url': if (policy.isAllowedNavUrl(a.url)) clipboard.writeText(a.url); break;
+    // 存储图片 / 链接另存为（spec §4.11）：防御纵深重校验 url（builder 已过 isAllowedUrl，这里再过一道）→
+    // wc.downloadURL 触发 will-download → 汇入单一下载管线（命名/落盘/进度/记录全在那）。
+    case 'save-image': if (policy.isAllowedNavUrl(a.url)) wc.downloadURL(a.url); break;
+    case 'save-link': if (policy.isAllowedNavUrl(a.url)) wc.downloadURL(a.url); break;
     case 'copy-selection': wc.copy(); break;
     case 'search-selection': { const u = urlInput.searchUrl(String(a.text || ''), engineTemplate()); if (policy.isAllowedNavUrl(u)) sendToRenderer('web-open-request', { url: u, background: false }); break; }
     case 'cut': wc.cut(); break;
