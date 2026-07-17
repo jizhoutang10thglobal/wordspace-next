@@ -36,12 +36,18 @@ Esc / 点遮罩 / × 关闭；主按钮自动聚焦。
 （下载进度每 ~200ms 一次）只原地改文本/进度宽度——**不许拆卡重建、不许抢焦点**；只有状态跃迁才重建 + 聚焦一次。
 e2e 以 DOM 节点身份标记断言（重建过的新节点标记必丢）。
 
-**重启安装的退出链（2026-07-16 修复）**：Electron `autoUpdater.quitAndInstall()` **不发 `before-quit`**——
-它先发专用的 `before-quit-for-update`、再逐窗 close、全部关完才 `app.quit()`。main 必须同时监听两个事件
-打「真退出」标志，否则 mac「关窗=隐藏驻留」守卫会把 quitAndInstall 的关窗 preventDefault 吞掉：
-窗口只是藏起来、app 不退、安装永远等不到 window-all-closed →「点了重启没反应」（2026-07-15 updater.log
-四连击实锤；此前所谓能重启全靠用户手动 Cmd+Q 触发退出时安装）。若有未保存修改，脏守卫照常拦（弹确认，
-取消则本次不装、退出时自动安装兜底）。
+**重启安装的退出链（2026-07-16 首修 → 2026-07-17 二修才真修好）**：Electron `autoUpdater.quitAndInstall()`
+**不发 `before-quit`**——native Squirrel 逐窗 close、全部关完才 quit；若「真退出」标志没打上，mac
+「关窗=隐藏驻留」守卫会把关窗 preventDefault 吞掉：窗口只是藏起来、app 不退、安装永远等不到
+window-all-closed →「点了重启,app 赖在 Dock 里、点开又是重启安装界面」。
+⚠ **07-16 首修是哑修**：补的 `app.on('before-quit-for-update')` 挂错发射器——该事件属
+`require('electron').autoUpdater`（**AutoUpdater 接口**，electron.d.ts:1995），不是 app 事件，从未触发
+（Colin 07-17 实机复现）。**现行修法（零事件依赖）**：`update-install` handler 在调 quitAndInstall
+**之前**由 `beginQuitForUpdate` 直置 `quitting=true`（用户点了「重启安装」= 意图明确，动作点直接放行；
+同步抛错则复位防「下次红叉误真退」），另在**正确的发射器**（native autoUpdater）上挂一份事件兜底。
+门：`e2e/update-quit.spec.js`——`WS2_UPDATE_QUIT_SIM`（复用同一 beginQuitForUpdate + 逐窗 close 模拟
+native 关窗序列）+ `WS2_DARWIN_PERSIST_SIM`（任何平台强制驻留分支,让 Linux CI 也有牙）断言**进程真退出**，
+另有驻留语义对照门。若有未保存修改，脏守卫照常拦（弹确认，取消则本次不装、退出时自动安装兜底）。
 
 **更新免密（一次性归属修复，2026-07-16）**：bundle 一旦被提权安装写成 root 所有（Squirrel ShipIt 的
 授权兜底会造成这个，且此后自我延续），每次更新都会弹系统密码/指纹。修复：`update-install` 时检测
@@ -81,11 +87,12 @@ electron-updater 差分三条件：新老两版 release 都有 blockmap + 本地
 ## 欠账
 
 - 打包态真更新链路未实测（弹面板/进度/重启安装要等下一次真发版验证；sim e2e 只兜非打包链路）。
-- 2026-07-16 三修复（重启退出链/免密修复/防闪烁）的真机端到端要**两个发版周期**才闭环：装上带修复的
-  版本后、更新到再下一版时才走新代码（重启一键直达、免密修复弹一次）。Colin/Wendi 机器可先手动
-  `sudo chown -R "$(id -un)" "/Applications/Wordspace Next.app"` 提前解决密码问题。
-- before-quit-for-update 的行为门只在 darwin 有牙（Linux CI 无隐藏驻留守卫，close 本就直达退出）；
-  CI 兜监听器存在性，行为验证靠 darwin 宿主跑 e2e。
+- **重启退出链二修（2026-07-17）的真机端到端同样要两个发版周期**：装上带本修复的版本后、更新到再下一版
+  时才走新代码（07-16 首修是哑修，所以 Colin 07-17 更新时仍复现——他运行的版本里 quitting 从未被置位）。
+  免密修复/防闪烁（07-16）不受影响；密码问题可先手动
+  `sudo chown -R "$(id -un)" "/Applications/Wordspace Next.app"` 解决。
+- ~~before-quit-for-update 的行为门只在 darwin 有牙~~（已解决：`e2e/update-quit.spec.js` 用
+  `WS2_DARWIN_PERSIST_SIM` 在任何平台强制驻留分支，Linux CI 也有牙）。
 - mac 差分实效未实测（要连发两版带 blockmap 的 release 才能观察真实节省比例）。
 - 每标签缩放同款限制：Electron zoom 按 host 传播——与本 feature 无关，见 browser.md。
 - 更新失败的 updater.log 尚无「一键导出/上报」入口，用户要手动去 userData 找。
