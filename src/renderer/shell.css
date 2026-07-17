@@ -313,24 +313,29 @@ body.is-mac .sb-head .sb-icobtn { width: 26px; }
    重开=左缘 hover peek / Cmd+\。spec=docs/features/immersive-collapse.md */
 .sb.is-collapsed { width: 0; min-width: 0; overflow: hidden; border-right: none; }
 
-/* 沉浸窗框（Wendi 2026-07-17，Arc 对标）：收起态内容区四周留 10px chrome 色边带。
-   三重职责：①窗口拖拽手柄（hiddenInset 下收起态原本零拖拽区）②左边带=peek 触发的可见锚点
-   （原 6px 隐形热区并入，触发宽度统一 10px）③视觉上窗与桌面有了分界（Wendi「边界不清晰」）。
+/* 沉浸窗框（Wendi 2026-07-17 初稿，Colin 2026-07-18 扩成「非全屏恒有」）：内容区四周留 10px chrome
+   色边带。三重职责：①窗口拖拽手柄（hiddenInset 下原本零拖拽区）②左边带=peek 触发的可见锚点
+   （原 6px 隐形热区并入，触发宽度统一 10px，仅收起态）③视觉上窗与桌面有了分界（Wendi「边界不清晰」）。
+   ⚠ 范围（Colin 拍板「不仅收起态，不收起也要有！只要不是全屏就要有」）：#271 只在收起态（is-sb-collapsed），
+   本次改为 body:not(.is-win-fullscreen) 恒有——
+     · 展开态：侧栏贴左缘（侧栏本身=左侧 chrome，Arc 同款，不给左带），#main margin:10px 四周（左 10px=与侧栏的缝）；
+     · 收起态：侧栏宽 0，#main 从窗左 10px 起（视觉/行为与 #271 完全一致，零回归）；
+     · 真全屏（macOS enter-full-screen → sidebar.js 挂 body.is-win-fullscreen）：两态都摘框、edge-hot 变透明但保留（peek 重开路不堵）。
    左边带不设 app-region:drag——drag 区吞鼠标事件，会哑掉 hover 触发；拖窗走 top/right/bottom 三条。
-   网页 view 因 #main margin 从 x=10 起，左边带永远是 DOM 地盘 → 原「主进程指针 watcher 代打」
-   路径已删（触发只此一条）。 */
-body.is-sb-collapsed { background: var(--c-bg-chrome); }
+   网页 view 因 #main margin 从 x=侧栏宽+10 起，左边带永远是 DOM 地盘（触发只此一条）。 */
+body:not(.is-win-fullscreen) { background: var(--c-bg-chrome); }
 /* 内容=一块纸（ui-demo 同款）：细边+微圆角把内容从窗框带上抬起来（暗色下无边纯 margin 看不出框）。
    overflow 用 clip 不用 hidden——hidden 会成为滚动容器被 scrollIntoView 悄悄滚偏（ui-demo 实测坑）。
    网页标签的原生 view 恰好盖满 #main 矩形（含 1px 边）,square 角、盖住细边：spec 已知边界。 */
-body.is-sb-collapsed #main { margin: 10px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: clip; }
+body:not(.is-win-fullscreen) #main { margin: 10px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: clip; }
 .win-frame { display: none; }
-body.is-sb-collapsed .win-frame { display: block; position: fixed; z-index: 235; -webkit-app-region: drag; }
-body.is-sb-collapsed .win-frame-top { top: 0; left: 0; right: 0; height: 10px; }
-body.is-sb-collapsed .win-frame-right { top: 0; right: 0; bottom: 0; width: 10px; }
-body.is-sb-collapsed .win-frame-bottom { bottom: 0; left: 0; right: 0; height: 10px; }
+body:not(.is-win-fullscreen) .win-frame { display: block; position: fixed; z-index: 235; -webkit-app-region: drag; }
+body:not(.is-win-fullscreen) .win-frame-top { top: 0; left: 0; right: 0; height: 10px; }
+body:not(.is-win-fullscreen) .win-frame-right { top: 0; right: 0; bottom: 0; width: 10px; }
+body:not(.is-win-fullscreen) .win-frame-bottom { bottom: 0; left: 0; right: 0; height: 10px; }
 
-/* 左缘热区（现=左边带本体，10px 可见宽）：只在收起态存在；hover 给一档轻反馈提示这里有东西。 */
+/* 左缘热区（现=左边带本体，10px 可见宽）：只在收起态存在（含全屏收起——peek 重开路不能堵）。
+   非全屏收起时 hover 给一档轻反馈提示这里有东西；全屏收起时保持透明（全屏无框视觉，但热区仍在、peek 照常触发）。 */
 .sb-edge-hot { display: none; }
 body.is-sb-collapsed .sb-edge-hot {
   display: block;
@@ -338,7 +343,7 @@ body.is-sb-collapsed .sb-edge-hot {
   z-index: 240; /* 压过内容与文档浮层(200)，低于模态(400)/toast(500) */
   transition: background-color var(--dur-fast) var(--ease);
 }
-body.is-sb-collapsed .sb-edge-hot:hover { background: var(--c-hover); }
+body:not(.is-win-fullscreen).is-sb-collapsed .sb-edge-hot:hover { background: var(--c-hover); }
 
 /* peek 悬浮层：收起态 hover 左缘，完整侧栏盖在内容上滑进滑出、不推挤布局。
    借 .sb 本体变身（单实例——快捷键/树状态全复用，不另造第二份侧栏）。
