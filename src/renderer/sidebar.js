@@ -186,6 +186,7 @@
     syncChrome();
     render();
     if (st.lazy && !st.tree) loadLazyTop(st.id); // 吸收/撤销一个过大根 → 顶层懒加载
+    mergeExternalDupes(info.id); // 吸收/撤销带树进来（不走 loadRootTree）也要收编外部标签；treeData=null 时是 no-op
     return st;
   }
   // 添加文件夹（头部按钮 / 空态按钮 / 树底常驻行 / ⋯ 菜单）：主进程弹框选目录 + classifyRoot 嵌套判定。
@@ -302,6 +303,7 @@
     } else {
       st.missing = true; // 不可达 → 失联灰态，不当空树
     }
+    mergeExternalDupes(rootId); // 新树到货：命中树内文件的外部标签并进 rel 身份（先开文件再添加其文件夹，↗ 不再永驻）
     syncChrome();
     render();
     if (opts.validate) validateRootEntries(rootId);
@@ -323,6 +325,7 @@
     st2.topTruncated = !!(d && d.truncated); // 根直接子项超单层预算（极罕见）
     collectDirRels(st2.tree, rootId, collapsed); // 新层默认全收起（展开才读下一层）
     renderRoot(rootId);
+    mergeExternalDupes(rootId); // lazy 顶层到货同样收编（简化模式根也不让 ↗ 永驻）
   }
   // 展开一个未加载的 lazy 目录：读它这一层的 children 填进节点、标 childrenLoaded；会话内缓存（收起不丢）。
   async function loadDirChildren(rootId, dirRel) {
@@ -344,6 +347,7 @@
     n2.dirTruncated = !!(d && d.truncated); // 本目录直接子项超单层预算
     collectDirRels(n2.children, rootId, collapsed); // 新层默认全收起
     renderRoot(rootId);
+    mergeExternalDupes(rootId); // 新展开的层里可能藏着外部标签指向的文件
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
   // 吸收后子根的标签不关、整体 rebase 进新根（文件都在磁盘原处，只换归属）。
@@ -487,15 +491,18 @@
     mergeExternalDupes(rootId);
     if (gone.length) { persistTabs(); renderZones(); }
   }
-  // 根失联/被移除期间用「打开」按钮开过它里面的文件 → 建的是 abs 外部标签；复活/撤销后 rel 身份回来，
-  // 同一磁盘文件出现两条标签（MR-ADV-5）。按树节点的 abs 归一：外部标签命中该根内节点 → 并进 rel 身份
-  // （open/pinned 取并集、激活跟随），外部那条销毁。
+  // 外部标签（abs 身份）的文件其实在某个已加载树里 → 并进 rel 身份（open/pinned 取并集、激活跟随），
+  // 外部那条销毁。两类来源：①根失联/被移除期间开过它里面的文件，复活/撤销后 rel 身份回来（MR-ADV-5）；
+  // ②先开工作区外文件、**再**添加它所在的文件夹为根（Wendi bug 2026-07-17）——不收编的话 ↗ 永驻、
+  // 且树里再点同一文件会翻出第二条标签。所以挂在所有「树内容到货」的点：loadRootTree/loadLazyTop/
+  // loadDirChildren/adoptRoot，外加 loadTabs 末尾（启动自愈存量坏状态）。
+  // rootId 缺省 = 不限根、对全部已加载树收编；传了 = 只收编命中该根的（省得别的根白扫）。
   function mergeExternalDupes(rootId) {
     let changed = false;
     for (const ext of tabState.entries.filter((e) => !e.rel && !isTempEntry(e))) {
       const node = findNodeByAbs(ext.abs);
-      if (!node || node.rootId !== rootId) continue;
-      const key = colKey(rootId, node.rel);
+      if (!node || (rootId && node.rootId !== rootId)) continue;
+      const key = colKey(node.rootId, node.rel);
       const relEntry = tabState.entries.find((e) => keyOf(e) === key);
       let entries;
       if (relEntry) {
@@ -504,7 +511,7 @@
           .filter((e) => keyOf(e) !== ext.abs);
       } else {
         entries = tabState.entries.map((e) =>
-          keyOf(e) === ext.abs ? { rootId, rel: node.rel, kind: e.kind, title: node.name, open: e.open, pinned: e.pinned } : e,
+          keyOf(e) === ext.abs ? { rootId: node.rootId, rel: node.rel, kind: e.kind, title: node.name, open: e.open, pinned: e.pinned } : e,
         );
       }
       const activeRel = tabState.activeRel === ext.abs ? key : tabState.activeRel;
@@ -1944,6 +1951,10 @@
       const eRoot = e && e.rel ? rootOf(e.rootId) : null;
       if (e && !(eRoot && (eRoot.missing || eRoot.lazy))) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发（失联/lazy 根的激活项不自动载入——lazy 树只有部分层，findNode 可能空转）
     }
+    // 启动自愈（放在激活恢复之后，不改上面的自动载入语义）：存量持久化的外部标签若其实落在某个根里
+    // （修复前版本会留下这种状态），收编成 rel 身份——不然激活它的 onOpen 会按树解析再建一条内部标签，
+    // 同一文件翻出两条（实测复现）。启动序保证此刻树已读完（loadTabs 本就排在读树之后）。
+    mergeExternalDupes();
   }
 
   // ---- 渲染两区 ----

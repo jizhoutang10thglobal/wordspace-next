@@ -47,7 +47,38 @@ mac 用 zip + latest-mac.yml、win 用 exe + latest.yml 给 electron-updater 做
 
 ## Release notes（2026-07-12 起的约定）
 
-- 每次发版后给该版本写一段**人话说明**（用户视角优先），落两处：
-  1. 仓库根 [`CHANGELOG.md`](../CHANGELOG.md)（正本，倒序）；
+- 每次发版后给该版本写一段**用户可见说明**，落两处：
+  1. 仓库根 [`CHANGELOG.md`](../CHANGELOG.md)（**正本**，倒序）；
   2. 同步到该版本 GitHub Release 页顶部（自动生成的 PR 列表保留在下方给开发者）。
-- 带新功能的版本值得写细；纯修复的小版本一两行即可。
+- 同一段内容还会自动流到两处，**不用手动同步**：
+  - App 内更新面板（electron-updater 拉 Release body，`src/lib/update-status.js` 解析 `---` 之上的部分）；
+  - 官网 [wordspace.ai/changelog](https://wordspace.ai/changelog)（构建时渲染 CHANGELOG.md；
+    `website/vercel.json` 的 ignoreCommand 已放行根目录 CHANGELOG.md 的变更触发重建——改这个闸前想清楚方向）。
+
+## Changelog 文案规范（2026-07-16 起）
+
+**目标**：用户 5 秒能扫完一个版本改了什么。Wendi 拍的方向：精简、规范。
+
+**结构**（每个版本）：
+
+```markdown
+## vX.Y.Z — YYYY-MM-DD
+
+一句话导语（可选：本版最重要的一件事，≤24 字，不解释机制）
+
+### 新增
+- **区域**：一行动宾短句（≤30 字）
+### 改进
+- …
+### 修复
+- …
+```
+
+**写法规则**：
+
+- 只列真有内容的组（纯修复版就只有「修复」组）；全版 ≤3 条可平铺不分组。
+- 每条一行：先说变化结果，不说原因；可用 `**区域**：`（侧栏/浏览器/图片/更新/地址栏/收藏…）开头帮扫读。
+- **禁止**：根因与内部机制、内部术语（watcher/IPC/renderer…）、PR 号、文件名、开发侧改动
+  （测试/文档/CI/ui-demo 这类不进 changelog——GitHub Release 的 PR 列表足够开发者看）。
+- 每版条目 ≤10 条；更多就归并（「一批 XX 修复：a；b；c」）。
+- 括号补充只用于「用户会疑惑」的场景说明（如平台限定、生效时机），不用于解释实现。

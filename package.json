@@ -57,6 +57,13 @@
         ],
         "name": "HTML 文档",
         "role": "Editor"
+      },
+      {
+        "ext": [
+          "pdf"
+        ],
+        "name": "PDF 文档",
+        "role": "Viewer"
       }
     ],
     "directories": {
@@ -111,6 +118,13 @@
           ],
           "name": "Markdown Document",
           "role": "Editor"
+        },
+        {
+          "ext": [
+            "pdf"
+          ],
+          "name": "PDF Document",
+          "role": "Viewer"
         }
       ]
     },
@@ -139,6 +153,13 @@
           ],
           "name": "Markdown Document",
           "role": "Editor"
+        },
+        {
+          "ext": [
+            "pdf"
+          ],
+          "name": "PDF Document",
+          "role": "Viewer"
         }
       ]
     },
