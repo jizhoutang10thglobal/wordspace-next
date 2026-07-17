@@ -14,6 +14,18 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-17 — Changelog 双语同写：CHANGELOG.en.md 必须与中文正本同步更新
+
+**是什么**：Colin 拍板 changelog 每版发布双语。新增 `CHANGELOG.en.md`（全量 40 版英文镜像，
+组名 Added / Improved / Fixed，标题行备注用半角括号）；官网 wordspace.ai/changelog 已上中英切换
+（PR #258）。**有真门**：官网构建时校验 en 最新版本 == zh 最新版本，发版只写中文漏英文 →
+`next build` 直接挂 → 官网部署红。
+**怎么 apply**：发版写 release notes 时，`CHANGELOG.md`（中文正本）和 `CHANGELOG.en.md` 一起更新，
+文案规范见 `docs/releasing.md`「Changelog 文案规范」+「双语同写」（一句话导语 + 新增/改进/修复分组 +
+每条 ≤30 字动宾短句；禁根因/内部术语/开发侧条目）。中文段照旧同步到 GitHub Release 页顶。
+**来源**：PR #258（docs/changelog-bilingual）；规范正本 docs/releasing.md
+
+
 ## 2026-07-16 — 沉浸收起(Arc 对标)已全量合 main:sb-reopen 浮钮已删、真 app 换 hiddenInset 窗框
 
 **是什么**:Wendi「零缝隙」反馈落地(ui-demo #230 + 真 app #238)。侧栏收起=流内零渲染(ui-demo 48px 细轨、真 app 52px COLLAPSED_STRIP、#sb-reopen 常驻浮钮**全删**),重开=左缘 hover peek(悬浮盖内容)/Cmd+\;真 app darwin 换 titleBarStyle:hiddenInset,红绿灯进 .sb-head(兼窗口拖拽区)且随收起隐藏。spec=docs/features/immersive-collapse.md。
