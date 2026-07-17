@@ -106,7 +106,7 @@
   // 悬浮展开钮（COLLAPSED_STRIP）——钮和条都删了，网页贴 x=0 全宽 = Wendi 要的「零缝隙」。
   const FIND_STRIP = 52;
   let toastInset = 0;
-  let peekPush = false; // peek 悬浮打开时：view 同宽右移让出侧栏带（DOM 盖不住原生 view，只能推）
+  let peekPush = false; // 快照失败时的退路：view 同宽右移让出侧栏带（正路是 __webPeekSnap 截帧垫底）
   function viewBounds() {
     const r = mainEl.getBoundingClientRect();
     let x = Math.round(r.left);
@@ -122,19 +122,59 @@
   window.__webRebound = rebound;
   try { new ResizeObserver(() => rebound()).observe(mainEl); } catch { window.addEventListener('resize', rebound); }
 
-  // ---- 沉浸收起 × 网页 view 的两个钩子（sidebar.js 调）----
+  // ---- 沉浸收起 × 网页 view（sidebar.js 调）----
   const sbWidth = () => {
     const v = parseInt(getComputedStyle(document.getElementById('sidebar')).getPropertyValue('--sb-width'), 10);
     return v >= 180 && v <= 520 ? v : 260;
   };
-  // ① peek 推让：peek 开 → view 右移一侧栏宽；关 → 复原。
-  window.__webPeekPush = (on) => { peekPush = !!on; rebound(); };
-  // ② 主进程左缘指针 watcher 开关：只在「收起 + 网页 view 在前台」时开（DOM 热区被 view 压着收不到鼠标）。
-  function syncEdgeWatch() {
-    const need = !!attachedKey && document.body.classList.contains('is-sb-collapsed');
-    if (window.ws2 && window.ws2.edgeWatch) window.ws2.edgeWatch(need, sbWidth());
-  }
-  window.__webEdgeWatch = syncEdgeWatch;
+  // peek 快照垫底（Wendi 2026-07-17，替换原「同宽右移」推挤）：DOM 盖不住原生 view，滑出前
+  // 对 view 截一帧垫在侧栏下（.web-peek-snap，z 230 < 侧栏 240）、摘掉 view——页面视觉纹丝不动
+  // （Arc 同款）。截图失败/超时(250ms)退回推让（peekPush），peek 绝不能被截图卡住。
+  // seq 是取消令牌：截图在途时 peek 已取消/已换台，迟到的截图不生效。
+  let peekSnapEl = null;
+  let peekSnapSeq = 0;
+  let peekSnapMode = null; // 'snap' | 'push' | null
+  window.__webPeekSnap = (on, cb) => {
+    if (on) {
+      const seq = ++peekSnapSeq;
+      if (!attachedKey) { if (cb) cb(); return; } // 文档态：DOM 悬浮层直接盖，无需动 view
+      const key = attachedKey;
+      const timeout = new Promise((r) => setTimeout(() => r(null), 250));
+      Promise.race([window.ws2.webCapture(key).catch(() => null), timeout]).then((dataUrl) => {
+        if (seq !== peekSnapSeq || attachedKey !== key) { if (cb) cb(); return; }
+        if (dataUrl) {
+          const b = viewBounds();
+          const img = document.createElement('img');
+          img.className = 'web-peek-snap';
+          img.src = dataUrl;
+          img.style.cssText = `left:${b.x}px;top:${b.y}px;width:${b.width}px;height:${b.height}px`;
+          document.body.appendChild(img);
+          peekSnapEl = img;
+          peekSnapMode = 'snap';
+          window.ws2.webHideAll();
+        } else {
+          peekSnapMode = 'push';
+          peekPush = true;
+          rebound();
+        }
+        if (cb) cb();
+      });
+    } else {
+      peekSnapSeq++; // 取消在途截图
+      if (peekSnapMode === 'snap') {
+        const e = activeEntry();
+        if (e && T.isWebEntry(e) && e.url && attachedKey === keyOf(e)) window.ws2.webShow(attachedKey, viewBounds());
+        // 等 view 真挂回再撤快照（下两帧），不闪素底；引用局部化防误删后续快照
+        const el = peekSnapEl;
+        peekSnapEl = null;
+        if (el) requestAnimationFrame(() => requestAnimationFrame(() => el.remove()));
+      } else if (peekSnapMode === 'push') {
+        peekPush = false;
+        rebound();
+      }
+      peekSnapMode = null;
+    }
+  };
 
   // web 态给底部 toast 让位：临时把 view 底部收起一条（update-ui.js 等外部模块经 window.__webToastInset 用）。
   function webToastInset() {
@@ -427,7 +467,6 @@
     // web 态（含起始页/子页面）隐藏文档编辑 chrome（⋯菜单 z65 / 文档面包屑）——否则它们浮在 web
     // surface(z60) 之上,起始页点右上角 ⋯ 会对看不见的后台文档导出 PDF（#8）。
     document.body.classList.toggle('ws-web-on', web);
-    syncEdgeWatch(); // 沉浸收起：attach/detach 每个转换点都过这里 → 主进程左缘 watcher 跟随开关
     if (!newtabEl.hidden) renderNewtab(); // 起始页可见时刷新置顶快捷行/瓦片
     syncOmni();
   }

@@ -313,34 +313,53 @@ body.is-mac .sb-head .sb-icobtn { width: 26px; }
    重开=左缘 hover peek / Cmd+\。spec=docs/features/immersive-collapse.md */
 .sb.is-collapsed { width: 0; min-width: 0; overflow: hidden; border-right: none; }
 
-/* 左缘热区：6px 隐形条，只在收起态存在；唯一职责=接住「鼠标滑到最左」这个意图。
-   （网页 view 在前台时它收不到鼠标——原生 view 压着 DOM——那半边靠主进程指针 watcher，见 ipc.js。）*/
+/* 沉浸窗框（Wendi 2026-07-17，Arc 对标）：收起态内容区四周留 10px chrome 色边带。
+   三重职责：①窗口拖拽手柄（hiddenInset 下收起态原本零拖拽区）②左边带=peek 触发的可见锚点
+   （原 6px 隐形热区并入，触发宽度统一 10px）③视觉上窗与桌面有了分界（Wendi「边界不清晰」）。
+   左边带不设 app-region:drag——drag 区吞鼠标事件，会哑掉 hover 触发；拖窗走 top/right/bottom 三条。
+   网页 view 因 #main margin 从 x=10 起，左边带永远是 DOM 地盘 → 原「主进程指针 watcher 代打」
+   路径已删（触发只此一条）。 */
+body.is-sb-collapsed { background: var(--c-bg-chrome); }
+/* 内容=一块纸（ui-demo 同款）：细边+微圆角把内容从窗框带上抬起来（暗色下无边纯 margin 看不出框）。
+   overflow 用 clip 不用 hidden——hidden 会成为滚动容器被 scrollIntoView 悄悄滚偏（ui-demo 实测坑）。
+   网页标签的原生 view 恰好盖满 #main 矩形（含 1px 边）,square 角、盖住细边：spec 已知边界。 */
+body.is-sb-collapsed #main { margin: 10px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: clip; }
+.win-frame { display: none; }
+body.is-sb-collapsed .win-frame { display: block; position: fixed; z-index: 235; -webkit-app-region: drag; }
+body.is-sb-collapsed .win-frame-top { top: 0; left: 0; right: 0; height: 10px; }
+body.is-sb-collapsed .win-frame-right { top: 0; right: 0; bottom: 0; width: 10px; }
+body.is-sb-collapsed .win-frame-bottom { bottom: 0; left: 0; right: 0; height: 10px; }
+
+/* 左缘热区（现=左边带本体，10px 可见宽）：只在收起态存在；hover 给一档轻反馈提示这里有东西。 */
 .sb-edge-hot { display: none; }
 body.is-sb-collapsed .sb-edge-hot {
   display: block;
-  position: fixed; top: 0; left: 0; bottom: 0; width: 6px;
+  position: fixed; top: 0; left: 0; bottom: 0; width: 10px;
   z-index: 240; /* 压过内容与文档浮层(200)，低于模态(400)/toast(500) */
+  transition: background-color var(--dur-fast) var(--ease);
 }
+body.is-sb-collapsed .sb-edge-hot:hover { background: var(--c-hover); }
 
 /* peek 悬浮层：收起态 hover 左缘，完整侧栏盖在内容上滑进滑出、不推挤布局。
    借 .sb 本体变身（单实例——快捷键/树状态全复用，不另造第二份侧栏）。
    静止态 transform:none：挂着 translateX(0) 会劫持内部 fixed 弹层（右键菜单等）的包含块。 */
 body.is-sb-peek .sb.is-collapsed {
-  position: fixed; top: 0; left: 0; bottom: 0;
+  position: fixed; top: 10px; left: 10px; bottom: 10px; /* 贴沉浸窗框内侧浮出（Arc 浮层形态，ui-demo 同款） */
   width: var(--sb-width, 260px); min-width: var(--sb-width, 260px);
   overflow: visible; z-index: 240;
-  border-right: 1px solid var(--c-border-strong);
-  border-radius: 0 var(--r-lg) var(--r-lg) 0; /* 墨圆：悬浮层右侧收圆角 */
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--r-lg); /* 墨圆：悬浮卡四角收圆 */
   box-shadow: var(--shadow-pop);
   transform: none; /* 静止态必须 none（fixed 包含块劫持坑）；入场动画交给 keyframes、不用 fill */
   animation: sb-peek-in var(--dur-slow) var(--ease-enter);
   transition: transform var(--dur-slow) var(--ease);
 }
-@keyframes sb-peek-in { from { transform: translateX(-103%); } }
+/* 藏起位移多让出左边带 10px——不然滑出前右缘在左带里露 ~2px 残影（ui-demo 实测坑） */
+@keyframes sb-peek-in { from { transform: translateX(calc(-103% - 10px)); } }
 body.is-sb-peek .sb.is-collapsed .sb-foot { display: flex; }
 body.is-sb-peek .sb.is-collapsed .sb-resize { display: none; } /* 悬浮态不改停靠宽度 */
 /* 滑出：JS 先挂 is-sb-peek-out（transform 过渡到屏外），动画完再一起摘类 */
-body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(-103%); animation: none; }
+body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-103% - 10px)); animation: none; }
 
 /* 品牌页脚：wordspace.ai logo + 版本号，钉在左侧栏底部（不在编辑区）。 */
 .sb-foot { flex: none; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-top: 1px solid var(--c-divider); }
@@ -626,6 +645,8 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(-103%); 
 .sb-modal-overlay { position: fixed; inset: 0; z-index: 400; background: rgba(28, 25, 23, 0.32); display: flex; align-items: center; justify-content: center; padding: 24px; animation: ws-modal-fade var(--dur-fast) var(--ease-enter); }
 /* 弹层期间垫底的网页快照（弹层要摘原生 view，快照让「页面还在」；z 在弹层 400 之下） */
 .web-snap { position: fixed; z-index: 390; pointer-events: none; }
+/* peek 期间垫底的网页快照（peek 摘 view 的「页面还在」视觉；z 230 < 悬浮侧栏 240） */
+.web-peek-snap { position: fixed; z-index: 230; pointer-events: none; }
 .sb-modal { width: 520px; max-width: calc(100vw - 32px); background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); display: flex; flex-direction: column; max-height: calc(100vh - 48px); overflow: hidden; transform-origin: center 40%; animation: ws-modal-pop var(--dur-slow) var(--ease-enter); }
 .sb-modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 14px; border-bottom: 1px solid var(--c-divider); }
 .sb-modal-head-text { min-width: 0; flex: 1; }
