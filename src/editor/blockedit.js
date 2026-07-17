@@ -249,6 +249,14 @@
     fmtbar.style.display = 'none';
     doc.documentElement.appendChild(fmtbar);
 
+    // 焦点接盘（⌘A 全篇第二级）：放墙 exitEdit 摘掉 contenteditable 会把键盘焦点甩出 iframe，
+    // 后续 Backspace/⌘X 就进不了 doc 的 keydown、跨块删管线够不着（e2e 实锤）。全篇选中后把焦点
+    // 停在这个隐形 UI 元素上（sentinel data-ws2-ui：serialize 整删、零入盘污染；opacity:0 不可见但可编程 focus）。
+    const focusCatcher = mk('span');
+    focusCatcher.setAttribute('tabindex', '-1');
+    focusCatcher.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;opacity:0;outline:none;pointer-events:none;';
+    doc.documentElement.appendChild(focusCatcher);
+
     // 块操作菜单
     const blockMenu = mk('div', 'ws-blockmenu');
     blockMenu.style.position = 'absolute';
@@ -359,6 +367,27 @@
       if (el.hasAttribute('data-ws2-ce')) { el.removeAttribute('contenteditable'); el.removeAttribute('data-ws2-ce'); }
       el.removeAttribute('data-ws2-editing');
       fmtShown = false; fmtbar.style.display = 'none'; // 离开编辑 → 关气泡
+    }
+    // 全篇跨块选区（⌘A 第二级）：退出编辑放墙（同拖选跨块），range 罩住首尾内容块——
+    // 首尾锚点用内容块而非 body（覆盖层 data-ws2-ui 挂在 body 末尾，别把 UI 圈进选区）。
+    function selectWholeDoc() {
+      if (editingEl) exitEdit();
+      clearSelectedAttr(); selectedEl = null;
+      const blocks = [...body.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui'));
+      if (!blocks.length) return;
+      const r = doc.createRange();
+      // 锚点放**首尾块内**（不是 body 层的 before/after）——deleteSelection 用 blockOf(锚点) 找端块，
+      // body 层锚点会被判「块外选区」直接 return false（实锤:全篇退格纹丝不动）。块内锚点与拖选
+      // 产生的选区同形,跨块删/剪切管线原样通。
+      const last = blocks[blocks.length - 1];
+      r.setStart(blocks[0], 0);
+      r.setEnd(last, last.childNodes.length);
+      const sel = doc.getSelection();
+      if (!sel) return;
+      // 先把焦点停进接盘（焦点变化会把 contenteditable 的旧选区折叠），再设全篇 range——
+      // 顺序反了选区会被 focus 冲掉。焦点留在 iframe 内,后续 Backspace/⌘X 才进得了 keydown。
+      try { focusCatcher.focus({ preventScroll: true }); } catch { /* 老内核无 options */ }
+      sel.removeAllRanges(); sel.addRange(r);
     }
     function placeCaret(el, caret) {
       const sel = doc.getSelection(); if (!sel) return;
@@ -1199,6 +1228,34 @@
         const blockEl = editingEl;
         // 用父窗口 setTimeout：iframe 是 sandbox 无 allow-scripts，在 iframe window 上调度回调会被拦
         global.setTimeout(() => { if (editingEl === blockEl) openSlash(blockEl); }, 0);
+        return;
+      }
+      // ⌘/Ctrl+A 分级全选（Notion/Typora 式，王波 2026-07-17「一次选一段、两次全篇」）：
+      // 第一次全选当前块文字；已全选再按 → 放墙（exitEdit，同拖选跨块）+ 全篇跨块选区
+      // （删除/剪切走下面既有 homeless 选区管线）。原生 Select All 被单块 contenteditable
+      // 钉死在块内、第二级永远够不到（实测第 2/3 次纹丝不动）——这里接管。菜单「全选」已
+      // 去加速器注册（main.js），真实按键在 mac/Win 都直达这里、不再被菜单吃掉。
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A') && !e.isComposing && e.keyCode !== 229) {
+        const sel = doc.getSelection();
+        if (editingEl && sel) {
+          e.preventDefault();
+          // 「块内已全选」判定剥空白比较——表格/列表的 sel.toString() 带 \t\n 分隔、textContent 没有，
+          // 逐字比对会永远判「未全选」把第二级堵死。空块（无文字）第一次就直接升全篇。
+          const norm = (s) => (s || '').replace(/\s+/g, '');
+          const blockText = norm(editingEl.textContent);
+          const allInBlock = blockText.length > 0 && norm(sel.toString()) === blockText;
+          if (blockText.length > 0 && !allInBlock) {
+            const r = doc.createRange();
+            r.selectNodeContents(editingEl);
+            sel.removeAllRanges(); sel.addRange(r);
+          } else {
+            selectWholeDoc();
+          }
+          return;
+        }
+        // 非编辑态（块选中/无输入焦点）按 ⌘A：直接全篇（Notion 同款——块选中态下 ⌘A=选中所有）
+        e.preventDefault();
+        selectWholeDoc();
         return;
       }
       // 跨块 / 无编辑态拖选的删除 + 剪切：原生删不掉这类选区（横跨多个独立 contenteditable 块，
