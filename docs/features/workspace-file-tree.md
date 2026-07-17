@@ -97,6 +97,23 @@ open/pinned 取并集、激活跟随、abs 旧条目销毁（引擎 = `sidebar.j
 门：`e2e/tabs.spec.js` 「先开工作区外文件、再添加其所在文件夹为根」+「启动自愈」两条（先写测试后修复，
 修复前双红 = 变异证据）。
 
+### viewer 态文档收编（2026-07-17 第二半，plan `docs/plans/2026-07-17-001`）
+
+上面的引擎只认 tabState 里的条目；**0 根**时打开的文件走单文件 viewer 态（侧栏不挂、不建标签——这仍是
+设计而非 bug），文档只活在 shell 的 `docPath`/`viewerFile` 里，添加文件夹后引擎对它视而不见 → 游离
+（树行高亮、标签区空），且树里重点被 shell 同文档早退守卫短路、救不回（Colin 2026-07-17 截图）。
+
+**契约**：侧栏一旦在场，**任何打开中的真文件必须以标签形态可见**——编辑器文档（html/md）与查看器文件
+（PDF/图片，Colin 2026-07-17 拍板纳入）同待遇。树内 = rel 身份（无 ↗）、树外 = abs ↗ 外部身份（与
+「工作区在场时打开根外文件」现行为一致）。收编是**纯身份登记**：不 reload、不碰编辑器/自动保存/dirty。
+**web/temp 标签激活时收编整个跳过**（Colin 拍板「不冒，不打扰」；也防「用户关掉的标签被树到货复活」），
+重入通道 = 树里点它（shell 同文档守卫的兜底分支补建 entry）。先后开多个只收编当前显示的（单槽语义）。
+
+实现：`shell.js` `viewerFile` 状态 + `__shellOpenFileAbs()`（docPath ?? viewerFile.abs）+ 同文档守卫兜底
+（`hasTabFor` 双域判定）；`sidebar.js` `adoptOpenFile()` 并入 `mergeExternalDupes` 末尾（自动继承其全部
+现在/将来触发点）、走 `onOpen` 既有漏斗建 entry。门：`e2e/tabs.spec.js`「viewer 收编」四条（冷开收编/
+根外 ↗ +点击路由/PDF/web 门+U2 兜底+不复活）。
+
 ## 树交互契约（bug-hunt 2026-07-15）
 
 一批 P2/P3 探索测试修复沉淀的行为契约（实现均在 `src/renderer/sidebar.js`，除注明外）：

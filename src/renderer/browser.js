@@ -313,9 +313,15 @@
     const prev = webState[s.key] || {};
     webState[s.key] = s;
     live.add(s.key); // 有状态推来 = view 已存在
-    // 标签行/持久化跟随（url/title 变了才写，防每帧写盘）
+    // 标签行/持久化跟随（url/title 变了才写，防每帧写盘）。
+    // title 只在拿到**真标题**（page-title-updated 后 s.title 非空）时覆写；s.title=null（懒加载起步/
+    // 导航中）完全不动 entry.title——恢复的标签保住持久化的旧名(如「Google」),不再闪「新标签页」
+    // (Wendi 2026-07-17)。全新标签的「新标签页」名由 sidebar 建 entry 时自己起;无 <title> 的页面
+    // 不触发 page-title-updated → 行保留上一个名字,与「显示占位假名」相比是更小的恶。
     if (sb() && (prev.url !== s.url || prev.title !== s.title || prev.favicon !== s.favicon)) {
-      sb().updateWeb(s.key, { url: s.url, title: s.title || s.url || window.wsT('browser.newTab') });
+      const patch = { url: s.url };
+      if (s.title) patch.title = s.title;
+      sb().updateWeb(s.key, patch);
     }
     // U3 导航加载反馈（治「渲染区闪回旧页面 1-2 秒」= 导航期零反馈）：loading 变化 → 轻量刷该标签行的 spinner。
     // 不走 updateWeb（那会落盘 + 整区 renderZones）；每个 s.key 都收，后台标签加载也转圈（Chrome 语义）。

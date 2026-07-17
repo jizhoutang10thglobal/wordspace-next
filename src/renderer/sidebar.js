@@ -519,6 +519,33 @@
       changed = true;
     }
     if (changed) { persistTabs(); renderZones(); }
+    adoptOpenFile(); // 树内容到货的统一会合点=本函数——viewer 收编搭同一趟车(plan 2026-07-17-001),现在/将来的调用点全自动继承
+  }
+  // 「当前打开面文件」(编辑器文档或查看器文件)是否已有标签——双域判定:abs 直配(外部 ↗ entry)
+  // 或 findNodeByAbs → rootId:rel 命中(rel entry 不带 abs 字段,只查 abs 会把已收编文档误判缺失、
+  // 重建出第二条)。shell 的 U2 兜底(hasTabFor)与下面 adoptOpenFile 共用。
+  function hasEntryForAbs(abs) {
+    if (!abs) return false;
+    if (tabState.entries.some((e) => !e.rel && !isTempEntry(e) && e.abs === abs)) return true;
+    const node = findNodeByAbs(abs);
+    if (node && tabState.entries.some((e) => keyOf(e) === colKey(node.rootId, node.rel))) return true;
+    return false;
+  }
+  // 0 根时打开的文件(单文件 viewer 态,不建标签是设计)在工作区出现后收编进标签系统
+  // (Wendi/Colin 2026-07-17,plan docs/plans/2026-07-17-001)。取 shell 的「当前打开面文件」,
+  // 无 entry 就走 onOpen 既有漏斗(树内=rel 身份+reveal,树外=classifyFile 建 abs ↗ 外部标签)。
+  // KD3 门:web/temp 激活时整个跳过——①openEntry 无条件切 activeRel,web view 挂屏时抢激活会劈开
+  // 「屏幕显示网页、⌘W/⌘S 作用到看不见的文档」(SH-4/浏览器 P1-2 同类病);②跳过还顺带消灭
+  // 「用户关掉收编标签后被下一次树到货复活」。重入通道=用户树里点它(shell 同文档守卫的 U2 兜底)。
+  async function adoptOpenFile() {
+    if (window.__webIsActive && window.__webIsActive()) return;
+    const act = tabState.activeRel && tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
+    if (act && isTempEntry(act)) return; // 临时文档在前台(其 docPath 为 null,但守一道)
+    const abs = window.__shellOpenFileAbs ? window.__shellOpenFileAbs() : null;
+    if (!abs || hasEntryForAbs(abs)) return;
+    try { if (!(await window.ws2.pathExists(abs))) return; } catch (e) { return; } // 文件已被外删→别收编死标签(loadTabs 外部 entry 校验同款)
+    if (hasEntryForAbs(abs)) return; // await 期间可能已被别的路径建上(如用户点树),别翻倍
+    if (window.__sbHooks && window.__sbHooks.onOpen) void window.__sbHooks.onOpen(abs);
   }
   // 单根重读树（文件操作后/watcher 事件）：只刷新该根，别的根纹丝不动。
   async function refreshRoot(rootId) {
@@ -3052,6 +3079,22 @@
     },
     pickFolder: () => pickFolder(), // ⋯ 菜单/菜单栏「打开文件夹…」= 添加根（单文件模式也要有开工作区的入口）
     manageRoots: () => openManageRootsModal(), // 菜单栏「管理文件夹…」= 不依赖树/rootsState 的逃生门（D4 兜底）
+    hasTabFor: (abs) => hasEntryForAbs(abs), // shell 同文档守卫的 U2 兜底用（双域判定,见 hasEntryForAbs）
+    // 仅测试用：按 abs 直接删一条 entry（构造「viewer 有文档、tabState 无 entry」态给 U2 兜底/不复活 e2e
+    // ——closeTab 路线到不了：finishClose 无相邻 entry 时会 __shellCloseDoc 清掉文档）。双域解析同 hasEntryForAbs。
+    dropEntryForTest: (abs) => {
+      let key = null;
+      const direct = tabState.entries.find((e) => !e.rel && !isTempEntry(e) && e.abs === abs);
+      if (direct) key = keyOf(direct);
+      else {
+        const n = findNodeByAbs(abs);
+        if (n) key = colKey(n.rootId, n.rel);
+      }
+      if (!key) return;
+      tabState = { entries: tabState.entries.filter((e) => keyOf(e) !== key), activeRel: tabState.activeRel === key ? null : tabState.activeRel };
+      persistTabs();
+      renderZones();
+    },
     onOpen: async (abs) => {
       // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc
