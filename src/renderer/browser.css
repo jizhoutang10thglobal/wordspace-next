@@ -106,7 +106,7 @@
 .sb-fav.is-open .sb-fav-caret { transform: rotate(90deg); }
 .sb-fav-label {
   font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-label); color: var(--c-text-3);
+  letter-spacing: var(--tracking-label); color: var(--c-text-3); text-transform: uppercase; /* 与 .sb-sec-label 同款分区栏标（style.md「分区栏标」：等宽+宽字距+大写；中文下 uppercase 隐形、英文缺它就穿帮 */
   transition: color var(--dur-fast) var(--ease);
 }
 .sb-fav-head:hover .sb-fav-label { color: var(--c-text-2); }
