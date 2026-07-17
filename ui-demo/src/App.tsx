@@ -25,6 +25,7 @@ import TemplatesPage from './components/TemplatesPage'
 import CloseConfirmModal from './components/CloseConfirmModal'
 import DeleteLinkedModal from './components/DeleteLinkedModal'
 import MarkdownSourcePanel from './components/MarkdownSourcePanel'
+import StartPage from './components/StartPage'
 import { useStore } from './mock/store'
 import { checkSchema } from './lib/schemaCheck'
 import './App.css'
@@ -32,6 +33,8 @@ import './App.css'
 function MainDocs() {
   const { tabs, activeTabId, docs } = useStore()
   const tab = tabs.find((t) => t.id === activeTabId)
+  // 一个标签都没开 → 导览页(方案 3 时间流,Wendi 2026-07-17;原来落进空 Canvas)。
+  if (!tab) return <StartPage />
   if (tab?.kind === 'web') return <WebView tab={tab} />
   if (tab?.kind === 'file') {
     if (tab.fileKind === 'pdf') return <PdfViewer tab={tab} />

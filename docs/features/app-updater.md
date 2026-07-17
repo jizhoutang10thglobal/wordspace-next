@@ -32,6 +32,13 @@
 
 **面板通用**：复用 `.sb-modal-overlay`/`.sb-modal` 壳（web 标签态自动摘 view、与其他弹层单例互斥）；
 Esc / 点遮罩 / × 关闭；主按钮自动聚焦。
+
+**更新日志入口（2026-07-16，Wendi「要有地方 track 各版本 notes」）**：正本=仓库根 CHANGELOG.md，
+官网 wordspace.ai/changelog 构建时渲染（见 docs/releasing.md「Changelog 文案规范」）。App 内两处入口，
+都**开成 app 内网页标签**（`update-open-changelog` IPC → `openExternalUrlFromOS`，含 scheme 白名单与
+就绪排队）：① 菜单「Wordspace Next → 更新日志…」；② 更新面板按钮——available「更新日志」/
+ready「更新日志」/ uptodate「最近更新了什么」（downloading/error 不给，别打扰当前事）。
+点击先收面板再开标签（弹层在时 view 被摘除守卫压着）。
 **渲染契约（防闪烁，2026-07-16 Wendi 反馈）**：结构签名（state+按钮+行类型+有无进度）不变的推送
 （下载进度每 ~200ms 一次）只原地改文本/进度宽度——**不许拆卡重建、不许抢焦点**；只有状态跃迁才重建 + 聚焦一次。
 e2e 以 DOM 节点身份标记断言（重建过的新节点标记必丢）。
