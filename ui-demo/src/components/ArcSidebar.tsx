@@ -31,12 +31,16 @@ import {
   Bookmark,
   History as HistoryIcon,
   LayoutTemplate,
+  Download,
 } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
 import { useBookmarks, BM_BAR } from '../mock/bookmarks'
 import { useHistory } from '../mock/history'
+import { useDownloads } from '../mock/downloads'
+import { aggregateProgress } from '../lib/downloads'
+import DownloadsPopover from './DownloadsPopover'
 import { useNav } from '../mock/nav'
 import { useT } from '../i18n'
 import { Avatar } from '../ui/primitives'
@@ -780,6 +784,53 @@ function Library({ query }: { query: string }) {
   )
 }
 
+// 工具栏下载入口（U2）：零态纯图标常显（P1，对齐历史图标）；有在途 → SVG 进度环
+// （批次聚合百分比，--c-accent 细线，单条先完成不回退）+ 活动计数徽标。
+// 订阅隔离在本组件：进度 tick 每 120ms 一次，绝不能让整个侧栏（文件树）跟着重渲染。
+function DownloadsButton() {
+  const t = useT()
+  const entries = useDownloads((s) => s.entries)
+  const batchIds = useDownloads((s) => s.batchIds)
+  const downloadsOpen = useUI((s) => s.downloadsOpen)
+  const openDownloads = useUI((s) => s.openDownloads)
+  const closeDownloads = useUI((s) => s.closeDownloads)
+  const agg = useMemo(
+    () => aggregateProgress(entries.filter((e) => batchIds.includes(e.id))),
+    [entries, batchIds],
+  )
+  const C = 2 * Math.PI * 8 // 进度环 r=8 的周长（dasharray 基准）
+  return (
+    <button
+      className="arc-ico"
+      data-dl-anchor
+      title={agg.active > 0 ? t('browser.dlToolbarActive', { n: agg.active }) : t('browser.dlToolbar')}
+      aria-haspopup="dialog"
+      aria-expanded={downloadsOpen}
+      onClick={() => (downloadsOpen ? closeDownloads() : openDownloads())}
+    >
+      {agg.active > 0 ? (
+        <span className="dl-ring-wrap">
+          <svg className="dl-ring" viewBox="0 0 20 20" width={20} height={20} aria-hidden>
+            <circle className="dl-ring-track" cx="10" cy="10" r="8" />
+            <circle
+              className="dl-ring-bar"
+              cx="10"
+              cy="10"
+              r="8"
+              strokeDasharray={C}
+              strokeDashoffset={C * (1 - agg.pct)}
+            />
+          </svg>
+          <Download size={9} className="dl-ring-glyph" />
+          <span className="dl-badge">{agg.active}</span>
+        </span>
+      ) : (
+        <Download size={15} />
+      )}
+    </button>
+  )
+}
+
 export default function ArcSidebar() {
   const t = useT()
   const navigate = useNavigate()
@@ -1162,6 +1213,7 @@ export default function ArcSidebar() {
             onClick={() => { reload(); coach('reload', t('sidebar.coachReload', { key: IS_MAC ? '⌘R' : 'Ctrl+R' })) }}
           ><RotateCw size={13} /></button>
           <button className="arc-ico" title={t('sidebar.history')} onClick={() => navigate('/history')}><HistoryIcon size={15} /></button>
+          <DownloadsButton />
           <button className="arc-ico" title={t('sidebar.findFileHint', { key: IS_MAC ? '⌘P' : 'Ctrl+P' })} onClick={openFind}><Search size={14} /></button>
         </div>
       </div>
@@ -1338,6 +1390,7 @@ export default function ArcSidebar() {
 
   if (collapsed) {
     // 沉浸收起：流内什么都不渲染，只留左缘热区（=左边框带 10px）+ 悬浮 peek 容器
+    // （DownloadsPopover 自身 portal 到 body，收起态从 toast「显示」打开时不受 peek visibility 影响）
     return (
       <>
         <div className="arc-edge-hot" onMouseEnter={peekEnter} onMouseLeave={peekLeave} />
@@ -1349,9 +1402,15 @@ export default function ArcSidebar() {
         >
           {body}
         </div>
+        <DownloadsPopover />
       </>
     )
   }
 
-  return body
+  return (
+    <>
+      {body}
+      <DownloadsPopover />
+    </>
+  )
 }
