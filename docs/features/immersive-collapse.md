@@ -10,11 +10,17 @@
 
 ## 行为契约
 
-**收起 = 沉浸**:侧栏收起后流内零渲染——没有 48px 细轨、没有常驻浮钮,内容区四边贴满窗口
-(网页标签 = 页面即窗口;文档标签保留文档头)。
+**收起 = 沉浸**:侧栏收起后流内零渲染——没有 48px 细轨、没有常驻浮钮,内容区只隔一圈 10px
+窗框(网页标签 = 页面即窗口;文档标签保留文档头)。
+
+**10px 窗框带**(Wendi 2026-07-17 追加,解「peek 触发边界不可见」):收起态内容四周均匀内缩
+10px,露出 chrome 色(`--c-bg-chrome`)边框带,内容区加 1px `--c-border` 细边 + `--r-md` 微圆角
+(纸方:内容=一块纸)。**真 app 里这圈是 `-webkit-app-region: drag` 的窗口拖动区**(顺带解掉
+「收起态窗口拖拽无处可拖」欠账);ui-demo 无真窗口,纯视觉。展开态不套窗框、不变。
 
 **重开三入口**:
-1. **左缘 hover peek**(Arc 签名交互):鼠标滑到窗口最左缘(6px 热区)→ 完整侧栏以悬浮层滑出,
+1. **左缘 hover peek**(Arc 签名交互):鼠标滑到左边框带(热区与 10px 左边框重合,触发区=整条
+   左边框;hover 背景加深一档 `--c-hover` 做可见反馈,不发光)→ 完整侧栏以悬浮层滑出,
    **盖在内容上、不推挤布局**;移开(侧栏与热区之外)→ 滑回。进出各有小延迟(120ms/240ms 缓冲)
    防误触发/闪烁。悬浮层带右侧圆角 + 投影(纸方墨圆:悬浮层=墨)。
 2. **Cmd+\\**(既有快捷键,行为不变)。
@@ -27,6 +33,8 @@
   包含块(doc-linking 原型踩过的坑)。
 - 藏起时 `visibility: hidden`(延迟到滑出动画结束)——防 tab 键聚焦到屏幕外的侧栏控件。
 - 悬浮层 z 层:压过内容与文档浮层、低于 modal/toast。
+- 悬浮层随窗框内缩(top/left/bottom = 10px),滑出后贴左边框内侧、视觉上从边框「长出来」;
+  藏起位移要多让出左偏的 10px(`translateX(calc(-103% - 10px))`),否则右缘会在左带里露一丝。
 
 **假红绿灯随侧栏走**(ui-demo):红绿灯画在侧栏顶部,收起即消失、peek 时随层滑回——一比一预演
 真 app hiddenInset 后的 Arc 行为。
@@ -37,6 +45,7 @@
 |---|---|---|
 | 收起态渲染(零流内元素+热区+peek 容器) | `ui-demo/src/components/ArcSidebar.tsx`(collapsed 分支) | `src/renderer/index.html`(#sb-edge-hot,sb-reopen 已删)+ `src/renderer/sidebar.js`(peek 控制器) |
 | peek/热区样式与动效 | `ui-demo/src/components/ArcSidebar.css`(.arc-edge-hot/.arc-peek) | `src/renderer/shell.css`(.sb-edge-hot / body.is-sb-peek .sb 变身,keyframes 入场不用 fill) |
+| 收起态 10px 窗框 + 左带 hover 反馈 | `ui-demo/src/App.tsx`+`App.css`(.ws-body.is-immersive)+ `ArcSidebar.css`(.arc-edge-hot 10px/.arc-peek 内缩) | **移植中**(另 session 2026-07-17)——窗框兼 `-webkit-app-region: drag` |
 | 窗框(hiddenInset+红绿灯进侧栏头) | 假红绿灯画在侧栏(天然等效) | `src/main/main.js`(darwin-only titleBarStyle+trafficLightPosition)+ `shell.css`(.sb-head 拖拽区/is-mac 让位 70px+26px 钮凑 240 最小宽的账) |
 | 红绿灯随收起隐/peek 现 | —(无真窗框) | `src/main/ipc.js` ws-window-buttons + `sidebar.js` 收起/peek 时机调用 |
 | 网页 view 贴零 + peek 推让 | —(iframe 无此问题) | `src/renderer/browser.js`(COLLAPSED_STRIP 已删;__webPeekPush=view 同宽右移不 reflow) |
@@ -62,8 +71,9 @@
 
 - **Windows/Linux 窗框**:仍是标准系统标题栏(hiddenInset 为 darwin 专属;Windows 要
   `titleBarStyle:'hidden'`+`titleBarOverlay` 另做,顶上那条在 Win 上还在)。
-- **收起态窗口拖拽**:hiddenInset + 内容全贴满后无可拖 DOM 区(网页标签下尤甚)——Arc 同样牺牲,
-  展开态可拖(.sb-head 兼拖拽区,控件已挖 no-drag)。
+- **收起态窗口拖拽**:~~hiddenInset + 内容全贴满后无可拖 DOM 区——Arc 同样牺牲~~ → 方案已定:
+  10px 窗框带兼 drag region(上表「10px 窗框」行,app 侧移植中 2026-07-17);展开态可拖不变
+  (.sb-head 兼拖拽区,控件已挖 no-drag)。
 - **红绿灯可见性无 e2e**:setWindowButtonVisibility 无公开 getter,CI 又是 linux(is-mac 分支不跑),
   只有宿主探针(窗高==内容高)+目验兜着。
 - **.sb-head 加图标要重算账**:is-mac 下 让位 70+右 6+6×26+gap 6 = 238 ≤ min-width 240,余量 2px

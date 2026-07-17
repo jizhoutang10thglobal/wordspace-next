@@ -27,6 +27,7 @@ import DeleteLinkedModal from './components/DeleteLinkedModal'
 import MarkdownSourcePanel from './components/MarkdownSourcePanel'
 import StartPage from './components/StartPage'
 import { useStore } from './mock/store'
+import { useUI } from './mock/ui'
 import { checkSchema } from './lib/schemaCheck'
 import './App.css'
 
@@ -74,6 +75,8 @@ function RoutedView() {
 }
 
 export default function App() {
+  // 沉浸收起时给内容区套 10px 窗框（Arc 式，见 App.css .is-immersive）
+  const immersive = useUI((s) => s.sidebarCollapsed)
   // 关 Wordspace（关浏览器标签/窗口）时若有未保存的临时文档 → 浏览器原生「离开?」提示。
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -88,7 +91,7 @@ export default function App() {
 
   return (
     <div className="ws-app">
-      <div className="ws-body">
+      <div className={'ws-body' + (immersive ? ' is-immersive' : '')}>
         <ArcSidebar />
         <div className="ws-main">
           <RoutedView />

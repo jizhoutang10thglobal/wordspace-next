@@ -16,24 +16,29 @@
 .arc-resize:hover { background: var(--c-accent); opacity: 0.35; }
 
 /* ------------------------------------------------------------------ */
-/* 沉浸收起（Wendi 对标 Arc，2026-07-16）：收起=流内零渲染，内容四边贴满。 */
-/* 重开走左缘热区 hover peek / Cmd+\。真 app 对应欠账见 docs/features/immersive-collapse.md */
+/* 沉浸收起（Wendi 对标 Arc，2026-07-16）：收起=流内零渲染，内容缩进 10px 窗框
+   （框在 App.css .ws-body.is-immersive）。重开走左边框 hover peek / Cmd+\。
+   真 app 对应欠账见 docs/features/immersive-collapse.md */
 /* ------------------------------------------------------------------ */
 
-/* 左缘热区：6px 隐形条，唯一职责是接住「鼠标滑到最左」这个意图 */
+/* 左缘热区：与左侧 10px 边框带重合——触发区=整条左边框，可见即可寻（Wendi 2026-07-17：
+   原 6px 隐形条「不知道鼠标挪哪」）。hover 反馈=背景加深一档，克制、不发光。 */
 .arc-edge-hot {
   position: fixed;
   top: 0; left: 0; bottom: 0;
-  width: 6px;
+  width: 10px;
   z-index: 240; /* 压过内容与文档浮层，低于 modal(1000) */
+  transition: background-color var(--dur-fast) var(--ease);
 }
+.arc-edge-hot:hover { background: var(--c-hover); }
 
-/* peek 悬浮层：完整侧栏盖在内容上滑进滑出，不推挤布局（Arc 签名交互） */
+/* peek 悬浮层：完整侧栏盖在内容上滑进滑出，不推挤布局（Arc 签名交互）。
+   四周随窗框内缩 10px——滑出后贴着左边框内侧，视觉上从边框「长出来」。 */
 .arc-peek {
   position: fixed;
-  top: 0; left: 0; bottom: 0;
+  top: 10px; left: 10px; bottom: 10px;
   z-index: 240;
-  transform: translateX(-103%); /* 多 3% 连阴影一起藏干净 */
+  transform: translateX(calc(-103% - 10px)); /* 多 3%+左偏 10px，连阴影一起藏干净 */
   visibility: hidden; /* 藏起时不可 tab 聚焦；0s 延迟到滑出动画结束 */
   transition: transform var(--dur-slow) var(--ease),
     visibility 0s linear var(--dur-slow);
