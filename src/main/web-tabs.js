@@ -153,7 +153,10 @@ function createView(key, url) {
   // 首绘前的 WebContentsView 是透明的——不设底色,新标签首次加载的几秒里会把底下的文档透出来
   // （Colin 实测报的「加载中闪回文档」bug 的根因之一）。底色按当前有效主题取,否则暗态切网页标签闪白。
   try { view.setBackgroundColor(viewBgColor()); } catch { /* 老版本无此 API 就算了 */ }
-  const rec = { view, url: url || null, title: i18n.t('dialog.webNewTabTitle'), favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, navSeq: 0, userZoom: null, _skipRecord: false };
+  // title 初始 null,不发明「新标签页」占位——registry 是数据层,title 非空 ⇔ 来自真事件(page-title-updated)。
+  // 曾把占位当初值:恢复的标签懒加载起步时,这个假名会顺着 pushUpdate 把侧栏里持久化的真标题(如「Google」)
+  // 覆写成「新标签页」闪一下(Wendi 2026-07-17)。下游全有 || url 兜底(历史/PDF/收藏),null 安全。
+  const rec = { view, url: url || null, title: null, favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, navSeq: 0, userZoom: null, _skipRecord: false };
   registry.set(key, rec);
   wireViewEvents(key, view);
   return view;
