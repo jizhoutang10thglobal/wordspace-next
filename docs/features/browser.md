@@ -59,6 +59,8 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   不错位）。app PR `fix/app-zone-count-align`：padding 上移 `.sb-zone-head`、label 归零、caret 边距
   归容器；正本 §4.3「对齐网格」补计数同线+6px 契约；几何门进 `sidebar-typography.spec.js`（Range 量
   纯文字矩形：同行中线/全侧栏间距/左缘三不变式）。**ui-demo 无此病、零改动**，此项无欠账。
+- 2026-07-17 **收藏管理入口改常显**（Wendi「与标签页『+』统一」+ Colin 拍板「都一直出现」，推翻 07-13
+  hover 才显）：`browser.css .sb-fav-manage` / ui-demo `ArcSidebar.css`，两侧同一 PR 落地，正本 §4.3/§14/§15。
 - 2026-07-14 **User-Agent 归一（反 CAPTCHA）**：app PR `fix/browser-ua`（Wendi「网页搜索总弹人机验证」）。
   正本 §11.7 记契约；`web-tabs.js` `ensureSession` + `web-tabs-policy.js` `browserUA()`。真 app 独有
   （ui-demo 是 iframe mock、无 Electron session，不移植、不算漂移）。
