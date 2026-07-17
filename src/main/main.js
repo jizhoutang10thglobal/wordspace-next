@@ -6,6 +6,9 @@ const docWatcher = require('./doc-watcher');
 const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
 const webPolicy = require('../lib/web-tabs-policy');
+const i18n = require('../lib/i18n');
+const { ZH, EN } = require('../i18n');
+const languageStore = require('./language-store');
 
 // e2e 测试用：隔离 userData，避免污染真实的最近文档与历史。
 // 修 MP-8：加 !app.isPackaged 闸（对齐 WS2_PDF_OUT 等全部 seam 惯例，这条原来漏了）——
@@ -61,8 +64,8 @@ function createWindow() {
     if (details && details.reason === 'clean-exit') return;
     if (!win || win.isDestroyed()) return;
     dialog.showMessageBox(win, {
-      type: 'error', buttons: ['重新加载'], defaultId: 0,
-      message: '编辑器意外崩溃', detail: '未保存到磁盘的临时内容可能已丢失。已保存的文件不受影响。'
+      type: 'error', buttons: [i18n.t('dialog.reloadBtn')], defaultId: 0,
+      message: i18n.t('dialog.crashMessage'), detail: i18n.t('dialog.crashDetail')
     }).then(() => { if (win && !win.isDestroyed()) { rendererReady = false; win.reload(); } }).catch(() => {});
   });
   // 渲染层 beforeunload 在 Electron 里是静默拦截，提示必须由主进程弹
@@ -73,7 +76,10 @@ function createWindow() {
     // 只有真退出（Cmd+Q → before-quit 先行；自动更新 quitAndInstall → before-quit-for-update 先行）
     // 才继续往下销毁 + 未保存守卫。
     // Windows/Linux 不驻留：按平台惯例关窗即退（走下面守卫 → window-all-closed → quit）。
-    if (process.platform === 'darwin' && !quitting) {
+    // WS2_DARWIN_PERSIST_SIM（isPackaged 闸,seam 惯例）：非 mac 的 CI 上强制走这条驻留分支——
+    // 「更新退出被驻留守卫吞掉」的 e2e 门要在 Linux CI 也有牙（bug 本体是 darwin-only 的）。
+    const darwinPersist = process.platform === 'darwin' || (!app.isPackaged && process.env.WS2_DARWIN_PERSIST_SIM);
+    if (darwinPersist && !quitting) {
       e.preventDefault();
       webTabs.setAllAudioMuted(true); // 隐藏驻留：后台网页别继续放声/烧 CPU（P2-11；标签静音已砍,只能整体静音）
       win.hide();
@@ -89,11 +95,11 @@ function createWindow() {
     if (!win.isVisible()) win.show();
     dialog.showMessageBox(win, {
       type: 'warning',
-      buttons: ['取消', '放弃修改并关闭'],
+      buttons: [i18n.t('common.cancel'), i18n.t('dialog.discardClose')],
       defaultId: 0,
       cancelId: 0,
-      message: '文档有未保存的修改',
-      detail: '关闭后未保存的修改将丢失。'
+      message: i18n.t('dialog.unsavedMessage'),
+      detail: i18n.t('dialog.unsavedDetail')
     }).then((r) => {
       if (r.response === 1) {
         forceClose = true;
@@ -139,58 +145,94 @@ function applyAppearance(pref) {
   return p;
 }
 
+// 语言三态枢纽（照 appearance 先例；关键差异：系统语言无 nativeTheme.on('updated') 那样的 live 事件，
+// app.getLocale() 只在启动读一次，故「跟随系统」改系统语言要重启 app 才生效——不建对应监听）。
+// WS2_LANG seam（仅非打包态，照 WS2_USERDATA 等惯例的 !app.isPackaged 闸）：强制偏好，优先于持久化与
+// app.getLocale()，给 e2e 锁定语言用（生产包继承到该变量不会劫持用户语言）。
+function langPref() {
+  if (!app.isPackaged && process.env.WS2_LANG) return i18n.normalizeLangPref(process.env.WS2_LANG);
+  return languageStore.getPref();
+}
+function effectiveLangNow() {
+  return i18n.effectiveLang(langPref(), app.getLocale());
+}
+// 把当前生效语言解析成一张扁平字典(en 缺 key fallback zh)发给 preload。
+// 主窗口 preload 是 sandboxed(默认 sandbox:true，不设 sandbox:false)——**不能 require 项目模块**，
+// 故字典在主进程(Node 上下文，require 无碍)解析好、经 sendSync 送过去，preload 只做查表 + 参数替换。
+// 语言切换走整窗 reload，本页生命周期内字典固定。
+function resolvedDict() {
+  const lang = effectiveLangNow();
+  const out = {};
+  for (const k in ZH) out[k] = ZH[k];
+  if (lang === 'en') for (const k in EN) if (EN[k] != null) out[k] = EN[k];
+  return out;
+}
+function broadcastLanguage() {
+  if (win && !win.isDestroyed()) win.webContents.send('language-changed', { pref: langPref(), lang: effectiveLangNow() });
+}
+// 用户切语言：持久化 + 更新 imperative t 当前语言 + 重建菜单（label 随语言变，U3 起）+ 广播 renderer。
+// renderer 侧收到广播后弹「重新加载以应用语言」——静态外壳(index.html/工具条)建一次不重建，整窗 reload 最省（见 plan 决策1）。
+function applyLanguage(pref) {
+  const p = languageStore.setPref(pref);
+  i18n.setActiveLang(effectiveLangNow());
+  buildMenu();
+  broadcastLanguage();
+  return p;
+}
+
 function buildMenu() {
+  const t = i18n.t; // 读 setActiveLang 设的当前语言；applyLanguage 里先 setActiveLang 再 buildMenu，切语言即重建
   const appearancePref = appearanceStore.getPref();
   const appearanceItem = (label, value) => ({
     label, type: 'radio', checked: appearancePref === value, click: () => applyAppearance(value),
   });
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: '检查更新…', click: () => manualCheckForUpdates() }, { label: '更新日志…', click: () => openExternalUrlFromOS(CHANGELOG_URL) }, { label: '设置…', accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: '报告问题 / 反馈…', click: () => shell.openExternal(BUG_REPORT_URL) }, { label: 'AI 接入…', click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: '外观', submenu: [appearanceItem('跟随系统', 'system'), appearanceItem('浅色', 'light'), appearanceItem('深色', 'dark')] }, { label: '性能诊断…', click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: '退出', accelerator: 'CmdOrCtrl+Q' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: t('menu.checkUpdates'), click: () => manualCheckForUpdates() }, { label: t('menu.changelog'), click: () => openExternalUrlFromOS(CHANGELOG_URL) }, { label: t('menu.settings'), accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: t('menu.reportIssue'), click: () => shell.openExternal(BUG_REPORT_URL) }, { label: t('menu.aiAccess'), click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: t('menu.appearance'), submenu: [appearanceItem(t('common.apprSystem'), 'system'), appearanceItem(t('common.apprLight'), 'light'), appearanceItem(t('common.apprDark'), 'dark')] }, { label: t('menu.perfDiag'), click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: t('common.quit'), accelerator: 'CmdOrCtrl+Q' }] },
     {
-      label: '文件',
+      label: t('menu.file'),
       submenu: [
-        { label: '新建标签页', accelerator: 'CmdOrCtrl+T', click: () => sendMenu('new-tab') },
-        { label: '打开文件…', accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
-        { label: '打开文件夹…', accelerator: 'CmdOrCtrl+Shift+O', click: () => sendMenu('open-folder') },
+        { label: t('menu.newTab'), accelerator: 'CmdOrCtrl+T', click: () => sendMenu('new-tab') },
+        { label: t('menu.openFile'), accelerator: 'CmdOrCtrl+O', click: () => sendMenu('open') },
+        { label: t('menu.openFolder'), accelerator: 'CmdOrCtrl+Shift+O', click: () => sendMenu('open-folder') },
         // 逃生门（诊断 D4）：不依赖侧栏树/根行渲染的「管理/移除文件夹」入口——大根死门时也能移除坏根。
-        { label: '管理文件夹…', click: () => sendMenu('manage-roots') },
-        { label: '快速打开…', accelerator: 'CmdOrCtrl+P', click: () => sendMenu('find-palette') },
-        { label: '关闭标签页', accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
+        { label: t('menu.manageRoots'), click: () => sendMenu('manage-roots') },
+        { label: t('menu.quickOpen'), accelerator: 'CmdOrCtrl+P', click: () => sendMenu('find-palette') },
+        { label: t('menu.closeTab'), accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
         // 浏览器 feature（spec §4.4/§7）：⌘⇧T 重开最近关闭的标签（只记非文档标签,栈容量 15,renderer 管）
-        { label: '重新打开关闭的标签页', accelerator: 'CmdOrCtrl+Shift+T', click: () => sendMenu('reopen-tab') },
-        { label: '保存', accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
+        { label: t('menu.reopenTab'), accelerator: 'CmdOrCtrl+Shift+T', click: () => sendMenu('reopen-tab') },
+        { label: t('common.save'), accelerator: 'CmdOrCtrl+S', click: () => sendMenu('save') },
         { type: 'separator' },
-        { label: '导出 PDF…', accelerator: 'CmdOrCtrl+E', click: () => sendMenu('export-pdf') }
+        { label: t('menu.exportPdf'), accelerator: 'CmdOrCtrl+E', click: () => sendMenu('export-pdf') }
       ]
     },
     {
-      label: '编辑',
+      label: t('menu.edit'),
       submenu: [
-        { label: '撤销', accelerator: 'CmdOrCtrl+Z', click: () => sendMenu('undo') },
-        { label: '重做', accelerator: 'CmdOrCtrl+Shift+Z', click: () => sendMenu('redo') },
+        { label: t('common.undo'), accelerator: 'CmdOrCtrl+Z', click: () => sendMenu('undo') },
+        { label: t('common.redo'), accelerator: 'CmdOrCtrl+Shift+Z', click: () => sendMenu('redo') },
         { type: 'separator' },
-        { role: 'cut', label: '剪切' },
-        { role: 'copy', label: '拷贝' },
-        { role: 'paste', label: '粘贴' },
-        { role: 'selectAll', label: '全选' },
+        { role: 'cut', label: t('common.cut') },
+        { role: 'copy', label: t('common.copy') },
+        { role: 'paste', label: t('common.paste') },
+        { role: 'selectAll', label: t('common.selectAll') },
         { type: 'separator' },
         // Cmd+F = 文档内查找（调研裁决：全软件铁律）。shell 判定：块编辑器活跃→查找条，否则回退聚焦文件筛选。
-        { label: '在文档中查找…', accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-in-doc') },
+        { label: t('menu.findInDoc'), accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-in-doc') },
         // Cmd+Shift+F = 按文件名筛选（Cmd+F 让位后下沉到这，抄 VS Code 分层）。复用既有 find-file → focusFilter。
-        { label: '在文件名中查找…', accelerator: 'CmdOrCtrl+Shift+F', click: () => sendMenu('find-file') }
+        { label: t('menu.findInFiles'), accelerator: 'CmdOrCtrl+Shift+F', click: () => sendMenu('find-file') }
       ]
     },
     {
-      label: '视图',
+      label: t('menu.view'),
       submenu: [
         // ⌘\ 切换侧栏：菜单加速器覆盖一切焦点域（含文档编辑 iframe 内，keydown 不冒泡的失灵域）。renderer onMenu → toggleCollapsed。
-        { label: '切换侧栏', accelerator: 'CmdOrCtrl+\\', click: () => sendMenu('toggle-sidebar') },
+        { label: t('menu.toggleSidebar'), accelerator: 'CmdOrCtrl+\\', click: () => sendMenu('toggle-sidebar') },
         // ⌘R 刷新当前网页标签（文档标签 no-op，防未保存编辑丢失）。自建菜单替换了默认 View>Reload，此处显式给回浏览器语义的刷新。
-        { label: '刷新', accelerator: 'CmdOrCtrl+R', click: () => sendMenu('reload') }
+        { label: t('menu.reload'), accelerator: 'CmdOrCtrl+R', click: () => sendMenu('reload') }
       ]
     },
-    { role: 'windowMenu', label: '窗口' }
+    { role: 'windowMenu', label: t('menu.window') }
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -222,6 +264,20 @@ function pushUpdateEvent(evt) {
   }
 }
 
+// 用户点了「重启安装」→ **动作点直置 quitting=true 放行退出，零事件依赖**。
+// ⚠ 为什么不能靠事件（二次血教训，Colin 2026-07-17 复现）：native Squirrel 的 quitAndInstall 逐窗
+// close 前发的 'before-quit-for-update' 挂在 require('electron').autoUpdater（AutoUpdater 接口，
+// electron.d.ts:1995）上——**不是 app 的事件**。2026-07-16 那版 app.on('before-quit-for-update')
+// 是给不存在的事件挂监听、从未触发过：quitting 恒 false → darwin 驻留守卫把更新的关窗 preventDefault
+// 吞掉 → 窗口只是 hide、Squirrel 永远等不到全关 →「点了重启,app 还赖在 Dock 里」。
+function beginQuitForUpdate(fire) {
+  quitting = true;
+  try { fire(); } catch (e) {
+    quitting = false; // 安装序列没启动成功：复位，别让下次红叉从「隐藏驻留」漂移成「真退出」
+    if (updLog) updLog.error('quitAndInstall threw: ' + ((e && e.stack) || e));
+  }
+}
+
 function setupAutoUpdater() {
   // IPC 桥 dev/packaged 都建：dev 要能弹「开发模式」面板，e2e 靠 __ws2UpdateSim 驱动整条 UI 链。
   ipcMain.handle('update-get-status', () => updatePayload());
@@ -231,11 +287,18 @@ function setupAutoUpdater() {
     pushUpdateEvent({ type: 'download-started' }); // shouldStartDownload 判真 → 真正开下载
   });
   ipcMain.handle('update-install', async () => {
-    if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.install++; return; }
+    if (!app.isPackaged) {
+      if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.install++;
+      // 退出链 e2e（WS2_UPDATE_QUIT_SIM，isPackaged 闸）：走与真路径**同一个** beginQuitForUpdate，
+      // 用「逐窗 close」模拟 native quitAndInstall 的关窗序列（全关 → window-all-closed → app.quit()，
+      // 与 Squirrel 时序同构）。门守的是「darwin 隐藏驻留守卫吞掉更新退出」这条链。
+      if (process.env.WS2_UPDATE_QUIT_SIM) beginQuitForUpdate(() => { for (const w of BrowserWindow.getAllWindows()) w.close(); });
+      return;
+    }
     if (!autoUpdater) return;
     await maybeRepairBundleOwnership(); // 免密修复（一次性）：失败/跳过都不拦安装，最坏回到 ShipIt 提权老路径
     if (updLog) updLog.info('user chose quitAndInstall');
-    autoUpdater.quitAndInstall();
+    beginQuitForUpdate(() => autoUpdater.quitAndInstall());
   });
   ipcMain.handle('update-open-changelog', () => {
     if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.changelog++; return; }
@@ -305,12 +368,11 @@ async function maybeRepairBundleOwnership() {
     if (win && !win.isDestroyed() && !win.isVisible()) win.show(); // 隐藏驻留中弹 sheet 会隐形（同脏守卫的教训）
     const r = await dialog.showMessageBox(win, {
       type: 'info',
-      buttons: ['修复并继续安装', '跳过（本次仍需输密码）'],
+      buttons: [i18n.t('dialog.repairAndInstall'), i18n.t('dialog.skipRepair')],
       defaultId: 0,
       cancelId: 1,
-      message: '一次性修复：以后更新不再要密码',
-      detail: '此前某次更新以管理员身份完成，应用文件被标成了系统所有——这就是每次更新都要输密码的原因。'
-        + '现在授权修复一次（把应用归属改回你），以后更新就不再需要密码。',
+      message: i18n.t('dialog.repairTitle'),
+      detail: i18n.t('dialog.repairDetail'),
     });
     if (r.response !== 0) { if (updLog) updLog.info('ownership repair skipped by user'); return; }
     await new Promise((resolve) => {
@@ -402,6 +464,16 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('set-appearance', (_e, pref) => applyAppearance(pref));
     // OS 主题变化（pref=system 时 shouldUseDarkColors 翻转）→ 重播 effective，让 renderer 实时跟随。
     nativeTheme.on('updated', () => broadcastAppearance(appearanceStore.getPref()));
+    // 语言:启动读偏好 + 装字典 + 设 imperative t 当前语言(在 buildMenu/createWindow 前，让首个窗口首帧就对)。
+    // 无「OS 语言变化」监听——app.getLocale 只启动读一次，跟随系统改语言要重启(平台限制,plan 决策1)。
+    languageStore.init(app.getPath('userData'));
+    i18n.configureI18n(ZH, EN);
+    i18n.setActiveLang(effectiveLangNow());
+    ipcMain.handle('get-language', () => langPref());
+    ipcMain.handle('get-effective-lang', () => effectiveLangNow());
+    // preload 在页面脚本跑之前就要建好 window.wsT(不能异步等)，故 sendSync 一次拿 { 生效语言, 解析好的扁平字典 }。
+    ipcMain.on('get-i18n-boot-sync', (e) => { e.returnValue = { lang: effectiveLangNow(), dict: resolvedDict() }; });
+    ipcMain.on('set-language', (_e, pref) => applyLanguage(pref));
     registerIpc();
     buildMenu();
     createWindow();
@@ -420,15 +492,16 @@ if (!app.requestSingleInstanceLock()) {
     // push 队列——让 seam 也过 scheme 白名单，e2e 才能验「file:// 不开标签」这道门。
     if (!app.isPackaged && process.env.WS2_OPEN_URL) openExternalUrlFromOS(process.env.WS2_OPEN_URL);
   });
-  // 真退出的第一信号：打上标志，close 守卫据此放行销毁而不是隐藏。两个事件都要接——
-  // Cmd+Q 走 before-quit；autoUpdater.quitAndInstall() **不走 before-quit**，它发专用的
-  // before-quit-for-update 再逐窗 close、全关后才 app.quit()（electron.d.ts + 实测）。
-  // ⚠ 血教训（2026-07-16）：此前只接 before-quit 并注释称"quitAndInstall 也会先发 before-quit"——
-  // 假的。结果 quitAndInstall 的关窗被 darwin 隐藏驻留守卫 preventDefault 吞掉：窗口只是藏起来、
-  // app 不退、安装永远等不到 window-all-closed →「点了重启没反应」（updater.log 2026-07-15 四连击实锤，
-  // 所谓"成功"的几次全是用户手动 Cmd+Q 救的）。
+  // 真退出的第一信号：打上标志，close 守卫据此放行销毁而不是隐藏。
+  // Cmd+Q 走 before-quit；autoUpdater.quitAndInstall() **不走 before-quit**（它逐窗 close、全关后才 quit）。
+  // ⚠ 血教训一（2026-07-16）：只接 before-quit → quitAndInstall 的关窗被 darwin 驻留守卫吞掉,点了重启没反应
+  //   （updater.log 2026-07-15 四连击实锤）。
+  // ⚠ 血教训二（2026-07-17 Colin 复现）：上一版补的 app.on('before-quit-for-update') 也是哑的——该事件挂在
+  //   require('electron').autoUpdater（AutoUpdater 接口，electron.d.ts:1995）上，**不是 app 事件**，从未触发。
+  //   主修已改为动作点直置（update-install handler → beginQuitForUpdate，零事件依赖）；下面在**正确的发射器**
+  //   上再挂一份兜底（防未来其他路径触发 native quitAndInstall，如 autoInstallOnAppQuit）。
   app.on('before-quit', () => { quitting = true; });
-  app.on('before-quit-for-update', () => { quitting = true; });
+  try { require('electron').autoUpdater.on('before-quit-for-update', () => { quitting = true; }); } catch { /* 平台无 native autoUpdater：安静跳过 */ }
   // macOS：隐藏驻留中点 Dock 图标 → 把窗口带回来（标准 mac 行为）。
   app.on('activate', () => focusWindow());
   app.on('window-all-closed', () => app.quit());

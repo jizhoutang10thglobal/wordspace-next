@@ -1,5 +1,23 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// i18n:页面脚本跑之前就把 window.wsT 建好(同步)。主进程把「当前生效语言解析好的扁平字典」经 sendSync
+// 送来(preload 是 sandboxed，不能 require 项目字典)，这里只做查表 + {param} 替换。缺 key → 显示 key 名。
+// 语言切换走整窗 reload，故本页生命周期内字典固定；下次 reload 重新 sendSync 取新语言的字典。
+(function () {
+  let boot = { lang: 'zh', dict: {} };
+  try { boot = ipcRenderer.sendSync('get-i18n-boot-sync') || boot; } catch (e) { /* 主进程未就绪等极端情况：wsT 回退显示 key 名 */ }
+  const dict = boot.dict || {};
+  function wsT(key, params) {
+    let s = dict[key] != null ? dict[key] : key;
+    if (params) {
+      for (const k in params) s = s.split('{' + k + '}').join(String(params[k]));
+    }
+    return s;
+  }
+  contextBridge.exposeInMainWorld('wsT', wsT);
+  contextBridge.exposeInMainWorld('wsLang', boot.lang || 'zh');
+})();
+
 contextBridge.exposeInMainWorld('ws2', {
   pickFile: () => ipcRenderer.invoke('pick-file'),
   pickImages: () => ipcRenderer.invoke('ws-pick-images'), // 图片插入：原生多选 → [{name, mime, base64}]
@@ -53,6 +71,13 @@ contextBridge.exposeInMainWorld('ws2', {
   setAppearance: (pref) => ipcRenderer.send('set-appearance', pref),
   onAppearanceChanged: (cb) => ipcRenderer.on('appearance-changed', (_e, payload) => cb(payload)),
 
+  // 语言三态：偏好归 main 管（唯一真相源，驱动菜单/对话框/renderer 显示语言）；renderer 查/设/听。
+  // 字典本体经 i18nBoot() 一次性注入（U4），renderer 用全局 window.wsT 翻译、不逐次跨桥。
+  getLanguage: () => ipcRenderer.invoke('get-language'),
+  getEffectiveLang: () => ipcRenderer.invoke('get-effective-lang'),
+  setLanguage: (pref) => ipcRenderer.send('set-language', pref),
+  onLanguageChanged: (cb) => ipcRenderer.on('language-changed', (_e, payload) => cb(payload)),
+
   // 本地文件夹工作区 (F06 → 多根)：文件操作一律 (rootId, relPath)，renderer 只用 rootId 引用根、不发路径。
   wsAddFolder: () => ipcRenderer.invoke('ws-add-folder'),
   wsAddFolderConfirm: (token) => ipcRenderer.invoke('ws-add-folder-confirm', token), // 病灶路径「仍要打开」确认（P0a U4）
@@ -92,6 +117,7 @@ contextBridge.exposeInMainWorld('ws2', {
   webNav: (key, action) => ipcRenderer.send('webtab-nav', key, action),
   webShow: (key, bounds) => ipcRenderer.send('webtab-show', key, bounds),
   webHideAll: () => ipcRenderer.send('webtab-hide-all'),
+  webCapture: (key) => ipcRenderer.invoke('webtab-capture', key), // 弹层摘 view 前的垫底快照
   webSetBounds: (key, bounds) => ipcRenderer.send('webtab-bounds', key, bounds),
   webClose: (key) => ipcRenderer.send('webtab-close', key),
   webFind: (key, text, opts) => ipcRenderer.send('webtab-find', key, text, opts),

@@ -108,7 +108,7 @@
     const x = document.createElement('button');
     x.className = 'sb-modal-x';
     x.textContent = '×';
-    x.title = '关闭';
+    x.title = window.wsT('common.close');
     x.addEventListener('click', closePanel);
     head.appendChild(x);
     card.appendChild(head);
@@ -179,7 +179,7 @@
     // 自动路径下载完成：低打扰提示一次（web 标签态临时收缩 view 底部，toast 不被原生 view 盖住）
     if (fromPush && st && st.state === 'ready' && !panelOpen && !readyToasted) {
       readyToasted = true;
-      if (window.__wsToast) window.__wsToast('新版本已就绪', '重启安装', () => window.ws2.updateInstall());
+      if (window.__wsToast) window.__wsToast(window.wsT('update.toastReady'), window.wsT('update.restartInstall'), () => window.ws2.updateInstall());
       if (window.__webToastInset) window.__webToastInset();
     }
     if (st && st.state !== 'ready') readyToasted = false;

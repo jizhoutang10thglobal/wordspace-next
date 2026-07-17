@@ -11,7 +11,7 @@ const DOC = (title, body) => `<!doctype html><html><head><meta charset="utf-8"><
 
 let app, page, tmp, wsA, wsB, userData;
 async function launch(env) {
-  const a = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', WS2_USERDATA: userData, ...env } });
+  const a = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', WS2_USERDATA: userData, ...env } });
   const p = await a.firstWindow();
   await p.waitForLoadState('domcontentloaded');
   await p.setViewportSize({ width: 1280, height: 860 });

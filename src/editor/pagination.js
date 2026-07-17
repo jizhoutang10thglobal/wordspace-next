@@ -31,6 +31,8 @@
     : (typeof require !== 'undefined' ? require('./blockedit.js') : null);
 
   const GAP = WSPage ? WSPage.PAGE_GAP_PX : 24;
+  // i18n：renderer 全局 t()（node/test 上下文无 wsT 时回退 key，防 require 期崩）。
+  const T = (k, p) => (global.wsT ? global.wsT(k, p) : k);
 
   // 覆盖层/纸面样式（运行时，不入盘）。纸方墨圆：方角白纸 + 1px 细边（box-shadow 画）+ 淡阴影。
   const CHROME_CSS =
@@ -283,7 +285,7 @@
         gutter.style.marginTop = (p.fill + box.marginBottom) + 'px';
         const chip = doc.createElement('span');
         chip.className = 'ws-page-chip';
-        chip.textContent = '第 ' + p.page + ' 页';
+        chip.textContent = T('editor.pageNumber', { page: p.page });
         gutter.appendChild(chip);
         mask.appendChild(gutter);
         frag.appendChild(mask);

@@ -4,6 +4,7 @@
 //   不再各自维护 manualCheck/manualDownloading 布尔（旧 S5 实现靠手工对齐两个标志，MP-7 就是漏对齐）。
 // renderer 拿到的 panel/pill 模型也在 main 算好（sandbox:true 下 preload require 不了项目模块），
 //   renderer 只管画——所以这里的模型函数覆盖了「UI 长什么样」的全部判定，单测在这层兜。
+const i18n = require('./i18n');
 
 function initialStatus() {
   return {
@@ -52,7 +53,7 @@ function nextStatus(prev, evt) {
       return {
         ...p,
         state: 'error',
-        message: evt.message || '未知错误',
+        message: evt.message || i18n.t('update.unknownError'),
         retry: p.state === 'downloading' ? 'download' : 'check',
       };
     }
@@ -123,12 +124,12 @@ function pillModel(status) {
     const pct = clampPercent(s.percent);
     return {
       kind: 'downloading',
-      text: '正在下载更新' + (s.version ? ' v' + s.version : ''),
+      text: i18n.t('update.pillDownloading') + (s.version ? ' v' + s.version : ''),
       percent: pct, // null = 起步中，pill 显示不定进度
     };
   }
   if (s.state === 'ready') {
-    return { kind: 'ready', text: '更新已就绪 · 重启安装', percent: 100 };
+    return { kind: 'ready', text: i18n.t('update.pillReady'), percent: 100 };
   }
   return null;
 }
@@ -139,70 +140,70 @@ function panelModel(status, currentVersion) {
   const v = s.version ? 'v' + s.version : '';
   switch (s.state) {
     case 'checking':
-      return { state: 'checking', title: '检查更新', body: [{ t: 'p', text: '正在检查更新…' }], spinner: true, buttons: [] };
+      return { state: 'checking', title: i18n.t('update.checkTitle'), body: [{ t: 'p', text: i18n.t('update.checking') }], spinner: true, buttons: [] };
     case 'available': {
-      const body = s.notes && s.notes.length ? s.notes : [{ t: 'p', text: '这个版本包含功能改进与问题修复。' }];
+      const body = s.notes && s.notes.length ? s.notes : [{ t: 'p', text: i18n.t('update.availableFallback') }];
       return {
         state: 'available',
-        title: '发现新版本 ' + v,
+        title: i18n.t('update.availableTitle', { v }),
         body,
         buttons: [
-          { id: 'download', label: '下载并安装', primary: true },
-          { id: 'changelog', label: '更新日志', title: '在 wordspace.ai 查看历史版本更新说明' },
-          { id: 'close', label: '以后再说' },
+          { id: 'download', label: i18n.t('update.downloadInstall'), primary: true },
+          { id: 'changelog', label: i18n.t('update.changelogBtn'), title: i18n.t('update.changelogTip') },
+          { id: 'close', label: i18n.t('update.later') },
         ],
       };
     }
     case 'downloading': {
       const pct = clampPercent(s.percent);
       const detail = pct == null
-        ? '正在开始下载…'
+        ? i18n.t('update.startingDownload')
         : formatBytes(s.transferred) + ' / ' + formatBytes(s.total) + (s.bytesPerSecond ? ' · ' + formatSpeed(s.bytesPerSecond) : '');
       return {
         state: 'downloading',
-        title: '正在下载 ' + (v || '更新'),
+        title: i18n.t('update.downloadingTitle', { target: v || i18n.t('update.updateNoun') }),
         body: [],
         progress: { percent: pct, detail },
-        buttons: [{ id: 'close', label: '后台下载' }],
+        buttons: [{ id: 'close', label: i18n.t('update.downloadInBackground') }],
       };
     }
     case 'ready':
       return {
         state: 'ready',
-        title: '更新已就绪',
-        body: [{ t: 'p', text: (v || '新版本') + ' 已下载完成，重启后生效。' }],
+        title: i18n.t('update.readyTitle'),
+        body: [{ t: 'p', text: i18n.t('update.readyBody', { target: v || i18n.t('update.newVersionNoun') }) }],
         buttons: [
-          { id: 'install', label: '立即重启安装', primary: true },
-          { id: 'changelog', label: '更新日志' },
-          { id: 'close', label: '稍后（退出时自动安装）' },
+          { id: 'install', label: i18n.t('update.restartNow'), primary: true },
+          { id: 'changelog', label: i18n.t('update.changelogBtn') },
+          { id: 'close', label: i18n.t('update.laterAutoInstall') },
         ],
       };
     case 'uptodate':
       return {
         state: 'uptodate',
-        title: '检查更新',
-        body: [{ t: 'p', text: '已是最新版本' + (currentVersion ? '（当前 v' + currentVersion + '）' : '') + '。' }],
+        title: i18n.t('update.checkTitle'),
+        body: [{ t: 'p', text: currentVersion ? i18n.t('update.uptodateWithVer', { ver: currentVersion }) : i18n.t('update.uptodate') }],
         buttons: [
-          { id: 'changelog', label: '最近更新了什么' },
-          { id: 'close', label: '好' },
+          { id: 'changelog', label: i18n.t('update.recentChanges') },
+          { id: 'close', label: i18n.t('common.ok') },
         ],
       };
     case 'error':
       return {
         state: 'error',
-        title: '更新出错',
-        body: [{ t: 'p', text: s.message || '未知错误' }, { t: 'p', text: '可以稍后再试，或检查网络连接。' }],
+        title: i18n.t('update.errorTitle'),
+        body: [{ t: 'p', text: s.message || i18n.t('update.unknownError') }, { t: 'p', text: i18n.t('update.errorHint') }],
         buttons: [
-          { id: s.retry === 'download' ? 'download' : 'check', label: '重试', primary: true },
-          { id: 'close', label: '关闭' },
+          { id: s.retry === 'download' ? 'download' : 'check', label: i18n.t('common.retry'), primary: true },
+          { id: 'close', label: i18n.t('common.close') },
         ],
       };
     case 'dev':
       return {
         state: 'dev',
-        title: '检查更新',
-        body: [{ t: 'p', text: '开发模式无法检查更新，打包后的正式版本才支持。' }],
-        buttons: [{ id: 'close', label: '好' }],
+        title: i18n.t('update.checkTitle'),
+        body: [{ t: 'p', text: i18n.t('update.devMode') }],
+        buttons: [{ id: 'close', label: i18n.t('common.ok') }],
       };
     default:
       return null;

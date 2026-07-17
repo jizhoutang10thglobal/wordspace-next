@@ -6,6 +6,10 @@ const assert = require('node:assert');
 const { JSDOM } = require('jsdom');
 const { mdToHtml, htmlToMd, isMdPath } = require('../src/main/md-adapter.js');
 const { validate } = require('../src/lib/schema-validate.js');
+// md-adapter 的默认标题走 i18n t()（磁盘默认名按当前语言）；测试环境配置字典到 zh 断言中文默认名。
+const _i18n = require('../src/lib/i18n');
+_i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
+_i18n.setActiveLang('zh');
 
 const docOf = (html) => new JSDOM(html).window.document;
 const conformOf = (html) => validate(docOf(html));

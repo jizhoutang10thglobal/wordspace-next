@@ -9,7 +9,7 @@ const ROOT = path.join(__dirname, '..');
 test('U1 probe: PDF.js ESM import + module worker 在 Electron file://+CSP 能加载 + 解析最小 PDF', async () => {
   // WS2_USERDATA 隔离：本 spec 曾是全套唯一用默认 userData 的——宿主开着 npm start 时撞单实例锁秒退、必红
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2-pdfjs-'));
-  const app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_USERDATA: path.join(tmp, 'userdata') } });
+  const app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmp, 'userdata') } });
   const page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
   const errs = [];

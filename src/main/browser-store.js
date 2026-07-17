@@ -42,7 +42,7 @@ function init(userDataDir) {
     (data) => ({ version: 1, engine: data.engine }));
 }
 function cell(name) {
-  if (!cells[name]) throw new Error('browser-store 未 init: ' + name);
+  if (!cells[name]) throw new Error('browser-store not initialized: ' + name); // 内部不变量错误(开发者向)，非用户可见，按仓库惯例用英文
   return cells[name];
 }
 
