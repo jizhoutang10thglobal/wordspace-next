@@ -86,6 +86,37 @@ await page.waitForSelector('[data-testid="start-page"]')
 await page.click('.sp-act-ink')
 ok(await page.evaluate(() => window.__wsUI.getState().createOpen), '动作: 新建文档 → CreateModal 开')
 
+// ---------- ③ UX4v3 对齐:切标签展开+高亮,但绝不滚动侧栏树(真 app 2026-07-14 拍板;探针口径同 e2e/tabs.spec) ----------
+// 必须走真实树路径(点 .arc-file 行建的标签才带 fileName/rootId 树联结;openDoc 的标签不触发 F6)。
+await page.evaluate(() => window.__wsUI.setState({ createOpen: false })) // 上一断言留下的 modal 罩着侧栏,先收
+await page.evaluate(() => window.__wsStore.setState({ tabs: [], activeTabId: null }, false))
+await page.waitForSelector('[data-testid="start-page"]')
+await page.waitForSelector('.arc-file')
+const fileCount = await page.locator('.arc-file').count()
+ok(fileCount >= 2, `树里可见文件 ≥2(${fileCount})`)
+await page.locator('.arc-file').nth(0).click()
+await page.waitForTimeout(120)
+await page.locator('.arc-file').nth(1).click()
+await page.waitForTimeout(120)
+await page.evaluate(() => {
+  window.__fileScrolled = false
+  const orig = Element.prototype.scrollIntoView
+  Element.prototype.scrollIntoView = function (...args) {
+    if (this.classList && this.classList.contains('arc-file')) window.__fileScrolled = true
+    return orig.apply(this, args)
+  }
+})
+await page.evaluate(() => {
+  // 切回第一个标签(触发 F6 展开效果——老实现会在 40ms 后 scrollIntoView)
+  const s = window.__wsStore.getState()
+  s.setActiveTab(s.tabs[0].id)
+})
+await page.waitForTimeout(300)
+const scrolled = await page.evaluate(() => window.__fileScrolled)
+ok(scrolled === false, 'UX4v3: 切标签树展开+高亮但不滚动(scrollIntoView 探针未触发)')
+const hasActive = await page.evaluate(() => !!document.querySelector('.arc-file.is-active'))
+ok(hasActive, 'UX4v3: 高亮仍在(is-active 行存在)')
+
 await browser.close()
 console.log(fail ? `\n${fail} FAILED` : '\nALL PASS')
 process.exit(fail ? 1 : 0)

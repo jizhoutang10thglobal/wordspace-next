@@ -53,7 +53,11 @@ mac 用 zip + latest-mac.yml、win 用 exe + latest.yml 给 electron-updater 做
 - 同一段内容还会自动流到两处，**不用手动同步**：
   - App 内更新面板（electron-updater 拉 Release body，`src/lib/update-status.js` 解析 `---` 之上的部分）；
   - 官网 [wordspace.ai/changelog](https://wordspace.ai/changelog)（构建时渲染 CHANGELOG.md；
-    `website/vercel.json` 的 ignoreCommand 已放行根目录 CHANGELOG.md 的变更触发重建——改这个闸前想清楚方向）。
+    `website/vercel.json` 的 ignoreCommand 已放行根目录 CHANGELOG.md / CHANGELOG.en.md 的变更触发重建——改这个闸前想清楚方向）。
+- **双语同写（2026-07-17 起，Colin 拍板）**：每版除中文正本外，同步在 `CHANGELOG.en.md` 写英文版
+  （同结构，组名 Added / Improved / Fixed，标题行备注用半角括号）。官网 changelog 页有中英切换，
+  **构建时有同步门**：en 最新版本 ≠ zh 最新版本 → next build 直接挂（部署红）。历史条目 en 缺失
+  允许（页面按版本回落中文），门只咬最新版。
 
 ## Changelog 文案规范（2026-07-16 起）
 
