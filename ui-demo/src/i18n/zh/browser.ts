@@ -50,6 +50,25 @@ export default {
   emptyHistory: '还没有浏览记录',
   removeFromHistory: '从历史中删除',
 
+  // 下载（工具栏入口 + popover 列表；mock 语义:「访达」类操作是演示 toast）
+  dlToolbar: '下载',
+  dlToolbarActive: '下载（{n} 个进行中）',
+  dlTitle: '下载',
+  dlClear: '清空记录',
+  dlEmpty: '还没有下载记录',
+  dlEmptyHint: '试试打开 FlowDesk 或 Tenth Global,点页面里的下载按钮',
+  dlProgress: '{done} / {total} · {pct}%',
+  dlStateCompleted: '已完成',
+  dlStateFailed: '下载失败',
+  dlStateCanceled: '已取消',
+  dlStateInterrupted: '已中断',
+  dlStateFileMissing: '文件已被删除',
+  dlCancel: '取消',
+  dlRetry: '重新下载',
+  dlRemove: '从记录中移除',
+  dlReveal: '在访达中显示',
+  dlRevealToast: '（演示）已在访达中定位「{name}」',
+
   // NewTab（起始页）
   omniPlaceholder: '搜索,或输入网址',
   safeNote: '内置浏览器没有恶意网站防护，访问陌生网站请自行留意',

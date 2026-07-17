@@ -50,6 +50,25 @@ export default {
   emptyHistory: 'No history yet',
   removeFromHistory: 'Remove from history',
 
+  // Downloads (toolbar entry + popover list; mock semantics: Finder-ish actions are demo toasts)
+  dlToolbar: 'Downloads',
+  dlToolbarActive: 'Downloads ({n} in progress)',
+  dlTitle: 'Downloads',
+  dlClear: 'Clear records',
+  dlEmpty: 'No downloads yet',
+  dlEmptyHint: 'Try the download buttons on the FlowDesk or Tenth Global sites',
+  dlProgress: '{done} / {total} · {pct}%',
+  dlStateCompleted: 'Completed',
+  dlStateFailed: 'Download failed',
+  dlStateCanceled: 'Canceled',
+  dlStateInterrupted: 'Interrupted',
+  dlStateFileMissing: 'File was deleted',
+  dlCancel: 'Cancel',
+  dlRetry: 'Download again',
+  dlRemove: 'Remove from list',
+  dlReveal: 'Show in Finder',
+  dlRevealToast: '(Demo) Located "{name}" in Finder',
+
   // NewTab (start page)
   omniPlaceholder: 'Search or enter address',
   safeNote: 'The built-in browser has no malicious-site protection. Take care when visiting unfamiliar sites.',
