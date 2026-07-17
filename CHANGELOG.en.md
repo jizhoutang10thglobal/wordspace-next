@@ -5,6 +5,20 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.10.6 — 2026-07-17
+
+The default screen (no tabs open) is now a start page.
+
+### Added
+
+- **Start page**: the new default screen when no tab is open — a search bar (find recent files, or enter a URL / search terms to open the web), recent files grouped by Today / Yesterday / This week (showing their folder, no more long paths), bookmarks and most-visited sites, plus new/open entries
+- **Immersive collapse**: with the sidebar collapsed, a narrow window frame surrounds the content — drag the window by it; the left edge doubles as the sidebar reveal strip (with hover feedback)
+
+### Fixed
+
+- **Tabs**: files opened before any folder was added (including PDFs) now automatically join their folder once you add it
+- **Immersive collapse**: revealing the sidebar over a web tab now rests on a page snapshot — no more white flash
+
 ## v0.10.5 — 2026-07-17
 
 Two-stage select-all, plus a batch of tab polish.

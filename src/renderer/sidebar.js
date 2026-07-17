@@ -2603,6 +2603,17 @@
   // spec=docs/features/immersive-collapse.md
   if (window.ws2 && window.ws2.platform === 'darwin') document.body.classList.add('is-mac'); // 红绿灯让位（hiddenInset）
 
+  // 沉浸窗框非全屏恒有（Colin 2026-07-18 扩展 #271）：真全屏（macOS enter-full-screen / F11）时摘框。
+  // 主进程 win.on('enter/leave-full-screen') → webContents.send('fullscreen-changed', bool) → preload
+  // onFullscreenChanged → 挂/摘 body.is-win-fullscreen（CSS 全部走 body:not(.is-win-fullscreen) 组合表达）。
+  // 启动初值查一次（冷启动可能已在全屏，如上次全屏中退出后系统恢复）。这条接线是「全屏无框」的唯一来源，
+  // 摘掉它 → 全屏态收不到 → 框不摘（immersive.spec「全屏无框」变异自检据此翻红）。
+  function applyWinFullscreen(isFs) { document.body.classList.toggle('is-win-fullscreen', !!isFs); }
+  if (window.ws2 && window.ws2.getFullscreen) {
+    window.ws2.getFullscreen().then(applyWinFullscreen).catch(() => {});
+    if (window.ws2.onFullscreenChanged) window.ws2.onFullscreenChanged(applyWinFullscreen);
+  }
+
   // peek=完整侧栏悬浮盖在内容上，不推挤布局；进 120ms/出 240ms 缓冲防误触发/闪烁。
   // 红绿灯随收起藏、peek/展开时现（hiddenInset 下灯浮在内容上，收起不藏=悬空）。
   // web 态（Wendi 2026-07-17）：滑出前先对页面截帧垫底、摘掉原生 view（__webPeekSnap，照更新弹窗

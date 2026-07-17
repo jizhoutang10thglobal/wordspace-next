@@ -24,6 +24,20 @@ await page.waitForFunction(() => !!window.__wsStore && !!window.__wsUI)
 const docked = await page.$eval('.ws-body > .arc-sidebar', (el) => el.getBoundingClientRect().width)
 ok(docked >= 180, `基线: 停靠侧栏在流内（宽 ${docked}px）`)
 
+// —— 展开态窗框（Colin 2026-07-18 扩「非全屏恒有」）：停靠态也有框——侧栏贴左缘,.ws-main 四周 10px + 细边圆角 ——
+const dockedSbLeft = await page.$eval('.ws-body > .arc-sidebar', (el) => Math.round(el.getBoundingClientRect().left))
+ok(dockedSbLeft === 0, `展开: 侧栏贴左缘（left=${dockedSbLeft}，期望 0）`)
+const sbW = Math.round(docked)
+const dm = await page.$eval('.ws-main', (el) => {
+  const r = el.getBoundingClientRect(); const cs = getComputedStyle(el)
+  return { x: Math.round(r.x), y: Math.round(r.y), right: Math.round(r.x + r.width), bottom: Math.round(r.y + r.height), bw: cs.borderTopWidth, br: parseFloat(cs.borderTopLeftRadius) }
+})
+ok(dm.x === sbW + 10 && dm.y === 10 && dm.right === 1390 && dm.bottom === 890,
+  `展开: .ws-main 四周 10px 框（x=${dm.x} y=${dm.y} right=${dm.right} bottom=${dm.bottom}，期望 ${sbW + 10}/10/1390/890）`)
+ok(dm.bw === '1px' && dm.br > 0, `展开: 内容纸细边+圆角（边 ${dm.bw} 圆角 ${dm.br}）`)
+const bodyBgDocked = await page.$eval('.ws-body', (el) => getComputedStyle(el).backgroundColor)
+ok(bodyBgDocked !== 'rgba(0, 0, 0, 0)' && bodyBgDocked !== 'transparent', `展开: 窗框缝有 chrome 底色（bg=${bodyBgDocked}）`)
+
 // —— 收起 = 沉浸：流内零残留，内容四周均匀内缩 10px 窗框带 ——
 await page.evaluate(() => window.__wsUI.getState().toggleSidebar())
 await page.waitForTimeout(120)

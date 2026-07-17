@@ -133,6 +133,9 @@ contextBridge.exposeInMainWorld('ws2', {
   // ---- 沉浸窗框（immersive-collapse spec）----
   platform: process.platform, // renderer 判 is-mac（hiddenInset 红绿灯让位只在 darwin 生效）
   setWindowButtons: (v) => ipcRenderer.send('ws-window-buttons', !!v),
+  // 窗框非全屏恒有（Colin 2026-07-18）：真全屏时摘框。renderer 查启动初值 + 听 live 变化，挂/摘 body.is-win-fullscreen。
+  getFullscreen: () => ipcRenderer.invoke('get-fullscreen'),
+  onFullscreenChanged: (cb) => ipcRenderer.on('fullscreen-changed', (_e, isFs) => cb(isFs)),
   // 收藏（主进程持久化 + 变更推全量,renderer 内存镜像做逐键补全）
   bmState: () => ipcRenderer.invoke('bm-state'),
   bmAdd: (b) => ipcRenderer.invoke('bm-add', b),
