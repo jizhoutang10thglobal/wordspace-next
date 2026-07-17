@@ -20,7 +20,7 @@ function svgImg(w: number, h: number, fill: string, label: string): string {
   return `<img src="data:image/svg+xml;utf8,${encodeURIComponent(svg)}" style="display:block;width:100%;height:auto;" alt="${label}">`
 }
 
-function docShell(id: string, title: string, emoji: string, blocks: Block[]): Doc {
+function docShell(id: string, title: string, emoji: string, blocks: Block[], ageH = 2): Doc {
   return {
     id,
     title,
@@ -29,7 +29,7 @@ function docShell(id: string, title: string, emoji: string, blocks: Block[]): Do
     folderId: 'r-docs',
     visibility: 'private',
     localPath: `~/Documents/产品资料/分页测试/${title}.html`,
-    updatedAt: now - 2 * HR,
+    updatedAt: now - ageH * HR, // 时间散开:让默认屏时间流(今天/昨天/本周/更早)有真分组可看
     updatedBy: 'm-wendi',
     collaborators: ['m-wendi'],
     blocks,
@@ -156,15 +156,15 @@ const deepList: Block[] = [
 ]
 
 export const PAGED_SAMPLE_DOCS: Doc[] = [
-  docShell('d-pg-longflow', '长文流水', '📜', longFlow),
-  docShell('d-pg-headings', '标题密集', '🪜', denseHeadings),
-  docShell('d-pg-bigimg', '巨图轰炸', '🖼️', bigImages),
-  docShell('d-pg-table', '长表格', '📊', longTable),
-  docShell('d-pg-code', '代码瀑布', '💻', codeFall),
-  docShell('d-pg-mixed', '混合大杂烩', '🥘', mixed),
-  docShell('d-pg-oneline', '一句话', '🫧', oneLiner),
-  docShell('d-pg-nobreak', '超长不可断行', '🧵', noBreak),
-  docShell('d-pg-deeplist', '深嵌套列表', '🪆', deepList),
+  docShell('d-pg-longflow', '长文流水', '📜', longFlow, 30),
+  docShell('d-pg-headings', '标题密集', '🪜', denseHeadings, 52),
+  docShell('d-pg-bigimg', '巨图轰炸', '🖼️', bigImages, 76),
+  docShell('d-pg-table', '长表格', '📊', longTable, 100),
+  docShell('d-pg-code', '代码瀑布', '💻', codeFall, 130),
+  docShell('d-pg-mixed', '混合大杂烩', '🥘', mixed, 170),
+  docShell('d-pg-oneline', '一句话', '🫧', oneLiner, 200),
+  docShell('d-pg-nobreak', '超长不可断行', '🧵', noBreak, 250),
+  docShell('d-pg-deeplist', '深嵌套列表', '🪆', deepList, 300),
 ]
 
 export const PAGED_SAMPLE_FILES: FileEntry[] = PAGED_SAMPLE_DOCS.map((d) => ({

@@ -1165,3 +1165,44 @@ test('单文件模式：⋯ 菜单「打开文件夹…」→ 装载工作区（
   await page.keyboard.press('Escape');
   await expect(page.locator('.aiax-modal')).toHaveCount(0);
 });
+
+// ⌘/Ctrl+A 分级全选（王波 2026-07-17,Windows 用户「一次选一段、两次全篇」,Notion/Typora 式）。
+// 修前实测:原生 Select All 被单块 contenteditable 钉死,第 2/3 次纹丝不动、全篇永远选不到。
+test('ED-SA：⌘A 分级全选——一次选当前块、两次全篇（放墙退编辑）、三次保持；全篇退格清空走跨块删管线', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#p1').click(); // 进 p1 编辑
+  await page.waitForTimeout(200);
+  const selInfo = () => frame.locator('body').evaluate((b) => {
+    const s = b.ownerDocument.getSelection();
+    return {
+      text: s ? s.toString().replace(/\s+/g, '') : '',
+      editing: b.ownerDocument.querySelector('[data-ws2-editing]') ? b.ownerDocument.querySelector('[data-ws2-editing]').id : null,
+    };
+  });
+  // 第 1 次:只选当前块文字,仍在编辑态
+  await page.keyboard.press('Meta+a');
+  let s = await selInfo();
+  expect(s.text).toBe('第一段文字。');
+  expect(s.editing).toBe('p1');
+  // 第 2 次:全篇——首尾块文字都进选区(强断言:覆盖范围,非查状态位),且已放墙退出编辑
+  await page.keyboard.press('Meta+a');
+  s = await selInfo();
+  expect(s.text).toContain('标题');
+  expect(s.text).toContain('第一段文字。');
+  expect(s.text).toContain('第三段。');
+  expect(s.text).toContain('引用。');
+  expect(s.editing).toBe(null); // 放墙 = 退出编辑态(否则选区仍会被钉回单块)
+  // 第 3 次:保持全篇,不折叠不缩水
+  await page.keyboard.press('Meta+a');
+  s = await selInfo();
+  expect(s.text).toContain('标题');
+  expect(s.text).toContain('引用。');
+  // 破坏性冒烟:全篇选中后退格 → 走既有跨块删管线,全部内容真没了(断内容消失,不赌占位块数)
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(250);
+  const left = await frame.locator('body').evaluate((b) => b.textContent.replace(/\s+/g, ''));
+  expect(left).not.toContain('第一段文字。');
+  expect(left).not.toContain('第三段。');
+  expect(left).not.toContain('标题');
+});
