@@ -207,27 +207,50 @@
   window.__webStatus = (key) => webState[key] || null;
   window.__webEnsureLoaded = (key, url) => { if (!live.has(key) && url) { live.add(key); window.ws2.webLoadUrl(key, url); } }; // 后台标签建 view 加载,不 attach
 
-  // DOM 弹层（⌘T modal / SaveModal / 关闭确认 / ⌘P 面板 / AI 接入）会被原生 view 盖住 →
+  // DOM 弹层（⌘T modal / SaveModal / 关闭确认 / ⌘P 面板 / AI 接入 / 更新面板）会被原生 view 盖住 →
   // 弹层存在期间临时摘掉 view,关掉后若激活的还是网页标签再挂回（视觉正确;标签状态不动）。
+  // 摘掉会露出底下的空态/文档层（Wendi 2026-07-16「更新弹窗背景变白」）→ 摘之前先对 view 截一帧
+  // 垫在弹层下（.web-snap，z 在弹层之下），视觉上「页面还在」；截图失败/超时(250ms)退回素底——
+  // 弹层绝不能被截图卡住。快照垫好(或放弃)才摘 view：先摘会拍不到画面，也会闪一帧素底。
   let overlayPaused = false;
+  let snapEl = null;
   const OVERLAY_SEL = '.sb-modal-overlay, #fp-overlay, .aiax-overlay';
   try {
     new MutationObserver(() => {
       const has = !!document.querySelector(OVERLAY_SEL);
       if (has && attachedKey && !overlayPaused) {
         overlayPaused = true;
-        window.ws2.webHideAll();
+        const key = attachedKey;
+        const timeout = new Promise((r) => setTimeout(() => r(null), 250));
+        Promise.race([window.ws2.webCapture(key).catch(() => null), timeout]).then((dataUrl) => {
+          if (dataUrl && overlayPaused && attachedKey === key) {
+            if (snapEl) snapEl.remove();
+            const b = viewBounds();
+            const img = document.createElement('img');
+            img.className = 'web-snap';
+            img.src = dataUrl;
+            img.style.cssText = `left:${b.x}px;top:${b.y}px;width:${b.width}px;height:${b.height}px`;
+            document.body.appendChild(img);
+            snapEl = img;
+          }
+          window.ws2.webHideAll();
+        });
       } else if (!has && overlayPaused) {
         overlayPaused = false;
         const e = activeEntry();
         if (e && T.isWebEntry(e) && e.url && attachedKey === keyOf(e)) window.ws2.webShow(attachedKey, viewBounds());
+        // 等 view 真挂回（原生 attach 下一帧生效）再撤快照，避免闪一帧素底；
+        // 引用局部化：紧接着又开新弹层时，迟到的撤图不能误删新快照。
+        const el = snapEl;
+        snapEl = null;
+        if (el) requestAnimationFrame(() => requestAnimationFrame(() => el.remove()));
       }
     }).observe(document.body, { childList: true });
   } catch { /* MutationObserver 恒可用;防御 */ }
 
   function showError(key, err) {
-    errTitle.textContent = err.code === 'crash' ? '页面崩溃了' : '页面加载失败';
-    errDesc.textContent = (err.url || '') + (err.desc ? '（' + err.desc + '）' : '');
+    errTitle.textContent = err.code === 'crash' ? window.wsT('browser.pageCrashed') : window.wsT('browser.pageLoadFailed');
+    errDesc.textContent = err.desc ? window.wsT('browser.errDesc', { url: err.url || '', desc: err.desc }) : (err.url || '');
     errEl.hidden = false;
     setVeil(false);
     if (attachedKey === key) { window.ws2.webHideAll(); attachedKey = null; } // 摘掉空白 view 露出占位
@@ -252,7 +275,7 @@
     live.add(s.key); // 有状态推来 = view 已存在
     // 标签行/持久化跟随（url/title 变了才写，防每帧写盘）
     if (sb() && (prev.url !== s.url || prev.title !== s.title || prev.favicon !== s.favicon)) {
-      sb().updateWeb(s.key, { url: s.url, title: s.title || s.url || '新标签页' });
+      sb().updateWeb(s.key, { url: s.url, title: s.title || s.url || window.wsT('browser.newTab') });
     }
     // U3 导航加载反馈（治「渲染区闪回旧页面 1-2 秒」= 导航期零反馈）：loading 变化 → 轻量刷该标签行的 spinner。
     // 不走 updateWeb（那会落盘 + 整区 renderZones）；每个 s.key 都收，后台标签加载也转圈（Chrome 语义）。
@@ -299,7 +322,7 @@
     // （同 open-file 的 restoreReady 串行化；热路径 promise 已 resolved,微任务级开销）。
     if (window.__sbRestoreReady) await window.__sbRestoreReady;
     openWeb(r.url, r.url, !!r.background);
-    if (r.background) toastOverWeb('已在后台标签页打开');
+    if (r.background) toastOverWeb(window.wsT('browser.openedInBackground'));
   });
   window.ws2.onWebToast((msg) => toastOverWeb(String(msg || '')));
   window.ws2.onWebFound((r) => {
@@ -351,7 +374,7 @@
   function submitNavigate(key, input) {
     live.add(key);
     window.ws2.webNavigate(key, input).then((r) => {
-      if (r && r.blocked) { live.delete(key); toast('不支持打开这类地址'); return; }
+      if (r && r.blocked) { live.delete(key); toast(window.wsT('browser.unsupportedUrl')); return; }
       // ⚠ 这里既不藏起始页也不 attach view——fresh WebContentsView 首绘前透明,提前挂上会盖住起始页
       // 露白屏（闪回 bug 只修一半的根因,两路审查交叉确认）。attach + 藏起始页全交给 onWebTabUpdated
       // 的 everCommitted 分支（导航真提交后才切,慢站加载期起始页一直盖着,像 Chrome 停在原页）。
@@ -370,7 +393,7 @@
       window.ws2.webNav(keyOf(e), 'reload');
       // 教学气泡只对真实鼠标点击（isTrusted）——⌘R 菜单路径走 __webMenu → navReload.click()，
       // 程序化 click isTrusted=false，用户已会快捷键、不弹。
-      if (ev && ev.isTrusted && window.__wsCoach) window.__wsCoach('reload', '下次可以用 ' + (window.__wsKbd ? window.__wsKbd('⌘R') : '⌘R') + ' 刷新');
+      if (ev && ev.isTrusted && window.__wsCoach) window.__wsCoach('reload', window.wsT('sidebar.coachReload', { key: (window.__wsKbd ? window.__wsKbd('⌘R') : '⌘R') }));
     }
   };
   navHistory.onclick = () => { if (subPage === 'history') closeSubPage(); else openSubPage('history'); };
@@ -434,7 +457,8 @@
     if (web) {
       const on = bmState.bookmarks.some((b) => b.url === e.url);
       omniStar.classList.toggle('is-on', on);
-      omniStar.title = window.__wsKbd ? (on ? window.__wsKbd('取消收藏 ⌘D') : window.__wsKbd('收藏 ⌘D')) : (on ? '取消收藏 ⌘D' : '收藏 ⌘D');
+      // i18n × #227 快捷键 tooltip：文案走 wsT(字典值含 ⌘ 字形)，再经 __wsKbd 平台归一(mac 保 ⌘/其他 ⌘→Ctrl+)。
+      { const bmT = on ? window.wsT('browser.unbookmark') : window.wsT('browser.bookmark'); omniStar.title = window.__wsKbd ? window.__wsKbd(bmT) : bmT; }
     }
   }
   omniStar.onclick = () => toggleBookmark();
@@ -596,7 +620,7 @@
     if (!bmState.bookmarks.length) {
       const empty = document.createElement('div');
       empty.className = 'sb-fav-empty';
-      empty.textContent = '点地址栏的 ☆ 收藏网页';
+      empty.textContent = window.wsT('browser.favEmpty');
       favList.appendChild(empty);
     }
   }
@@ -628,7 +652,7 @@
     } else {
       const empty = document.createElement('div');
       empty.className = 'web-nt-tiles-empty';
-      empty.textContent = '还没有收藏——打开网页后点地址栏的 ☆，就会出现在这里';
+      empty.textContent = window.wsT('browser.newtabTilesEmpty');
       ntTiles.appendChild(empty);
     }
     // 置顶快捷行
@@ -733,7 +757,7 @@
     top.className = 'wp-top';
     const back = document.createElement('button');
     back.className = 'wp-back';
-    back.title = '返回';
+    back.title = window.wsT('common.back');
     back.innerHTML = BACK18;
     back.onclick = () => closeSubPage();
     const h = document.createElement('div');
@@ -753,9 +777,9 @@
     actions.className = 'wp-actions';
     const clearBtn = document.createElement('button');
     clearBtn.className = 'wp-btn';
-    clearBtn.innerHTML = TRASH14 + '<span>清除浏览数据</span>';
+    clearBtn.innerHTML = TRASH14 + '<span>' + window.wsT('browser.clearBrowsingData') + '</span>';
     actions.appendChild(clearBtn);
-    const wrap = pageShell('历史记录', actions);
+    const wrap = pageShell(window.wsT('browser.history'), actions);
     clearBtn.onclick = () => {
       const old = actions.querySelector('.wp-clear-menu');
       if (old) { old.remove(); return; }
@@ -768,11 +792,11 @@
         b.onclick = async () => { menu.remove(); await window.ws2.histClear(range); };
         return b;
       };
-      menu.append(mk('最近一小时', '1h'), mk('最近 24 小时', '24h'), mk('最近 7 天', '7d'));
+      menu.append(mk(window.wsT('browser.lastHour'), '1h'), mk(window.wsT('browser.last24h'), '24h'), mk(window.wsT('browser.last7d'), '7d'));
       const sep = document.createElement('div');
       sep.className = 'wp-clear-sep';
       menu.appendChild(sep);
-      menu.appendChild(mk('全部清除', 'all', true));
+      menu.appendChild(mk(window.wsT('browser.clearAll'), 'all', true));
       actions.appendChild(menu);
       setTimeout(() => {
         const off = (ev) => { if (!menu.contains(ev.target) && ev.target !== clearBtn) { menu.remove(); document.removeEventListener('mousedown', off); } };
@@ -784,7 +808,7 @@
     search.innerHTML = SEARCH14;
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = '搜索历史记录';
+    input.placeholder = window.wsT('browser.searchHistory');
     input.value = histQuery;
     const clearX = document.createElement('button');
     clearX.className = 'wp-search-x';
@@ -803,7 +827,7 @@
       if (!items.length) {
         const empty = document.createElement('div');
         empty.className = 'wp-empty';
-        empty.textContent = q ? '没有匹配的历史记录' : '还没有浏览记录';
+        empty.textContent = q ? window.wsT('browser.noMatchingHistory') : window.wsT('browser.noHistory');
         listHost.appendChild(empty);
         return;
       }
@@ -818,7 +842,7 @@
         if (dk !== lastDay) {
           lastDay = dk;
           const d = new Date(h.visitedAt);
-          const label = dk === todayKey ? '今天' : dk === yesterdayKey ? '昨天' : (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日';
+          const label = dk === todayKey ? window.wsT('browser.today') : dk === yesterdayKey ? window.wsT('browser.yesterday') : window.wsT('browser.monthDay', { month: d.getMonth() + 1, day: d.getDate() });
           const day = document.createElement('div');
           day.className = 'wp-day';
           day.textContent = label;
@@ -841,7 +865,7 @@
         u.textContent = String(h.url).replace(/^https?:\/\//i, '');
         const x = document.createElement('button');
         x.className = 'wp-row-x';
-        x.title = '删除';
+        x.title = window.wsT('common.delete');
         x.innerHTML = X13;
         x.onclick = async (ev) => { ev.stopPropagation(); await window.ws2.histRemoveOne(h.id); };
         row.append(time, ico, t, u, x);
@@ -861,35 +885,35 @@
     actions.className = 'wp-actions';
     const newFolder = document.createElement('button');
     newFolder.className = 'wp-btn';
-    newFolder.innerHTML = FOLDER_PLUS14 + '<span>新文件夹</span>';
-    newFolder.onclick = () => window.ws2.bmAddFolder('新文件夹');
+    newFolder.innerHTML = FOLDER_PLUS14 + '<span>' + window.wsT('browser.newFolder') + '</span>';
+    newFolder.onclick = () => window.ws2.bmAddFolder(window.wsT('browser.newFolder'));
     const imp = document.createElement('button');
     imp.className = 'wp-btn';
-    imp.innerHTML = UPLOAD14 + '<span>导入</span>';
+    imp.innerHTML = UPLOAD14 + '<span>' + window.wsT('browser.import') + '</span>';
     imp.onclick = async () => {
       let r;
       try { r = await window.ws2.bmImport(); } catch { return; }
       if (!r || r.canceled) return;
-      if (r.error) { toast('导入失败：' + r.error); return; }
+      if (r.error) { toast(window.wsT('browser.importFailed', { error: r.error })); return; }
       toast(r.parsed === 0
-        ? '没识别到书签（需要浏览器导出的 HTML 书签文件）'
+        ? window.wsT('browser.importNoneRecognized')
         : r.added === 0
-          ? '这些书签都已存在，没有新增'
-          : '已导入 ' + r.added + ' 个书签'); // 报净新增（拍板#6）
+          ? window.wsT('browser.importAllExist')
+          : window.wsT('browser.importedCount', { count: r.added })); // 报净新增（拍板#6）
     };
     const exp = document.createElement('button');
     exp.className = 'wp-btn';
-    exp.innerHTML = DOWNLOAD14 + '<span>导出</span>';
+    exp.innerHTML = DOWNLOAD14 + '<span>' + window.wsT('browser.export') + '</span>';
     exp.onclick = async () => {
       let r;
       try { r = await window.ws2.bmExport(); } catch { return; }
-      if (r && r.ok) toast('已导出为 bookmarks.html（Chrome/Safari/Firefox 都能导入）');
+      if (r && r.ok) toast(window.wsT('browser.exportedToast'));
     };
     actions.append(newFolder, imp, exp);
-    const wrap = pageShell('收藏夹', actions);
+    const wrap = pageShell(window.wsT('browser.bookmarks'), actions);
     const hint = document.createElement('p');
     hint.className = 'wp-hint';
-    hint.textContent = '导入 / 导出用的是浏览器通用的 HTML 书签格式（Netscape），可以和 Chrome、Safari、Firefox、Edge 互相搬。';
+    hint.textContent = window.wsT('browser.bookmarksHint');
     wrap.appendChild(hint);
     for (const f of bmState.folders) {
       const items = bmState.bookmarks.filter((b) => b.folderId === f.id);
@@ -901,7 +925,7 @@
       name.className = 'wp-folder-name';
       name.value = f.name;
       name.disabled = f.id === BM_BAR;
-      name.title = f.id === BM_BAR ? '书签栏（固定）' : '重命名文件夹';
+      name.title = f.id === BM_BAR ? window.wsT('browser.bookmarkBarFixed') : window.wsT('browser.renameFolder');
       name.onblur = () => { const v = name.value.trim(); if (v && v !== f.name) window.ws2.bmRenameFolder(f.id, v); else name.value = f.name; };
       name.onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); name.blur(); } };
       const count = document.createElement('span');
@@ -911,7 +935,7 @@
       if (f.id !== BM_BAR) {
         const del = document.createElement('button');
         del.className = 'wp-btn is-danger wp-folder-del';
-        del.title = '删除文件夹（含其中书签）';
+        del.title = window.wsT('browser.deleteFolder');
         del.innerHTML = TRASH14;
         del.onclick = () => window.ws2.bmRemoveFolder(f.id);
         head.appendChild(del);
@@ -920,7 +944,7 @@
       if (!items.length) {
         const empty = document.createElement('div');
         empty.className = 'wp-hint';
-        empty.textContent = '空';
+        empty.textContent = window.wsT('browser.emptyFolder');
         sec.appendChild(empty);
       }
       for (const b of items) {
@@ -950,12 +974,12 @@
         sel.onchange = () => window.ws2.bmUpdate(b.id, { folderId: sel.value });
         const open = document.createElement('button');
         open.className = 'wp-row-x';
-        open.title = '打开';
+        open.title = window.wsT('common.open');
         open.innerHTML = EXT13;
         open.onclick = () => { closeSubPage(); focusOrOpen(b.url, b.title); }; // 同 §4.3 语义（拍板#3）
         const del = document.createElement('button');
         del.className = 'wp-row-x';
-        del.title = '删除';
+        del.title = window.wsT('common.delete');
         del.innerHTML = X13;
         del.onclick = () => window.ws2.bmRemoveOne(b.id);
         row.append(ico, title, u, sel, open, del);
@@ -967,26 +991,58 @@
 
   // 设置页（§4.10）：浏览器区只有默认搜索引擎一行；「主页」设置已删（拍板#2），不要加回来。
   function renderSettingsPage() {
-    const wrap = pageShell('设置');
+    const T = (k) => (typeof window.wsT === 'function' ? window.wsT(k) : k);
+    const wrap = pageShell(T('settings.pageTitle'));
+
+    // 语言三态（偏好归 main 管；切换后整窗 reload 生效——静态外壳建一次不重建，plan 决策1）。
+    const langSec = document.createElement('div');
+    langSec.className = 'wp-sec';
+    langSec.textContent = T('settings.language');
+    wrap.appendChild(langSec);
+    const lrow = document.createElement('div');
+    lrow.className = 'wp-set-row';
+    const llabel = document.createElement('span');
+    llabel.className = 'wp-set-label';
+    llabel.textContent = T('settings.uiLanguage');
+    const ldesc = document.createElement('span');
+    ldesc.className = 'wp-set-desc';
+    ldesc.textContent = T('settings.languageDesc');
+    const lctl = document.createElement('span');
+    lctl.className = 'wp-set-ctl';
+    const lsel = document.createElement('select');
+    lsel.id = 'wp-language-select';
+    for (const [val, key] of [['system', 'settings.langSystem'], ['zh', 'settings.langZh'], ['en', 'settings.langEn']]) {
+      const opt = document.createElement('option');
+      opt.value = val; opt.textContent = T(key);
+      lsel.appendChild(opt);
+    }
+    if (window.ws2 && window.ws2.getLanguage) {
+      window.ws2.getLanguage().then((p) => { lsel.value = p || 'system'; }).catch(() => {});
+    }
+    // 切语言 → main 持久化 + 广播 language-changed → i18n-ui.js 整窗 reload（新语言全量生效）。
+    lsel.onchange = () => { if (window.ws2 && window.ws2.setLanguage) window.ws2.setLanguage(lsel.value); };
+    lctl.appendChild(lsel);
+    lrow.append(llabel, ldesc, lctl);
+    wrap.appendChild(lrow);
 
     // 外观三态（与菜单栏 radio / ⋯菜单同一真相源，都从 main 查；这是 Colin 追认的第三入口）
     const appSec = document.createElement('div');
     appSec.className = 'wp-sec';
-    appSec.textContent = '外观';
+    appSec.textContent = T('settings.appearance');
     wrap.appendChild(appSec);
     const arow = document.createElement('div');
     arow.className = 'wp-set-row';
     const alabel = document.createElement('span');
     alabel.className = 'wp-set-label';
-    alabel.textContent = '主题';
+    alabel.textContent = T('settings.theme');
     const adesc = document.createElement('span');
     adesc.className = 'wp-set-desc';
-    adesc.textContent = '跟随系统时，系统切换深浅色会实时跟随';
+    adesc.textContent = T('settings.themeDesc');
     const actl = document.createElement('span');
     actl.className = 'wp-set-ctl';
     const asel = document.createElement('select');
     asel.id = 'wp-appearance-select';
-    for (const [val, name] of [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']]) {
+    for (const [val, name] of [['system', T('common.apprSystem')], ['light', T('common.apprLight')], ['dark', T('common.apprDark')]]) {
       const opt = document.createElement('option');
       opt.value = val; opt.textContent = name;
       asel.appendChild(opt);
@@ -1001,19 +1057,20 @@
 
     const sec = document.createElement('div');
     sec.className = 'wp-sec';
-    sec.textContent = '浏览器';
+    sec.textContent = T('settings.browser');
     wrap.appendChild(sec);
     const row = document.createElement('div');
     row.className = 'wp-set-row';
     const label = document.createElement('span');
     label.className = 'wp-set-label';
-    label.textContent = '默认搜索引擎';
+    label.textContent = T('settings.defaultSearchEngine');
     const desc = document.createElement('span');
     desc.className = 'wp-set-desc';
-    desc.textContent = '在地址栏打一句话（不是网址）时用它搜索';
+    desc.textContent = T('settings.defaultSearchEngineDesc');
     const ctl = document.createElement('span');
     ctl.className = 'wp-set-ctl';
     const sel = document.createElement('select');
+    sel.id = 'wp-engine-select'; // i18n 加了语言 select 后,设置页有 3 个 select——给引擎 select 显式 id,e2e 精确定位(不再靠 :not 排除)
     for (const eng of (settings.engines || [])) {
       const opt = document.createElement('option');
       opt.value = eng.key;
@@ -1033,27 +1090,27 @@
     row2.className = 'wp-set-row';
     const label2 = document.createElement('span');
     label2.className = 'wp-set-label';
-    label2.textContent = '默认浏览器';
+    label2.textContent = T('settings.defaultBrowser');
     const desc2 = document.createElement('span');
     desc2.className = 'wp-set-desc';
-    desc2.textContent = '系统里点开的网页链接都用 Wordspace 打开';
+    desc2.textContent = T('settings.defaultBrowserDesc');
     const ctl2 = document.createElement('span');
     ctl2.className = 'wp-set-ctl';
     const btn = document.createElement('button');
     btn.className = 'wp-btn';
-    btn.textContent = '设为默认浏览器';
+    btn.textContent = T('settings.setDefaultBrowser');
     window.ws2.browserDefaultStatus().then((s) => {
       if (!s) return;
-      if (s.isDefault) { btn.textContent = '已是默认浏览器'; btn.disabled = true; }
-      else if (!s.packaged) { btn.textContent = '仅安装版可设'; btn.disabled = true; }
+      if (s.isDefault) { btn.textContent = T('settings.isDefaultBrowser'); btn.disabled = true; }
+      else if (!s.packaged) { btn.textContent = T('settings.installedOnly'); btn.disabled = true; }
     }).catch(() => {});
     btn.onclick = async () => {
       try {
         const r = await window.ws2.browserSetDefault();
-        if (r && r.isDefault) { btn.textContent = '已是默认浏览器'; btn.disabled = true; }
-        else if (r && r.ok) btn.textContent = '请在系统弹窗里确认';
-        else btn.textContent = '设置失败';
-      } catch { btn.textContent = '设置失败'; }
+        if (r && r.isDefault) { btn.textContent = T('settings.isDefaultBrowser'); btn.disabled = true; }
+        else if (r && r.ok) btn.textContent = T('settings.confirmInSystemDialog');
+        else btn.textContent = T('settings.setDefaultFailed');
+      } catch { btn.textContent = T('settings.setDefaultFailed'); }
     };
     ctl2.appendChild(btn);
     row2.append(label2, desc2, ctl2);

@@ -32,7 +32,7 @@ function startServer() {
 async function launch(userdata, extraEnv = {}) {
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: userdata, WS2_NO_CLOSE_DIALOG: '1', ...extraEnv },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: userdata, WS2_NO_CLOSE_DIALOG: '1', ...extraEnv },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');

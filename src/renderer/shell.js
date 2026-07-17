@@ -92,7 +92,7 @@ async function refreshBacklinks() {
   if (g !== blGen || docContext !== c) return; // 又刷了一次 / 切了文档 → 本次作废
   if (!list || !list.length) { hideBacklinks(); return; }
   const rootName = new Map((roots || []).map((r) => [r.id, r.name])); // A：跨根来源标空间名
-  blCountEl.textContent = list.length + ' 篇文档链接到这里';
+  blCountEl.textContent = window.wsT('shell.backlinksCount', { n: list.length });
   blListEl.textContent = '';
   for (let i = 0; i < list.length; i++) {
     const src = list[i];
@@ -101,7 +101,7 @@ async function refreshBacklinks() {
     item.className = 'ws-bl-item';
     item.title = (crossRoot ? (rootName.get(src.rootId) || '') + ' · ' : '') + src.rel;
     const t = document.createElement('div'); t.className = 'ws-bl-item-title'; t.textContent = src.title || src.rel;
-    if (crossRoot) { const badge = document.createElement('span'); badge.className = 'ws-bl-item-root'; badge.textContent = rootName.get(src.rootId) || '其他空间'; t.appendChild(badge); }
+    if (crossRoot) { const badge = document.createElement('span'); badge.className = 'ws-bl-item-root'; badge.textContent = rootName.get(src.rootId) || window.wsT('shell.otherSpace'); t.appendChild(badge); }
     item.appendChild(t);
     if (src.snippet) { const sn = document.createElement('div'); sn.className = 'ws-bl-item-snippet'; sn.textContent = blClamp(src.snippet); item.appendChild(sn); }
     item.addEventListener('click', async () => { // 点来源 = 应用内打开（跨根用来源自己的 rootId）
@@ -136,7 +136,7 @@ function setDirty(v) {
   // 面包屑上、或外部重载后压住清洁态）。save() 是先 setDirty(false) 再 flashSaved()，这里清掉无妨（flash 紧接重置）。
   if (savedTimer) { clearTimeout(savedTimer); savedTimer = null; }
   if (v) {
-    dirtyDot.textContent = '● 未保存';
+    dirtyDot.textContent = window.wsT('shell.unsaved');
     dirtyDot.className = 'ws-dirty';
     dirtyDot.hidden = false;
   } else {
@@ -150,7 +150,7 @@ function setDirty(v) {
 // 不是弹窗：保存高频，模态太重；复用用户已经盯着的位置给即时确认，Cmd+S / 点按钮两条路都覆盖。
 function flashSaved() {
   if (savedTimer) clearTimeout(savedTimer);
-  dirtyDot.textContent = '✓ 已保存';
+  dirtyDot.textContent = window.wsT('shell.saved');
   dirtyDot.className = 'ws-dirty ws-saved';
   dirtyDot.hidden = false;
   savedTimer = setTimeout(() => {
@@ -223,7 +223,7 @@ window.__wsApplyMovesToOpenDoc = async (movesArr) => {
 
 // AI 占位（斜杠 /ai 或格式气泡 ✦AI 触发）——本地编辑器暂无 AI，仅提示开发中（用父窗口弹窗，
 // 因 iframe sandbox 无 allow-modals）。
-function showAiSoon() { window.alert('AI 功能开发中'); }
+function showAiSoon() { window.alert(window.wsT('shell.aiSoon')); }
 
 // 仅用于显示的纯文件名：跨平台按 / 或 \ 切（Windows 路径用反斜杠）。真正加载用的 URL 一律走
 // 主进程的 window.ws2.pathInfo（Node url.pathToFileURL），renderer 不自己拼 file:// URL。
@@ -463,10 +463,10 @@ async function onDocLinkClick(e) {
   let r;
   try { r = await window.ws2.resolveDocLink(docPath, href); } catch (err) { return; }
   if (!r || r.error) return;
-  if (!r.insideRoot) { toastLite('链接指向工作区外，未打开'); return; }
+  if (!r.insideRoot) { toastLite(window.wsT('shell.linkOutsideWorkspace')); return; }
   if (!r.exists) { // U4：断链 → 弹修复卡（重新指向候选 / 新建），linkview 缺失时退回 toast 占位
     if (window.WS2LinkView && window.WS2LinkView.showRepair) window.WS2LinkView.showRepair(a, r);
-    else toastLite('链接目标不存在：' + (r.rel || href));
+    else toastLite(window.wsT('shell.linkTargetMissing', { target: r.rel || href }));
     return;
   }
   window.__wsOpenResolved(r);
@@ -496,7 +496,10 @@ function prepFrame(asDirty) {
 }
 
 // ---- 非 HTML 文件的应用内查看器（#1）：图片/PDF 直接预览，其余 → 外部打开卡片 ----
-const KIND_LABEL = { word: 'Word 文档', pdf: 'PDF', image: '图片', sheet: '表格', slides: '演示文稿', other: '文件' };
+function kindLabel(kind) {
+  const m = { word: window.wsT('shell.kindWord'), pdf: 'PDF', image: window.wsT('shell.kindImage'), sheet: window.wsT('shell.kindSheet'), slides: window.wsT('shell.kindSlides'), other: window.wsT('shell.kindFile') };
+  return m[kind] || window.wsT('shell.kindFile');
+}
 const EXT_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>';
 function bigIconSvg() {
   return '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
@@ -509,7 +512,7 @@ function closeViewer() {
 function openExternalBtn(node, cls) {
   const b = document.createElement('button');
   b.className = cls;
-  b.innerHTML = EXT_SVG + '<span>用默认程序打开</span>';
+  b.innerHTML = EXT_SVG + '<span>' + window.wsT('shell.openWithDefault') + '</span>';
   // 根内走 (rootId, rel)（assertInsideWorkspace 守卫）；根外（「打开」按钮选的）没 rel，走吃 abs 的那条。
   b.onclick = () => (node.rel ? window.ws2.wsOpenExternal(node.rootId, node.rel) : window.ws2.openExternalAbs(node.abs));
   return b;
@@ -519,7 +522,7 @@ async function showViewer(node) {
   // ⚠ 摘 web view 挪到脏守卫**之后**（浏览器 feature P2-1）：取消丢弃时什么都不动、网页态保留。
   if (tempDoc) { stashActiveTemp(); tempDoc = null; }
   else if (dirty) {
-    if (!confirm('当前文档有未保存的修改，确定丢弃并打开这个文件？')) return;
+    if (!confirm(window.wsT('shell.discardOpenThisFile'))) return;
     discardPendingAutoSave(); // 确认丢弃：到期的自动保存不能把刚丢弃的编辑写回盘
   }
   if (window.__webDetach) window.__webDetach(); // 守卫通过 → 摘 web view（原生 view 盖住一切 DOM）
@@ -561,7 +564,7 @@ async function showViewer(node) {
       name.title = node.name; // 名字过长被截断时，悬停显示全名
       const tag = document.createElement('span');
       tag.className = 'fv-tag';
-      tag.textContent = '图片 · 只读';
+      tag.textContent = window.wsT('shell.imageReadonly');
       const sp = document.createElement('div');
       sp.className = 'fv-sp';
       bar.append(name, tag, sp, openExternalBtn(node, 'fv-open'));
@@ -599,10 +602,10 @@ async function showViewer(node) {
   name.title = node.name; // 名字过长被截断时，悬停显示全名
   const meta = document.createElement('div');
   meta.className = 'efp-meta ws-truncate';
-  meta.textContent = (KIND_LABEL[kind] || '文件') + ' · ' + (node.rel || node.name);
+  meta.textContent = kindLabel(kind) + ' · ' + (node.rel || node.name);
   const note = document.createElement('p');
   note.className = 'efp-note';
-  note.textContent = '这不是 HTML 文档，Wordspace 不能直接编辑它。可以一键用默认程序打开。';
+  note.textContent = window.wsT('shell.notHtmlNote');
   card.append(ico, name, meta, note, openExternalBtn(node, 'efp-open'));
   wrap.appendChild(card);
   viewer.appendChild(wrap);
@@ -747,7 +750,7 @@ function loadFromHtml(html, opts) {
 function canLeaveActive() {
   if (tempDoc) { stashActiveTemp(); return true; }
   if (dirty) {
-    if (!confirm('当前文档有未保存的修改，确定丢弃并切换？')) return false;
+    if (!confirm(window.wsT('shell.discardSwitch'))) return false;
     discardPendingAutoSave(); // 确认丢弃：同 openDoc，别让到期的自动保存把丢弃的编辑写回盘
   }
   return true;
@@ -756,7 +759,7 @@ function canLeaveActive() {
 function shellNewTemp(base, html) {
   if (!canLeaveActive()) return null;
   const id = genTempId();
-  tempStore.set(id, { base: base || '未命名', html });
+  tempStore.set(id, { base: base || window.wsT('common.untitled'), html });
   renderTemp(id);
   return id;
 }
@@ -768,7 +771,7 @@ function shellRescueDeletedDirty() {
   let html;
   try { html = serializeActiveDoc(); }
   catch (e) { return null; } // 序列化失败：救不了，交给调用方回落
-  const base = String((docInfo && docInfo.name) || docName.textContent || '未命名').replace(/\.[^.]+$/, '');
+  const base = String((docInfo && docInfo.name) || docName.textContent || window.wsT('common.untitled')).replace(/\.[^.]+$/, '');
   discardPendingAutoSave(); // 文件已被删，在途自动保存写它只会 ENOENT，先掐掉
   const id = genTempId();
   tempStore.set(id, { base, html });
@@ -865,7 +868,7 @@ async function openDoc(p) {
   //    web 态下 dirty 属于后台文档 A,切去别的文档 B 会让 A 让位,不问就丢了 A 的未保存编辑。
   if (tempDoc) { stashActiveTemp(); tempDoc = null; }
   else if (dirty) {
-    if (!confirm('当前文档有未保存的修改，确定丢弃并打开新文档？')) { window.__pendingColdOpen = null; return; }
+    if (!confirm(window.wsT('shell.discardOpenNew'))) { window.__pendingColdOpen = null; return; }
     discardPendingAutoSave(); // 确认丢弃：到期的自动保存不能在下面 readDoc 的让出期把刚丢弃的编辑写回盘
   }
   if (window.__webDetach) window.__webDetach(); // 守卫通过、确定打开新文档 → 摘 web view
@@ -875,7 +878,7 @@ async function openDoc(p) {
     raw = await window.ws2.readDoc(p);
     info = await window.ws2.pathInfo(p);
   } catch (e) {
-    alert('无法打开文件：' + p + '\n' + (e.message || e));
+    alert(window.wsT('shell.cannotOpenFile', { path: p }) + '\n' + (e.message || e));
     window.__pendingColdOpen = null;
     return;
   }
@@ -987,12 +990,12 @@ async function save() {
   try {
     result = await window.ws2.saveDoc(docPath, html);
   } catch (e) {
-    alert('保存失败：' + (e.message || e));
+    alert(window.wsT('shell.saveFailed', { err: e.message || e }));
     return;
   }
   setDirty(false);
   if (result && result.archiveWarning) {
-    alert('文件已保存，但历史版本归档失败（本次保存没有进入历史记录）：\n' + result.archiveWarning);
+    alert(window.wsT('shell.saveArchiveWarn', { warn: result.archiveWarning }));
   } else {
     flashSaved(); // 归档警告已经弹了 alert 就不再闪「已保存」，免得自相矛盾
   }
@@ -1020,13 +1023,13 @@ async function saveAs() {
   if (dirty) await save();
   const cd = frame.contentDocument;
   // 修 SH-8：同 save()——重载二段跳期间别把空壳另存成空副本（外部改动触发的静默 reload 期间点「另存为」）。
-  if (!cd || (!basicEdit && !cd.querySelector('[data-ws2-canvas],[data-ws2-root]'))) { alert('文档尚未就绪（可能正在重新加载），请稍后再试'); return; }
+  if (!cd || (!basicEdit && !cd.querySelector('[data-ws2-canvas],[data-ws2-root]'))) { alert(window.wsT('shell.docNotReadyRetry')); return; }
   const html = basicEdit
     ? WS2BasicEdit.serialize(cd)
     : WS2Serialize.serializeDocument(cd);
   let r;
   try { r = await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.(html?|md)$/i, ''), html, isMdPath(docPath) ? 'md' : undefined); } // 另存为保持原格式（KD-6）
-  catch (e) { alert('另存为失败：' + (e.message || e)); return; }
+  catch (e) { alert(window.wsT('shell.saveAsFailed', { err: e.message || e })); return; }
   if (!r || r.canceled || !r.abs) return;
   await openDoc(r.abs);
   flashSaved();
@@ -1096,21 +1099,21 @@ function openPageSetupModal() {
   overlay.innerHTML =
     '<div class="sb-modal ws-pgs-modal">' +
       '<div class="sb-modal-head"><div class="sb-modal-head-text">' +
-        '<div class="sb-modal-title">页面设置</div>' +
-        '<div class="sb-modal-where">分页显示与导出 PDF 的纸张版式 · 改动即时生效</div></div>' +
-        '<button class="sb-modal-x" id="pgs-x" aria-label="关闭"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>' +
-      '<label class="ws-pgs-row ws-pgs-toggle"><input type="checkbox" id="pgs-on"' + (on ? ' checked' : '') + '> 分页文档（像 Word：按页显示、导出 PDF 按页分页）</label>' +
+        '<div class="sb-modal-title">' + window.wsT('shell.pageSetupTitle') + '</div>' +
+        '<div class="sb-modal-where">' + window.wsT('shell.pageSetupWhere') + '</div></div>' +
+        '<button class="sb-modal-x" id="pgs-x" aria-label="' + window.wsT('common.close') + '"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>' +
+      '<label class="ws-pgs-row ws-pgs-toggle"><input type="checkbox" id="pgs-on"' + (on ? ' checked' : '') + '> ' + window.wsT('shell.pagedDocLabel') + '</label>' +
       '<div id="pgs-body"' + (on ? '' : ' class="ws-pgs-off"') + '>' +
-        '<div class="ws-pgs-row"><span class="ws-pgs-lbl">纸张</span><select id="pgs-size">' + sizeOpts + '</select>' +
-          '<select id="pgs-orient"><option value="portrait"' + (cfg.orientation === 'portrait' ? ' selected' : '') + '>纵向</option><option value="landscape"' + (cfg.orientation === 'landscape' ? ' selected' : '') + '>横向</option></select></div>' +
-        '<div class="ws-pgs-row"><span class="ws-pgs-lbl">边距</span><select id="pgs-preset">' +
-          '<option value="normal">普通（25.4mm）</option><option value="narrow">窄（12.7mm）</option><option value="wide">宽（左右 50.8mm）</option><option value="custom">自定义</option></select></div>' +
+        '<div class="ws-pgs-row"><span class="ws-pgs-lbl">' + window.wsT('shell.paper') + '</span><select id="pgs-size">' + sizeOpts + '</select>' +
+          '<select id="pgs-orient"><option value="portrait"' + (cfg.orientation === 'portrait' ? ' selected' : '') + '>' + window.wsT('shell.portrait') + '</option><option value="landscape"' + (cfg.orientation === 'landscape' ? ' selected' : '') + '>' + window.wsT('shell.landscape') + '</option></select></div>' +
+        '<div class="ws-pgs-row"><span class="ws-pgs-lbl">' + window.wsT('shell.margin') + '</span><select id="pgs-preset">' +
+          '<option value="normal">' + window.wsT('shell.marginNormal') + '</option><option value="narrow">' + window.wsT('shell.marginNarrow') + '</option><option value="wide">' + window.wsT('shell.marginWide') + '</option><option value="custom">' + window.wsT('shell.marginCustom') + '</option></select></div>' +
         '<div class="ws-pgs-row ws-pgs-margins">' +
-          ['top', 'right', 'bottom', 'left'].map((k, i) => '<label>' + ['上', '右', '下', '左'][i] + ' <input type="number" min="0" max="80" step="0.1" id="pgs-m-' + k + '" value="' + cfg.margin[k] + '"> mm</label>').join('') +
+          ['top', 'right', 'bottom', 'left'].map((k, i) => '<label>' + [window.wsT('shell.marginTop'), window.wsT('shell.marginRight'), window.wsT('shell.marginBottom'), window.wsT('shell.marginLeft')][i] + ' <input type="number" min="0" max="80" step="0.1" id="pgs-m-' + k + '" value="' + cfg.margin[k] + '"> mm</label>').join('') +
         '</div>' +
-        '<label class="ws-pgs-row ws-pgs-toggle"><input type="checkbox" id="pgs-nums"' + (nums ? ' checked' : '') + '> 导出 PDF 时在页脚加页码</label>' +
+        '<label class="ws-pgs-row ws-pgs-toggle"><input type="checkbox" id="pgs-nums"' + (nums ? ' checked' : '') + '> ' + window.wsT('shell.pageNumbersLabel') + '</label>' +
       '</div>' +
-      '<div class="ws-pgs-actions"><button id="pgs-done" class="ws-pgs-btn ws-pgs-primary">完成</button></div>' +
+      '<div class="ws-pgs-actions"><button id="pgs-done" class="ws-pgs-btn ws-pgs-primary">' + window.wsT('common.done') + '</button></div>' +
     '</div>';
   const $ = (id) => overlay.querySelector('#' + id);
   const presetOf = (mg) => Object.keys(P.MARGIN_PRESETS).find((k) => ['top', 'right', 'bottom', 'left'].every((e) => P.MARGIN_PRESETS[k][e] === mg[e])) || 'custom';
@@ -1172,7 +1175,7 @@ function handleDocChanged(p) {
   if (dirty) {
     discardPendingAutoSave();
     if (document.hidden) { pendingExternalChange = p; return; }
-    if (!confirm('这个文件在外部被改动了，但你有未保存的修改。\n重新加载会丢弃你的修改、改用磁盘上的新版本，继续吗？')) {
+    if (!confirm(window.wsT('shell.externalChangedConfirm'))) {
       scheduleAutoSave(); // 用户选保留自己的版本：恢复自动保存语义（跟旧行为一致，编辑照常落盘）
       return;
     }
@@ -1203,7 +1206,18 @@ document.addEventListener('visibilitychange', () => {
 // 主进程发来「打开这个文件」（Finder 双击 / 文件关联 / 第二实例）。冷启动时这跟侧栏「恢复上次工作区」
 // 并发：同步先标记 __pendingColdOpen，让 loadTabs 知道「这个文件该占 viewer，别拿上次激活标签抢」；
 // 标签实际创建在 sidebar onOpen 里等恢复跑完才做（见 sidebar.js restoreReady）。
-window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
+// PDF 等查看器类型分流进 showViewer（跟「打开」按钮 pickAndOpen 同一套口径）——2026-07-17 起
+// fileAssociations 声明了 .pdf（Wendi「PDF 默认打开设为 Wordspace」），双击 PDF 不能再直塞编辑器。
+window.ws2.onOpenFile(async (p) => {
+  window.__pendingColdOpen = p;
+  let meta;
+  try { meta = await window.ws2.classifyFile(p); }
+  catch (e) { meta = { kind: 'other', name: baseName(p), rel: null, rootId: null }; }
+  if (meta.kind === 'html' || meta.kind === 'md') { openDoc(p); return; }
+  await showViewer({ abs: p, rel: meta.rel, rootId: meta.rootId, name: meta.name || baseName(p), kind: meta.kind });
+  // viewer 路径没有 sidebar onOpen 来清占位标记，自己清——否则泄漏到将来会一直抑制 loadTabs 恢复激活标签
+  window.__pendingColdOpen = null;
+});
 // 「AI 接入」弹窗（菜单「AI 接入…」触发；对齐 ui-demo /agents 页两卡结构，复用统一模态壳 T1）。
 // Prompt 文本经 IPC 读打包资源 src/renderer/ai-guide.md（与 docs/ 正本被防漂移测试锁逐字节一致）。
 const AI_SKILL_CMD = 'npx skills add wordspace-ai/skills';
@@ -1219,10 +1233,10 @@ function openAiAccessModal() {
   head.className = 'sb-modal-head';
   const ht = document.createElement('div');
   ht.className = 'sb-modal-head-text';
-  ht.innerHTML = '<div class="sb-modal-title">AI 接入</div><div class="sb-modal-where">让你的 AI 会写 Wordspace 文档</div>';
+  ht.innerHTML = '<div class="sb-modal-title">' + window.wsT('shell.aiAccessTitle') + '</div><div class="sb-modal-where">' + window.wsT('shell.aiAccessWhere') + '</div>';
   const x = document.createElement('button');
   x.className = 'sb-modal-x';
-  x.setAttribute('aria-label', '关闭');
+  x.setAttribute('aria-label', window.wsT('common.close'));
   x.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
   x.onclick = close;
   head.append(ht, x);
@@ -1236,11 +1250,11 @@ function openAiAccessModal() {
   const tabSkill = document.createElement('button');
   tabSkill.className = 'aiax-tab is-active';
   tabSkill.id = 'aiax-tab-skill';
-  tabSkill.innerHTML = '安装 Skill <span class="aiax-badge">推荐</span>';
+  tabSkill.innerHTML = window.wsT('shell.installSkill') + ' <span class="aiax-badge">' + window.wsT('shell.recommended') + '</span>';
   const tabPrompt = document.createElement('button');
   tabPrompt.className = 'aiax-tab';
   tabPrompt.id = 'aiax-tab-prompt';
-  tabPrompt.textContent = '复制 Prompt';
+  tabPrompt.textContent = window.wsT('shell.copyPrompt');
   tabs.append(tabSkill, tabPrompt);
 
   // —— 面板一：安装 Skill ——
@@ -1248,29 +1262,29 @@ function openAiAccessModal() {
   paneSkill.className = 'aiax-pane';
   const introSkill = document.createElement('div');
   introSkill.className = 'aiax-way-desc';
-  introSkill.textContent = '装一次，Claude Code / Cursor 等 30+ 工具通用。';
+  introSkill.textContent = window.wsT('shell.skillIntro');
   const cmdRow = document.createElement('div');
   cmdRow.className = 'aiax-cmd';
   const cmdText = document.createElement('code');
   cmdText.textContent = AI_SKILL_CMD;
   const btnCmd = document.createElement('button');
   btnCmd.className = 'sb-btn aiax-copy-cmd';
-  btnCmd.textContent = '复制命令';
+  btnCmd.textContent = window.wsT('shell.copyCommand');
   btnCmd.onclick = async () => {
-    try { await navigator.clipboard.writeText(AI_SKILL_CMD); flashBtn(btnCmd, '✓ 已复制'); }
-    catch (e) { alert('复制失败：' + (e.message || e)); }
+    try { await navigator.clipboard.writeText(AI_SKILL_CMD); flashBtn(btnCmd, window.wsT('shell.copied')); }
+    catch (e) { alert(window.wsT('shell.copyFailed', { err: e.message || e })); }
   };
   cmdRow.append(cmdText, btnCmd);
   const steps = document.createElement('ol');
   steps.className = 'aiax-steps';
   // 步骤按 CLI 真实交互实测校准（expect 驱动过全流程，别凭 README 想象）
   steps.innerHTML =
-    '<li>打开「终端」（需要 <b>Node.js</b>，没有先去 nodejs.org 装 LTS）</li>' +
-    '<li>粘贴上面的命令，回车</li>' +
-    '<li><b>Which agents…</b>：Cursor / Codex 等 13 家已默认包含；<b>Claude Code 这类要自己勾</b>——↑↓ 或输入搜索找到它，按空格勾选，回车</li>' +
-    '<li><b>Installation scope</b>：选 <b>Global</b>（默认的 Project 只装进当前文件夹）</li>' +
-    '<li>确认安装；若追问要不要装 find-skills，随意</li>' +
-    '<li>重启 AI 工具，说「写一份 ×× 的 Wordspace 文档」试试。更新：<code>npx skills update</code></li>';
+    window.wsT('shell.installStep1') +
+    window.wsT('shell.installStep2') +
+    window.wsT('shell.installStep3') +
+    window.wsT('shell.installStep4') +
+    window.wsT('shell.installStep5') +
+    window.wsT('shell.installStep6');
   paneSkill.append(introSkill, cmdRow, steps);
 
   // —— 面板二：复制 Prompt ——
@@ -1279,16 +1293,16 @@ function openAiAccessModal() {
   panePrompt.hidden = true;
   const introPrompt = document.createElement('div');
   introPrompt.className = 'aiax-way-desc';
-  introPrompt.textContent = '不装任何东西：复制全文，粘到对话开头，再提需求。每次新会话要重新粘。';
+  introPrompt.textContent = window.wsT('shell.promptIntro');
   const btnPrompt = document.createElement('button');
   btnPrompt.className = 'sb-btn sb-btn-primary aiax-copy-prompt';
-  btnPrompt.textContent = '复制 Prompt';
+  btnPrompt.textContent = window.wsT('shell.copyPrompt');
   btnPrompt.onclick = async () => {
     try {
       const text = await window.ws2.aiGuide();
       await navigator.clipboard.writeText(text);
-      flashBtn(btnPrompt, '✓ 已复制');
-    } catch (e) { alert('复制失败：' + (e.message || e)); }
+      flashBtn(btnPrompt, window.wsT('shell.copied'));
+    } catch (e) { alert(window.wsT('shell.copyFailed', { err: e.message || e })); }
   };
   panePrompt.append(introPrompt, btnPrompt);
 
@@ -1303,7 +1317,7 @@ function openAiAccessModal() {
 
   const foot = document.createElement('div');
   foot.className = 'aiax-note';
-  foot.textContent = '打开文件时自动校验：合规 = 完整块编辑，不合规 = 基础编辑。';
+  foot.textContent = window.wsT('shell.autoValidateNote');
   body.append(tabs, paneSkill, panePrompt, foot);
   modal.append(head, body);
   overlay.appendChild(modal);
@@ -1362,9 +1376,9 @@ async function exportPdf(mode) {
     const cdoc = frame.contentDocument;
     const pageNumbers = paged && !!(cdoc && cdoc.head && cdoc.head.querySelector('meta[name="ws-page-numbers"][content="true"]'));
     const res = await window.ws2.exportPdf(docPath, mode, html, { paged, pageNumbers }); // 主进程按 mode 分 exportPdfFromHtml / 直印源文件
-    if (res && res.error) alert('导出 PDF 失败：' + res.error);
+    if (res && res.error) alert(window.wsT('shell.exportPdfFailed', { err: res.error }));
   } catch (e) {
-    alert('导出 PDF 失败：' + ((e && e.message) || e));
+    alert(window.wsT('shell.exportPdfFailed', { err: (e && e.message) || e }));
   } finally {
     exporting = false;
   }
@@ -1379,7 +1393,7 @@ function buildWordspacePrintHtml() {
   const cd = frame.contentDocument;
   // 防 Bug2 外部重载把 contentDocument 切到 about:blank/半载时克隆出空壳 → 导出空白 PDF 却报成功
   if (!cd || !cd.querySelector('[data-ws2-canvas],[data-ws2-root]')) {
-    throw new Error('文档尚未就绪（可能正在重新加载），请稍后再导出');
+    throw new Error(window.wsT('shell.docNotReadyExport'));
   }
   const root = cd.documentElement.cloneNode(true);
   root.querySelectorAll('[data-ws2-ui]').forEach((n) => n.remove());
@@ -1430,10 +1444,10 @@ async function exportAsMd() {
   if (!exportMdBtn || exportMdBtn.disabled) return;
   const cd = frame.contentDocument;
   // 外部重载二段跳期间 contentDocument 可能是 about:blank——别把空壳序列化成「看起来导出成功」的空 .md
-  if (!cd || !cd.querySelector('[data-ws2-canvas],[data-ws2-root]')) { alert('文档尚未就绪（可能正在重新加载），请稍后再导出'); return; }
+  if (!cd || !cd.querySelector('[data-ws2-canvas],[data-ws2-root]')) { alert(window.wsT('shell.docNotReadyExport')); return; }
   const html = WS2Serialize.serializeDocument(cd);
   try { await window.ws2.wsSaveDocAs(baseName(docPath).replace(/\.(html?|md)$/i, ''), html, 'md', { reveal: true }); }
-  catch (e) { alert('导出 Markdown 失败：' + (e.message || e)); }
+  catch (e) { alert(window.wsT('shell.exportMdFailed', { err: e.message || e })); }
 }
 if (exportMdBtn) exportMdBtn.onclick = exportAsMd;
 

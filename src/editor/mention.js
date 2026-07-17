@@ -56,7 +56,7 @@
     if (!st.items.length) {
       var empty = document.createElement('div');
       empty.className = 'ws-mention-empty';
-      empty.textContent = st.loading ? '加载中…' : '无匹配文档';
+      empty.textContent = st.loading ? window.wsT('common.loading') : window.wsT('link.noMatchDoc');
       listEl.appendChild(empty);
       return;
     }
@@ -66,7 +66,7 @@
     st.items.forEach(function (it) { if (it.kind === 'doc') { var b = it.rel.split('/').pop(); baseCount[b] = (baseCount[b] || 0) + 1; } });
     st.items.forEach(function (it, i) {
       // B 跨根：其他空间组的首项上方插一个空间名分节头（非交互）
-      if (it.groupFirst) { var hd = document.createElement('div'); hd.className = 'ws-mention-group'; hd.textContent = it.rootName || '其他空间'; listEl.appendChild(hd); }
+      if (it.groupFirst) { var hd = document.createElement('div'); hd.className = 'ws-mention-group'; hd.textContent = it.rootName || window.wsT('link.otherSpace'); listEl.appendChild(hd); }
       var row = document.createElement('div');
       row.className = 'ws-mention-item' + (i === st.active ? ' is-active' : '');
       row.setAttribute('data-idx', String(i));
@@ -90,13 +90,13 @@
     // B：跨卷根不可建链 → 底部灰字提示（拒绝路径可见，L8）
     if (st.crossVolNames && st.crossVolNames.length) {
       var note = document.createElement('div'); note.className = 'ws-mention-volnote';
-      note.textContent = st.crossVolNames.join('、') + '：在另一磁盘卷，暂不支持链接';
+      note.textContent = window.wsT('link.crossVolNote', { names: st.crossVolNames.join(window.wsT('link.nameSep')) });
       listEl.appendChild(note);
     }
     // V3：超大根（简化模式）链接索引降级 → 底部灰字提示（拒绝路径可见）
     if (st.degradedNames && st.degradedNames.length) {
       var dnote = document.createElement('div'); dnote.className = 'ws-mention-volnote';
-      dnote.textContent = st.degradedNames.join('、') + '：文件夹过大，链接功能不可用';
+      dnote.textContent = window.wsT('link.degradedNote', { names: st.degradedNames.join(window.wsT('link.nameSep')) });
       listEl.appendChild(dnote);
     }
     // 让选中项可见
@@ -144,8 +144,8 @@
     // 标每组首项（渲染分节头用）：源根组不加头；其他空间组首项加空间名头
     var lastRoot = null;
     out.forEach(function (it) { it.groupFirst = (!it.current && it.rootId !== lastRoot); lastRoot = it.rootId; });
-    if (st.query.trim() && window.__wsCreateLinkedDoc) out.push({ kind: 'create', title: '新建「' + st.query.trim() + '」' });
-    out.push({ kind: 'url', title: '网址链接…' });
+    if (st.query.trim() && window.__wsCreateLinkedDoc) out.push({ kind: 'create', title: window.wsT('link.createNamed', { query: st.query.trim() }) });
+    out.push({ kind: 'url', title: window.wsT('link.urlLink') });
     st.crossVolNames = crossVolNames;
     st.degradedNames = degradedNames;
     st.items = out;
@@ -210,7 +210,7 @@
     if (before == null || before.length < st.anchorOff) { close(); return; } // 读不到 / caret 移到锚点之前
     if (st.trigLen > 0) {
       var trig = before.substr(st.anchorOff, st.trigLen);
-      var oks = st.trig === 1 ? ['@', '＠'] : ['[[', '【【'];
+      var oks = st.trig === 1 ? ['@', '＠'] : ['[[', '【【']; // i18n-exempt（触发符匹配用户输入，含全角 IME 变体，须字面）
       if (oks.indexOf(trig) < 0) { close(); return; } // 触发符被删/改 → 关
     }
     var q = before.slice(st.anchorOff + st.trigLen);
@@ -236,23 +236,23 @@
     close();
     // ① 先定目标（校验/新建/网址都在动正文之前——任何失败分支都不碰正文，用户输入不凭空蒸发）
     if (it.kind === 'url') {
-      var url = window.prompt ? window.prompt('链接地址', 'https://') : null;
+      var url = window.prompt ? window.prompt(window.wsT('link.urlPrompt'), 'https://') : null;
       if (!url) return;
       // 过 safeHref（与气泡链接路径一致）：挡 javascript:/data:/file: 等危险 scheme 写进磁盘 href（审查 #3/#6）。
       var safe = (window.WS2Format && window.WS2Format.safeHref) ? window.WS2Format.safeHref(url) : url;
-      if (!safe) { if (window.alert) window.alert('不允许的链接地址'); return; }
+      if (!safe) { if (window.alert) window.alert(window.wsT('link.badUrl')); return; }
       finish(ctx, safe, safe, /*external*/true);
       return;
     }
     if (it.kind === 'create') {
       // 新建在当前文档同目录、插链接进当前文档、随后跳去编辑新文档（Colin 2026-07-09）。标题=query。
-      var title = ctx.query.trim() || '未命名文档';
+      var title = ctx.query.trim() || window.wsT('common.untitledDoc');
       var mk = (window.__wsCreateLinkedDoc ? window.__wsCreateLinkedDoc(ctx.rootId, ctx.fromRel, title) : Promise.resolve(null));
       Promise.resolve(mk).then(function (res) {
-        if (!res || !res.rel) { if (window.__wsToast) window.__wsToast('新建失败'); return; }
+        if (!res || !res.rel) { if (window.__wsToast) window.__wsToast(window.wsT('link.createFailed')); return; }
         var href = window.WS2Links.relHref(ctx.fromRel, res.rel);
         finish(ctx, href, title, false, { created: res.rel, createdAbs: res.abs });
-        if (window.__wsToast) window.__wsToast('已新建「' + title + '」并链接');
+        if (window.__wsToast) window.__wsToast(window.wsT('link.createdAndLinked', { title: title }));
       });
       return;
     }
@@ -260,7 +260,7 @@
     if (it.rootId != null && it.rootId !== ctx.rootId) {
       Promise.all([window.ws2.wsAbs(ctx.rootId, ctx.fromRel), window.ws2.wsAbs(it.rootId, it.rel)]).then(function (ab) {
         var href = (ab[0] && ab[1]) ? window.WS2Links.relHrefAbs(ab[0], ab[1]) : null;
-        if (!href) { if (window.__wsToast) window.__wsToast('无法建立跨文件夹空间的链接（可能不在同一磁盘卷）'); return; }
+        if (!href) { if (window.__wsToast) window.__wsToast(window.wsT('link.crossSpaceLinkFail')); return; }
         finish(ctx, href, it.title, false);
       }).catch(function () {});
       return;

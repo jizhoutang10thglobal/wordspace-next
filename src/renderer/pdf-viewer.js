@@ -29,17 +29,17 @@
     name.title = opts.fileName || 'PDF'; // 名字过长被截断时，悬停显示全名
     const tag = document.createElement('span');
     tag.className = 'fv-tag';
-    tag.textContent = 'PDF · 只读'; // 对齐图片查看器/ui-demo（T4 审计 #120：补只读语义标）
+    tag.textContent = window.wsT('misc.pdfReadonly'); // 对齐图片查看器/ui-demo（T4 审计 #120：补只读语义标）
     const pageInfo = document.createElement('span');
     pageInfo.className = 'pdfv-pageinfo';
     pageInfo.textContent = '… / …';
     const sp = document.createElement('div');
     sp.className = 'fv-sp';
-    const zoomOut = iconBtn('pdfv-zbtn', '−', '缩小');
+    const zoomOut = iconBtn('pdfv-zbtn', '−', window.wsT('misc.zoomOut'));
     const zoomLabel = document.createElement('span');
     zoomLabel.className = 'pdfv-zlabel';
-    const zoomIn = iconBtn('pdfv-zbtn', '＋', '放大');
-    const fitBtn = iconBtn('pdfv-fit', '适应宽度', '适应宽度');
+    const zoomIn = iconBtn('pdfv-zbtn', '＋', window.wsT('misc.zoomIn')); // i18n-exempt（＋ 是缩放按钮字形,与 − 视觉配对,非可翻译文案;title 已 wsT）
+    const fitBtn = iconBtn('pdfv-fit', window.wsT('misc.fitWidth'), window.wsT('misc.fitWidth'));
     bar.append(name, tag, pageInfo, sp, zoomOut, zoomLabel, zoomIn, fitBtn);
     if (opts.openExternalEl) bar.appendChild(opts.openExternalEl);
     viewer.appendChild(bar);
@@ -53,7 +53,7 @@
     try {
       doc = await lib.getDocument({ url }).promise;
     } catch (e) {
-      stage.innerHTML = '<div class="pdfv-err">PDF 打开失败：' + ((e && e.message) || e) + '</div>';
+      stage.innerHTML = '<div class="pdfv-err">' + window.wsT('misc.pdfOpenFailed', { err: (e && e.message) || e }) + '</div>';
       return;
     }
     const numPages = doc.numPages;

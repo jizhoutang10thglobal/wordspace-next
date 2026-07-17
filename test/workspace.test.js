@@ -4,6 +4,10 @@ const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const ws = require('../src/main/workspace.js');
+// workspace 的默认名/错误消息走 i18n t()；测试环境配置字典到 zh(真 app 无 locale 默认 zh)断言中文。
+const _i18n = require('../src/lib/i18n');
+_i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
+_i18n.setActiveLang('zh');
 
 const HTML = '<!doctype html><html><body><h1>x</h1></body></html>';
 

@@ -163,7 +163,7 @@
     filterWrap.hidden = !has;
     if (filesLabel) filesLabel.hidden = !has;
     if (rootNameEl) {
-      rootNameEl.textContent = '本地文件';
+      rootNameEl.textContent = window.wsT('sidebar.localFiles');
       rootNameEl.title = rootsState.map((r) => r.path).join('\n');
     }
     const sb = document.getElementById('sidebar');
@@ -186,6 +186,7 @@
     syncChrome();
     render();
     if (st.lazy && !st.tree) loadLazyTop(st.id); // 吸收/撤销一个过大根 → 顶层懒加载
+    mergeExternalDupes(info.id); // 吸收/撤销带树进来（不走 loadRootTree）也要收编外部标签；treeData=null 时是 no-op
     return st;
   }
   // 添加文件夹（头部按钮 / 空态按钮 / 树底常驻行 / ⋯ 菜单）：主进程弹框选目录 + classifyRoot 嵌套判定。
@@ -199,37 +200,38 @@
   async function handleAddResult(r) {
     if (!r) return; // 用户取消了原生框
     if (r.status === 'same') {
-      showToast('「' + r.root.name + '」已经打开了');
+      showToast(window.wsT('sidebar.folderAlreadyOpen', { name: r.root.name }));
     } else if (r.status === 'child') {
       // 父根还在加载 / 是简化模式的大文件夹 →「去那个文件夹里展开」可能太深不好找（诊断 D5：~ 一注册，
       // 所有子文件夹全被拒）。给出口：引导去「管理文件夹」移除父根后单独打开这个子文件夹。正常态保持原文案。
       const pst = rootOf(r.parent.id);
       if (pst && (pst.loading || pst.lazy)) {
-        showToast('「' + r.name + '」在你打开的「' + r.parent.name + '」里' + (pst.lazy ? '（简化模式的大文件夹）' : '（还在加载）') + '。可以直接在它里面展开找到，或在「管理文件夹」里移除它后单独打开「' + r.name + '」', '管理文件夹', () => openManageRootsModal());
+        const mode = pst.lazy ? window.wsT('sidebar.folderModeLazy') : window.wsT('sidebar.folderModeLoading');
+        showToast(window.wsT('sidebar.folderChildParentStuck', { name: r.name, parent: r.parent.name, mode }), window.wsT('menu.manageRoots'), () => openManageRootsModal());
       } else {
-        showToast('「' + r.name + '」已经在「' + r.parent.name + '」里了——不会重复打开，去那个文件夹里展开即可');
+        showToast(window.wsT('sidebar.folderIsChild', { name: r.name, parent: r.parent.name }));
       }
     } else if (r.status === 'limit') {
-      showToast('最多同时打开 ' + r.max + ' 个文件夹');
+      showToast(window.wsT('sidebar.folderLimit', { max: r.max }));
     } else if (r.status === 'parent') {
       openAbsorbConfirm(r);
     } else if (r.status === 'confirm-huge') {
       openHugeConfirm(r); // 病灶路径（~、/、/Users、卷根）→ 劝导选具体工作文件夹（诊断 §6.3）
     } else if (r.status === 'stale') {
-      showToast('文件夹状态已变化，请重试');
+      showToast(window.wsT('sidebar.folderStateChangedRetry'));
     } else if (r.status === 'revived') {
       // 选的是失联根的路径且现在可达 → 主进程顺手复活了它。两段式：先转非失联 + 加载态渲染，再填树。
       const st = rootOf(r.root.id);
       if (st) { st.missing = false; st.path = r.root.path; st.name = r.root.name; st.tree = null; st.loading = true; }
       syncChrome();
       render();
-      await loadRootTree(r.root.id, { validate: true, toast: '「' + r.root.name + '」已重新连接' });
+      await loadRootTree(r.root.id, { validate: true, toast: window.wsT('sidebar.reconnected', { name: r.root.name }) });
     } else if (r.status === 'added') {
       // 两段式：先把根装进 rootsState（tree=null + loading），立刻渲染根 + 加载行；再异步 wsReadTree 填树。
       const st = adoptRoot(r.root, null);
       st.loading = true;
       render();
-      await loadRootTree(r.root.id, { toast: '已打开文件夹「' + r.root.name + '」' });
+      await loadRootTree(r.root.id, { toast: window.wsT('sidebar.folderOpened', { name: r.root.name }) });
     }
   }
   // 病灶路径确认（诊断 §6.3）：选了整个用户目录 / 磁盘 / 卷根 → 劝导选具体工作文件夹。抄 openAbsorbConfirm
@@ -251,23 +253,23 @@
     const textWrap = document.createElement('div');
     const title = document.createElement('div');
     title.className = 'sb-cc-title';
-    title.textContent = '「' + r.name + '」是一个很大的系统文件夹';
+    title.textContent = window.wsT('sidebar.hugeTitle', { name: r.name });
     const desc = document.createElement('div');
     desc.className = 'sb-modal-desc';
-    desc.textContent = '你选的是整个用户目录 / 磁盘，通常包含数十万个系统文件，打开会非常慢。建议改选里面具体的工作文件夹（比如某个项目文件夹或「文稿」）。';
+    desc.textContent = window.wsT('sidebar.hugeDesc');
     textWrap.append(title, desc);
     body.append(ico, textWrap);
     const foot = document.createElement('div');
     foot.className = 'sb-modal-foot';
     const cancel = document.createElement('button');
     cancel.className = 'sb-btn sb-btn-primary';
-    cancel.textContent = '换一个文件夹';
+    cancel.textContent = window.wsT('sidebar.hugePickAnother');
     cancel.onclick = () => { close(); pickFolder(); }; // 直接再开选择框换一个（推荐路径，主按钮）
     const spacer = document.createElement('span');
     spacer.className = 'sb-modal-spacer';
     const ok = document.createElement('button');
     ok.className = 'sb-btn';
-    ok.textContent = '仍要打开';
+    ok.textContent = window.wsT('sidebar.hugeOpenAnyway');
     ok.onclick = async () => {
       close();
       let res;
@@ -301,6 +303,7 @@
     } else {
       st.missing = true; // 不可达 → 失联灰态，不当空树
     }
+    mergeExternalDupes(rootId); // 新树到货：命中树内文件的外部标签并进 rel 身份（先开文件再添加其文件夹，↗ 不再永驻）
     syncChrome();
     render();
     if (opts.validate) validateRootEntries(rootId);
@@ -322,6 +325,7 @@
     st2.topTruncated = !!(d && d.truncated); // 根直接子项超单层预算（极罕见）
     collectDirRels(st2.tree, rootId, collapsed); // 新层默认全收起（展开才读下一层）
     renderRoot(rootId);
+    mergeExternalDupes(rootId); // lazy 顶层到货同样收编（简化模式根也不让 ↗ 永驻）
   }
   // 展开一个未加载的 lazy 目录：读它这一层的 children 填进节点、标 childrenLoaded；会话内缓存（收起不丢）。
   async function loadDirChildren(rootId, dirRel) {
@@ -343,12 +347,13 @@
     n2.dirTruncated = !!(d && d.truncated); // 本目录直接子项超单层预算
     collectDirRels(n2.children, rootId, collapsed); // 新层默认全收起
     renderRoot(rootId);
+    mergeExternalDupes(rootId); // 新展开的层里可能藏着外部标签指向的文件
   }
   // 「并入并添加」确认（对齐 ui-demo AddFolderModal 的 parent 通知 + 主按钮）：新文件夹包住了已打开的根，
   // 吸收后子根的标签不关、整体 rebase 进新根（文件都在磁盘原处，只换归属）。
   function openAbsorbConfirm(r) {
     if (document.querySelector('.sb-modal-overlay')) return;
-    const childNames = r.children.map((c) => c.name).join('、');
+    const childNames = r.children.map((c) => c.name).join(window.wsT('sidebar.listSep'));
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay';
     const onKey = (e) => { if (e.key === 'Escape') close(); };
@@ -363,28 +368,29 @@
     const textWrap = document.createElement('div');
     const title = document.createElement('div');
     title.className = 'sb-cc-title';
-    title.textContent = '「' + r.name + '」包含了已打开的文件夹';
+    title.textContent = window.wsT('sidebar.absorbTitle', { name: r.name });
     const desc = document.createElement('div');
     desc.className = 'sb-modal-desc';
-    desc.textContent = '「' + r.name + '」包含了已打开的「' + childNames + '」。添加后会把它' + (r.children.length > 1 ? '们' : '') + '并入「' + r.name + '」，避免同一批文件出现两次；打开的标签页会跟过去，不会关闭。';
+    const it = window.wsT(r.children.length > 1 ? 'sidebar.pronounThem' : 'sidebar.pronounIt');
+    desc.textContent = window.wsT('sidebar.absorbDesc', { name: r.name, children: childNames, it });
     textWrap.append(title, desc);
     body.append(ico, textWrap);
     const foot = document.createElement('div');
     foot.className = 'sb-modal-foot';
     const cancel = document.createElement('button');
     cancel.className = 'sb-btn';
-    cancel.textContent = '取消';
+    cancel.textContent = window.wsT('common.cancel');
     cancel.onclick = close;
     const spacer = document.createElement('span');
     spacer.className = 'sb-modal-spacer';
     const ok = document.createElement('button');
     ok.className = 'sb-btn sb-btn-primary';
-    ok.textContent = '并入并添加';
+    ok.textContent = window.wsT('sidebar.absorbConfirm');
     ok.onclick = async () => {
       close();
       let res;
       try { res = await window.ws2.wsAbsorbConfirm(r.token); } catch (e) { return; }
-      if (!res || res.status !== 'added') { showToast('文件夹状态已变化，没有并入'); return; }
+      if (!res || res.status !== 'added') { showToast(window.wsT('sidebar.absorbChanged')); return; }
       // 标签 rebase：子根 entries 换归属到新根（key 变了但标签不关、激活跟随）
       for (const rb of res.rebases || []) {
         tabState = window.WS2Tabs.rebaseRoot(tabState, rb.fromRootId, rb.toRootId, rb.prefix);
@@ -401,7 +407,7 @@
       // 激活标签跟着 rebase 换了 key → 树里重新定位高亮
       const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
       if (act && act.rel) expandToFile(act.rootId, act.rel);
-      showToast('「' + res.root.name + '」已并入，含原来的子文件夹');
+      showToast(window.wsT('sidebar.absorbedInto', { name: res.root.name }));
     };
     foot.append(cancel, spacer, ok);
     modal.append(body, foot);
@@ -417,7 +423,7 @@
     const act = tabState.activeRel ? tabState.entries.find((x) => keyOf(x) === tabState.activeRel) : null;
     if (act && act.rel && act.rootId === rootId && window.__shellIsDirty && window.__shellIsDirty()) {
       if (window.__shellSaveActive) await window.__shellSaveActive();
-      if (window.__shellIsDirty && window.__shellIsDirty()) { showToast('这个文件夹里有没保存成功的修改，先处理再移除'); return; }
+      if (window.__shellIsDirty && window.__shellIsDirty()) { showToast(window.wsT('sidebar.removeDirtyBlock')); return; }
     }
     let r;
     try { r = await window.ws2.wsRemoveRoot(rootId); } catch (e) { return; }
@@ -439,11 +445,11 @@
       if (e) openTabRow(e);
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
-    showToast('已移除「' + r.root.name + '」（磁盘文件不受影响）', '撤销', async () => {
+    showToast(window.wsT('sidebar.rootRemoved', { name: r.root.name }), window.wsT('common.undo'), async () => {
       let u;
       try { u = await window.ws2.wsUndoRemoveRoot(r.token); } catch (e) { return; }
       if (!u || u.status !== 'ok') {
-        showToast(u && u.status === 'overlap' ? '无法撤销：它和现在打开的文件夹有重叠' : u && u.status === 'limit' ? '无法撤销：文件夹数量已满' : '无法撤销');
+        showToast(u && u.status === 'overlap' ? window.wsT('sidebar.undoRemoveOverlap') : u && u.status === 'limit' ? window.wsT('sidebar.undoRemoveLimit') : window.wsT('sidebar.undoRemoveFailed'));
         return;
       }
       adoptRoot(u.root, u.tree, u.index);
@@ -462,7 +468,7 @@
     let r;
     try { r = await window.ws2.wsRelocateRoot(rootId); } catch (e) { return; }
     if (!r) return; // 取消
-    if (r.status === 'overlap') { showToast('选的位置和已打开的文件夹重叠，换一个位置'); return; }
+    if (r.status === 'overlap') { showToast(window.wsT('sidebar.relocateOverlap')); return; }
     if (r.status !== 'ok') return;
     const st = rootOf(rootId);
     if (!st) return;
@@ -474,7 +480,7 @@
     syncChrome();
     render();
     validateRootEntries(rootId);
-    showToast('「' + r.root.name + '」已重新连接');
+    showToast(window.wsT('sidebar.reconnected', { name: r.root.name }));
   }
   // 根复活/重定位后校验它的标签：新树里没有的文件（换了位置的旧结构）静默丢，激活回落。
   function validateRootEntries(rootId) {
@@ -485,15 +491,18 @@
     mergeExternalDupes(rootId);
     if (gone.length) { persistTabs(); renderZones(); }
   }
-  // 根失联/被移除期间用「打开」按钮开过它里面的文件 → 建的是 abs 外部标签；复活/撤销后 rel 身份回来，
-  // 同一磁盘文件出现两条标签（MR-ADV-5）。按树节点的 abs 归一：外部标签命中该根内节点 → 并进 rel 身份
-  // （open/pinned 取并集、激活跟随），外部那条销毁。
+  // 外部标签（abs 身份）的文件其实在某个已加载树里 → 并进 rel 身份（open/pinned 取并集、激活跟随），
+  // 外部那条销毁。两类来源：①根失联/被移除期间开过它里面的文件，复活/撤销后 rel 身份回来（MR-ADV-5）；
+  // ②先开工作区外文件、**再**添加它所在的文件夹为根（Wendi bug 2026-07-17）——不收编的话 ↗ 永驻、
+  // 且树里再点同一文件会翻出第二条标签。所以挂在所有「树内容到货」的点：loadRootTree/loadLazyTop/
+  // loadDirChildren/adoptRoot，外加 loadTabs 末尾（启动自愈存量坏状态）。
+  // rootId 缺省 = 不限根、对全部已加载树收编；传了 = 只收编命中该根的（省得别的根白扫）。
   function mergeExternalDupes(rootId) {
     let changed = false;
     for (const ext of tabState.entries.filter((e) => !e.rel && !isTempEntry(e))) {
       const node = findNodeByAbs(ext.abs);
-      if (!node || node.rootId !== rootId) continue;
-      const key = colKey(rootId, node.rel);
+      if (!node || (rootId && node.rootId !== rootId)) continue;
+      const key = colKey(node.rootId, node.rel);
       const relEntry = tabState.entries.find((e) => keyOf(e) === key);
       let entries;
       if (relEntry) {
@@ -502,7 +511,7 @@
           .filter((e) => keyOf(e) !== ext.abs);
       } else {
         entries = tabState.entries.map((e) =>
-          keyOf(e) === ext.abs ? { rootId, rel: node.rel, kind: e.kind, title: node.name, open: e.open, pinned: e.pinned } : e,
+          keyOf(e) === ext.abs ? { rootId: node.rootId, rel: node.rel, kind: e.kind, title: node.name, open: e.open, pinned: e.pinned } : e,
         );
       }
       const activeRel = tabState.activeRel === ext.abs ? key : tabState.activeRel;
@@ -571,7 +580,7 @@
     if (!shown && q) {
       const e = document.createElement('div');
       e.className = 'sb-tree-empty';
-      e.textContent = '没有匹配的文件';
+      e.textContent = window.wsT('sidebar.noMatchingFiles');
       treeEl.appendChild(e);
     }
     if (!q) {
@@ -579,12 +588,12 @@
       const add = document.createElement('button');
       add.className = 'sb-add-root';
       add.id = 'sb-add-root';
-      add.title = '再打开一个文件夹，和现有的并排显示';
+      add.title = window.wsT('sidebar.addRootTitle');
       const ico = document.createElement('span');
       ico.className = 'sb-ico';
       ico.innerHTML = SVG.folder;
       const label = document.createElement('span');
-      label.textContent = '添加文件夹…';
+      label.textContent = window.wsT('sidebar.addFolder');
       add.append(ico, label);
       add.onclick = pickFolder;
       treeEl.appendChild(add);
@@ -661,7 +670,7 @@
     head.dataset.root = root.id;
     head.dataset.rel = '';
     head.dataset.depth = -1; // sticky ancestor：根标题是最外层祖先
-    head.title = root.path + (lazy ? ' · 简化模式（超大文件夹，按需加载）' : ' · 拖动可调整文件夹顺序');
+    head.title = window.wsT(lazy ? 'sidebar.rootHeadTitleLazy' : 'sidebar.rootHeadTitle', { path: root.path });
     head.draggable = true;
     const caret = document.createElement('span');
     caret.className = 'sb-caret' + (open ? ' is-open' : '');
@@ -678,8 +687,8 @@
       // 零新增 CSS；tag 后不再挂 path（省空间），path 进 title。
       const tag = document.createElement('span');
       tag.className = 'sb-root-miss-tag';
-      tag.textContent = '简化模式';
-      tag.title = '这个文件夹很大（超过 15 万个项目），Wordspace 按需逐层加载，筛选/快速打开只覆盖已浏览过的目录';
+      tag.textContent = window.wsT('sidebar.lazyTag');
+      tag.title = window.wsT('sidebar.lazyTagTitle');
       head.appendChild(tag);
     } else {
       const pathEl = document.createElement('span');
@@ -695,9 +704,9 @@
     };
     head.oncontextmenu = (e) => {
       e.preventDefault();
-      const items = [{ label: '新建文档', run: () => openCreateModal(root.id, '') }];
-      if (index > 0) items.push({ label: '移到最上面', run: () => reorderRootTo(root.id, 0) });
-      items.push({ label: '移除（磁盘文件不动）', danger: true, run: () => removeRootUI(root.id) });
+      const items = [{ label: window.wsT('sidebar.newDoc'), run: () => openCreateModal(root.id, '') }];
+      if (index > 0) items.push({ label: window.wsT('sidebar.moveToTop'), run: () => reorderRootTo(root.id, 0) });
+      items.push({ label: window.wsT('sidebar.removeRoot'), danger: true, run: () => removeRootUI(root.id) });
       showContextMenu(e.clientX, e.clientY, items);
     };
     // 根标题行双职：①拖别的根经过 → 上/下沿插入线做重排；②拖文件过来 → 移到该根顶层（同根内）。
@@ -755,14 +764,14 @@
       // 两段式添加：树还在读盘（大文件夹/云盘 4-5s）→ 加载行占位，别显示成「空文件夹」。
       const e = document.createElement('div');
       e.className = 'sb-loading';
-      e.textContent = '正在读取文件夹…';
+      e.textContent = window.wsT('sidebar.readingFolder');
       parent.appendChild(e);
       return true;
     }
     if (!nodes.length && !(lazy && q)) {
       const e = document.createElement('div');
       e.className = 'sb-tree-empty';
-      e.textContent = '这个文件夹还没有文件';
+      e.textContent = window.wsT('sidebar.folderNoFiles');
       parent.appendChild(e);
       return true;
     }
@@ -771,15 +780,15 @@
       // 简化模式筛选只覆盖「已浏览过（已加载）的目录」——行尾提示，别让用户以为搜全了（V3）。
       const hint = document.createElement('div');
       hint.className = 'sb-tree-empty';
-      hint.textContent = '简化模式：仅搜索已浏览过的目录';
-      hint.title = '这个文件夹太大、按需加载。展开更多目录后再筛选，或用「移除后打开具体子文件夹」得到完整搜索';
+      hint.textContent = window.wsT('sidebar.lazyFilterHint');
+      hint.title = window.wsT('sidebar.lazyFilterHintTitle');
       parent.appendChild(hint);
     }
     if (lazy && !q && root.topTruncated) {
       // 根直接子项超单层预算（极罕见）——顶层只显示了前 N 个，提示一下。
       const hint = document.createElement('div');
       hint.className = 'sb-tree-empty';
-      hint.textContent = '此文件夹的直接项目过多，仅显示前一部分';
+      hint.textContent = window.wsT('sidebar.dirTruncatedNote');
       parent.appendChild(hint);
     }
     return true;
@@ -792,7 +801,7 @@
     head.dataset.root = root.id;
     head.dataset.rel = '';
     head.dataset.depth = -1;
-    head.title = root.path + ' · 失联（文件夹不可达）';
+    head.title = window.wsT('sidebar.rootMissingTitle', { path: root.path });
     const ico = document.createElement('span');
     ico.className = 'sb-ico sb-root-miss-ic';
     ico.innerHTML = WARN_SVG20;
@@ -801,29 +810,29 @@
     name.textContent = root.name;
     const tag = document.createElement('span');
     tag.className = 'sb-root-miss-tag';
-    tag.textContent = '失联';
+    tag.textContent = window.wsT('sidebar.missingTag');
     head.append(ico, name, tag);
     head.oncontextmenu = (e) => {
       e.preventDefault();
       showContextMenu(e.clientX, e.clientY, [
-        { label: '重新定位…', run: () => relocateRootUI(root.id) },
-        { label: '移除', danger: true, run: () => removeRootUI(root.id) },
+        { label: window.wsT('sidebar.relocateEllipsis'), run: () => relocateRootUI(root.id) },
+        { label: window.wsT('common.remove'), danger: true, run: () => removeRootUI(root.id) },
       ]);
     };
     const note = document.createElement('div');
     note.className = 'sb-root-miss-note';
     const msg = document.createElement('span');
     msg.className = 'ws-truncate';
-    msg.textContent = '文件夹不可达（可能被移动、删除，或所在磁盘未连接）';
+    msg.textContent = window.wsT('sidebar.missingNote');
     const acts = document.createElement('span');
     acts.className = 'sb-root-miss-acts';
     const relBtn = document.createElement('button');
     relBtn.className = 'sb-root-miss-act';
-    relBtn.textContent = '重新定位';
+    relBtn.textContent = window.wsT('sidebar.relocate');
     relBtn.onclick = () => relocateRootUI(root.id);
     const rmBtn = document.createElement('button');
     rmBtn.className = 'sb-root-miss-act';
-    rmBtn.textContent = '移除';
+    rmBtn.textContent = window.wsT('common.remove');
     rmBtn.onclick = () => removeRootUI(root.id);
     acts.append(relBtn, rmBtn);
     note.append(msg, acts);
@@ -982,9 +991,9 @@
     markInAppFileOp(); // U5：标记 in-app 操作，抑制紧随的外部改名探测二次提示
     let r;
     try { r = await window.ws2.wsRename(node.rootId, node.rel, newLeaf, op); } // op=打开中文档 abs，主进程重写时跳过它
-    catch (e) { showToast('重命名失败：' + shortErr(e)); await refreshRoot(node.rootId); return; } // 根刚失联/文件没了：别未捕获 rejection 把改名框晾在原地
+    catch (e) { showToast(window.wsT('sidebar.renameFailed', { err: shortErr(e) })); await refreshRoot(node.rootId); return; } // 根刚失联/文件没了：别未捕获 rejection 把改名框晾在原地
     // P3-03：用户在改名框里换了文档后缀（如 .html 输成 .md）——改名不改格式，保原后缀并提示走另存为。
-    if (r.formatKept) showToast('改名不改格式：要转 Markdown 请用「另存为 / 导出」');
+    if (r.formatKept) showToast(window.wsT('sidebar.formatKept'));
     if (wasOpen && window.__shellRetargetDoc) window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     else if (openUnderDir && window.__shellRetargetDoc) {
       const newAbs = r.abs + op.slice(node.abs.length); // 前缀替换（isUnder 已确认 op 以 node.abs+分隔符 开头）
@@ -1013,15 +1022,15 @@
     const openN = (r.moves && r.moves.length && window.__wsApplyMovesToOpenDoc) ? await window.__wsApplyMovesToOpenDoc(r.moves) : 0;
     const total = (r.rewritten || 0) + openN;
     if (total > 0) {
-      if (reverse) showToast('已更新 ' + total + ' 篇文档里的链接', '撤销', reverse);
-      else showToast('已更新 ' + total + ' 篇文档里的链接');
+      if (reverse) showToast(window.wsT('sidebar.linksUpdated', { total }), window.wsT('common.undo'), reverse);
+      else showToast(window.wsT('sidebar.linksUpdated', { total }));
     }
   }
   // U5 撤销：把改名/移动整个反着做一遍（L4：绝不快照回滚——反向 op 走同一套机器，引用/标签/retarget 自然反转）。
   // 前置校验：新文件还在、旧路径没被占（不满足→明说放弃、不做半套）。revOp = 反向操作的执行体。
   async function undoMoveOp(newRel, oldAbs, rootId, revOp) {
     if (!(await window.ws2.pathExists(await window.ws2.wsAbs(rootId, newRel))) || (await window.ws2.pathExists(oldAbs))) {
-      showToast('文件已被后续操作改动，无法撤销这次链接更新'); return;
+      showToast(window.wsT('sidebar.undoLinkFailed')); return;
     }
     const nn = findNode(rootId, newRel);
     if (nn) await revOp(nn);
@@ -1047,14 +1056,14 @@
       if (bl && bl.length) { total += bl.length; names.push(oldRel.split('/').pop()); }
     }
     if (!total) return; // 没文档引用旧路径 → 不打扰
-    const label = names.length === 1 ? '「' + names[0] + '」' : (names.length + ' 个文件');
-    showToast('检测到' + label + '改名/移动，' + total + ' 篇文档的链接指向旧路径', '一键更新', async () => {
+    const label = names.length === 1 ? window.wsT('sidebar.quotedName', { name: names[0] }) : window.wsT('sidebar.nFiles', { n: names.length });
+    showToast(window.wsT('sidebar.externalRenameDetected', { label, total }), window.wsT('sidebar.updateNow'), async () => {
       const openAbs = window.__shellDocPath ? window.__shellDocPath() : null;
       try {
         const res = await window.ws2.wsRewriteMoves(rootId, [...moves], openAbs); // C：返回 abs moves + fan-out（跨根引用也修）
         const n = (res && res.rewritten) || 0;
         const openN = (res && res.moves && window.__wsApplyMovesToOpenDoc) ? await window.__wsApplyMovesToOpenDoc(res.moves) : 0;
-        showToast('已更新 ' + (n + openN) + ' 篇文档里的链接');
+        showToast(window.wsT('sidebar.linksUpdated', { total: n + openN }));
       } catch (e) {}
     });
   }
@@ -1064,7 +1073,7 @@
     markInAppFileOp(); // U5：抑制外部改名探测二次提示
     let r;
     try { r = await window.ws2.wsMove(node.rootId, node.rel, destDirRel, op); } // op=打开中文档 abs，主进程重写时跳过它
-    catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
+    catch (e) { showToast(window.wsT('sidebar.moveFailed', { err: shortErr(e) })); await refreshRoot(node.rootId); return; }
     if (wasOpen && window.__shellRetargetDoc && r.abs !== node.abs) {
       window.__shellRetargetDoc(r.abs, r.rel.split('/').pop());
     }
@@ -1101,9 +1110,9 @@
     try {
       let r;
       try { r = await window.ws2.wsMoveAcross(node.rootId, node.rel, toRootId, destDirRel, op); } // op=打开中文档 abs，主进程重写时跳过它
-      catch (e) { showToast('移动失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
+      catch (e) { showToast(window.wsT('sidebar.moveFailed', { err: shortErr(e) })); await refreshRoot(node.rootId); return; }
       if (r && r.crossDevice) { // 真跨盘：不搬，明确告知（此前没动任何状态）
-        showToast('这两个文件夹在不同的磁盘上，暂不支持直接拖动移动——先在访达里复制过去');
+        showToast(window.wsT('sidebar.crossDeviceMove'));
         return;
       }
       // 标签换根跟随（含撞名去重后的新 rel/title）
@@ -1148,11 +1157,11 @@
       modal.className = 'sb-modal ws-delguard';
       overlay.appendChild(modal);
       const h = document.createElement('div'); h.className = 'sb-modal-title';
-      h.textContent = node.isDir ? '文件夹「' + node.name + '」里的文档被 ' + N + ' 篇外部文档链接'
-                                 : '「' + node.name + '」被 ' + N + ' 篇文档链接';
+      h.textContent = node.isDir ? window.wsT('sidebar.delGuardTitleDir', { name: node.name, n: N })
+                                 : window.wsT('sidebar.delGuardTitleFile', { name: node.name, n: N });
       modal.appendChild(h);
       const desc = document.createElement('div'); desc.className = 'ws-delguard-desc';
-      desc.textContent = '删除后这些文档里指向它的链接会断开（显示为断链，可在链接上重新指向或撤销删除恢复）：';
+      desc.textContent = window.wsT('sidebar.delGuardDesc');
       modal.appendChild(desc);
       const list = document.createElement('div'); list.className = 'ws-delguard-list';
       referrers.slice(0, 5).forEach((s) => {
@@ -1161,11 +1170,11 @@
         const p = document.createElement('div'); p.className = 'ws-delguard-item-path'; p.textContent = s.rel;
         it.appendChild(t); it.appendChild(p); list.appendChild(it);
       });
-      if (N > 5) { const more = document.createElement('div'); more.className = 'ws-delguard-more'; more.textContent = '… 等 ' + N + ' 篇'; list.appendChild(more); } // N=引用总数，非 remainder
+      if (N > 5) { const more = document.createElement('div'); more.className = 'ws-delguard-more'; more.textContent = window.wsT('sidebar.delGuardMore', { n: N }); list.appendChild(more); } // N=引用总数，非 remainder
       modal.appendChild(list);
       const acts = document.createElement('div'); acts.className = 'ws-delguard-actions';
-      const cancel = document.createElement('button'); cancel.className = 'ws-delguard-btn'; cancel.textContent = '取消';
-      const del = document.createElement('button'); del.className = 'ws-delguard-btn ws-delguard-danger'; del.textContent = '仍要删除';
+      const cancel = document.createElement('button'); cancel.className = 'ws-delguard-btn'; cancel.textContent = window.wsT('common.cancel');
+      const del = document.createElement('button'); del.className = 'ws-delguard-btn ws-delguard-danger'; del.textContent = window.wsT('sidebar.stillDelete');
       acts.appendChild(cancel); acts.appendChild(del); modal.appendChild(acts);
       const close = (v) => { document.removeEventListener('keydown', onKey, true); overlay.remove(); resolve(v); };
       const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(false); } };
@@ -1199,7 +1208,7 @@
       .map((e) => ({ rootId: e.rootId, rel: e.rel, kind: e.kind, title: e.title, open: !!e.open, pinned: !!e.pinned }));
     let r;
     try { r = await window.ws2.wsDelete(node.rootId, node.rel); }
-    catch (e) { showToast('删除失败：' + shortErr(e)); await refreshRoot(node.rootId); return; }
+    catch (e) { showToast(window.wsT('sidebar.deleteFailed', { err: shortErr(e) })); await refreshRoot(node.rootId); return; }
     removeTabsUnder(node); // 移除被删文件的标签
     await refreshRoot(node.rootId);
     if (affectsOpen) { // 删了当前打开的 → 切到下一个标签 / 回空态
@@ -1208,7 +1217,7 @@
       if (n) openNode(n);
       else if (window.__shellCloseDoc) window.__shellCloseDoc();
     }
-    showToast('已删除「' + node.name + '」', '撤销', async () => {
+    showToast(window.wsT('sidebar.deleted', { name: node.name }), window.wsT('common.undo'), async () => {
       const undo = await window.ws2.wsUndoDelete(node.rootId, r.token); // { rel, abs }：真实恢复位置（原位被占会去重改名）
       await refreshRoot(node.rootId);
       // p3-05：撤销 = 回到删前，恢复置顶/打开状态。两个坑（对抗审查 CONFIRMED）：
@@ -1231,8 +1240,8 @@
     });
   }
   async function newSubfolder(rootId, dirRel) {
-    try { await window.ws2.wsMakeDir(rootId, dirRel, '新建文件夹'); }
-    catch (e) { showToast('新建文件夹失败：' + shortErr(e)); return; }
+    try { await window.ws2.wsMakeDir(rootId, dirRel, window.wsT('common.newFolder')); }
+    catch (e) { showToast(window.wsT('sidebar.newFolderFailed', { err: shortErr(e) })); return; }
     await refreshRoot(rootId);
   }
   // IPC 错误串裁短（Electron 会包一层 "Error invoking remote method 'ws-x': Error: ..."，只留最后一段）
@@ -1345,7 +1354,7 @@
       name.title = chain.names.join('/'); // 名字过长被截断时，悬停显示全名（含压缩链全路径）
       const add = document.createElement('button');
       add.className = 'sb-add';
-      add.title = '在此文件夹新建文档';
+      add.title = window.wsT('sidebar.addDocHere');
       add.innerHTML = PLUS_SVG;
       add.onclick = (e) => {
         e.stopPropagation();
@@ -1367,10 +1376,10 @@
       row.oncontextmenu = (e) => {
         e.preventDefault();
         showContextMenu(e.clientX, e.clientY, [
-          { label: '新建文档', run: () => openCreateModal(dir.rootId, dir.rel) },
-          { label: '新建子文件夹', run: () => newSubfolder(dir.rootId, dir.rel) },
-          { label: '重命名', run: () => startInlineRename(dir, row) },
-          { label: '删除', danger: true, run: () => doDelete(dir) },
+          { label: window.wsT('sidebar.newDoc'), run: () => openCreateModal(dir.rootId, dir.rel) },
+          { label: window.wsT('sidebar.newSubfolder'), run: () => newSubfolder(dir.rootId, dir.rel) },
+          { label: window.wsT('common.rename'), run: () => startInlineRename(dir, row) },
+          { label: window.wsT('common.delete'), danger: true, run: () => doDelete(dir) },
         ]);
       };
       row.ondragstart = (e) => {
@@ -1397,7 +1406,7 @@
         e.preventDefault();
         e.stopPropagation();
         row.classList.remove('sb-drop');
-        if (dropWouldNest(dragNode, dir.rootId, dir.rel)) { showToast('不能把文件夹移动到它自己里面'); dragNode = null; return; }
+        if (dropWouldNest(dragNode, dir.rootId, dir.rel)) { showToast(window.wsT('sidebar.cantMoveIntoSelf')); dragNode = null; return; }
         // 同根→doMove(rename)；跨根→doMoveAcross(换根)
         if (dragNode.rootId === dir.rootId) doMove(dragNode, dir.rel);
         else doMoveAcross(dragNode, dir.rootId, dir.rel);
@@ -1409,14 +1418,14 @@
           const e = document.createElement('div');
           e.className = 'sb-loading';
           e.style.paddingLeft = (26 + (depth + 1) * INDENT_STEP) + 'px';
-          e.textContent = '正在读取…';
+          e.textContent = window.wsT('sidebar.readingLevel');
           parent.appendChild(e);
         } else if (lazy && !dir.childrenLoaded) {
           // 展开了但这一层还没加载（如从持久化展开态恢复）→ 触发加载 + loading 行占位
           const e = document.createElement('div');
           e.className = 'sb-loading';
           e.style.paddingLeft = (26 + (depth + 1) * INDENT_STEP) + 'px';
-          e.textContent = '正在读取…';
+          e.textContent = window.wsT('sidebar.readingLevel');
           parent.appendChild(e);
           loadDirChildren(dir.rootId, dir.rel);
         } else if (dir.children.length) {
@@ -1425,7 +1434,7 @@
           const e = document.createElement('div');
           e.className = 'sb-tree-empty';
           e.style.paddingLeft = (26 + (depth + 1) * INDENT_STEP) + 'px';
-          e.textContent = lazy && dir.dirTruncated ? '此文件夹的直接项目过多，仅显示前一部分' : '空文件夹';
+          e.textContent = lazy && dir.dirTruncated ? window.wsT('sidebar.dirTruncatedNote') : window.wsT('sidebar.emptyFolder');
           parent.appendChild(e);
         }
       }
@@ -1464,10 +1473,10 @@
         e.preventDefault();
         const nodeKey = colKey(node.rootId, node.rel); // 标签身份键 = rootId:rel（与 WS2Tabs.keyOf 一致）
         showContextMenu(e.clientX, e.clientY, [
-          { label: '打开', run: () => openNode(node) },
-          { label: isPinned(nodeKey) ? '取消置顶' : '置顶', run: () => (isPinned(nodeKey) ? unpinRel(nodeKey) : pinFromTree(node)) },
-          { label: '重命名', run: () => startInlineRename(node, row) },
-          { label: '删除', danger: true, run: () => doDelete(node) },
+          { label: window.wsT('common.open'), run: () => openNode(node) },
+          { label: isPinned(nodeKey) ? window.wsT('sidebar.unpin') : window.wsT('sidebar.pin'), run: () => (isPinned(nodeKey) ? unpinRel(nodeKey) : pinFromTree(node)) },
+          { label: window.wsT('common.rename'), run: () => startInlineRename(node, row) },
+          { label: window.wsT('common.delete'), danger: true, run: () => doDelete(node) },
         ]);
       };
       parent.appendChild(row);
@@ -1667,7 +1676,7 @@
     }
     const x = document.createElement('button');
     x.className = 'sb-modal-x';
-    x.setAttribute('aria-label', '关闭');
+    x.setAttribute('aria-label', window.wsT('common.close'));
     x.innerHTML = X_SVG16;
     x.onclick = onClose;
     head.append(text, x);
@@ -1681,7 +1690,7 @@
   function openCloseConfirm(key, op, entry) {
     if (document.querySelector('.sb-modal-overlay')) return; // 单例守卫（同 aiax/fp 弹层惯例）：连按不叠层、Esc 不一键全关、finishClose 不双跑
     const temp = isTempEntry(entry);
-    const name = entry ? entry.title : '这个文件';
+    const name = entry ? entry.title : window.wsT('sidebar.thisFile');
     const overlay = document.createElement('div');
     overlay.className = 'sb-modal-overlay';
     if (window.__shellPauseAutosave) window.__shellPauseAutosave(); // 修 SH-3：弹窗期间挂起自动保存
@@ -1699,29 +1708,29 @@
     const textWrap = document.createElement('div');
     const title = document.createElement('div');
     title.className = 'sb-cc-title';
-    title.textContent = '「' + name + '」还没保存';
+    title.textContent = window.wsT('sidebar.unsavedTitle', { name });
     const desc = document.createElement('div');
     desc.className = 'sb-modal-desc';
     desc.textContent = temp
-      ? '这是一个还没存进文件夹的临时文档。关掉后未保存的内容会丢失。'
-      : '这个文档有未保存的修改，关掉后会丢失。';
+      ? window.wsT('sidebar.unsavedDescTemp')
+      : window.wsT('sidebar.unsavedDescReal');
     textWrap.append(title, desc);
     body.append(ico, textWrap);
     const foot = document.createElement('div');
     foot.className = 'sb-modal-foot';
     const discard = document.createElement('button');
     discard.className = 'sb-btn sb-btn-danger';
-    discard.textContent = '不保存，直接关闭';
+    discard.textContent = window.wsT('sidebar.closeWithoutSaving');
     discard.onclick = () => { close(); finishClose(key, op); };
     const spacer = document.createElement('span');
     spacer.className = 'sb-modal-spacer';
     const cancel = document.createElement('button');
     cancel.className = 'sb-btn';
-    cancel.textContent = '取消';
+    cancel.textContent = window.wsT('common.cancel');
     cancel.onclick = close;
     const save = document.createElement('button');
     save.className = 'sb-btn sb-btn-primary';
-    save.textContent = '保存并关闭';
+    save.textContent = window.wsT('sidebar.saveAndClose');
     save.onclick = async () => {
       close();
       if (temp) {
@@ -1758,7 +1767,7 @@
     const targets = []; // { rootId, dir, label }
     for (const st of rootsState) {
       if (st.missing || !st.tree) continue;
-      targets.push({ rootId: st.id, dir: '', label: st.name + '（根目录）' });
+      targets.push({ rootId: st.id, dir: '', label: window.wsT('sidebar.rootDirLabel', { name: st.name }) });
       (function walk(nodes) {
         for (const n of nodes) {
           if (n.isDir) {
@@ -1780,8 +1789,8 @@
     nameInput.className = 'sb-save-name';
     nameInput.type = 'text';
     nameInput.value = t.base;
-    nameInput.placeholder = '文件名';
-    nameInput.setAttribute('aria-label', '文件名');
+    nameInput.placeholder = window.wsT('sidebar.fileName');
+    nameInput.setAttribute('aria-label', window.wsT('sidebar.fileName'));
     const ext = document.createElement('span');
     ext.className = 'sb-save-ext';
     ext.textContent = '.html';
@@ -1803,27 +1812,27 @@
     const foot = document.createElement('div');
     foot.className = 'sb-modal-foot';
     const pickedName = () => (nameInput.value.trim() || t.base);
-    const browse = document.createElement('button'); browse.className = 'sb-btn'; browse.textContent = '浏览…';
-    browse.title = '用系统保存框选任意位置（可存到工作区外）';
+    const browse = document.createElement('button'); browse.className = 'sb-btn'; browse.textContent = window.wsT('sidebar.browse');
+    browse.title = window.wsT('sidebar.browseTitle');
     browse.onclick = async () => {
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取最新内容
       // 修 SH-5：防御——活跃临时文档若已不是打开这个 SaveModal 时的那个（加速器穿透切走），别静默存错/存空
-      if (!cur || cur.id !== t.id) { close(); showToast('文档已切换，未保存'); return; }
+      if (!cur || cur.id !== t.id) { close(); showToast(window.wsT('sidebar.docSwitched')); return; }
       let r;
       try { r = await window.ws2.wsSaveDocAs(pickedName(), cur.html); }
-      catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
+      catch (e) { showToast(window.wsT('sidebar.saveFailed', { err: (e && e.message) || e })); return; }
       if (!r || r.canceled) return; // 原生框取消 → 留在弹窗里
       close();
       await adoptSavedTemp(cur.id, r.abs, closeAfter);
     };
-    const cancel = document.createElement('button'); cancel.className = 'sb-btn'; cancel.textContent = '取消'; cancel.onclick = close;
+    const cancel = document.createElement('button'); cancel.className = 'sb-btn'; cancel.textContent = window.wsT('common.cancel'); cancel.onclick = close;
     const spacer = document.createElement('span'); spacer.className = 'sb-modal-spacer';
-    const ok = document.createElement('button'); ok.className = 'sb-btn sb-btn-primary'; ok.textContent = '保存到这里';
+    const ok = document.createElement('button'); ok.className = 'sb-btn sb-btn-primary'; ok.textContent = window.wsT('sidebar.saveHere');
     ok.onclick = async () => {
       if (!selected) { browse.onclick(); return; } // 一个根都没有（全失联/全移除）→ 只能走「浏览…」
       close();
       const cur = window.__shellActiveTemp && window.__shellActiveTemp(); // 存的一刻再取一次最新内容
-      if (!cur || cur.id !== t.id) { showToast('文档已切换，未保存'); return; } // 修 SH-5：防御，同 browse
+      if (!cur || cur.id !== t.id) { showToast(window.wsT('sidebar.docSwitched')); return; } // 修 SH-5：防御，同 browse
       await doSaveTemp(cur.id, pickedName(), cur.html, selected.rootId, selected.dir, closeAfter);
     };
     const onKey = (e) => {
@@ -1835,7 +1844,7 @@
     const body = modalBody();
     body.append(nameRow, list);
     modal.append(
-      modalHead('保存到哪里', '「' + t.base + '」· 默认存到工作区根目录，也可以选别的文件夹或「浏览…」到其他位置', close),
+      modalHead(window.wsT('sidebar.saveModalTitle'), window.wsT('sidebar.saveModalSub', { name: t.base }), close),
       body, foot,
     );
     overlay.appendChild(modal);
@@ -1850,8 +1859,8 @@
   async function doSaveTemp(tempId, base, html, rootId, dir, closeAfter) {
     let r;
     try { r = await window.ws2.wsNewDoc(rootId, dir || '', base, html); }
-    catch (e) { showToast('保存失败：' + ((e && e.message) || e)); return; }
-    if (!r || !r.abs) { showToast('保存失败'); return; }
+    catch (e) { showToast(window.wsT('sidebar.saveFailed', { err: (e && e.message) || e })); return; }
+    if (!r || !r.abs) { showToast(window.wsT('sidebar.saveFailedShort')); return; }
     await adoptSavedTemp(tempId, r.abs, closeAfter, rootId);
   }
   // 落盘后的收编（根内/外通用）：去临时标签 → 建真标签（根内 rootId:rel 身份 / 根外 abs 外部标签）→
@@ -1867,9 +1876,9 @@
     if (node) { expandToFile(node.rootId, node.rel); highlightActive(abs); }
     const nodeRoot = node ? rootOf(node.rootId) : null;
     const place = node
-      ? (nodeRoot ? nodeRoot.name : '工作区') + (node.rel.indexOf('/') >= 0 ? ' / ' + node.rel.split('/').slice(0, -1).join('/') : '')
+      ? (nodeRoot ? nodeRoot.name : window.wsT('sidebar.workspace')) + (node.rel.indexOf('/') >= 0 ? ' / ' + node.rel.split('/').slice(0, -1).join('/') : '')
       : abs.split('/').slice(0, -1).join('/');
-    showToast('已保存到 ' + place);
+    showToast(window.wsT('sidebar.savedTo', { place }));
     if (closeAfter) closeTabRel(node ? colKey(node.rootId, node.rel) : abs); // 「保存并关闭」
   }
 
@@ -1942,6 +1951,10 @@
       const eRoot = e && e.rel ? rootOf(e.rootId) : null;
       if (e && !(eRoot && (eRoot.missing || eRoot.lazy))) openTabRow(e); // 内部走 findNode→openNode、外部走 abs 分发（失联/lazy 根的激活项不自动载入——lazy 树只有部分层，findNode 可能空转）
     }
+    // 启动自愈（放在激活恢复之后，不改上面的自动载入语义）：存量持久化的外部标签若其实落在某个根里
+    // （修复前版本会留下这种状态），收编成 rel 身份——不然激活它的 onOpen 会按树解析再建一条内部标签，
+    // 同一文件翻出两条（实测复现）。启动序保证此刻树已读完（loadTabs 本就排在读树之后）。
+    mergeExternalDupes();
   }
 
   // ---- 渲染两区 ----
@@ -1993,7 +2006,7 @@
     // 这里不提前摘,否则失联根/findNode-miss 提前 return 时 view 已摘、activeRel 仍是 web = 状态劈开。
     if (entry.rel) {
       const root = rootOf(entry.rootId);
-      if (root && root.missing) { showToast('「' + root.name + '」失联了，重新定位后才能打开'); return; }
+      if (root && root.missing) { showToast(window.wsT('sidebar.rootMissingOpen', { name: root.name })); return; }
       const n = findNode(entry.rootId, entry.rel);
       if (n) {
         // onOpen 那条路（真重载）的一次性开关：false → 整个不定位；'expand' → 定位但不滚。
@@ -2063,7 +2076,7 @@
     if (external) {
       const ext = document.createElement('span');
       ext.className = 'sb-tab-ext-ico';
-      ext.title = '工作区外的文件';
+      ext.title = window.wsT('sidebar.externalFile');
       ext.innerHTML = EXT_ICO_SVG;
       row.append(ext);
     }
@@ -2072,14 +2085,14 @@
     // __sbHooks.onDirtyChange 同步开关，非活跃真文件切走前必经保存守卫、无脏态。
     const dot = document.createElement('span');
     dot.className = 'sb-tab-dot';
-    dot.title = temp ? '未保存（还没存进文件夹）' : '有未保存的修改';
+    dot.title = temp ? window.wsT('sidebar.unsavedDotTemp') : window.wsT('sidebar.unsavedDot');
     // web 标签没有脏态（shell 的 dirty 属于底下的后台文档,不挂到网页标签上）
     if (web || (!temp && !(key === tabState.activeRel && window.__shellIsDirty && window.__shellIsDirty()))) dot.hidden = true;
     row.append(dot);
     if (!temp) { // 临时文档不能置顶（置顶持久化、临时文档重启即弃）
       const pin = document.createElement('button');
       pin.className = 'sb-tab-pin' + (entry.pinned ? ' is-pinned' : '');
-      pin.title = entry.pinned ? '取消置顶' : '置顶';
+      pin.title = entry.pinned ? window.wsT('sidebar.unpin') : window.wsT('sidebar.pin');
       pin.innerHTML = entry.pinned ? PIN_OFF_SVG : PIN_SVG;
       pin.onclick = (e) => {
         e.stopPropagation();
@@ -2091,12 +2104,12 @@
     // × 关闭：两个区都有。标签页区 = 关标签；置顶区 = 直接移出置顶（Wendi 要的，整条删掉、不只取消钉）。
     const x = document.createElement('button');
     x.className = 'sb-tab-close';
-    x.title = zone === 'pinned' ? '移出置顶' : kbd('关闭标签页 ⌘W');
+    x.title = zone === 'pinned' ? window.wsT('sidebar.removePin') : kbd(window.wsT('sidebar.closeTab'));
     x.innerHTML = X_SVG;
     x.onclick = (e) => {
       e.stopPropagation();
       (zone === 'pinned' ? removeTabRel : closeTabRel)(key);
-      if (zone !== 'pinned') coachOnce('close-tab', '下次可以用 ' + kbd('⌘W') + ' 关闭当前标签');
+      if (zone !== 'pinned') coachOnce('close-tab', window.wsT('sidebar.coachCloseTab', { key: kbd('⌘W') }));
     };
     row.append(x);
     row.onclick = () => openTabRow(entry, 'expand'); // 点标签：展开到该文件+高亮，但不滚动视口（Colin 2026-07-14 定）
@@ -2172,7 +2185,7 @@
     if (onPlus) {
       const plus = document.createElement('button');
       plus.className = 'sb-zone-add';
-      plus.title = plusTitle || '新建文档';
+      plus.title = plusTitle || window.wsT('sidebar.newDoc');
       plus.innerHTML = PLUS_SVG;
       plus.onclick = (e) => { e.stopPropagation(); onPlus(); }; // 别冒泡触发栏标折叠
       head.appendChild(plus);
@@ -2216,25 +2229,25 @@
     pinnedEl.innerHTML = '';
     pinnedEl.hidden = false;
     pinnedEl.classList.toggle('is-open', pinnedOpen);
-    pinnedEl.appendChild(zoneHeader('置顶', 'ws-pinned-open', pinned.length, null));
+    pinnedEl.appendChild(zoneHeader(window.wsT('sidebar.pinnedZone'), 'ws-pinned-open', pinned.length, null));
     if (pinnedOpen) {
       const plist = zoneList('pinned');
       if (pinned.length) for (const e of pinned) plist.appendChild(tabRow(e, 'pinned'));
-      else plist.appendChild(zoneHint('把标签页拖到这里置顶', 'sb-zone-hint-drop')); // 虚线框空态（对齐 ui-demo arc-tabs-empty：看得出是可拖入目标）
+      else plist.appendChild(zoneHint(window.wsT('sidebar.pinnedEmptyHint'), 'sb-zone-hint-drop')); // 虚线框空态（对齐 ui-demo arc-tabs-empty：看得出是可拖入目标）
       pinnedEl.appendChild(plist);
     }
 
     tabsEl.innerHTML = '';
     tabsEl.hidden = false;
     tabsEl.classList.toggle('is-open', tabsOpen);
-    tabsEl.appendChild(zoneHeader('标签页', 'ws-tabs-open', tabs.length, () => {
+    tabsEl.appendChild(zoneHeader(window.wsT('sidebar.tabsZone'), 'ws-tabs-open', tabs.length, () => {
       openCreateModal(null, '', { temp: true });
-      coachOnce('new-tab', '下次可以用 ' + kbd('⌘T') + ' 新建标签页');
-    }, kbd('新建标签页 ⌘T')));
+      coachOnce('new-tab', window.wsT('sidebar.coachNewTab', { key: kbd('⌘T') }));
+    }, kbd(window.wsT('sidebar.newTabTitle'))));
     if (tabsOpen) {
       const tlist = zoneList('tabs');
       if (tabs.length) for (const e of tabs) tlist.appendChild(tabRow(e, 'tabs'));
-      else tlist.appendChild(zoneHint('没有打开的标签'));
+      else tlist.appendChild(zoneHint(window.wsT('sidebar.tabsEmptyHint')));
       tabsEl.appendChild(tlist);
     }
     // 浏览器 feature：无工作区也能开网页标签——第一个 web 标签要能点亮侧栏（syncChrome 只在根变化时跑）。
@@ -2371,9 +2384,9 @@
     }
     const modal = document.createElement('div');
     modal.className = 'sb-modal';
-    const head = modalHead(temp ? '新建标签页' : '新建文档', temp
-      ? '输入网址直接上网，或在下面新建一个文档（临时文档，保存时再选存到哪）'
-      : '在 ' + (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : ''), close);
+    const head = modalHead(temp ? window.wsT('sidebar.newTab') : window.wsT('sidebar.newDoc'), temp
+      ? window.wsT('sidebar.createTabSub')
+      : window.wsT('sidebar.createDocSub', { location: (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : '') }), close);
     // ⌘T 二合一（spec §4.5.1）：顶部一条地址栏（自动聚焦）——Enter 开新网页标签并导航,关 modal。
     let omniRow = null;
     if (temp) {
@@ -2385,7 +2398,7 @@
       const omniIn = document.createElement('input');
       omniIn.className = 'sb-cm-omni-input';
       omniIn.type = 'text';
-      omniIn.placeholder = '搜索,或输入网址';
+      omniIn.placeholder = window.wsT('sidebar.omniPlaceholder');
       omniIn.spellcheck = false;
       omniIn.onkeydown = (e) => {
         e.stopPropagation();
@@ -2420,11 +2433,11 @@
         if (temp) {
           // 临时文档：不落盘，shell 建内容 + 渲染，侧栏建临时标签（身份 = shell 返回的 'temp:…'）。
           // 返回 null = 用户在「切走脏文件」守卫里取消了，不建标签。
-          const id = window.__shellNewTemp('未命名', t.html);
-          if (id) openTabEntry({ abs: id, kind: 'html', title: '未命名' });
+          const id = window.__shellNewTemp(window.wsT('common.untitled'), t.html);
+          if (id) openTabEntry({ abs: id, kind: 'html', title: window.wsT('common.untitled') });
           return;
         }
-        const r = await window.ws2.wsNewDoc(rootId, dirRel || '', '未命名', t.html);
+        const r = await window.ws2.wsNewDoc(rootId, dirRel || '', window.wsT('common.untitled'), t.html);
         await refreshRoot(rootId);
         if (r && r.abs) openDoc(r.abs);
       };
@@ -2438,18 +2451,18 @@
       secRow.className = 'sb-cm-sec';
       const secLabel = document.createElement('span');
       secLabel.className = 'sb-cm-sec-label';
-      secLabel.textContent = '新建文档';
+      secLabel.textContent = window.wsT('sidebar.newDoc');
       const p1 = document.createElement('span');
       p1.className = 'sb-cm-para is-on';
-      p1.textContent = '范式 1';
+      p1.textContent = window.wsT('sidebar.paradigm1');
       const p2 = document.createElement('span');
       p2.className = 'sb-cm-para';
-      p2.textContent = '范式 2';
-      p2.title = '敬请期待';
+      p2.textContent = window.wsT('sidebar.paradigm2');
+      p2.title = window.wsT('sidebar.comingSoon');
       const p3 = document.createElement('span');
       p3.className = 'sb-cm-para';
-      p3.textContent = '范式 3';
-      p3.title = '敬请期待';
+      p3.textContent = window.wsT('sidebar.paradigm3');
+      p3.title = window.wsT('sidebar.comingSoon');
       secRow.append(secLabel, p1, p2, p3);
       body.appendChild(secRow);
     }
@@ -2487,8 +2500,8 @@
     bar.className = 'fp-bar';
     const ico = document.createElement('span'); ico.className = 'fp-bar-ico'; ico.innerHTML = SEARCH_SVG;
     const input = document.createElement('input');
-    input.className = 'fp-input'; input.type = 'text'; input.placeholder = '按文件名查找…'; input.spellcheck = false;
-    const hint = document.createElement('span'); hint.className = 'fp-hint'; hint.textContent = '⏎ 打开';
+    input.className = 'fp-input'; input.type = 'text'; input.placeholder = window.wsT('sidebar.findPlaceholder'); input.spellcheck = false;
+    const hint = document.createElement('span'); hint.className = 'fp-hint'; hint.textContent = window.wsT('sidebar.findHintOpen');
     bar.append(ico, input, hint);
     const list = document.createElement('div');
     list.className = 'fp-list';
@@ -2498,7 +2511,7 @@
       const foot = document.createElement('div');
       foot.className = 'fp-foot';
       foot.id = 'fp-lazy-note';
-      foot.textContent = '简化模式的大文件夹未纳入快速打开（在侧栏里逐层展开查找）';
+      foot.textContent = window.wsT('sidebar.lazyQuickOpenNote');
       foot.style.padding = '8px 14px';
       foot.style.fontSize = 'var(--fs-sm)';
       foot.style.color = 'var(--c-text-3)';
@@ -2518,7 +2531,7 @@
     function renderList() {
       list.innerHTML = '';
       if (!hits.length) {
-        const empty = document.createElement('div'); empty.className = 'fp-empty'; empty.textContent = '没有匹配的文件';
+        const empty = document.createElement('div'); empty.className = 'fp-empty'; empty.textContent = window.wsT('sidebar.noMatchingFiles');
         list.appendChild(empty);
         return;
       }
@@ -2609,7 +2622,7 @@
   function toggleCollapsed() { if (sidebarEl) setSidebarCollapsed(!sidebarEl.classList.contains('is-collapsed')); }
   // 鼠标点按钮 → 顺手教一次快捷键（菜单加速器/keydown 路径直接调 toggleCollapsed，不经这里、不弹）。
   // （#234 原来还给 sb-reopen 浮钮挂 coach——沉浸收起已删该钮，只剩 toggle 这一条。）
-  if (toggleBtn) toggleBtn.onclick = () => { toggleCollapsed(); coachOnce('toggle-sidebar', '下次可以用 ' + kbd('⌘\\') + ' 收起 / 展开侧栏'); };
+  if (toggleBtn) toggleBtn.onclick = () => { toggleCollapsed(); coachOnce('toggle-sidebar', window.wsT('sidebar.coachToggleSidebar', { key: kbd('⌘\\') })); };
   // ⌘\ 切换侧栏的**主**通道是「视图」菜单加速器（sendMenu('toggle-sidebar') → shell onMenu → __sbHooks.toggleSidebar），
   // 它覆盖全部焦点域——含文档编辑 iframe 内的原失灵域（keydown 不冒泡出 iframe，靠 keydown 兜不住，必须走菜单）。
   // 下面这条主层 document keydown 保留作**主层 fallback**：macOS/Electron 真实按键会被原生菜单先吃掉、这条不触发
@@ -2900,7 +2913,7 @@
   // 新开网页标签。background=true 后台加载不抢激活（⌘点链接/右键后台打开）。返回身份键。
   function openWebTab(url, title, background) {
     const key = window.WS2Tabs.mkWebId(++webSeq, Date.now());
-    const entry = { abs: key, kind: 'web', title: title || url || '新标签页', url: url || null };
+    const entry = { abs: key, kind: 'web', title: title || url || window.wsT('sidebar.newWebTab'), url: url || null };
     if (background) {
       tabState = { entries: [...tabState.entries, { ...entry, open: true, pinned: false }], activeRel: tabState.activeRel };
       persistTabs();
@@ -2962,7 +2975,7 @@
     const modal = document.createElement('div');
     modal.className = 'sb-modal';
     modal.append(
-      modalHead('管理文件夹', '移除只是从 Wordspace 里关掉，磁盘上的文件不受影响。', close),
+      modalHead(window.wsT('sidebar.manageRootsTitle'), window.wsT('sidebar.manageRootsDesc'), close),
     );
     const body = modalBody();
     const list = document.createElement('div');
@@ -2980,7 +2993,7 @@
       if (!infos.length) {
         const empty = document.createElement('div');
         empty.className = 'sb-tree-empty';
-        empty.textContent = '没有打开的文件夹';
+        empty.textContent = window.wsT('sidebar.noOpenFolders');
         list.appendChild(empty);
         return;
       }
@@ -2999,7 +3012,7 @@
         const nm = document.createElement('div');
         nm.className = 'mr-name ws-truncate';
         nm.style.fontWeight = 'var(--fw-semibold)';
-        nm.textContent = info.name + (info.missing ? '（失联）' : '');
+        nm.textContent = info.name + (info.missing ? window.wsT('sidebar.missingSuffix') : '');
         const pth = document.createElement('div');
         pth.className = 'ws-truncate';
         pth.style.fontSize = 'var(--fs-sm)';
@@ -3010,7 +3023,7 @@
         const rm = document.createElement('button');
         rm.className = 'sb-btn sb-btn-danger mr-remove';
         rm.dataset.root = info.id;
-        rm.textContent = '移除';
+        rm.textContent = window.wsT('common.remove');
         rm.onclick = async () => {
           await removeRootUI(info.id); // 复用：wsRemoveRoot + rootsState/标签清理 + 可撤销 toast
           await renderList(); // 移除后重拉（不依赖 rootsState 事件）
@@ -3155,24 +3168,20 @@
     try { version = await window.ws2.appVersion(); } catch {}
     const domRows = treeEl ? treeEl.querySelectorAll('.sb-row').length : 0;
     const L = [];
-    L.push('Wordspace 性能诊断  v' + version + '   ' + new Date().toLocaleString());
+    L.push(window.wsT('sidebar.diagTitle', { version, date: new Date().toLocaleString() }));
     L.push('');
-    if (!roots.length) L.push('（还没打开任何文件夹，或还没读过树）');
+    if (!roots.length) L.push(window.wsT('sidebar.diagNoRoots'));
     roots.forEach((r, i) => {
       const name = r.path.split('/').filter(Boolean).pop() || r.path;
-      L.push('根' + (i + 1) + '「' + name + '」  ' + (r.cloud ? '☁ ' + r.cloud + ' 云盘' : '本地'));
+      L.push(window.wsT('sidebar.diagRootLine', { n: i + 1, name, info: r.cloud ? window.wsT('sidebar.diagCloud', { name: r.cloud }) : window.wsT('sidebar.diagLocal') }));
       L.push('   ' + r.path);
-      const kb = r.payloadBytes ? '  ·  IPC 载荷 ≈' + Math.round(r.payloadBytes / 1024).toLocaleString() + 'KB' : '';
-      L.push('   文件数 ' + r.fileCount.toLocaleString() + ' / 目录 ' + (r.dirCount || 0).toLocaleString() + kb +
-        '  ·  readTree 上次 ' + r.lastReadMs + 'ms / 峰值 ' + r.maxReadMs + 'ms（全量 ' + r.reads + ' 次 / 子树 ' + (r.scopedReads || 0) + ' 次 / 单层 ' + (r.dirReads || 0) + ' 次）' +
-        '  ·  watcher 触发 ' + r.watchEvents + ' 次');
+      const kb = r.payloadBytes ? window.wsT('sidebar.diagIpcPayload', { kb: Math.round(r.payloadBytes / 1024).toLocaleString() }) : '';
+      L.push(window.wsT('sidebar.diagFileStats', { files: r.fileCount.toLocaleString(), dirs: (r.dirCount || 0).toLocaleString(), kb, last: r.lastReadMs, max: r.maxReadMs, reads: r.reads, scoped: r.scopedReads || 0, dirReads: r.dirReads || 0, events: r.watchEvents }));
     });
     L.push('');
-    L.push('渲染：上次 ' + diagRender.lastMs.toFixed(0) + 'ms · 峰值 ' + diagRender.maxMs.toFixed(0) +
-      'ms · 共 ' + diagRender.count + ' 次  ·  当前树 DOM 行数 ' + domRows);
-    L.push('主线程长任务(>50ms 卡帧)：' + longTasks.count + ' 次 · 累计 ' + Math.round(longTasks.totalMs) +
-      'ms · 最长单次 ' + Math.round(longTasks.maxMs) + 'ms   ← 滚动/交互卡顿看这行');
-    L.push('JS 内存：' + memMB());
+    L.push(window.wsT('sidebar.diagRenderLine', { last: diagRender.lastMs.toFixed(0), max: diagRender.maxMs.toFixed(0), count: diagRender.count, rows: domRows }));
+    L.push(window.wsT('sidebar.diagLongTask', { count: longTasks.count, total: Math.round(longTasks.totalMs), max: Math.round(longTasks.maxMs) }));
+    L.push(window.wsT('sidebar.diagMem', { mem: memMB() }));
     return L.join('\n');
   }
   async function renderPerfPanel() {
@@ -3197,22 +3206,22 @@
     const bar = document.createElement('div');
     bar.style.display = 'flex'; bar.style.gap = '7px'; bar.style.flexWrap = 'wrap'; bar.style.alignItems = 'center';
     const mkBtn = (label) => { const b = document.createElement('button'); b.textContent = label; b.style.font = 'inherit'; b.style.padding = '4px 10px'; b.style.borderRadius = '6px'; b.style.border = '1px solid #555'; b.style.background = '#2d2d2d'; b.style.color = '#e6e6e6'; b.style.cursor = 'pointer'; return b; };
-    const copy = mkBtn('复制诊断');
-    const record = mkBtn('录制 5 秒 Profile');
-    const close = mkBtn('关闭');
-    copy.onclick = async () => { try { await navigator.clipboard.writeText(await buildDiagReport()); copy.textContent = '已复制 ✓'; setTimeout(() => (copy.textContent = '复制诊断'), 1500); } catch { copy.textContent = '复制失败'; } };
+    const copy = mkBtn(window.wsT('sidebar.diagCopy'));
+    const record = mkBtn(window.wsT('sidebar.diagRecord'));
+    const close = mkBtn(window.wsT('common.close'));
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(await buildDiagReport()); copy.textContent = window.wsT('sidebar.diagCopied'); setTimeout(() => (copy.textContent = window.wsT('sidebar.diagCopy')), 1500); } catch { copy.textContent = window.wsT('sidebar.diagCopyFailed'); } };
     // catch-anything：录一段真 CPU profile，记录每个函数/帧，主进程存成 .cpuprofile 文件并在访达里高亮，发回来。
     record.onclick = async () => {
-      record.disabled = true; record.textContent = '录制中… 请现在复现卡顿（滚动/切换）';
+      record.disabled = true; record.textContent = window.wsT('sidebar.diagRecording');
       try {
         const res = await window.ws2.diagRecordProfile(5000);
-        record.textContent = res && res.path ? '已保存：' + res.path.split('/').pop() + '（访达已打开）' : '录制失败';
-      } catch { record.textContent = '录制失败（需在打包版里用）'; }
-      record.disabled = false; setTimeout(() => (record.textContent = '录制 5 秒 Profile'), 4000);
+        record.textContent = res && res.path ? window.wsT('sidebar.diagSaved', { name: res.path.split('/').pop() }) : window.wsT('sidebar.diagRecordFailed');
+      } catch { record.textContent = window.wsT('sidebar.diagRecordFailedPkg'); }
+      record.disabled = false; setTimeout(() => (record.textContent = window.wsT('sidebar.diagRecord')), 4000);
     };
     close.onclick = () => togglePerfPanel();
     const hint = document.createElement('span');
-    hint.textContent = '打开后滚动/切换来复现卡顿，看「长任务」实时涨 · 每 1 秒刷新';
+    hint.textContent = window.wsT('sidebar.diagHint');
     hint.style.opacity = '0.6'; hint.style.width = '100%';
     bar.append(copy, record, close, hint);
     panel.append(pre, bar);

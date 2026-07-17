@@ -3,21 +3,23 @@
   // 自己不决定「何时显示 / 显示在哪」——那是 shell 的定位控制器（有 iframe 几何 + 选中/编辑态）干的；
   // 这里只负责：① 构建按钮 + 命令逻辑（跨帧 execCommand / WS2Format）② setMode 切「文字态 vs 元素态」
   // 露出对应分组。命令通过 ctx.doc / ctx.getSelectedEl 跨帧操作被编辑文档；ctx 由 shell setContext。
+  // i18n：renderer 全局 t()（node/test 上下文无 wsT 时回退 key，防 require 期崩）。展示文案在 create() 期解析。
+  const T = (k, p) => (global.wsT ? global.wsT(k, p) : k);
   const TURN = [
-    { label: '正文', tag: 'p' },
-    { label: '标题 1', tag: 'h1' },
-    { label: '标题 2', tag: 'h2' },
-    { label: '标题 3', tag: 'h3' },
-    { label: '引用', tag: 'blockquote' }
+    { labelKey: 'blockText', tag: 'p' },
+    { labelKey: 'blockH1', tag: 'h1' },
+    { labelKey: 'blockH2', tag: 'h2' },
+    { labelKey: 'blockH3', tag: 'h3' },
+    { labelKey: 'blockQuote', tag: 'blockquote' }
   ];
   const FONTS = [
-    { label: '默认字体', value: '' },
-    { label: '无衬线', value: 'sans-serif' },
-    { label: '衬线', value: 'serif' },
-    { label: '等宽', value: 'monospace' },
-    { label: '系统', value: '-apple-system, system-ui, sans-serif' }
+    { labelKey: 'fontDefault', value: '' },
+    { labelKey: 'fontSans', value: 'sans-serif' },
+    { labelKey: 'fontSerif', value: 'serif' },
+    { labelKey: 'fontMono', value: 'monospace' },
+    { labelKey: 'fontSystem', value: '-apple-system, system-ui, sans-serif' }
   ];
-  const SIZES = ['默认字号', '12', '14', '16', '18', '20', '24', '28', '32', '40'];
+  const SIZES = ['', '12', '14', '16', '18', '20', '24', '28', '32', '40']; // '' = 默认字号（label 在 create() 期 t() 解析）
   const TEXT_COLORS = ['#1c1d1f', '#8a8f96', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#7b1fa2'];
   const HILITE_COLORS = ['#fff59d', '#fce8b6', '#fce8e6', '#e6f4ea', '#e8f0fe', '#f3e3ff'];
   const RADII = ['', '8px', '16px'];
@@ -149,21 +151,22 @@
         if (next !== el && ctx.canvas && ctx.canvas.select) ctx.canvas.select(next);
       });
     }
-    const turnBtn = btn('转为' + ICON.chevron, '转换类型', () => {});
+    const turnBtn = btn(T('editor.turnInto') + ICON.chevron, T('editor.turnType'), () => {});
     turnBtn.className = 'tb-btn tb-turn';
     const turnPop = d.createElement('div'); turnPop.className = 'tb-menu';
     for (const t of TURN) {
-      const row = btn(t.label, t.label, () => { applyTurn(t.tag); closePops(); });
+      const lbl = T('editor.' + t.labelKey);
+      const row = btn(lbl, lbl, () => { applyTurn(t.tag); closePops(); });
       row.className = 'tb-menu-item';
       turnPop.appendChild(row);
     }
     const turnHolder = holder(turnBtn, turnPop);
 
     // ---- 文字行内格式 ----
-    els.bold = btn(ICON.bold, '加粗 Cmd+B', cmd('bold'));
-    els.italic = btn(ICON.italic, '斜体 Cmd+I', cmd('italic'));
-    els.underline = btn(ICON.underline, '下划线 Cmd+U', cmd('underline'));
-    els.strike = btn(ICON.strike, '删除线', cmd('strikeThrough'));
+    els.bold = btn(ICON.bold, T('editor.boldCmd'), cmd('bold'));
+    els.italic = btn(ICON.italic, T('editor.italicCmd'), cmd('italic'));
+    els.underline = btn(ICON.underline, T('editor.underlineCmd'), cmd('underline'));
+    els.strike = btn(ICON.strike, T('editor.strike'), cmd('strikeThrough'));
 
     // ---- 颜色弹层：元素态作用于被选元素（CSSOM），文字态作用于选区（execCommand） ----
     function colorMenu(triggerLabel, title, colors, command, clearValue, styleProp) {
@@ -180,7 +183,7 @@
         sw.addEventListener('click', () => { applyColor(c); closePops(); });
         pop.appendChild(sw);
       }
-      const clr = btn('清除', '清除', () => {
+      const clr = btn(T('editor.clear'), T('editor.clear'), () => {
         if (editing() || !selEl()) run((doc) => doc.execCommand(command, false, clearValue));
         else applyToSel((el) => WS2Format.applyBlockStyle(el, styleProp, ''));
         closePops();
@@ -189,17 +192,17 @@
       pop.appendChild(clr);
       return holder(trigger, pop);
     }
-    els.color = colorMenu('<span class="tb-aglyph">A</span>', '文字颜色', TEXT_COLORS, 'foreColor', '#1c1d1f', 'color');
-    els.hilite = colorMenu(ICON.highlight, '背景高亮', HILITE_COLORS, 'hiliteColor', 'transparent', 'backgroundColor');
+    els.color = colorMenu('<span class="tb-aglyph">A</span>', T('editor.textColor'), TEXT_COLORS, 'foreColor', '#1c1d1f', 'color');
+    els.hilite = colorMenu(ICON.highlight, T('editor.highlightBg'), HILITE_COLORS, 'hiliteColor', 'transparent', 'backgroundColor');
 
     // ---- 链接弹层 ----
     let linkSnapshot = null;
-    const linkBtn = btn(ICON.link, '链接', () => {});
+    const linkBtn = btn(ICON.link, T('editor.link'), () => {});
     const linkPop = d.createElement('div'); linkPop.className = 'tb-linkpop';
     const linkInput = d.createElement('input');
     linkInput.type = 'text'; linkInput.placeholder = 'https://…'; linkInput.className = 'tb-linkinput';
-    const linkOk = btn('应用', '应用链接', () => applyLink());
-    const linkRemove = btn('移除', '移除链接', () => { linkInput.value = ''; applyLink(); });
+    const linkOk = btn(T('editor.apply'), T('editor.applyLink'), () => applyLink());
+    const linkRemove = btn(T('common.remove'), T('editor.removeLink'), () => { linkInput.value = ''; applyLink(); });
     linkOk.className = 'tb-textbtn'; linkRemove.className = 'tb-textbtn';
     const linkRow = d.createElement('div'); linkRow.className = 'tb-linkrow';
     linkRow.append(linkInput, linkOk, linkRemove);
@@ -245,14 +248,14 @@
       if (editing() || !selEl()) run((doc) => doc.execCommand(command, false));
       else applyToSel((el) => WS2Format.applyBlockStyle(el, 'textAlign', value));
     };
-    els.alignL = btn(ICON.alignL, '左对齐', align('justifyLeft', 'left'));
-    els.alignC = btn(ICON.alignC, '居中', align('justifyCenter', 'center'));
-    els.alignR = btn(ICON.alignR, '右对齐', align('justifyRight', 'right'));
+    els.alignL = btn(ICON.alignL, T('editor.alignLeft'), align('justifyLeft', 'left'));
+    els.alignC = btn(ICON.alignC, T('editor.alignCenter'), align('justifyCenter', 'center'));
+    els.alignR = btn(ICON.alignR, T('editor.alignRight'), align('justifyRight', 'right'));
 
     // ---- 块操作（元素态） ----
     const blockTarget = (doc) => (ctx.getSelectedEl && ctx.getSelectedEl()) || WS2Format.currentBlock(doc);
-    els.dup = btn(ICON.copy, '复制块', () => run((doc) => { WS2Format.duplicateBlock(blockTarget(doc)); }));
-    els.del = btn(ICON.trash, '删除块', () => run((doc) => { const b = blockTarget(doc); if (b) b.remove(); }), { danger: true });
+    els.dup = btn(ICON.copy, T('editor.duplicateBlock'), () => run((doc) => { WS2Format.duplicateBlock(blockTarget(doc)); }));
+    els.del = btn(ICON.trash, T('editor.deleteBlock'), () => run((doc) => { const b = blockTarget(doc); if (b) b.remove(); }), { danger: true });
 
     // ---- 更多 ⋯：字体 / 字号 / 圆角 / 阴影 / 不透明度 / 清除格式（元素态画布特性收纳于此） ----
     function cycle(prop, ring, el) {
@@ -260,28 +263,28 @@
       const i = ring.indexOf(cur);
       return ring[(i + 1) % ring.length];
     }
-    els.font = select(FONTS, (v) => {
+    els.font = select(FONTS.map((f) => ({ value: f.value, label: T('editor.' + f.labelKey) })), (v) => {
       if (editing() || !selEl()) { if (v) run((doc) => doc.execCommand('fontName', false, v)); return; }
       applyToSel((el) => WS2Format.applyBlockStyle(el, 'fontFamily', v));
     });
-    els.size = select(SIZES.map(s => ({ label: s, value: s === '默认字号' ? '' : s })), (v) => {
+    els.size = select(SIZES.map(s => ({ label: s === '' ? T('editor.sizeDefault') : s, value: s })), (v) => {
       if (editing() || !selEl()) { if (v) run((doc) => WS2Format.wrapInlineStyle(doc, 'fontSize', v + 'px')); return; }
       applyToSel((el) => WS2Format.applyBlockStyle(el, 'fontSize', v ? v + 'px' : ''));
     });
     function moreRow(node) { const r = d.createElement('div'); r.className = 'tb-menu-row'; r.appendChild(node); return r; }
     function moreItem(label, title, onClick) { const b = btn(label, title, onClick); b.className = 'tb-menu-item'; return b; }
-    const moreBtn = btn(ICON.more, '更多', () => {});
+    const moreBtn = btn(ICON.more, T('common.more'), () => {});
     const morePop = d.createElement('div'); morePop.className = 'tb-menu tb-menu-wide';
     const moreSep = () => { const s = d.createElement('div'); s.className = 'tb-menu-sep'; return s; };
     morePop.append(
       moreRow(els.font),
       moreRow(els.size),
       moreSep(),
-      moreItem('圆角', '圆角', () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'borderRadius', cycle('borderRadius', RADII, el)))),
-      moreItem('阴影', '阴影', () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'boxShadow', el.style.boxShadow ? '' : BOX_SHADOW))),
-      moreItem('不透明度', '不透明度', () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'opacity', cycle('opacity', OPACITIES, el)))),
+      moreItem(T('editor.radius'), T('editor.radius'), () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'borderRadius', cycle('borderRadius', RADII, el)))),
+      moreItem(T('editor.shadow'), T('editor.shadow'), () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'boxShadow', el.style.boxShadow ? '' : BOX_SHADOW))),
+      moreItem(T('editor.opacity'), T('editor.opacity'), () => applyToSel((el) => WS2Format.applyBlockStyle(el, 'opacity', cycle('opacity', OPACITIES, el)))),
       moreSep(),
-      moreItem('清除格式', '清除格式', cmd('removeFormat'))
+      moreItem(T('editor.clearFormat'), T('editor.clearFormat'), cmd('removeFormat'))
     );
     const moreHolder = holder(moreBtn, morePop);
 

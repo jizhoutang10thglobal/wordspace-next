@@ -49,6 +49,11 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
 - app 侧：`feat/browser-port` 分支（2026-07-11，按正本 §14 验收清单全量移植；合 main 后以 merge commit 为准）
 - 2026-07-13 收藏区 header 重样式（栏标化 + 对齐网格，正本 §4.3 已更新，Wendi「视觉乱」反馈）：
   ui-demo PR #170 + app PR `fix/app-sidebar-fav-align`，两侧同步落地，此项无欠账。
+- 2026-07-17 **收藏区栏标补 uppercase**（Colin 英文界面真机抓到：`Bookmarks` 混排、PINNED/TABS/FILES
+  全大写）：`.sb-fav-label` 抄了 `.sb-sec-label` 配方（等宽/fs-xs/semibold/tracking-label/text-3）却漏
+  `text-transform: uppercase`——中文下隐形，i18n 英文一开就穿帮。app PR `fix/sidebar-fav-uppercase`；
+  配 e2e 一致性门 `e2e/sidebar-typography.spec.js`（computed style 比对收藏头 vs 全部区块头 + 锚死
+  uppercase，任何一侧再漂移即翻红）。栏标规范正本在 `docs/style.md`「分区栏标」。
 - 2026-07-14 **User-Agent 归一（反 CAPTCHA）**：app PR `fix/browser-ua`（Wendi「网页搜索总弹人机验证」）。
   正本 §11.7 记契约；`web-tabs.js` `ensureSession` + `web-tabs-policy.js` `browserUA()`。真 app 独有
   （ui-demo 是 iframe mock、无 Electron session，不移植、不算漂移）。
@@ -89,6 +94,24 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   `browser.js __webMenu` 网页态 → `navReload.click()`（复用导航条按钮 disabled 守卫：起始页 url=null → no-op）；
   **文档标签有意 no-op**（`shell.js onMenu` 无 reload 分支，防未保存编辑丢失，§2 拍板）。正本 §7 新增 ⌘R 行。
   门 `e2e/browser.spec.js`（U5 web 刷新=`/rl` 路由 server 命中+1 强断言 + 无目标不炸）+ `e2e/tabs.spec.js`（UX-U5 文档 no-op=易失标记存活）。
+
+## Wendi 2026-07-16 反馈：弹层期间背景保住网页内容（快照垫底）
+
+- **原契约不变**：DOM 弹层（更新面板/⌘T/保存/⌘P/AI 接入，`OVERLAY_SEL`）出现时摘掉原生 view
+  （Electron 里 WebContentsView 恒在 HTML 层之上，不摘弹层被网页盖住），关弹层挂回。
+- **新增**：摘 view **之前**先对 view 自己的 webContents 截一帧（窗口级 capturePage 不合成子 view，
+  实测恒白），垫在弹层下（`.web-snap`，z=390 < 弹层 400，pointer-events:none）——弹层背景是冻结的
+  页面快照而非空态底（Wendi「更新的时候背景变白，按说应该 keep the tab content」）。快照垫好（或
+  250ms 超时/截图失败放弃，退回素底）才摘 view，弹层绝不被截图卡住；关弹层 `webShow` 挂回后下两帧
+  撤图（不闪素底；引用局部化防迟到撤图误删下一个弹层的新快照）。
+- 链路：`web-tabs.js capture(key)` → `browser-ipc.js webtab-capture` → `preload.js webCapture` →
+  `browser.js` OVERLAY_SEL 守卫（一处改，全部弹层受益）。ui-demo 无原生 view 分层问题，弹层天然
+  盖在内容上——**无需对齐，无漂移**。
+- 门：`e2e/browser.spec.js`「弹层摘 view 垫页面快照」（Wendi 原路径：手动检查更新→available 弹面板；
+  断快照非空 data 图+几何盖内容区+view 真摘；关弹层快照撤掉+像素级红底回屏）。变异自检过
+  （capture 恒 null → 翻红）。
+- 已知边界：弹层开着时拖窗口改尺寸，快照不跟随重拍（静态帧，罕见路径）；快照是冻结帧，页面里的
+  视频/动图在弹层期间不动（可接受，弹层本就阻断交互）。
 
 ## 欠账
 

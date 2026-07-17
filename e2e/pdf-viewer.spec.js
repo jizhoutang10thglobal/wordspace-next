@@ -16,7 +16,7 @@ test.beforeEach(async () => {
   await fs.mkdir(wsDir, { recursive: true });
   await fs.writeFile(path.join(wsDir, 'a.html'), '<!doctype html><html><body><h1>A</h1></body></html>', 'utf8');
   await fs.writeFile(path.join(wsDir, 'test.pdf'), Buffer.from(PDF_B64, 'base64'));
-  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir } });
+  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir } });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });
@@ -71,4 +71,24 @@ test('PDF.js viewer：放大按钮改变缩放比 + 画布真变大（不被 CSS
   if (geo.overflow) {
     expect(geo.canvasLeft, '画布左缘滚不到（溢出时应 safe center 靠左起排）').toBeGreaterThanOrEqual(geo.stageLeft - 1);
   }
+});
+
+// ---- PDF 默认打开(Wendi 2026-07-17):Finder 双击/文件关联走 open-file → 必须进查看器,不能塞编辑器 ----
+// 主进程侧真管道:openExternalPath → webContents.send('open-file') → shell.js onOpenFile 分流。
+// 变异口径:老实现(onOpenFile 直调 openDoc)跑这个用例 → pdfv-stage 不出现、#doc-frame 塞 PDF 字节 → 翻红。
+test('open-file(.pdf)：文件关联双击 → 内置查看器上屏,编辑器不接管;open-file(.html) 回归仍进编辑器', async () => {
+  await page.click('#home-open-folder');
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
+  const pdfAbs = path.join(wsDir, 'test.pdf');
+  await app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('open-file', p), pdfAbs);
+  // 查看器真上屏(PDF.js canvas + 只读标),文件名对
+  await expect(page.locator('.pdfv-stage canvas.pdfv-page')).toHaveCount(1, { timeout: 12000 });
+  await expect(page.locator('.pdfv-bar .fv-name')).toHaveAttribute('title', 'test.pdf');
+  // 编辑器 iframe 没被拿去装 PDF(老实现会把 pdf 路径塞给 openDoc)
+  const frameSrc = await page.locator('#doc-frame').getAttribute('src').catch(() => null);
+  expect(String(frameSrc)).not.toMatch(/\.pdf/i);
+  // 回归:open-file(.html) 仍进编辑器
+  const htmlAbs = path.join(wsDir, 'a.html');
+  await app.evaluate(({ BrowserWindow }, p) => BrowserWindow.getAllWindows()[0].webContents.send('open-file', p), htmlAbs);
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('A', { timeout: 8000 });
 });

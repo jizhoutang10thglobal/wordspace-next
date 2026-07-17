@@ -20,27 +20,30 @@
   // 图片摄入纯逻辑 + 降采样管线（doc-images）：类型白名单 / 降采样 / canonical html / ingestImage。
   const II = (typeof WS2ImageIngest !== 'undefined') ? WS2ImageIngest
     : (typeof require !== 'undefined' ? require('../lib/image-ingest.js') : null);
+  // i18n：renderer 全局 t()（node/test 上下文无 wsT 时回退 key，防 require 期崩）。
+  const T = (k, p) => (global.wsT ? global.wsT(k, p) : k);
 
-  // 斜杠 / 块操作的类型表（对齐 ui-demo SLASH_ITEMS）
+  // 斜杠 / 块操作的类型表（对齐 ui-demo SLASH_ITEMS）。labelKey 走 editor 命名空间、展示时 t() 解析。
   const SLASH_ITEMS = [
-    { key: 'text', label: '正文', tag: 'p' },
-    { key: 'h1', label: '标题 1', tag: 'h1' },
-    { key: 'h2', label: '标题 2', tag: 'h2' },
-    { key: 'h3', label: '标题 3', tag: 'h3' },
-    { key: 'h4', label: '标题 4', tag: 'h4' },
-    { key: 'list', label: '无序列表', tag: 'ul' },
-    { key: 'quote', label: '引用', tag: 'blockquote' },
+    { key: 'text', labelKey: 'blockText', tag: 'p' },
+    { key: 'h1', labelKey: 'blockH1', tag: 'h1' },
+    { key: 'h2', labelKey: 'blockH2', tag: 'h2' },
+    { key: 'h3', labelKey: 'blockH3', tag: 'h3' },
+    { key: 'h4', labelKey: 'blockH4', tag: 'h4' },
+    { key: 'list', labelKey: 'blockBulletList', tag: 'ul' },
+    { key: 'quote', labelKey: 'blockQuote', tag: 'blockquote' },
     // 下标引用已全改成 itemByKey('text')（U3 重构），重排/加项安全。
-    { key: 'numbered', label: '编号列表', tag: 'ol' },
-    { key: 'todo', label: '待办列表', tag: 'ul', cls: 'ws-todo' },
-    { key: 'callout', label: '提示', tag: 'div', cls: 'ws-callout' },
-    { key: 'image', label: '图片', tag: null, image: true }, // 异步插入（走父层选图），不经 newBlock 同步造块
-    { key: 'divider', label: '分隔线', tag: 'hr' },
-    { key: 'ai', label: '✦ AI 生成（开发中）', tag: null, ai: true },
+    { key: 'numbered', labelKey: 'blockNumberedList', tag: 'ol' },
+    { key: 'todo', labelKey: 'blockTodoList', tag: 'ul', cls: 'ws-todo' },
+    { key: 'callout', labelKey: 'blockCallout', tag: 'div', cls: 'ws-callout' },
+    { key: 'image', labelKey: 'blockImage', tag: null, image: true }, // 异步插入（走父层选图），不经 newBlock 同步造块
+    { key: 'divider', labelKey: 'blockDivider', tag: 'hr' },
+    { key: 'ai', labelKey: 'aiGenerate', tag: null, ai: true },
   ];
+  const slashLabel = (it) => T('editor.' + it.labelKey);
   const filterSlash = (q) => {
     const s = (q || '').toLowerCase();
-    return SLASH_ITEMS.filter((it) => !s || it.label.toLowerCase().includes(s) || it.key.includes(s));
+    return SLASH_ITEMS.filter((it) => !s || slashLabel(it).toLowerCase().includes(s) || it.key.includes(s));
   };
   const itemByKey = (k) => SLASH_ITEMS.find((it) => it.key === k); // 按 key 取（不依赖下标——加 h4 后下标会移）
 
@@ -162,16 +165,22 @@
     let blockRoot = pickBlockRoot(body);
 
     // ---- 注入排版样式表（构造样式表 / adoptedStyleSheets，CSP-safe、不进序列化）----
+    // 空块/图片说明占位文案随语言：EDITOR_CSS 是模块期定的静态常量，占位文本在 attach 期用 t() 拼进来
+    //（走 adoptedStyleSheets 不入序列化；切文档重 attach 时取当前语言）。cssEsc 防文案里的引号/反斜杠破 CSS 串。
+    const cssEsc = (s) => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    const placeholderCss =
+      "p[data-ws2-editing]:empty::before{content:'" + cssEsc(T('editor.emptyBlockPlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
+      "figcaption[data-ws2-ce]:empty::before{content:'" + cssEsc(T('editor.figcaptionPlaceholder')) + "';color:#8a8f96;pointer-events:none;}";
     let sheet = null;
     try {
       sheet = new (win.CSSStyleSheet || CSSStyleSheet)();
-      sheet.replaceSync(EDITOR_CSS);
+      sheet.replaceSync(EDITOR_CSS + placeholderCss);
       doc.adoptedStyleSheets = [...(doc.adoptedStyleSheets || []), sheet];
     } catch (e) {
       // 退路：构造样式表不可用时，用一个 data-ws2-ui 的 <style>（仍不入序列化，因 data-ws2-ui 整节点剥除）
       const st = doc.createElement('style');
       st.setAttribute('data-ws2-ui', WS2_OVERLAY);
-      st.textContent = EDITOR_CSS;
+      st.textContent = EDITOR_CSS + placeholderCss;
       (doc.head || doc.documentElement).appendChild(st);
     }
     // §0：编辑器不套 canvas 装饰排版（已删）。data-ws2-root 仍打——只驱动「空块占一行高度」这种编辑可用性 CSS（非装饰），存盘剥除。
@@ -231,7 +240,7 @@
     grip.style.position = 'absolute';
     grip.style.display = 'none';
     grip.setAttribute('draggable', 'true');
-    grip.title = '拖动重排 · 点击打开菜单';
+    grip.title = T('editor.gripTip');
     grip.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>';
     doc.documentElement.appendChild(grip);
 
@@ -467,10 +476,10 @@
     function newBlock(item) {
       let el;
       if (item.tag === 'hr') { el = doc.createElement('hr'); }
-      else if (item.tag === 'ul' || item.tag === 'ol') { el = doc.createElement(item.tag); if (item.cls) el.className = item.cls; el.innerHTML = '<li>列表项</li>'; }
-      else if (item.tag === 'div' && item.cls === 'ws-callout') { el = doc.createElement('div'); el.className = 'ws-callout'; el.textContent = '提示内容'; }
-      else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.textContent = '引用内容'; }
-      else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.textContent = '新标题'; }
+      else if (item.tag === 'ul' || item.tag === 'ol') { el = doc.createElement(item.tag); if (item.cls) el.className = item.cls; const li = doc.createElement('li'); li.textContent = T('editor.listItem'); el.appendChild(li); }
+      else if (item.tag === 'div' && item.cls === 'ws-callout') { el = doc.createElement('div'); el.className = 'ws-callout'; el.textContent = T('editor.calloutContent'); }
+      else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.textContent = T('editor.quoteContent'); }
+      else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.textContent = T('editor.newHeading'); }
       else { el = doc.createElement('p'); }
       ensureBlockStyle(item.cls);
       return el;
@@ -485,9 +494,9 @@
 
     // ---- 图片块（doc-images）：斜杠 / 粘贴 / 拖放三入口共用的摄入→插入管线 ----
     function ingestErrorMsg(reason) {
-      return reason === 'budget' ? '图片太大：压缩后仍超过 1.5MB 上限'
-        : reason === 'type' ? '不支持的图片格式'
-        : '图片无法解码';
+      return reason === 'budget' ? T('editor.imageTooLarge')
+        : reason === 'type' ? T('editor.imageUnsupported')
+        : T('editor.imageDecodeFailed');
     }
     function base64ToFile(name, mime, b64) {
       const bin = atob(b64 || '');
@@ -537,7 +546,7 @@
     }
     // 斜杠「图片」：父层原生选图（可取消——取消绝不 checkpoint，否则留空撤销步）→ File[] → insertImages
     async function pickAndInsertImage(anchorEl, replaceEmpty) {
-      if (!pickImages) { if (global.__wsToast) global.__wsToast('图片选择不可用'); return; }
+      if (!pickImages) { if (global.__wsToast) global.__wsToast(T('editor.imagePickerUnavailable')); return; }
       let picked;
       try { picked = await pickImages(); } catch (e) { picked = null; }
       if (!live || !picked || !picked.length) return;
@@ -788,16 +797,16 @@
         const blk = editingEl || blockOf(sel.getRangeAt(0).startContainer);
         // 气泡链接：菜单锚到「链接」按钮正下方（用户点这里，菜单像从按钮掉下来）——
         // 而不是选区下方（Colin 2026-07-09：点上方按钮、菜单落在选区下隔着一整行=手感很远）。
-        const linkBtn = fmtbar.querySelector('button[title="链接"]');
+        const linkBtn = fmtbar.querySelector('button[title="' + T('editor.link') + '"]');
         let anchor = null;
         if (linkBtn) { const b = linkBtn.getBoundingClientRect(); if (b.height) anchor = { top: b.bottom + 6, left: b.left, above: b.top }; }
         openMention(blk, 0, 'wrap', sel.getRangeAt(0).cloneRange(), anchor);
         return;
       }
-      const url = global.prompt ? global.prompt('链接地址', 'https://') : null;
+      const url = global.prompt ? global.prompt(T('editor.linkUrlPrompt'), 'https://') : null;
       if (!url) return;
       const href = fmt.safeHref(url);
-      if (!href) { if (global.alert) global.alert('不允许的链接地址'); return; }
+      if (!href) { if (global.alert) global.alert(T('editor.linkNotAllowed')); return; }
       doc.execCommand('createLink', false, href);
       markDirty(); persistEditing();
     }
@@ -832,19 +841,19 @@
     function buildFmtbar() {
       fmtbar.innerHTML = '';
       // 转为▾
-      const turn = fmtBtn('转为', '<span class="ws-fmtbar-text">转为 <svg style="vertical-align:-2px" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>', () => openTurnMenu());
+      const turn = fmtBtn(T('editor.turnInto'), '<span class="ws-fmtbar-text">' + T('editor.turnInto') + ' <svg style="vertical-align:-2px" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>', () => openTurnMenu());
       turn.className = 'ws-fmtbar-btn ws-fmtbar-text';
       fmtbar.appendChild(turn);
       fmtbar.appendChild(sepEl());
-      fmtbar.appendChild(fmtBtn('加粗', '<b>B</b>', () => execText('bold')));
-      fmtbar.appendChild(fmtBtn('斜体', '<i>I</i>', () => execText('italic')));
-      fmtbar.appendChild(fmtBtn('下划线', '<u>U</u>', () => execText('underline')));
-      fmtbar.appendChild(fmtBtn('删除线', '<s>S</s>', () => execText('strikeThrough')));
-      fmtbar.appendChild(fmtBtn('行内代码', '<span style="font-family:monospace">&lt;&gt;</span>', () => wrapCode()));
+      fmtbar.appendChild(fmtBtn(T('editor.bold'), '<b>B</b>', () => execText('bold')));
+      fmtbar.appendChild(fmtBtn(T('editor.italic'), '<i>I</i>', () => execText('italic')));
+      fmtbar.appendChild(fmtBtn(T('editor.underline'), '<u>U</u>', () => execText('underline')));
+      fmtbar.appendChild(fmtBtn(T('editor.strike'), '<s>S</s>', () => execText('strikeThrough')));
+      fmtbar.appendChild(fmtBtn(T('editor.inlineCode'), '<span style="font-family:monospace">&lt;&gt;</span>', () => wrapCode()));
       fmtbar.appendChild(sepEl());
-      fmtbar.appendChild(colorHolder('文字色', false));
-      fmtbar.appendChild(colorHolder('高亮', true));
-      fmtbar.appendChild(fmtBtn('链接', '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>', () => addLink()));
+      fmtbar.appendChild(colorHolder(T('editor.textColorShort'), false));
+      fmtbar.appendChild(colorHolder(T('editor.highlightShort'), true));
+      fmtbar.appendChild(fmtBtn(T('editor.link'), '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.8 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>', () => addLink()));
       fmtbar.appendChild(sepEl());
       const ai = fmtBtn('AI', '<span class="ws-fmtbar-ai">✦ AI</span>', () => onAiSoon());
       ai.className = 'ws-fmtbar-btn ws-fmtbar-ai';
@@ -878,8 +887,8 @@
       if (menu) { togglePopMenu(menu); return; }
       menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
       menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
-      [['text', '正文'], ['h1', '标题 1'], ['h2', '标题 2'], ['h3', '标题 3'], ['quote', '引用'], ['list', '无序列表'], ['numbered', '编号列表'], ['todo', '待办列表']].forEach(([key, label]) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.textContent = label;
+      [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList']].forEach(([key, labelKey]) => {
+        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.textContent = T('editor.' + labelKey);
         it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         it.addEventListener('click', (e) => {
           e.preventDefault(); e.stopPropagation();
@@ -920,16 +929,16 @@
       // 修 ED-B1：「转为」只对文字承载块给（table/img/hr 等结构块转正文会把表格文字黏成团 / 图片直接消失、
       // 属性搬到 h2 上）。非可编辑块只留插入/复制/删除。
       if (isEditableEl(el)) {
-        sub('转为正文', itemByKey('text'), 'text'); sub('转为标题', itemByKey('h2'), 'heading'); sub('转为引用', itemByKey('quote'), 'quote');
+        sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading'); sub(T('editor.turnToQuote'), itemByKey('quote'), 'quote');
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       }
       // 图片块（无说明）：加说明 → figure/figcaption + 进说明编辑（doc-images U5）
       if (classify(el) === 'image' && !(el.querySelector && el.querySelector('figcaption'))) {
-        add('加说明', () => { closeBlockMenu(); addCaption(el); }, false, 'text');
+        add(T('editor.addCaption'), () => { closeBlockMenu(); addCaption(el); }, false, 'text');
       }
-      add('在下方插入', () => { const nx = insertAfter(el, itemByKey('text')); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); }, false, 'plus');
-      add('复制', () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); }, false, 'copy');
-      add('删除', () => { closeBlockMenu(); removeBlock(el); }, true, 'trash');
+      add(T('editor.insertBelow'), () => { const nx = insertAfter(el, itemByKey('text')); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); }, false, 'plus');
+      add(T('editor.duplicate'), () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); }, false, 'copy');
+      add(T('common.delete'), () => { closeBlockMenu(); removeBlock(el); }, true, 'trash');
       // 颜色行（#85：前面补分隔线，对齐 ui-demo 删除与色板之间的 sep）。只给文字承载块——
       // 原子块（图片/分隔线）上色无意义（上色本就 gated 在 isEditableEl，露空色板是误导，对齐 ui-demo）。
       if (isEditableEl(el)) {
@@ -958,9 +967,9 @@
       if (!slash) { slashMenu.style.display = 'none'; return; }
       const items = filterSlash(slash.query);
       slashMenu.innerHTML = '';
-      if (!items.length) { const e = doc.createElement('div'); e.setAttribute('data-ws2-ui', WS2_OVERLAY); e.className = 'ws-slashmenu-empty'; e.textContent = '无匹配'; slashMenu.appendChild(e); }
+      if (!items.length) { const e = doc.createElement('div'); e.setAttribute('data-ws2-ui', WS2_OVERLAY); e.className = 'ws-slashmenu-empty'; e.textContent = T('editor.noMatch'); slashMenu.appendChild(e); }
       items.forEach((it, i) => {
-        const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', WS2_OVERLAY); b.className = 'ws-slashmenu-item' + (i === slash.active ? ' active' : ''); b.textContent = it.label;
+        const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', WS2_OVERLAY); b.className = 'ws-slashmenu-item' + (i === slash.active ? ' active' : ''); b.textContent = slashLabel(it);
         b.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); applySlash(it.key); });
         slashMenu.appendChild(b);
@@ -1034,7 +1043,7 @@
       const trigLen = trig || 0; // @=1、[[=2、斜杠/气泡=0
       const anchorOff = Math.max(0, caretOffset(blockEl) - trigLen); // 提及区起点：insert 时 = 触发符起点；trig=0 = 当前 caret
       const doOpen = (ctx) => {
-        if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast('临时 / 工作区外文档暂不支持文档互链'); return; }
+        if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast(T('editor.mentionUnsupportedTempDoc')); return; }
         M.open({
           frame: win.frameElement, doc, win, blockEl,
           caretRect: rect, rootId: ctx.rootId, fromRel: ctx.rel,
@@ -1059,8 +1068,8 @@
       const two = textBeforeCaret(editingEl, 2);
       const one = two.slice(-1);
       let trig = 0;
-      if (two === '[[' || two === '【【') trig = 2;
-      else if (one === '@' || one === '＠') trig = 1;
+      if (two === '[[' || two === '【【') trig = 2; // i18n-exempt（触发符匹配用户输入，含全角 IME 变体，须字面不翻）
+      else if (one === '@' || one === '＠') trig = 1; // i18n-exempt（同上，触发符字面）
       if (!trig) return;
       openMention(editingEl, trig, 'insert', null);
     }
@@ -1512,7 +1521,7 @@
       if (!dragFrom && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
         e.preventDefault();
         const imgs = II ? II.pickImageFiles(e.dataTransfer) : [];
-        if (!imgs.length) { if (global.__wsToast) global.__wsToast('只支持拖入图片文件（png / jpg / webp / gif / avif）'); return; }
+        if (!imgs.length) { if (global.__wsToast) global.__wsToast(T('editor.dropImagesOnly')); return; }
         insertImages(imgs, dropAnchor(e.clientY), false);
         return;
       }
@@ -1523,9 +1532,9 @@
     //（静默失败 = 用户以为没做出来，L8）；跨根/无身份/自链 → 明确 toast，绝不静默。
     function dropFileLink(e, file) {
       const ctx = docCtx();
-      if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast('临时 / 工作区外文档暂不支持拖入链接'); return; }
+      if (!ctx || ctx.rootId == null) { if (global.__wsToast) global.__wsToast(T('editor.linkUnsupportedTempDoc')); return; }
       const crossRoot = file.rootId !== ctx.rootId; // B：跨文件夹空间拖入 → relHrefAbs（同卷才建）
-      if (!crossRoot && file.rel === ctx.rel) { if (global.__wsToast) global.__wsToast('不能链接到文档自己'); return; }
+      if (!crossRoot && file.rel === ctx.rel) { if (global.__wsToast) global.__wsToast(T('editor.linkSelfNotAllowed')); return; }
       let range = caretRangeAtPoint(doc, e.clientX, e.clientY);
       let host = range && (range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement);
       let blk = host ? blockOf(host) : null;
@@ -1537,7 +1546,7 @@
           const dist = e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0;
           if (!best || dist < best.dist) best = { b, dist };
         }
-        if (!best) { if (global.__wsToast) global.__wsToast('这篇文档没有可放链接的文字块'); return; }
+        if (!best) { if (global.__wsToast) global.__wsToast(T('editor.noTextBlockForLink')); return; }
         blk = best.b;
         range = doc.createRange(); range.selectNodeContents(blk); range.collapse(false); // 落到块末
       }
@@ -1562,10 +1571,10 @@
       if (!crossRoot) { insertAt(global.WS2Links.relHref(ctx.rel, file.rel)); return; }
       // 跨根（B）：同卷才建；两端 abs 经 wsAbs 取 → relHrefAbs
       Promise.resolve(global.ws2.wsSameVolume ? global.ws2.wsSameVolume(ctx.rootId, file.rootId) : true).then((ok) => {
-        if (!ok) { if (global.__wsToast) global.__wsToast('这两个文件夹在不同磁盘卷，暂不支持链接'); return; }
+        if (!ok) { if (global.__wsToast) global.__wsToast(T('editor.crossVolumeUnsupported')); return; }
         return Promise.all([global.ws2.wsAbs(ctx.rootId, ctx.rel), global.ws2.wsAbs(file.rootId, file.rel)]).then((ab) => {
           const href = (ab[0] && ab[1]) ? global.WS2Links.relHrefAbs(ab[0], ab[1]) : null;
-          if (!href) { if (global.__wsToast) global.__wsToast('无法建立跨文件夹空间的链接'); return; }
+          if (!href) { if (global.__wsToast) global.__wsToast(T('editor.crossRootLinkFailed')); return; }
           insertAt(href);
         });
       }).catch(() => {});
@@ -1624,6 +1633,7 @@
   }
 
   // ===== 注入到 iframe 的编辑器样式（ui-demo Canvas.css 移植；选择器既命中 .ws-* 也命中裸标签）=====
+  // i18n-exempt-start（EDITOR_CSS 是注入 iframe 的编辑器 CSS，其中的中文全是 CSS 注释 / dev 说明，非用户可见文案，不翻）
   const EDITOR_CSS = `
   /* §0：编辑器不套 canvas 装饰排版（max-width/居中/字号/颜色那套已删）；显示按 .html 原生，
      让块渲染正确的最小语义 CSS（margin/callout/todo）由 Schema baseline 随文件入盘（U5）。
@@ -1635,8 +1645,7 @@
   .ws-todo > li[data-checked="true"]::before { content:'✓';border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center; }
 
   [contenteditable='true']{outline:none;}
-  p[data-ws2-editing]:empty::before{content:'输入正文,或按 / 插入';color:#8a8f96;pointer-events:none;}
-  figcaption[data-ws2-ce]:empty::before{content:'图片说明';color:#8a8f96;pointer-events:none;}
+  /* 空块/图片说明的占位文案（:empty::before content）随语言，在 attach 期用 t() 拼进 adoptedStyleSheets，不写死在这。 */
   /* 空块也占一行高度——否则非编辑态的空块（没占位符）塌成 0 高，连按 Enter 建的空白行全叠在一处、看着「换不了行」。
      用 em 跟字号缩放（空标题行更高）。纯渲染、不进序列化。 */
   [data-ws2-root] > p:empty, [data-ws2-root] > h1:empty, [data-ws2-root] > h2:empty,
@@ -1688,6 +1697,7 @@
   .ws-slashmenu-item:hover,.ws-slashmenu-item.active{background:#f0f1f3;}
   .ws-slashmenu-empty{padding:8px 10px;font-size:12px;color:#8a8f96;}
   `;
+  // i18n-exempt-end
 
   const api = { attach, classify, isEditableEl, pickBlockRoot, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
