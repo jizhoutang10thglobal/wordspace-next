@@ -143,15 +143,16 @@ test('⌘T 地址栏开网页：真加载(像素级红底上屏) + 标签行/omn
   // omnibox 值 = 当前 url,星标显形（网页标签才有）
   await expect(page.locator('#omni-input')).toHaveValue(base + '/');
   await expect(page.locator('#omni-star')).toBeVisible();
-  // 强断言三件套：view 真挂上窗口 / bounds 真铺满内容区（x=侧栏宽,y=0 无网页头,右下顶到窗口边）/ 真渲染红底
+  // 强断言三件套：view 真挂上窗口 / bounds 真铺满内容区窗框内（沉浸窗框非全屏恒有,Colin 2026-07-18：
+  // 展开态 view 也内缩 10px 框——x=侧栏宽+10, y=10, 右下各让 10）/ 真渲染红底
   const key = await activeWebKey();
   await expect.poll(async () => { const v = await viewInfo(key); return v && v.attached && isRed(v.pixel); }, { timeout: 8000 }).toBe(true);
   const v = await viewInfo(key);
-  const sbW = await page.evaluate(() => document.getElementById('sidebar').getBoundingClientRect().width);
-  expect(v.bounds.x).toBe(Math.round(sbW)); // 紧贴侧栏右缘
-  expect(v.bounds.y).toBe(0); // 无网页头 → 无顶部偏移（§3.2）
-  expect(v.bounds.width).toBe(v.content.w - Math.round(sbW)); // 铺满剩余宽度
-  expect(v.bounds.height).toBe(v.content.h); // 全高
+  const sbW = await page.evaluate(() => Math.round(document.getElementById('sidebar').getBoundingClientRect().width));
+  expect(v.bounds.x).toBe(sbW + 10); // 侧栏右缘 + 10px 缝
+  expect(v.bounds.y).toBe(10); // 顶部 10px 窗框（不是网页头——「无网页头」由下面 count===0 单独验，§3.2）
+  expect(v.bounds.width).toBe(v.content.w - sbW - 20); // 左缝 10 + 右框 10
+  expect(v.bounds.height).toBe(v.content.h - 20); // 上下框各 10
   // 无网页头：内容区里没有任何 Wordspace chrome 罩在网页上（§3.2 决策——连元素都不存在）
   expect(await page.locator('#web-header, .web-chrome, .web-bmbar').count()).toBe(0);
 });
