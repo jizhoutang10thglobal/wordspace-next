@@ -215,7 +215,16 @@ function buildMenu() {
         { role: 'cut', label: t('common.cut') },
         { role: 'copy', label: t('common.copy') },
         { role: 'paste', label: t('common.paste') },
-        { role: 'selectAll', label: t('common.selectAll') },
+        // 全选去 role 化（王波 2026-07-17 分级全选）：role selectAll 的默认加速器会把 ⌘/Ctrl+A 吃在
+        // 菜单层（U4 同款血教训），块编辑器的分级逻辑（一次选块、两次全篇，blockedit.js）永远收不到键。
+        // 点击行为保持等价（focusedWebContents.selectAll，作用聚焦上下文：编辑器 iframe/omnibox/网页 view）。
+        // mac 不设 accelerator（mac 忽略 registerAccelerator:false、设了必吃键→菜单项不显示 ⌘A，小代价）；
+        // Win/Linux 用 registerAccelerator:false 保显示不注册。
+        {
+          label: t('common.selectAll'),
+          ...(process.platform === 'darwin' ? {} : { accelerator: 'CmdOrCtrl+A', registerAccelerator: false }),
+          click: () => { const f = require('electron').webContents.getFocusedWebContents(); if (f && !f.isDestroyed()) f.selectAll(); }
+        },
         { type: 'separator' },
         // Cmd+F = 文档内查找（调研裁决：全软件铁律）。shell 判定：块编辑器活跃→查找条，否则回退聚焦文件筛选。
         { label: t('menu.findInDoc'), accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find-in-doc') },
