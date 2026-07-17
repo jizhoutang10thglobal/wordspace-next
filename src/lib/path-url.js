@@ -22,15 +22,17 @@ function pathInfo(p) {
   };
 }
 
-// 从进程 argv 选出第一个可编辑文档参数（.html/.htm/.md，与 ipc.js 的 assertDocPath 口径一致），解析为
+// 从进程 argv 选出第一个 app 认识的文件参数（可编辑 .html/.htm/.md + 查看器 .pdf，与
+// fileAssociations 声明口径一致，锁在 test/file-associations.test.js），解析为
 // 绝对路径（Windows/Linux 双击文件经 argv 传入，macOS 走 open-file 事件不经此）。cwd 显式传入：
 // second-instance 时要用「第二次启动」的工作目录（Electron second-instance 事件的 workingDirectory），
 // 而非当前已运行实例的 process.cwd()。纯函数（仅 path）→ 可单测，给「无 Windows 机器」补一层自动化覆盖。
 // 审计整改：原来只认 .html——Win/Linux 双击 .md 时 app 聚焦但文件被静默吞掉，与 mac 行为不一致。
+// 2026-07-17（Wendi）：+.pdf——「PDF 默认打开设为 Wordspace」，renderer 侧按 kind 分流进内置查看器。
 function htmlPathFromArgv(argv, cwd) {
   // 修 MP-12：排除以 - 开头的参数——否则「值以 .html/.md 结尾的 flag」（如 Chromium 注入的
   // --user-data-dir=/x/y.html）会被当成文件路径，把真文件吞掉、弹「无法打开」。
-  const a = (argv || []).slice(1).find((x) => !x.startsWith('-') && /\.(html?|md)$/i.test(x));
+  const a = (argv || []).slice(1).find((x) => !x.startsWith('-') && /\.(html?|md|pdf)$/i.test(x));
   return a ? path.resolve(cwd || process.cwd(), a) : null;
 }
 
