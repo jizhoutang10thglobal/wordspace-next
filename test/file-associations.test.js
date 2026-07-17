@@ -11,7 +11,10 @@ const assert = require('node:assert');
 const pkg = require('../package.json');
 const { htmlPathFromArgv } = require('../src/lib/path-url');
 
-const DOC_EXTS = ['html', 'htm', 'md']; // app 侧口径的单一列举（变更时两个方向都会翻红提醒）
+const DOC_EXTS = ['html', 'htm', 'md']; // 可编辑文档口径的单一列举（变更时两个方向都会翻红提醒）
+// 查看器类型（只看不编，fileAssociations role=Viewer）：双击/「打开方式」进内置查看器。
+// 2026-07-17 +pdf（Wendi「PDF 默认打开设为 Wordspace」——此前没声明，macOS 打开方式里根本选不了）。
+const VIEWER_EXTS = ['pdf'];
 
 const declaredExts = (platform) => {
   const assocs = (pkg.build && pkg.build[platform] && pkg.build[platform].fileAssociations) || [];
@@ -19,9 +22,9 @@ const declaredExts = (platform) => {
 };
 
 for (const platform of ['mac', 'win']) {
-  test(`fileAssociations(${platform})：app 认的每个文档扩展名都已声明（含 .md）`, () => {
+  test(`fileAssociations(${platform})：app 认的每个扩展名都已声明（文档 + 查看器）`, () => {
     const declared = declaredExts(platform);
-    for (const ext of DOC_EXTS) {
+    for (const ext of [...DOC_EXTS, ...VIEWER_EXTS]) {
       assert.ok(declared.includes(ext), `build.${platform}.fileAssociations 缺 "${ext}"`);
     }
   });
@@ -37,8 +40,8 @@ for (const platform of ['mac', 'win']) {
   });
 }
 
-test('DOC_EXTS 与 htmlPathFromArgv 口径一致（列举本身不许漂）', () => {
-  for (const ext of DOC_EXTS) {
-    assert.ok(htmlPathFromArgv(['app', `/x/a.${ext}`], '/c'), `app 不认 .${ext}，DOC_EXTS 过期了`);
+test('DOC_EXTS/VIEWER_EXTS 与 htmlPathFromArgv 口径一致（列举本身不许漂）', () => {
+  for (const ext of [...DOC_EXTS, ...VIEWER_EXTS]) {
+    assert.ok(htmlPathFromArgv(['app', `/x/a.${ext}`], '/c'), `app 不认 .${ext}，列举过期了`);
   }
 });

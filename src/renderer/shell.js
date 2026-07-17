@@ -1206,7 +1206,18 @@ document.addEventListener('visibilitychange', () => {
 // 主进程发来「打开这个文件」（Finder 双击 / 文件关联 / 第二实例）。冷启动时这跟侧栏「恢复上次工作区」
 // 并发：同步先标记 __pendingColdOpen，让 loadTabs 知道「这个文件该占 viewer，别拿上次激活标签抢」；
 // 标签实际创建在 sidebar onOpen 里等恢复跑完才做（见 sidebar.js restoreReady）。
-window.ws2.onOpenFile((p) => { window.__pendingColdOpen = p; openDoc(p); });
+// PDF 等查看器类型分流进 showViewer（跟「打开」按钮 pickAndOpen 同一套口径）——2026-07-17 起
+// fileAssociations 声明了 .pdf（Wendi「PDF 默认打开设为 Wordspace」），双击 PDF 不能再直塞编辑器。
+window.ws2.onOpenFile(async (p) => {
+  window.__pendingColdOpen = p;
+  let meta;
+  try { meta = await window.ws2.classifyFile(p); }
+  catch (e) { meta = { kind: 'other', name: baseName(p), rel: null, rootId: null }; }
+  if (meta.kind === 'html' || meta.kind === 'md') { openDoc(p); return; }
+  await showViewer({ abs: p, rel: meta.rel, rootId: meta.rootId, name: meta.name || baseName(p), kind: meta.kind });
+  // viewer 路径没有 sidebar onOpen 来清占位标记，自己清——否则泄漏到将来会一直抑制 loadTabs 恢复激活标签
+  window.__pendingColdOpen = null;
+});
 // 「AI 接入」弹窗（菜单「AI 接入…」触发；对齐 ui-demo /agents 页两卡结构，复用统一模态壳 T1）。
 // Prompt 文本经 IPC 读打包资源 src/renderer/ai-guide.md（与 docs/ 正本被防漂移测试锁逐字节一致）。
 const AI_SKILL_CMD = 'npx skills add wordspace-ai/skills';

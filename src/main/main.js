@@ -76,7 +76,10 @@ function createWindow() {
     // 只有真退出（Cmd+Q → before-quit 先行；自动更新 quitAndInstall → before-quit-for-update 先行）
     // 才继续往下销毁 + 未保存守卫。
     // Windows/Linux 不驻留：按平台惯例关窗即退（走下面守卫 → window-all-closed → quit）。
-    if (process.platform === 'darwin' && !quitting) {
+    // WS2_DARWIN_PERSIST_SIM（isPackaged 闸,seam 惯例）：非 mac 的 CI 上强制走这条驻留分支——
+    // 「更新退出被驻留守卫吞掉」的 e2e 门要在 Linux CI 也有牙（bug 本体是 darwin-only 的）。
+    const darwinPersist = process.platform === 'darwin' || (!app.isPackaged && process.env.WS2_DARWIN_PERSIST_SIM);
+    if (darwinPersist && !quitting) {
       e.preventDefault();
       webTabs.setAllAudioMuted(true); // 隐藏驻留：后台网页别继续放声/烧 CPU（P2-11；标签静音已砍,只能整体静音）
       win.hide();
@@ -257,6 +260,20 @@ function pushUpdateEvent(evt) {
   }
 }
 
+// 用户点了「重启安装」→ **动作点直置 quitting=true 放行退出，零事件依赖**。
+// ⚠ 为什么不能靠事件（二次血教训，Colin 2026-07-17 复现）：native Squirrel 的 quitAndInstall 逐窗
+// close 前发的 'before-quit-for-update' 挂在 require('electron').autoUpdater（AutoUpdater 接口，
+// electron.d.ts:1995）上——**不是 app 的事件**。2026-07-16 那版 app.on('before-quit-for-update')
+// 是给不存在的事件挂监听、从未触发过：quitting 恒 false → darwin 驻留守卫把更新的关窗 preventDefault
+// 吞掉 → 窗口只是 hide、Squirrel 永远等不到全关 →「点了重启,app 还赖在 Dock 里」。
+function beginQuitForUpdate(fire) {
+  quitting = true;
+  try { fire(); } catch (e) {
+    quitting = false; // 安装序列没启动成功：复位，别让下次红叉从「隐藏驻留」漂移成「真退出」
+    if (updLog) updLog.error('quitAndInstall threw: ' + ((e && e.stack) || e));
+  }
+}
+
 function setupAutoUpdater() {
   // IPC 桥 dev/packaged 都建：dev 要能弹「开发模式」面板，e2e 靠 __ws2UpdateSim 驱动整条 UI 链。
   ipcMain.handle('update-get-status', () => updatePayload());
@@ -266,16 +283,30 @@ function setupAutoUpdater() {
     pushUpdateEvent({ type: 'download-started' }); // shouldStartDownload 判真 → 真正开下载
   });
   ipcMain.handle('update-install', async () => {
-    if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.install++; return; }
+    if (!app.isPackaged) {
+      if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.install++;
+      // 退出链 e2e（WS2_UPDATE_QUIT_SIM，isPackaged 闸）：走与真路径**同一个** beginQuitForUpdate，
+      // 用「逐窗 close」模拟 native quitAndInstall 的关窗序列（全关 → window-all-closed → app.quit()，
+      // 与 Squirrel 时序同构）。门守的是「darwin 隐藏驻留守卫吞掉更新退出」这条链。
+      if (process.env.WS2_UPDATE_QUIT_SIM) beginQuitForUpdate(() => { for (const w of BrowserWindow.getAllWindows()) w.close(); });
+      return;
+    }
     if (!autoUpdater) return;
     if (!(await maybeExplainInstallAuth())) return; // 用户选了官网重装/取消：本次不装（更新仍就绪可再点）
     if (updLog) updLog.info('user chose quitAndInstall');
-    autoUpdater.quitAndInstall();
+    beginQuitForUpdate(() => autoUpdater.quitAndInstall());
   });
 
   if (!app.isPackaged) {
     // e2e seam（照 __ws2WebTabs 惯例，仅非打包态）：注入状态事件驱动面板/pill，动作调用只计数不真跑。
-    global.__ws2UpdateSim = { push: (evt) => pushUpdateEvent(evt), calls: { download: 0, install: 0 }, payload: () => updatePayload() };
+    // authExplain(): maybeExplainInstallAuth 的直调入口（真 install handler dev 态提前 return，绕不到它）
+    // + calls.authShown 计数（弹说明分支被走到时 +1，配 WS2_BUNDLE_OWNED/WS2_AUTH_DIALOG_RESPONSE 断言）。
+    global.__ws2UpdateSim = {
+      push: (evt) => pushUpdateEvent(evt),
+      calls: { download: 0, install: 0, authShown: 0 },
+      payload: () => updatePayload(),
+      authExplain: () => maybeExplainInstallAuth(),
+    };
     return;
   }
 
@@ -323,28 +354,47 @@ function manualCheckForUpdates() {
 // 输一次密码，装出来的 app 归属即当前用户，此后 ShipIt 恢复无提权静默更新）」。
 // 返回 false = 用户选了重装路线或取消，本次不调 quitAndInstall。
 async function maybeExplainInstallAuth() {
-  if (process.platform !== 'darwin') return true;
+  // WS2_BUNDLE_OWNED seam 在场 = e2e 强制驱动此逻辑（连非 mac CI 也有牙，照 WS2_DARWIN_PERSIST_SIM 先例）；
+  // 无 seam 的真实运行只在 mac 有意义（root-owned bundle 是 mac 概念），其他平台直接放行。
+  const forced = !app.isPackaged && process.env.WS2_BUNDLE_OWNED;
+  if (process.platform !== 'darwin' && !forced) return true;
   try {
     const fs = require('fs');
     const { bundlePathFromExe } = require('../lib/mac-bundle-repair');
     const bundle = bundlePathFromExe(app.getPath('exe'));
     if (!bundle) return true;
-    try {
-      // bundle 根 + Contents 都可写才算健康（ShipIt 替换要动整棵树；root:wheel 755 下两者都不可写）
-      await fs.promises.access(bundle, fs.constants.W_OK);
-      await fs.promises.access(path.join(bundle, 'Contents'), fs.constants.W_OK);
-      return true; // 归属健康：静默安装，不打扰
-    } catch {}
-    if (updLog) updLog.warn('bundle not writable by current user (root-owned?), install needs ShipIt auth: ' + bundle);
+    // 判据必须是「bundle 属主是不是当前用户」,不能用 fs.access(W_OK)——
+    // ⚠ 实锤（Colin 2026-07-17 拖 DMG 重装后）：/Applications 里已签名 app 的 W_OK 恒为「不可写」
+    // （SIP/App Management 保护，连属主本人 touch 都被拒），access(W_OK) 会把「归属已修好」误判成
+    // root-owned → 每次更新都误弹授权说明。ShipIt 免提权的真实判据是「.app 属主==你 且 父目录 /Applications
+    // 你能写」,和 bundle 内能否 touch 文件无关（它是整包原子替换）。故只看 uid。
+    let rootOwned = false;
+    // WS2_BUNDLE_OWNED seam（仅非打包态,照 seam 惯例）:e2e 强制归属判定,'root'=不健康 / 'self'=健康。
+    // 真机上 dev 态 bundle=node_modules/electron/dist（属主就是你）永远 healthy,门测不到「弹说明」分支。
+    if (!app.isPackaged && process.env.WS2_BUNDLE_OWNED) {
+      rootOwned = process.env.WS2_BUNDLE_OWNED === 'root';
+    } else {
+      try {
+        const st = await fs.promises.stat(bundle);
+        const stC = await fs.promises.stat(path.join(bundle, 'Contents'));
+        rootOwned = st.uid !== process.getuid() || stC.uid !== process.getuid();
+      } catch { return true; } // stat 失败（路径怪）不打扰、不拦装
+    }
+    if (!rootOwned) return true; // 归属健康（属主=你）：静默安装
+    if (updLog) updLog.warn('bundle owned by another user (root?), install needs ShipIt auth: ' + bundle);
     if (win && !win.isDestroyed() && !win.isVisible()) win.show(); // 隐藏驻留中弹 sheet 会隐形（同脏守卫的教训）
-    const r = await dialog.showMessageBox(win, {
-      type: 'info',
-      buttons: [i18n.t('dialog.updateAuthContinue'), i18n.t('dialog.updateAuthReinstall'), i18n.t('dialog.updateAuthCancel')],
-      defaultId: 0,
-      cancelId: 2,
-      message: i18n.t('dialog.updateAuthTitle'),
-      detail: i18n.t('dialog.updateAuthDetail'),
-    });
+    if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.authShown++; // e2e：证明确实走到了「弹说明」分支
+    // WS2_AUTH_DIALOG_RESPONSE seam（非打包态）:原生对话框 e2e 点不了,注入按钮 index（0 继续/1 重装/2 取消）。
+    const r = (!app.isPackaged && process.env.WS2_AUTH_DIALOG_RESPONSE != null)
+      ? { response: Number(process.env.WS2_AUTH_DIALOG_RESPONSE) }
+      : await dialog.showMessageBox(win, {
+        type: 'info',
+        buttons: [i18n.t('dialog.updateAuthContinue'), i18n.t('dialog.updateAuthReinstall'), i18n.t('dialog.updateAuthCancel')],
+        defaultId: 0,
+        cancelId: 2,
+        message: i18n.t('dialog.updateAuthTitle'),
+        detail: i18n.t('dialog.updateAuthDetail'),
+      });
     if (r.response === 1) {
       if (updLog) updLog.info('user chose website-reinstall route');
       shell.openExternal('https://wordspace.ai'); // 系统浏览器：下载 DMG + Finder 拖入是浏览器外动作
@@ -460,15 +510,16 @@ if (!app.requestSingleInstanceLock()) {
     // push 队列——让 seam 也过 scheme 白名单，e2e 才能验「file:// 不开标签」这道门。
     if (!app.isPackaged && process.env.WS2_OPEN_URL) openExternalUrlFromOS(process.env.WS2_OPEN_URL);
   });
-  // 真退出的第一信号：打上标志，close 守卫据此放行销毁而不是隐藏。两个事件都要接——
-  // Cmd+Q 走 before-quit；autoUpdater.quitAndInstall() **不走 before-quit**，它发专用的
-  // before-quit-for-update 再逐窗 close、全关后才 app.quit()（electron.d.ts + 实测）。
-  // ⚠ 血教训（2026-07-16）：此前只接 before-quit 并注释称"quitAndInstall 也会先发 before-quit"——
-  // 假的。结果 quitAndInstall 的关窗被 darwin 隐藏驻留守卫 preventDefault 吞掉：窗口只是藏起来、
-  // app 不退、安装永远等不到 window-all-closed →「点了重启没反应」（updater.log 2026-07-15 四连击实锤，
-  // 所谓"成功"的几次全是用户手动 Cmd+Q 救的）。
+  // 真退出的第一信号：打上标志，close 守卫据此放行销毁而不是隐藏。
+  // Cmd+Q 走 before-quit；autoUpdater.quitAndInstall() **不走 before-quit**（它逐窗 close、全关后才 quit）。
+  // ⚠ 血教训一（2026-07-16）：只接 before-quit → quitAndInstall 的关窗被 darwin 驻留守卫吞掉,点了重启没反应
+  //   （updater.log 2026-07-15 四连击实锤）。
+  // ⚠ 血教训二（2026-07-17 Colin 复现）：上一版补的 app.on('before-quit-for-update') 也是哑的——该事件挂在
+  //   require('electron').autoUpdater（AutoUpdater 接口，electron.d.ts:1995）上，**不是 app 事件**，从未触发。
+  //   主修已改为动作点直置（update-install handler → beginQuitForUpdate，零事件依赖）；下面在**正确的发射器**
+  //   上再挂一份兜底（防未来其他路径触发 native quitAndInstall，如 autoInstallOnAppQuit）。
   app.on('before-quit', () => { quitting = true; });
-  app.on('before-quit-for-update', () => { quitting = true; });
+  try { require('electron').autoUpdater.on('before-quit-for-update', () => { quitting = true; }); } catch { /* 平台无 native autoUpdater：安静跳过 */ }
   // macOS：隐藏驻留中点 Dock 图标 → 把窗口带回来（标准 mac 行为）。
   app.on('activate', () => focusWindow());
   app.on('window-all-closed', () => app.quit());
