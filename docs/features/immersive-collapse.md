@@ -92,8 +92,12 @@
   **展开态也有 top/right/bottom 三条边带可拖**(与 .sb-head 并存不冲突,顶带横跨全宽含侧栏顶)。
 - ~~全屏下窗框仍在~~:已解(Colin 2026-07-18)——主进程 `enter/leave-full-screen` → renderer 挂/摘
   `body.is-win-fullscreen`,真全屏两态都摘框(收起态 peek 热区保留、变透明,不堵重开)。CSS 全走
-  `body:not(.is-win-fullscreen)` 组合表达,不写两份。⚠ 遗留小项:展开态顶带横跨全宽会盖住 .sb-head 顶部
-  按钮上沿 ~4px(40px 头、28px 钮居中→钮 y=6..34,顶带 y=0..10),钮仍有 24px 可点;KD5 已知取舍,Wendi 过目边框时一并看。
+  `body:not(.is-win-fullscreen)` 组合表达,不写两份。
+- ~~展开态顶带盖侧栏图标钮顶 4px~~:已解(Colin 2026-07-18)——窗框扩成非全屏恒有后,横跨全宽的顶带
+  (`.win-frame-top`,z235,drag)盖住展开态侧栏图标钮顶 ~4px(钮 y=6..34 ∩ 顶带 y=0..10),那 4px 变回
+  drag 吞点击。修:`.sb-head` `position:relative;z-index:236` 抬到顶带之上,no-drag 钮赢回顶边;只抬头不抬
+  整个 `.sb`(免造层叠上下文困住挂 body 的浮层)。拖窗仍走 sb-head 空白处。门=`e2e/immersive.spec.js`
+  「图标钮顶边归钮不归拖拽条」(elementFromPoint 真实层叠判定+变异自检)。
 - **peek 期间页面是冻结帧**(快照垫底的固有取舍):页面里的视频/动图在 peek 打开期间不动,
   收回即恢复;peek 是瞬态交互,可接受。
 - **红绿灯与 peek 悬浮卡的相对位置**:trafficLightPosition 定死 (14,14) 是窗口坐标,peek 卡内缩
