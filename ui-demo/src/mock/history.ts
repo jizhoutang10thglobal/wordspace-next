@@ -23,6 +23,7 @@ function recordable(url: string): boolean {
 
 // seed 几条(相对"现在"往前推),让历史页一开就有内容。用固定基准,持久化后不乱跳。
 const NOW = 1_720_500_000_000
+// i18n-exempt-start —— 种子历史条目（假访问记录），演示数据不翻。
 const seed: HistEntry[] = [
   { id: 'hs1', url: 'https://news.design/today', title: 'Designer News · 行业动态', visitedAt: NOW - 20 * 60_000 },
   { id: 'hs2', url: 'https://tenthglobal.com', title: 'Tenth Global', visitedAt: NOW - 2 * HOUR },
@@ -30,6 +31,7 @@ const seed: HistEntry[] = [
   { id: 'hs4', url: 'glass://search?q=本地优先软件', title: '本地优先软件 - Glass 搜索', visitedAt: NOW - DAY - HOUR },
   { id: 'hs5', url: 'https://news.design/today', title: 'Designer News · 行业动态', visitedAt: NOW - 2 * DAY },
 ]
+// i18n-exempt-end
 
 interface HistState {
   entries: HistEntry[]

@@ -2,6 +2,7 @@ const { BrowserWindow } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 const { pathInfo } = require('../lib/path-url');
+const i18n = require('../lib/i18n');
 const { isSelfPaged } = require('../lib/self-paged');
 
 // 导出 PDF（MVP：直印源文件，文档自带 CSS，不注入编辑器样式）。
@@ -97,7 +98,7 @@ async function exportPdfFromHtml(html, srcDir, outPath, opts) {
   try {
     await fs.writeFile(tmp, html, 'utf8');
   } catch (e) {
-    throw new Error('无法在文档所在文件夹创建临时文件导出 PDF（可能是只读目录）。请把文档移到有写入权限的文件夹后再试。');
+    throw new Error(i18n.t('dialog.errPdfTmpFail'));
   }
   try {
     await exportPdf(tmp, outPath, opts);

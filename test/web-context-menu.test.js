@@ -2,6 +2,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const M = require('../src/lib/web-context-menu');
+// i18n Phase 2：菜单 label 改走 t()，配 zh 让下面「用 X 搜索」等中文断言继续成立。
+const _i18n = require('../src/lib/i18n');
+_i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
+_i18n.setActiveLang('zh');
 
 const ids = (tpl) => tpl.filter((i) => i.type !== 'separator').map((i) => i.id);
 const byId = (tpl, id) => tpl.find((i) => i.id === id);

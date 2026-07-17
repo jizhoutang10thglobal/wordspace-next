@@ -11,6 +11,8 @@
 (function (global) {
   const fmt = (typeof WS2Format !== 'undefined') ? WS2Format
     : (typeof require !== 'undefined' ? require('./format.js') : null);
+  // i18n：renderer 全局 t()（node/test 上下文无 wsT 时回退 key，防 require 期崩）。
+  const T = (k, p) => (global.wsT ? global.wsT(k, p) : k);
 
   const TEXT_COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2'];
   const HILITE_COLORS = ['#fff59d', '#ffd6d6', '#d7f0db', '#dbe9ff', '#f3e3ff'];
@@ -142,17 +144,17 @@
       return row;
     };
     const colorHolder = el('div', 'ws-fmtbar-holder');
-    const colorBtn = btn('文字颜色', 'A', () => { const open = menu !== 'color'; closeMenu(); if (open) { menu = 'color'; colorSw.hidden = false; } });
+    const colorBtn = btn(T('editor.textColor'), 'A', () => { const open = menu !== 'color'; closeMenu(); if (open) { menu = 'color'; colorSw.hidden = false; } });
     colorBtn.classList.add('ws-fmtbar-aglyph');
     const colorSw = swatchRow(TEXT_COLORS, 'color'); colorHolder.append(colorBtn, colorSw);
     const hiliteHolder = el('div', 'ws-fmtbar-holder');
-    const hiliteBtn = btn('背景高亮', '🖍', () => { const open = menu !== 'hilite'; closeMenu(); if (open) { menu = 'hilite'; hiliteSw.hidden = false; } });
+    const hiliteBtn = btn(T('editor.highlightBg'), '🖍', () => { const open = menu !== 'hilite'; closeMenu(); if (open) { menu = 'hilite'; hiliteSw.hidden = false; } });
     const hiliteSw = swatchRow(HILITE_COLORS, 'background-color'); hiliteHolder.append(hiliteBtn, hiliteSw);
     bar.append(
-      btn('加粗', SVG.bold, () => doExec('bold')), btn('斜体', SVG.italic, () => doExec('italic')),
-      btn('下划线', SVG.underline, () => doExec('underline')), btn('删除线', SVG.strike, () => doExec('strikeThrough')),
+      btn(T('editor.bold'), SVG.bold, () => doExec('bold')), btn(T('editor.italic'), SVG.italic, () => doExec('italic')),
+      btn(T('editor.underline'), SVG.underline, () => doExec('underline')), btn(T('editor.strike'), SVG.strike, () => doExec('strikeThrough')),
       el('span', 'ws-fmtbar-sep'), colorHolder, hiliteHolder,
-      el('span', 'ws-fmtbar-sep'), btn('清除格式', SVG.eraser, () => doExec('removeFormat')),
+      el('span', 'ws-fmtbar-sep'), btn(T('editor.clearFormat'), SVG.eraser, () => doExec('removeFormat')),
     );
     document.body.appendChild(bar);
 
@@ -171,8 +173,8 @@
 
     // ==== B/C：焦点框 + 悬停删除（宿主浮层）====
     const focusBox = el('div', 'nce-focus'); focusBox.hidden = true;
-    const focusDel = el('button', 'nce-focus-del', TRASH + '<span>删除此块</span>');
-    focusDel.title = '删除此块 (Delete)';
+    const focusDel = el('button', 'nce-focus-del', TRASH + '<span>' + T('editor.deleteThisBlock') + '</span>');
+    focusDel.title = T('editor.deleteThisBlockKey');
     focusDel.addEventListener('mousedown', (e) => e.preventDefault());
     focusDel.addEventListener('click', () => { if (focusEl) removeBlock(focusEl, true); });
     focusBox.appendChild(focusDel);
@@ -207,7 +209,7 @@
       try {
         const br = elm.getBoundingClientRect(); const bb = body.getBoundingClientRect();
         const frac = (br.width * br.height) / Math.max(1, bb.width * bb.height);
-        if (frac > 0.85 && hostWin.confirm && !hostWin.confirm('这一块几乎是整个文档，确定删除？')) return;
+        if (frac > 0.85 && hostWin.confirm && !hostWin.confirm(T('editor.deleteAlmostWholeDoc'))) return;
       } catch (e) {}
       const next = keepNext ? (nearestInDir(elm, 'down', blocks) || nearestInDir(elm, 'up', blocks)) : null;
       elm.remove();

@@ -1,0 +1,33 @@
+// link 命名空间(zh)：文档互链的提及菜单(mention) + 悬停预览卡/断链修复卡(linkview)。
+module.exports = {
+  // ---- mention 提及菜单 ----
+  noMatchDoc: '无匹配文档',
+  otherSpace: '其他空间',
+  nameSep: '、',
+  crossVolNote: '{names}：在另一磁盘卷，暂不支持链接',
+  degradedNote: '{names}：文件夹过大，链接功能不可用',
+  createNamed: '新建「{query}」',
+  urlLink: '网址链接…',
+  urlPrompt: '链接地址',
+  badUrl: '不允许的链接地址',
+  createFailed: '新建失败',
+  createdAndLinked: '已新建「{title}」并链接',
+  crossSpaceLinkFail: '无法建立跨文件夹空间的链接（可能不在同一磁盘卷）',
+  // ---- linkview 预览卡 / 断链修复卡 ----
+  nonDocFileNote: '非文档文件，打开后转交系统对应程序。',
+  brokenTitle: '链接目标不存在',
+  brokenNote: '目标可能被移动、改名，或已删除。',
+  repointMoved: '重新指向 {target}（原文件已移动到这里）',
+  repoint: '重新指向 {target}',
+  createIn: '在{dir}新建「{name}」',
+  rootDir: '根目录',
+  browsePick: '浏览…手动选择要指向的文件',
+  deleteLinkKeepText: '删除此链接（保留文字）',
+  fileOutsideWorkspace: '所选文件不在当前工作区，无法建相对链接',
+  linkGone: '链接已不在当前文档',
+  linkDeleted: '已删除链接（保留文字）',
+  linkGoneNoRepoint: '链接已不在当前文档，未能重新指向',
+  crossSpaceCalcFail: '无法计算跨文件夹空间的链接（可能不在同一磁盘卷）',
+  repointed: '已重新指向 {target}',
+  createdNamed: '已新建「{name}」',
+};

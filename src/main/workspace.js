@@ -8,6 +8,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
 const { buildFileTree, kindOf, assertInsideWorkspace, cleanLeafName, isSkippedName, isBundleName } = require('../lib/file-tree');
+const i18n = require('../lib/i18n');
 const files = require('./files');
 const perfDiag = require('./perf-diag');
 
@@ -44,12 +45,36 @@ function uniqueLeaf(taken, base, ext) {
   return name;
 }
 
-// 递归走盘 → { files:[{path,kind}], dirs:[rel] }，path/rel 均为工作区内 '/' 分隔相对路径。
+// 条目预算（Colin 拍板 15 万；诊断 D3）：walk 遍历中计数「过 skip 后真正进树的条目」（文件 + 目录），
+// 到预算即停止遍历、返回 truncated=true。防大根（家目录/桌面级，几十万~百万条目）把
+// walk → 每文件 stat → 建树 → 几百 MB IPC → renderer 堆一路 O(N) 冻死（Colin/Wendi 病根）。
+// WS2_TREE_BUDGET 是测试 seam：node:test 直接改 process.env、e2e 经 launch env 传小值；生产不设即恒 15 万。
+const DEFAULT_TREE_BUDGET = 150000;
+function treeBudget() {
+  const v = parseInt(process.env.WS2_TREE_BUDGET, 10);
+  return Number.isInteger(v) && v > 0 ? v : DEFAULT_TREE_BUDGET;
+}
+
+// 单层预算（P0b lazy 模式，readDir）：一个目录的直接子项超过它 → 截断本层。VS Code 在单目录百万直接
+// 子项上也会卡死（issue #281507），全量扫架构没这护栏 renderdir 一次就爆内存。默认 5 万；WS2_DIR_BUDGET
+// 是测试 seam（同 WS2_TREE_BUDGET）。跟 treeBudget 是两回事：treeBudget 管「整根走全量还是走 lazy」，
+// dirBudget 管「lazy 模式下单层最多渲染多少直接子项」。
+const DEFAULT_DIR_BUDGET = 50000;
+function dirBudget() {
+  const v = parseInt(process.env.WS2_DIR_BUDGET, 10);
+  return Number.isInteger(v) && v > 0 ? v : DEFAULT_DIR_BUDGET;
+}
+
+// 递归走盘 → { files:[{path,kind}], dirs:[rel], truncated, entryCount }，path/rel 均为工作区内 '/' 分隔相对路径。
 // startRel 非空 = 只走该子树（watcher 报了变化目录时的子树级重扫，见 readSubtrees）。
 async function walk(root, startRel = '') {
   const filesOut = [];
   const dirsOut = [];
+  const budget = treeBudget();
+  let count = 0; // 已进树的条目数（文件 + 目录，过 skip 后）
+  let truncated = false;
   async function rec(absDir, rel) {
+    if (truncated) return;
     let entries;
     try {
       entries = await fs.readdir(absDir, { withFileTypes: true });
@@ -58,18 +83,21 @@ async function walk(root, startRel = '') {
     }
     for (const e of entries) {
       if (skip(e.name)) continue;
+      if (count >= budget) { truncated = true; return; } // 预算用尽即停（恰好等于预算不算超——第 budget+1 个才触发）
+      count++;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         dirsOut.push(childRel);
         if (isBundle(e.name)) continue; // macOS 包：树上显示成一个节点，但不递归进去（否则钻进内部上万文件、卡死）
         await rec(path.join(absDir, e.name), childRel);
+        if (truncated) return;
       } else if (e.isFile()) {
         filesOut.push({ path: childRel, kind: kindOf(e.name) });
       }
     }
   }
   await rec(startRel ? path.join(root, startRel.split('/').join(path.sep)) : root, startRel);
-  return { files: filesOut, dirs: dirsOut };
+  return { files: filesOut, dirs: dirsOut, truncated, entryCount: count };
 }
 
 // 并发限流的逐文件 stat 取 ino——无界 Promise.all 在大根上会同时压几万个 stat 进 libuv 线程池
@@ -89,6 +117,15 @@ async function fillInos(rootAbs, fl) {
       }),
     );
   }
+}
+
+// IPC 载荷字节估算（诊断 §7 盲区）：O(N) 从 rel 长度粗估，不真 JSON.stringify——真序列化会给普通根加一
+// 整趟 O(N) 大字符串分配（红线：普通根零回归）。每文件 ≈ rel*2(abs 同量级) + kind/ino/结构常量；目录同理。
+function estPayloadBytes(fl, dirs) {
+  let n = 0;
+  for (const f of fl) n += (f.path.length + 2) * 2 + 140;
+  for (const d of dirs) n += (d.length + 2) * 2 + 80;
+  return n;
 }
 
 // 给每个节点补绝对路径（主进程算路径，渲染层不做路径运算——点 .html 直接用 abs 喂 openDoc）。
@@ -114,9 +151,16 @@ async function readTree(root) {
   // stat 只要祖先的 execute 位就能过，walk 对 readdir 失败又静默吞成空树 → 半失联的根被当成「空了」，
   // 标签+置顶全被 reconcile 清光。根层 readdir 探一次，抛错即 null；子目录级失败维持吞掉（局部问题局部退化）。
   try { await fs.readdir(r); } catch { return null; }
-  const { files: fl, dirs } = await walk(r);
+  const { files: fl, dirs, truncated, entryCount } = await walk(r);
+  // 超条目预算（D3）：**不建局部树、不 fillInos**——半棵树比没有更误导，且 15 万次 stat + 几百 MB IPC
+  // + renderer 再存一份正是「卡死」本体。回空树 + truncated 旗标，renderer 据此渲染「过大」提示行 + 移除
+  // 入口、并对该根的 watcher 事件 no-op（不重扫）。tree=[] 保证 IPC 载荷恒定微小。
+  if (truncated) {
+    perfDiag.recordRead(r, Number(process.hrtime.bigint() - __t0) / 1e6, entryCount, { dirCount: dirs.length, bytes: 0 });
+    return { root: r, name: path.basename(r), tree: [], truncated: true, entryCount };
+  }
   await fillInos(r, fl);
-  perfDiag.recordRead(r, Number(process.hrtime.bigint() - __t0) / 1e6, fl.length);
+  perfDiag.recordRead(r, Number(process.hrtime.bigint() - __t0) / 1e6, fl.length, { dirCount: dirs.length, bytes: estPayloadBytes(fl, dirs) });
   return { root: r, name: path.basename(r), tree: addAbs(buildFileTree(fl, dirs), r) };
 }
 
@@ -167,12 +211,57 @@ async function readSubtrees(root, dirRels) {
   return { subtrees };
 }
 
+// 单层读取（P0b lazy 模式：展开哪层读哪层，VS Code 路线）。只 readdir 一层、不递归、不 stat（无 ino）——
+// 这是「过大」根（超 treeBudget、走 lazy 的根）能秒级浏览的核心：成本 O(本层直接子项)、与整棵树规模无关。
+// dirRel '' = 根本身。返回 { dir, children:[…], truncated, entryCount }，children 节点形状对齐 readTree
+//（name/rel/abs/isDir/kind，dir 带 childrenLoaded），但**无 ino**（lazy 根走路径匹配、不做 inode 跟随，V3）。
+// 复用 walk 的跳过规则（isSkippedName/isBundleName）；bundle 目录（.app）标 childrenLoaded=true+空 children
+//（树上是单节点、不钻进去，与全量 walk 一致）。单层预算 dirBudget：直接子项超它 → 截断 + truncated。
+// assertInsideWorkspace 约束 dirRel（渲染层路径不可信，同 readSubtrees 威胁模型）。
+async function readDir(root, dirRel = '') {
+  const r = path.resolve(root);
+  const rel = String(dirRel || '');
+  const absDir = rel ? assertInsideWorkspace(r, rel) : r;
+  const __t0 = process.hrtime.bigint();
+  let entries;
+  try {
+    entries = await fs.readdir(absDir, { withFileTypes: true });
+  } catch {
+    perfDiag.recordDirRead(r, Number(process.hrtime.bigint() - __t0) / 1e6);
+    return { dir: rel, children: [], truncated: false, entryCount: 0 }; // 不可达/权限：空层（父级仍在，别当整根失联）
+  }
+  const budget = dirBudget();
+  const nodes = [];
+  let count = 0;
+  let truncated = false;
+  for (const e of entries) {
+    if (skip(e.name)) continue;
+    if (count >= budget) { truncated = true; break; } // 恰好等于预算不算超——第 budget+1 个才触发（同 walk）
+    count++;
+    const childRel = rel ? `${rel}/${e.name}` : e.name;
+    const abs = path.join(absDir, e.name);
+    if (e.isDirectory()) {
+      // bundle（.app 等）：树上单节点、不递归（childrenLoaded=true+空，避免 lazy 展开钻进去上万文件）
+      nodes.push({ name: e.name, rel: childRel, abs, isDir: true, children: [], childrenLoaded: isBundle(e.name) });
+    } else if (e.isFile()) {
+      nodes.push({ name: e.name, rel: childRel, abs, isDir: false, kind: kindOf(e.name), children: [] });
+    }
+  }
+  // 与 buildFileTree/sortNodes 同口径排序（文件夹优先，同组中文拼音/数字）——lazy 层与全量树观感一致。
+  nodes.sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+    return a.name.localeCompare(b.name, 'zh-Hans-CN', { numeric: true });
+  });
+  perfDiag.recordDirRead(r, Number(process.hrtime.bigint() - __t0) / 1e6);
+  return { dir: rel, children: nodes, truncated, entryCount: count };
+}
+
 // 在 dirRel 目录里新建一个 .html（内容由调用方给——模板 HTML）。dirRel '' = 工作区根。
 async function newDoc(root, dirRel, baseName, html, ext) {
   const e = ext === '.md' ? '.md' : '.html'; // U4 断链「新建」尊重断链后缀；默认 .html（@新建/旧调用方不传）
   const r = path.resolve(root);
   const destDir = assertInsideWorkspace(r, dirRel || '.');
-  const base = cleanLeafName(baseName) || '未命名';
+  const base = cleanLeafName(baseName) || i18n.t('common.untitled');
   await fs.mkdir(destDir, { recursive: true });
   const leaf = uniqueLeaf(new Set(await listNames(destDir)), base, e);
   const abs = assertInsideWorkspace(r, path.join(destDir, leaf));
@@ -190,7 +279,7 @@ async function listDocs(root) {
 async function makeDir(root, dirRel, name) {
   const r = path.resolve(root);
   const parent = assertInsideWorkspace(r, dirRel || '.');
-  const base = cleanLeafName(name) || '新建文件夹';
+  const base = cleanLeafName(name) || i18n.t('common.newFolder');
   const leaf = uniqueLeaf(new Set(await listNames(parent)), base, '');
   const abs = assertInsideWorkspace(r, path.join(parent, leaf));
   await fs.mkdir(abs, { recursive: true });
@@ -293,7 +382,7 @@ async function undoDelete(root, token, backupRoot) {
   const r = path.resolve(root);
   // 修 MP-16：token 直接进 path.join，畸形值（含 ../ 或分隔符）能把 backupDir 指出 backupRoot。加固：
   // 只认 deletePath 生成的格式（del-<base36>-<hex>），不符即拒——正常 UI 流不可达，防御 renderer 被攻破。
-  if (!/^del-[0-9a-z]+-[0-9a-f]+$/.test(String(token || ''))) throw new Error('非法的撤销令牌');
+  if (!/^del-[0-9a-z]+-[0-9a-f]+$/.test(String(token || ''))) throw new Error(i18n.t('dialog.errBadUndoToken'));
   const backupDir = path.join(backupRoot, token);
   const manifest = JSON.parse(await fs.readFile(path.join(backupDir, 'manifest.json'), 'utf8'));
   const origAbs = assertInsideWorkspace(r, manifest.rel);
@@ -335,6 +424,7 @@ async function sweepBackups(backupRoot, maxAgeMs = 24 * 60 * 60 * 1000) {
 module.exports = {
   readTree,
   readSubtrees,
+  readDir,
   listDocs,
   newDoc,
   makeDir,

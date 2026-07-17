@@ -4,6 +4,14 @@ const { JSDOM } = require('jsdom');
 
 // toolbar.js 裸引用 WS2Format（非 global. 前缀），node:test 下要先挂到 globalThis 再 require。
 global.WS2Format = require('../src/editor/format.js');
+
+// i18n：toolbar 的 label/title 走 renderer 全局 wsT（本用例断言中文），node:test 下把 wsT 接到
+// i18n 模块并锁 zh，让 t('editor.*') 返回中文原文（否则回退 key 名、按钮找不到）。
+const _i18n = require('../src/lib/i18n');
+_i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
+_i18n.setActiveLang('zh');
+global.wsT = _i18n.t;
+
 const toolbar = require('../src/editor/toolbar.js');
 
 // 建一个 jsdom 容器 + 一份「被编辑文档」doc，返回 { tb, container, doc, body }。

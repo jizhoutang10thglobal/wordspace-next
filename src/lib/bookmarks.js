@@ -5,12 +5,13 @@
 // state = { folders: [{ id, name }], bookmarks: [{ id, title, url, folderId, addedAt(ms), favicon? }] }
 // BM_BAR = 「书签栏」固定文件夹：☆/⌘D 默认落这里；不可改名/删除。
 
+const i18n = require('./i18n');
 const BM_BAR = 'bm-bar';
 let idSeq = 0;
 const uid = (p, ts) => p + '-' + Number(ts || 0).toString(36) + '-' + ++idSeq;
 
 function emptyState() {
-  return { folders: [{ id: BM_BAR, name: '书签栏' }], bookmarks: [] };
+  return { folders: [{ id: BM_BAR, name: i18n.t('bookmark.bar') }], bookmarks: [] };
 }
 // 载入/操作前兜底：保证书签栏文件夹存在且形状合法。
 function sanitize(state) {
@@ -18,7 +19,7 @@ function sanitize(state) {
   let folders = Array.isArray(s.folders)
     ? s.folders.filter((f) => f && typeof f.id === 'string' && typeof f.name === 'string')
     : [];
-  if (!folders.some((f) => f.id === BM_BAR)) folders = [{ id: BM_BAR, name: '书签栏' }, ...folders];
+  if (!folders.some((f) => f.id === BM_BAR)) folders = [{ id: BM_BAR, name: i18n.t('bookmark.bar') }, ...folders];
   const ids = new Set(folders.map((f) => f.id));
   // favicon 只留 http(s) 或有限长 data:（主进程存的是 data:URL）——拒 javascript: 和无上限 data:
   // （sanitize 是「载入前防旧数据毒化」的兜底,磁盘被塞多 MB data:URL 会永久重持久化+每次全量推 renderer,P2-5）。
@@ -65,7 +66,7 @@ function update(state, id, patch) {
 function addFolder(state, name, ts) {
   const id = uid('bmf', ts);
   // 撞名自动加「名字 2」后缀（与导入路径同口径,P3-09；不弹错、低摩擦）
-  const finalName = uniqueName(new Set(state.folders.map((f) => f.name)), name || '新文件夹');
+  const finalName = uniqueName(new Set(state.folders.map((f) => f.name)), name || i18n.t('bookmark.newFolder'));
   return { state: { folders: [...state.folders, { id, name: finalName }], bookmarks: state.bookmarks }, id };
 }
 function renameFolder(state, id, name) {
@@ -131,7 +132,7 @@ function parseNetscapeHtml(html, ts) {
     const tok = m[0];
     if (tok[1] === 'h' || tok[1] === 'H') {
       const attrs = m[1] || '';
-      const name = unesc((m[2] || '').trim()) || '文件夹';
+      const name = unesc((m[2] || '').trim()) || i18n.t('bookmark.folder');
       const isBar = /personal_toolbar_folder\s*=\s*["']?true/i.test(attrs);
       if (isBar) pendingFolder = { id: BM_BAR, name };
       else {

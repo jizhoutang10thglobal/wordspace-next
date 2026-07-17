@@ -3,6 +3,7 @@ import { Copy, Check, ClipboardList, TerminalSquare, ShieldCheck, ChevronDown, X
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
 import { relTime } from '../lib/format'
+import { useT } from '../i18n'
 import type { AgentEvent } from '../types'
 // AI 创作指南（= docs/schema-1-ai-authoring.md 的分发拷贝，test/skill-guide-sync.test.js 锁一致）
 import SCHEMA_PROMPT from '../lib/schema-prompt.md?raw'
@@ -12,26 +13,26 @@ import './Agents.css'
 const SKILL_CMD = 'npx skills add wordspace-ai/skills'
 
 // ---- Agent API 占位（Wendi 原稿，保留展示、规划中；暂不进真 app）----
+// action → misc 命名空间 key，渲染时用组件 t() 解析（切语言即更新）。
 const ACTION_VERB: Record<AgentEvent['action'], string> = {
-  create: '生成',
-  read: '读取',
-  publish: '发布',
-  update: '更新',
+  create: 'misc.actionCreate',
+  read: 'misc.actionRead',
+  publish: 'misc.actionPublish',
+  update: 'misc.actionUpdate',
 }
 const API_BASE = 'https://api.wordspace.app/v1'
 const API_KEY = 'wsk_live_••••••••3f2a'
-const CURL = `curl -X POST https://api.wordspace.app/v1/documents \\
-  -H "Authorization: Bearer $WS_KEY" \\
-  -d '{"title":"周报","blocks":[...],"publish":"internal"}'`
 
 // AI 接入：上半 = 现在就能用的两条路（Tab 切换：复制 Prompt / 安装 Skill），
 // 下半 = Agent API 占位（Wendi 原稿，规划中）。产出不靠 AI 自觉：打开即过确定性校验器，不合规降级兜底。
 export default function Agents() {
+  const t = useT()
   const open = useUI((s) => s.agentsOpen)
   const close = useUI((s) => s.closeAgents)
   const toast = useStore((s) => s.toast)
   const agentEvents = useStore((s) => s.agentEvents)
   const addAgentEvent = useStore((s) => s.addAgentEvent)
+  const CURL = t('misc.curlExample')
 
   const [tab, setTab] = useState<'prompt' | 'skill'>('prompt')
   const [copied, setCopied] = useState<'prompt' | 'cmd' | null>(null)
@@ -42,7 +43,7 @@ export default function Agents() {
     publishInternal: false,
   })
 
-  const copy = (text: string, msg = '已复制') => {
+  const copy = (text: string, msg = t('misc.copied')) => {
     void navigator.clipboard?.writeText(text)
     toast(msg, 'success')
   }
@@ -53,13 +54,15 @@ export default function Agents() {
   }
 
   const simulate = () => {
+    const name = t('misc.simAgentName')
+    const title = t('misc.simDocTitle')
     addAgentEvent({
-      agentName: '市场 Agent',
+      agentName: name,
       agentColor: '#0b8793',
       action: 'create',
-      docTitle: '自动周报',
+      docTitle: title,
     })
-    toast('市场 Agent 生成了《自动周报》', 'success')
+    toast(t('misc.simToast', { name, title }), 'success')
   }
 
   useEffect(() => {
@@ -76,19 +79,16 @@ export default function Agents() {
       <div className="ws-modal ag-modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="ws-modal-head">
           <div className="ws-modal-head-text">
-            <div className="ws-modal-title">AI 接入</div>
-            <div className="ws-modal-sub">让任何 AI 按 Wordspace Schema 生成、编辑文档</div>
+            <div className="ws-modal-title">{t('misc.title')}</div>
+            <div className="ws-modal-sub">{t('misc.subtitle')}</div>
           </div>
-          <button className="ws-modal-x" onClick={close} aria-label="关闭"><X size={18} /></button>
+          <button className="ws-modal-x" onClick={close} aria-label={t('common.close')}><X size={18} /></button>
         </div>
         <div className="ws-modal-body ag-modal-body">
-          <p className="ag-intro">
-            两种接入方式，产出的 .html 在 Wordspace 打开时都会经过确定性校验器把关——
-            不合规会自动降级，AI 犯错也弄不坏你的文档。
-          </p>
+          <p className="ag-intro">{t('misc.intro')}</p>
 
           {/* 方式切换 Tab */}
-        <div className="ag-tabs" role="tablist" aria-label="接入方式">
+        <div className="ag-tabs" role="tablist" aria-label={t('misc.tablistLabel')}>
           <button
             role="tab"
             aria-selected={tab === 'prompt'}
@@ -96,8 +96,8 @@ export default function Agents() {
             onClick={() => setTab('prompt')}
           >
             <ClipboardList size={14} />
-            复制 Prompt
-            <span className="ag-tab-hint">任何对话式 AI</span>
+            {t('misc.copyPrompt')}
+            <span className="ag-tab-hint">{t('misc.tabPromptHint')}</span>
           </button>
           <button
             role="tab"
@@ -106,7 +106,7 @@ export default function Agents() {
             onClick={() => setTab('skill')}
           >
             <TerminalSquare size={14} />
-            安装 Skill
+            {t('misc.tabSkill')}
             <span className="ag-tab-hint">coding agent</span>
           </button>
         </div>
@@ -116,30 +116,28 @@ export default function Agents() {
             <div className="ag-card">
               <div className="ag-way-head">
                 <div className="ag-way-text">
-                  <div className="ag-way-title">粘给任何对话式 AI，零安装</div>
-                  <div className="ag-way-hint">
-                    Claude、ChatGPT、Gemini……Prompt 就是完整的《Schema #1 创作指南》。
-                  </div>
+                  <div className="ag-way-title">{t('misc.promptWayTitle')}</div>
+                  <div className="ag-way-hint">{t('misc.promptWayHint')}</div>
                 </div>
                 <button
                   className="ag-primary"
-                  onClick={() => copyMark(SCHEMA_PROMPT, 'prompt', '已复制 Prompt，粘给你的 AI 即可')}
+                  onClick={() => copyMark(SCHEMA_PROMPT, 'prompt', t('misc.toastPromptCopied'))}
                 >
                   {copied === 'prompt' ? <Check size={14} /> : <Copy size={14} />}
-                  {copied === 'prompt' ? '已复制' : '复制 Prompt'}
+                  {copied === 'prompt' ? t('misc.copied') : t('misc.copyPrompt')}
                 </button>
               </div>
               <div className="ag-divider" />
               <ol className="ag-steps">
-                <li>点上面的按钮，把 Prompt 复制到剪贴板</li>
-                <li>粘进你的 AI 对话，接着用一句话描述要写 / 要改什么（可以把现有 .html 一起贴给它）</li>
-                <li>把 AI 产出的内容存成 <code>.html</code>，在 Wordspace 打开——合规即获得完整结构化编辑</li>
+                <li>{t('misc.promptStep1')}</li>
+                <li>{t('misc.promptStep2')}</li>
+                <li>{t('misc.promptStep3a')}<code>.html</code>{t('misc.promptStep3b')}</li>
               </ol>
               <div className="ag-divider" />
               <button className="ag-preview-toggle" onClick={() => setPreviewOpen((v) => !v)}>
                 <ChevronDown size={13} className={previewOpen ? 'is-open' : ''} />
-                预览 Prompt 内容
-                <span className="ag-preview-meta">{SCHEMA_PROMPT.length.toLocaleString()} 字符</span>
+                {t('misc.previewPrompt')}
+                <span className="ag-preview-meta">{t('misc.charCount', { n: SCHEMA_PROMPT.length.toLocaleString() })}</span>
               </button>
               {previewOpen && <pre className="ag-preview">{SCHEMA_PROMPT}</pre>}
             </div>
@@ -149,10 +147,8 @@ export default function Agents() {
             <div className="ag-card">
               <div className="ag-way-head">
                 <div className="ag-way-text">
-                  <div className="ag-way-title">给 coding agent 装成长期技能</div>
-                  <div className="ag-way-hint">
-                    装一次，Claude Code、Codex、Cursor 等 agent 此后生成 / 编辑 Wordspace 文档时自动遵守 Schema。
-                  </div>
+                  <div className="ag-way-title">{t('misc.skillWayTitle')}</div>
+                  <div className="ag-way-hint">{t('misc.skillWayHint')}</div>
                 </div>
               </div>
               <div className="ag-divider" />
@@ -160,16 +156,16 @@ export default function Agents() {
                 <pre className="ag-cmd">{SKILL_CMD}</pre>
                 <button
                   className="ag-copy"
-                  onClick={() => copyMark(SKILL_CMD, 'cmd', '已复制安装命令')}
+                  onClick={() => copyMark(SKILL_CMD, 'cmd', t('misc.toastCmdCopied'))}
                 >
                   {copied === 'cmd' ? <Check size={13} /> : <Copy size={13} />}
-                  复制
+                  {t('common.copy')}
                 </button>
               </div>
               <ol className="ag-steps">
-                <li>在你的项目目录里跑上面这条命令（从 Wordspace 官方技能仓库安装）</li>
-                <li>让 agent 写文档时点明「Wordspace 文档」，它会自动按 Schema 产出 <code>.html</code></li>
-                <li>产出文件在 Wordspace 打开即自动校验，无需手动检查</li>
+                <li>{t('misc.skillStep1')}</li>
+                <li>{t('misc.skillStep2')}<code>.html</code></li>
+                <li>{t('misc.skillStep3')}</li>
               </ol>
             </div>
           </section>
@@ -180,14 +176,13 @@ export default function Agents() {
           <div className="ag-note">
             <ShieldCheck size={15} className="ag-note-ico" />
             <span>
-              AI 不需要完美：每份文档在打开时都会被<b>确定性校验器</b>逐条检查，不合规自动降级为基础编辑，
-              内容永远不会被弄坏。
+              {t('misc.noteA')}<b>{t('misc.noteBold')}</b>{t('misc.noteB')}
             </span>
           </div>
         </section>
 
         {/* ==== Agent API 占位（Wendi 原稿，规划中；暂不进真 app）==== */}
-        <div className="ag-planned-label">Agent API · 规划中</div>
+        <div className="ag-planned-label">{t('misc.plannedLabel')}</div>
 
         {/* API */}
         <section className="ag-section">
@@ -195,12 +190,12 @@ export default function Agents() {
           <div className="ag-card">
             <div className="ag-row">
               <div className="ag-row-main">
-                <div className="ag-row-key">接入地址</div>
+                <div className="ag-row-key">{t('misc.apiEndpoint')}</div>
                 <code className="ag-mono">{API_BASE}</code>
               </div>
               <button className="ag-copy" onClick={() => copy(API_BASE)}>
                 <Copy size={13} />
-                复制
+                {t('common.copy')}
               </button>
             </div>
             <div className="ag-divider" />
@@ -211,12 +206,12 @@ export default function Agents() {
               </div>
               <button className="ag-copy" onClick={() => copy(API_KEY)}>
                 <Copy size={13} />
-                复制
+                {t('common.copy')}
               </button>
             </div>
             <div className="ag-divider" />
             <div className="ag-code-wrap">
-              <div className="ag-row-key ag-code-label">示例：创建并发布一篇文档</div>
+              <div className="ag-row-key ag-code-label">{t('misc.apiExample')}</div>
               <pre className="ag-code">{CURL}</pre>
             </div>
           </div>
@@ -224,25 +219,25 @@ export default function Agents() {
 
         {/* 权限 */}
         <section className="ag-section">
-          <div className="ag-label">权限</div>
+          <div className="ag-label">{t('misc.permsLabel')}</div>
           <div className="ag-card">
             <PermRow
-              label="创建文档"
-              hint="允许 Agent 在你的仓库中新建文档"
+              label={t('misc.permCreate')}
+              hint={t('misc.permCreateHint')}
               on={perms.create}
               onToggle={() => setPerms((p) => ({ ...p, create: !p.create }))}
             />
             <div className="ag-divider" />
             <PermRow
-              label="读取文档"
-              hint="允许 Agent 读取已发布的文档内容"
+              label={t('misc.permRead')}
+              hint={t('misc.permReadHint')}
               on={perms.read}
               onToggle={() => setPerms((p) => ({ ...p, read: !p.read }))}
             />
             <div className="ag-divider" />
             <PermRow
-              label="发布到内网"
-              hint="允许 Agent 将文档部署到公司内网"
+              label={t('misc.permPublish')}
+              hint={t('misc.permPublishHint')}
               on={perms.publishInternal}
               onToggle={() =>
                 setPerms((p) => ({ ...p, publishInternal: !p.publishInternal }))
@@ -253,13 +248,13 @@ export default function Agents() {
 
         {/* 活动 */}
         <section className="ag-section">
-          <div className="ag-label">活动</div>
+          <div className="ag-label">{t('misc.activityLabel')}</div>
           <button className="ag-sim" onClick={simulate}>
-            模拟一次 Agent 调用
+            {t('misc.simulate')}
           </button>
           <div className="ag-events">
             {agentEvents.length === 0 ? (
-              <div className="ag-empty">还没有 Agent 调用记录。</div>
+              <div className="ag-empty">{t('misc.noEvents')}</div>
             ) : (
               agentEvents.map((e) => (
                 <div key={e.id} className="ag-event">
@@ -267,8 +262,8 @@ export default function Agents() {
                     AI
                   </span>
                   <span className="ag-event-name">{e.agentName}</span>
-                  <span className="ag-event-verb">{ACTION_VERB[e.action]}</span>
-                  <span className="ag-event-doc">《{e.docTitle}》</span>
+                  <span className="ag-event-verb">{t(ACTION_VERB[e.action])}</span>
+                  <span className="ag-event-doc">{t('misc.docQuoted', { title: e.docTitle })}</span>
                   <span className="ag-event-time">{relTime(e.at)}</span>
                 </div>
               ))

@@ -1,0 +1,18 @@
+export default {
+  cancel: 'Cancel',
+  confirm: 'OK',
+  close: 'Close',
+  delete: 'Delete',
+  rename: 'Rename',
+  save: 'Save',
+  open: 'Open',
+  create: 'New',
+  back: 'Back',
+  done: 'Done',
+  undo: 'Undo',
+  copy: 'Copy',
+  duplicate: 'Duplicate',
+  more: 'More',
+  edit: 'Edit',
+  search: 'Search',
+}

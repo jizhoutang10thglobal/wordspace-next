@@ -1,5 +1,6 @@
 import { ExternalLink } from 'lucide-react'
 import { useStore } from '../mock/store'
+import { useT } from '../i18n'
 import './FileViewerBar.css'
 
 // The shared top bar for in-app file viewers (PDF, image, …): the file name, a
@@ -14,6 +15,7 @@ export default function FileViewerBar({
   app: string
 }) {
   const toast = useStore((s) => s.toast)
+  const t = useT()
   return (
     <div className="fv-bar">
       <span className="fv-bar-name ws-truncate">{fileName}</span>
@@ -21,9 +23,9 @@ export default function FileViewerBar({
       <div className="fv-bar-sp" />
       <button
         className="fv-open"
-        onClick={() => toast(`正在用 ${app} 打开「${fileName}」`, 'success')}
+        onClick={() => toast(t('sidebar.openingWith', { app, name: fileName ?? '' }), 'success')}
       >
-        <ExternalLink size={14} />用 {app} 打开
+        <ExternalLink size={14} />{t('sidebar.openWithApp', { app })}
       </button>
     </div>
   )

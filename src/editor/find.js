@@ -55,9 +55,9 @@
     inputEl = document.createElement('input');
     inputEl.className = 'ws-docfind-input';
     inputEl.type = 'text';
-    inputEl.placeholder = '在文档中查找';
+    inputEl.placeholder = window.wsT('find.findInDoc');
     inputEl.spellcheck = false;
-    inputEl.setAttribute('aria-label', '在文档中查找');
+    inputEl.setAttribute('aria-label', window.wsT('find.findInDoc'));
 
     countEl = document.createElement('span');
     countEl.className = 'ws-docfind-count';
@@ -65,16 +65,16 @@
 
     var nav = document.createElement('div');
     nav.className = 'ws-docfind-nav';
-    prevBtn = mkBtn('上一个 (Shift+Enter)', SVG_UP);
-    nextBtn = mkBtn('下一个 (Enter)', SVG_DOWN);
-    prevBtn.setAttribute('aria-label', '上一个匹配');
-    nextBtn.setAttribute('aria-label', '下一个匹配');
+    prevBtn = mkBtn(window.wsT('find.prevTitle'), SVG_UP);
+    nextBtn = mkBtn(window.wsT('find.nextTitle'), SVG_DOWN);
+    prevBtn.setAttribute('aria-label', window.wsT('find.prevMatch'));
+    nextBtn.setAttribute('aria-label', window.wsT('find.nextMatch'));
     nav.appendChild(prevBtn);
     nav.appendChild(nextBtn);
 
-    var closeBtn = mkBtn('关闭 (Esc)', SVG_X);
+    var closeBtn = mkBtn(window.wsT('find.closeTitle'), SVG_X);
     closeBtn.className += ' ws-docfind-close';
-    closeBtn.setAttribute('aria-label', '关闭查找');
+    closeBtn.setAttribute('aria-label', window.wsT('find.closeFind'));
 
     bar.appendChild(inputEl);
     bar.appendChild(countEl);
@@ -156,7 +156,7 @@
     if (!countEl) return;
     var q = inputEl ? inputEl.value : '';
     if (!q) countEl.textContent = '';
-    else if (!matches.length) countEl.textContent = '无结果';
+    else if (!matches.length) countEl.textContent = window.wsT('find.noResults');
     else countEl.textContent = (active + 1) + ' / ' + matches.length;
     if (prevBtn) prevBtn.disabled = !matches.length;
     if (nextBtn) nextBtn.disabled = !matches.length;

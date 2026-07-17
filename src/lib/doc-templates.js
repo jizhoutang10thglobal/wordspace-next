@@ -1,24 +1,28 @@
 // 「新建文档」的内置模板（本地，无 AI）。每份是一段独立的标准 HTML，新建时由主进程经
 // files.writeDocSafe 原样落盘（字节层，不过编辑器序列化器）。第一项「空文档」永远在最前、
 // 一键直达。内容对齐 ui-demo seedTemplates 的本地可用子集（会议纪要/项目方案/周计划）。
-// 纯数据模块（无 require），node:test 可直接 require 校验。
+// node:test 可直接 require 校验（i18n 也是纯逻辑、无 electron，不破坏可测性）。
+// name/desc 用 getter 走 i18n.t()（选择器显示，随语言实时切换：ws-templates IPC 每次调用时
+//   structured-clone 触发 getter 取当前语言）；base（磁盘默认名）与 html 正文豁免不翻（i18n-exempt）。
+const i18n = require('./i18n');
 const SHELL = (title, body) =>
   `<!doctype html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n<title>${title}</title>\n</head>\n<body>\n${body}\n</body>\n</html>\n`;
 
+// i18n-exempt-start —— 以下 base（磁盘默认名）与 html 模板正文整段豁免不翻；name/desc 走上面的 getter 翻译。
 const TEMPLATES = [
   {
     id: 'blank',
-    name: '空文档',
+    get name() { return i18n.t('template.blankName'); },
     base: '未命名',
-    desc: '从一张白纸开始',
+    get desc() { return i18n.t('template.blankDesc'); },
     accent: '#1a73e8',
     html: SHELL('未命名', '<h1>未命名</h1>\n<p></p>'),
   },
   {
     id: 'minutes',
-    name: '会议纪要',
+    get name() { return i18n.t('template.minutesName'); },
     base: '会议纪要',
-    desc: '主题 / 参会 / 议题 / 决议 / 待办',
+    get desc() { return i18n.t('template.minutesDesc'); },
     accent: '#1a73e8',
     html: SHELL(
       '会议纪要',
@@ -38,9 +42,9 @@ const TEMPLATES = [
   },
   {
     id: 'proposal',
-    name: '项目方案',
+    get name() { return i18n.t('template.proposalName'); },
     base: '项目方案',
-    desc: '背景 / 目标 / 方案 / 里程碑 / 风险',
+    get desc() { return i18n.t('template.proposalDesc'); },
     accent: '#e8710a',
     html: SHELL(
       '项目方案',
@@ -62,9 +66,9 @@ const TEMPLATES = [
   },
   {
     id: 'weekly',
-    name: '周计划',
+    get name() { return i18n.t('template.weeklyName'); },
     base: '周计划',
-    desc: 'Weekly Plan / 例会节奏 / 周末复盘',
+    get desc() { return i18n.t('template.weeklyDesc'); },
     accent: '#d4356b',
     html: SHELL(
       '周计划',
@@ -86,5 +90,6 @@ const TEMPLATES = [
     ),
   },
 ];
+// i18n-exempt-end
 
 module.exports = { TEMPLATES };

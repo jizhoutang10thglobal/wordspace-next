@@ -46,6 +46,9 @@
 .ws-toast-danger::before { background: var(--c-danger); }
 .ws-toast-progress::before { background: var(--c-accent); }
 .ws-toast-success .ws-toast-check { color: var(--c-success); }
+/* hint = 快捷键教学气泡：accent 墨蓝色条 + 灯泡，安静不喧宾夺主 */
+.ws-toast-hint::before { background: var(--c-accent); }
+.ws-toast-hint .ws-toast-bulb { color: var(--c-accent); }
 
 /* actionable toast (e.g. 删除…撤销): clickable, with an accent action button */
 .ws-toast.has-action { pointer-events: auto; }

@@ -43,7 +43,7 @@ async function seedWorkspace(dir) {
 async function launch(env) {
   const a = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', ...env },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', ...env },
   });
   const p = await a.firstWindow();
   await p.waitForLoadState('domcontentloaded');
@@ -473,15 +473,17 @@ test('移动当前打开的文件 → 编辑器重指向到新目录、高亮跟
 
 // ============================ 收起按钮 + 重启恢复 ============================
 
-test('点头部收起按钮 → 侧栏真收起（全隐藏）+ 悬浮展开按钮，再展开', async () => {
+test('点头部收起按钮 → 侧栏真收起（全隐藏、零可见 chrome），Cmd/Ctrl+\\ 再展开', async () => {
   await openWorkspace();
   await page.click('#sb-toggle');
   await expect(page.locator('#sidebar')).toHaveClass(/is-collapsed/);
   expect(await page.locator('#sidebar').evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(5); // 真收起 = 宽 0
-  await expect(page.locator('#sb-reopen')).toBeVisible(); // 侧栏全隐后自己的 toggle 也没了 → 编辑区悬浮展开按钮现身
-  await page.click('#sb-reopen');
+  // 沉浸收起：sb-reopen 浮钮已删（纯 Arc 式，零可见 chrome）；热区就位，重开=hover peek / Cmd+\
+  expect(await page.locator('#sb-reopen').count()).toBe(0);
+  await expect(page.locator('#sb-edge-hot')).toBeVisible();
+  await page.keyboard.press('Control+\\'); // 主层 keydown fallback（e2e CDP 按键绕过原生菜单）
   await expect(page.locator('#sidebar')).not.toHaveClass(/is-collapsed/);
-  await expect(page.locator('#sb-reopen')).toBeHidden();
+  await expect(page.locator('#sb-edge-hot')).toBeHidden(); // 展开后热区退场
 });
 
 test('置顶：右键树文件→进置顶区（不必先打开），重启仍在，取消置顶移除', async () => {

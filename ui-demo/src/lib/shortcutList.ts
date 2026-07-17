@@ -1,4 +1,5 @@
 import { IS_MAC } from './platform'
+import { t } from '../i18n'
 
 // 快捷键速查面板（Cmd+/ / Ctrl+/）的数据源——只列「当前 demo 里真的能用」的键位，
 // 按作用域分组（§1 上下文模型）。键位写成平台无关 token，渲染时按平台出字
@@ -17,89 +18,92 @@ export interface ShortcutGroup {
   items: ShortcutItem[]
 }
 
-const GROUPS: ShortcutGroup[] = [
-  {
-    title: '应用壳 · 全局',
-    items: [
-      { keys: ['Mod', 'T'], label: '新建标签页（新文档）' },
-      { keys: ['Mod', 'W'], label: '关闭当前标签页' },
-      { keys: ['Ctrl', 'Tab'], label: '下一个标签页（+Shift 上一个）' },
-      { keys: ['Mod', '1…8'], label: '直达第 N 个标签页' },
-      { keys: ['Mod', '9'], label: '最后一个标签页' },
-      { keys: ['Mod', 'S'], label: '保存（临时文档弹「保存到哪里」）' },
-      { keys: ['Mod', 'Shift', 'S'], label: '另存为…' },
-      { keys: ['Mod', 'P'], label: '快速打开（搜文件名）' },
-      { keys: ['Mod', 'Shift', 'F'], label: '聚焦文件筛选框' },
-      { keys: ['Mod', '\\'], label: '收起 / 展开侧栏' },
-      { keys: ['Mod', ','], label: '设置' },
-      { keys: ['Mod', '/'], label: '本面板' },
-    ],
-  },
-  {
-    title: '编辑器 · 查找与选择',
-    items: [
-      { keys: ['Mod', 'F'], label: '在文档中查找（Enter 下一个 · Shift+Enter 上一个）' },
-      { keys: ['Mod', 'A'], label: '全选块内文字，再按升到块选中态' },
-    ],
-  },
-  {
-    title: '编辑器 · 文本态（光标在块里）',
-    hint: '格式键作用于选中文字；无选区时放行原生',
-    items: [
-      { keys: ['Mod', 'B'], label: '加粗' },
-      { keys: ['Mod', 'I'], label: '斜体' },
-      { keys: ['Mod', 'U'], label: '下划线' },
-      { keys: ['Mod', 'Shift', 'X'], label: '删除线' },
-      { keys: ['Mod', 'Shift', 'H'], label: '高亮' },
-      { keys: ['Mod', 'E'], label: '行内代码' },
-      { keys: ['Mod', 'K'], label: '插入链接' },
-      { keys: ['Mod', 'Shift', 'V'], label: '粘贴为纯文本' },
-      { keys: ['Mod', 'Z'], label: '撤销（+Shift 重做）', macOnly: true },
-      { keys: ['Mod', 'Z'], label: '撤销（+Shift 或 Ctrl+Y 重做）', winOnly: true },
-      { keys: ['/'], label: '斜杠插入菜单' },
-      { keys: ['Enter'], label: '新块（Shift+Enter 块内换行）' },
-      { keys: ['Tab'], label: '列表缩进（Shift+Tab 反缩进）' },
-      { keys: ['Esc'], label: '退到块选中态' },
-    ],
-  },
-  {
-    title: '编辑器 · 块操作（文本态或块选中态）',
-    items: [
-      { keys: ['Mod', 'D'], label: '复制当前块' },
-      { keys: ['Mod', 'Shift', 'K'], label: '删除当前块' },
-      { keys: ['Mod', 'Shift', '↑/↓'], label: '上移 / 下移当前块' },
-      { keys: ['Mod', 'Alt', '0'], keysWin: ['Ctrl', 'Shift', '0'], label: '转为正文' },
-      { keys: ['Mod', 'Alt', '1…3'], keysWin: ['Ctrl', 'Shift', '1…3'], label: '转为标题 1 / 2 / 3' },
-      { keys: ['Mod', 'Alt', '4…6'], keysWin: ['Ctrl', 'Shift', '4…6'], label: '转为待办 / 无序 / 有序列表' },
-      { keys: ['Mod', 'Shift', '8'], label: '无序列表' },
-      { keys: ['Mod', 'Shift', '7'], label: '有序列表' },
-      { keys: ['Mod', 'Enter'], label: '待办打勾 / 取消' },
-      { keys: ['↑', '↓'], label: '块选中态：移动选择' },
-      { keys: ['Enter'], label: '块选中态：进入编辑' },
-      { keys: ['⌫'], label: '块选中态：删除块' },
-    ],
-  },
-  {
-    title: '光标导航 · 系统原生',
-    hint: '操作系统直接提供，编辑器不拦截',
-    items: [
-      { keys: ['Alt', '⌫'], keysWin: ['Ctrl', '⌫'], label: '按词删除' },
-      { keys: ['Alt', '←/→'], keysWin: ['Ctrl', '←/→'], label: '按词左右移动（+Shift 扩选）' },
-      { keys: ['Mod', '←/→'], label: '到行首 / 行尾', macOnly: true },
-      { keys: ['Mod', '↑/↓'], label: '跳到文档首 / 尾', macOnly: true },
-    ],
-  },
-  {
-    title: 'Markdown 触发（行首输入 + 空格）',
-    items: [
-      { keys: ['#', '##', '###'], label: '标题 1 / 2 / 3' },
-      { keys: ['-'], label: '无序列表' },
-      { keys: ['1.'], label: '有序列表' },
-      { keys: ['[]'], label: '待办' },
-      { keys: ['>'], label: '引用' },
-    ],
-  },
-]
+// 每次调用时按当前语言重建（t() 即时求值）——面板渲染时调，切语言即出新文案。
+function buildGroups(): ShortcutGroup[] {
+  return [
+    {
+      title: t('shortcuts.grpAppShell'),
+      items: [
+        { keys: ['Mod', 'T'], label: t('shortcuts.newTab') },
+        { keys: ['Mod', 'W'], label: t('shortcuts.closeTab') },
+        { keys: ['Ctrl', 'Tab'], label: t('shortcuts.nextTab') },
+        { keys: ['Mod', '1…8'], label: t('shortcuts.jumpTab') },
+        { keys: ['Mod', '9'], label: t('shortcuts.lastTab') },
+        { keys: ['Mod', 'S'], label: t('shortcuts.save') },
+        { keys: ['Mod', 'Shift', 'S'], label: t('shortcuts.saveAs') },
+        { keys: ['Mod', 'P'], label: t('shortcuts.quickOpen') },
+        { keys: ['Mod', 'Shift', 'F'], label: t('shortcuts.focusFilter') },
+        { keys: ['Mod', '\\'], label: t('shortcuts.toggleSidebar') },
+        { keys: ['Mod', ','], label: t('shortcuts.settings') },
+        { keys: ['Mod', '/'], label: t('shortcuts.thisPanel') },
+      ],
+    },
+    {
+      title: t('shortcuts.grpFindSelect'),
+      items: [
+        { keys: ['Mod', 'F'], label: t('shortcuts.findInDoc') },
+        { keys: ['Mod', 'A'], label: t('shortcuts.selectAll') },
+      ],
+    },
+    {
+      title: t('shortcuts.grpTextMode'),
+      hint: t('shortcuts.hintTextMode'),
+      items: [
+        { keys: ['Mod', 'B'], label: t('shortcuts.bold') },
+        { keys: ['Mod', 'I'], label: t('shortcuts.italic') },
+        { keys: ['Mod', 'U'], label: t('shortcuts.underline') },
+        { keys: ['Mod', 'Shift', 'X'], label: t('shortcuts.strikethrough') },
+        { keys: ['Mod', 'Shift', 'H'], label: t('shortcuts.highlight') },
+        { keys: ['Mod', 'E'], label: t('shortcuts.inlineCode') },
+        { keys: ['Mod', 'K'], label: t('shortcuts.insertLink') },
+        { keys: ['Mod', 'Shift', 'V'], label: t('shortcuts.pastePlain') },
+        { keys: ['Mod', 'Z'], label: t('shortcuts.undoMac'), macOnly: true },
+        { keys: ['Mod', 'Z'], label: t('shortcuts.undoWin'), winOnly: true },
+        { keys: ['/'], label: t('shortcuts.slashMenu') },
+        { keys: ['Enter'], label: t('shortcuts.newBlock') },
+        { keys: ['Tab'], label: t('shortcuts.listIndent') },
+        { keys: ['Esc'], label: t('shortcuts.escToBlock') },
+      ],
+    },
+    {
+      title: t('shortcuts.grpBlockOps'),
+      items: [
+        { keys: ['Mod', 'D'], label: t('shortcuts.duplicateBlock') },
+        { keys: ['Mod', 'Shift', 'K'], label: t('shortcuts.deleteBlock') },
+        { keys: ['Mod', 'Shift', '↑/↓'], label: t('shortcuts.moveBlock') },
+        { keys: ['Mod', 'Alt', '0'], keysWin: ['Ctrl', 'Shift', '0'], label: t('shortcuts.toText') },
+        { keys: ['Mod', 'Alt', '1…3'], keysWin: ['Ctrl', 'Shift', '1…3'], label: t('shortcuts.toHeading') },
+        { keys: ['Mod', 'Alt', '4…6'], keysWin: ['Ctrl', 'Shift', '4…6'], label: t('shortcuts.toList') },
+        { keys: ['Mod', 'Shift', '8'], label: t('shortcuts.bulletedList') },
+        { keys: ['Mod', 'Shift', '7'], label: t('shortcuts.numberedList') },
+        { keys: ['Mod', 'Enter'], label: t('shortcuts.toggleTodo') },
+        { keys: ['↑', '↓'], label: t('shortcuts.blockMove') },
+        { keys: ['Enter'], label: t('shortcuts.blockEnter') },
+        { keys: ['⌫'], label: t('shortcuts.blockDelete') },
+      ],
+    },
+    {
+      title: t('shortcuts.grpNav'),
+      hint: t('shortcuts.hintNav'),
+      items: [
+        { keys: ['Alt', '⌫'], keysWin: ['Ctrl', '⌫'], label: t('shortcuts.deleteWord') },
+        { keys: ['Alt', '←/→'], keysWin: ['Ctrl', '←/→'], label: t('shortcuts.moveWord') },
+        { keys: ['Mod', '←/→'], label: t('shortcuts.lineEnds'), macOnly: true },
+        { keys: ['Mod', '↑/↓'], label: t('shortcuts.docEnds'), macOnly: true },
+      ],
+    },
+    {
+      title: t('shortcuts.grpMarkdown'),
+      items: [
+        { keys: ['#', '##', '###'], label: t('shortcuts.mdHeading') },
+        { keys: ['-'], label: t('shortcuts.bulletedList') },
+        { keys: ['1.'], label: t('shortcuts.numberedList') },
+        { keys: ['[]'], label: t('shortcuts.mdTodo') },
+        { keys: ['>'], label: t('shortcuts.mdQuote') },
+      ],
+    },
+  ]
+}
 
 // token → 当前平台显示文字
 const GLYPH: Record<string, [mac: string, win: string]> = {
@@ -116,7 +120,7 @@ export function renderKey(token: string): string {
 
 /** 当前平台的分组（应用平台过滤 + keysWin 覆盖） */
 export function shortcutGroupsForPlatform(): ShortcutGroup[] {
-  return GROUPS.map((g) => ({
+  return buildGroups().map((g) => ({
     ...g,
     items: g.items
       .filter((it) => (IS_MAC ? !it.winOnly : !it.macOnly))

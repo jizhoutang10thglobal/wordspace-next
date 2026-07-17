@@ -20,7 +20,7 @@ let app, page, tmp, wsDir, userData;
 async function launch(env) {
   const a = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', ...env },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', ...env },
   });
   const p = await a.firstWindow();
   await p.waitForLoadState('domcontentloaded');

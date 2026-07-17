@@ -1,6 +1,10 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const { JSDOM } = require('jsdom');
+// i18n Phase 2：模板 name/desc 改走 t() getter，配 zh 让下面的中文断言继续成立。
+const _i18n = require('../src/lib/i18n');
+_i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
+_i18n.setActiveLang('zh');
 const { TEMPLATES } = require('../src/lib/doc-templates.js');
 const { validate } = require('../src/lib/schema-validate.js');
 
