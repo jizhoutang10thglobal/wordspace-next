@@ -290,6 +290,12 @@ ul { list-style: none; }
   padding: 0 8px 0 14px;
   /* 沉浸窗框：系统标题栏没了（darwin hiddenInset），侧栏头兼任窗口拖拽区；框架窗口下此属性被忽略，无副作用 */
   -webkit-app-region: drag;
+  /* 抬到窗框顶边 .win-frame（z 235，fixed）之上（Colin 2026-07-18）：#276 把 10px 拖拽顶边扩成非全屏恒有后，
+     它横跨全宽、盖住展开态侧栏图标钮的顶 ~4px（钮 y=6..34、顶边 y=0..10），那 4px 变回 drag、吞点击。
+     只抬 .sb-head（不抬整个 .sb，免得给侧栏造层叠上下文困住挂在 body 的右键菜单/浮层）——头里全是 flex 流式
+     子元素、无绝对定位依赖，造的层叠上下文只圈住图标钮本身。抬上去后 no-drag 钮赢回顶边，拖窗仍走 sb-head
+     的空白处（本就是 drag）。收起态钮不可见、全屏无顶边，此属性无副作用。 */
+  position: relative; z-index: 236;
 }
 .sb-head button { -webkit-app-region: no-drag; } /* 控件从拖拽区挖掉，点击不被吞 */
 /* darwin：红绿灯叠在窗口左上（trafficLightPosition x14/y14，占位到 ~66px），侧栏头让位。
