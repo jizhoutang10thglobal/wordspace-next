@@ -54,6 +54,13 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   `text-transform: uppercase`——中文下隐形，i18n 英文一开就穿帮。app PR `fix/sidebar-fav-uppercase`；
   配 e2e 一致性门 `e2e/sidebar-typography.spec.js`（computed style 比对收藏头 vs 全部区块头 + 锚死
   uppercase，任何一侧再漂移即翻红）。栏标规范正本在 `docs/style.md`「分区栏标」。
+- 2026-07-17 **置顶/标签页计数对齐**（Colin 真机抓到：计数比栏标上浮 ~2.5px、间距 14px vs 收藏行
+  6px）：根因是移植时栏标拆成带不对称 padding 的子 span（ui-demo 里栏标 class 就在行容器上、天然
+  不错位）。app PR `fix/app-zone-count-align`：padding 上移 `.sb-zone-head`、label 归零、caret 边距
+  归容器；正本 §4.3「对齐网格」补计数同线+6px 契约；几何门进 `sidebar-typography.spec.js`（Range 量
+  纯文字矩形：同行中线/全侧栏间距/左缘三不变式）。**ui-demo 无此病、零改动**，此项无欠账。
+- 2026-07-17 **收藏管理入口改常显**（Wendi「与标签页『+』统一」+ Colin 拍板「都一直出现」，推翻 07-13
+  hover 才显）：`browser.css .sb-fav-manage` / ui-demo `ArcSidebar.css`，两侧同一 PR 落地，正本 §4.3/§14/§15。
 - 2026-07-14 **User-Agent 归一（反 CAPTCHA）**：app PR `fix/browser-ua`（Wendi「网页搜索总弹人机验证」）。
   正本 §11.7 记契约；`web-tabs.js` `ensureSession` + `web-tabs-policy.js` `browserUA()`。真 app 独有
   （ui-demo 是 iframe mock、无 Electron session，不移植、不算漂移）。
