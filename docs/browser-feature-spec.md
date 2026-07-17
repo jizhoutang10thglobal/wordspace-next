@@ -583,6 +583,11 @@ mailto, tel, intent }`；**名单外的含冒号输入一律落搜索**（`note:
 **真 app**：并入现有标签持久化（workspace/tabs 恢复机制已在 `sidebar.js`）。web 标签恢复时
 **懒加载**：先恢复标签行，激活到它时才创建 `WebContentsView` 并 loadURL（冷启动别把 N 个网页全拉起）。
 注意既有教训：冷启动「恢复工作区」与外部打开文件有竞态，恢复流程要串行化（restoreReady 那套已在 main）。
+**懒加载期间标签行标题不许闪占位（Wendi 2026-07-17）**：registry 建 view 时 title 初始 **null**、
+不发明「新标签页」占位（数据层不产 UI 文案，title 非空 ⇔ 来自 page-title-updated 真事件）；renderer
+跟随块只在真标题时覆写 entry.title——恢复的标签从点击到页面加载完，行上始终是持久化的旧名（可带
+loading spinner）。全新标签的「新标签页」名由 sidebar 建 entry 时起，不受影响。门=browser.spec
+「恢复的标签懒加载」（MutationObserver 记每帧标题，占位/裸 URL 任何一帧都翻红）。
 
 ---
 
