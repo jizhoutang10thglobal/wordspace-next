@@ -6,10 +6,18 @@
   overflow: hidden;
 }
 
+/* 沉浸窗框非全屏恒有（Wendi 2026-07-17 初稿，Colin 2026-07-18 扩「不收起也要有,只要不是全屏就要有」）：
+   内容四周留 10px chrome 色边框带,内容成一块带细边微圆角的「纸」。ui-demo 纯视觉;真 app 里这圈是
+   -webkit-app-region: drag 的窗口拖动区。
+   · 展开态：侧栏(.arc-sidebar)贴左缘=左侧 chrome,.ws-main margin:10 → 左 10px=与侧栏的缝(KD1/KD4);
+   · 收起态：侧栏流内零渲染,.ws-main margin:10 → 从窗左 10px 起(原 #271 视觉,零回归)。
+   ui-demo 无 OS 全屏概念,故不做全屏例外(spec 记与真 app 的有意分歧)。左带兼 peek 触发锚点
+   (.arc-edge-hot,见 ArcSidebar.css);.is-immersive 仍标收起态供 edge-hot/peek 的组件级渲染。 */
 .ws-body {
   flex: 1;
   display: flex;
   min-height: 0;
+  background: var(--c-bg-chrome); /* 框缝底色（.ws-main 四周 10px + 与侧栏的缝露这层 chrome） */
 }
 
 .ws-main {
@@ -17,16 +25,7 @@
   display: flex;
   min-width: 0;
   background: var(--c-bg);
-}
-
-/* 沉浸收起的 Arc 式窗框（Wendi 2026-07-17）：侧栏收起后内容四周留 10px chrome 色边框带,
-   内容成一块带细边微圆角的「纸」。ui-demo 纯视觉;真 app 里这圈是 -webkit-app-region: drag
-   的窗口拖动区。左带兼 peek 触发锚点（.arc-edge-hot 与之重合,见 ArcSidebar.css）。 */
-.ws-body.is-immersive {
-  padding: 10px;
-  background: var(--c-bg-chrome);
-}
-.ws-body.is-immersive .ws-main {
+  margin: 10px; /* 四周窗框缝；左 margin 在展开态=与侧栏的缝 */
   border: 1px solid var(--c-border);
   border-radius: var(--r-md);
   overflow: clip; /* 只裁圆角,不成为滚动容器（hidden 会被 scrollIntoView 悄悄滚偏） */
