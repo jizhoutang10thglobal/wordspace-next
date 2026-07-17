@@ -5,6 +5,37 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.10.5 — 2026-07-17
+
+Two-stage select-all, plus a batch of tab polish.
+
+### Added
+
+- **Select all**: ⌘A works in two stages — first press selects the current block, press again to select the whole document
+- **Changelog**: new "Changelog…" menu item and update-panel buttons open wordspace.ai/changelog for full version history
+
+### Fixed
+
+- **Tabs**: after a restart, clicking an open tab no longer flashes "New Tab" before showing its real title
+- **Tabs**: when only pinned tabs remain, ⌘W is no longer a dead key — it returns to the start page first, and closes the window on the next press (pins are kept)
+- **Bookmarks**: the manage-bookmarks entry in the sidebar is now always visible, consistent with the tabs "+"
+- **Sidebar**: section counts in Pinned/Tabs now align with the section labels, with unified spacing
+
+## v0.10.4 — 2026-07-17
+
+PDFs can now open in Wordspace by default.
+
+### Added
+
+- **PDF**: set Wordspace as the default app for PDFs in "Open With" — double-click views them right inside the app (macOS)
+
+### Fixed
+
+- **Updates**: the update prompt no longer blanks the page when a web tab is open
+- **Updates**: "Restart and Install" now really restarts and installs (the previous fix was incomplete; takes effect from the update after this version)
+- **Tabs**: opening a single file and then adding its folder now files the tab under that folder instead of leaving it marked "outside the workspace" (old mislabeled tabs heal automatically after upgrading)
+- **Sidebar**: the English "Bookmarks" section label now matches the all-caps style of other sections
+
 ## v0.10.3 — 2026-07-16
 
 Huge folders are now fully usable (simplified mode), and the whole app speaks English and Chinese.
