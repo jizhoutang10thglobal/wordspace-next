@@ -153,6 +153,14 @@ contextBridge.exposeInMainWorld('ws2', {
   histRemoveOne: (id) => ipcRenderer.invoke('hist-remove-one', id),
   histClear: (range) => ipcRenderer.invoke('hist-clear', range),
   onHistoryChanged: (cb) => ipcRenderer.on('history-changed', (_e, s) => cb(s)),
+  // 下载（spec §4.11；list 补拉 + 动作 + 变更推送。进度环/popover 由 onDownloadsChanged 驱动）
+  dlList: () => ipcRenderer.invoke('dl-list'),
+  dlCancel: (id) => ipcRenderer.send('dl-cancel', id),
+  dlRetry: (id) => ipcRenderer.send('dl-retry', id),
+  dlClear: () => ipcRenderer.send('dl-clear'),
+  dlRemove: (id) => ipcRenderer.send('dl-remove', id),
+  dlReveal: (id) => ipcRenderer.invoke('dl-reveal', id),
+  onDownloadsChanged: (cb) => ipcRenderer.on('downloads-changed', (_e, data) => cb(data)),
   // 浏览器设置（搜索引擎；真 app 默认 Bing,拍板）
   browserSettings: () => ipcRenderer.invoke('browser-settings'),
   browserSetEngine: (key) => ipcRenderer.invoke('browser-set-engine', key),

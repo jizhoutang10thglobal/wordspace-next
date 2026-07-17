@@ -285,7 +285,7 @@ ul { list-style: none; }
   flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px; /* 七钮排（+下载入口 §4.11）：非 mac 收 gap 到 4 凑 min-width 240 的账（下方注释） */
   height: var(--h-titlebar);
   padding: 0 8px 0 14px;
   /* 沉浸窗框：系统标题栏没了（darwin hiddenInset），侧栏头兼任窗口拖拽区；框架窗口下此属性被忽略，无副作用 */
@@ -299,11 +299,14 @@ ul { list-style: none; }
 }
 .sb-head button { -webkit-app-region: no-drag; } /* 控件从拖拽区挖掉，点击不被吞 */
 /* darwin：红绿灯叠在窗口左上（trafficLightPosition x14/y14，占位到 ~66px），侧栏头让位。
-   压缩排布凑最小宽的账（照 ui-demo arc-top 同款口径）：让位 70 + 右 6 + 六钮 6×26 + gap 6×1
-   = 238 ≤ 侧栏 min-width 240（#235 定）。不压缩钮会溢出侧栏、最右的 #sb-find 被编辑区 iframe
-   盖住吞点击（e2e T7 实翻过）。往这排加图标前先重算这笔账（ui-demo .arc-top 处同有一条）。 */
+   压缩排布凑最小宽的账（照 ui-demo arc-top 同款口径）：让位 70 + 右 6 + 七钮 7×22 + gap 7×1
+   = 237 ≤ 侧栏 min-width 240（#235 定）。⚠2026-07-18 加下载入口 #nav-downloads 后从六钮变七钮，
+   钮宽 26→22、非 mac gap 8→4 + 钮宽 28→26 才塞得下（非 mac：22 + 7×26 + 7×4 = 232 ≤ 240）。
+   不压缩钮会溢出侧栏、最右的 #sb-find 被编辑区 iframe 盖住吞点击（e2e T7 实翻过）。
+   往这排加图标前先重算这笔账（ui-demo .arc-top 处同有一条）。 */
+.sb-head .sb-icobtn { width: 26px; } /* 非 mac：七钮凑 240（mac 下方再收到 22） */
 body.is-mac .sb-head { padding: 0 6px 0 70px; gap: 1px; }
-body.is-mac .sb-head .sb-icobtn { width: 26px; }
+body.is-mac .sb-head .sb-icobtn { width: 22px; }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
 /* 图标钮 = 墨圆 + hover 墨条滑入（对齐 ui-demo .arc-ico） */
 .sb-icobtn {

@@ -36,6 +36,5 @@ module.exports = {
   errBadUndoToken: 'Invalid undo token',
   errPdfTmpFail: 'Couldn’t create a temporary file for PDF export in the document’s folder (it may be read-only). Move the document to a writable folder and try again.',
   // Main-process → renderer toast / web tab default title
-  noDownload: 'The Wordspace browser doesn’t support downloads',
   webNewTabTitle: 'New tab',
 };
