@@ -1,0 +1,33 @@
+// link namespace (en). Translations reviewed by Colin.
+module.exports = {
+  // ---- mention menu ----
+  noMatchDoc: 'No matching documents',
+  otherSpace: 'Other space',
+  nameSep: ', ',
+  crossVolNote: '{names}: on another disk volume — linking not supported yet',
+  degradedNote: '{names}: folder too large — linking unavailable',
+  createNamed: 'Create “{query}”',
+  urlLink: 'Web link…',
+  urlPrompt: 'Link address',
+  badUrl: 'That link address isn’t allowed',
+  createFailed: 'Couldn’t create',
+  createdAndLinked: 'Created “{title}” and linked it',
+  crossSpaceLinkFail: 'Can’t create a link across folder spaces (they may be on different disk volumes)',
+  // ---- linkview preview / broken-link repair ----
+  nonDocFileNote: 'Not a document file — opening hands it to the system’s default app.',
+  brokenTitle: 'Link target not found',
+  brokenNote: 'The target may have been moved, renamed, or deleted.',
+  repointMoved: 'Point to {target} (original file moved here)',
+  repoint: 'Point to {target}',
+  createIn: 'Create “{name}” in {dir}',
+  rootDir: 'the root folder',
+  browsePick: 'Browse… pick the file to point to',
+  deleteLinkKeepText: 'Remove this link (keep the text)',
+  fileOutsideWorkspace: 'That file is outside the current workspace, so a relative link can’t be made',
+  linkGone: 'The link is no longer in this document',
+  linkDeleted: 'Link removed (text kept)',
+  linkGoneNoRepoint: 'The link is no longer in this document — couldn’t re-point it',
+  crossSpaceCalcFail: 'Can’t work out a link across folder spaces (they may be on different disk volumes)',
+  repointed: 'Re-pointed to {target}',
+  createdNamed: 'Created “{name}”',
+};

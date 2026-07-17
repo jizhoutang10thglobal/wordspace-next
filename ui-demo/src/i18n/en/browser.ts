@@ -1,0 +1,82 @@
+// browser namespace strings (browser: web view / bookmarks / history / new tab / context menu / mock structural labels).
+export default {
+  // shared
+  glassSearch: 'Glass Search',
+
+  // WebView (web content area + find-in-page + context-action toasts)
+  openedInBackground: 'Opened in background tab',
+  copiedLink: 'Link copied',
+  copiedImage: 'Image copied',
+  copiedImageUrl: 'Image address copied',
+  copied: 'Copied',
+  searchTitle: 'Search: {q}',
+  demoEditAction: '(Demo) edit action',
+  reloadedPage: 'Page reloaded',
+  copiedPageLink: 'Page link copied',
+  exportingPdf: 'Exporting PDF…',
+  iframeBlockedNote: 'Some sites block embedded preview. If it comes up blank, open it in your system browser.',
+  findInPage: 'Find in page',
+  findPrev: 'Previous',
+  findNext: 'Next',
+  findClose: 'Close (Esc)',
+
+  // BookmarksPage
+  bookmarksTitle: 'Bookmarks',
+  newFolder: 'New folder',
+  importBtn: 'Import',
+  exportBtn: 'Export',
+  importExportHint: 'Import / export uses the standard browser HTML bookmarks format (Netscape), interchangeable with Chrome, Safari, Firefox, and Edge.',
+  bookmarksBarFixed: 'Bookmarks bar (fixed)',
+  renameFolder: 'Rename folder',
+  deleteFolder: 'Delete folder (and its bookmarks)',
+  empty: 'Empty',
+  exportedToast: 'Exported as bookmarks.html (importable into Chrome/Safari/Firefox)',
+  importNoneRecognized: 'No bookmarks found (need an HTML bookmarks file exported from a browser)',
+  importAllExist: 'These bookmarks already exist; nothing added',
+  importedCount: 'Imported {n} bookmarks',
+
+  // HistoryPage
+  historyTitle: 'History',
+  searchHistory: 'Search history',
+  today: 'Today',
+  yesterday: 'Yesterday',
+  dateMonthDay: '{m}/{d}',
+  clearBrowsingData: 'Clear browsing data',
+  clearLastHour: 'Last hour',
+  clearLast24h: 'Last 24 hours',
+  clearLast7d: 'Last 7 days',
+  clearAll: 'Clear all',
+  noMatch: 'No matching history',
+  emptyHistory: 'No history yet',
+  removeFromHistory: 'Remove from history',
+
+  // NewTab (start page)
+  omniPlaceholder: 'Search or enter address',
+  safeNote: 'The built-in browser has no malicious-site protection. Take care when visiting unfamiliar sites.',
+  careersTile: 'Careers',
+  careersInitial: 'C',
+  companyTile: 'Company site',
+  wikipediaTile: 'Wikipedia',
+
+  // webCtxMenu (web page context menu)
+  ctxOpenLinkNewTab: 'Open link in new tab',
+  ctxOpenLinkBgTab: 'Open link in background tab',
+  ctxCopyLink: 'Copy link',
+  ctxCopyImage: 'Copy image',
+  ctxCopyImageUrl: 'Copy image address',
+  ctxCopy: 'Copy',
+  ctxSearchSelection: 'Search Glass for "{q}"',
+  ctxCut: 'Cut',
+  ctxPaste: 'Paste',
+  ctxSelectAll: 'Select all',
+  ctxForward: 'Forward',
+  ctxReload: 'Reload',
+  ctxCopyPageLink: 'Copy page link',
+  ctxExportPdf: 'Export PDF',
+
+  // mock structural labels (default names / titles)
+  newTab: 'New tab',
+  searchResultTitle: '{q} · Glass Search',
+  folderBar: 'Bookmarks bar',
+  folderDefault: 'Folder',
+}

@@ -151,16 +151,25 @@
 
 /* 标签行的 favicon（web 标签） */
 .sb-tab-fav { width: 14px; height: 14px; border-radius: 3px; object-fit: contain; }
+/* U3 导航加载反馈：加载中的网页标签行 → spinner 顶掉 favicon/地球（Chrome 惯例,loading 优先级最高）。
+   复用 ws-spin keyframe;描边走主题 token（深浅两态都看得见,别写死色）。 */
+.sb-tab.is-loading .sb-ico { position: relative; }
+.sb-tab.is-loading .sb-ico > * { opacity: 0; }
+.sb-tab.is-loading .sb-ico::after {
+  content: ''; position: absolute; inset: 0; margin: auto;
+  width: 12px; height: 12px; box-sizing: border-box; border-radius: 50%;
+  border: 2px solid var(--c-border); border-top-color: var(--c-text-2);
+  animation: ws-spin 0.7s linear infinite;
+}
 
 /* ---- 起始页（§4.5.2）：内容区本地 surface ---- */
 .web-newtab, .web-error, .web-page {
   position: absolute;
   inset: 0;
-  z-index: 60; /* 盖住文档 chrome；sb-reopen(70) 仍在上 */
+  z-index: 60; /* 盖住文档 chrome */
   background: var(--c-bg);
   overflow: auto;
 }
-body.is-sb-collapsed .sb-reopen { z-index: 70; }
 .web-nt-inner {
   max-width: 560px;
   margin: 0 auto;
@@ -421,8 +430,12 @@ body.is-sb-collapsed .sb-reopen { z-index: 70; }
 }
 .sb-cm-para.is-on { color: var(--c-accent); border-color: var(--c-accent); background: var(--c-accent-tint); opacity: 1; }
 
-/* hidden 属性必须赢过上面的 display 声明（.web-error 的 flex 曾把隐藏态干掉——隐形全屏层拦点击） */
-.web-newtab[hidden], .web-error[hidden], .web-page[hidden], .web-findbar[hidden], .sb-omni-sug[hidden] { display: none !important; }
+/* hidden 属性必须赢过上面的 display 声明（.web-error 的 flex 曾把隐藏态干掉——隐形全屏层拦点击）。
+   P3-01：凡是「display:(inline-)flex + JS 会 toggle hidden」的类都得进这份清单,否则 flex 压过
+   UA 的 [hidden]{display:none}，JS 设了 hidden 也隐不掉 → 死按钮/空 flex 行。
+   .sb-omni-star（文档/起始页上死星标）、.web-nt-pins（无置顶时空 flex 行）、.wp-search-x（空搜索框的死清除钮）。 */
+.web-newtab[hidden], .web-error[hidden], .web-page[hidden], .web-findbar[hidden], .sb-omni-sug[hidden],
+.sb-omni-star[hidden], .web-nt-pins[hidden], .wp-search-x[hidden] { display: none !important; }
 
 /* web 态隐藏文档编辑 chrome（#8）：⋯菜单(z65)/文档面包屑本浮在 web surface(z60) 之上,
    起始页/子页面右上角会露出对不可见后台文档的操作按钮。web 激活时整体隐藏。 */

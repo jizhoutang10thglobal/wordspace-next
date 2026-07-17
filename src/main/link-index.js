@@ -8,12 +8,12 @@
 'use strict';
 const fsp = require('fs/promises');
 const path = require('path');
-const { kindOf } = require('../lib/file-tree');
+const { kindOf, isSkippedName, isBundleName } = require('../lib/file-tree');
 const wsLinks = require('../lib/links'); // resolveHref/relHref（U1）
 const mdAdapter = require('./md-adapter');
 const docIdLib = require('../lib/doc-id'); // U7 双层身份修复锚
 
-const INDEX_VERSION = 1;
+const INDEX_VERSION = 2; // v2：outLinks 新增跨根边 { rel:null, targetAbs }（A/B/C）。v1 缓存无此字段 → 丢弃重建。
 const DOC_RE = /\.(html?|md)$/i;
 // 抽 snippet 时认定的「块」边界：链接所在块的纯文本做反链上下文（对齐 ui-demo snippetOf）。
 const BLOCK_TAGS = new Set(['p', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'td', 'th', 'figcaption', 'summary', 'div', 'section', 'article', 'pre']);
@@ -89,39 +89,67 @@ async function readDocMeta(abs, ownRel) {
   if (mdAdapter.isMdPath(abs)) { try { html = await mdAdapter.mdToHtml(raw, { title: baseNoExt(abs) }); } catch (e) { html = raw; } } // md 转换失败：退化按原文抽（不毒化）
   const { title, links } = await extractDocMeta(html);
   const seen = new Set();
+  const seenAbs = new Set();
   const outLinks = [];
   for (const { href, snippet } of links) {
-    const rel = wsLinks.resolveHref(ownRel, href); // 同根内目标 rel；外链/锚点/越界 → null
-    if (!rel || seen.has(rel)) continue;
-    seen.add(rel);
-    outLinks.push({ rel, snippet });
+    const rel = wsLinks.resolveHref(ownRel, href); // 同根内目标 rel
+    if (rel) {
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      outLinks.push({ rel, snippet });
+      continue;
+    }
+    // 同根解析不到 → 试跨根边（A/B/C）：词法绝对目标（tree 域，abs 是本文档 join(根path,rel)）。
+    // 是否真落在某个「文件夹空间」内、算不算有效跨根链接，交查询时 fan-out 判（越界到无根处 → 存了也永不匹配、无害）。
+    // 外链/锚点/根绝对 href → resolveHrefAbs 返回 null，跳过（不是文档内互链）。
+    const tAbs = wsLinks.resolveHrefAbs(abs, href);
+    if (tAbs && !seenAbs.has(tAbs)) { seenAbs.add(tAbs); outLinks.push({ rel: null, targetAbs: tAbs, snippet }); }
   }
   return { title: title || baseNoExt(abs), outLinks, docId };
 }
 function baseNoExt(p) { return path.basename(p).replace(DOC_RE, ''); }
 
-// ---- 递归列出一个根下满足 predicate(name) 的文件，返回 [{rel, abs}]（rel 用 / 分隔）----
+// 链接索引扫描的条目预算（P0b V3）：链接索引也是全量递归扫盘——对超大根（家目录/桌面级）它会把
+// 「树已经靠 lazy 避掉的全量扫」原样再做一遍，@ 菜单/反链一触发就把 app 冻死（诊断 §7 隐雷）。超预算即停、
+// 标 truncated，该根链接功能降级（@ 菜单/反链提示「此文件夹过大，链接功能不可用」）。WS2_LINK_BUDGET 测试 seam。
+const DEFAULT_LINK_BUDGET = 150000;
+function linkBudget() {
+  const v = parseInt(process.env.WS2_LINK_BUDGET, 10);
+  return Number.isInteger(v) && v > 0 ? v : DEFAULT_LINK_BUDGET;
+}
+// ---- 递归列出一个根下满足 predicate(name) 的文件，返回 { files:[{rel, abs}], truncated }（rel 用 / 分隔）----
+// 复用 walk 的跳过规则（isSkippedName 覆盖 dotfile + node_modules/.git 等；isBundleName 不钻 .app）——修隐雷：
+// 以前只跳 dotfile，会一头钻进 node_modules/.app 内部上万文件。加条目预算封顶总遍历量。
 async function listFilesMatching(rootPath, predicate) {
   const out = [];
+  const budget = linkBudget();
+  let count = 0;
+  let truncated = false;
   async function rec(dirAbs, relPrefix) {
+    if (truncated) return;
     let ents;
     try { ents = await fsp.readdir(dirAbs, { withFileTypes: true }); }
     catch { return; }
     for (const e of ents) {
-      if (e.name.startsWith('.')) continue; // 跳隐藏（.git/.ws2-trash 等）
+      if (isSkippedName(e.name)) continue; // dotfile + 依赖/缓存目录 + 垃圾文件（与树扫描同一份规则）
+      if (count >= budget) { truncated = true; return; }
+      count++;
       const abs = path.join(dirAbs, e.name);
       const rel = relPrefix ? relPrefix + '/' + e.name : e.name;
-      if (e.isDirectory()) await rec(abs, rel);
-      else if (e.isFile() && predicate(e.name)) out.push({ rel, abs });
+      if (e.isDirectory()) {
+        if (isBundleName(e.name)) continue; // .app 等包：Finder 当单文件、内部上万文件——不钻进去
+        await rec(abs, rel);
+        if (truncated) return;
+      } else if (e.isFile() && predicate(e.name)) out.push({ rel, abs });
     }
   }
   await rec(rootPath, '');
-  return out;
+  return { files: out, truncated };
 }
-function listDocs(rootPath) { return listFilesMatching(rootPath, (n) => DOC_RE.test(n)); }
+async function listDocs(rootPath) { return (await listFilesMatching(rootPath, (n) => DOC_RE.test(n))).files; }
 // 非文档文件（pdf/图片/表格等）：@菜单里列在文档之后（链接任何文件都合法，点击时非文档走系统程序）。
 async function listNonDocFiles(rootPath) {
-  const files = await listFilesMatching(rootPath, (n) => !DOC_RE.test(n));
+  const { files } = await listFilesMatching(rootPath, (n) => !DOC_RE.test(n));
   return files.map((f) => { const name = path.basename(f.rel); return { rel: f.rel, kind: kindOf(f.rel), title: name.replace(/\.[^.]+$/, '') || name }; }); // 去任意扩展名（baseNoExt 只去 .html/.md）
 }
 
@@ -131,15 +159,21 @@ const index = new Map();
 
 function getRoot(rootId) {
   let r = index.get(rootId);
-  if (!r) { r = { path: null, docs: new Map() }; index.set(rootId, r); }
+  if (!r) { r = { path: null, docs: new Map(), truncated: false }; index.set(rootId, r); }
   return r;
+}
+// 该根链接功能是否降级（扫描超预算 = 超大根）：@菜单/反链据此提示「此文件夹过大，链接功能不可用」。
+function isDegraded(rootId) {
+  const r = index.get(rootId);
+  return !!(r && r.truncated);
 }
 
 // 增量刷新一个根：stat 每个文档，mtime/size/ino 任一变（或新文件）才重读；消失的删掉。返回是否有变更。
 async function refreshRoot(rootId, rootPath) {
   const r = getRoot(rootId);
   r.path = rootPath;
-  const files = await listDocs(rootPath);
+  const { files, truncated } = await listFilesMatching(rootPath, (n) => DOC_RE.test(n));
+  r.truncated = truncated; // 扫描超预算 → 该根链接功能降级（部分文档没进索引，反链/@菜单不完整）
   const live = new Set();
   let changed = false;
   await Promise.all(files.map(async ({ rel, abs }) => {
@@ -159,8 +193,9 @@ async function refreshRoot(rootId, rootPath) {
   // U7 修复锚快照：给每条出链记「目标当前 docId」；目标已消失（断链）→ 沿用重建前的旧快照（carry-forward）。
   // 这样目标被外部改名/移动后（rel 变了但 docId 随字节不变），修复卡靠这个稳定 id 反查现址。
   for (const [, e] of r.docs) {
-    const prevMap = e._prevOut ? new Map(e._prevOut.map((l) => [l.rel, l.targetDocId])) : null;
+    const prevMap = e._prevOut ? new Map(e._prevOut.filter((l) => l.rel != null).map((l) => [l.rel, l.targetDocId])) : null;
     for (const l of e.outLinks) {
+      if (l.rel == null) continue; // 跨根边（targetAbs）：同根 docId 快照不适用（目标在别的根）；跨根 doc-id 修复记欠账
       const tgt = r.docs.get(l.rel);
       if (tgt) l.targetDocId = tgt.docId || null;                              // 目标在 → 快照现 id
       else if (prevMap && prevMap.has(l.rel)) l.targetDocId = prevMap.get(l.rel); // 目标没了 → 沿用旧快照
@@ -188,33 +223,65 @@ function query(rootId) {
 // （href="notes.html" 而磁盘是 Notes.html）时，outLinks 存 href 原样大小写、docs 键用磁盘大小写 → backlinks/titleOf 的
 // === 精确比对会漏（反链丢、出链在 U4 显示成断链/无标题），但链接点击仍能打开（FS 不敏感）。真解要 FS 大小写敏感性探测
 // + NFC/NFD 归一（在 case-sensitive FS 上乱 casefold 会把真断链误判成有效），非平凡 → 留后续；U4 断链修复卡兜底。
-// 反链：根内哪些文档链到 (rootId, targetRel)。返回 [{rel, title, snippet}]（每源一条，取首个命中链接的 snippet）。
+// 反链：**任意根**里哪些文档链到 (rootId, targetRel)。返回 [{rootId, rel, title, snippet}]（每源一条）。
+// 跨根（A/B/C）：目标的 tree 绝对路径 = join(目标根 path, targetRel)；各根的跨根出链存的 targetAbs（同 tree 域）比对。
+// fan-out 需要各根索引都已建（调用方 ensureAll）；没建的根不在 index 里 → 它的反链会漏（调用方负责先 ensure）。
 function backlinks(rootId, targetRel) {
-  const r = index.get(rootId);
-  if (!r) return [];
+  const tr = index.get(rootId);
+  if (!tr || !tr.path) return [];
+  const targetAbs = path.join(tr.path, targetRel);
   const out = [];
-  for (const [rel, e] of r.docs) {
-    if (rel === targetRel) continue; // 自链不算
-    const hit = e.outLinks.find((l) => l.rel === targetRel);
-    if (hit) out.push({ rel, title: e.title, snippet: hit.snippet });
+  for (const [rid, r] of index) {
+    for (const [rel, e] of r.docs) {
+      if (rid === rootId && rel === targetRel) continue; // 自链不算
+      const hit = e.outLinks.find((l) =>
+        (rid === rootId && l.rel === targetRel) || (l.rel == null && l.targetAbs === targetAbs));
+      if (hit) out.push({ rootId: rid, rel, title: e.title, snippet: hit.snippet });
+    }
   }
   return out;
 }
 
-// 文件夹反链（U6 删除守卫）：夹外文档里，哪些链到「夹内任意文档」。**夹内互链不算**（删整夹一起走）。
-// 返回 [{rel, title, snippet}]（每个外部来源一条，取首个命中夹内的链接的 snippet）。dirRel = 文件夹根内路径。
+// 文件夹反链（U6 删除守卫）：**任意根**的夹外文档里，哪些链到「夹内任意文档」。**夹内互链不算**（删整夹一起走）。
+// 返回 [{rootId, rel, title, snippet}]。夹内判定：同根按 rel 前缀；跨根按 targetAbs 是否在夹的 tree 绝对路径下。
 function dirBacklinks(rootId, dirRel) {
-  const r = index.get(rootId);
-  if (!r || !dirRel) return [];
-  const prefix = dirRel + '/';
-  const under = (rel) => rel.indexOf(prefix) === 0; // 夹内（文件夹本身不是文档，不会等于 rel）
+  const tr = index.get(rootId);
+  if (!tr || !tr.path || !dirRel) return [];
+  const relPrefix = dirRel + '/';
+  const absPrefix = path.join(tr.path, dirRel) + path.sep; // 夹的 tree 绝对前缀（带分隔符边界）
   const out = [];
-  for (const [rel, e] of r.docs) {
-    if (under(rel)) continue; // 夹内来源不算外部引用
-    const hit = e.outLinks.find((l) => under(l.rel));
-    if (hit) out.push({ rel, title: e.title, snippet: hit.snippet });
+  for (const [rid, r] of index) {
+    const sameRoot = rid === rootId;
+    for (const [rel, e] of r.docs) {
+      if (sameRoot && rel.indexOf(relPrefix) === 0) continue; // 夹内来源不算外部引用
+      const hit = e.outLinks.find((l) =>
+        (sameRoot && l.rel != null && l.rel.indexOf(relPrefix) === 0) ||
+        (l.rel == null && l.targetAbs != null && (l.targetAbs + path.sep).indexOf(absPrefix) === 0));
+      if (hit) out.push({ rootId: rid, rel, title: e.title, snippet: hit.snippet });
+    }
   }
   return out;
+}
+
+// U-CR0 跨根移动守卫：条目自身「指向源根的出链」计数——移去别的根后这些相对链接会失效
+//（跨根自动重写要等 C 阶段；在此之前先拦一道，别静默损坏）。
+// 文件 = 它全部 outLinks 条数（换根后基准变了、全断）；文件夹 = 夹内文档指向「夹外」的链接条数
+//（夹内互链一起搬、相对路径不变、不算——与 dirBacklinks 的夹外语义对称）。
+function ownOutlinks(rootId, rel, isDir) {
+  const r = index.get(rootId);
+  if (!r || !rel) return 0;
+  if (!isDir) {
+    const e = r.docs.get(rel);
+    return e ? e.outLinks.length : 0;
+  }
+  const prefix = rel + '/';
+  const under = (x) => x != null && x.indexOf(prefix) === 0; // 跨根边 rel=null → 不算夹内
+  let n = 0;
+  for (const [drel, e] of r.docs) {
+    if (!under(drel)) continue; // 只看夹内文档的出链
+    for (const l of e.outLinks) if (!under(l.rel)) n++; // 指向夹外（含跨根 targetAbs）= 换根后会断
+  }
+  return n;
 }
 
 function titleOf(rootId, rel) {
@@ -276,9 +343,9 @@ async function hydrate(storeFile, rootId, rootPath) {
 }
 
 module.exports = {
-  extractDocMeta, readDocMeta, listDocs, listNonDocFiles,
+  extractDocMeta, readDocMeta, listDocs, listNonDocFiles, isDegraded,
   refreshRoot, rebuildRoot, removeRoot,
-  query, backlinks, dirBacklinks, titleOf, relOfDocId, movedTarget, warm,
+  query, backlinks, dirBacklinks, ownOutlinks, titleOf, relOfDocId, movedTarget, warm,
   save, hydrate,
   _index: index, // 测试用
 };

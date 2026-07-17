@@ -17,6 +17,10 @@
   // 用「非数字」把 host:port（localhost:3000 / example.com:8080）排除在 scheme 判定外。
   var OPAQUE_SCHEME_RE = /^([a-z][a-z0-9+.-]*):(?=[^0-9])/i;
   var ALLOWED_NAV_SCHEMES = { http: 1, https: 1 };
+  // 只拦「真实注册过的危险/不支持协议」（P2-4）——`note:hello`/`todo:fix`/`re:报价` 这类日常词组落搜索
+  // （spec §5：非网址即搜索）。带 // 的 authority scheme 另走 AUTHORITY 分支;这里管无 //（或 file:/ 单斜杠）的。
+  var BLOCKED_OPAQUE_SCHEMES = { javascript: 1, data: 1, file: 1, vbscript: 1, blob: 1, chrome: 1,
+    about: 1, ws: 1, wss: 1, ftp: 1, mailto: 1, tel: 1, intent: 1 };
   // 显示/搜索无争议的安全 scheme（about: 用于内部页,不进地址栏导航但也不该被当搜索）——v1 只认 http/https 导航,
   // 其余带 scheme 的一律 blocked（含 file:/javascript:/data:/自定义）。
   var IPV4_RE = /^(\d{1,3})(\.\d{1,3}){3}$/;
@@ -53,12 +57,15 @@
     var input = String(raw == null ? '' : raw).trim();
     if (!input) return { kind: 'blocked', url: null };   // 空输入：什么都不做
 
-    var m = input.match(AUTHORITY_SCHEME_RE) || input.match(OPAQUE_SCHEME_RE);
-    if (m) {
-      var scheme = m[1].toLowerCase();
-      if (ALLOWED_NAV_SCHEMES[scheme]) return { kind: 'url', url: input }; // http://[::1] 等一并放行
-      return { kind: 'blocked', url: null };             // file:/javascript:/data:/自定义 → 拒绝
+    var am = input.match(AUTHORITY_SCHEME_RE);
+    if (am) {
+      var ascheme = am[1].toLowerCase();
+      if (ALLOWED_NAV_SCHEMES[ascheme]) return { kind: 'url', url: input }; // http(s):// → 放行（http://[::1] 一并）
+      return { kind: 'blocked', url: null };             // file://ftp://自定义:// → 拒绝（非白名单 nav scheme）
     }
+    var om = input.match(OPAQUE_SCHEME_RE);
+    if (om && BLOCKED_OPAQUE_SCHEMES[om[1].toLowerCase()]) return { kind: 'blocked', url: null }; // javascript:/data:/file:/mailto: 等
+    // 名单外的含冒号输入（note:hello / myapp:token）不是网址 → 往下落搜索/域名判定（P2-4，spec §5）
 
     // IPv6 无 scheme:[::1] / [::1]:8080
     if (input.charAt(0) === '[') {

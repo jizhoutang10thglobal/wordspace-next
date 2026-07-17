@@ -190,7 +190,7 @@
   }
   function el(tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
   function openBtn(r) {
-    var b = el('button', 'ws-linkview-act', '打开');
+    var b = el('button', 'ws-linkview-act', window.wsT('common.open'));
     b.addEventListener('click', function (ev) {
       ev.preventDefault(); ev.stopPropagation();
       if (window.__wsOpenResolved) window.__wsOpenResolved(r);
@@ -247,7 +247,7 @@
     titleRow.appendChild(el('span', null, ICONS[r.kind] || ICONS.other));
     titleRow.appendChild(el('span', 'ws-linkview-title-text', r.name));
     cardEl.appendChild(titleRow);
-    cardEl.appendChild(el('div', 'ws-linkview-note', '非文档文件，打开后转交系统对应程序。'));
+    cardEl.appendChild(el('div', 'ws-linkview-note', window.wsT('link.nonDocFileNote')));
     var foot = el('div', 'ws-linkview-foot');
     foot.appendChild(el('span', 'ws-linkview-path', r.rel));
     foot.appendChild(openBtn(r));
@@ -275,10 +275,10 @@
     cardEl.innerHTML = '';
     var titleRow = el('div', 'ws-linkview-title is-broken');
     titleRow.appendChild(el('span', null, '⚠'));
-    titleRow.appendChild(el('span', 'ws-linkview-title-text', '链接目标不存在'));
+    titleRow.appendChild(el('span', 'ws-linkview-title-text', window.wsT('link.brokenTitle')));
     cardEl.appendChild(titleRow);
     cardEl.appendChild(el('div', 'ws-linkview-path', r.rel));
-    cardEl.appendChild(el('div', 'ws-linkview-note', '目标可能被移动、改名，或已删除。'));
+    cardEl.appendChild(el('div', 'ws-linkview-note', window.wsT('link.brokenNote')));
     var repairs = el('div', 'ws-linkview-repairs');
     cardEl.appendChild(repairs);
     hoverAnchor = a; positionCard(a);
@@ -292,22 +292,22 @@
       if (g !== hoverGen) return;
       var moved = res[0], list = res[1] || [], added = {};
       // ① doc-id 反查到的现址：原文件已移动/改名到这里（最强候选，置顶）
-      if (moved) { repairs.appendChild(repairItem('↪', '重新指向 ' + moved + '（原文件已移动到这里）', function () { doRepoint(a, r, moved); })); added[moved] = 1; }
+      if (moved) { repairs.appendChild(repairItem('↪', window.wsT('link.repointMoved', { target: moved }), function () { doRepoint(a, r, moved); })); added[moved] = 1; }
       // ② 同根同名文档（linksQuery 只回文档 → pdf/图片天然不入）
       var want = Links.baseOf(r.rel);
       (list).filter(function (f) { return f.rel !== r.rel && !added[f.rel] && Links.baseOf(f.rel) === want; })
         .slice(0, 3)
-        .forEach(function (c) { repairs.appendChild(repairItem('↩', '重新指向 ' + c.rel, function () { doRepoint(a, r, c.rel); })); });
+        .forEach(function (c) { repairs.appendChild(repairItem('↩', window.wsT('link.repoint', { target: c.rel }), function () { doRepoint(a, r, c.rel); })); });
       // ③ 「新建」——仅对编辑器可创作的类型（html/md）；断链指向 pdf/图片等无从「新建」。
       if (r.kind === 'html' || r.kind === 'md') {
         var dir = Links.dirOf(r.rel);
-        repairs.appendChild(repairItem('＋', '在' + (dir || '根目录') + '新建「' + r.name + '」', function () { doCreate(a, r); }));
+        repairs.appendChild(repairItem('＋', window.wsT('link.createIn', { dir: dir || window.wsT('link.rootDir'), name: r.name }), function () { doCreate(a, r); })); // i18n-exempt（＋ 是新建按钮字形，非可翻译文案；title 已 wsT）
       }
       // ①②③ 都是「系统的智能猜测」（可能没有 / 猜错）。下面两条是恒有的手动兜底：
       // 系统找不到时让用户自己在 Finder 里指、或彻底断了就删掉链接（保留文字）——分隔线区隔。
       var sep = el('div', 'ws-linkview-repair-sep'); repairs.appendChild(sep);
-      repairs.appendChild(repairItem('📁', '浏览…手动选择要指向的文件', function () { doPickAndRepoint(a, r); }));
-      repairs.appendChild(repairItem('✕', '删除此链接（保留文字）', function () { doDeleteLink(a); }));
+      repairs.appendChild(repairItem('📁', window.wsT('link.browsePick'), function () { doPickAndRepoint(a, r); }));
+      repairs.appendChild(repairItem('✕', window.wsT('link.deleteLinkKeepText'), function () { doDeleteLink(a); }));
       positionCard(a); // 内容高度变了 → 重新夹取 left/top
     }).catch(function () {});
   }
@@ -319,7 +319,7 @@
       if (!abs) return; // 用户取消
       return Promise.resolve(window.ws2.classifyFile(abs)).then(function (m) {
         if (!m || m.rootId !== ctx.rootId || m.rel == null) {
-          if (window.__wsToast) window.__wsToast('所选文件不在当前工作区，无法建相对链接');
+          if (window.__wsToast) window.__wsToast(window.wsT('link.fileOutsideWorkspace'));
           closeCard(); return;
         }
         doRepoint(a, r, m.rel); // 复用重新指向（保尾缀 + 编辑收口 + 自愈）
@@ -329,47 +329,60 @@
   // 手动兜底②：文件确实没了 → 拆掉 <a>、保留其文字（unwrap），断链装饰随之消失。
   function doDeleteLink(a) {
     var d = cd();
-    if (!d || !d.contains(a)) { if (window.__wsToast) window.__wsToast('链接已不在当前文档'); closeCard(); return; }
+    if (!d || !d.contains(a)) { if (window.__wsToast) window.__wsToast(window.wsT('link.linkGone')); closeCard(); return; }
     if (window.__wsBeforeDocEdit) window.__wsBeforeDocEdit();
     var parent = a.parentNode;
     while (a.firstChild) parent.insertBefore(a.firstChild, a); // 文字移出到原位
     parent.removeChild(a);
     if (window.__wsAfterDocEdit) window.__wsAfterDocEdit();
-    if (window.__wsToast) window.__wsToast('已删除链接（保留文字）');
+    if (window.__wsToast) window.__wsToast(window.wsT('link.linkDeleted'));
     closeCard();
     scan(frame);
   }
   // 重新指向：flush 待定编辑 → 保留原 href 尾缀 → relHref 重算只改这一条 <a> → 标脏+checkpoint → 装饰自愈。
+  // candRel 属于 r.rootId（linksMovedTarget / linksQuery 都查的 r.rootId）。目标与当前文档同根 → 同根 relHref；
+  // 跨根（A）→ relHrefAbs（两端 abs 经 wsAbs 取，tree 域）。跨根算不出（不同磁盘卷）→ 提示、不动。
   function doRepoint(a, r, candRel) {
     var ctx = window.__wsDocContext && window.__wsDocContext();
     var d = cd();
     if (!ctx || !d || !d.contains(a)) { // <a> 已不在当前文档（切走 / 块删）→ 不动任何东西（§5.3）
-      if (window.__wsToast) window.__wsToast('链接已不在当前文档，未能重新指向');
+      if (window.__wsToast) window.__wsToast(window.wsT('link.linkGoneNoRepoint'));
       closeCard(); return;
     }
     var Links = window.WS2Links;
     var suffix = Links.splitHrefSuffix(a.getAttribute('href') || '')[1]; // #锚点/?查询 尾缀保留（L2）
-    var newHref = Links.relHref(ctx.rel, candRel) + suffix;
-    if (window.__wsBeforeDocEdit) window.__wsBeforeDocEdit();
-    a.setAttribute('href', newHref);
-    if (window.__wsAfterDocEdit) window.__wsAfterDocEdit();
-    if (window.__wsToast) window.__wsToast('已重新指向 ' + candRel);
-    closeCard();
-    scan(frame); // 即时自愈，别等存盘/reindex
+    var targetRoot = (r.rootId != null) ? r.rootId : ctx.rootId;
+    var hrefP;
+    if (targetRoot === ctx.rootId) {
+      hrefP = Promise.resolve(Links.relHref(ctx.rel, candRel) + suffix);
+    } else { // 跨根重新指向：绝对相对（A）
+      hrefP = Promise.all([window.ws2.wsAbs(ctx.rootId, ctx.rel), window.ws2.wsAbs(targetRoot, candRel)])
+        .then(function (ab) { var h = ab[0] && ab[1] ? Links.relHrefAbs(ab[0], ab[1]) : null; return h ? h + suffix : null; });
+    }
+    hrefP.then(function (newHref) {
+      if (!newHref) { if (window.__wsToast) window.__wsToast(window.wsT('link.crossSpaceCalcFail')); closeCard(); return; }
+      if (!d.contains(a)) { if (window.__wsToast) window.__wsToast(window.wsT('link.linkGoneNoRepoint')); closeCard(); return; } // 异步窗口内切走了
+      if (window.__wsBeforeDocEdit) window.__wsBeforeDocEdit();
+      a.setAttribute('href', newHref);
+      if (window.__wsAfterDocEdit) window.__wsAfterDocEdit();
+      if (window.__wsToast) window.__wsToast(window.wsT('link.repointed', { target: candRel }));
+      closeCard();
+      scan(frame); // 即时自愈，别等存盘/reindex
+    }).catch(function () { closeCard(); });
   }
   // 新建：目录=断链目标目录、名=目标名去扩展、扩展名按断链后缀（.md→.md 否则 .html）。不切走当前标签页。
   function doCreate(a, r) {
     var ctx = window.__wsDocContext && window.__wsDocContext();
     var create = window.__wsCreateLinkedDoc;
-    if (!ctx || !create) { if (window.__wsToast) window.__wsToast('新建失败'); return; }
+    if (!ctx || !create) { if (window.__wsToast) window.__wsToast(window.wsT('link.createFailed')); return; }
     var name = r.name.replace(/\.(html?|md)$/i, '');
     var ext = /\.md$/i.test(r.name) ? '.md' : '.html';
     closeCard();
     Promise.resolve(create(ctx.rootId, r.rel, name, ext)).then(function (res) { // fromRel=r.rel → dirOf 落到目标目录
-      if (!res) { if (window.__wsToast) window.__wsToast('新建失败'); return; }
-      if (window.__wsToast) window.__wsToast('已新建「' + name + '」');
+      if (!res) { if (window.__wsToast) window.__wsToast(window.wsT('link.createFailed')); return; }
+      if (window.__wsToast) window.__wsToast(window.wsT('link.createdNamed', { name: name }));
       scan(frame); // 目标现已存在 → 断链自愈
-    }).catch(function () { if (window.__wsToast) window.__wsToast('新建失败'); });
+    }).catch(function () { if (window.__wsToast) window.__wsToast(window.wsT('link.createFailed')); });
   }
 
   // 切/关文档统一收口（shell.js detachEditors 调）：清高亮 + 关卡 + 清定时器 + 作废在飞异步。

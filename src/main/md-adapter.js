@@ -12,6 +12,7 @@
 
 // 行内标签集合复用校验器同源（schema-model 是纯 CJS 模块）：判「单元格里是不是块级内容」与校验器口径一致
 const { PHRASING_TAGS: PHRASING } = require('../lib/schema-model.js');
+const i18n = require('../lib/i18n');
 
 let enginePromise = null;
 
@@ -292,7 +293,7 @@ async function mdToHtml(md, opts) {
   const { md2html } = await loadEngine();
   const { frontMatter, body: mdBody } = splitFrontMatter(md); // 修 MD-2：先剥 frontmatter，别让 --- 进转换管道
   const body = String(await md2html.process(String(mdBody == null ? '' : mdBody)));
-  const title = escapeHtml((opts && opts.title) || '未命名');
+  const title = escapeHtml((opts && opts.title) || i18n.t('common.untitled'));
   const fmMeta = frontMatter ? '<meta name="ws-frontmatter" content="' + encodeFm(frontMatter) + '">\n' : '';
   return '<!DOCTYPE html>\n<html>\n<head>\n<meta charset="utf-8">\n<meta name="wordspace-schema" content="1">\n' + fmMeta + '<title>'
     + title + '</title>\n</head>\n<body>\n' + body + '\n</body>\n</html>\n';

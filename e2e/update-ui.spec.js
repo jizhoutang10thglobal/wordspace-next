@@ -18,7 +18,7 @@ test.beforeAll(async () => {
   await fs.writeFile(path.join(wsDir, 'a.html'), '<!DOCTYPE html><html><body><p>hi</p></body></html>');
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
@@ -93,7 +93,7 @@ test('自动路径：全程不弹面板，侧栏 pill 跟进度；就绪后 toas
   await sim({ type: 'downloaded', version: '8.8.8' });
   await expect(page.locator('#sb-update-txt')).toContainText('更新已就绪');
   // 低打扰提示：toast 出现且 action 是重启安装
-  await expect(page.locator('.sb-toast')).toContainText('新版本已就绪');
+  await expect(page.locator('.sb-toast', { hasText: '新版本已就绪' })).toBeVisible();
   await expect(page.locator('.sb-toast-action')).toHaveText('重启安装');
 
   const installBefore = (await simCalls()).install;
@@ -113,4 +113,49 @@ test('启动补拉：renderer 重载后从 main 缓存恢复 pill（事件先于
   await page.waitForLoadState('domcontentloaded');
   await expect(page.locator('#sb-update-txt')).toContainText('更新已就绪');
   await expect(page.locator('.up-card')).toHaveCount(0); // 补拉只挂 pill，不自动弹面板
+});
+
+test('下载进度推送不重建面板：同一张卡原地更新（防闪烁），焦点不被反复抢', async () => {
+  // 进入 downloading 面板态
+  await sim({ type: 'checking', manual: true });
+  await sim({ type: 'available', version: '7.7.7', notes: [] });
+  await sim({ type: 'download-started' });
+  const card = page.locator('.up-card');
+  await expect(card).toHaveAttribute('data-state', 'downloading');
+  // 给卡片打上 DOM 身份标记 + 把焦点挪到「后台下载」按钮（非 primary），随后的进度推送都不许动这两样
+  await page.evaluate(() => {
+    document.querySelector('.up-card').__probe = 'same-node';
+    document.querySelector('.up-btn[data-act="close"]').focus();
+  });
+  await sim({ type: 'progress', percent: 33, transferred: 44e6, total: 132e6, bytesPerSecond: 3e6 });
+  await sim({ type: 'progress', percent: 34, transferred: 45e6, total: 132e6, bytesPerSecond: 3e6 });
+  await expect(page.locator('.up-prog-detail')).toContainText('34%'); // 数值真在走
+  const after = await page.evaluate(() => ({
+    probe: document.querySelector('.up-card').__probe || null, // 重建过的新节点上不会有这个标记
+    focusAct: document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.act : null,
+  }));
+  expect(after.probe, '进度推送不许拆掉重建面板（拆建=闪烁病根）').toBe('same-node');
+  expect(after.focusAct, '进度推送不许抢焦点').toBe('close');
+  // 状态跃迁（downloading → ready）才允许重建：按钮/标题都换了
+  await sim({ type: 'downloaded', version: '7.7.7' });
+  await expect(card).toHaveAttribute('data-state', 'ready');
+  await page.locator('.sb-modal-x').click();
+  await expect(card).toHaveCount(0);
+});
+
+test('quitAndInstall 退出链：before-quit-for-update 必须被接住（否则 mac 隐藏驻留吞掉重启）', async () => {
+  // CI 真门：监听器必须挂着（漏接 = 打包版点「重启安装」窗口只被藏起来、app 不退——2026-07-15 实锤）。
+  const n = await app.evaluate(({ app: a }) => a.listenerCount('before-quit-for-update'));
+  expect(n, 'main 必须监听 before-quit-for-update（quitAndInstall 不发 before-quit）').toBeGreaterThan(0);
+  // darwin 行为门：模拟 Electron quitAndInstall 的真实时序（先发事件、再关窗）→ app 必须真退出。
+  // Linux CI 上这段跳过（无隐藏驻留守卫，close 本来就直达退出，断言无区分度）；darwin 宿主跑有牙。
+  if (process.platform === 'darwin') {
+    const closed = app.waitForEvent('close', { timeout: 8000 });
+    await app.evaluate(({ app: a, BrowserWindow }) => {
+      a.emit('before-quit-for-update');
+      for (const w of BrowserWindow.getAllWindows()) w.close();
+    });
+    await closed; // 没接住事件时窗口只会被 hide，app 不退 → 这里超时翻红
+    app = null; // 已退出，afterAll 不再 close
+  }
 });

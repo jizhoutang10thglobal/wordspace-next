@@ -49,39 +49,47 @@ function sortNodes(nodes) {
   return nodes;
 }
 
-// 走到（必要时沿途创建）一个目录节点，rel 累积为「a/b/c」。
-function ensureDir(root, parts) {
-  let cur = root;
-  let acc = '';
-  for (const part of parts) {
-    acc = acc ? `${acc}/${part}` : part;
-    let next = cur.children.find((c) => c.isDir && c.name === part);
-    if (!next) {
-      next = { name: part, rel: acc, isDir: true, children: [] };
-      cur.children.push(next);
-    }
-    cur = next;
-  }
-  return cur;
-}
-
 /**
  * 由文件 + 目录列表（均为工作区内相对路径，'/' 分隔）构造排序好的嵌套树。
  * @param files {Array<{path:string, kind?:string}>} 文件，path 形如 '素材/封面.png'
  * @param dirs  {Array<string>} 已知目录（含空目录，让用户显式建的空文件夹也显示——文件夹是一等公民）
  * @returns 顶层节点数组，节点 = { name, rel, isDir, kind?, children }
+ *
+ * ensureDir 的目录查找用 **每节点一张 name→dir 子节点索引（WeakMap）**，消掉旧版 `children.find` 的
+ * O(M²)（诊断 D3：超大扁平目录 15 万同级 → 线性 find 退化成 68 秒主进程冻结，实测）。索引只是查找加速、
+ * 不进树（WeakMap 局部、构造完即弃）——节点创建顺序、children 顺序、末尾 sortNodes 全不变 → 输出与旧版
+ * **逐字节一致**（test/file-tree-fidelity.test.js 对老实现做差分锁）。索引只存 ensureDir 建的目录节点，
+ * 与旧版 `find(c => c.isDir && c.name === part)` 的「只认目录、file/dir 同名不冲突」语义一致。
  */
 function buildFileTree(files, dirs = []) {
   const root = { name: '', rel: '', isDir: true, children: [] };
+  const childIndex = new WeakMap(); // 目录节点 → Map(子目录名 → 子目录节点)
+  const idxOf = (n) => { let m = childIndex.get(n); if (!m) { m = new Map(); childIndex.set(n, m); } return m; };
+  function ensureDir(parts) {
+    let cur = root;
+    let acc = '';
+    for (const part of parts) {
+      acc = acc ? `${acc}/${part}` : part;
+      const m = idxOf(cur);
+      let next = m.get(part);
+      if (!next) {
+        next = { name: part, rel: acc, isDir: true, children: [] };
+        cur.children.push(next);
+        m.set(part, next);
+      }
+      cur = next;
+    }
+    return cur;
+  }
   for (const d of dirs) {
     const parts = String(d).split('/').filter(Boolean);
-    if (parts.length) ensureDir(root, parts);
+    if (parts.length) ensureDir(parts);
   }
   for (const f of files) {
     const parts = String(f.path).split('/').filter(Boolean);
     if (!parts.length) continue;
     const leaf = parts.pop();
-    const parent = parts.length ? ensureDir(root, parts) : root;
+    const parent = parts.length ? ensureDir(parts) : root;
     parent.children.push({
       name: leaf,
       rel: f.path,
@@ -115,4 +123,77 @@ function cleanLeafName(raw) {
     .trim();
 }
 
-module.exports = { buildFileTree, kindOf, sortNodes, assertInsideWorkspace, cleanLeafName };
+// ===== 扫描跳过规则（workspace.walk 与 workspace-watcher 共用同一份判定——两处不一致会造出
+// 「watcher 为一个树上根本不存在的路径触发全量重扫」的白烧）=====
+
+// 不进树的噪音：隐藏文件 / 依赖·构建·缓存目录 / 原子写的临时文件。
+// B 档只列「工具生成、绝不会是用户文档文件夹名」的目录，且都是文件数炸弹（node_modules 常 10 万+）——
+// 不含 build/dist/out/target 这种普通词（怕误伤真文件夹）。点开头的（.git/.next/.cache/.venv/.gradle/.idea/
+// .svn/.Spotlight-V100…）已被 isSkippedName 的 name.startsWith('.') 覆盖，不用在这重列。
+const IGNORE = new Set([
+  'node_modules', '.git', 'bower_components', '__pycache__', 'Pods', 'DerivedData', 'venv',
+]);
+// macOS 包（package/bundle）：Finder 当单个文件、内部可含上万文件（.app 应用包 / .photoslibrary 照片图库…）。
+// 文档工作区里递归钻进去 → 文件数爆炸、readTree 卡死（Wendi「打开桌面特别卡」根因 = 桌面上的 Minecraft.app，
+// 一个 .app 内部可几千到十几万文件）。学 Finder：树上显示成单个节点、不往里递归。按后缀判定（够用，不引 UTI）。
+const BUNDLE_EXTS = new Set([
+  'app', 'framework', 'bundle', 'plugin', 'kext', 'xpc', 'component', 'mdimporter', 'qlgenerator',
+  'prefpane', 'wdgt', 'dsym', 'pkg', 'mpkg', 'photoslibrary', 'photolibrary', 'fcpbundle',
+  'imovielibrary', 'tvlibrary', 'aplibrary', 'musiclibrary',
+]);
+function isBundleName(name) {
+  const i = String(name).lastIndexOf('.');
+  return i > 0 && BUNDLE_EXTS.has(String(name).slice(i + 1).toLowerCase());
+}
+// Windows / 云盘垃圾文件：靠「隐藏属性」藏身、名字不带点。跨系统同步（共享云盘上的 Windows 同事，
+// Wendi 2026-07-14 报的场景）后隐藏属性丢失 → 在 macOS 上现形进树。大小写不敏感（Windows 文件系统
+// 保留任意大小写、比较不敏感）。desktop.ini / Thumbs.db（Windows）、$RECYCLE.BIN / System Volume
+// Information（外置盘/同步盘残留目录）。`~$xxx.docx` 是 Office 打开文档时的锁文件（`~$` 前缀）。
+// `Icon\r` 是 macOS 自定义文件夹图标文件（名字是 "Icon"+回车、靠 UF_HIDDEN 隐藏、也不带点）。
+// 已知限制：任意文件上的 macOS chflags hidden（UF_HIDDEN）按名字判不出来，Node fs 读不到 BSD flags——
+// 见 docs/features/workspace-file-tree.md 欠账。
+const JUNK = new Set(['desktop.ini', 'thumbs.db', 'ehthumbs.db', '$recycle.bin', 'system volume information']);
+// 原子写 tmp 命名从 `.ws2tmp` 改成了 `.ws2tmp-<pid>-<seq>`（防并发保存互踩，files.js），endsWith('.ws2tmp')
+// 匹配不上新名字 → 存盘时临时文件漏进侧栏树。用 includes 兜住新旧两种命名（不该给用户看的写盘中间产物）。
+const isSkippedName = (name) =>
+  String(name).startsWith('.') || String(name).includes('.ws2tmp') || IGNORE.has(name) ||
+  JUNK.has(String(name).toLowerCase()) || String(name).startsWith('~$') || name === 'Icon\r';
+
+// 整条相对路径（'/' 分隔）是不是「扫描根本不会看见」的噪音——是的话这个磁盘事件不可能改变树，
+// watcher 层直接丢弃（.DS_Store / .git 内部 / node_modules 内部的 churn 占外部事件的大头）。
+// 中间段是 bundle（.app 内部变化）也算噪音；**最后一段是 bundle 不算**——bundle 自身增删/改名会改父目录列表。
+function isNoisePath(relPath) {
+  const parts = String(relPath).split('/').filter(Boolean);
+  for (let i = 0; i < parts.length; i++) {
+    if (isSkippedName(parts[i])) return true;
+    if (i < parts.length - 1 && isBundleName(parts[i])) return true;
+  }
+  return false;
+}
+
+/**
+ * 由 watcher 报来的变化路径列表算「需要重扫的目录」（每条取父目录 = 增删/改名会变的那层列表；
+ * 内容变化事件也落在父目录，重扫它顺带刷新该文件 stat）。祖先归并（a 与 a/b 只留 a）。
+ * 返回 null = 该走全量重扫：任何路径的父目录是根（''，重扫根子树 = 全量）、或归并后仍超 cap（事件太散，
+ * 分头扫不如整扫一次）。
+ */
+function affectedDirsOf(relPaths, cap = 8) {
+  const dirs = new Set();
+  for (const p of relPaths) {
+    const parts = String(p).split('/').filter(Boolean);
+    if (parts.length <= 1) return null; // 根层变化 → 全量
+    dirs.add(parts.slice(0, -1).join('/'));
+  }
+  const sorted = [...dirs].sort((a, b) => a.length - b.length); // 短(浅)的在前,后面的只需对已保留项查前缀
+  const kept = [];
+  for (const d of sorted) {
+    if (!kept.some((k) => d === k || d.startsWith(k + '/'))) kept.push(d);
+  }
+  if (!kept.length || kept.length > cap) return null;
+  return kept;
+}
+
+module.exports = {
+  buildFileTree, kindOf, sortNodes, assertInsideWorkspace, cleanLeafName,
+  isSkippedName, isBundleName, isNoisePath, affectedDirsOf,
+};

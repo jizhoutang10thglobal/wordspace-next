@@ -16,7 +16,7 @@ async function launch() {
   app = await electron.launch({
     // --no-sandbox：CI 无特权 runner 必需；与 iframe sandbox=allow-same-origin（挡文档脚本）无关
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_PDF_OUT: path.join(tmpDir, 'export.pdf') },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_PDF_OUT: path.join(tmpDir, 'export.pdf') },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
@@ -1144,7 +1144,7 @@ test('单文件模式：⋯ 菜单「打开文件夹…」→ 装载工作区（
   const wsDir = path.join(tmpDir, 'ws-from-menu');
   await fs.mkdir(wsDir, { recursive: true });
   await fs.writeFile(path.join(wsDir, 'in-ws.html'), '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>w</title></head><body><h1>W</h1></body></html>', 'utf8');
-  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'ud-menu'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir } });
+  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'ud-menu'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir } });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });

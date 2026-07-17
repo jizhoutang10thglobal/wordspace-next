@@ -65,8 +65,24 @@
     return Math.min(2, Math.max(0.5, next));
   }
 
+  // ---- User-Agent 归一（反 CAPTCHA，Wendi 2026-07-14 报的浏览器搜索反复弹人机验证）----
+  // Electron 默认 UA 带两个标准 Chrome UA 里不存在的 token：`<appName>/<ver>` 和 `Electron/<ver>`。
+  // Google 反滥用把非标准 UA 当自动化/bot 信号 → /sorry 拦截页 + reCAPTCHA。剥掉这两个 token 归一成
+  // 标准 Chrome UA（内核本就是 Chromium，不是伪装、不动 navigator）。appName 由调用方传 app.getName()——
+  // dev 下是 'wordspace-next'、打包后是 'Wordspace Next'（含空格），运行时取值两种形态都覆盖，正则转义特殊字符。
+  function browserUA(defaultUA, appName) {
+    if (typeof defaultUA !== 'string' || !defaultUA) return '';
+    var ua = defaultUA.replace(/\sElectron\/\S+/i, '');
+    if (appName) {
+      var esc = String(appName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      ua = ua.replace(new RegExp('\\s' + esc + '/\\S+', 'i'), '');
+    }
+    return ua.replace(/\s{2,}/g, ' ').trim();
+  }
+
   var API = {
     permissionAllowed: permissionAllowed,
+    browserUA: browserUA,
     isAllowedNavUrl: isAllowedNavUrl,
     safeFilename: safeFilename,
     classifyLoadFailure: classifyLoadFailure,

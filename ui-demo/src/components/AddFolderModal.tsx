@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { X, FolderOpen, HardDrive, CornerDownRight, GitMerge, Info } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
+import { useT } from '../i18n'
 import { classifyRoot, canonPath } from '../lib/tree'
 import './AddFolderModal.css'
 
@@ -10,14 +11,15 @@ import './AddFolderModal.css'
 // 嵌套裁决（调研）：加根前判定新根与已有根的关系——相同/子目录/父目录/无关，各自智能处理，
 // 不硬报错。SAMPLE_FOLDERS 特意含一个子目录（品牌升级/视觉规范）和一个父目录（~/Projects）来演示。
 const SAMPLE_FOLDERS = [
-  '~/Projects/品牌升级/视觉规范', // 子目录：是已打开的「品牌升级」的下一级 → 不重复开
+  '~/Projects/品牌升级/视觉规范', // i18n-exempt 演示假路径 · 子目录：是已打开的「品牌升级」的下一级 → 不重复开
   '~/Projects', // 父目录：包住了已打开的「品牌升级」 → 提议并入
-  '~/Desktop/项目归档', // 无关：正常加
-  '~/Documents/合同与票据', // 无关：正常加
+  '~/Desktop/项目归档', // i18n-exempt 演示假路径 · 无关：正常加
+  '~/Documents/合同与票据', // i18n-exempt 演示假路径 · 无关：正常加
 ]
 const leafOf = (p: string) => p.replace(/\/+$/, '').split('/').pop() || p
 
 export default function AddFolderModal() {
+  const t = useT()
   const open = useUI((s) => s.addFolderOpen)
   const close = useUI((s) => s.closeAddFolder)
   const allRoots = useStore((s) => s.roots)
@@ -78,17 +80,17 @@ export default function AddFolderModal() {
         className="ws-modal afm"
         role="dialog"
         aria-modal="true"
-        aria-label="添加文件夹"
+        aria-label={t('modals.addFolder')}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <header className="ws-modal-head">
           <div className="ws-modal-head-text">
-            <div className="ws-modal-title">添加文件夹</div>
+            <div className="ws-modal-title">{t('modals.addFolder')}</div>
             <div className="ws-modal-sub">
-              再打开一个文件夹，和现有的并排显示；随时可以移除，磁盘文件不受影响。
+              {t('modals.addFolderSub')}
             </div>
           </div>
-          <button className="ws-modal-x" onClick={close} aria-label="关闭">
+          <button className="ws-modal-x" onClick={close} aria-label={t('common.close')}>
             <X size={16} />
           </button>
         </header>
@@ -97,11 +99,11 @@ export default function AddFolderModal() {
           <div className="afm-picker">
             <div className={`afm-path ${folder ? '' : 'is-empty'}`}>
               <HardDrive size={14} />
-              <span className="ws-truncate">{folder || '还没选择文件夹'}</span>
+              <span className="ws-truncate">{folder || t('modals.noFolderPicked')}</span>
             </div>
             <button className="ws-btn afm-browse" onClick={pickFolder}>
               <FolderOpen size={14} />
-              选择文件夹…
+              {t('modals.pickFolder')}
             </button>
           </div>
           {relation && relation.rel !== 'independent' && (
@@ -110,25 +112,25 @@ export default function AddFolderModal() {
                 {relation.rel === 'parent' ? <GitMerge size={15} /> : relation.rel === 'child' ? <CornerDownRight size={15} /> : <Info size={15} />}
               </span>
               <span className="afm-notice-text">
-                {relation.rel === 'same' && '这个文件夹已经打开了。'}
+                {relation.rel === 'same' && t('modals.relSame')}
                 {relation.rel === 'child' && (
-                  <>「<b>{leafOf(folder)}</b>」已经在「<b>{relation.parent.replace(/\/+$/, '').split('/').pop()}</b>」里了——不会重复打开它。想去看它，在那个文件夹里展开即可。</>
+                  <>{t('modals.bracketL')}<b>{leafOf(folder)}</b>{t('modals.relChildMid')}<b>{relation.parent.replace(/\/+$/, '').split('/').pop()}</b>{t('modals.relChildEnd')}</>
                 )}
                 {relation.rel === 'parent' && (
-                  <>「<b>{leafOf(folder)}</b>」包含了已打开的「<b>{relation.children.map((c) => c.replace(/\/+$/, '').split('/').pop()).join('、')}</b>」。添加后会把它{relation.children.length > 1 ? '们' : ''}并入「{leafOf(folder)}」，避免同一批文件出现两次。</>
+                  <>{t('modals.bracketL')}<b>{leafOf(folder)}</b>{t('modals.relParentMid')}<b>{relation.children.map((c) => c.replace(/\/+$/, '').split('/').pop()).join(t('modals.listSep'))}</b>{t('modals.relParentEnd', { plural: relation.children.length > 1 ? t('modals.pluralThem') : '', name: leafOf(folder) })}</>
                 )}
               </span>
             </div>
           )}
           {roots.length ? (
-            <div className="afm-current">已打开：{roots.map((r) => r.name).join('、')}</div>
+            <div className="afm-current">{t('modals.alreadyOpen', { names: roots.map((r) => r.name).join(t('modals.listSep')) })}</div>
           ) : null}
         </div>
 
         <div className="ws-modal-foot">
-          <button className="ws-btn" onClick={close}>取消</button>
+          <button className="ws-btn" onClick={close}>{t('common.cancel')}</button>
           <button className="ws-btn ws-btn-primary" disabled={!folder} onClick={submit}>
-            {relation && !canAdd ? '知道了' : relation?.rel === 'parent' ? '并入并添加' : '添加'}
+            {relation && !canAdd ? t('modals.gotIt') : relation?.rel === 'parent' ? t('modals.mergeAndAdd') : t('modals.add')}
           </button>
         </div>
       </div>

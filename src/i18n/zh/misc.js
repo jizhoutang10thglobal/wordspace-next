@@ -1,0 +1,18 @@
+// misc 命名空间(zh)：网页右键菜单 label + PDF 查看器工具栏/错误串。
+module.exports = {
+  openLinkNewTab: '在新标签页打开链接',
+  openLinkBgTab: '在后台标签页打开链接',
+  copyLink: '拷贝链接',
+  copyImage: '拷贝图片',
+  copyImageUrl: '拷贝图片地址',
+  searchWith: '用 {engine} 搜索「{query}」',
+  navForward: '前进',
+  reload: '重新加载',
+  copyPageUrl: '拷贝页面链接',
+  exportPdf: '导出 PDF',
+  pdfReadonly: 'PDF · 只读',
+  zoomOut: '缩小',
+  zoomIn: '放大',
+  fitWidth: '适应宽度',
+  pdfOpenFailed: 'PDF 打开失败：{err}',
+};

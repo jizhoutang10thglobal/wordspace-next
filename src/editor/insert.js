@@ -5,6 +5,9 @@
   // 内联样式，序列化原样保留（KTD4——白名单零改）；插入内容**不**盖任何 data-ws2-* 标记。
   // 面板本身是父层 chrome（shell.css 类，非注入 iframe），满足 renderer CSP。
 
+  // i18n：renderer 全局 t()（node/test 上下文无 wsT 时回退 key，防 require 期崩）。
+  const T = (k, p) => (global.wsT ? global.wsT(k, p) : k);
+
   // ---- 纯工厂 ----
 
   // 10 种类型 → 一个干净、带 inline 样式的元素。样式以分号串拼好一次性写 el.style.cssText（CSSOM）。
@@ -19,13 +22,13 @@
       }
       case 'text': {
         el = doc.createElement('p');
-        el.textContent = '文本段落';
+        el.textContent = T('editor.defaultTextParagraph');
         el.style.cssText = 'margin:0;font-size:16px;line-height:1.6;color:#1a1a1a;';
         break;
       }
       case 'heading': {
         el = doc.createElement('h2');
-        el.textContent = '标题';
+        el.textContent = T('editor.heading');
         el.style.cssText = 'margin:0;font-size:28px;font-weight:700;line-height:1.3;color:#1a1a1a;';
         break;
       }
@@ -55,7 +58,7 @@
       }
       case 'button': {
         el = doc.createElement('button');
-        el.textContent = '按钮';
+        el.textContent = T('editor.button');
         el.style.cssText = 'padding:10px 20px;border:none;border-radius:6px;background:linear-gradient(135deg,#ff5a5f,#ff8a5b);color:#fff;font-size:14px;font-weight:600;cursor:pointer;';
         break;
       }
@@ -67,7 +70,7 @@
       case 'link': {
         el = doc.createElement('a');
         el.setAttribute('href', '#');
-        el.textContent = '链接文本';
+        el.textContent = T('editor.linkText');
         el.style.cssText = 'color:#1a73e8;text-decoration:underline;';
         break;
       }
@@ -76,14 +79,14 @@
         el.style.cssText = 'margin:0;padding-left:24px;font-size:16px;line-height:1.7;color:#1a1a1a;';
         for (let i = 0; i < 3; i++) {
           const li = doc.createElement('li');
-          li.textContent = '列表项';
+          li.textContent = T('editor.listItem');
           el.appendChild(li);
         }
         break;
       }
       case 'quote': {
         el = doc.createElement('blockquote');
-        el.textContent = '引用内容';
+        el.textContent = T('editor.quoteContent');
         el.style.cssText = 'margin:0;padding:8px 16px;border-left:4px solid #ff5a5f;color:#555;font-style:italic;';
         break;
       }
@@ -114,16 +117,16 @@
   // ---- 面板 UI（父层 chrome） ----
 
   const TYPES = [
-    { type: 'container', label: '容器' },
-    { type: 'text', label: '文本' },
-    { type: 'heading', label: '标题' },
-    { type: 'table', label: '表格' },
-    { type: 'image', label: '图片' },
-    { type: 'button', label: '按钮' },
-    { type: 'divider', label: '分隔线' },
-    { type: 'link', label: '链接' },
-    { type: 'list', label: '列表' },
-    { type: 'quote', label: '引用' },
+    { type: 'container', labelKey: 'elContainer' },
+    { type: 'text', labelKey: 'elText' },
+    { type: 'heading', labelKey: 'heading' },
+    { type: 'table', labelKey: 'elTable' },
+    { type: 'image', labelKey: 'blockImage' },
+    { type: 'button', labelKey: 'button' },
+    { type: 'divider', labelKey: 'blockDivider' },
+    { type: 'link', labelKey: 'link' },
+    { type: 'list', labelKey: 'elList' },
+    { type: 'quote', labelKey: 'blockQuote' },
   ];
 
   function attach(host, deps) {
@@ -138,8 +141,8 @@
 
     const trigger = d.createElement('button');
     trigger.className = 'tb-btn tb-textbtn';
-    trigger.textContent = '+ 插入';
-    trigger.title = '插入元素';
+    trigger.textContent = T('editor.insertBtn');
+    trigger.title = T('editor.insertElement');
     trigger.addEventListener('click', togglePanel);
 
     const panel = d.createElement('div');
@@ -151,7 +154,7 @@
     for (const t of TYPES) {
       const cell = d.createElement('button');
       cell.className = 'insert-cell';
-      cell.textContent = t.label;
+      cell.textContent = T('editor.' + t.labelKey);
       cell.addEventListener('click', () => insert(t.type));
       grid.appendChild(cell);
     }
