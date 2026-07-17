@@ -1,6 +1,6 @@
 # i18n Phase 2:真 app 移植(中英切换进 `src/`)
 
-> status: active · origin: `docs/features/i18n.md`(Phase 1 已合 #223)+ plan #214 · 日期 2026-07-16
+> status: completed(2026-07-16 随 PR #239 全量落地并合入 main) · origin: `docs/features/i18n.md`(Phase 1 已合 #223)+ plan #214 · 日期 2026-07-16
 >
 > Phase 1(ui-demo)已上 main:纯 core + 9 命名空间字典 + 三态偏好 + 三道防漂移门。本 plan 把同套架构搬进真 app(Electron 主进程 + vanilla renderer)。**执行前先读 `ui-demo/src/i18n/core.ts` 和 `docs/features/i18n.md`——四项拍板与架构主张全部继承,不再重新讨论。**
 
