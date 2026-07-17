@@ -68,6 +68,11 @@ export default {
   dlRemove: 'Remove from list',
   dlReveal: 'Show in Finder',
   dlRevealToast: '(Demo) Located "{name}" in Finder',
+  dlStartedToast: 'Downloading "{name}"',
+  dlDoneToast: 'Downloaded "{name}"',
+  dlShowAction: 'Show',
+  dlFailedToast: '"{name}" failed to download',
+  dlInterruptedToast: '{n} download(s) interrupted',
 
   // NewTab (start page)
   omniPlaceholder: 'Search or enter address',

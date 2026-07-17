@@ -68,6 +68,11 @@ export default {
   dlRemove: '从记录中移除',
   dlReveal: '在访达中显示',
   dlRevealToast: '（演示）已在访达中定位「{name}」',
+  dlStartedToast: '开始下载「{name}」',
+  dlDoneToast: '已下载「{name}」',
+  dlShowAction: '显示',
+  dlFailedToast: '「{name}」下载失败',
+  dlInterruptedToast: '{n} 个下载已中断',
 
   // NewTab（起始页）
   omniPlaceholder: '搜索,或输入网址',

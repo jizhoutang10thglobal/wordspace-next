@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useStore } from './store'
+import { useUI } from './ui'
+import { t } from '../i18n'
 import {
   uniquify,
   stripUniquifySuffix,
@@ -85,6 +88,8 @@ interface DlState {
 
 // —— 假进度引擎（模块级，不挂任何组件）——
 const timers = new Map<string, ReturnType<typeof setInterval>>()
+// 本次 rehydrate 被转成 interrupted 的条数（merge 里计数,onRehydrateStorage 回调里发通知）。
+let interruptedAtBoot = 0
 
 function stopTicker(id: string) {
   const tm = timers.get(id)
@@ -123,7 +128,9 @@ function beginTicker(id: string) {
 }
 
 // 终态迁移统一收口：批次维护（cancel/fail 退出批次、completed 留在批内撑住环；无在途 → 批次清空）
-// + completed 落账 diskNames。
+// + completed 落账 diskNames + toast 反馈。
+// toast 三连（开始/完成/失败）是侧栏收起（沉浸模式）时唯一可感知的反馈（KTD 兜底）；
+// 取消刻意不 toast——它只能从 popover 里发起，用户正看着行内状态翻「已取消」。
 function finishAs(id: string, state: 'failed' | 'completed' | 'canceled', receivedBytes: number) {
   useDownloads.setState((st) => {
     const entries = st.entries.map((x) => (x.id === id ? { ...x, receivedBytes, state } : x))
@@ -136,6 +143,16 @@ function finishAs(id: string, state: 'failed' | 'completed' | 'canceled', receiv
         : st.diskNames
     return { entries, batchIds, diskNames }
   })
+  const name = useDownloads.getState().entries.find((e) => e.id === id)?.filename ?? ''
+  if (state === 'completed') {
+    // 完成 = success + action「显示」打开 popover（照 exportDoc 先例;进行中不用 progress-tone,见 KTD）。
+    useStore.getState().toast(t('browser.dlDoneToast', { name }), 'success', {
+      label: t('browser.dlShowAction'),
+      run: () => useUI.getState().openDownloads(),
+    })
+  } else if (state === 'failed') {
+    useStore.getState().toast(t('browser.dlFailedToast', { name }), 'danger')
+  }
 }
 
 // CAP 裁剪：超上限时从最老端挤掉**终态**条目；在途绝不挤。
@@ -178,6 +195,8 @@ export const useDownloads = create<DlState>()(
         }
         set((st) => ({ entries: capped([entry, ...st.entries]), batchIds: [...st.batchIds, id] }))
         beginTicker(id)
+        // 开始 = 短 neutral toast:侧栏收起时这是「点了下载按钮真的有反应」的唯一可见反馈。
+        useStore.getState().toast(t('browser.dlStartedToast', { name: filename }), 'neutral')
         return id
       },
 
@@ -220,10 +239,16 @@ export const useDownloads = create<DlState>()(
       // 状态从不出现「刷新后还是 downloading」的窗口，也无需绕过通知机制去改已生效的 state。
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<Pick<DlState, 'entries' | 'diskNames'>>
+        interruptedAtBoot = (p.entries ?? []).filter((e) => e.state === 'downloading').length
         const entries = (p.entries ?? current.entries).map((e) =>
           e.state === 'downloading' ? { ...e, state: 'interrupted' as const } : e,
         )
         return { ...current, ...p, entries, batchIds: [] }
+      },
+      // 事后回调只发通知（状态已在 merge 原子转好）：本次启动有条目被转 interrupted → 一条 neutral toast。
+      onRehydrateStorage: () => () => {
+        if (interruptedAtBoot > 0)
+          useStore.getState().toast(t('browser.dlInterruptedToast', { n: interruptedAtBoot }), 'neutral')
       },
     },
   ),
