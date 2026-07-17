@@ -860,7 +860,8 @@ export default function ArcSidebar() {
     return Number.isFinite(v) ? Math.max(240, Math.min(520, v)) : 274
   })
 
-  // 收起态 = 沉浸模式（Wendi 对标 Arc，2026-07-16）：不留 48px 细轨，内容四边贴满。
+  // 收起态 = 沉浸模式（Wendi 对标 Arc，2026-07-16）：不留 48px 细轨，内容只隔一圈
+  // 10px 窗框（App.css .is-immersive；真 app 里这圈是窗口拖动区）。
   // 重开三入口：左缘 hover 滑出悬浮侧栏（peek，盖在内容上不推挤）、Cmd+\、peek 里点收起钮真展开。
   // peek 做在同一个组件实例里（不另挂 <ArcSidebar overlay/>）——全局快捷键监听在本组件的
   // effect 上，双实例会双挂监听、Cmd+\ 一次触发两回（开了秒关，见上面 handler 的注释）。
@@ -1388,7 +1389,7 @@ export default function ArcSidebar() {
   )
 
   if (collapsed) {
-    // 沉浸收起：流内什么都不渲染（内容贴满），只留 6px 左缘热区 + 悬浮 peek 容器
+    // 沉浸收起：流内什么都不渲染，只留左缘热区（=左边框带 10px）+ 悬浮 peek 容器
     // （DownloadsPopover 自身 portal 到 body，收起态从 toast「显示」打开时不受 peek visibility 影响）
     return (
       <>

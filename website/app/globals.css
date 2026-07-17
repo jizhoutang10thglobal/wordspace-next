@@ -679,6 +679,36 @@ p {
   color: var(--text-primary);
 }
 
+/* 语言切换（中文/English）：标题行右侧的双 pill */
+.cl-head-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cl-lang {
+  display: inline-flex;
+  gap: 4px;
+  flex: none;
+}
+
+.cl-lang-btn {
+  border: 1px solid var(--border, #e5e0d8);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.cl-lang-btn.is-on {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--bg, #faf7f2);
+}
+
 .cl-sub {
   margin: 0;
   color: var(--text-secondary);

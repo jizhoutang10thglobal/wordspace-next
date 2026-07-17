@@ -3,6 +3,8 @@
 // 不查 class 存在性——老实现（收起留 48px 细轨）跑这套必翻红，断言天然有牙。
 // 契约（Colin 拍板）：收起=零可见 chrome（无细轨/无浮钮）、左缘 hover peek + Cmd/Ctrl+\ 重开、
 // 文档标签收起时 52px 文档头保留（沉浸范围只砍侧栏侧）。
+// 2026-07-17 追加（Wendi）：收起态内容四周 10px 窗框带（真 app=窗口拖动区）、peek 触发区=
+// 整条左边框且 hover 有可见反馈、peek 贴左边框内侧滑出（x=10）。
 import { chromium } from 'playwright'
 
 const URL = process.argv[2] ?? 'http://localhost:5199/'
@@ -22,22 +24,27 @@ await page.waitForFunction(() => !!window.__wsStore && !!window.__wsUI)
 const docked = await page.$eval('.ws-body > .arc-sidebar', (el) => el.getBoundingClientRect().width)
 ok(docked >= 180, `基线: 停靠侧栏在流内（宽 ${docked}px）`)
 
-// —— 收起 = 沉浸：内容四边贴满，流内零残留 ——
+// —— 收起 = 沉浸：流内零残留，内容四周均匀内缩 10px 窗框带 ——
 await page.evaluate(() => window.__wsUI.getState().toggleSidebar())
 await page.waitForTimeout(120)
 const railGone = await page.evaluate(() => !document.querySelector('.ws-body > .arc-sidebar'))
 ok(railGone, '收起: 流内不再渲染任何侧栏元素（48px 细轨已删）')
 const main = await page.$eval('.ws-main', (el) => el.getBoundingClientRect())
-ok(Math.round(main.x) === 0 && Math.round(main.width) === 1400,
-  `收起: 内容区贴满全宽（x=${Math.round(main.x)} w=${Math.round(main.width)}，期望 0/1400）`)
-// 变异探针同源断言：最左边缘像素下压的是内容/热区，不是任何可见 chrome 条
-const leftmost = await page.evaluate(() => {
-  const el = document.elementFromPoint(2, 450)
-  const bg = el ? getComputedStyle(el).backgroundColor : ''
-  return { cls: el?.className ?? '', transparent: bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent' }
-})
-ok(leftmost.transparent || !String(leftmost.cls).includes('arc-'),
-  `收起: 左缘无可见条（点到 ${JSON.stringify(leftmost)}）`)
+ok(
+  Math.round(main.x) === 10 && Math.round(main.y) === 10 &&
+    Math.round(main.width) === 1380 && Math.round(main.height) === 880,
+  `收起: 内容区四周内缩 10px（x=${Math.round(main.x)} y=${Math.round(main.y)} w=${Math.round(main.width)} h=${Math.round(main.height)}，期望 10/10/1380/880）`)
+// 窗框带可见（Wendi 2026-07-17：原隐形热区「不知道鼠标挪哪」）——读 computed 背景，不查 class
+const frameBg = await page.$eval('.ws-body', (el) => getComputedStyle(el).backgroundColor)
+ok(frameBg !== 'rgba(0, 0, 0, 0)' && frameBg !== 'transparent', `收起: 窗框带有可见底色（bg=${frameBg}）`)
+// hover 左边框 → 背景加深一档的可见反馈
+const edgeIdle = await page.$eval('.arc-edge-hot', (el) => getComputedStyle(el).backgroundColor)
+await page.mouse.move(5, 700)
+await page.waitForTimeout(200)
+const edgeHover = await page.$eval('.arc-edge-hot', (el) => getComputedStyle(el).backgroundColor)
+ok(edgeHover !== edgeIdle, `收起: hover 左边框有可见反馈（${edgeIdle} → ${edgeHover}）`)
+await page.mouse.move(900, 450)
+await page.waitForTimeout(750) // 等 hover 顺带触发的 peek 收干净，别污染后面的断言
 
 // —— 文档头保留（拍板：网页全隐、文档保留文档头）——
 await page.evaluate(() => {
@@ -62,10 +69,10 @@ const peek = await page.evaluate(() => {
   const r = p.getBoundingClientRect()
   return { x: Math.round(r.x), w: Math.round(r.width), vis: getComputedStyle(p).visibility }
 })
-ok(peek && peek.x === 0 && peek.w >= 180 && peek.vis === 'visible',
-  `peek: hover 左缘滑出完整悬浮侧栏（${JSON.stringify(peek)}）`)
+ok(peek && peek.x === 10 && peek.w >= 180 && peek.vis === 'visible',
+  `peek: hover 左边框滑出悬浮侧栏、贴边框内侧（${JSON.stringify(peek)}，期望 x=10）`)
 const mainDuringPeek = await page.$eval('.ws-main', (el) => Math.round(el.getBoundingClientRect().x))
-ok(mainDuringPeek === 0, `peek: 悬浮不推挤内容（内容区 x 仍=${mainDuringPeek}）`)
+ok(mainDuringPeek === 10, `peek: 悬浮不推挤内容（内容区 x 仍=${mainDuringPeek}）`)
 
 // —— 鼠标离开 → peek 收回（computed visibility 强断言，不查 class）——
 await page.mouse.move(900, 450)
