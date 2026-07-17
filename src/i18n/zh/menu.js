@@ -4,6 +4,7 @@
 module.exports = {
   // Wordspace Next 菜单
   checkUpdates: '检查更新…',
+  changelog: '更新日志…',
   settings: '设置…',
   reportIssue: '报告问题 / 反馈…',
   aiAccess: 'AI 接入…',
