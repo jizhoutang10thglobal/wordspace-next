@@ -14,6 +14,24 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-17 — 更新器「重启不重启」07-16 首修是哑修,真修=#249 已合;#248 撞车解法交底
+
+**是什么**:07-16 修「点重启安装没反应」补的 `app.on('before-quit-for-update')` **挂错发射器**——该事件属
+`require('electron').autoUpdater`(AutoUpdater 接口,electron.d.ts:1995),不是 app 事件,监听器从未触发,
+quitting 恒 false,darwin 驻留守卫照吞 quitAndInstall 的关窗(Colin 07-17 实机复现:窗口没了但 app 赖在
+Dock 里)。配套 e2e 门也是哑门(存在性查错发射器 + darwin 段自导自演 emit)。**真修=PR #249 已合 main**:
+update-install handler 动作点直置 quitting=true(`beginQuitForUpdate`,零事件依赖)+ 兜底监听挂 native
+autoUpdater + 行为门 `e2e/update-quit.spec.js`(真按钮路径断言**进程真退出**;`WS2_DARWIN_PERSIST_SIM`
+任何平台强制驻留分支=Linux CI 有牙)。
+**怎么 apply**:①**#248(fix/updater-ux-round2)因此 DIRTY**,rebase 解法交底在 #248 的 PR 评论——
+update-install handler 两修复共存(保 maybeExplainInstallAuth + 最后包 `beginQuitForUpdate(() =>
+autoUpdater.quitAndInstall())`),**别把 app 版监听带回来**(update-ui.spec 新门断言 app 上该监听=0)。
+②方法论:修事件类 bug 先查事件挂在哪个发射器(d.ts 接口归属);「监听器存在性」门验不了「事件会发生」,
+行为门才有牙。③鉴别诊断:「窗口没了但 Dock 还在」=进程没退(本 bug);「app 退了但没装/没重启」=
+ShipIt 授权取消(#248 管的路径)。④真机闭环仍要两个发版周期:下一次更新还会最后复现一次(手动 ⌘Q 兜)。
+**来源**:PR #249(fix/updater-quit-for-real);#248 评论;docs/features/app-updater.md 退出链段。
+
+
 ## 2026-07-16 — 沉浸收起(Arc 对标)已全量合 main:sb-reopen 浮钮已删、真 app 换 hiddenInset 窗框
 
 **是什么**:Wendi「零缝隙」反馈落地(ui-demo #230 + 真 app #238)。侧栏收起=流内零渲染(ui-demo 48px 细轨、真 app 52px COLLAPSED_STRIP、#sb-reopen 常驻浮钮**全删**),重开=左缘 hover peek(悬浮盖内容)/Cmd+\;真 app darwin 换 titleBarStyle:hiddenInset,红绿灯进 .sb-head(兼窗口拖拽区)且随收起隐藏。spec=docs/features/immersive-collapse.md。
