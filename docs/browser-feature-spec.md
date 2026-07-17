@@ -807,6 +807,23 @@ main → renderer (push)
 | 置顶标签关闭钮 | **无 `X`**（Chrome 惯例：钉住=防误关） | **有 `X`**，点击=取消置顶并移除（`removeTabRel`）；`⌘W` 仍守置顶（P3-02，Colin 2026-07-14 方案 B：保留 v0.4.5 起既有习惯） |
 | 下载（§4.11） | **mock 下载**：假进度定时器、无真文件落盘；「下载文件夹」「在访达中显示」是演示语义（toast 告知）；「退出 app」= 刷新页面（rehydrate 转 interrupted）；触发点 = mock 站按钮/右键（真外部 iframe 里的下载拦不到——sandbox 无 `allow-downloads`，mock 下载只在 mock 站生效）；尺寸/时长为演示定值 | **真下载**：`will-download` 真接 `DownloadItem`，真落盘系统「下载」文件夹（uniquify 对真磁盘查重）、真进度/取消/失败事件、「在访达中显示」= `shell.showItemInFolder`、退出 app = 真进程退出转 interrupted |
 
+**真 app 下载落地细则（U6 补，2026-07-18；spike 实证 + 移植修正）**
+
+1. **popover 覆盖机制 = 注册 `.dlp-overlay` 进 `OVERLAY_SEL`（摘原生 view + 快照垫底），不锁侧栏宽**——
+   对 plan 原 KTD「popover 锁侧栏宽、不注册 OVERLAY_SEL、`window blur` 关」的**实现修正**（非漂移）。理由：
+   ① ui-demo 定稿卡片就是 340px（宽于侧栏），锁侧栏宽放不下、破坏保真；② 原生 `WebContentsView` 恒在 HTML
+   层之上，卡片盖到网页区时不摘 view 就被网页盖住（与更新面板同约束）。落地=打开即摘 view + 页面快照垫底，
+   关闭走 **veil + Esc**（网页区原生 view 吞 click，document 级 click-outside 靠不住，与 ui-demo veil 同理）。
+2. **真 app `failed` = `DownloadItem` done('interrupted')**（服务端 RST / 磁盘满等运行时失败，spike 实证）；
+   mock 的「确定性 40% failed」是 demo 触发器，真 app 无等价确定触发（靠真实服务端错误）。
+3. **静默网络停滞：真 app 停在 `downloading`**（socket 销毁后 8s 内不 fire done，与 Chrome 同款）——不像 mock
+   有定时器终结；只有退出 app → load-sanitize 才翻 `interrupted`（不做「实时网络失败→failed」的 UI 预期）。
+4. **完成/失败 toast 降级为纯文案**：真 app 走 `web-toast` 单字符串通道 → 纯文本，**无** §4.11 契约的可点
+   「显示」action、**无** danger tone（通道所限）。进度环 + popover 入口常显兜底，用户仍可一键点开。要补需扩
+   toast 通道带 action/tone（欠账记 `docs/features/browser.md`）。
+5. **启动时「N 个下载被转 interrupted」的计数 toast 未做**（§4.11「启动=neutral 计数条」）：load-sanitize 静默
+   翻转、不额外通知（欠账记 `docs/features/browser.md`）。
+
 **六项拍板结果（Colin 2026-07-10，全部已定，无遗留）**
 
 1. **默认搜索引擎 = Bing**（真 app；demo 保持 glass，见上表）。
@@ -845,9 +862,10 @@ main → renderer (push)
   文件名清洗/绝不自动打开）**/权限全拒/弹窗转标签。
 - [ ] §12 砍除清单没有被做回来（下载已于 2026-07-17 拍板恢复、移出砍除范围，见 §12 该行标注；
   其余各条仍有效）。
-- [ ] 下载（§4.11）：真接 `will-download`（删旧 cancel+toast）/uniquify 防覆盖/工具栏入口+popover/
+- [x] 下载（§4.11）：真接 `will-download`（删旧 cancel+toast）/uniquify 防覆盖/工具栏入口+popover/
   重试=新条目/完成通知/「在访达中显示」只定位；e2e 覆盖完成/取消/重名路径（含变异自检），下载产物
-  进 `.gitignore`。
+  走 `WS2_DL_DIR`=tmpdir 零落盘（无需 `.gitignore` 条目）。**真 app 落地 2026-07-18，见 §13 落地细则
+  + `docs/features/browser.md`；toast action/tone + 启动计数条降级，记欠账。**
 
 ---
 
