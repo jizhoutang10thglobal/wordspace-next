@@ -156,23 +156,44 @@ test('⌘T 地址栏开网页：真加载(像素级红底上屏) + 标签行/omn
   expect(await page.locator('#web-header, .web-chrome, .web-bmbar').count()).toBe(0);
 });
 
-test('沉浸收起：侧栏收起 → 网页 view 贴 x=0 全宽（52px COLLAPSED_STRIP 已删 = Wendi 零缝隙）；peek 推让复原', async () => {
+test('沉浸收起：收起 → 网页 view 内缩进 10px 窗框；peek=快照垫底不推挤，收回挂回（Wendi 2026-07-17）', async () => {
   await launch();
   await openWebViaModal(base + '/');
   const key = await activeWebKey();
-  await expect.poll(async () => { const v = await viewInfo(key); return v && v.attached; }, { timeout: 8000 }).toBe(true);
+  await expect.poll(async () => { const v = await viewInfo(key); return !!(v && v.attached && isRed(v.pixel)); }, { timeout: 8000 }).toBe(true);
   await page.click('#sb-toggle'); // 收起
   await expect(page.locator('#sidebar')).toHaveClass(/is-collapsed/);
-  // 老实现：x=52、width=内容宽-52（给 sb-reopen 留条）→ 这两条必翻红
-  await expect.poll(async () => (await viewInfo(key)).bounds.x, { timeout: 4000 }).toBe(0);
+  // 沉浸窗框：view 内缩 10px（原「贴 x=0 零缝隙」拍板已被 Wendi 边框反馈取代）
+  await expect.poll(async () => (await viewInfo(key)).bounds.x, { timeout: 4000 }).toBe(10);
   const v = await viewInfo(key);
-  expect(v.bounds.width).toBe(v.content.w); // 全宽贴满
-  // peek 推让：__webPeekPush(true) → view 同宽右移一侧栏宽（不 reflow）；false → 复原
-  await page.evaluate(() => window.__webPeekPush(true));
-  await expect.poll(async () => (await viewInfo(key)).bounds.x, { timeout: 4000 }).toBeGreaterThan(150);
-  expect((await viewInfo(key)).bounds.width).toBe(v.bounds.width); // 同宽（右缘出窗被裁，不改网页布局）
-  await page.evaluate(() => window.__webPeekPush(false));
-  await expect.poll(async () => (await viewInfo(key)).bounds.x, { timeout: 4000 }).toBe(0);
+  expect(v.bounds.width).toBe(v.content.w - 20); // 左右各让 10
+  // peek：真 hover 左边带（内缩后左 10px 是 DOM 地盘，主进程 watcher 已删）→ 快照垫底 + view 摘掉。
+  // hover 可重试轮询：防宿主操作者真实鼠标与 CDP 合成指针混流（见 immersive.spec 注）。
+  await expect
+    .poll(async () => {
+      await page.mouse.move(880, 430);
+      await page.waitForTimeout(60);
+      await page.mouse.move(5, 430);
+      await page.waitForTimeout(300);
+      return page.evaluate(() => document.body.classList.contains('is-sb-peek'));
+    }, { timeout: 10000 })
+    .toBe(true);
+  const snap = page.locator('.web-peek-snap');
+  await expect(snap).toBeVisible();
+  const src = await snap.getAttribute('src');
+  expect(src.startsWith('data:image/'), '快照不是 data 图').toBe(true);
+  expect(src.length, '快照是空图').toBeGreaterThan(5000);
+  // 快照几何 = view 原位（内容视觉纹丝不动，不是推让）
+  const sBox = await snap.boundingBox();
+  expect(Math.round(sBox.x)).toBe(10);
+  expect(Math.round(sBox.width)).toBe(v.bounds.width);
+  await expect.poll(async () => (await viewInfo(key)).attached, { timeout: 4000 }).toBe(false); // view 真摘了
+  // 移开 → 收回：view 挂回原位、快照撤掉
+  await page.mouse.move(900, 430);
+  await expect(page.locator('body')).not.toHaveClass(/is-sb-peek/, { timeout: 3000 });
+  await expect.poll(async () => { const w = await viewInfo(key); return w.attached && w.bounds.x === 10; }, { timeout: 4000 }).toBe(true);
+  await expect(page.locator('.web-peek-snap')).toHaveCount(0);
+  expect(isRed((await viewInfo(key)).pixel), '挂回后页面没真回屏').toBe(true);
 });
 
 test('反 CAPTCHA：webtabs UA 无 Electron/app 标识（主进程 session 门 + 真实请求头强门）', async () => {

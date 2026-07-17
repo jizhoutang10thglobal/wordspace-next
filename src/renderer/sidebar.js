@@ -519,6 +519,33 @@
       changed = true;
     }
     if (changed) { persistTabs(); renderZones(); }
+    adoptOpenFile(); // 树内容到货的统一会合点=本函数——viewer 收编搭同一趟车(plan 2026-07-17-001),现在/将来的调用点全自动继承
+  }
+  // 「当前打开面文件」(编辑器文档或查看器文件)是否已有标签——双域判定:abs 直配(外部 ↗ entry)
+  // 或 findNodeByAbs → rootId:rel 命中(rel entry 不带 abs 字段,只查 abs 会把已收编文档误判缺失、
+  // 重建出第二条)。shell 的 U2 兜底(hasTabFor)与下面 adoptOpenFile 共用。
+  function hasEntryForAbs(abs) {
+    if (!abs) return false;
+    if (tabState.entries.some((e) => !e.rel && !isTempEntry(e) && e.abs === abs)) return true;
+    const node = findNodeByAbs(abs);
+    if (node && tabState.entries.some((e) => keyOf(e) === colKey(node.rootId, node.rel))) return true;
+    return false;
+  }
+  // 0 根时打开的文件(单文件 viewer 态,不建标签是设计)在工作区出现后收编进标签系统
+  // (Wendi/Colin 2026-07-17,plan docs/plans/2026-07-17-001)。取 shell 的「当前打开面文件」,
+  // 无 entry 就走 onOpen 既有漏斗(树内=rel 身份+reveal,树外=classifyFile 建 abs ↗ 外部标签)。
+  // KD3 门:web/temp 激活时整个跳过——①openEntry 无条件切 activeRel,web view 挂屏时抢激活会劈开
+  // 「屏幕显示网页、⌘W/⌘S 作用到看不见的文档」(SH-4/浏览器 P1-2 同类病);②跳过还顺带消灭
+  // 「用户关掉收编标签后被下一次树到货复活」。重入通道=用户树里点它(shell 同文档守卫的 U2 兜底)。
+  async function adoptOpenFile() {
+    if (window.__webIsActive && window.__webIsActive()) return;
+    const act = tabState.activeRel && tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
+    if (act && isTempEntry(act)) return; // 临时文档在前台(其 docPath 为 null,但守一道)
+    const abs = window.__shellOpenFileAbs ? window.__shellOpenFileAbs() : null;
+    if (!abs || hasEntryForAbs(abs)) return;
+    try { if (!(await window.ws2.pathExists(abs))) return; } catch (e) { return; } // 文件已被外删→别收编死标签(loadTabs 外部 entry 校验同款)
+    if (hasEntryForAbs(abs)) return; // await 期间可能已被别的路径建上(如用户点树),别翻倍
+    if (window.__sbHooks && window.__sbHooks.onOpen) void window.__sbHooks.onOpen(abs);
   }
   // 单根重读树（文件操作后/watcher 事件）：只刷新该根，别的根纹丝不动。
   async function refreshRoot(rootId) {
@@ -2578,15 +2605,27 @@
 
   // peek=完整侧栏悬浮盖在内容上，不推挤布局；进 120ms/出 240ms 缓冲防误触发/闪烁。
   // 红绿灯随收起藏、peek/展开时现（hiddenInset 下灯浮在内容上，收起不藏=悬空）。
+  // web 态（Wendi 2026-07-17）：滑出前先对页面截帧垫底、摘掉原生 view（__webPeekSnap，照更新弹窗
+  // 白背景的快照方案）——页面纹丝不动，替换原「同宽右移让位」的推挤。截图异步（≤250ms），
+  // peekPending 是取消旗：截图期间鼠标已离开就不再滑出。
   let peekTimer = 0;
+  let peekPending = false;
   const peekOn = () => document.body.classList.contains('is-sb-peek');
   function openPeek() {
     if (!sidebarEl || !sidebarEl.classList.contains('is-collapsed') || peekOn()) return;
-    document.body.classList.add('is-sb-peek');
-    if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true);
-    if (window.__webPeekPush) window.__webPeekPush(true); // web 态：原生 view 同宽右移让出侧栏带（DOM 盖不住它，只能推）
+    peekPending = true;
+    const finish = () => {
+      if (!peekPending || peekOn() || !sidebarEl.classList.contains('is-collapsed')) return;
+      peekPending = false;
+      document.body.classList.add('is-sb-peek');
+      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true);
+    };
+    if (window.__webPeekSnap) window.__webPeekSnap(true, finish);
+    else finish();
   }
   function closePeek(immediate) {
+    peekPending = false;
+    if (window.__webPeekSnap) window.__webPeekSnap(false); // 幂等：挂回 view/撤快照/取消在途截图
     if (!peekOn()) return;
     const done = () => {
       document.body.classList.remove('is-sb-peek', 'is-sb-peek-out');
@@ -2597,7 +2636,6 @@
       document.body.classList.add('is-sb-peek-out');
       setTimeout(done, 340); // --dur-slow 320ms + 余量
     }
-    if (window.__webPeekPush) window.__webPeekPush(false);
   }
   function peekEnter() { clearTimeout(peekTimer); peekTimer = setTimeout(openPeek, 120); }
   function peekLeave() { clearTimeout(peekTimer); peekTimer = setTimeout(() => closePeek(false), 240); }
@@ -2606,8 +2644,8 @@
     sidebarEl.addEventListener('mouseenter', () => { if (peekOn()) clearTimeout(peekTimer); });
     sidebarEl.addEventListener('mouseleave', () => { if (peekOn()) peekLeave(); });
   }
-  // 网页 view 在前台时 DOM 收不到鼠标（原生 view 压着）→ 主进程指针 watcher 代打（ipc.js ws-edge-watch）。
-  if (window.ws2 && window.ws2.onEdge) window.ws2.onEdge((entering) => { if (entering) peekEnter(); else peekLeave(); });
+  // （原「网页 view 前台时主进程指针 watcher 代打」已删：沉浸窗框让 #main 内缩 10px，
+  //   左边带永远是 DOM 地盘，#sb-edge-hot 在 web 态也能收到鼠标——触发只此一条。）
 
   function setSidebarCollapsed(v) {
     if (!sidebarEl) return;
@@ -2615,7 +2653,6 @@
     sidebarEl.classList.toggle('is-collapsed', v);
     document.body.classList.toggle('is-sb-collapsed', v);
     if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(!v);
-    if (window.__webEdgeWatch) window.__webEdgeWatch(); // browser.js 按 收起×web态 开/关主进程 watcher
     // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
     if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
   }
@@ -3042,6 +3079,22 @@
     },
     pickFolder: () => pickFolder(), // ⋯ 菜单/菜单栏「打开文件夹…」= 添加根（单文件模式也要有开工作区的入口）
     manageRoots: () => openManageRootsModal(), // 菜单栏「管理文件夹…」= 不依赖树/rootsState 的逃生门（D4 兜底）
+    hasTabFor: (abs) => hasEntryForAbs(abs), // shell 同文档守卫的 U2 兜底用（双域判定,见 hasEntryForAbs）
+    // 仅测试用：按 abs 直接删一条 entry（构造「viewer 有文档、tabState 无 entry」态给 U2 兜底/不复活 e2e
+    // ——closeTab 路线到不了：finishClose 无相邻 entry 时会 __shellCloseDoc 清掉文档）。双域解析同 hasEntryForAbs。
+    dropEntryForTest: (abs) => {
+      let key = null;
+      const direct = tabState.entries.find((e) => !e.rel && !isTempEntry(e) && e.abs === abs);
+      if (direct) key = keyOf(direct);
+      else {
+        const n = findNodeByAbs(abs);
+        if (n) key = colKey(n.rootId, n.rel);
+      }
+      if (!key) return;
+      tabState = { entries: tabState.entries.filter((e) => keyOf(e) !== key), activeRel: tabState.activeRel === key ? null : tabState.activeRel };
+      persistTabs();
+      renderZones();
+    },
     onOpen: async (abs) => {
       // 等启动恢复整条跑完再建标签：冷启动时这一句让 open-file 排在 loadTabs 之后，标签不再被覆盖/中止。
       // 热路径（app 已开）restoreReady 早已 resolved，await 立即过、不阻塞。文档内容由 shell.openDoc
