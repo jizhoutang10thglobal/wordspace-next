@@ -7,7 +7,7 @@
 
 const NAMESPACES = [
   'common', 'menu', 'dialog', 'sidebar', 'shell', 'browser', 'settings', 'editor',
-  'link', 'find', 'update', 'schema', 'template', 'bookmark', 'misc',
+  'link', 'find', 'update', 'schema', 'template', 'bookmark', 'misc', 'start',
 ];
 
 // 文件里 key 不带前缀，合并时统一加。
