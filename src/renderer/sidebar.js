@@ -2674,8 +2674,9 @@
   });
 
   // 侧栏宽度可拖拽（UX5 / Wendi F1）：右边界拖拽柄改 --sb-width（夹 min/max），存 localStorage、重启恢复。
-  // 最小 240（Wendi 2026-07-16）：.sb-head 顶排 6 图标 + 间距 + padding 需 238px，180 下限会让
-  // 右端图标溢出被网页/编辑区盖掉「消失」。旧存值 <240 夹到 240（贴用户原意，不跳回默认宽）。
+  // 最小 240（Wendi 2026-07-16）：.sb-head 顶排 7 图标（2026-07-18 加下载入口后钮宽收 22/26 凑 237px）+
+  // 间距 + padding 需 ≤240px（账在 shell.css .sb-head 处），180 下限会让右端图标溢出被网页/编辑区盖掉
+  // 「消失」。旧存值 <240 夹到 240（贴用户原意，不跳回默认宽）。
   const SB_MIN = 240, SB_MAX = 520, SB_KEY = 'ws2-sb-width';
   (function initSidebarResize() {
     if (!sidebarEl) return;
