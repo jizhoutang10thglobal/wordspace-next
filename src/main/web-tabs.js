@@ -1,6 +1,6 @@
 // 网页标签的主进程 view 管理器 + 安全 session（spec §10.2/§11）。
 // 一个 registry 管完：view 生命周期 + 导航事件权威副本 + 安全边界（独立 session/零 preload/
-// 权限默认拒/loadURL 白名单/下载 cancel）。纯决策逻辑在 src/lib/web-tabs-policy.js（可单测），
+// 权限默认拒/loadURL 白名单/下载受控落盘,§4.11）。纯决策逻辑在 src/lib/web-tabs-policy.js（可单测），
 // 这里只做 electron 副作用。
 //
 // 关键不变式：
@@ -19,12 +19,20 @@ const ctxMenu = require('../lib/web-context-menu');
 const urlInput = require('../lib/url-input');
 const engines = require('../lib/search-engines');
 const browserStore = require('./browser-store');
+const downloadsLib = require('../lib/downloads');
 
 const PARTITION = 'persist:webtabs';
-const registry = new Map(); // key -> { view, url, title, favicon, loading, canGoBack, canGoForward, error, userZoom, _skipRecord }
+const registry = new Map(); // key -> { view, url, title, favicon, loading, canGoBack, canGoForward, error, userZoom, _skipRecord, committedUrl, pendingUncommittedUrl }
 let getWin = () => null;
 let sess = null;
 let onHistoryChange = null; // ipc 注册：历史变更 → 持久化 + 推 renderer
+
+// ---- 下载引擎状态（spec §4.11）----
+const inflight = new Map(); // id -> DownloadItem（内存实时进度源；store 只在状态迁移时落盘,进度 tick 不写盘）
+let dlSeq = 0;
+let downloadsHook = null;   // ipc 注册：下载列表变更 → 广播 renderer（照 onHistoryChange 先例）
+const DL_PUSH_MS = 250;     // updated 事件很密 → 节流广播（照 updater 血教训,主进程算整包 renderer 增量渲染）
+let dlPushTimer = null;
 
 function engineTemplate() { return engines.engineOf(browserStore.getSettings().engine).url; }
 function engineName() { return engines.engineOf(browserStore.getSettings().engine).name; }
@@ -46,10 +54,53 @@ function ensureSession() {
   if (sess.setDisplayMediaRequestHandler) sess.setDisplayMediaRequestHandler((_req, cb) => cb({}));
   if (sess.setDevicePermissionHandler) sess.setDevicePermissionHandler(() => false);
 
-  // 下载已砍（spec §12）：一律 cancel + toast 告知,不落任何文件。
-  sess.on('will-download', (_e, item) => {
-    try { item.cancel(); } catch { /* 已取消 */ }
-    sendToRenderer('web-toast', i18n.t('dialog.noDownload'));
+  // 下载（spec §4.11）：真接 DownloadItem。同步段（setSavePath 之前）绝不 await——任何 await 之后
+  // Electron 已走默认路径/弹框（spike 实证红线）。命名管线（sanitize+uniquify）必须全同步完成。
+  sess.on('will-download', (_e, item, wc) => {
+    // 1. 未提交 url 回滚（修「地址栏敲下载 URL → navigate 乐观写 r.url 被持久化 → 重启会话恢复静默重下」雷）。
+    //    链接点击触发的下载:页面早已 onNav 提交过(pending=null),天然不回滚。
+    try { rollbackUncommittedFor(wc); } catch { /* 回滚失败不阻断下载 */ }
+
+    // 2. 下载目录（WS2_DL_DIR 测试 seam → 系统下载 → home 兜底,照 printToPdf/bm-export 先例）。
+    const dir = resolveDlDir();
+
+    // 3. 命名管线（全同步）：清洗 → 查重集(真磁盘 ∪ 在途名) → uniquify → setSavePath。
+    const raw = downloadsLib.sanitizeFilename(item.getFilename());
+    const taken = new Set();
+    try { for (const n of fs.readdirSync(dir)) taken.add(n); } catch { /* 目录不存在 → 空集 */ }
+    for (const it of inflight.values()) {
+      try { const p = it.getSavePath(); if (p) taken.add(path.basename(p)); } catch { /* item 已结束 */ }
+    }
+    const name = downloadsLib.uniquify(raw, taken);
+    const savePath = path.join(dir, name);
+    item.setSavePath(savePath); // ⚠ 同步!spike 实证:任何 await 之后就晚了
+
+    // 4. 建条目 → inflight → store → 开始 toast → 推送。
+    const id = mkDlId();
+    let sizeBytes = 0; try { sizeBytes = item.getTotalBytes() || 0; } catch { /* 无 Content-Length */ }
+    let sourceUrl = ''; try { sourceUrl = item.getURL() || ''; } catch { /* */ }
+    const entry = { id, filename: name, sourceUrl, sizeBytes, receivedBytes: 0, state: 'downloading', startedAt: Date.now(), savePath };
+    inflight.set(id, item);
+    browserStore.setDownloads(downloadsLib.capDownloads([entry, ...browserStore.getDownloads()]));
+    sendToRenderer('web-toast', i18n.t('browser.dlStarted', { name })); // 收起态兜底:侧栏收起时唯一可见反馈
+    flushDownloads(); // 状态迁移即推（不节流）
+
+    // 5. updated：只写内存实时进度、节流广播（不写盘,进度值易失,重启本就翻 interrupted）。
+    item.on('updated', () => { pushDownloadsThrottled(); });
+
+    // 6. done：映射终态 + 非 completed 清半截文件（spike 发现残留）+ 更新 store + toast。
+    item.on('done', (_e2, state) => {
+      inflight.delete(id);
+      // spike 实证:state ∈ {'completed','cancelled'(我方 cancel=用户取消),'interrupted'(运行时失败)}。
+      const terminal = state === 'completed' ? 'completed' : state === 'cancelled' ? 'canceled' : 'failed';
+      if (terminal !== 'completed') { try { fs.unlinkSync(savePath); } catch { /* 半截文件可能已不在 */ } }
+      let recv = 0; try { recv = item.getReceivedBytes(); } catch { /* */ }
+      browserStore.setDownloads(browserStore.getDownloads().map((e) => (e.id === id ? { ...e, state: terminal, receivedBytes: recv } : e)));
+      if (terminal === 'completed') sendToRenderer('web-toast', i18n.t('browser.dlDone', { name }));
+      else if (terminal === 'failed') sendToRenderer('web-toast', i18n.t('browser.dlFailed', { name }));
+      // 取消不 toast（用户正看着,无需打扰）。
+      flushDownloads();
+    });
   });
 
   return sess;
@@ -61,6 +112,7 @@ function init(winGetter) {
   if (ctxProbeOn()) global.__ws2CtxAction = executeCtxAction; // e2e 探针：右键前也能直接调动作出口
 }
 function setHistoryHook(fn) { onHistoryChange = fn; }
+function setDownloadsHook(fn) { downloadsHook = fn; }
 
 function sendToRenderer(channel, payload) {
   const win = getWin();
@@ -156,7 +208,7 @@ function createView(key, url) {
   // title 初始 null,不发明「新标签页」占位——registry 是数据层,title 非空 ⇔ 来自真事件(page-title-updated)。
   // 曾把占位当初值:恢复的标签懒加载起步时,这个假名会顺着 pushUpdate 把侧栏里持久化的真标题(如「Google」)
   // 覆写成「新标签页」闪一下(Wendi 2026-07-17)。下游全有 || url 兜底(历史/PDF/收藏),null 安全。
-  const rec = { view, url: url || null, title: null, favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, navSeq: 0, userZoom: null, _skipRecord: false };
+  const rec = { view, url: url || null, title: null, favicon: null, loading: false, canGoBack: false, canGoForward: false, error: null, navSeq: 0, userZoom: null, _skipRecord: false, committedUrl: null, pendingUncommittedUrl: null };
   registry.set(key, rec);
   wireViewEvents(key, view);
   return view;
@@ -197,6 +249,8 @@ function wireViewEvents(key, view) {
     // navSeq 每次真提交（did-navigate/-in-page）自增——renderer 拿它认「新页刚提交」的沿；
     // did-start-loading / navigate() 的乐观推都不动它,失败载(did-fail-load)与 abort(-3) 更不会 → 恢复
     // 重挂 view 只认这个沿,不会被 204/下载/中止那种「loading 收尾但没提交」的假沿误触发（P1 审查 CONFIRMED）。
+    // 真提交 → 记为已提交 url,清未提交标志（will-download 回滚只回滚「乐观写了但没提交」的那种）。
+    r.committedUrl = url; r.pendingUncommittedUrl = null;
     r.url = url; r.everCommitted = true; r.navSeq = (r.navSeq || 0) + 1; syncNav(key); pushUpdate(key);
     // 历史：主动导航才记；back/forward 前 nav() 打了 _skipRecord 标志（§4.8 契约）。用后即清,别泄漏。
     if (r._skipRecord) { r._skipRecord = false; return; }
@@ -337,6 +391,7 @@ function navigate(key, input) {
   createView(key, null);
   const r = registry.get(key);
   r.url = parsed.url; r.error = null; r._skipRecord = false; // 兜底清 back/forward 残留标志（P1-1:back 未成行时标志会滞留,吞掉这次正常导航的历史）
+  r.pendingUncommittedUrl = parsed.url; // 乐观写了 url 但还没 did-navigate 提交:若这次导航其实是下载,will-download 据此回滚 r.url（修「重启静默重下」雷）
   r.view.webContents.loadURL(parsed.url); // noop rejection 已内附,不必 catch
   pushUpdate(key);
   return { url: parsed.url };
@@ -349,6 +404,7 @@ function loadUrlDirect(key, url, opts) {
   createView(key, url);
   const r = registry.get(key); r.url = url; r.error = null;
   r._skipRecord = opts && opts.record === false; // 恢复不记；其余清零（兜底 back 残留）
+  r.pendingUncommittedUrl = url; // 同 navigate:正常页面加载会在 did-navigate 清掉;真是下载则 will-download 回滚
   r.view.webContents.loadURL(url);
   pushUpdate(key);
   return { url };
@@ -432,6 +488,100 @@ function setAllAudioMuted(muted) {
   }
 }
 
+// ---- 下载引擎（spec §4.11）----
+function mkDlId() { return Date.now().toString(36) + '-' + (++dlSeq).toString(36); } // 时间戳+seq:跨重启防撞,同 ms 多下载不撞（照 mkWebId 先例）
+function resolveDlDir() {
+  if (!app.isPackaged && process.env.WS2_DL_DIR) return process.env.WS2_DL_DIR; // 测试 seam,e2e 全程写 tmpdir
+  try { return app.getPath('downloads'); } catch { return app.getPath('home'); }
+}
+
+// will-download 里找 wc 对应的 registry key,若有未提交乐观 url → 回滚。
+// 回滚目标 = 上一个已提交 url(committedUrl),无则 null(=起始页,与 fresh web 条目的 url:null 一致；
+// ⚠ 不用 'wordspace://newtab' 字面 sentinel——那是真值 url,会被 activate 当真地址加载→被 policy 拦成错误页。
+// u3-design 举它作例但真 app 里 fresh 标签的 entry.url 就是 null，回滚到 null 才让 renderer 显起始页）。
+function rollbackUncommittedFor(wc) {
+  if (!wc) return; // sess.downloadURL(retry) 触发时 wc 可能为空 → 无标签可回滚
+  for (const [key, rec] of registry) {
+    if (rec.view && rec.view.webContents === wc) {
+      if (rec.pendingUncommittedUrl) {
+        rec.url = rec.committedUrl || null;
+        rec.pendingUncommittedUrl = null;
+        pushUpdate(key);
+      }
+      return;
+    }
+  }
+}
+
+// 节流广播（updated tick）——250ms 合并；状态迁移走 flushDownloads 即推。
+function pushDownloadsThrottled() {
+  if (!downloadsHook || dlPushTimer) return;
+  dlPushTimer = setTimeout(() => { dlPushTimer = null; if (downloadsHook) downloadsHook(downloadsList()); }, DL_PUSH_MS);
+}
+function flushDownloads() {
+  if (dlPushTimer) { clearTimeout(dlPushTimer); dlPushTimer = null; }
+  if (downloadsHook) downloadsHook(downloadsList());
+}
+
+// fileMissing 懒检测:completed 且非在途的条目,savePath 不在磁盘 → 就地标 fileMissing 写回 store（popover 开时 sweep）。
+function sweepMissing(stored) {
+  let changed = false;
+  const swept = stored.map((e) => {
+    if (e.state === 'completed' && e.savePath && !inflight.has(e.id)) {
+      let exists = true;
+      try { exists = fs.existsSync(e.savePath); } catch { exists = true; } // 判不了就当在,别误标缺失
+      if (!exists) { changed = true; return { ...e, state: 'fileMissing' }; }
+    }
+    return e;
+  });
+  if (changed) browserStore.setDownloads(swept);
+  return changed ? swept : stored;
+}
+
+// 展示列表 = store 全量 + 在途叠加内存实时进度,按 startedAt 倒序。
+function downloadsList() {
+  const stored = sweepMissing(browserStore.getDownloads());
+  return stored
+    .map((e) => {
+      const item = inflight.get(e.id);
+      if (!item) return e;
+      let recv = e.receivedBytes; let total = e.sizeBytes;
+      try { recv = item.getReceivedBytes(); } catch { /* */ }
+      try { const t = item.getTotalBytes(); if (t) total = t; } catch { /* */ }
+      return { ...e, receivedBytes: recv, sizeBytes: total };
+    })
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+}
+
+function dlCancel(id) {
+  const item = inflight.get(String(id));
+  if (item) { try { item.cancel(); } catch { /* 已结束 */ } } // done(cancelled) 回调收尾（清半截+终态+push）
+}
+function dlRetry(id) {
+  const e = browserStore.getDownloads().find((x) => x.id === String(id));
+  if (!e || !e.sourceUrl) return;
+  ensureSession();
+  try { sess.downloadURL(e.sourceUrl); } catch { /* 会话不可用 */ } // 触发新 will-download → 新条目置顶（不动老条目,spec）
+}
+function dlClear() { // 只清终态,在途保留
+  browserStore.setDownloads(browserStore.getDownloads().filter((e) => e.state === 'downloading'));
+  flushDownloads();
+}
+function dlRemove(id) { // 单条移除:id 命中且非在途才删（在途不可单条移除,只能取消）
+  browserStore.setDownloads(browserStore.getDownloads().filter((e) => e.id !== String(id) || e.state === 'downloading'));
+  flushDownloads();
+}
+function dlReveal(id) {
+  const e = browserStore.getDownloads().find((x) => x.id === String(id));
+  if (!e) return { ok: false, missing: true };
+  let exists = false;
+  try { exists = !!(e.savePath && fs.existsSync(e.savePath)); } catch { exists = false; }
+  if (exists) { try { shell.showItemInFolder(e.savePath); } catch { /* 系统调用失败 */ } return { ok: true }; } // §11.5 红线:只定位不打开
+  browserStore.setDownloads(browserStore.getDownloads().map((x) => (x.id === String(id) ? { ...x, state: 'fileMissing' } : x)));
+  flushDownloads();
+  return { ok: false, missing: true };
+}
+
 // ---- 右键菜单（原生）----
 function ctxProbeOn() { try { return !!process.env.WS2_CTXMENU_PROBE && !app.isPackaged; } catch { return false; } }
 function openCtxMenu(key, params) {
@@ -497,8 +647,9 @@ let fitTimer = null;
 function scheduleRefit(key) { clearTimeout(fitTimer); fitTimer = setTimeout(() => fitToWidth(key), 250); }
 
 module.exports = {
-  init, setHistoryHook, createView, show, hide, hideAll, capture, setBounds, destroy, destroyAll,
+  init, setHistoryHook, setDownloadsHook, createView, show, hide, hideAll, capture, setBounds, destroy, destroyAll,
   navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setZoom, printToPdf,
   openCtxMenu, executeCtxAction, recordHistory, setAllAudioMuted,
+  downloadsList, dlCancel, dlRetry, dlClear, dlRemove, dlReveal,
   _registry: registry,
 };

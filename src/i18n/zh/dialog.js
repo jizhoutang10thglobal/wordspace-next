@@ -34,6 +34,5 @@ module.exports = {
   errBadUndoToken: '非法的撤销令牌',
   errPdfTmpFail: '无法在文档所在文件夹创建临时文件导出 PDF（可能是只读目录）。请把文档移到有写入权限的文件夹后再试。',
   // 主进程 → renderer toast / 网页标签默认标题
-  noDownload: 'Wordspace 浏览器不支持下载',
   webNewTabTitle: '新标签页',
 };

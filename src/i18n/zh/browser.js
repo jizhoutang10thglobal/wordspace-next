@@ -8,6 +8,10 @@ module.exports = {
   newTab: '新标签页',
   openedInBackground: '已在后台标签页打开',
   unsupportedUrl: '不支持打开这类地址',
+  // 下载 toast（主进程发,收起态也可见；「显示」按钮见 U4 popover）
+  dlStarted: '正在下载 {name}',
+  dlDone: '已下载 {name}',
+  dlFailed: '下载失败：{name}',
   // omnibox 星标
   bookmark: '收藏 ⌘D',
   unbookmark: '取消收藏 ⌘D',

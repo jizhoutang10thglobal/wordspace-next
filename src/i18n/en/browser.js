@@ -8,6 +8,10 @@ module.exports = {
   newTab: 'New Tab',
   openedInBackground: 'Opened in a background tab',
   unsupportedUrl: "Can't open this kind of address",
+  // Download toasts (from main process, visible even when sidebar collapsed; "Reveal" button lands in U4 popover)
+  dlStarted: 'Downloading {name}',
+  dlDone: 'Downloaded {name}',
+  dlFailed: 'Download failed: {name}',
   // Omnibox star
   bookmark: 'Bookmark ⌘D',
   unbookmark: 'Remove bookmark ⌘D',
