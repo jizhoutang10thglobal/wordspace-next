@@ -14,6 +14,12 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-17 — 空态默认屏已换成「导览页」(两侧):#home 锚 id 保留,旧元素退役
+
+**是什么**:无标签空态从「标题+两按钮+裸路径列表」换成浏览器式导览页(方案 3 时间流:问候+统一 omnibox+按时间分组的最近文件+书签/最常访问/开始)。ui-demo=#259/#263 已合;真 app=#267(auto-merge 中)。spec=docs/features/start-page.md。
+**怎么 apply**:① 真 app **#home/#home-open/#home-open-folder 三个 id 原样保留**(openWorkspace 惯例不受影响),但 **#recent-list、.ws-empty-title/.ws-empty-note/.ws-empty-actions 已退役**——e2e/代码别再引用;新面锚点见 e2e/start-page.spec.js。② ui-demo 关掉最后一个普通标签会回导览页(置顶不再自动接管激活),依赖「关最后标签后激活置顶」旧行为的测试要改口。③ ui-demo SEED_VERSION 已到 28;真 app i18n 新增 start 命名空间。④ ui-demo 切标签不再滚动侧栏树(对齐真 app UX4v3),断言滚动行为的测试要改。
+**来源**:PR #259 / #263 / #267,docs/plans/2026-07-17-001
+
 ## 2026-07-16 — 沉浸收起(Arc 对标)已全量合 main:sb-reopen 浮钮已删、真 app 换 hiddenInset 窗框
 
 **是什么**:Wendi「零缝隙」反馈落地(ui-demo #230 + 真 app #238)。侧栏收起=流内零渲染(ui-demo 48px 细轨、真 app 52px COLLAPSED_STRIP、#sb-reopen 常驻浮钮**全删**),重开=左缘 hover peek(悬浮盖内容)/Cmd+\;真 app darwin 换 titleBarStyle:hiddenInset,红绿灯进 .sb-head(兼窗口拖拽区)且随收起隐藏。spec=docs/features/immersive-collapse.md。
