@@ -254,7 +254,7 @@
   // 弹层绝不能被截图卡住。快照垫好(或放弃)才摘 view：先摘会拍不到画面，也会闪一帧素底。
   let overlayPaused = false;
   let snapEl = null;
-  const OVERLAY_SEL = '.sb-modal-overlay, #fp-overlay, .aiax-overlay';
+  const OVERLAY_SEL = '.sb-modal-overlay, #fp-overlay, .aiax-overlay, .dlp-overlay';
   try {
     new MutationObserver(() => {
       const has = !!document.querySelector(OVERLAY_SEL);
@@ -263,7 +263,11 @@
         const key = attachedKey;
         const timeout = new Promise((r) => setTimeout(() => r(null), 250));
         Promise.race([window.ws2.webCapture(key).catch(() => null), timeout]).then((dataUrl) => {
-          if (dataUrl && overlayPaused && attachedKey === key) {
+          // 迟到的 capture 取消令牌：capture 期间弹层已关(overlayPaused 翻 false)或标签已切 → else-if 分支
+          // 已把 view 挂回可见,这里绝不能再动它。原来 webHideAll 无条件执行 → 快速开关下载 popover 时把刚
+          // 挂回的 view 又藏了、网页区卡空白须切标签才恢复(对抗审查 P2；姊妹 __webPeekSnap 有同款守卫)。
+          if (!overlayPaused || attachedKey !== key) return;
+          if (dataUrl) {
             if (snapEl) snapEl.remove();
             const b = viewBounds();
             const img = document.createElement('img');
@@ -1184,8 +1188,8 @@
   // ---- 全局快捷键（renderer 聚焦时；web view 聚焦时由主进程 before-input-event 转发同名命令）----
   document.addEventListener('keydown', (ev) => {
     const mod = ev.metaKey || ev.ctrlKey;
-    // 弹层守卫（§7）：任何 modal/面板开着不穿透——含 AI 接入 .aiax-overlay（#11,与 view 暂停的 OVERLAY_SEL 口径一致）
-    if (document.querySelector('.sb-modal-overlay, #fp-overlay, .aiax-overlay')) return;
+    // 弹层守卫（§7）：任何 modal/面板开着不穿透——含 AI 接入 .aiax-overlay / 下载 popover .dlp-overlay（#11,与 view 暂停的 OVERLAY_SEL 口径一致）
+    if (document.querySelector('.sb-modal-overlay, #fp-overlay, .aiax-overlay, .dlp-overlay')) return;
     if (mod && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'l') { ev.preventDefault(); focusOmni(); return; }
     if (mod && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'd') {
       if (isWebActive()) { ev.preventDefault(); toggleBookmark(); }
@@ -1198,6 +1202,319 @@
       if (k === '0') { ev.preventDefault(); window.ws2.webZoom(keyOf(activeEntry()), 'reset'); return; }
     }
   });
+
+  // ==== 下载（§4.11）：工具栏进度环 + popover 列表 ==================================
+  // 状态源 = 主进程 downloads-changed 推送（+ 打开 popover 时 dlList() 拉一次触发 fileMissing sweep）。
+  // renderer 无 require → truncateMiddle/aggregateProgress/formatBytes/逐状态操作在这里内联等价实现
+  // （照 ui-demo src/lib/downloads.ts；逐状态操作可见性照 spec §4.11 表）。
+  // 增量渲染（P5，updater 狂闪血教训）：进度高频推送只改 stroke-dashoffset/徽标/进度条 width/状态文本，
+  // 绝不整卡整列重建、绝不抢焦点。popover 根挂 document.body 直接子节点 + 注册 .dlp-overlay 进 OVERLAY_SEL
+  // → 打开即摘原生 view + 快照垫底，340px 卡片在快照上完整渲染、veil 收得到 click。
+  (function initDownloads() {
+    const navDl = document.getElementById('nav-downloads');
+    if (!navDl || !window.ws2 || !window.ws2.dlList || !window.ws2.onDownloadsChanged) return; // 老 preload/DOM 不齐时安静退场
+    const ringWrap = navDl.querySelector('.dl-ring-wrap');
+    const ringBar = navDl.querySelector('.dl-ring-bar');
+    const badge = navDl.querySelector('.dl-badge');
+    const RING_C = 2 * Math.PI * 8; // 进度环 r=8 周长（dasharray 基准）
+    if (ringBar) { ringBar.style.strokeDasharray = String(RING_C); ringBar.style.strokeDashoffset = String(RING_C); }
+
+    let entries = [];        // 最新下载列表（主进程已按 startedAt 倒序）
+    let ringBatch = new Set(); // 进度环「当前批次」的条目 id：在途条目加入,已完成的**留在批次里撑住分母**,
+                               // 直到批次全部落地(无在途)才清空——兑现 spec §4.11「单条先完成环不回退」
+                               // （对齐 ui-demo lib/downloads.ts 的 batchIds；真 app 主进程无 batchIds,批次账放 renderer）。
+    let popEl = null;        // .dlp-overlay 根（null=未开）
+    let listEl = null, emptyEl = null, clearBtn = null; // popover 持久子元素
+    const rowEls = new Map(); // id -> 行 DOM（增量复用）
+    let onEsc = null;
+
+    // —— 纯逻辑内联（照 ui-demo lib/downloads.ts）——
+    function truncateMiddle(name, max) {
+      max = max || 34;
+      const chars = Array.from(name);
+      if (chars.length <= max) return name;
+      const tail = Math.max(10, Math.floor(max * 0.4));
+      const head = Math.max(1, max - tail - 1);
+      return chars.slice(0, head).join('') + '…' + chars.slice(chars.length - tail).join('');
+    }
+    function formatBytes(n) {
+      if (!(n > 0)) return '0 B';
+      if (n < 1024) return n + ' B';
+      const kb = n / 1024;
+      if (kb < 1024) return Math.round(kb) + ' KB';
+      const mb = kb / 1024;
+      if (mb < 1024) return (mb < 10 ? mb.toFixed(1) : Math.round(mb)) + ' MB';
+      const gb = mb / 1024;
+      return (gb < 10 ? gb.toFixed(1) : Math.round(gb)) + ' GB';
+    }
+    // 聚合进度（工具栏环，spec §4.11）：批次 = 在途 + 本批已完成条目（已完成的**留在分子分母里**，
+    // 单条先完成时分母不缩小 → 环只前进不回退）。active=在途数（徽标）；active 归零 → 清批次、环隐藏。
+    // ⚠ 别退回「只对 state==='downloading' 求和」：那样某条先完成会被移出分母，环可见地倒退（对抗审查 P2）。
+    function aggregateProgress(list) {
+      const byId = new Map(list.map((e) => [e.id, e]));
+      for (const e of list) if (e.state === 'downloading') ringBatch.add(e.id);
+      const active = list.filter((e) => e.state === 'downloading').length;
+      if (active === 0) { ringBatch.clear(); return { active: 0, pct: 0 }; }
+      // 只算仍存在的批次成员（被移除/清空的条目自然掉出）；已完成条目 sizeBytes 用实收兜底（见 web-tabs done）。
+      const batch = [...ringBatch].map((id) => byId.get(id)).filter(Boolean);
+      const recv = batch.reduce((s, e) => s + (e.receivedBytes || 0), 0);
+      const total = batch.reduce((s, e) => s + (e.sizeBytes || 0), 0);
+      return { active: active, pct: total > 0 ? Math.min(1, recv / total) : 0 };
+    }
+    // 逐状态操作可见性（spec §4.11：downloading→取消；completed→访达+移除；failed/canceled/interrupted→重试+移除；fileMissing→仅移除）
+    const isTerminal = (s) => s !== 'downloading';
+    const canRetry = (s) => s === 'failed' || s === 'canceled' || s === 'interrupted';
+    const canReveal = (s) => s === 'completed';
+    const canRemove = (s) => s !== 'downloading';
+
+    // —— 内联 SVG（无 lucide）：文件类型图标（照 ui-demo extIconOf）+ 动作图标 ——
+    const ICO_IMAGE = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><circle cx="10" cy="13" r="2"/><path d="m20 17-1.1-1.1a2 2 0 0 0-2.8 0L10 22"/>';
+    const ICO_ARCHIVE = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M10 7h1"/><path d="M10 11h1"/><path d="M10 15h1"/>';
+    const ICO_TEXT = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/>';
+    const ICO_FILE = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>';
+    const ICO_X = '<path d="M18 6L6 18M6 6l12 12"/>';
+    const ICO_REVEAL = '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/><path d="M2 11h20"/>';
+    const ICO_RETRY = '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>';
+    const ICO_DL = '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>';
+    const ICO_TRASH = '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>';
+    function svg(paths, size) {
+      return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+    }
+    function extIco(name) {
+      const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
+      if (/^(png|jpe?g|gif|webp|svg|heic)$/.test(ext)) return ICO_IMAGE;
+      if (/^(zip|dmg|exe|gz|tar|7z|rar)$/.test(ext)) return ICO_ARCHIVE;
+      if (/^(pdf|docx?|html?|md|txt)$/.test(ext)) return ICO_TEXT;
+      return ICO_FILE;
+    }
+
+    // —— 工具栏进度环（增量：零态纯图标；有在途 = 环 + 徽标，只改 dashoffset/徽标文本）——
+    function renderToolbar() {
+      const agg = aggregateProgress(entries);
+      if (agg.active > 0) {
+        if (ringWrap) ringWrap.classList.add('is-active');
+        if (ringBar) ringBar.style.strokeDashoffset = String(RING_C * (1 - agg.pct));
+        if (badge) badge.textContent = String(agg.active);
+      } else if (ringWrap) {
+        ringWrap.classList.remove('is-active');
+      }
+    }
+
+    function statusText(e) {
+      const s = e.state;
+      if (s === 'downloading') {
+        const pct = e.sizeBytes > 0 ? Math.floor((e.receivedBytes / e.sizeBytes) * 100) : 0;
+        return window.wsT('browser.dlProgress', { done: formatBytes(e.receivedBytes), total: formatBytes(e.sizeBytes), pct: pct });
+      }
+      if (s === 'completed') return window.wsT('browser.dlStateCompleted') + ' · ' + formatBytes(e.sizeBytes);
+      if (s === 'failed') return window.wsT('browser.dlStateFailed');
+      if (s === 'canceled') return window.wsT('browser.dlStateCanceled');
+      if (s === 'interrupted') return window.wsT('browser.dlStateInterrupted');
+      return window.wsT('browser.dlStateFileMissing');
+    }
+
+    async function doReveal(e) {
+      try {
+        const r = await window.ws2.dlReveal(e.id);
+        if (r && r.missing) toast(window.wsT('browser.dlRevealToast', { name: e.filename }));
+      } catch (err) { /* 主进程不可用 */ }
+    }
+
+    // 动作区（随 state 变才重建；进行中态每帧不动这里）
+    function buildActs(actsEl, e) {
+      actsEl.textContent = '';
+      const s = e.state;
+      const mk = (paths, size, cls, titleKey, fn) => {
+        const b = document.createElement('button');
+        b.className = 'dl-act' + (cls ? ' ' + cls : '');
+        b.title = window.wsT(titleKey);
+        b.innerHTML = svg(paths, size);
+        b.addEventListener('click', fn);
+        actsEl.appendChild(b);
+      };
+      if (s === 'downloading') mk(ICO_X, 14, 'is-danger', 'browser.dlCancel', () => window.ws2.dlCancel(e.id));
+      if (canReveal(s)) mk(ICO_REVEAL, 14, '', 'browser.dlReveal', () => doReveal(e));
+      if (canRetry(s)) mk(ICO_RETRY, 13, '', 'browser.dlRetry', () => window.ws2.dlRetry(e.id));
+      if (canRemove(s)) mk(ICO_X, 14, 'is-danger', 'browser.dlRemove', () => window.ws2.dlRemove(e.id));
+    }
+
+    function buildRow() {
+      const row = document.createElement('div');
+      row.className = 'dl-row';
+      const ico = document.createElement('span');
+      ico.className = 'dl-row-ico';
+      const main = document.createElement('div');
+      main.className = 'dl-row-main';
+      const name = document.createElement('span');
+      name.className = 'dl-name';
+      const status = document.createElement('span');
+      status.className = 'dl-status';
+      const bar = document.createElement('span');
+      bar.className = 'dl-bar';
+      const fill = document.createElement('span');
+      fill.className = 'dl-bar-fill';
+      bar.appendChild(fill);
+      main.appendChild(name);
+      main.appendChild(status);
+      main.appendChild(bar);
+      const acts = document.createElement('div');
+      acts.className = 'dl-acts';
+      row.appendChild(ico);
+      row.appendChild(main);
+      row.appendChild(acts);
+      row._els = { ico: ico, name: name, status: status, bar: bar, fill: fill, acts: acts };
+      row._state = null;
+      row._name = null;
+      return row;
+    }
+
+    // 增量更新一行：name/icon 仅名变时动；进行中态每帧只改 status + width；state 变才重建动作区。
+    function updateRow(row, e) {
+      const els = row._els;
+      if (row._name !== e.filename) {
+        els.name.textContent = truncateMiddle(e.filename);
+        els.name.title = e.filename;
+        els.ico.innerHTML = svg(extIco(e.filename), 16);
+        row._name = e.filename;
+      }
+      els.status.textContent = statusText(e);
+      els.status.classList.toggle('is-danger', e.state === 'failed');
+      const downloading = e.state === 'downloading';
+      els.bar.hidden = !downloading;
+      if (downloading) {
+        const pct = e.sizeBytes > 0 ? Math.floor((e.receivedBytes / e.sizeBytes) * 100) : 0;
+        els.fill.style.width = pct + '%';
+      }
+      if (row._state !== e.state) {
+        row.dataset.state = e.state;
+        row.classList.toggle('is-missing', e.state === 'fileMissing');
+        buildActs(els.acts, e);
+        row._state = e.state;
+      }
+    }
+
+    // popover 列表（增量：按 id 复用行，insertBefore 只移动既有节点、不重建，不重启进度条 transition）
+    function renderList() {
+      if (!popEl) return;
+      clearBtn.hidden = !entries.some((e) => isTerminal(e.state)); // 有终态才显「清空」
+      if (entries.length === 0) {
+        listEl.hidden = true;
+        emptyEl.hidden = false;
+        rowEls.forEach((r) => r.remove());
+        rowEls.clear();
+        return;
+      }
+      emptyEl.hidden = true;
+      listEl.hidden = false;
+      const seen = new Set();
+      let prev = null;
+      for (const e of entries) {
+        seen.add(e.id);
+        let row = rowEls.get(e.id);
+        if (!row) { row = buildRow(); rowEls.set(e.id, row); }
+        updateRow(row, e);
+        const next = prev ? prev.nextSibling : listEl.firstChild;
+        if (next !== row) listEl.insertBefore(row, next);
+        prev = row;
+      }
+      rowEls.forEach((row, id) => { if (!seen.has(id)) { row.remove(); rowEls.delete(id); } });
+    }
+
+    // anchorPos（照 ui-demo：读 [data-dl-anchor] rect、钳窗口内；无按钮回落左上，卡片 340 + 边距 = 356）
+    function anchorPos() {
+      const el = document.querySelector('[data-dl-anchor]');
+      if (el) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.bottom > 0) {
+          return {
+            left: Math.max(10, Math.min(r.left - 8, window.innerWidth - 356)),
+            top: Math.min(r.bottom + 8, window.innerHeight - 120),
+          };
+        }
+      }
+      return { left: 12, top: 52 };
+    }
+
+    function openPop() {
+      if (popEl) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'dlp-overlay';
+      const veil = document.createElement('div');
+      veil.className = 'dlp-veil';
+      veil.addEventListener('click', closePop);
+      const card = document.createElement('div');
+      card.className = 'dlp';
+      card.setAttribute('role', 'dialog');
+      card.setAttribute('aria-label', window.wsT('browser.dlTitle'));
+      const pos = anchorPos();
+      card.style.left = pos.left + 'px';
+      card.style.top = pos.top + 'px';
+      const head = document.createElement('header');
+      head.className = 'dlp-head';
+      const title = document.createElement('span');
+      title.className = 'dlp-title';
+      title.textContent = window.wsT('browser.dlTitle');
+      clearBtn = document.createElement('button');
+      clearBtn.className = 'dlp-clear';
+      clearBtn.innerHTML = svg(ICO_TRASH, 12) + '<span></span>';
+      clearBtn.lastChild.textContent = window.wsT('browser.dlClear');
+      clearBtn.hidden = true;
+      clearBtn.addEventListener('click', () => window.ws2.dlClear());
+      head.appendChild(title);
+      head.appendChild(clearBtn);
+      card.appendChild(head);
+      emptyEl = document.createElement('div');
+      emptyEl.className = 'dlp-empty';
+      emptyEl.hidden = true;
+      const eico = document.createElement('span');
+      eico.className = 'dlp-empty-ico';
+      eico.innerHTML = svg(ICO_DL, 20);
+      const etext = document.createElement('div');
+      etext.className = 'dlp-empty-text';
+      etext.textContent = window.wsT('browser.dlEmpty');
+      const ehint = document.createElement('div');
+      ehint.className = 'dlp-empty-hint';
+      ehint.textContent = window.wsT('browser.dlEmptyHint');
+      emptyEl.appendChild(eico);
+      emptyEl.appendChild(etext);
+      emptyEl.appendChild(ehint);
+      listEl = document.createElement('div');
+      listEl.className = 'dlp-list';
+      listEl.hidden = true;
+      card.appendChild(emptyEl);
+      card.appendChild(listEl);
+      overlay.appendChild(veil);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay); // 直接挂 body（OVERLAY_SEL 非 subtree observer 要求）
+      popEl = overlay;
+      rowEls.clear();
+      renderList();
+      // 打开即拉一次（触发主进程 fileMissing sweep + 拿最新）
+      window.ws2.dlList().then((data) => { entries = Array.isArray(data) ? data : entries; renderToolbar(); renderList(); }).catch(() => { /* keep */ });
+      onEsc = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); closePop(); } };
+      window.addEventListener('keydown', onEsc);
+    }
+
+    function closePop() {
+      if (!popEl) return;
+      popEl.remove();
+      popEl = null;
+      listEl = emptyEl = clearBtn = null;
+      rowEls.clear();
+      if (onEsc) { window.removeEventListener('keydown', onEsc); onEsc = null; }
+    }
+
+    navDl.addEventListener('click', () => { if (popEl) closePop(); else openPop(); });
+
+    // 状态源：主进程推送 → 环 + 列表（列表仅开着时）都刷
+    window.ws2.onDownloadsChanged((data) => {
+      entries = Array.isArray(data) ? data : [];
+      renderToolbar();
+      if (popEl) renderList();
+    });
+    // 启动补拉一次（拿既有下载记录 → 环初态正确）
+    window.ws2.dlList().then((data) => { entries = Array.isArray(data) ? data : []; renderToolbar(); if (popEl) renderList(); }).catch(() => { /* keep default */ });
+  })();
 
   // 初始 chrome 态
   syncChrome();

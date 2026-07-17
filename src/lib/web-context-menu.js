@@ -3,7 +3,8 @@
 // 真正的 electron 副作用（Menu.popup / wc.copy 等）在 web-tabs.js 的 executeCtxAction 里。
 // 与 ui-demo/src/lib/webCtxMenu.ts 是对齐的双胞胎（spec §4.7 六分节）。
 // 安全红线：链接/图片地址类条目只对 http(s) 出现，危险 scheme（javascript:/data:/file:）整节不出现。
-// 砍除项（spec §12，别加回来）：无「下载/存储图片」、无「存为文档」（剪藏）。
+// 下载（save-link / save-image，spec §4.11，2026-07-17 恢复标准档）走 executeCtxAction 的 wc.downloadURL → will-download 管线。
+// 砍除项（spec §12，别加回来）：无「存为文档」（剪藏 clip-page）。
 (function () {
   // node（web-tabs.js require）路径拿真 i18n；无 require 的环境兜底回显 key，绝不崩。
   var i18n = typeof require === 'function' ? require('./i18n') : { t: function (k) { return k; } };
@@ -46,6 +47,7 @@
       link.push({ id: 'open-link', label: i18n.t('misc.openLinkNewTab'), args: { url: params.linkURL } });
       link.push({ id: 'open-link-bg', label: i18n.t('misc.openLinkBgTab'), args: { url: params.linkURL } });
       link.push({ id: 'copy-link', label: i18n.t('misc.copyLink'), args: { url: params.linkURL } });
+      link.push({ id: 'save-link', label: i18n.t('misc.saveLink'), args: { url: params.linkURL } }); // 链接另存为（下载恢复,§4.11;走 wc.downloadURL 同管线）
     }
 
     var image = [];
@@ -53,8 +55,8 @@
       image.push({ id: 'copy-image', label: i18n.t('misc.copyImage'), args: { x: params.x, y: params.y } });
       if (params.srcURL && isAllowedUrl(params.srcURL)) {
         image.push({ id: 'copy-image-url', label: i18n.t('misc.copyImageUrl'), args: { url: params.srcURL } });
+        image.push({ id: 'save-image', label: i18n.t('misc.saveImage'), args: { url: params.srcURL } }); // 存储图片（下载恢复,§4.11;isHttp 门沿用,危险 scheme 不出）
       }
-      // 无「下载/存储图片」项（下载已砍，spec §12）
     }
 
     var selection = [];

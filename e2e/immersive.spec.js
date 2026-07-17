@@ -130,6 +130,28 @@ test('展开态窗框：非全屏恒有——#main 四周 10px + 三条 drag 带
   await expect(page.locator('#sb-edge-hot')).toBeHidden();
 });
 
+test('展开态：侧栏图标钮顶边归钮不归拖拽条（顶 ~4px 可点，Colin 2026-07-18）', async () => {
+  await openWorkspace(); // 展开态：窗框顶带横跨全宽、盖住侧栏头图标钮顶部
+  // 在「钮 与 顶带」的重叠区打一个 elementFromPoint（钮顶 y≈6、顶带 0..10 → 取钮顶 +2px 落进重叠带）。
+  // 顶带 .win-frame-top(z235,fixed,drag) 若在钮之上 → 命中 frame、那几 px 变 drag 吞点击；
+  // .sb-head 抬到 z236 后 no-drag 钮赢 → 命中钮。真实层叠判定（elementFromPoint），不查 class。
+  const hit = await page.evaluate(() => {
+    const btn = document.querySelector('.sb-head .sb-icobtn');
+    const r = btn.getBoundingClientRect();
+    const cx = Math.round(r.left + r.width / 2);
+    const topY = Math.round(r.top + 2);
+    const el = document.elementFromPoint(cx, topY);
+    return {
+      btnTop: Math.round(r.top),
+      hitsFrame: !!(el && el.closest('.win-frame')),
+      hitsButton: !!(el && el.closest('.sb-head .sb-icobtn')),
+    };
+  });
+  expect(hit.btnTop, '钮顶应落在顶带(0..10)内，否则本测试无意义').toBeLessThan(10);
+  expect(hit.hitsFrame, '钮顶被窗框拖拽条盖住 → 那几 px 吞点击').toBe(false);
+  expect(hit.hitsButton, '钮顶未命中按钮本身').toBe(true);
+});
+
 // 全屏无框：真全屏（macOS enter-full-screen / F11）两态都摘框。用 win.emit 确定性驱动主进程真实 handler
 // （真 setFullScreen 在 mac 会强占屏/Space 动画、xvfb CI 事件不可靠；emit 走完全相同的 send→挂类→CSS 链，
 // 摘掉 handler/preload channel/renderer 监听任一环此测即红——变异自检据此翻红）。真 OS 事件→handler 链宿主眼验兜。

@@ -21,6 +21,8 @@ function pushHistory(entries) { broadcast('history-changed', entries || browserS
 function registerBrowserIpc() {
   browserStore.init(app.getPath('userData'));
   webTabs.setHistoryHook((entries) => pushHistory(entries));
+  // 下载列表变更 → 广播 renderer（进度环/popover live 更新）。web-tabs 已在主进程合成整包 + 节流,这里只转发。
+  webTabs.setDownloadsHook((data) => broadcast('downloads-changed', data));
   // 收藏变更 → 全量推 renderer,走 store 的 leading-edge 防抖合并（P3-11：单次变更立即推,窗口内多次合并）。
   browserStore.subscribe('bookmarks', (data) => broadcast('bookmarks-changed', data));
 
@@ -125,6 +127,14 @@ function registerBrowserIpc() {
     pushHistory();
     return true;
   });
+
+  // ---- 下载（spec §4.11；引擎在 web-tabs,这里只转发通道。dl-list 顺带 sweep fileMissing）----
+  ipcMain.handle('dl-list', () => webTabs.downloadsList());
+  ipcMain.on('dl-cancel', (_e, id) => webTabs.dlCancel(String(id)));
+  ipcMain.on('dl-retry', (_e, id) => webTabs.dlRetry(String(id)));
+  ipcMain.on('dl-clear', () => webTabs.dlClear());
+  ipcMain.on('dl-remove', (_e, id) => webTabs.dlRemove(String(id)));
+  ipcMain.handle('dl-reveal', (_e, id) => webTabs.dlReveal(String(id)));
 
   // ---- 浏览器设置（真 app 引擎表无 glass,默认 Bing,spec §4.10/§13）----
   ipcMain.handle('browser-settings', () => ({ ...browserStore.getSettings(), engines: engines.ORDER.map((k) => ({ key: k, name: engines.ENGINES[k].name })) }));
