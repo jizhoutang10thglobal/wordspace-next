@@ -320,7 +320,10 @@ body.is-mac .sb-head .sb-icobtn { width: 26px; }
    网页 view 因 #main margin 从 x=10 起，左边带永远是 DOM 地盘 → 原「主进程指针 watcher 代打」
    路径已删（触发只此一条）。 */
 body.is-sb-collapsed { background: var(--c-bg-chrome); }
-body.is-sb-collapsed #main { margin: 10px; }
+/* 内容=一块纸（ui-demo 同款）：细边+微圆角把内容从窗框带上抬起来（暗色下无边纯 margin 看不出框）。
+   overflow 用 clip 不用 hidden——hidden 会成为滚动容器被 scrollIntoView 悄悄滚偏（ui-demo 实测坑）。
+   网页标签的原生 view 恰好盖满 #main 矩形（含 1px 边）,square 角、盖住细边：spec 已知边界。 */
+body.is-sb-collapsed #main { margin: 10px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: clip; }
 .win-frame { display: none; }
 body.is-sb-collapsed .win-frame { display: block; position: fixed; z-index: 235; -webkit-app-region: drag; }
 body.is-sb-collapsed .win-frame-top { top: 0; left: 0; right: 0; height: 10px; }
