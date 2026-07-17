@@ -1,4 +1,5 @@
 let docPath = null;
+let viewerFile = null; // 查看器当前文件 { abs, kind }——showViewer 设、closeViewer 清（prepFrame/shellCloseDoc 都经它）。0 根收编引擎读（plan 2026-07-17-001，Colin 拍板查看器纳入）
 let docInfo = null; // 当前文档的跨平台派生值 { fileUrl, dirUrl, name }，主进程算（见 window.ws2.pathInfo）
 let docContext = null; // 当前文档的互链身份 { rootId, rel }（classify-file 算）；临时/工作区外 = null（不支持互链）
 // 换文档时算当前文档的 rootId+rel（给 U3 提及菜单 / U4 断链判定用）。async best-effort，用 docPath 守陈旧。
@@ -505,6 +506,7 @@ function bigIconSvg() {
   return '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>';
 }
 function closeViewer() {
+  viewerFile = null; // 查看器退场的唯一咽喉——openDoc(prepFrame)/关文档/切临时都经这里，状态不残留
   if (!viewer) return;
   viewer.hidden = true;
   viewer.innerHTML = '';
@@ -531,6 +533,7 @@ async function showViewer(node) {
   detachEditors();
   loadGen++; frame.onload = null; // 对称 #94 shellCloseDoc：作废在飞导航，否则晚到的 load 把块编辑器挂上查看器底下的隐藏 iframe（幽灵脏态）
   docPath = null; docContext = null;
+  viewerFile = { abs: node.abs, kind: node.kind || 'other' }; // 收编引擎读「当前打开面文件」的查看器分支
   docInfo = null;
   docPageCfg = null; // 查看器态没有分页概念（对称 shellCloseDoc）
   setDirty(false);
@@ -856,6 +859,10 @@ async function openDoc(p) {
     if (wasWebActive) {
       if (window.__webDetach) window.__webDetach();
       if (window.__sbHooks && window.__sbHooks.onOpen) window.__sbHooks.onOpen(docPath);
+    } else if (window.__sbHooks && window.__sbHooks.hasTabFor && !window.__sbHooks.hasTabFor(p)) {
+      // U2 兜底(plan 2026-07-17-001):同文档但 tabState 无 entry(0 根 viewer 收编被 web 门跳过后
+      // 用户点树重入等)→ 补建标签再 return。onOpen 幂等,走既有建标签+reveal 漏斗。
+      window.__sbHooks.onOpen(p);
     }
     return;
   }
@@ -937,6 +944,9 @@ function shellCloseDoc() {
 window.__shellRetargetDoc = shellRetargetDoc;
 window.__shellCloseDoc = shellCloseDoc;
 window.__shellDocPath = () => docPath;
+// 「当前打开面文件」= 编辑器文档 ?? 查看器文件(PDF/图片)。0 根收编引擎(sidebar adoptOpenFile)用:
+// temp 态两者皆 null 天然豁免;web 态 docPath/viewerFile 仍指被盖住的底层文件,由引擎的 web 门挡。
+window.__shellOpenFileAbs = () => docPath || (viewerFile && viewerFile.abs) || null;
 window.__shellIsDirty = () => dirty; // 给侧栏关标签时的脏检查
 window.__shellDiscard = () => setDirty(false); // 已确认丢弃 → 清脏，切下一个时不再追问
 // 临时文档桥（侧栏 sidebar.js 用）：建/切/取快照/落盘就位/丢弃。
