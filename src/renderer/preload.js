@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld('ws2', {
   webNav: (key, action) => ipcRenderer.send('webtab-nav', key, action),
   webShow: (key, bounds) => ipcRenderer.send('webtab-show', key, bounds),
   webHideAll: () => ipcRenderer.send('webtab-hide-all'),
+  webCapture: (key) => ipcRenderer.invoke('webtab-capture', key), // 弹层摘 view 前的垫底快照
   webSetBounds: (key, bounds) => ipcRenderer.send('webtab-bounds', key, bounds),
   webClose: (key) => ipcRenderer.send('webtab-close', key),
   webFind: (key, text, opts) => ipcRenderer.send('webtab-find', key, text, opts),
