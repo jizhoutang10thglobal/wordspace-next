@@ -508,12 +508,17 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(-103%); 
 .sb-zone[hidden] { display: none; }
 .sb-zone { margin: 0 0 4px; }
 .sb-zone:last-of-type { padding-bottom: 2px; margin-bottom: 0; }
-.sb-zone-head { display: flex; align-items: center; }
+/* 对齐修正（Colin 2026-07-17 真机抓到数字浮起+错列）：padding 必须在行容器上（对齐 ui-demo——
+   那边 .arc-section-label 和 .arc-zone-head 是同一个元素）。此前 padding 挂在 label 子元素上：
+   纵向不对称（上 10 下 5）让 label 文字在 align-items:center 行里被压低 ~2.5px、计数显得上浮；
+   label 右 padding 8 + 计数左 padding 6 = 14px 间距，和收藏行的 gap 6px 不一致。
+   文字绝对位置不变（容器接管同一份 10px 8px 5px），计数/caret 与文字回到同一光学线。 */
+.sb-zone-head { display: flex; align-items: center; padding: 10px 8px 5px; }
 /* 可折叠栏标（置顶/标签页，抄收藏区 §4.3）：整条可点、caret 右置随 is-open 旋转、计数用等宽字 */
 .sb-zone-head[role="button"] { cursor: pointer; }
-.sb-zone-head .sb-sec-label { flex: none; } /* caret/count 在场时 label 不吃满，交给 .sb-zone-count 顶开（对齐 .sb-fav-count 布局） */
+.sb-zone-head .sb-sec-label { flex: none; padding: 0; } /* caret/count 在场时 label 不吃满，交给 .sb-zone-count 顶开（对齐 .sb-fav-count 布局）；padding 已上移给容器 */
 .sb-zone-count { flex: 1; padding-left: 6px; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-3); }
-.sb-zone-caret { flex: none; display: inline-flex; align-items: center; margin-right: 8px; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); }
+.sb-zone-caret { flex: none; display: inline-flex; align-items: center; color: var(--c-text-3); transition: transform var(--dur-fast) var(--ease); } /* 右缘 8px 由容器 padding 提供，不再自带 margin */
 .sb-zone.is-open .sb-zone-caret { transform: rotate(90deg); }
 /* 「文件」段标（独立于 .sb-zone，跟在标签页区之后）：复用段标样式，提供文件区上方留白。 */
 .sb-files-label[hidden] { display: none; }
