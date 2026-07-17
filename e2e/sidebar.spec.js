@@ -43,7 +43,7 @@ async function seedWorkspace(dir) {
 async function launch(env) {
   const a = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', ...env },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', ...env },
   });
   const p = await a.firstWindow();
   await p.waitForLoadState('domcontentloaded');
@@ -330,6 +330,52 @@ test('右键文件夹 → 删除整棵子树 → 撤销整棵回来', async () =
   await expect.poll(() => exists(path.join(wsDir, '数据', 'c.png'))).toBe(true); // poll：撤销恢复是异步的，别用即时断言（flaky）
 });
 
+test('P2-2 连删两个文件：两条撤销 toast 并存，各撤各的（变异敏感）', async () => {
+  await openWorkspace();
+  // 删 a.html
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  // 紧接着删 README（旧行为：这一步会把 a 的撤销 toast 顶掉）
+  await page.click('.sb-file[data-rel="README"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'README'))).toBe(false);
+  // 两条撤销 toast 同时在（旧行为只剩 1 条）
+  await expect(page.locator('.sb-toast-action', { hasText: '撤销' })).toHaveCount(2);
+  // 先撤 a.html（含「已删除「a.html」」文案的那条），另一条不受影响
+  await page.locator('.sb-toast', { hasText: 'a.html' }).locator('.sb-toast-action').click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(true);
+  await expect.poll(() => exists(path.join(wsDir, 'README'))).toBe(false); // README 仍删着
+  await expect(page.locator('.sb-toast-action', { hasText: '撤销' })).toHaveCount(1); // 只剩 README 那条
+  // 再撤 README
+  await page.locator('.sb-toast', { hasText: 'README' }).locator('.sb-toast-action').click();
+  await expect.poll(() => exists(path.join(wsDir, 'README'))).toBe(true);
+});
+
+test('P2-2 toast 上限：撤销条占满时新信息条不被自己吞掉、撤销条也不被挤走（对抗审查 P2 变异敏感）', async () => {
+  await openWorkspace();
+  // 场景一：4 条撤销条（占满 cap=4）+ 1 条无撤销信息条 → 信息条必须显形。
+  //   旧逻辑 find(非撤销条) 会把「唯一的非撤销条=刚建的这条信息条本身」挑出来挤掉 → 报错凭空消失。
+  const s1 = await page.evaluate(() => {
+    document.querySelector('.sb-toast-host')?.replaceChildren();
+    for (let i = 1; i <= 4; i++) window.__wsToast('删除' + i, '撤销', () => {});
+    window.__wsToast('保存失败_ERRTOAST'); // 无撤销信息条
+    const toasts = [...document.querySelectorAll('.sb-toast')];
+    return { hasErr: toasts.some((t) => t.textContent.includes('保存失败_ERRTOAST')),
+             undo: toasts.filter((t) => t.dataset.action === '1').length };
+  });
+  expect(s1.hasErr).toBe(true); // 新信息条显形——没被清理逻辑当场吞掉
+  expect(s1.undo).toBe(4);      // 4 条撤销条一条没少
+  // 场景二：5 条撤销条 → 撤销条保命，一条不挤（暂时超限、各自 15s 超时收）。
+  //   旧逻辑无非撤销条可挤时走 || firstElementChild 兜底 → 挤掉最旧撤销条 → 撤销机会丢失（4 条）。
+  const undo5 = await page.evaluate(() => {
+    document.querySelector('.sb-toast-host')?.replaceChildren();
+    for (let i = 1; i <= 5; i++) window.__wsToast('删' + i, '撤销', () => {});
+    return [...document.querySelectorAll('.sb-toast')].filter((t) => t.dataset.action === '1').length;
+  });
+  expect(undo5).toBe(5);
+});
+
 // ============================ 内联改名取消 ============================
 
 test('内联改名 Escape 取消 → 文件名不变', async () => {
@@ -427,15 +473,17 @@ test('移动当前打开的文件 → 编辑器重指向到新目录、高亮跟
 
 // ============================ 收起按钮 + 重启恢复 ============================
 
-test('点头部收起按钮 → 侧栏真收起（全隐藏）+ 悬浮展开按钮，再展开', async () => {
+test('点头部收起按钮 → 侧栏真收起（全隐藏、零可见 chrome），Cmd/Ctrl+\\ 再展开', async () => {
   await openWorkspace();
   await page.click('#sb-toggle');
   await expect(page.locator('#sidebar')).toHaveClass(/is-collapsed/);
   expect(await page.locator('#sidebar').evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(5); // 真收起 = 宽 0
-  await expect(page.locator('#sb-reopen')).toBeVisible(); // 侧栏全隐后自己的 toggle 也没了 → 编辑区悬浮展开按钮现身
-  await page.click('#sb-reopen');
+  // 沉浸收起：sb-reopen 浮钮已删（纯 Arc 式，零可见 chrome）；热区就位，重开=hover peek / Cmd+\
+  expect(await page.locator('#sb-reopen').count()).toBe(0);
+  await expect(page.locator('#sb-edge-hot')).toBeVisible();
+  await page.keyboard.press('Control+\\'); // 主层 keydown fallback（e2e CDP 按键绕过原生菜单）
   await expect(page.locator('#sidebar')).not.toHaveClass(/is-collapsed/);
-  await expect(page.locator('#sb-reopen')).toBeHidden();
+  await expect(page.locator('#sb-edge-hot')).toBeHidden(); // 展开后热区退场
 });
 
 test('置顶：右键树文件→进置顶区（不必先打开），重启仍在，取消置顶移除', async () => {
@@ -468,6 +516,123 @@ test('置顶：右键树文件→进置顶区（不必先打开），重启仍�
   await expect(page.locator('#sb-pinned .sb-tab')).toHaveCount(0); // 没有置顶项了
   await expect(page.locator('#sb-pinned')).toBeVisible(); // 但置顶区恒在
   await expect(page.locator('#sb-pinned .sb-zone-hint')).toHaveText('把标签页拖到这里置顶'); // 文案对齐 ui-demo（T2）
+});
+
+test('P3-05 置顶→删除→撤销：置顶状态一起回来（变异敏感）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: /^置顶$/ }).click();
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toBeVisible();
+  // 删除 a.html（置顶随文件消失）
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toHaveCount(0);
+  // 撤销 → 文件回树 + 置顶也回来
+  await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toBeVisible();
+});
+
+test('P3-05 目录级联：置顶的文件在被删目录里 → 撤销后置顶回来', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click(); // 展开
+  await page.click('.sb-file[data-rel="数据/b.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: /^置顶$/ }).click();
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="数据/b.html"]')).toBeVisible();
+  // 删整个 数据 目录
+  await page.click('.sb-dir[data-rel="数据"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, '数据'))).toBe(false);
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="数据/b.html"]')).toHaveCount(0);
+  // 撤销 → 子文件的置顶恢复
+  await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
+  await expect.poll(() => exists(path.join(wsDir, '数据', 'b.html'))).toBe(true);
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="数据/b.html"]')).toBeVisible();
+});
+
+test('P3-05 撤销不抢激活：删一个非激活的打开文档→撤销,激活标签/编辑器不被拽走（对抗审查 P2 变异敏感）', async () => {
+  await fs.writeFile(path.join(wsDir, 'c.html'), HTML('CCC'), 'utf8'); // 第二个顶层文档
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]'); // 打开 a
+  await page.click('.sb-file[data-rel="c.html"]'); // 再打开 c（激活=c，a 仍开着但非激活）
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="c.html"].is-active')).toBeVisible();
+  // 删 a.html（非激活的打开文档）
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="a.html"]')).toHaveCount(0);
+  // 撤销 → a 标签回来(open)，但激活仍是 c（编辑器没被拽到 a）。旧逻辑 openEntry 会把激活抢给 a →
+  // applyTabs 不载入编辑器 → 高亮的激活标签≠编辑器内容。
+  await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="a.html"]')).toBeVisible();          // a 回来了
+  await expect(page.locator('#sb-tabs .sb-tab[data-rel="c.html"].is-active')).toBeVisible(); // 激活仍是 c
+  await expect(page.locator('#doc-name')).toHaveAttribute('title', 'c.html');               // 编辑器面包屑仍是 c
+});
+
+test('P3-05 撤销去重改名：原位被占时置顶跟到真实恢复位置,不落错文件/不丢（对抗审查 P2 变异敏感）', async () => {
+  await openWorkspace();
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: /^置顶$/ }).click();
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toBeVisible();
+  await page.click('.sb-file[data-rel="a.html"]', { button: 'right' });
+  await page.locator('.sb-ctx-item', { hasText: '删除' }).click();
+  await expect.poll(() => exists(path.join(wsDir, 'a.html'))).toBe(false);
+  // 撤销前：原位被一个**新** a.html 占了 → 撤销时恢复的文件会去重改名成「a 2.html」
+  await fs.writeFile(path.join(wsDir, 'a.html'), HTML('新A'), 'utf8');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus'))); // 让树看见新 a.html
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible();
+  // 撤销 → 恢复文件落到「a 2.html」；置顶要跟到 a 2.html（旧逻辑用旧 rel → 置顶落到 a.html=新文件 或丢失）
+  await page.locator('.sb-toast-action', { hasText: '撤销' }).click();
+  await expect(page.locator('.sb-file[data-rel="a 2.html"]')).toBeVisible({ timeout: 5000 });
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a 2.html"]')).toBeVisible(); // 置顶跟到真实恢复位置
+  await expect(page.locator('#sb-pinned .sb-tab[data-rel="a.html"]')).toHaveCount(0);   // 没落到新文件上
+});
+
+test('P3-07 展开的子文件夹重启后仍展开（变异敏感）', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click(); // 展开 数据
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect.poll(async () => {
+    try { const j = JSON.parse(await fs.readFile(wsJson, 'utf8')); return !!j.treeState && Object.values(j.treeState.expandedByRoot || {}).some((a) => a.includes('数据')); } catch { return false; }
+  }, { timeout: 4000 }).toBe(true);
+  await app.close();
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible(); // 无需再点，展开态自动恢复
+});
+
+test('P3-07 收起的根重启后仍收起', async () => {
+  await openWorkspace();
+  await page.click('.sb-root-head'); // 收起整个根
+  await expect(page.locator('.sb-root-head .sb-caret.is-open')).toHaveCount(0);
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toHaveCount(0); // 收起 → 文件隐藏
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect.poll(async () => {
+    try { const j = JSON.parse(await fs.readFile(wsJson, 'utf8')); return !!(j.treeState && (j.treeState.collapsedRoots || []).length); } catch { return false; }
+  }, { timeout: 4000 }).toBe(true);
+  await app.close();
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-root-head .sb-caret.is-open')).toHaveCount(0); // 仍收起
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toHaveCount(0);
+});
+
+test('P3-07 缓存语义：磁盘上已展开的目录被删 → 重启无残留报错（rel 失效即弃）', async () => {
+  await openWorkspace();
+  await page.locator('.sb-dir[data-rel="数据"]').click();
+  await expect(page.locator('.sb-file[data-rel="数据/b.html"]')).toBeVisible();
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect.poll(async () => {
+    try { const j = JSON.parse(await fs.readFile(wsJson, 'utf8')); return !!j.treeState && Object.values(j.treeState.expandedByRoot || {}).some((a) => a.includes('数据')); } catch { return false; }
+  }, { timeout: 4000 }).toBe(true);
+  await app.close();
+  await fs.rm(path.join(wsDir, '数据'), { recursive: true, force: true }); // 外部删掉已持久化展开的目录
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  await expect(page.locator('.sb-file[data-rel="a.html"]')).toBeVisible(); // 树正常渲染
+  await expect(page.locator('.sb-dir[data-rel="数据"]')).toHaveCount(0); // 死 rel 被弃、不残留
 });
 
 test('收起态不再有竖排图标轨（Wendi B2：去掉）', async () => {

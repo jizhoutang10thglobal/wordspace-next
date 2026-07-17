@@ -285,3 +285,41 @@ test('持久化：save → hydrate 往返；损坏/版本不符 → 不命中', 
   idx.removeRoot(rootId);
   await fsp.rm(dir, { recursive: true, force: true });
 });
+
+// ===== P0b V3：listFilesMatching 复用跳过规则（修隐雷）+ 条目预算 → 降级 =====
+test('V3 修隐雷：listDocs 不再钻进 node_modules / .app（复用 isSkippedName/isBundleName）', async () => {
+  const dir = await mkRoot({
+    'real.html': DOC('真', ''),
+    'node_modules/pkg/dist.html': DOC('依赖里的', ''),   // 以前会被钻进去扫到
+    'Foo.app/Contents/x.html': DOC('app 内部', ''),      // 以前会被钻进去扫到
+    '.git/HEAD.html': DOC('git 内部', ''),
+  });
+  const docs = await idx.listDocs(dir);
+  const rels = docs.map((d) => d.rel);
+  assert.deepEqual(rels, ['real.html'], '只应扫到 real.html，不钻 node_modules/.app/.git，实得=' + rels.join(','));
+});
+
+test('V3 条目预算：超 WS2_LINK_BUDGET → refreshRoot 后 isDegraded=true（该根链接功能降级）', async () => {
+  const files = {};
+  for (let i = 0; i < 12; i++) files[`d${i}/f.html`] = DOC('t' + i, ''); // 24 条目(12 目录+12 文件) > 预算(5)，且 !=预算防哑门
+  const dir = await mkRoot(files);
+  const prev = process.env.WS2_LINK_BUDGET;
+  process.env.WS2_LINK_BUDGET = '5';
+  try {
+    idx.removeRoot('rL');
+    await idx.refreshRoot('rL', dir);
+    assert.equal(idx.isDegraded('rL'), true, '超预算 → 降级');
+  } finally {
+    if (prev == null) delete process.env.WS2_LINK_BUDGET; else process.env.WS2_LINK_BUDGET = prev;
+    idx.removeRoot('rL');
+  }
+});
+
+test('V3 预算内不降级：小根 isDegraded=false，索引照常建', async () => {
+  const dir = await mkRoot({ 'a.html': DOC('A', ''), 'sub/b.html': DOC('B', '') });
+  idx.removeRoot('rS');
+  await idx.refreshRoot('rS', dir);
+  assert.equal(idx.isDegraded('rS'), false);
+  assert.equal(idx.query('rS').length, 2, '两个文档都进索引');
+  idx.removeRoot('rS');
+});

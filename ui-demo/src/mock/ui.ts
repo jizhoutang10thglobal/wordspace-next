@@ -80,6 +80,11 @@ interface UI {
   pageSetupFor: string | null
   openPageSetup: (docId: string) => void
   closePageSetup: () => void
+
+  // 「存为模板」modal：值 = 要存的 doc id。null = 关闭。
+  saveTemplateFor: string | null
+  openSaveTemplate: (docId: string) => void
+  closeSaveTemplate: () => void
 }
 
 export const useUI = create<UI>((set) => ({
@@ -150,6 +155,10 @@ export const useUI = create<UI>((set) => ({
   pageSetupFor: null,
   openPageSetup: (docId) => set({ pageSetupFor: docId }),
   closePageSetup: () => set({ pageSetupFor: null }),
+
+  saveTemplateFor: null,
+  openSaveTemplate: (docId) => set({ saveTemplateFor: docId }),
+  closeSaveTemplate: () => set({ saveTemplateFor: null }),
 }))
 
 /**
@@ -168,6 +177,7 @@ export function anyOverlayOpen(s: UI): boolean {
     s.shortcutsOpen ||
     s.agentsOpen || // 「AI 接入」是全屏 modal，开着时壳/编辑器快捷键不该穿透（docFindOpen 是非模态查找条，有意不加）
     s.publishDocId ||
-    s.pageSetupFor
+    s.pageSetupFor ||
+    s.saveTemplateFor
   )
 }

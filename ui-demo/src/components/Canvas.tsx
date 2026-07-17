@@ -11,6 +11,8 @@ import { GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { IS_MAC } from '../lib/platform'
+import { useT, t as tImperative, type TFunc } from '../i18n'
+import { scopeTemplateCss } from '../lib/templateScope'
 import {
   VISIBILITY_META,
   type Block,
@@ -30,6 +32,13 @@ import LinkPreview from './canvas/LinkPreview'
 import Backlinks from './canvas/Backlinks'
 import DocFind from './canvas/DocFind'
 import { resolveHref, relHref, dirOf, baseOf, splitHrefSuffix } from '../lib/links'
+import {
+  acceptsImageType,
+  imageBlockHtml,
+  ingestImage,
+  parseImageBlockHtml,
+  pickImageFiles,
+} from '../lib/image'
 import { usePageConfig } from '../mock/paged'
 import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
@@ -52,28 +61,30 @@ const SLASH_ITEMS: {
   level?: 1 | 2 | 3
   listStyle?: ListStyle
 }[] = [
-  { key: 'text', label: '正文', kw: 'text zhengwen p', type: 'text' },
-  { key: 'h1', label: '标题 1', kw: 'h1 biaoti heading', type: 'heading', level: 1 },
-  { key: 'h2', label: '标题 2', kw: 'h2 biaoti heading', type: 'heading', level: 2 },
-  { key: 'h3', label: '标题 3', kw: 'h3 biaoti heading', type: 'heading', level: 3 },
-  { key: 'list', label: '无序列表', kw: 'list liebiao ul bulleted wuxu', type: 'list', listStyle: 'bulleted' },
-  { key: 'numbered', label: '编号列表', kw: 'numbered ordered ol bianhao youxu 1', type: 'list', listStyle: 'numbered' },
-  { key: 'todo', label: '待办列表', kw: 'todo task checkbox daiban checklist', type: 'list', listStyle: 'todo' },
+  { key: 'text', label: 'editor.text', kw: 'text zhengwen p', type: 'text' },
+  { key: 'h1', label: 'editor.heading1', kw: 'h1 biaoti heading', type: 'heading', level: 1 },
+  { key: 'h2', label: 'editor.heading2', kw: 'h2 biaoti heading', type: 'heading', level: 2 },
+  { key: 'h3', label: 'editor.heading3', kw: 'h3 biaoti heading', type: 'heading', level: 3 },
+  { key: 'list', label: 'editor.bulletedList', kw: 'list liebiao ul bulleted wuxu', type: 'list', listStyle: 'bulleted' },
+  { key: 'numbered', label: 'editor.numberedList', kw: 'numbered ordered ol bianhao youxu 1', type: 'list', listStyle: 'numbered' },
+  { key: 'todo', label: 'editor.todoList', kw: 'todo task checkbox daiban checklist', type: 'list', listStyle: 'todo' },
   // 互链的可发现入口①：斜杠菜单。位置放在列表之后（第 8 项）——放最后会掉出菜单可视区、
   // 用户根本看不见（Colin 实测「没找到」的直接原因）。历史注释说「下标引用只能 append」已核实过时：
   // 全仓只有 .filter / .find(key)，无下标引用，重排安全。
-  { key: 'doclink', label: '🔗 链接到文档', kw: 'link doclink lianjie wendang mention at @', type: 'doclink' },
-  { key: 'quote', label: '引用', kw: 'quote yinyong', type: 'quote' },
-  { key: 'callout', label: '提示', kw: 'callout tishi', type: 'callout' },
-  { key: 'table', label: '表格', kw: 'table biaoge grid', type: 'table' },
-  { key: 'code', label: '代码', kw: 'code daima pre snippet', type: 'code' },
-  { key: 'divider', label: '分隔线', kw: 'divider hr fengexian', type: 'divider' },
-  { key: 'ai', label: '✦ AI 生成（开发中）', kw: 'ai', type: 'ai' },
+  { key: 'doclink', label: 'editor.slashDoclink', kw: 'link doclink lianjie wendang mention at @', type: 'doclink' },
+  { key: 'quote', label: 'editor.quote', kw: 'quote yinyong', type: 'quote' },
+  { key: 'callout', label: 'editor.callout', kw: 'callout tishi', type: 'callout' },
+  { key: 'table', label: 'editor.table', kw: 'table biaoge grid', type: 'table' },
+  { key: 'code', label: 'editor.code', kw: 'code daima pre snippet', type: 'code' },
+  { key: 'image', label: 'editor.image', kw: 'image img tupian picture photo zhaopian', type: 'image' },
+  { key: 'divider', label: 'editor.divider', kw: 'divider hr fengexian', type: 'divider' },
+  { key: 'ai', label: 'editor.slashAi', kw: 'ai', type: 'ai' },
 ]
-const filterSlash = (q: string) => {
+// label 现在是 i18n key，筛选时用 t(label) 求出当前语言文案再匹配（kw 仍是拼音/英文关键字）。
+const filterSlash = (q: string, t: TFunc) => {
   const s = q.toLowerCase()
   return SLASH_ITEMS.filter(
-    (it) => !s || it.label.toLowerCase().includes(s) || it.kw.includes(s),
+    (it) => !s || t(it.label).toLowerCase().includes(s) || it.kw.includes(s),
   )
 }
 
@@ -174,6 +185,94 @@ function isCaretAtBlockStart(el: HTMLElement): boolean {
 // One block. 单击可编辑块 = 进文字编辑（光标落点击处）；单击不可编辑块 = 块级灰选中。
 // 「分块制」只留在数据层（每块离散、忠实 HTML），不再在视觉上做对象框。
 // ---------------------------------------------------------------------------
+// 图片块（doc-images spec）：原子叶子块——光标不可入内、点击=整块灰选（走 BlockRow 的
+// onSelect 路径）。block.html 只有两种 canonical 形态（imageBlockHtml 构造）：裸 <img> /
+// <figure><img><figcaption>。说明（figcaption）是块内唯一可编辑区，点击它不触发块选中；
+// 清空失焦即降回裸 <img>（双向收敛）。
+function ImageBlockView({
+  doc,
+  block,
+  selected,
+  registerEl,
+}: {
+  doc: Doc
+  block: Block
+  selected: boolean
+  registerEl: (id: string, el: HTMLElement | null) => void
+}) {
+  const t = useT()
+  const updateBlockHtml = useStore((s) => s.updateBlockHtml)
+  const checkpoint = useStore((s) => s.checkpoint)
+  const parsed = useMemo(() => parseImageBlockHtml(block.html), [block.html])
+  const [capOpen, setCapOpen] = useState(false) // 「加说明」刚点开、caption 还是空的编辑态
+  const capRef = useRef<HTMLElement | null>(null)
+
+  if (!parsed) {
+    // 旧占位块 / 坏数据：沿用原灰盒占位渲染，不假装是图
+    return (
+      <div className="ws-image ws-image-stub" ref={(el) => registerEl(block.id, el)}>
+        {block.html || t('editor.image')}
+      </div>
+    )
+  }
+  const persistCaption = () => {
+    const text = (capRef.current?.textContent ?? '').trim()
+    if (text !== parsed.caption) {
+      checkpoint()
+      updateBlockHtml(doc.id, block.id, imageBlockHtml(parsed.src, parsed.alt, text))
+    }
+    setCapOpen(false)
+  }
+  const showCaption = capOpen || parsed.caption !== ''
+  return (
+    <figure
+      className="ws-image"
+      data-block={block.id}
+      ref={(el) => registerEl(block.id, el)}
+    >
+      <img src={parsed.src} alt={parsed.alt} draggable={false} />
+      {showCaption && (
+        <figcaption
+          ref={(el) => {
+            capRef.current = el
+          }}
+          contentEditable
+          suppressContentEditableWarning
+          data-placeholder={t('editor.captionPlaceholder')}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation() // 别让 Enter/Backspace 漏到文档级快捷键（会插块/删块）
+            if (e.key === 'Enter' || e.key === 'Escape') {
+              e.preventDefault()
+              ;(e.target as HTMLElement).blur()
+            }
+          }}
+          onBlur={persistCaption}
+        >
+          {parsed.caption}
+        </figcaption>
+      )}
+      {selected && !showCaption && (
+        <button
+          type="button"
+          className="ws-image-addcap"
+          contentEditable={false}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            setCapOpen(true)
+            window.setTimeout(() => capRef.current?.focus(), 0)
+          }}
+        >
+          {t('editor.addCaption')}
+        </button>
+      )}
+    </figure>
+  )
+}
+
+// ---------------------------------------------------------------------------
 function BlockRow({
   doc,
   block,
@@ -209,6 +308,7 @@ function BlockRow({
   onDragEnd: () => void
   dropEdge: 'top' | 'bottom' | null
 }) {
+  const t = useT()
   const updateBlockHtml = useStore((s) => s.updateBlockHtml)
   const checkpoint = useStore((s) => s.checkpoint)
   const elRef = useRef<HTMLElement | null>(null)
@@ -352,16 +452,14 @@ function BlockRow({
     inner = <hr className="ws-hr" ref={(el) => registerEl(block.id, el)} />
   } else if (block.type === 'image') {
     inner = (
-      <div className="ws-image" ref={(el) => registerEl(block.id, el)}>
-        {block.html}
-      </div>
+      <ImageBlockView doc={doc} block={block} selected={selected} registerEl={registerEl} />
     )
   } else if (block.type === 'heading') {
     const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3'
     inner = <L className={`ws-h ws-h${block.level ?? 2}`} {...editProps} />
   } else if (block.type === 'text') {
     inner = (
-      <p className="ws-p" data-placeholder="输入正文,或按 / 插入" {...editProps} />
+      <p className="ws-p" data-placeholder={t('editor.textPlaceholder')} {...editProps} />
     )
   } else if (block.type === 'list') {
     const style = block.listStyle ?? 'bulleted'
@@ -395,14 +493,14 @@ function BlockRow({
               onMouseDown={(e) => e.preventDefault()}
               onClick={addTableRow}
             >
-              + 加一行
+              {t('editor.addRow')}
             </button>
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={deleteTableRow}
             >
-              删除此行
+              {t('editor.deleteRow')}
             </button>
           </div>
         )}
@@ -448,7 +546,7 @@ function BlockRow({
       <div className="ws-block-controls" contentEditable={false}>
         <span
           className="ws-block-grip"
-          title="拖动重排 · 点击打开菜单"
+          title={t('editor.blockGripTitle')}
           draggable
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
@@ -524,6 +622,7 @@ function PageGap({
   box: ReturnType<typeof pageBoxPx>
   onClick?: (e: React.MouseEvent) => void // 点页底留白/页间空白 → 路由光标到最近块（修死区）
 }) {
+  const t = useT()
   return (
     <div
       className="ws-page-gap"
@@ -543,7 +642,7 @@ function PageGap({
           marginRight: -(box.margin.right + 1),
         }}
       >
-        <span className="ws-page-chip">第 {nextPage} 页</span>
+        <span className="ws-page-chip">{t('editor.pageN', { n: nextPage })}</span>
       </div>
     </div>
   )
@@ -553,6 +652,7 @@ function PageGap({
 // Header: breadcrumb, meta, and the "…" menu (export / link / rename / delete)
 // ---------------------------------------------------------------------------
 export function DocHeader({ doc }: { doc: Doc }) {
+  const t = useT()
   const editor = useStore((s) => s.getMember(doc.updatedBy))
   const renameDoc = useStore((s) => s.renameDoc)
   // 反链面板要的当前文件身份（rootId + 根内路径）。选字符串（不选对象）避免每次 store 更新都重渲。
@@ -590,12 +690,12 @@ export function DocHeader({ doc }: { doc: Doc }) {
         {folderCrumb ? (
           <span className="ws-truncate">{folderCrumb}</span>
         ) : (
-          <span>{doc.unsaved ? '未保存的草稿' : '文档'}</span>
+          <span>{doc.unsaved ? t('editor.unsavedDraft') : t('editor.docFallback')}</span>
         )}
         <div className="ws-doc-more">
           <button
             className="ws-icon-btn"
-            title="更多"
+            title={t('common.more')}
             onClick={() => setMenuOpen((o) => !o)}
           >
             <MoreHorizontal size={16} strokeWidth={1.8} />
@@ -630,7 +730,7 @@ export function DocHeader({ doc }: { doc: Doc }) {
       <div className="ws-doc-meta">
         {editor && <Avatar member={editor} size={20} />}
         <span className="ws-muted">
-          {editor?.name} 编辑于 {relTime(doc.updatedAt)}
+          {t('editor.editedBy', { name: editor?.name ?? '', time: relTime(doc.updatedAt) })}
         </span>
         {!isFolderSpace && (
           <span className="ws-meta-vis">
@@ -651,6 +751,7 @@ export function DocHeader({ doc }: { doc: Doc }) {
 // docId：编辑指定文档而非当前激活 tab（给 Schema 演示页内嵌真编辑器用）。
 // embedded：内嵌模式——去掉文档头（面包屑/标题/发布）和页脚，只留可编辑的块 + 全套编辑 UX。
 export default function Canvas({ docId, embedded }: { docId?: string; embedded?: boolean } = {}) {
+  const t = useT()
   const tabs = useStore((s) => s.tabs)
   const activeTabId = useStore((s) => s.activeTabId)
   const getDoc = useStore((s) => s.getDoc)
@@ -698,6 +799,10 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   const docFindOpen = useUI((s) => s.docFindOpen)
   const closeDocFind = useUI((s) => s.closeDocFind)
+
+  // 模板版式：文档已盖章的 templateCss（从模板新建 / 存为模板带来）经 templateScope
+  // 作用域化后注入，只作用文档区、不漏 app 界面。
+  const scopedTplCss = useMemo(() => scopeTemplateCss(doc?.templateCss ?? ''), [doc?.templateCss])
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const blockEls = useRef<Map<string, HTMLElement>>(new Map())
@@ -1058,6 +1163,63 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     [doc, updateBlockHtml, setBlockType, editBlock, deleteBlock, deselect, checkpoint],
   )
 
+  // ===== 图片块插入管线（doc-images spec：斜杠 / 粘贴 / 拖放三入口共用）=====
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const imagePick = useRef<{ anchorId: string; replaceEmpty: boolean } | null>(null)
+  const insertImages = useCallback(
+    async (files: File[], anchorId: string | null, replaceEmpty = false) => {
+      if (!doc || files.length === 0) return
+      let after = anchorId
+      let inserted = 0
+      for (const f of files) {
+        const r = await ingestImage(f) // 降采样护栏：长边≤1600 / base64≤1.5MB / 拒 SVG
+        if (!r.ok) {
+          toast(
+            r.reason === 'budget'
+              ? tImperative('editor.imgTooLarge')
+              : r.reason === 'type'
+                ? tImperative('editor.imgUnsupported')
+                : tImperative('editor.imgDecodeFail'),
+            'neutral',
+          )
+          continue
+        }
+        if (inserted === 0) checkpoint() // 首张成功才快照：全拒时不留空撤销步
+        const alt = (f.name || '').replace(/\.[a-z0-9]+$/i, '') // 可访问性 + 未来检索
+        const id = addBlock(doc.id, after, 'image', undefined, imageBlockHtml(r.src, alt))
+        selectBlock(id)
+        after = id
+        inserted++
+      }
+      // 已拍板②：锚点是空段落时原地替换（先插后删，撤销合成一步）
+      if (inserted > 0 && replaceEmpty && anchorId) deleteBlock(doc.id, anchorId)
+    },
+    [doc, addBlock, deleteBlock, selectBlock, checkpoint, toast],
+  )
+  // 粘贴图片。已拍板①文本优先：剪贴板有可用文本 → 交还既有文本粘贴路径，这里不拦。
+  const onBlocksPaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      const cd = e.clipboardData
+      if (!cd || !doc) return
+      if (cd.getData('text/plain').trim()) return
+      const files = pickImageFiles(cd)
+      if (files.length === 0)
+        for (const item of Array.from(cd.items))
+          if (item.kind === 'file') {
+            const f = item.getAsFile()
+            if (f && acceptsImageType(f.type)) files.push(f)
+          }
+      if (files.length === 0) return
+      e.preventDefault()
+      const anchor = editingId ?? selectedId ?? null
+      const blk = anchor ? doc.blocks.find((b) => b.id === anchor) : undefined
+      const host = anchor ? blockEls.current.get(anchor) : undefined
+      const replaceEmpty = blk?.type === 'text' && !(host?.textContent ?? '').trim()
+      void insertImages(files, anchor, replaceEmpty)
+    },
+    [doc, editingId, selectedId, insertImages],
+  )
+
   // 斜杠菜单选中某项：删掉已输入的「/query」，再插入新块 / 转换当前块 / 弹 AI 占位。
   const applySlash = useCallback(
     (key: string) => {
@@ -1084,10 +1246,17 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         }, 0)
         return
       }
-      checkpoint()
       const el = blockEls.current.get(slash.blockId)
       const empty = !el || (el.textContent ?? '').trim() === ''
-      if (it.type === 'divider' || it.type === 'image') {
+      if (it.type === 'image') {
+        // 图片：开系统文件选择器，真插入在 input onChange（insertImages）。checkpoint 不在
+        // 这打——用户可能取消选择，空快照会留一步无效撤销。空段落原地替换（已拍板②）。
+        imagePick.current = { anchorId: slash.blockId, replaceEmpty: empty }
+        imageInputRef.current?.click()
+        return
+      }
+      checkpoint()
+      if (it.type === 'divider') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
       } else if (it.type === 'table' || it.type === 'code') {
         // 表格/代码：插入带默认内容的新块并进编辑（单元格/代码行随即可点改）
@@ -1128,10 +1297,10 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       ;(isDoc ? docsFirst : rest).push({ key: `f:${f.path}`, title, path: f.path, kind: f.kind })
     }
     const out = [...docsFirst, ...rest].slice(0, 8)
-    if (q) out.push({ key: 'create', title: `新建「${mention.query.trim()}」`, create: true })
-    out.push({ key: 'url', title: '网址链接…', url: true })
+    if (q) out.push({ key: 'create', title: t('editor.createNamed', { name: mention.query.trim() }), create: true })
+    out.push({ key: 'url', title: t('editor.urlLink'), url: true })
     return out
-  }, [mention, files, docs, curRootId, curPath])
+  }, [mention, files, docs, curRootId, curPath, t])
 
   // 选中提及项：三种收尾——insert（@/[[/斜杠：插入目标标题快照的 <a>）、wrap（工具栏：把选中文字
   // 变成链接、保留用户文字）、url（外部网址）。链接文字=快照，改名不回写文字，靠 hover 卡看目标当前标题。
@@ -1147,13 +1316,13 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       let title = ''
       let externalUrl: string | null = null
       if (key === 'url') {
-        const url = window.prompt('链接地址', 'https://')
+        const url = window.prompt(tImperative('editor.linkAddressPrompt'), 'https://')
         if (!url) return
         externalUrl = url
         title = url
       } else if (key === 'create') {
         // 新建在当前文档同目录（Typora 式的文件原生答案）；不切走当前标签页（Notion 同款）
-        title = m.query.trim() || '无标题文档'
+        title = m.query.trim() || tImperative('editor.untitledDoc')
         targetPath = createLinkedDoc(curRootId, dirOf(curPath), title)
         if (!targetPath) return
       } else {
@@ -1171,7 +1340,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         sel0?.addRange(m.savedRange)
         document.execCommand('createLink', false, href)
         updateBlockHtml(doc.id, m.blockId, el.innerHTML)
-        if (key === 'create') toast(`已新建「${title}」并链接`, 'success')
+        if (key === 'create') toast(tImperative('editor.createdAndLinked', { name: title }), 'success')
         return
       }
       // ③ insert 模式：trig>0（@/[[ 手势）先用 **DOM 真相**定位「触发符+query」整段删除——不按计数
@@ -1186,7 +1355,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         scan.selectNodeContents(el)
         scan.setEnd(caret.startContainer, caret.startOffset)
         const before = scan.toString()
-        const trigs = m.trig === 1 ? ['@', '＠'] : ['[[', '【【']
+        const trigs = m.trig === 1 ? ['@', '＠'] : ['[[', '【【'] // i18n-exempt（@提及/[[链接的触发符，含中文 IME 全角变体，功能字符非文案）
         let idx = -1
         let tlen = m.trig
         for (const t of trigs) {
@@ -1231,8 +1400,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       if (key === 'create') {
         const p = targetPath
         const rid = curRootId
-        toast(`已新建「${title}」`, 'success', {
-          label: '打开',
+        toast(tImperative('editor.createdNamed', { name: title }), 'success', {
+          label: tImperative('common.open'),
           run: () => {
             const f = useStore.getState().files.find((x) => x.rootId === rid && x.path === p)
             if (f) useStore.getState().openFileTab(f)
@@ -1270,8 +1439,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       const two = textBeforeCaret(el, 2)
       const one = two.slice(-1)
       let trig = 0
-      if (two === '[[' || two === '【【') trig = 2
-      else if (one === '@' || one === '＠') trig = 1
+      if (two === '[[' || two === '【【') trig = 2 // i18n-exempt（触发符检测）
+      else if (one === '@' || one === '＠') trig = 1 // i18n-exempt（触发符检测）
       if (!trig) return
       const rect = caretRect()
       if (rect) setMention({ blockId: editingId, query: '', pos: rect, active: 0, trig })
@@ -1461,7 +1630,16 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const onBlocksDragOver = useCallback(
     (e: React.DragEvent) => {
       const f = getDragFile()
-      if (!f || !curRootId || !curPath || f.rootId !== curRootId) return
+      if (!f) {
+        // OS 文件拖入（doc-images）：dragover 阶段只知道 'Files'、看不到 MIME——先放行，
+        // drop 时按图片白名单过滤（非图仍拒 + toast，不静默）。
+        if (e.dataTransfer.types.includes('Files')) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+        }
+        return
+      }
+      if (!curRootId || !curPath || f.rootId !== curRootId) return
       e.preventDefault()
       e.dataTransfer.dropEffect = 'link'
     },
@@ -1470,13 +1648,42 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const onBlocksDrop = useCallback(
     (e: React.DragEvent) => {
       const f = getDragFile()
+      if (!f && e.dataTransfer.types.includes('Files')) {
+        // OS 文件拖入 → 图片块（doc-images）。非图片文件维持拒绝口径，但要说出来。
+        e.preventDefault()
+        e.stopPropagation()
+        if (!doc) return
+        const files = pickImageFiles(e.dataTransfer)
+        if (files.length === 0) {
+          toast(tImperative('editor.dropImageOnly'), 'neutral')
+          return
+        }
+        // 落点：Y 最近的块；落在其上半且非首块 → 插到它前面，否则插到它后面
+        let best: { id: string; idx: number; mid: number; dist: number } | null = null
+        for (const [id, el] of blockEls.current) {
+          const idx = doc.blocks.findIndex((b) => b.id === id)
+          if (idx < 0 || !document.contains(el)) continue
+          const r = el.getBoundingClientRect()
+          const dist =
+            e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0
+          const mid = (r.top + r.bottom) / 2
+          if (!best || dist < best.dist) best = { id, idx, mid, dist }
+        }
+        const anchor = best
+          ? e.clientY < best.mid && best.idx > 0
+            ? doc.blocks[best.idx - 1].id
+            : best.id
+          : null // 空文档：append
+        void insertImages(files, anchor)
+        return
+      }
       if (!f || !doc) return
       if (!curRootId || !curPath) return
       if (f.rootId !== curRootId) {
         // 跨根不支持（相对路径算不出来）——但要**说出来**，静默没反应会让人以为功能不存在
         e.preventDefault()
         e.stopPropagation()
-        toast('跨文件夹的链接暂不支持——把文件拖进同一个文件夹的文档里', 'neutral')
+        toast(tImperative('editor.crossFolderLink'), 'neutral')
         return
       }
       // 精确落点：落在文字上就插在那；落在装饰块/空白/边距上 → 兜底找 Y 方向最近的可编辑块，
@@ -1503,7 +1710,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         if (!best) {
           e.preventDefault()
           e.stopPropagation()
-          toast('这篇文档没有可放链接的文字块', 'neutral')
+          toast(tImperative('editor.noTextBlock'), 'neutral')
           return
         }
         bid = best.bid
@@ -1527,7 +1734,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       const el = blockEls.current.get(bid)
       if (el) updateBlockHtml(doc.id, bid, el.innerHTML)
     },
-    [doc, curRootId, curPath, docs, checkpoint, updateBlockHtml, toast],
+    [doc, curRootId, curPath, docs, checkpoint, updateBlockHtml, toast, insertImages],
   )
 
   // 断链修复①：重新指向候选文件（改这一条链接的 href，落库该块）
@@ -1536,7 +1743,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       if (!doc || !preview || !curPath) return
       if (!document.contains(preview.anchor)) {
         // anchor 已 detach（文档切换/块重渲）——别对着空气改还报成功
-        toast('链接已不在当前文档，未能重新指向', 'danger')
+        toast(tImperative('editor.linkGone'), 'danger')
         setPreview(null)
         return
       }
@@ -1547,7 +1754,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       const blockEl = preview.anchor.closest('[data-block]') as HTMLElement | null
       const bid = blockEl?.dataset.block
       if (blockEl && bid) updateBlockHtml(doc.id, bid, blockEl.innerHTML)
-      toast(`已重新指向 ${candidate.path}`, 'success')
+      toast(tImperative('editor.repointedTo', { path: candidate.path }), 'success')
       setPreview(null)
     },
     [doc, preview, curPath, checkpoint, updateBlockHtml, toast],
@@ -1559,7 +1766,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     const isMd = /\.md$/i.test(preview.target)
     const title = baseOf(preview.target).replace(/\.(html|md)$/i, '')
     const p = createLinkedDoc(curRootId, dirOf(preview.target), title, isMd ? '.md' : '.html')
-    if (p) toast(`已新建「${title}${isMd ? '.md' : ''}」`, 'success')
+    if (p) toast(tImperative('editor.createdNamed', { name: `${title}${isMd ? '.md' : ''}` }), 'success')
     setPreview(null)
   }, [preview, curRootId, createLinkedDoc, toast])
 
@@ -1837,6 +2044,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       // 灰选中态按 Enter：在选中块后插正文块并进编辑（兜底，可在不可编辑块后插块）
       if (e.key === 'Enter' && selectedId && !editingId && doc) {
         if (e.isComposing || e.keyCode === 229) return
+        // 焦点在图片说明（figcaption）里：这是块内编辑，不是选中态操作（防插块）
+        if ((e.target as HTMLElement)?.closest?.('figcaption')) return
         e.preventDefault()
         checkpoint()
         editBlock(addBlock(doc.id, selectedId, 'text'), { mode: 'start' })
@@ -1963,6 +2172,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         !editingId &&
         doc
       ) {
+        // 焦点在图片说明（figcaption）里：删的是说明文字，不是整块（防误删图）
+        if ((e.target as HTMLElement)?.closest?.('figcaption')) return
         e.preventDefault()
         removeBlock(selectedId)
       }
@@ -2065,7 +2276,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        const it = filterSlash(slash.query)[slash.active]
+        const it = filterSlash(slash.query, t)[slash.active]
         if (it) applySlash(it.key)
         else setSlash(null)
         return
@@ -2078,7 +2289,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                 ...s,
                 active: Math.max(
                   0,
-                  Math.min(s.active + 1, filterSlash(s.query).length - 1),
+                  Math.min(s.active + 1, filterSlash(s.query, t).length - 1),
                 ),
               }
             : s,
@@ -2106,7 +2317,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [slash, mention, editingId, doc?.id, applySlash, paged])
+  }, [slash, mention, editingId, doc?.id, applySlash, paged, t])
 
   // persist the block the toolbar just edited
   const persistFocused = useCallback(() => {
@@ -2119,7 +2330,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   if (!doc) {
     return (
       <main className="ws-canvas ws-canvas-empty">
-        <div className="ws-empty">从左侧选择一篇文档,或新建一篇。</div>
+        <div className="ws-empty">{t('editor.emptyDoc')}</div>
       </main>
     )
   }
@@ -2194,7 +2405,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         }
       }
       // 兜底（无文件身份的临时文档 / 块选中态整块加链）：维持原网址 prompt 行为
-      const url = window.prompt('链接地址', 'https://')
+      const url = window.prompt(tImperative('editor.linkAddressPrompt'), 'https://')
       if (!url) return
       if (saved) {
         const s = window.getSelection()
@@ -2310,7 +2521,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           className={
             `ws-doc ws-doc-${doc.kind}` +
             (doc.pageFormat ? ` ws-fmt ws-fmt-${doc.pageFormat}` : '') +
-            (paged ? ' ws-doc-paged' : '')
+            (paged ? ' ws-doc-paged' : '') +
+            (scopedTplCss ? ' ws-tpl-on' : '')
           }
           // 分页视图：纸宽 = 纸张 px 宽，padding = 页边距（内容列自然收窄为页内容宽）。
           // 页高由内容流 + 块级 PageGap spacer + 末页补白 spacer 自然给出（超高块块内不推挤、
@@ -2326,6 +2538,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
               : undefined
           }
         >
+          {/* 模板版式 CSS：已作用域化到 .ws-doc.ws-tpl-on，只作用文档区、不漏 app 界面。 */}
+          {scopedTplCss && <style>{scopedTplCss}</style>}
           {!embedded && <DocHeader doc={doc} />}
           <div
             className="ws-blocks"
@@ -2334,6 +2548,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             onMouseOut={onBlocksMouseOut}
             onDragOver={onBlocksDragOver}
             onDrop={onBlocksDrop}
+            onPaste={onBlocksPaste}
           >
             {doc.blocks.map((b, i) => {
               let edge: 'top' | 'bottom' | null = null
@@ -2410,7 +2625,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                       marginRight: -1,
                     }}
                   >
-                    <span className="ws-page-chip">第 {g.page} 页</span>
+                    <span className="ws-page-chip">{t('editor.pageN', { n: g.page })}</span>
                   </div>
                 </div>
               ))}
@@ -2420,8 +2635,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           {!embedded && (
             <div className="ws-doc-end ws-muted">
               {doc.unsaved
-                ? '未保存的新文档 · ⌘S（或右上角「保存」）存进当前空间'
-                : `这是一个本地 HTML 文件 · ${doc.localPath}`}
+                ? t('editor.unsavedNewDoc')
+                : t('editor.localHtmlFile', { path: doc.localPath })}
             </div>
           )}
         </article>
@@ -2438,9 +2653,29 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
       {aiSoonOpen && <AiSoonModal onClose={() => setAiSoonOpen(false)} />}
 
+      {/* 图片插入的隐藏文件选择器（斜杠菜单「图片」触发；multiple = 一次插多张连续块） */}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.currentTarget.files ?? []).filter((f) =>
+            acceptsImageType(f.type),
+          )
+          const ctx = imagePick.current
+          imagePick.current = null
+          e.currentTarget.value = '' // 允许连续两次选同一文件
+          if (ctx && files.length > 0)
+            void insertImages(files, ctx.anchorId, ctx.replaceEmpty)
+        }}
+      />
+
       {blockMenuFor && blockMenuPos && (
         <BlockActionMenu
           pos={blockMenuPos}
+          blockType={doc.blocks.find((b) => b.id === blockMenuFor)?.type}
           onTurnInto={(type, level) => {
             checkpoint()
             setBlockType(doc.id, blockMenuFor, type, level)
@@ -2466,9 +2701,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       {slash && (
         <SlashMenu
           pos={slash.pos}
-          items={filterSlash(slash.query).map((it) => ({
+          items={filterSlash(slash.query, t).map((it) => ({
             key: it.key,
-            label: it.label,
+            label: t(it.label),
           }))}
           activeIndex={slash.active}
           onPick={applySlash}

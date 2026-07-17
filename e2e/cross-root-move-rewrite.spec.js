@@ -14,7 +14,7 @@ const DOC = (title, body) => `<!doctype html><html><head><meta charset="utf-8"><
 let app, page, tmp, wsA, wsB, userData;
 
 async function launch(env) {
-  const a = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', WS2_USERDATA: userData, ...env } });
+  const a = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', WS2_USERDATA: userData, ...env } });
   const p = await a.firstWindow();
   await p.waitForLoadState('domcontentloaded');
   await p.setViewportSize({ width: 1280, height: 860 });
@@ -79,7 +79,7 @@ test('C2-1 跨根移动 B/报价单→A：无守卫弹窗 + A/周报 的跨根�
   // 周报（在 A）原来跨根 ../项目资料/报价单.html → 现在报价单也在 A → 自动重写成同根短形式 报价单.html
   await expect.poll(async () => await read(path.join(wsA, '周报.html')), { timeout: 5000 })
     .toMatch(/<a href="报价单\.html">报价单<\/a>/);
-  await expect(page.locator('.sb-toast')).toContainText('已更新');
+  await expect(page.locator('.sb-toast', { hasText: '已更新' })).toBeVisible();
 });
 
 test('C2-2 被移文档自身的跨根出链重算：A/doc→B 后，它指向 B/target 的链接变同根短形式', async () => {
@@ -112,7 +112,7 @@ test('C2-4 撤销跨根移动：文件移回原根 + 引用反向重写回跨根
   const [ra, rb] = await openTwoRoots();
   await dndTo(rb, '报价单.html', `.sb-root-head[data-root="${ra}"]`);
   await expect.poll(async () => await read(path.join(wsA, '周报.html')), { timeout: 5000 }).toMatch(/<a href="报价单\.html">/);
-  await expect(page.locator('.sb-toast')).toContainText('已更新');
+  await expect(page.locator('.sb-toast', { hasText: '已更新' })).toBeVisible();
   await page.locator('.sb-toast .sb-toast-action, .sb-toast button', { hasText: '撤销' }).first().click();
   // 撤销：报价单 移回 B + 周报 的链接反向重写回 ../项目资料/报价单.html
   await expect.poll(() => onDisk(path.join(wsB, '报价单.html')), { timeout: 5000 }).toBe(true);

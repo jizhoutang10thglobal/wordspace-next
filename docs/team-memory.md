@@ -14,6 +14,74 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-16 — 沉浸收起(Arc 对标)已全量合 main:sb-reopen 浮钮已删、真 app 换 hiddenInset 窗框
+
+**是什么**:Wendi「零缝隙」反馈落地(ui-demo #230 + 真 app #238)。侧栏收起=流内零渲染(ui-demo 48px 细轨、真 app 52px COLLAPSED_STRIP、#sb-reopen 常驻浮钮**全删**),重开=左缘 hover peek(悬浮盖内容)/Cmd+\;真 app darwin 换 titleBarStyle:hiddenInset,红绿灯进 .sb-head(兼窗口拖拽区)且随收起隐藏。spec=docs/features/immersive-collapse.md。
+**怎么 apply**:① e2e/代码**别再引用 #sb-reopen**(元素已不存在;二次展开的测试口径=mouse.move(3,430) 出 peek 后点 #sb-toggle,或 Ctrl+\,参照 e2e/immersive.spec.js)。② **往 .sb-head / ui-demo .arc-top 加图标前先重算宽度账**(mac 红绿灯让位后 238≤min-width 240,余量 2px——超了最右钮被编辑区 iframe 吞点击,CSS 注释有账本)。③ 宿主 mac 跑 app 看到没有系统标题栏=正常新窗框,不是 bug。
+**来源**:PR #230 / #238,feat/immersive-collapse-app
+## 2026-07-16 — P0 大根修复已全部落地(P0a #236 + P0b #241)——动 sidebar/ipc/workspace 先 rebase;附「墙钟断言别贴边」教训
+
+**是什么**:大根卡死 P0 系列收官,两个 PR 已合 main:P0a 止血包(#236:启动死门修复/walk 条目预算
+15 万/「过大」态/菜单「管理文件夹…」逃生门/病灶路径确认框)+P0b 懒加载(#241:超预算根自动进「简化
+模式」——readDir 按层读取(单层 5 万预算)/watcher 只重读「变化∩已加载层」/筛选/Cmd+P/inode 跟随降级/
+link-index listFilesMatching 修复(原会钻 node_modules/.app)/ensureDir Map 化(150k 宽树 68s→0.6s))。
+双双经主 session 对抗审查:真实家目录(191 万条目)重放全过——现在加 ~ 是「1.8s 进简化模式、能浏览
+能开文档、重启秒开、随时可移除」。
+**怎么 apply**:①`src/renderer/sidebar.js`(+300 行)/`src/main/workspace.js`/`ipc.js`/
+`src/lib/file-tree.js`/`link-index.js` 都大改了——手上有未合分支动过这些文件的,rebase 时冲突自解,
+语义疑问查 `docs/features/workspace-big-roots.md`(行为契约已全量更新)。②之前广播的「删 workspace.json
+救援法」对新版不再必需(但 v0.10.x 及更老版本用户仍用得上)。③**教训:测试里的墙钟性能断言别贴边**
+——执行 AI 在快 Mac 上量 0.6s 就写 1.5s 阈值,GH 共享 runner 直接超时红(CI 实锤);性能断言的阈值
+应设在「要防的那类回归」量级(这里 O(M²) 复发≈68s,线设 10s),不是本机实测×2;「本地绿≠CI 绿」
+对性能断言同样成立。④e2e 全量套跑一条既有 P2-6 偶发 flaky(重试即过、main 无前科)——遇到先重跑
+确认非回归,别急着改测试。
+**来源**:PR #236/#241;诊断=docs/brainstorms/2026-07-16-bigroot-freeze-p0-diagnosis.md;
+spec=docs/features/workspace-big-roots.md。
+
+## 2026-07-16 — 硬教训：quitAndInstall 不发 before-quit，发 before-quit-for-update（动退出链必读）
+
+**是什么**：Electron `autoUpdater.quitAndInstall()` 的退出时序是——先发 **`before-quit-for-update`**、再逐窗 `close`、全部关完才 `app.quit()`（届时才有 before-quit）。main.js 曾只接 `before-quit` 打「真退出」标志、注释还断言 quitAndInstall 会先发它（假的）——结果 mac「关窗=隐藏驻留」守卫把 quitAndInstall 的关窗 `preventDefault` 吞掉：窗口只是藏起来、app 不退、安装永等不到 `window-all-closed`。用户视角=「点了重启安装没反应」，且这按钮**自上线起从未工作过**（Colin 机器 updater.log 2026-07-15 四连击零重启实锤；此前所谓能更新全靠用户手动 Cmd+Q 触发退出时安装）。同 PR 另修两个：bundle 被提权安装写成 root:wheel 后每次更新都要密码（一次性 chown 修复流程 + `src/lib/mac-bundle-repair.js`）、下载进度面板整卡拆建+抢焦点导致狂闪（改结构签名比对原地更新）。
+**怎么 apply**：① 任何要在「真退出」和「关窗=隐藏」之间做区分的代码（close 守卫/退出清理/防丢数据），**必须同时监听 `before-quit` 和 `before-quit-for-update`**——只接前者=自动更新重启必坏；② 别信注释里对 Electron 事件时序的断言，electron.d.ts + updater.log（`userData/logs/updater.log`，「evt=xxx ∅ -> checking」=新进程启动标记）可实证；③ 面板/弹层类 UI 收高频推送时，禁止每次推送整树重建+refocus——按结构签名做原地更新。
+**来源**：PR #231（fix/updater-ux）；docs/features/app-updater.md 行为契约已更新；随 v0.10.1 发版
+
+## 2026-07-16 — P0 大根卡死:救援方法 + 「上限是条目数不是 GB」+ sidebar/ipc/workspace 即将大动(撞车预警)
+
+**是什么**:Colin+Wendi 都中招——把巨型目录(家目录/桌面)加为根,app 卡死甚至死锁(根行不渲染、
+移不掉、重启复发)。诊断完成:①上限单位是**文件条目数不是 GB**(readTree 严格线性,25 万条=18s/68MB
+payload;Colin 家目录 191 万条→分钟级扫描+~2GB 双进程堆=renderer OOM 冻死;~/Library 不是隐藏目录、
+现有跳过规则拦不住);②死锁根因=启动路径 `await Promise.all(读树)` 先于 rootsState 赋值
+(sidebar.js:2839)→空态永驻→唯一移除入口(根行右键)不可达;③watcher 高 churn 根 overflow→全量重扫
+永动机。诊断正本=docs/brainstorms/2026-07-16-bigroot-freeze-p0-diagnosis.md(PR #228)。
+**怎么 apply**:①**用户救援**(告诉 Wendi/任何中招者):⌘Q 完全退出→删
+`~/Library/Application Support/Wordspace Next/workspace.json`(或编辑其 roots 数组删大根条目)→重启;
+**别重装,重装不清 userData,白装**。②做 perf 或压测:以条目数为轴造合成树(25 万条只要 35s/250MB 盘),
+别用 GB 填盘。③**撞车预警**:P0a(修死锁+扫描预算 15 万+管理文件夹逃生门)与 P0b(懒加载架构)即将
+大动 `src/renderer/sidebar.js`(启动 IIFE/renderRootSection 区域)、`src/main/ipc.js`(ws-add-folder)、
+`src/main/workspace.js`(walk/readTree)、`main.js`(菜单)——并行 session 动这些文件前先 /sync-main
+看 P0a/P0b PR 状态,改 sidebar 启动时序属高危区。执行 plan=docs/plans/2026-07-16-001/002。
+**来源**:诊断+plan PR #228;拍板=Colin 2026-07-16(P0a 先行、P0b 紧随、预算 15 万条目)。
+
+## 2026-07-15 — Vercel 部署改造：预览构建关闭 + 只在本目录变更时构建（治连日限流）
+
+**是什么**：仓里两个 Vercel 项目（ui-demo/website）连同一个仓、原本没 vercel.json，导致每次 push 两个项目都构建、每个 PR 分支都出预览——连日撞爆免费日部署限流、卡所有人。已加 `ui-demo/vercel.json` + `website/vercel.json` 的 ignoreCommand（PR #220）：① 预览分支一律不构建（`VERCEL_ENV != production` → 跳过）；② main 只在本项目目录有变更时才构建。Colin 拍板关预览。
+**怎么 apply**：① **PR 分支不再有 Vercel 预览链接了**——要看效果走「合 main → 看公开 live（wordspace-ui-demo.vercel.app）」，或本地 `npm run dev`。别再等/找预览 URL。② 别删这两个 vercel.json；改 ignoreCommand 前想清楚（写错方向会让 live 不部署或全量构建，exit 0=跳过 / 非0=构建）。③ docs-only PR（team-memory/changelog）现在两个项目都跳过构建，正常。
+**来源**：PR #220（chore/vercel-skip-unchanged）
+
+## 2026-07-15 — ui-demo 常驻 worktree 有 3+ 并发 session,必须各开独立 worktree
+
+**是什么**：ui-demo 常驻 worktree（.../wordspace-next-ui-demo）此刻被 3+ 个 session 同时抢（feat/ui-demo-doc-images 图片块 / feat/ui-demo-template-v1 用户自定义模板 / feat/ui-demo-company-templates）。实测撞车：我在里面 checkout 自己分支后,另一 session 把工作树切到 doc-images,我的未提交改动被带到他们分支、和他们 Canvas.tsx/image.ts 混一起,险些被 git add -A 一并提交。
+**怎么 apply**：① 动 ui-demo 前先 `git -C <worktree> branch --show-current` 确认分支没被别人换走;② 多 session 同时改 ui-demo 一律各开独立 worktree（`git worktree add <新路径> <你的分支>`,如我用了 .../wordspace-next-template）,别共用那个常驻 worktree——共用时任何一方切分支都会劫持彼此未提交改动;③ 收尾清干净自己在共享树里的污染,别连累别人。
+**来源**：feat/ui-demo-template-v1（用户自定义模板 U1 实施途中）
+
+
+## 2026-07-14 — 探索测试 p1（错误页死路）已修 PR #201；动 browser.js/web-tabs.js 前先看
+
+**是什么**：错误页恢复死路修复合入中（PR #201,分支 fix/browser-error-page-recover）。根因比计划更深:错误页**自身会提交**(did-navigate→everCommitted 藏起始页)+showError 摘 view(attachedKey=null)→ everCommitted 重挂分支与 error-clear 分支双双够不着。修法=主进程给 web 标签加 **navSeq 提交序号**(每 did-navigate 自增,随 web-tab-updated 推),renderer 认 s.navSeq>prev.navSeq 的**提交沿**重挂 view。
+
+**怎么 apply**：① 认领 bug-hunt 别的浏览器条目、或任何动 `src/main/web-tabs.js` / `src/renderer/browser.js onWebTabUpdated` 的 session:**先拉 PR #201**,它给 pushUpdate 加了 navSeq 字段、给 onWebTabUpdated 加了第三条恢复分支——别覆盖或与之冲突。② 硬教训(可复用):**「loading 收尾沿」≠「提交」**——abort/-3(下载被cancel/204/被后续导航打断)照样 loading 收尾但没提交,拿收尾沿做 view 重挂会盖上失败页残帧(对抗审查 CONFIRMED P2);要「新页真提交」信号就用 did-navigate,别用 did-stop-loading。③ 测试硬教训:纯新标签失败**不是死路**(起始页还在→everCommitted 分支自愈),复现死路必须「已提交过的标签」或「切走再切回」——写错误页恢复的 e2e 别用纯新标签(会写出自测绿但没测到东西的空门,变异自检才逮出来)。
+
+**来源**：探索测试计划 docs/plans/bug-hunt-2026-07-14/p1-error-page-dead-end.md;PR #201(含 5 e2e+三向变异自检+正本 §10.2 记账)。
+
 ## 2026-07-14 — 基础编辑器悬停蓝框（.nce-hover/🗑/🔒）整体撤除（app+ui-demo，PR #180）
 
 **是什么**：Wendi 报非合规文档里出现巨型蓝色虚线框——那是基础编辑器的「悬停删除」浮层：整篇一张 `<table>` 的文档（Word 导出常态）悬停即框住整表、🗑 锚在框右上角视口外不可见，用户读作渲染 bug。Colin 拍板把悬停 chrome（虚线框/🗑/只读🔒）整体撤掉；删块保留 Esc 块模式 + contenteditable 原生选中删除。

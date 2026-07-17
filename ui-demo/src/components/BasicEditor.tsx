@@ -1,8 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bold, Italic, Underline, Strikethrough, Eraser, Info, Trash2 } from 'lucide-react'
+import { useT } from '../i18n'
 import type { Doc } from '../types'
 import { DocHeader } from './Canvas'
+import { useAppearance } from '../appearance'
+// 配方镜像（正本 = 真 app src/lib/doc-dark-recipe.js,U6 直接搬那份）。
+import { recipeCss, isAlreadyDark } from '../docDark'
 import './BasicEditor.css'
+
+// 深色下给 iframe 文档注/摘反色滤镜。滤镜挂 html(documentElement),媒体反反色,已暗文档跳过。
+// 防重注:按 id 判存在。ui-demo 无 CSP,用 <style>(与 revealAll 同法);真 app 有 CSP 走 adoptedStyleSheets。
+const DOC_DARK_ID = 'ws-doc-dark'
+function syncDocDark(d: Document, dark: boolean): void {
+  const existing = d.getElementById(DOC_DARK_ID)
+  if (!dark) { existing?.remove(); return }
+  const win = d.defaultView
+  const htmlBg = win ? win.getComputedStyle(d.documentElement).backgroundColor : ''
+  const bodyBg = win && d.body ? win.getComputedStyle(d.body).backgroundColor : ''
+  if (isAlreadyDark([htmlBg, bodyBg])) { existing?.remove(); return }
+  if (existing) return
+  const st = d.createElement('style'); st.id = DOC_DARK_ID
+  st.textContent = recipeCss('html')
+  d.head?.appendChild(st)
+}
 
 // 打开「不符合 Schema」的野生 HTML 时的基础编辑视图。见 docs/brainstorms/2026-07-01-nonconform-html-editing-requirements.md。
 // 文件在沙箱 iframe 里全保真渲染（<style> 隔离、<script> 不执行）；编辑器 chrome（格式条 / 焦点框）
@@ -62,6 +82,7 @@ function nearestInDir(cur: HTMLElement, dir: Dir, all: HTMLElement[]): HTMLEleme
 }
 
 export default function BasicEditor({ doc }: { doc: Doc }) {
+  const t = useT()
   const html = doc.rawHtml ?? ''
   const hostRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
@@ -74,13 +95,31 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
   const blocksRef = useRef<HTMLElement[]>([])
   const focusElRef = useRef<HTMLElement | null>(null)
   const modeRef = useRef<'text' | 'block'>('text')
+  const effective = useAppearance((s) => s.effective)
+  const effectiveRef = useRef(effective)
+  effectiveRef.current = effective
+
+  // 主题实时切换:不重挂 iframe,只对当前 live 文档注/摘滤镜。
+  useEffect(() => {
+    const f = frameRef.current
+    if (!f) return
+    const dark = effective === 'dark'
+    if (view === 'preview') {
+      f.style.filter = dark ? 'invert(1) hue-rotate(180deg)' : ''
+      return
+    }
+    f.style.filter = ''
+    const d = f.contentDocument
+    if (d && d.body) syncDocDark(d, dark)
+  }, [effective, view])
 
   useEffect(() => {
     const f = frameRef.current
     const host = hostRef.current
     if (!f || !host) return
 
-    // 预览态：iframe 用 allow-scripts（跑文档 JS、隔离），只读，不挂任何编辑 chrome。
+    // 预览态：iframe 用 allow-scripts（跑文档 JS、隔离，跨源无法注 constructable sheet），
+    // 只读，编辑 chrome 全不挂；深色反色由上面的实时 effect 对 iframe 元素整体施 filter。
     if (view === 'preview') { setBubble(null); setMenu(null); setFocus(null); return }
 
     const docOf = () => f.contentDocument
@@ -164,6 +203,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
     const wire = () => {
       const d = docOf(); if (!d || !d.body) return
       revealAll(d) // 先展开全部被 JS 藏起来的内容，再收集块
+      syncDocDark(d, effectiveRef.current === 'dark') // 深色下注反色滤镜(样式生效后采样,已暗跳过)
       d.body.contentEditable = 'true'; d.body.style.outline = 'none'; d.body.style.cursor = 'text'
       modeRef.current = 'text'; blocksRef.current = collectBlocks(d.body)
       d.addEventListener('selectionchange', refreshBubble)
@@ -204,8 +244,8 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       <div className="nce-head">
         <div className="nce-head-doc"><DocHeader doc={doc} /></div>
         <div className="nce-modes" onMouseDown={guard}>
-          <button className={view === 'edit' ? 'on' : ''} onClick={() => setView('edit')}>编辑</button>
-          <button className={view === 'preview' ? 'on' : ''} onClick={() => setView('preview')}>预览</button>
+          <button className={view === 'edit' ? 'on' : ''} onClick={() => setView('edit')}>{t('common.edit')}</button>
+          <button className={view === 'preview' ? 'on' : ''} onClick={() => setView('preview')}>{t('editor.preview')}</button>
         </div>
       </div>
 
@@ -223,14 +263,14 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       {/* 中立、精简的提示，放文档下方 */}
       <div className="nce-notice">
         <Info size={15} />
-        <span>该文件不符合 Wordspace Schema，仅支持基础编辑。</span>
+        <span>{t('editor.nonconformNotice')}</span>
       </div>
 
       {/* 焦点框 + 删除（Esc 块模式 / 键盘） */}
       {focus && (
         <div className="nce-focus" style={{ top: focus.top, left: focus.left, width: focus.width, height: focus.height }}>
-          <button className="nce-focus-del" title="删除此块 (Delete)" onMouseDown={guard} onClick={() => api()?.deleteFocused()}>
-            <Trash2 size={13} /> 删除此块
+          <button className="nce-focus-del" title={t('editor.deleteBlockTitle')} onMouseDown={guard} onClick={() => api()?.deleteFocused()}>
+            <Trash2 size={13} /> {t('editor.deleteBlock')}
           </button>
         </div>
       )}
@@ -238,14 +278,14 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
       {/* 富文字浮动格式条 */}
       {bubble && (
         <div className="ws-fmtbar nce-bubble" style={{ top: bubble.top, left: bubble.left }} onMouseDown={guard} role="toolbar">
-          <button className="ws-fmtbar-btn" title="加粗" onMouseDown={guard} onClick={() => exec('bold')}><Bold size={15} /></button>
-          <button className="ws-fmtbar-btn" title="斜体" onMouseDown={guard} onClick={() => exec('italic')}><Italic size={15} /></button>
-          <button className="ws-fmtbar-btn" title="下划线" onMouseDown={guard} onClick={() => exec('underline')}><Underline size={15} /></button>
-          <button className="ws-fmtbar-btn" title="删除线" onMouseDown={guard} onClick={() => exec('strikeThrough')}><Strikethrough size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.bold')} onMouseDown={guard} onClick={() => exec('bold')}><Bold size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.italic')} onMouseDown={guard} onClick={() => exec('italic')}><Italic size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.underline')} onMouseDown={guard} onClick={() => exec('underline')}><Underline size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.strikethrough')} onMouseDown={guard} onClick={() => exec('strikeThrough')}><Strikethrough size={15} /></button>
           <span className="ws-fmtbar-sep" />
 
           <div className="ws-fmtbar-holder">
-            <button className="ws-fmtbar-btn ws-fmtbar-aglyph" title="文字颜色" onMouseDown={guard} onClick={() => setMenu(menu === 'color' ? null : 'color')}>A</button>
+            <button className="ws-fmtbar-btn ws-fmtbar-aglyph" title={t('editor.textColor')} onMouseDown={guard} onClick={() => setMenu(menu === 'color' ? null : 'color')}>A</button>
             {menu === 'color' && (
               <div className="ws-fmtbar-swatches" onMouseDown={guard}>
                 {TEXT_COLORS.map((c) => (
@@ -256,7 +296,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
           </div>
 
           <div className="ws-fmtbar-holder">
-            <button className="ws-fmtbar-btn" title="背景高亮" onMouseDown={guard} onClick={() => setMenu(menu === 'hilite' ? null : 'hilite')}>🖍</button>
+            <button className="ws-fmtbar-btn" title={t('editor.highlight')} onMouseDown={guard} onClick={() => setMenu(menu === 'hilite' ? null : 'hilite')}>🖍</button>
             {menu === 'hilite' && (
               <div className="ws-fmtbar-swatches" onMouseDown={guard}>
                 {HILITE_COLORS.map((c) => (
@@ -267,7 +307,7 @@ export default function BasicEditor({ doc }: { doc: Doc }) {
           </div>
 
           <span className="ws-fmtbar-sep" />
-          <button className="ws-fmtbar-btn" title="清除格式" onMouseDown={guard} onClick={() => exec('removeFormat')}><Eraser size={15} /></button>
+          <button className="ws-fmtbar-btn" title={t('editor.clearFormat')} onMouseDown={guard} onClick={() => exec('removeFormat')}><Eraser size={15} /></button>
         </div>
       )}
     </div>

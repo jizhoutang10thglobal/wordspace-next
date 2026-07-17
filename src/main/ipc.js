@@ -1,4 +1,5 @@
-const { ipcMain, dialog, app, BrowserWindow, shell } = require('electron');
+const { ipcMain, dialog, app, BrowserWindow, shell, screen } = require('electron');
+const i18n = require('../lib/i18n');
 const fsp = require('fs/promises');
 const path = require('path');
 const { pathToFileURL, fileURLToPath } = require('url');
@@ -39,13 +40,14 @@ let nextRootId = 1;
 let rootsRestorePromise = null; // 首次 ws-get-roots 从 store 恢复（幂等）
 const MAX_ROOTS = 8; // 每根一个递归 watcher，封顶控资源（JetBrains 官方警告 attach 多了拖性能）
 const pendingAbsorb = new Map(); // token → { path, real } 等确认的「父目录吸收」
+const pendingHuge = new Map(); // token → { dir, real } 等确认的「病灶路径」（~、/、/Users、卷根，诊断 §6.3）
 const removedStash = new Map(); // token → { root, index } 可撤销的「移除根」
 let stashSeq = 1;
 
 function rootById(rootId) {
   const r = roots.find((x) => x.id === rootId);
-  if (!r) throw new Error('未知的工作区根: ' + rootId);
-  if (r.missing) throw new Error('工作区文件夹失联: ' + rootId);
+  if (!r) throw new Error(i18n.t('dialog.errUnknownRoot', { id: rootId }));
+  if (r.missing) throw new Error(i18n.t('dialog.errRootMissing', { id: rootId }));
   return r.path;
 }
 function rootInfo(r) {
@@ -69,6 +71,56 @@ async function canonReal(p) {
   } catch {
     return resolved;
   }
+}
+// 病灶根确认（诊断 §6.3，Colin 拍板）：添加 ~/、/、/Users、卷根等海量系统路径前弹确认劝导。
+// WS2_HUGE_PATHS 测试 seam（仅非打包态，path.delimiter 分隔，照 WS2_FOLDER_IN 惯例）：追加病灶路径，
+// 让 e2e 用 tmp 目录复现（真机拿不到 os.homedir 之类的确定性 fixture）。
+function hugeRootReason(real) {
+  const extra = !app.isPackaged && process.env.WS2_HUGE_PATHS
+    ? process.env.WS2_HUGE_PATHS.split(path.delimiter).filter(Boolean)
+    : [];
+  return rootsLib.dangerRootReason(real, { extra });
+}
+// 添加文件夹的 classify + 分流（same/revive/child/parent/limit/independent-register）。抽成独立函数：
+// 病灶确认后走 ws-add-folder-confirm 也复用同一套判定（跳过病灶检查、其余一字不差），不让确认路径漏判嵌套。
+async function resolveAdd(dir, real) {
+  const cls = rootsLib.classifyRoot(real, classifyRoots());
+  if (cls.rel === 'same') {
+    const r = roots.find((x) => x.id === cls.rootId);
+    // 选的是一个失联根的路径且现在可达了（外置盘插回来）→ 顺手复活，不报「已打开」
+    if (r.missing && (await dirExists(r.path))) {
+      clearReviveTimer(r.id); // P3-08：手动重加已抢先复活，收掉复活探测 timer
+      r.missing = false;
+      r.real = await canonReal(r.path);
+      startRootWatch(r);
+      // 两段式（见 'added' 分支说明）：不带 tree，renderer 渲染加载态后走 wsReadTree 填。
+      return { status: 'revived', root: rootInfo(r) };
+    }
+    return { status: 'same', root: rootInfo(r) };
+  }
+  if (cls.rel === 'child') {
+    const parent = roots.find((x) => x.id === cls.parentId);
+    return { status: 'child', name: path.basename(real), parent: rootInfo(parent) };
+  }
+  if (cls.rel === 'parent') {
+    // 新根包住已有根 → 不静默动用户的树，出确认；确认走 ws-absorb-confirm(token)。
+    // childIds 钉死在弹窗时刻：确认框列的是哪几个，吸收的就只能是哪几个（防挂起期间新加的根被连带吸收）。
+    const children = cls.childIds.map((id) => roots.find((x) => x.id === id));
+    const token = 'absorb-' + stashSeq++;
+    pendingAbsorb.set(token, { path: path.resolve(dir), real, childIds: cls.childIds });
+    if (pendingAbsorb.size > 8) pendingAbsorb.delete(pendingAbsorb.keys().next().value); // 取消不通知主进程，防囤积
+    return { status: 'parent', token, name: path.basename(real), children: children.map(rootInfo) };
+  }
+  if (roots.length >= MAX_ROOTS) return { status: 'limit', max: MAX_ROOTS };
+  const root = { id: 'r' + nextRootId++, path: path.resolve(dir), real, missing: false };
+  roots.push(root);
+  await persistRoots();
+  startRootWatch(root);
+  // 两段式返回：先回根（不带 tree），renderer 立刻渲染根 + 「正在读取…」加载行，再走 wsReadTree 填树。
+  // 大文件夹（桌面/云盘）全量扫描阻塞在这条 IPC 回复上时用户干等无反馈（Wendi 2026-07-14）；U2 的条目预算
+  // 再给读树本身封顶，过大根走「过大」态。watcher 已 startRootWatch 注册；加载期间 st.tree 仍 null，
+  // watcher 事件被 doTreeScan 的守卫自然 no-op。
+  return { status: 'added', root: rootInfo(root) };
 }
 // 起对某根的递归监听：外部增删改 → 通知 renderer 重读该根的树 + reconcile 标签（事件带 rootId +
 // 变化目录列表）。watcher 挂了（拔盘/根被删）→ 复查可达性：真没了标 missing + 广播（renderer 重拉根列表
@@ -101,6 +153,37 @@ function markRootMissing(root) {
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.webContents.isDestroyed()) w.webContents.send('ws-roots-changed');
   }
+  scheduleReviveProbe(root); // P3-08：挂低频复活探测，路径改回来/外置盘插回时自愈，免手点「重新定位」
+}
+
+// P3-08 失联根自动复活探测：missing 根的 watcher 已注销、没人再看那个路径——把目录改回原路径（或外置盘
+// 插回）不会自愈，必须手点「重新定位」再选一次同一个文件夹。挂 5s 一次的 dirExists 轮询（fs.stat 一次，
+// 便宜），通了 → 清 missing、重挂 watcher、广播根列表 + 该根全量树重扫（null=全量）。用轮询而非 fs.watch
+// 盯父目录——父目录可能也没了 / 是卷根。根移除/重定位/复活/app 退出时取消对应 timer。
+const REVIVE_MS = 5000;
+const reviveTimers = new Map(); // rootId → interval
+function clearReviveTimer(rootId) {
+  const t = reviveTimers.get(rootId);
+  if (t) { clearInterval(t); reviveTimers.delete(rootId); }
+}
+function scheduleReviveProbe(root) {
+  if (reviveTimers.has(root.id)) return; // 幂等：同一根不叠多个 timer
+  const t = setInterval(async () => {
+    const cur = roots.find((x) => x.id === root.id);
+    if (!cur || !cur.missing) { clearReviveTimer(root.id); return; } // 已移除/已复活 → 收 timer
+    if (!(await dirExists(cur.path))) return; // 还没回来，下个 5s 再看
+    clearReviveTimer(cur.id);
+    cur.missing = false;
+    cur.real = await canonReal(cur.path);
+    startRootWatch(cur);
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.webContents.isDestroyed()) continue;
+      w.webContents.send('ws-roots-changed');          // renderer 重拉根列表、根行回彩色
+      w.webContents.send('ws-tree-changed', cur.id, null); // null=全量，renderer 重读整棵树填回来
+    }
+  }, REVIVE_MS);
+  if (t.unref) t.unref(); // 别让这个纯运维轮询挡住 app 退出（= 退出时自然取消）
+  reviveTimers.set(root.id, t);
 }
 // ---- U2 文档互链索引：每根一份可丢弃缓存。懒建（首次 query/backlinks 才建，用户从不互链的根不花代价）；
 // 树变化时增量刷新；根移除时丢弃。所有索引变更按 rootId 串行化（防并发 refresh 竞态改同一 Map）。----
@@ -228,6 +311,7 @@ async function restoreRoots() {
         const root = { id: r.id, path: r.path, real: missing ? r.path : await canonReal(r.path), missing };
         roots.push(root);
         if (!missing) startRootWatch(root);
+        else scheduleReviveProbe(root); // P3-08：启动即失联的根（外置盘没插）也挂复活探测，插回时自愈
       }
     })();
   }
@@ -244,7 +328,7 @@ async function dirExists(p) {
 // 纵深防御：读写只接受 .html/.htm/.md 路径（可编辑文档；md 走读写两端适配，见 md-adapter）。
 // 这道守卫挡住「篡改 recents.json 注入 /etc/passwd 等任意路径越权读写」的向量，不影响正常流。
 function assertDocPath(p) {
-  if (typeof p !== 'string' || !/\.(html?|md)$/i.test(p)) throw new Error('只支持 .html/.htm/.md 文件：' + p);
+  if (typeof p !== 'string' || !/\.(html?|md)$/i.test(p)) throw new Error(i18n.t('dialog.errUnsupportedFile', { path: p }));
 }
 
 function registerIpc() {
@@ -253,13 +337,37 @@ function registerIpc() {
     //（html→编辑器 / 图片·PDF→应用内查看器 / 其余→默认程序打开）。所有文件在前作默认筛选，HTML 仍单列一项。
     const r = await dialog.showOpenDialog({
       filters: [
-        { name: '所有文件', extensions: ['*'] },
-        { name: 'HTML 文档', extensions: ['html', 'htm'] },
-        { name: 'Markdown 文档', extensions: ['md'] },
+        { name: i18n.t('dialog.filterAll'), extensions: ['*'] },
+        { name: i18n.t('dialog.filterHtml'), extensions: ['html', 'htm'] },
+        { name: i18n.t('dialog.filterMd'), extensions: ['md'] },
       ],
       properties: ['openFile']
     });
     return r.canceled ? null : r.filePaths[0];
+  });
+  // 图片插入（doc-images）：原生多选图片选择器 → 逐个 fsp.readFile → base64。只读文件返字节，
+  // 降采样/合法性判定在 renderer 父层做（createImageBitmap/canvas）。filter 只列 renderer 会接受的
+  // 位图格式（不列 svg——会被拒，不引诱用户选）。单张坏文件 .catch 跳过，不炸整批。
+  const IMG_EXT_MIME = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp', '.gif': 'image/gif', '.avif': 'image/avif',
+  };
+  ipcMain.handle('ws-pick-images', async () => {
+    const r = await dialog.showOpenDialog({
+      filters: [{ name: i18n.t('dialog.filterImage'), extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'] }],
+      properties: ['openFile', 'multiSelections'],
+    });
+    if (r.canceled || !r.filePaths || !r.filePaths.length) return [];
+    const out = [];
+    for (const abs of r.filePaths) {
+      const mime = IMG_EXT_MIME[path.extname(abs).toLowerCase()];
+      if (!mime) continue; // 不认的扩展名跳过（renderer 也会二次拒）
+      try {
+        const buf = await fsp.readFile(abs);
+        out.push({ name: path.basename(abs), mime, base64: buf.toString('base64') });
+      } catch { /* 单张读失败：跳过，别炸整批 */ }
+    }
+    return out;
   });
   // 给「打开」按钮选到的任意绝对路径分类：kind（按扩展名）+ 文件名 + 若在某个已打开的根内则算出
   // (rootId, rel)（否则 null=工作区外）。abs 用 realpath 归一化后跟各根的 realpath 比——macOS 上
@@ -333,8 +441,10 @@ function registerIpc() {
   ipcMain.handle('ws-links-candidates', async (_e, rootId) => {
     await ensureLinkIndex(rootId);
     const root = liveRoot(rootId);
-    const others = root ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
-    return { docs: linkIndex.query(rootId), others };
+    const degraded = linkIndex.isDegraded(rootId); // V3：超大根链接功能降级
+    // 降级根不再扫非文档文件（又一次全量扫，正是要避的冻死）；@菜单据 degraded 显示提示、不列候选
+    const others = root && !degraded ? await linkIndex.listNonDocFiles(root.path).catch(() => []) : [];
+    return { docs: linkIndex.query(rootId), others, degraded };
   });
   // B @菜单跨根候选：所有 live 根分组返回。sourceRootId = 触发 @ 的文档所在根 → 排在最前（组内行为与单根现状一致，单根用户零感知）。
   // sameVol = 与源根同磁盘卷（stat().dev 相等）；跨卷根不给建链（B 层可见拒绝，renderer 灰字提示、不列候选）。
@@ -348,12 +458,14 @@ function registerIpc() {
     const groups = [];
     for (const r of ordered) {
       const dev = await devOf(r.path);
+      const degraded = linkIndex.isDegraded(r.id); // V3：超大根链接功能降级
       groups.push({
         rootId: r.id,
         rootName: rootInfo(r).name,
         sameVol: srcDev != null && dev != null && dev === srcDev,
+        degraded,
         docs: linkIndex.query(r.id),
-        others: await linkIndex.listNonDocFiles(r.path).catch(() => []),
+        others: degraded ? [] : await linkIndex.listNonDocFiles(r.path).catch(() => []), // 降级根不再扫非文档（避免二次全量扫）
       });
     }
     return groups;
@@ -383,7 +495,7 @@ function registerIpc() {
     const text = buf.toString('utf8');
     // 非 UTF-8 文件按 UTF-8 解码会丢字节，保存会损坏内容，直接拒开
     if (!Buffer.from(text, 'utf8').equals(buf)) {
-      throw new Error('此文件不是 UTF-8 编码，为避免损坏内容，暂不支持编辑');
+      throw new Error(i18n.t('dialog.errNotUtf8'));
     }
     // markdown 后端：读盘处 md→html，下游（校验分流/编辑器/渲染）只见 HTML——格式只活在磁盘 IO 两端
     if (mdAdapter.isMdPath(p)) return mdAdapter.mdToHtml(text, { title: path.basename(p).replace(/\.md$/i, '') });
@@ -446,7 +558,7 @@ function registerIpc() {
     if (!outPath) {
       const def = path.basename(p).replace(/\.(html?|md)$/i, '') + '.pdf';
       const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
-        title: '导出 PDF',
+        title: i18n.t('dialog.exportPdfTitle'),
         defaultPath: path.join(path.dirname(p), def),
         filters: [{ name: 'PDF', extensions: ['pdf'] }],
       });
@@ -513,42 +625,22 @@ function registerIpc() {
       dir = r.filePaths[0];
     }
     const real = await canonReal(dir);
-    const cls = rootsLib.classifyRoot(real, classifyRoots());
-    if (cls.rel === 'same') {
-      const r = roots.find((x) => x.id === cls.rootId);
-      // 选的是一个失联根的路径且现在可达了（外置盘插回来）→ 顺手复活，不报「已打开」
-      if (r.missing && (await dirExists(r.path))) {
-        r.missing = false;
-        r.real = await canonReal(r.path);
-        startRootWatch(r);
-        // 两段式（见 'added' 分支说明）：不带 tree，renderer 渲染加载态后走 wsReadTree 填。
-        return { status: 'revived', root: rootInfo(r) };
-      }
-      return { status: 'same', root: rootInfo(r) };
+    // 病灶路径（~、/、/Users、卷根，诊断 §6.3）→ 先弹确认劝导选具体工作文件夹，确认走 ws-add-folder-confirm(token)。
+    const reason = hugeRootReason(real);
+    if (reason) {
+      const token = 'huge-' + stashSeq++;
+      pendingHuge.set(token, { dir: path.resolve(dir), real });
+      if (pendingHuge.size > 8) pendingHuge.delete(pendingHuge.keys().next().value); // 取消不通知主进程，防囤积
+      return { status: 'confirm-huge', token, path: path.resolve(dir), name: path.basename(real) || real, reason };
     }
-    if (cls.rel === 'child') {
-      const parent = roots.find((x) => x.id === cls.parentId);
-      return { status: 'child', name: path.basename(real), parent: rootInfo(parent) };
-    }
-    if (cls.rel === 'parent') {
-      // 新根包住已有根 → 不静默动用户的树，出确认；确认走 ws-absorb-confirm(token)。
-      // childIds 钉死在弹窗时刻：确认框列的是哪几个，吸收的就只能是哪几个（防挂起期间新加的根被连带吸收）。
-      const children = cls.childIds.map((id) => roots.find((x) => x.id === id));
-      const token = 'absorb-' + stashSeq++;
-      pendingAbsorb.set(token, { path: path.resolve(dir), real, childIds: cls.childIds });
-      if (pendingAbsorb.size > 8) pendingAbsorb.delete(pendingAbsorb.keys().next().value); // 取消不通知主进程，防囤积
-      return { status: 'parent', token, name: path.basename(real), children: children.map(rootInfo) };
-    }
-    if (roots.length >= MAX_ROOTS) return { status: 'limit', max: MAX_ROOTS };
-    const root = { id: 'r' + nextRootId++, path: path.resolve(dir), real, missing: false };
-    roots.push(root);
-    await persistRoots();
-    startRootWatch(root);
-    // 两段式返回：先回根（不带 tree），renderer 立刻渲染根 + 「正在读取…」加载行，再走 wsReadTree 填树。
-    // 大文件夹（桌面/云盘）全量扫描 4-5s 阻塞在这条 IPC 回复上时，用户干等无反馈（Wendi 2026-07-14）。
-    // watcher 已 startRootWatch 注册；加载期间（renderer 的 st.tree 仍为 null）watcher 事件被 doTreeScan
-    // 的 `!st.tree` 守卫自然 no-op，不与第二段的 wsReadTree 打架。
-    return { status: 'added', root: rootInfo(root) };
+    return resolveAdd(dir, real);
+  });
+  // 病灶路径确认「仍要打开」→ 走 resolveAdd（跳过病灶检查，classify 分流一字不差；期间注册表变了照样按新态判）。
+  ipcMain.handle('ws-add-folder-confirm', async (_e, token) => {
+    const pend = pendingHuge.get(token);
+    pendingHuge.delete(token);
+    if (!pend) return { status: 'stale' };
+    return resolveAdd(pend.dir, pend.real);
   });
   // 「并入并添加」确认：吸收子根（子根注销、标签 rebase 进新父根——文件都还在磁盘原处，只换归属）。
   ipcMain.handle('ws-absorb-confirm', async (_e, token) => {
@@ -572,6 +664,7 @@ function registerIpc() {
       if (!own || !own.rel) return { status: 'stale' };
       rebases.push({ fromRootId: id, toRootId: newRoot.id, prefix: own.rel });
       workspaceWatcher.unwatch(id);
+      clearReviveTimer(id); // P3-08：被吸收的子根不再独立，收掉它可能挂着的复活探测
       dropLinkIndex(id); // U2（审查 #1）：被吸收的子根不再是根，丢它的链接索引（对齐 ws-remove-root）
     }
     roots = roots.filter((x) => !cls.childIds.includes(x.id));
@@ -591,6 +684,7 @@ function registerIpc() {
     if (idx < 0) return null;
     const [root] = roots.splice(idx, 1);
     workspaceWatcher.unwatch(rootId);
+    clearReviveTimer(rootId); // P3-08：根被移除，收掉可能挂着的复活探测
     dropLinkIndex(rootId); // U2：丢弃该根链接索引
     await persistRoots();
     const token = 'rmroot-' + stashSeq++;
@@ -611,6 +705,7 @@ function registerIpc() {
     roots.splice(index, 0, root); // 放回原来的位置（照 ui-demo）
     await persistRoots();
     if (!root.missing) startRootWatch(root);
+    else scheduleReviveProbe(root); // P3-08：撤销复活后仍失联（路径此刻不可达）→ 挂探测，回来时自愈
     return {
       status: 'ok',
       root: rootInfo(root),
@@ -626,7 +721,7 @@ function registerIpc() {
     const seam = !app.isPackaged ? process.env.WS2_RELOCATE_IN : null;
     let dir = seam;
     if (!dir) {
-      const picked = await dialog.showOpenDialog({ properties: ['openDirectory'], title: '重新定位文件夹' });
+      const picked = await dialog.showOpenDialog({ properties: ['openDirectory'], title: i18n.t('dialog.relocateFolderTitle') });
       if (picked.canceled || !picked.filePaths[0]) return null;
       dir = picked.filePaths[0];
     }
@@ -634,6 +729,7 @@ function registerIpc() {
     const others = classifyRoots().filter((x) => x.id !== rootId);
     const cls = rootsLib.classifyRoot(real, others);
     if (cls.rel !== 'independent') return { status: 'overlap' };
+    clearReviveTimer(rootId); // P3-08：手动重定位已复活，收掉复活探测（且新路径可能与旧不同）
     r.path = path.resolve(dir);
     r.real = real;
     r.missing = false;
@@ -681,6 +777,17 @@ function registerIpc() {
       return null; // 越权路径/瞬时 IO 错 → 回落全量，别把树搞半残
     }
   });
+  // 单层读取（P0b lazy 模式：展开哪层读哪层）。过大根（超 treeBudget 走 lazy）靠它秒级浏览：成本 O(本层)，
+  // 与整棵树规模无关。dirRel '' = 根本身。渲染层路径不可信 → readDir 内部 assertInsideWorkspace 兜。
+  ipcMain.handle('ws-read-dir', async (_e, rootId, dirRel) => {
+    const r = roots.find((x) => x.id === rootId);
+    if (!r || r.missing) return null;
+    try {
+      return await workspace.readDir(r.path, typeof dirRel === 'string' ? dirRel : '');
+    } catch {
+      return null; // 越权路径/瞬时 IO 错 → null，renderer 该层显示空/loading，别崩
+    }
+  });
   // 聚焦兜底的便宜版：冲掉该根 watcher 的在途去抖（有变化立即走正常事件管线），返回 watcher 是否活着——
   // 不活（平台不支持递归 watch/挂了）的根，renderer 才需要聚焦全量刷新。
   ipcMain.handle('ws-watch-flush', (_e, rootId) => ({ alive: workspaceWatcher.flush(rootId) }));
@@ -695,7 +802,7 @@ function registerIpc() {
     // ext='md' 时写盘前 html→md。两个消费方：①另存为保持原格式（KD-6，md 文档存回 .md）；
     // ②「导出为 Markdown」（Colin+Wendi 2026-07-03）——合规 html 文档跨格式产 .md 副本，带 reveal。
     const isMd = ext === 'md';
-    const leaf = (String(base || '').replace(/[\\/:*?"<>|]/g, ' ').trim() || '未命名') + (isMd ? '.md' : '.html');
+    const leaf = (String(base || '').replace(/[\\/:*?"<>|]/g, ' ').trim() || i18n.t('common.untitled')) + (isMd ? '.md' : '.html');
     let out = !app.isPackaged ? process.env.WS2_SAVE_AS_OUT : null;
     const seamUsed = !!out;
     if (!out) {
@@ -703,11 +810,11 @@ function registerIpc() {
       let defDir = firstLive ? firstLive.path : null;
       if (!defDir) { try { defDir = app.getPath('documents'); } catch { defDir = app.getPath('home'); } }
       const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
-        title: '保存文档',
+        title: i18n.t('dialog.saveDocTitle'),
         defaultPath: path.join(defDir, leaf),
         filters: isMd
-          ? [{ name: 'Markdown 文档', extensions: ['md'] }]
-          : [{ name: 'HTML 文档', extensions: ['html', 'htm'] }],
+          ? [{ name: i18n.t('dialog.filterMd'), extensions: ['md'] }]
+          : [{ name: i18n.t('dialog.filterHtml'), extensions: ['html', 'htm'] }],
       });
       if (r.canceled || !r.filePath) return { canceled: true };
       out = r.filePath;
@@ -791,6 +898,17 @@ function registerIpc() {
       : [];
     return workspaceStore.setTabs(workspaceFile(), { entries, activeRel: state && state.activeRel });
   });
+  // P3-07 树展开态持久化（缓存语义，rel 失效即弃）：写盘前把已不在注册表的 rootId 滤掉（同 ws-set-tabs 的
+  // 移除根竞态防御）。失联根的条目保留——重新定位后展开态原样回来。
+  ipcMain.handle('ws-get-tree-state', () => workspaceStore.getTreeState(workspaceFile()));
+  ipcMain.handle('ws-set-tree-state', (_e, ts) => {
+    const known = new Set(roots.map((r) => r.id));
+    const expandedByRoot = {};
+    const src = ts && ts.expandedByRoot;
+    if (src && typeof src === 'object') for (const id of Object.keys(src)) if (known.has(id)) expandedByRoot[id] = src[id];
+    const collapsedRoots = Array.isArray(ts && ts.collapsedRoots) ? ts.collapsedRoots.filter((id) => known.has(id)) : [];
+    return workspaceStore.setTreeState(workspaceFile(), { expandedByRoot, collapsedRoots });
+  });
   // 某绝对路径是否还存在（给 loadTabs 重启恢复时校验外部标签的文件还在不在；不在则静默丢）。
   ipcMain.handle('path-exists', (_e, abs) => fsp.stat(abs).then(() => true, () => false));
   // 新建文档模板（含空文档，第一项）。
@@ -808,6 +926,37 @@ function registerIpc() {
   ipcMain.handle('ws-file-url', (_e, rootId, relPath) => {
     const abs = assertInsideWorkspace(rootById(rootId), relPath);
     return pathToFileURL(abs).href;
+  });
+
+  // ---- 沉浸窗框（immersive-collapse，spec=docs/features/immersive-collapse.md）----
+  // 红绿灯随侧栏收起隐藏/展开恢复（darwin 专属；hiddenInset 下灯浮在内容上，收起要跟着藏）。
+  ipcMain.on('ws-window-buttons', (e, visible) => {
+    if (process.platform !== 'darwin') return;
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (w && !w.isDestroyed()) { try { w.setWindowButtonVisibility(!!visible); } catch { /* 非 hiddenInset 窗框会抛 */ } }
+  });
+  // 左缘指针 watcher：侧栏收起 + 网页 view 在前台时，DOM 收不到鼠标（原生 view 压在最上），
+  // hover peek 的进/出只能靠主进程轮询屏幕指针。只在 renderer 显式开启时跑（收起+web 态），90ms 一拍。
+  let edgeTimer = null;
+  ipcMain.on('ws-edge-watch', (e, on, sbWidth) => {
+    clearInterval(edgeTimer); edgeTimer = null;
+    if (!on) return;
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (!w) return;
+    const width = Math.max(120, Number(sbWidth) || 274);
+    let inPeek = false;
+    edgeTimer = setInterval(() => {
+      try {
+        if (w.isDestroyed()) { clearInterval(edgeTimer); edgeTimer = null; return; }
+        if (!w.isFocused()) return;
+        const p = screen.getCursorScreenPoint();
+        const b = w.getContentBounds();
+        const inWin = p.y >= b.y && p.y <= b.y + b.height;
+        const relX = p.x - b.x;
+        if (!inPeek && inWin && relX >= 0 && relX <= 3) { inPeek = true; e.sender.send('ws-edge', true); }
+        else if (inPeek && (!inWin || relX > width + 16)) { inPeek = false; e.sender.send('ws-edge', false); }
+      } catch { /* 平台指针查询偶发抛(xvfb/无显示器) —— watcher 静默跳拍,别把主进程带崩 */ }
+    }, 90);
   });
 
   // 浏览器 feature 的 IPC 面（webtab:*/bm:*/hist:*/browser-settings）。

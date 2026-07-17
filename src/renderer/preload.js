@@ -1,7 +1,26 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// i18n:页面脚本跑之前就把 window.wsT 建好(同步)。主进程把「当前生效语言解析好的扁平字典」经 sendSync
+// 送来(preload 是 sandboxed，不能 require 项目字典)，这里只做查表 + {param} 替换。缺 key → 显示 key 名。
+// 语言切换走整窗 reload，故本页生命周期内字典固定；下次 reload 重新 sendSync 取新语言的字典。
+(function () {
+  let boot = { lang: 'zh', dict: {} };
+  try { boot = ipcRenderer.sendSync('get-i18n-boot-sync') || boot; } catch (e) { /* 主进程未就绪等极端情况：wsT 回退显示 key 名 */ }
+  const dict = boot.dict || {};
+  function wsT(key, params) {
+    let s = dict[key] != null ? dict[key] : key;
+    if (params) {
+      for (const k in params) s = s.split('{' + k + '}').join(String(params[k]));
+    }
+    return s;
+  }
+  contextBridge.exposeInMainWorld('wsT', wsT);
+  contextBridge.exposeInMainWorld('wsLang', boot.lang || 'zh');
+})();
+
 contextBridge.exposeInMainWorld('ws2', {
   pickFile: () => ipcRenderer.invoke('pick-file'),
+  pickImages: () => ipcRenderer.invoke('ws-pick-images'), // 图片插入：原生多选 → [{name, mime, base64}]
   classifyFile: (abs) => ipcRenderer.invoke('classify-file', abs),
   fileUrlAbs: (abs) => ipcRenderer.invoke('file-url-abs', abs),
   openExternalAbs: (abs) => ipcRenderer.invoke('open-external-abs', abs),
@@ -44,9 +63,23 @@ contextBridge.exposeInMainWorld('ws2', {
   onWsRootsChanged: (cb) => ipcRenderer.on('ws-roots-changed', () => cb()), // 运行时根状态变化（如拔盘转失联）→ 重拉根列表
   onOpenFile: (cb) => ipcRenderer.on('open-file', (_e, p) => cb(p)),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, cmd) => cb(cmd)),
+  // 外观三态：偏好归 main 管（唯一真相源，驱动 nativeTheme）；renderer 只查/设/听。
+  // chrome 走 data-theme（main 广播 effective），因 themeSource 不 live 更新 renderer prefers-color-scheme。
+  getAppearance: () => ipcRenderer.invoke('get-appearance'),
+  getEffectiveTheme: () => ipcRenderer.invoke('get-effective-theme'),
+  setAppearance: (pref) => ipcRenderer.send('set-appearance', pref),
+  onAppearanceChanged: (cb) => ipcRenderer.on('appearance-changed', (_e, payload) => cb(payload)),
+
+  // 语言三态：偏好归 main 管（唯一真相源，驱动菜单/对话框/renderer 显示语言）；renderer 查/设/听。
+  // 字典本体经 i18nBoot() 一次性注入（U4），renderer 用全局 window.wsT 翻译、不逐次跨桥。
+  getLanguage: () => ipcRenderer.invoke('get-language'),
+  getEffectiveLang: () => ipcRenderer.invoke('get-effective-lang'),
+  setLanguage: (pref) => ipcRenderer.send('set-language', pref),
+  onLanguageChanged: (cb) => ipcRenderer.on('language-changed', (_e, payload) => cb(payload)),
 
   // 本地文件夹工作区 (F06 → 多根)：文件操作一律 (rootId, relPath)，renderer 只用 rootId 引用根、不发路径。
   wsAddFolder: () => ipcRenderer.invoke('ws-add-folder'),
+  wsAddFolderConfirm: (token) => ipcRenderer.invoke('ws-add-folder-confirm', token), // 病灶路径「仍要打开」确认（P0a U4）
   wsAbsorbConfirm: (token) => ipcRenderer.invoke('ws-absorb-confirm', token),
   wsRemoveRoot: (rootId) => ipcRenderer.invoke('ws-remove-root', rootId),
   wsUndoRemoveRoot: (token) => ipcRenderer.invoke('ws-undo-remove-root', token),
@@ -54,7 +87,10 @@ contextBridge.exposeInMainWorld('ws2', {
   wsReorderRoots: (ids) => ipcRenderer.invoke('ws-reorder-roots', ids),
   wsGetRoots: () => ipcRenderer.invoke('ws-get-roots'),
   wsReadTree: (rootId) => ipcRenderer.invoke('ws-read-tree', rootId),
+  wsGetTreeState: () => ipcRenderer.invoke('ws-get-tree-state'), // P3-07 树展开态持久化（缓存语义）
+  wsSetTreeState: (ts) => ipcRenderer.invoke('ws-set-tree-state', ts),
   wsReadSubtrees: (rootId, dirs) => ipcRenderer.invoke('ws-read-subtrees', rootId, dirs), // 子树级重扫;null=回落全量
+  wsReadDir: (rootId, dirRel) => ipcRenderer.invoke('ws-read-dir', rootId, dirRel), // P0b lazy 模式：单层读取（展开哪层读哪层）
   wsWatchFlush: (rootId) => ipcRenderer.invoke('ws-watch-flush', rootId), // 聚焦兜底:冲在途去抖,返回 {alive}
   wsNewDoc: (rootId, dirRel, base, html, ext) => ipcRenderer.invoke('ws-new-doc', rootId, dirRel, base, html, ext),
   wsSaveDocAs: (base, html, ext, opts) => ipcRenderer.invoke('ws-save-doc-as', base, html, ext, opts), // ext 'md'=写盘前转 md；opts.reveal=导出语义 Finder 高亮
@@ -80,6 +116,7 @@ contextBridge.exposeInMainWorld('ws2', {
   webNav: (key, action) => ipcRenderer.send('webtab-nav', key, action),
   webShow: (key, bounds) => ipcRenderer.send('webtab-show', key, bounds),
   webHideAll: () => ipcRenderer.send('webtab-hide-all'),
+  webCapture: (key) => ipcRenderer.invoke('webtab-capture', key), // 弹层摘 view 前的垫底快照
   webSetBounds: (key, bounds) => ipcRenderer.send('webtab-bounds', key, bounds),
   webClose: (key) => ipcRenderer.send('webtab-close', key),
   webFind: (key, text, opts) => ipcRenderer.send('webtab-find', key, text, opts),
@@ -91,6 +128,12 @@ contextBridge.exposeInMainWorld('ws2', {
   onWebFound: (cb) => ipcRenderer.on('web-found', (_e, r) => cb(r)),
   onWebToast: (cb) => ipcRenderer.on('web-toast', (_e, msg) => cb(msg)),
   onWebShortcut: (cb) => ipcRenderer.on('web-shortcut', (_e, r) => cb(r)),
+
+  // ---- 沉浸窗框（immersive-collapse spec）----
+  platform: process.platform, // renderer 判 is-mac（hiddenInset 红绿灯让位只在 darwin 生效）
+  setWindowButtons: (v) => ipcRenderer.send('ws-window-buttons', !!v),
+  edgeWatch: (on, sbWidth) => ipcRenderer.send('ws-edge-watch', !!on, sbWidth),
+  onEdge: (cb) => ipcRenderer.on('ws-edge', (_e, entering) => cb(!!entering)),
   // 收藏（主进程持久化 + 变更推全量,renderer 内存镜像做逐键补全）
   bmState: () => ipcRenderer.invoke('bm-state'),
   bmAdd: (b) => ipcRenderer.invoke('bm-add', b),

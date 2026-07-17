@@ -3,6 +3,7 @@
 //  - 收藏/历史变更后推全量（数据小：收藏 + ≤500 历史），renderer 内存镜像供逐键补全（不跨 IPC）。
 //  - 导入导出走主进程系统对话框 + fs（renderer 不传路径）。
 const { ipcMain, dialog, app, BrowserWindow } = require('electron');
+const i18n = require('../lib/i18n');
 const fsp = require('fs/promises');
 const path = require('path');
 const webTabs = require('./web-tabs');
@@ -15,12 +16,13 @@ function broadcast(channel, payload) {
     if (!w.webContents.isDestroyed()) w.webContents.send(channel, payload);
   }
 }
-function pushBookmarks() { broadcast('bookmarks-changed', browserStore.getBookmarks()); }
 function pushHistory(entries) { broadcast('history-changed', entries || browserStore.getHistory()); }
 
 function registerBrowserIpc() {
   browserStore.init(app.getPath('userData'));
   webTabs.setHistoryHook((entries) => pushHistory(entries));
+  // 收藏变更 → 全量推 renderer,走 store 的 leading-edge 防抖合并（P3-11：单次变更立即推,窗口内多次合并）。
+  browserStore.subscribe('bookmarks', (data) => broadcast('bookmarks-changed', data));
 
   // ---- 网页标签 view 生命周期 / 导航（renderer 激活漏斗驱动）----
   ipcMain.handle('webtab-navigate', (_e, key, input) => webTabs.navigate(String(key), String(input == null ? '' : input)));
@@ -28,6 +30,8 @@ function registerBrowserIpc() {
   ipcMain.on('webtab-nav', (_e, key, action) => webTabs.nav(String(key), String(action)));
   ipcMain.on('webtab-show', (_e, key, bounds) => { webTabs.show(String(key), sanitizeBounds(bounds)); webTabs.wireFoundInPage(String(key)); });
   ipcMain.on('webtab-hide-all', () => webTabs.hideAll());
+  ipcMain.handle('webtab-capture', (_e, key) => webTabs.capture(String(key))); // 弹层摘 view 前的垫底快照
+
   ipcMain.on('webtab-bounds', (_e, key, bounds) => webTabs.setBounds(String(key), sanitizeBounds(bounds)));
   ipcMain.on('webtab-close', (_e, key) => webTabs.destroy(String(key)));
   ipcMain.on('webtab-find', (_e, key, text, opts) => webTabs.find(String(key), String(text == null ? '' : text), opts && typeof opts === 'object' ? { forward: opts.forward !== false, findNext: !!opts.findNext } : {}));
@@ -48,14 +52,12 @@ function registerBrowserIpc() {
       favicon: typeof src.favicon === 'string' ? src.favicon : undefined,
       ts: Date.now(),
     });
-    browserStore.setBookmarks(r.state);
-    pushBookmarks();
+    browserStore.setBookmarks(r.state); // 推送由 store.subscribe('bookmarks') 防抖合并驱动
     return r.id;
   });
   const mutate = (fn) => {
     const next = fn(browserStore.getBookmarks());
     browserStore.setBookmarks(next);
-    pushBookmarks();
     return true;
   };
   ipcMain.handle('bm-remove-by-url', (_e, url) => mutate((s) => bookmarksLib.removeByUrl(s, String(url))));
@@ -64,7 +66,6 @@ function registerBrowserIpc() {
   ipcMain.handle('bm-add-folder', (_e, name) => {
     const r = bookmarksLib.addFolder(browserStore.getBookmarks(), typeof name === 'string' ? name : '', Date.now());
     browserStore.setBookmarks(r.state);
-    pushBookmarks();
     return r.id;
   });
   ipcMain.handle('bm-rename-folder', (_e, id, name) => mutate((s) => bookmarksLib.renameFolder(s, String(id), typeof name === 'string' ? name : '')));
@@ -77,9 +78,9 @@ function registerBrowserIpc() {
       let defDir;
       try { defDir = app.getPath('downloads'); } catch { defDir = app.getPath('home'); }
       const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
-        title: '导出书签',
+        title: i18n.t('dialog.exportBookmarksTitle'),
         defaultPath: path.join(defDir, 'bookmarks.html'),
-        filters: [{ name: 'HTML 书签', extensions: ['html'] }],
+        filters: [{ name: i18n.t('dialog.filterHtmlBookmark'), extensions: ['html'] }],
       });
       if (r.canceled || !r.filePath) return { canceled: true };
       out = r.filePath;
@@ -92,8 +93,8 @@ function registerBrowserIpc() {
     let file = !app.isPackaged ? process.env.WS2_BM_IN : null;
     if (!file) {
       const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
-        title: '导入书签',
-        filters: [{ name: 'HTML 书签', extensions: ['html', 'htm'] }],
+        title: i18n.t('dialog.importBookmarksTitle'),
+        filters: [{ name: i18n.t('dialog.filterHtmlBookmark'), extensions: ['html', 'htm'] }],
         properties: ['openFile'],
       });
       if (r.canceled || !r.filePaths[0]) return { canceled: true };
@@ -101,11 +102,10 @@ function registerBrowserIpc() {
     }
     let html;
     try { html = await fsp.readFile(file, 'utf8'); } catch (err) { return { error: String((err && err.message) || err) }; }
-    const r = bookmarksLib.importNetscape(browserStore.getBookmarks(), html, Date.now());
-    if (r.added) {
-      browserStore.setBookmarks(r.state);
-      pushBookmarks();
-    }
+    const before = browserStore.getBookmarks();
+    const r = bookmarksLib.importNetscape(before, html, Date.now());
+    // 有净新增书签,或有新增文件夹（P3-10 温和修正后可能加空文件夹）→ 落盘 + 推（subscribe 驱动）
+    if (r.added || r.state.folders.length !== before.folders.length) browserStore.setBookmarks(r.state);
     return { parsed: r.parsed, added: r.added };
   });
 

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ChevronUp, ChevronDown, X } from 'lucide-react'
+import { useT } from '../../i18n'
 import './DocFind.css'
 
 // 文档内查找（Cmd+F）。调研裁决：Cmd+F 是所有软件的铁律=在当前文档里找字，
@@ -43,6 +44,7 @@ function collectMatches(container: HTMLElement, query: string): Range[] {
 }
 
 export default function DocFind({ container, onClose }: { container: HTMLElement | null; onClose: () => void }) {
+  const t = useT()
   const [query, setQuery] = useState('')
   const [cur, setCur] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -109,24 +111,24 @@ export default function DocFind({ container, onClose }: { container: HTMLElement
       <input
         ref={inputRef}
         className="ws-docfind-input"
-        placeholder="在文档中查找"
+        placeholder={t('editor.findInDoc')}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         spellCheck={false}
-        aria-label="在文档中查找"
+        aria-label={t('editor.findInDoc')}
       />
       <span className="ws-docfind-count" aria-live="polite">
-        {query ? (count ? `${active + 1} / ${count}` : '无结果') : ''}
+        {query ? (count ? `${active + 1} / ${count}` : t('editor.noResults')) : ''}
       </span>
       <div className="ws-docfind-nav">
-        <button className="ws-docfind-btn" title="上一个 (Shift+Enter)" onClick={() => go(-1)} disabled={!count} aria-label="上一个匹配">
+        <button className="ws-docfind-btn" title={t('editor.prevMatchTitle')} onClick={() => go(-1)} disabled={!count} aria-label={t('editor.prevMatch')}>
           <ChevronUp size={15} />
         </button>
-        <button className="ws-docfind-btn" title="下一个 (Enter)" onClick={() => go(1)} disabled={!count} aria-label="下一个匹配">
+        <button className="ws-docfind-btn" title={t('editor.nextMatchTitle')} onClick={() => go(1)} disabled={!count} aria-label={t('editor.nextMatch')}>
           <ChevronDown size={15} />
         </button>
       </div>
-      <button className="ws-docfind-btn ws-docfind-close" title="关闭 (Esc)" onClick={onClose} aria-label="关闭查找">
+      <button className="ws-docfind-btn ws-docfind-close" title={t('editor.closeFindTitle')} onClick={onClose} aria-label={t('editor.closeFind')}>
         <X size={15} />
       </button>
     </div>

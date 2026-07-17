@@ -32,6 +32,23 @@
 
 **面板通用**：复用 `.sb-modal-overlay`/`.sb-modal` 壳（web 标签态自动摘 view、与其他弹层单例互斥）；
 Esc / 点遮罩 / × 关闭；主按钮自动聚焦。
+**渲染契约（防闪烁，2026-07-16 Wendi 反馈）**：结构签名（state+按钮+行类型+有无进度）不变的推送
+（下载进度每 ~200ms 一次）只原地改文本/进度宽度——**不许拆卡重建、不许抢焦点**；只有状态跃迁才重建 + 聚焦一次。
+e2e 以 DOM 节点身份标记断言（重建过的新节点标记必丢）。
+
+**重启安装的退出链（2026-07-16 修复）**：Electron `autoUpdater.quitAndInstall()` **不发 `before-quit`**——
+它先发专用的 `before-quit-for-update`、再逐窗 close、全部关完才 `app.quit()`。main 必须同时监听两个事件
+打「真退出」标志，否则 mac「关窗=隐藏驻留」守卫会把 quitAndInstall 的关窗 preventDefault 吞掉：
+窗口只是藏起来、app 不退、安装永远等不到 window-all-closed →「点了重启没反应」（2026-07-15 updater.log
+四连击实锤；此前所谓能重启全靠用户手动 Cmd+Q 触发退出时安装）。若有未保存修改，脏守卫照常拦（弹确认，
+取消则本次不装、退出时自动安装兜底）。
+
+**更新免密（一次性归属修复，2026-07-16）**：bundle 一旦被提权安装写成 root 所有（Squirrel ShipIt 的
+授权兜底会造成这个，且此后自我延续），每次更新都会弹系统密码/指纹。修复：`update-install` 时检测
+bundle 根 + `Contents` 的 W_OK，不可写 → 弹一次性说明（「修复并继续安装」/「跳过」）→ 授权后
+`chown -R <uid>`（osascript with administrator privileges，命令构造在 `src/lib/mac-bundle-repair.js`，
+uid 数字校验 + shell/AppleScript 双层转义，有单测）→ 此后 ShipIt 恢复无提权替换、更新免密。
+跳过/失败不拦安装（落回 ShipIt 提权弹窗，不比现状差）；全程记 updater.log。
 
 **日志**：electron-updater 全部事件 + 状态迁移落 `userData/logs/updater.log`
 （`src/lib/file-log.js`，512KB 轮转、保两代）。用户报「更新没更上」先要这个文件。
@@ -45,6 +62,7 @@ electron-updater 差分三条件：新老两版 release 都有 blockmap + 本地
 | 维度 | ui-demo | 真 app |
 |---|---|---|
 | 状态机/展示模型（纯逻辑） | —— | `src/lib/update-status.js` |
+| 免密修复命令构造（纯逻辑） | —— | `src/lib/mac-bundle-repair.js` |
 | 文件日志 | —— | `src/lib/file-log.js` |
 | updater 接线 + IPC + sim seam | —— | `src/main/main.js`（setupAutoUpdater 段） |
 | 面板 + pill 渲染 | —— | `src/renderer/update-ui.js` / `.css` |
@@ -63,6 +81,11 @@ electron-updater 差分三条件：新老两版 release 都有 blockmap + 本地
 ## 欠账
 
 - 打包态真更新链路未实测（弹面板/进度/重启安装要等下一次真发版验证；sim e2e 只兜非打包链路）。
+- 2026-07-16 三修复（重启退出链/免密修复/防闪烁）的真机端到端要**两个发版周期**才闭环：装上带修复的
+  版本后、更新到再下一版时才走新代码（重启一键直达、免密修复弹一次）。Colin/Wendi 机器可先手动
+  `sudo chown -R "$(id -un)" "/Applications/Wordspace Next.app"` 提前解决密码问题。
+- before-quit-for-update 的行为门只在 darwin 有牙（Linux CI 无隐藏驻留守卫，close 本就直达退出）；
+  CI 兜监听器存在性，行为验证靠 darwin 宿主跑 e2e。
 - mac 差分实效未实测（要连发两版带 blockmap 的 release 才能观察真实节省比例）。
 - 每标签缩放同款限制：Electron zoom 按 host 传播——与本 feature 无关，见 browser.md。
 - 更新失败的 updater.log 尚无「一键导出/上报」入口，用户要手动去 userData 找。

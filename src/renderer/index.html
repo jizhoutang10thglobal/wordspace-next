@@ -13,37 +13,37 @@
 
 <!-- 左侧本地文件栏（F06，对齐 ui-demo ArcSidebar 的「连接文件夹」一支）。body 是 flex 行：侧栏定宽，#main flex:1。 -->
 <aside id="sidebar" class="sb">
-  <div class="sb-resize" id="sb-resize" title="拖拽调整侧栏宽度"></div>
+  <div class="sb-resize" id="sb-resize" title="拖拽调整侧栏宽度" data-i18n-title="sidebar.resizeHint"></div>
   <!-- 顶栏导航条（浏览器 spec §4.1）：收起侧栏 / 后退 / 前进 / 刷新 / 历史 / 查找文件。
        后退/前进/刷新按「当前标签能否导航」实时 disabled（文档标签暂无导航历史 → 恒灰；网页标签由 browser.js 驱动）。 -->
   <div class="sb-head">
-    <button id="sb-toggle" class="sb-icobtn" title="收起/展开侧栏 (Cmd+\)">
+    <button id="sb-toggle" class="sb-icobtn" title="收起侧栏 ⌘\" data-i18n-title="sidebar.toggleSidebarTitle">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
     </button>
-    <button id="nav-back" class="sb-icobtn" title="后退" disabled>
+    <button id="nav-back" class="sb-icobtn" title="后退" data-i18n-title="sidebar.navBack" disabled>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
     </button>
-    <button id="nav-fwd" class="sb-icobtn" title="前进" disabled>
+    <button id="nav-fwd" class="sb-icobtn" title="前进" data-i18n-title="sidebar.navForward" disabled>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
     </button>
-    <button id="nav-reload" class="sb-icobtn" title="刷新" disabled>
+    <button id="nav-reload" class="sb-icobtn" title="刷新 ⌘R" data-i18n-title="sidebar.reloadTitle" disabled>
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
     </button>
     <span class="sb-head-sp"></span>
-    <button id="nav-history" class="sb-icobtn" title="历史记录">
+    <button id="nav-history" class="sb-icobtn" title="历史记录" data-i18n-title="browser.history">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
     </button>
     <!-- 查找文件的可见入口（T7，Colin 拍板）：调 Cmd+P 命令面板 -->
-    <button id="sb-find" class="sb-icobtn" title="查找文件 (Cmd+P)">
+    <button id="sb-find" class="sb-icobtn" title="查找文件 ⌘P" data-i18n-title="sidebar.findFileTitle">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
     </button>
   </div>
   <!-- 地址栏 omnibox（spec §4.2）：值=激活标签 url；左状态图标随标签类型；网页标签右端 ☆；下方补全下拉。 -->
   <div class="sb-omni" id="sb-omni">
     <span class="sb-omni-ico" id="omni-ico"></span>
-    <input id="omni-input" type="text" placeholder="搜索,或输入网址" spellcheck="false" autocomplete="off">
-    <span class="sb-omni-tag" id="omni-local" hidden>本地</span>
-    <button class="sb-omni-star" id="omni-star" title="收藏 (Cmd+D)" hidden>
+    <input id="omni-input" type="text" placeholder="搜索,或输入网址" data-i18n-ph="sidebar.omniPlaceholder" spellcheck="false" autocomplete="off">
+    <span class="sb-omni-tag" id="omni-local" data-i18n="common.localTag" hidden>本地</span>
+    <button class="sb-omni-star" id="omni-star" title="收藏 ⌘D" data-i18n-title="sidebar.addBookmarkTitle" hidden>
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 3.4a.55.55 0 0 1 1 0l2.4 4.9a.55.55 0 0 0 .4.3l5.4.8a.55.55 0 0 1 .3.9l-3.9 3.8a.55.55 0 0 0-.15.5l.9 5.3a.55.55 0 0 1-.8.6l-4.8-2.5a.55.55 0 0 0-.5 0l-4.8 2.5a.55.55 0 0 1-.8-.6l.9-5.3a.55.55 0 0 0-.15-.5L3 10.3a.55.55 0 0 1 .3-.9l5.4-.8a.55.55 0 0 0 .4-.3z"/></svg>
     </button>
     <div class="sb-omni-sug" id="omni-sug" hidden></div>
@@ -53,9 +53,9 @@
     <div class="sb-fav" id="sb-fav" hidden>
       <!-- header 穿栏标衣服（spec §4.3 2026-07-13 定稿）：无行首图标，caret 在行尾常显、展开旋转 -->
       <div class="sb-fav-head" id="sb-fav-head" role="button" tabindex="0">
-        <span class="sb-fav-label">收藏</span>
+        <span class="sb-fav-label" data-i18n="sidebar.favorites">收藏</span>
         <span class="sb-fav-count" id="sb-fav-count"></span>
-        <button class="sb-fav-manage" id="sb-fav-manage" title="管理收藏">
+        <button class="sb-fav-manage" id="sb-fav-manage" title="管理收藏" data-i18n-title="sidebar.manageBookmarks">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg>
         </button>
         <span class="sb-fav-caret" id="sb-fav-caret"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
@@ -65,25 +65,26 @@
     <!-- sticky ancestor 吸顶浮层（扁平树无法用原生 CSS sticky 正确释放，VS Code 式 JS 浮层）：
          滚动时 sidebar.js 往这里填当前路径的祖先文件夹行、绝对定位在可视区顶部。 -->
     <div class="sb-sticky" id="sb-sticky" aria-hidden="true"></div>
-    <div class="sb-empty" id="sb-empty">
-      <div class="sb-empty-note">打开一个本地文件夹，把这里当工作区</div>
-      <button id="sb-empty-open" class="sb-empty-btn">打开文件夹</button>
-    </div>
     <!-- 置顶区（钉住的文件）：有置顶才显示。sidebar.js 填充。 -->
     <div class="sb-zone" id="sb-pinned" hidden></div>
     <!-- 标签页区（打开记录，浏览器式 tab）：有打开的才显示，头部带 + 新建。sidebar.js 填充。 -->
     <div class="sb-zone" id="sb-tabs" hidden></div>
     <!-- 文档区：「文件」段标 + 筛选 + 文件树（对齐 ui-demo 的 置顶/标签页/文件 三段节奏） -->
-    <div class="sb-sec-label sb-files-label" id="sb-files-label" hidden>文件</div>
+    <div class="sb-sec-label sb-files-label" id="sb-files-label" data-i18n="sidebar.filesLabel" hidden>文件</div>
     <div class="sb-filter" id="sb-filter" hidden>
       <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-      <input id="sb-filter-input" type="text" placeholder="筛选文件" spellcheck="false">
+      <input id="sb-filter-input" type="text" placeholder="筛选文件" data-i18n-ph="sidebar.filterFiles" spellcheck="false">
       <!-- 清除钮（T8 对齐 ui-demo arc-filter-clear）：输入非空时显示 -->
-      <button id="sb-filter-clear" class="sb-filter-clear" title="清除" hidden>
+      <button id="sb-filter-clear" class="sb-filter-clear" title="清除" data-i18n-title="sidebar.clearFilter" hidden>
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
     <div class="sb-tree" id="sb-tree" hidden></div>
+    <!-- 空态 CTA：没打开任何文件夹时的「打开文件夹」。位置在侧栏最底（收藏/置顶/标签页之下，Wendi 2026-07-15）。 -->
+    <div class="sb-empty" id="sb-empty">
+      <div class="sb-empty-note" data-i18n="sidebar.emptyNote">打开一个本地文件夹，把这里当工作区</div>
+      <button id="sb-empty-open" class="sb-empty-btn" data-i18n="sidebar.emptyOpenBtn">打开文件夹</button>
+    </div>
   </div>
   <!-- 更新 pill：后台下载更新/更新就绪时出现在页脚上方，点击打开更新面板（update-ui.js 驱动）。 -->
   <button class="sb-update" id="sb-update" hidden>
@@ -93,7 +94,7 @@
   <!-- 品牌页脚：wordspace.ai logo + 版本号（左侧栏底部，增强 branding）。 -->
   <div class="sb-foot">
     <!-- AI 接入入口（Colin：对齐 ui-demo 左下角位置；菜单「AI 接入…」保留作无工作区时的兜底） -->
-    <button id="sb-ai" class="sb-icobtn sb-foot-ai" title="AI 接入">
+    <button id="sb-ai" class="sb-icobtn sb-foot-ai" title="AI 接入" data-i18n-title="sidebar.aiAccessTitle">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
     </button>
     <img class="sb-foot-logo" src="wordspace-wordmark.png" alt="wordspace.ai">
@@ -101,50 +102,62 @@
   </div>
 </aside>
 
+<!-- 沉浸收起（Arc 对标）：左缘 6px 隐形热区——hover 滑出悬浮侧栏（peek）。常驻浮钮 sb-reopen
+     已删（Colin 拍板「纯 Arc 式」：零可见 UI，重开=hover peek / Cmd+\）。仅 body.is-sb-collapsed 时显示。 -->
+<div id="sb-edge-hot" class="sb-edge-hot" aria-hidden="true"></div>
+
 <!-- 编辑区（照搬 ui-demo Canvas chrome）。 -->
 <section id="main" class="ws-main-doc">
-  <!-- 侧栏「真收起」（全隐藏）后的悬浮展开入口：钉在编辑区左上角空档（顶栏左内边距 56px 给它留位），
-       仅 body.is-sb-collapsed 时显示。侧栏全隐后 sb-toggle 也没了，靠它 / Cmd+\ 重开。 -->
-  <button id="sb-reopen" class="sb-reopen" title="展开侧栏 (Cmd+\)">
-    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
-  </button>
   <!-- 右上角 ⋯ 菜单（Colin 2026-07-02：三颗外露按钮收进一个三点菜单，像 ui-demo 文档头的 … ）。
        原按钮变菜单项、ID 不变（shell.js 的 disabled 接线与 e2e 选择器沿用）。
        「保存」→「另存为…」（自动保存后保存钮失义；另存为=把当前文档复制存到任意位置）；「导出」→「导出 PDF」。 -->
   <div class="top-actions">
-    <button id="doc-menu-btn" class="ta-more" title="更多操作">
+    <button id="doc-menu-btn" class="ta-more" title="更多操作" data-i18n-title="shell.moreActions">
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
     </button>
     <div id="doc-menu" class="ws-docmenu" hidden>
       <button id="open-btn" class="ws-docmenu-item">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
-        <span>打开文件…</span>
+        <span data-i18n="shell.openFileMenu">打开文件…</span>
       </button>
       <!-- 打开文件夹（Colin：单文件模式没有开工作区入口 → 集成进「打开」菜单，永远可达） -->
       <button id="open-folder-btn" class="ws-docmenu-item">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h5l2 2h9a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1z"/></svg>
-        <span>打开文件夹…</span>
+        <span data-i18n="shell.openFolderMenu">打开文件夹…</span>
       </button>
-      <button id="save-btn" class="ws-docmenu-item" disabled>
+      <button id="save-btn" class="ws-docmenu-item" title="另存为 ⌘⇧S" data-i18n-title="shell.saveAsTitle" disabled>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7H7v7"/><path d="M7 3v4h8"/></svg>
-        <span>另存为…</span>
+        <span data-i18n="shell.saveAsMenu">另存为…</span>
       </button>
       <div class="ws-docmenu-sep"></div>
       <!-- 导出 PDF：直接走 Wordspace 样式（所见即所得）。raw 代码路径仍保留、未接 UI，见 shell.js。 -->
-      <button id="export-btn" class="ws-docmenu-item" disabled title="导出 PDF（所见即所得）">
+      <button id="export-btn" class="ws-docmenu-item" disabled title="导出 PDF（所见即所得）" data-i18n-title="shell.exportPdfBtnTitle">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-        <span>导出 PDF</span>
+        <span data-i18n="shell.exportPdfMenu">导出 PDF</span>
       </button>
       <!-- 导出为 Markdown（Colin+Wendi 2026-07-03）：仅符合 Schema #1 的 html 文档可用——产 .md 副本、
            不切换当前文档（导出语义，对齐导出 PDF；「另存为」才切换）。md 文档本身/非合规/临时文档禁用。 -->
-      <button id="export-md-btn" class="ws-docmenu-item" disabled title="导出为 Markdown（仅符合 Schema 的文档）">
+      <button id="export-md-btn" class="ws-docmenu-item" disabled title="导出为 Markdown（仅符合 Schema 的文档）" data-i18n-title="shell.exportMdBtnTitle">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
-        <span>导出为 Markdown…</span>
+        <span data-i18n="shell.exportMdMenu">导出为 Markdown…</span>
       </button>
       <!-- 页面设置（分页文档 = Schema 1 可选版式）：分页开关 / 纸张·方向·边距 / 导出页码。仅合规 html 文档可用。 -->
-      <button id="page-setup-btn" class="ws-docmenu-item" disabled title="页面设置（分页文档：纸张 / 方向 / 边距）">
+      <button id="page-setup-btn" class="ws-docmenu-item" disabled title="页面设置（分页文档：纸张 / 方向 / 边距）" data-i18n-title="shell.pageSetupBtnTitle">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
-        <span>页面设置…</span>
+        <span data-i18n="shell.pageSetupMenu">页面设置…</span>
+      </button>
+      <!-- 外观三态（⋯菜单入口 = 三选一，与菜单栏 radio 同一心智模型；当前态 .is-active 显 ✓）。
+           settings 面 + 菜单栏是另两个入口，三处都从 main 查同一真相源。 -->
+      <div class="ws-docmenu-sep"></div>
+      <div class="ws-docmenu-label" data-i18n="menu.appearance">外观</div>
+      <button class="ws-docmenu-item ws-appearance-item" data-pref="system">
+        <span class="ws-appearance-check">✓</span><span data-i18n="common.apprSystem">跟随系统</span>
+      </button>
+      <button class="ws-docmenu-item ws-appearance-item" data-pref="light">
+        <span class="ws-appearance-check">✓</span><span data-i18n="common.apprLight">浅色</span>
+      </button>
+      <button class="ws-docmenu-item ws-appearance-item" data-pref="dark">
+        <span class="ws-appearance-check">✓</span><span data-i18n="common.apprDark">深色</span>
       </button>
     </div>
   </div>
@@ -153,12 +166,12 @@
     <!-- 文档头：面包屑 本地 / 文件名 + 元信息（仅开文档时显示）。定高实心条 + 底分隔线，把顶栏与编辑区隔开。 -->
     <div id="doc-header" class="ws-doc-header" hidden>
       <div class="ws-breadcrumb">
-        <span>本地</span>
+        <span data-i18n="common.localTag">本地</span>
         <span class="ws-bc-sep">/</span>
         <span id="doc-name" class="ws-doc-crumb"></span>
-        <span id="dirty-dot" class="ws-dirty" hidden>● 未保存</span>
+        <span id="dirty-dot" class="ws-dirty" data-i18n="shell.unsaved" hidden>● 未保存</span>
         <!-- 当前文件状态标（本地未发布）。对齐 ui-demo omnibox 的「本地」tag，复用面包屑、不另起地址栏。 -->
-        <span id="doc-status" class="ws-status-tag" hidden>本地</span>
+        <span id="doc-status" class="ws-status-tag" data-i18n="common.localTag" hidden>本地</span>
       </div>
     </div>
 
@@ -176,10 +189,10 @@
     <div id="home" class="ws-empty-wrap">
       <div class="ws-empty">
         <div class="ws-empty-title">Wordspace Next</div>
-        <div class="ws-empty-note">打开一个 HTML / Markdown 文档，或把一个文件夹当工作区</div>
+        <div class="ws-empty-note" data-i18n="shell.emptyDocNote">打开一个 HTML / Markdown 文档，或把一个文件夹当工作区</div>
         <div class="ws-empty-actions">
-          <button id="home-open" class="top-share">打开文档</button>
-          <button id="home-open-folder" class="ta-ghost ws-empty-ghost">打开文件夹</button>
+          <button id="home-open" class="top-share" data-i18n="shell.openDocBtn">打开文档</button>
+          <button id="home-open-folder" class="ta-ghost ws-empty-ghost" data-i18n="shell.openFolderBtn">打开文件夹</button>
         </div>
         <ul id="recent-list"></ul>
       </div>
@@ -188,9 +201,9 @@
     <!-- 非合规文件降级提示条（Feature 3）：仅非合规文档时显示，shell.js 切换 hidden。位于 doc-header 与 iframe 之间。 -->
     <!-- 文案对齐 ui-demo nce-notice（Colin 2026-07-03：精简成一句）；长版操作说明收进悬停 title -->
     <div id="ws-degrade-notice" class="ws-degrade-notice" hidden
-         title="基础编辑：点文字改字（选中出格式条：粗/斜/下/删 + 文字色/高亮/清除）· 悬停任意块右上角 🗑 删除 · 按 Esc 后用方向键在块间移动、Delete 删除">
+         title="基础编辑：点文字改字（选中出格式条：粗/斜/下/删 + 文字色/高亮/清除）· 悬停任意块右上角 🗑 删除 · 按 Esc 后用方向键在块间移动、Delete 删除" data-i18n-title="shell.degradeTitle">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-      <span>该文件不符合 Wordspace Schema，仅支持基础编辑。</span>
+      <span data-i18n="shell.degradeNotice">该文件不符合 Wordspace Schema，仅支持基础编辑。</span>
     </div>
 
     <iframe id="doc-frame" sandbox="allow-same-origin" hidden></iframe>
@@ -212,19 +225,19 @@
       <div class="web-nt-brand">Wordspace</div>
       <div class="web-nt-search">
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-        <input id="web-nt-input" type="text" placeholder="搜索,或输入网址" spellcheck="false" autocomplete="off">
+        <input id="web-nt-input" type="text" placeholder="搜索,或输入网址" data-i18n-ph="sidebar.omniPlaceholder" spellcheck="false" autocomplete="off">
       </div>
       <div class="web-nt-tiles" id="web-nt-tiles"></div>
       <div class="web-nt-pins" id="web-nt-pins" hidden></div>
-      <div class="web-nt-note">内置浏览器没有恶意网站防护，访问陌生网站请自行留意</div>
+      <div class="web-nt-note" data-i18n="browser.newtabWarn">内置浏览器没有恶意网站防护，访问陌生网站请自行留意</div>
     </div>
   </div>
   <!-- 网页加载失败 / 渲染进程崩溃的占位（view 已隐藏时可见）。 -->
   <div id="web-error" class="web-error" hidden>
     <div class="web-err-card">
-      <div class="web-err-title" id="web-err-title">页面加载失败</div>
+      <div class="web-err-title" id="web-err-title" data-i18n="browser.pageLoadFailed">页面加载失败</div>
       <div class="web-err-desc" id="web-err-desc"></div>
-      <button class="web-err-reload" id="web-err-reload">重新加载</button>
+      <button class="web-err-reload" id="web-err-reload" data-i18n="browser.errReload">重新加载</button>
     </div>
   </div>
   <!-- 子页面（历史 / 收藏管理 / 设置，spec §4.8/§4.9/§4.10）：browser.js 填充。 -->
@@ -232,20 +245,22 @@
   <!-- 页内查找条（spec §4.6）：查找激活期间 view bounds 顶部收缩出这条的高度（原生 view 会盖住 DOM）。 -->
   <div id="web-findbar" class="web-findbar" hidden>
     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
-    <input id="web-find-input" type="text" placeholder="在页面中查找" spellcheck="false">
+    <input id="web-find-input" type="text" placeholder="在页面中查找" data-i18n-ph="browser.findInPage" spellcheck="false">
     <span class="web-find-count" id="web-find-count" hidden></span>
-    <button class="web-find-btn" id="web-find-prev" title="上一个 (⇧Enter)">
+    <button class="web-find-btn" id="web-find-prev" title="上一个 (⇧Enter)" data-i18n-title="browser.findPrev">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
     </button>
-    <button class="web-find-btn" id="web-find-next" title="下一个 (Enter)">
+    <button class="web-find-btn" id="web-find-next" title="下一个 (Enter)" data-i18n-title="browser.findNext">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
     </button>
-    <button class="web-find-btn" id="web-find-close" title="关闭 (Esc)">
+    <button class="web-find-btn" id="web-find-close" title="关闭 (Esc)" data-i18n-title="browser.findClose">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
     </button>
   </div>
 </section>
 
+<!-- i18n 胶水最先载：DOMContentLoaded 时先把静态外壳按语言写好，再让下面各模块建 UI（都用 window.wsT）。 -->
+<script src="i18n-ui.js"></script>
 <script src="../editor/serialize.js"></script>
 <script src="../editor/undo.js"></script>
 <script src="../editor/format.js"></script>
@@ -253,6 +268,7 @@
 <script src="../lib/schema-validate.js"></script>
 <script src="../lib/schema-page.js"></script>
 <script src="../lib/schema-registry.js"></script>
+<script src="../lib/image-ingest.js"></script>
 <script src="../editor/blockedit.js"></script>
 <script src="../editor/pagination.js"></script>
 <script src="../editor/basic-edit.js"></script>
@@ -262,6 +278,10 @@
 <script src="../lib/links.js"></script>
 <script src="../editor/mention.js"></script>
 <script src="../editor/linkview.js"></script>
+<!-- 外观反色滤镜:配方 + 亮度纯逻辑(UMD 全局)先于 doc-theme/shell 载入 -->
+<script src="../lib/luminance.js"></script>
+<script src="../lib/doc-dark-recipe.js"></script>
+<script src="doc-theme.js"></script>
 <script src="shell.js"></script>
 <script src="../lib/tabs.js"></script>
 <script src="../lib/web-history.js"></script>
@@ -269,5 +289,6 @@
 <script src="sidebar.js"></script>
 <script src="browser.js"></script>
 <script src="update-ui.js"></script>
+<script src="appearance-ui.js"></script>
 </body>
 </html>

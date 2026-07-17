@@ -143,8 +143,36 @@ async function setTabs(storeFile, state) {
   });
 }
 
+// P3-07 树展开态（缓存语义，rel 失效即弃）：{ expandedByRoot: { [rootId]: [rel...] }, collapsedRoots: [rootId] }。
+// 存「偏离默认的那部分」——目录默认收起，故存「被展开的目录」；根默认展开，故存「被收起的根」。cap 每根 500。
+const TREE_STATE_CAP = 500;
+function sanitizeTreeState(ts) {
+  const expandedByRoot = {};
+  const src = ts && ts.expandedByRoot;
+  if (src && typeof src === 'object') {
+    for (const rootId of Object.keys(src)) {
+      if (typeof rootId !== 'string') continue;
+      const rels = Array.isArray(src[rootId]) ? src[rootId].filter((r) => typeof r === 'string').slice(0, TREE_STATE_CAP) : [];
+      expandedByRoot[rootId] = rels;
+    }
+  }
+  const collapsedRoots = Array.isArray(ts && ts.collapsedRoots) ? ts.collapsedRoots.filter((r) => typeof r === 'string') : [];
+  return { expandedByRoot, collapsedRoots };
+}
+async function getTreeState(storeFile) {
+  return sanitizeTreeState((await readRaw(storeFile)).treeState);
+}
+async function setTreeState(storeFile, treeState) {
+  return serialized(async () => {
+    const raw = await readRaw(storeFile);
+    raw.treeState = sanitizeTreeState(treeState);
+    await writeRaw(storeFile, raw);
+    return raw.treeState;
+  });
+}
+
 async function clear(storeFile) {
   await fs.rm(storeFile, { force: true }).catch(() => {});
 }
 
-module.exports = { loadState, saveRoots, getTabs, setTabs, clear };
+module.exports = { loadState, saveRoots, getTabs, setTabs, getTreeState, setTreeState, clear };

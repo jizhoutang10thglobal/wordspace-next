@@ -9,6 +9,7 @@ import {
   Sparkles,
   ChevronDown,
 } from 'lucide-react'
+import { useT } from '../../i18n'
 import type { BlockType, ListStyle } from '../../types'
 
 export interface FormatRect {
@@ -16,20 +17,21 @@ export interface FormatRect {
   left: number
 }
 
+// label 是 editor 命名空间的 i18n key（渲染处 t(it.label) 求值）。
 const TURN_INTO: {
   label: string
   type: BlockType
   level?: 1 | 2 | 3
   listStyle?: ListStyle
 }[] = [
-  { label: '正文', type: 'text' },
-  { label: '标题 1', type: 'heading', level: 1 },
-  { label: '标题 2', type: 'heading', level: 2 },
-  { label: '标题 3', type: 'heading', level: 3 },
-  { label: '引用', type: 'quote' },
-  { label: '无序列表', type: 'list', listStyle: 'bulleted' },
-  { label: '编号列表', type: 'list', listStyle: 'numbered' },
-  { label: '待办列表', type: 'list', listStyle: 'todo' },
+  { label: 'editor.text', type: 'text' },
+  { label: 'editor.heading1', type: 'heading', level: 1 },
+  { label: 'editor.heading2', type: 'heading', level: 2 },
+  { label: 'editor.heading3', type: 'heading', level: 3 },
+  { label: 'editor.quote', type: 'quote' },
+  { label: 'editor.bulletedList', type: 'list', listStyle: 'bulleted' },
+  { label: 'editor.numberedList', type: 'list', listStyle: 'numbered' },
+  { label: 'editor.todoList', type: 'list', listStyle: 'todo' },
 ]
 const TEXT_COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2']
 const HILITE_COLORS = ['#fff59d', '#ffd6d6', '#d7f0db', '#dbe9ff', '#f3e3ff']
@@ -50,6 +52,7 @@ export default function FormatToolbar({
   onTurnInto: (type: BlockType, level?: 1 | 2 | 3, listStyle?: ListStyle) => void
   onAskAI: () => void
 }) {
+  const t = useT()
   const [menu, setMenu] = useState<'turn' | 'color' | 'hilite' | null>(null)
   const guard = (e: React.MouseEvent) => e.preventDefault()
 
@@ -65,11 +68,11 @@ export default function FormatToolbar({
       <div className="ws-fmtbar-holder">
         <button
           className="ws-fmtbar-btn ws-fmtbar-text"
-          title="转换块类型"
+          title={t('editor.turnIntoTitle')}
           onMouseDown={guard}
           onClick={() => setMenu(menu === 'turn' ? null : 'turn')}
         >
-          转为 <ChevronDown size={12} strokeWidth={2} />
+          {t('editor.turnInto')} <ChevronDown size={12} strokeWidth={2} />
         </button>
         {menu === 'turn' && (
           <div className="ws-fmtbar-menu" onMouseDown={guard}>
@@ -83,7 +86,7 @@ export default function FormatToolbar({
                   setMenu(null)
                 }}
               >
-                {it.label}
+                {t(it.label)}
               </button>
             ))}
           </div>
@@ -92,19 +95,19 @@ export default function FormatToolbar({
 
       <span className="ws-fmtbar-sep" />
 
-      <button className="ws-fmtbar-btn" title="加粗" onMouseDown={guard} onClick={() => onCmd('bold')}>
+      <button className="ws-fmtbar-btn" title={t('editor.bold')} onMouseDown={guard} onClick={() => onCmd('bold')}>
         <Bold size={15} strokeWidth={2} />
       </button>
-      <button className="ws-fmtbar-btn" title="斜体" onMouseDown={guard} onClick={() => onCmd('italic')}>
+      <button className="ws-fmtbar-btn" title={t('editor.italic')} onMouseDown={guard} onClick={() => onCmd('italic')}>
         <Italic size={15} strokeWidth={2} />
       </button>
-      <button className="ws-fmtbar-btn" title="下划线" onMouseDown={guard} onClick={() => onCmd('underline')}>
+      <button className="ws-fmtbar-btn" title={t('editor.underline')} onMouseDown={guard} onClick={() => onCmd('underline')}>
         <Underline size={15} strokeWidth={2} />
       </button>
-      <button className="ws-fmtbar-btn" title="删除线" onMouseDown={guard} onClick={() => onCmd('strikeThrough')}>
+      <button className="ws-fmtbar-btn" title={t('editor.strikethrough')} onMouseDown={guard} onClick={() => onCmd('strikeThrough')}>
         <Strikethrough size={15} strokeWidth={2} />
       </button>
-      <button className="ws-fmtbar-btn" title="行内代码" onMouseDown={guard} onClick={() => onCmd('__code__')}>
+      <button className="ws-fmtbar-btn" title={t('editor.inlineCode')} onMouseDown={guard} onClick={() => onCmd('__code__')}>
         <Code size={15} strokeWidth={2} />
       </button>
 
@@ -114,7 +117,7 @@ export default function FormatToolbar({
       <div className="ws-fmtbar-holder">
         <button
           className="ws-fmtbar-btn ws-fmtbar-aglyph"
-          title="文字颜色"
+          title={t('editor.textColor')}
           onMouseDown={guard}
           onClick={() => setMenu(menu === 'color' ? null : 'color')}
         >
@@ -143,7 +146,7 @@ export default function FormatToolbar({
       <div className="ws-fmtbar-holder">
         <button
           className="ws-fmtbar-btn"
-          title="背景高亮"
+          title={t('editor.highlight')}
           onMouseDown={guard}
           onClick={() => setMenu(menu === 'hilite' ? null : 'hilite')}
         >
@@ -168,7 +171,7 @@ export default function FormatToolbar({
         )}
       </div>
 
-      <button className="ws-fmtbar-btn" title="链接" onMouseDown={guard} onClick={() => onCmd('createLink')}>
+      <button className="ws-fmtbar-btn" title={t('editor.link')} onMouseDown={guard} onClick={() => onCmd('createLink')}>
         <Link2 size={15} strokeWidth={2} />
       </button>
 
@@ -176,7 +179,7 @@ export default function FormatToolbar({
 
       <button
         className="ws-fmtbar-btn ws-fmtbar-ai"
-        title="让 AI 重排这一块（开发中）"
+        title={t('editor.askAiTitle')}
         onMouseDown={guard}
         onClick={onAskAI}
       >
