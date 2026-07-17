@@ -2,6 +2,10 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const B = require('../src/lib/bookmarks');
+// i18n Phase 2：默认名（书签栏/新文件夹/文件夹）改走 t()，配 zh 让默认名恒为中文（BM_BAR 靠 id，不受影响）。
+const _i18n = require('../src/lib/i18n');
+_i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
+_i18n.setActiveLang('zh');
 
 const T0 = 1_800_000_000_000;
 const withData = () => {

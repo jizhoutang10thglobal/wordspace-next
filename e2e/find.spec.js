@@ -17,7 +17,7 @@ async function launch() {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2e2e-find-'));
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1' },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');

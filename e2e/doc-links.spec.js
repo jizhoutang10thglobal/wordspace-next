@@ -32,7 +32,7 @@ test.beforeEach(async () => {
   await fs.writeFile(path.join(wsDir, '报告.pdf'), '%PDF-1.4 fake', 'utf8'); // 非文档文件（B2：@菜单也列它）
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');

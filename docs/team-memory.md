@@ -19,6 +19,24 @@
 **是什么**:Wendi「零缝隙」反馈落地(ui-demo #230 + 真 app #238)。侧栏收起=流内零渲染(ui-demo 48px 细轨、真 app 52px COLLAPSED_STRIP、#sb-reopen 常驻浮钮**全删**),重开=左缘 hover peek(悬浮盖内容)/Cmd+\;真 app darwin 换 titleBarStyle:hiddenInset,红绿灯进 .sb-head(兼窗口拖拽区)且随收起隐藏。spec=docs/features/immersive-collapse.md。
 **怎么 apply**:① e2e/代码**别再引用 #sb-reopen**(元素已不存在;二次展开的测试口径=mouse.move(3,430) 出 peek 后点 #sb-toggle,或 Ctrl+\,参照 e2e/immersive.spec.js)。② **往 .sb-head / ui-demo .arc-top 加图标前先重算宽度账**(mac 红绿灯让位后 238≤min-width 240,余量 2px——超了最右钮被编辑区 iframe 吞点击,CSS 注释有账本)。③ 宿主 mac 跑 app 看到没有系统标题栏=正常新窗框,不是 bug。
 **来源**:PR #230 / #238,feat/immersive-collapse-app
+## 2026-07-16 — P0 大根修复已全部落地(P0a #236 + P0b #241)——动 sidebar/ipc/workspace 先 rebase;附「墙钟断言别贴边」教训
+
+**是什么**:大根卡死 P0 系列收官,两个 PR 已合 main:P0a 止血包(#236:启动死门修复/walk 条目预算
+15 万/「过大」态/菜单「管理文件夹…」逃生门/病灶路径确认框)+P0b 懒加载(#241:超预算根自动进「简化
+模式」——readDir 按层读取(单层 5 万预算)/watcher 只重读「变化∩已加载层」/筛选/Cmd+P/inode 跟随降级/
+link-index listFilesMatching 修复(原会钻 node_modules/.app)/ensureDir Map 化(150k 宽树 68s→0.6s))。
+双双经主 session 对抗审查:真实家目录(191 万条目)重放全过——现在加 ~ 是「1.8s 进简化模式、能浏览
+能开文档、重启秒开、随时可移除」。
+**怎么 apply**:①`src/renderer/sidebar.js`(+300 行)/`src/main/workspace.js`/`ipc.js`/
+`src/lib/file-tree.js`/`link-index.js` 都大改了——手上有未合分支动过这些文件的,rebase 时冲突自解,
+语义疑问查 `docs/features/workspace-big-roots.md`(行为契约已全量更新)。②之前广播的「删 workspace.json
+救援法」对新版不再必需(但 v0.10.x 及更老版本用户仍用得上)。③**教训:测试里的墙钟性能断言别贴边**
+——执行 AI 在快 Mac 上量 0.6s 就写 1.5s 阈值,GH 共享 runner 直接超时红(CI 实锤);性能断言的阈值
+应设在「要防的那类回归」量级(这里 O(M²) 复发≈68s,线设 10s),不是本机实测×2;「本地绿≠CI 绿」
+对性能断言同样成立。④e2e 全量套跑一条既有 P2-6 偶发 flaky(重试即过、main 无前科)——遇到先重跑
+确认非回归,别急着改测试。
+**来源**:PR #236/#241;诊断=docs/brainstorms/2026-07-16-bigroot-freeze-p0-diagnosis.md;
+spec=docs/features/workspace-big-roots.md。
 
 ## 2026-07-16 — 硬教训：quitAndInstall 不发 before-quit，发 before-quit-for-update（动退出链必读）
 

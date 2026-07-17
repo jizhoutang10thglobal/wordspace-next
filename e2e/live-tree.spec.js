@@ -13,7 +13,7 @@ const W = 6000; // 等监听落地的宽限（去抖 + 重读 + 重渲染）
 let app, page, tmp, wsDir;
 
 async function launch(env) {
-  const a = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', ...env } });
+  const a = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', ...env } });
   const p = await a.firstWindow();
   await p.waitForLoadState('domcontentloaded');
   await p.setViewportSize({ width: 1280, height: 860 });

@@ -3,6 +3,7 @@
 //  - 收藏/历史变更后推全量（数据小：收藏 + ≤500 历史），renderer 内存镜像供逐键补全（不跨 IPC）。
 //  - 导入导出走主进程系统对话框 + fs（renderer 不传路径）。
 const { ipcMain, dialog, app, BrowserWindow } = require('electron');
+const i18n = require('../lib/i18n');
 const fsp = require('fs/promises');
 const path = require('path');
 const webTabs = require('./web-tabs');
@@ -75,9 +76,9 @@ function registerBrowserIpc() {
       let defDir;
       try { defDir = app.getPath('downloads'); } catch { defDir = app.getPath('home'); }
       const r = await dialog.showSaveDialog(BrowserWindow.fromWebContents(e.sender), {
-        title: '导出书签',
+        title: i18n.t('dialog.exportBookmarksTitle'),
         defaultPath: path.join(defDir, 'bookmarks.html'),
-        filters: [{ name: 'HTML 书签', extensions: ['html'] }],
+        filters: [{ name: i18n.t('dialog.filterHtmlBookmark'), extensions: ['html'] }],
       });
       if (r.canceled || !r.filePath) return { canceled: true };
       out = r.filePath;
@@ -90,8 +91,8 @@ function registerBrowserIpc() {
     let file = !app.isPackaged ? process.env.WS2_BM_IN : null;
     if (!file) {
       const r = await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender), {
-        title: '导入书签',
-        filters: [{ name: 'HTML 书签', extensions: ['html', 'htm'] }],
+        title: i18n.t('dialog.importBookmarksTitle'),
+        filters: [{ name: i18n.t('dialog.filterHtmlBookmark'), extensions: ['html', 'htm'] }],
         properties: ['openFile'],
       });
       if (r.canceled || !r.filePaths[0]) return { canceled: true };
