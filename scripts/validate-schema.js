@@ -12,6 +12,12 @@ const path = require('path');
 const { JSDOM } = require('jsdom');
 const { validate } = require('../src/lib/schema-validate.js');
 const mdAdapter = require('../src/main/md-adapter.js'); // 纯字符串进出、无 electron 依赖，Node 直接可用
+// schema-validate 的违规消息走 i18n t()；本 CLI 是 node 消费者(非 app)，必须自己 configureI18n，
+// 否则 msg 出成裸 key 名(schema.blockNoStyle 而非「块级不能带 style 属性」)——AI 创作回路读的就是这个 msg。
+// 默认 zh(保持 CLI 原中文输出);WS2_LANG=en 可切英文。
+const i18n = require('../src/lib/i18n');
+i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
+i18n.setActiveLang(process.env.WS2_LANG === 'en' ? 'en' : 'zh');
 
 async function main(argv) {
   const p = argv[2];

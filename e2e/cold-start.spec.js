@@ -24,7 +24,7 @@ let app = null; // 模块级：afterEach 兜底关，红跑（断言失败）也
 async function launch(env) {
   const a = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', ...env },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', ...env },
   });
   app = a; // 记到模块级，afterEach 负责关
   const p = await a.firstWindow();

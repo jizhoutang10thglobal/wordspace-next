@@ -1,0 +1,51 @@
+// browser namespace (en). AI-drafted, Colin to review.
+module.exports = {
+  // Error page
+  pageCrashed: 'This page crashed',
+  pageLoadFailed: "This page didn't load",
+  errDesc: '{url} ({desc})',
+  // Tabs / toasts
+  newTab: 'New Tab',
+  openedInBackground: 'Opened in a background tab',
+  unsupportedUrl: "Can't open this kind of address",
+  // Omnibox star
+  bookmark: 'Bookmark ⌘D',
+  unbookmark: 'Remove bookmark ⌘D',
+  // Bookmarks bar / start page empty states
+  favEmpty: 'Click the ☆ in the address bar to bookmark a page',
+  newtabTilesEmpty: 'No bookmarks yet — open a page and click the ☆ in the address bar to add one here',
+  // History page
+  history: 'History',
+  clearBrowsingData: 'Clear browsing data',
+  lastHour: 'Last hour',
+  last24h: 'Last 24 hours',
+  last7d: 'Last 7 days',
+  clearAll: 'Clear all',
+  searchHistory: 'Search history',
+  noMatchingHistory: 'No matching history',
+  noHistory: 'No browsing history yet',
+  today: 'Today',
+  yesterday: 'Yesterday',
+  monthDay: '{month}/{day}',
+  // Bookmarks manager page
+  newFolder: 'New folder',
+  import: 'Import',
+  importFailed: 'Import failed: {error}',
+  importNoneRecognized: 'No bookmarks found (needs an HTML bookmarks file exported from a browser)',
+  importAllExist: 'These bookmarks already exist — nothing new added',
+  importedCount: 'Imported {count} bookmark(s)',
+  export: 'Export',
+  exportedToast: 'Exported as bookmarks.html (importable into Chrome/Safari/Firefox)',
+  bookmarks: 'Bookmarks',
+  bookmarksHint: 'Import / export uses the standard HTML bookmarks format (Netscape), so you can move bookmarks between Chrome, Safari, Firefox, and Edge.',
+  bookmarkBarFixed: 'Bookmarks bar (fixed)',
+  renameFolder: 'Rename folder',
+  deleteFolder: 'Delete folder (and its bookmarks)',
+  emptyFolder: 'Empty',
+  newtabWarn: 'The built-in browser has no malicious-site protection; be careful visiting unfamiliar sites',
+  errReload: 'Reload',
+  findInPage: 'Find in page',
+  findPrev: 'Previous (⇧Enter)',
+  findNext: 'Next (Enter)',
+  findClose: 'Close (Esc)',
+};

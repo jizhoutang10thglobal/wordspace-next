@@ -21,7 +21,7 @@ async function seedWorkspace(dir) {
 async function launch(env) {
   const a = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', ...env },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', ...env },
   });
   const p = await a.firstWindow();
   await p.waitForLoadState('domcontentloaded');
@@ -193,18 +193,21 @@ test('临时文档切标签不丢：编辑 → 切到别的文件 → 切回，�
   await expect(page.frameLocator('#doc-frame').locator('h1')).toContainText('_MARK_'); // 内容恢复
 });
 
-test('收起「真收起」：#sb-toggle → 侧栏全隐（宽 0）+ 悬浮展开按钮；#sb-reopen 展开', async () => {
+test('收起「真收起」：#sb-toggle → 侧栏全隐（宽 0）+ 零可见 chrome；hover peek 展开（沉浸收起版）', async () => {
   await openWorkspace();
   const width = () => page.locator('#sidebar').evaluate((el) => el.getBoundingClientRect().width);
   expect(await width()).toBeGreaterThan(100);
   await page.click('#sb-toggle');
   await expect(page.locator('#sidebar')).toHaveClass(/is-collapsed/);
   expect(await width(), '真收起应宽度归零').toBeLessThan(5);
-  await expect(page.locator('#sb-reopen')).toBeVisible();
-  await page.click('#sb-reopen');
+  // 沉浸收起（immersive-collapse）：sb-reopen 浮钮已删（纯 Arc 式），重开=左缘 hover peek / Cmd+\
+  expect(await page.locator('#sb-reopen').count()).toBe(0);
+  await page.mouse.move(3, 430); // hover 左缘 → peek 悬浮侧栏
+  await expect(page.locator('body')).toHaveClass(/is-sb-peek/, { timeout: 2000 });
+  await page.waitForTimeout(380); // 等滑入动画落定
+  await page.click('#sb-toggle'); // peek 里点 toggle = 真展开
   await expect(page.locator('#sidebar')).not.toHaveClass(/is-collapsed/);
   expect(await width()).toBeGreaterThan(100);
-  await expect(page.locator('#sb-reopen')).toBeHidden();
 });
 
 test('Cmd+P 命令面板：菜单 find-palette → 面板 → 输入过滤 → Enter 打开', async () => {

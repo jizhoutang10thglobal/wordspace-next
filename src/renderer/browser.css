@@ -166,11 +166,10 @@
 .web-newtab, .web-error, .web-page {
   position: absolute;
   inset: 0;
-  z-index: 60; /* 盖住文档 chrome；sb-reopen(70) 仍在上 */
+  z-index: 60; /* 盖住文档 chrome */
   background: var(--c-bg);
   overflow: auto;
 }
-body.is-sb-collapsed .sb-reopen { z-index: 70; }
 .web-nt-inner {
   max-width: 560px;
   margin: 0 auto;

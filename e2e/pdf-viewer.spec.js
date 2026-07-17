@@ -16,7 +16,7 @@ test.beforeEach(async () => {
   await fs.mkdir(wsDir, { recursive: true });
   await fs.writeFile(path.join(wsDir, 'a.html'), '<!doctype html><html><body><h1>A</h1></body></html>', 'utf8');
   await fs.writeFile(path.join(wsDir, 'test.pdf'), Buffer.from(PDF_B64, 'base64'));
-  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir } });
+  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmp, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_FOLDER_IN: wsDir } });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });

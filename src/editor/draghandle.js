@@ -1,4 +1,6 @@
 (function (global) {
+  // i18n：renderer 全局 t()（node/test 上下文无 wsT 时回退 key，防 require 期崩）。
+  const T = (k, p) => (global.wsT ? global.wsT(k, p) : k);
   function attach(doc, undoMgr, markDirty) {
     const win = doc.defaultView;
 
@@ -6,7 +8,7 @@
     handle.setAttribute('data-ws2-ui', '');
     handle.setAttribute('contenteditable', 'false');
     handle.textContent = '⋮⋮';
-    handle.title = '拖动调整顺序，点击打开菜单';
+    handle.title = T('editor.dragHandleTip');
     handle.style.cssText = 'position:absolute;display:none;z-index:99998;cursor:grab;color:#bbb;font-size:14px;line-height:1;padding:4px;user-select:none;font-family:-apple-system,sans-serif;';
     doc.documentElement.appendChild(handle);
 
@@ -20,7 +22,7 @@
     menu.setAttribute('contenteditable', 'false');
     menu.style.cssText = 'position:absolute;display:none;z-index:99999;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.12);padding:4px;font-family:-apple-system,sans-serif;font-size:13px;';
     const del = doc.createElement('div');
-    del.textContent = '删除块';
+    del.textContent = T('editor.deleteBlock');
     del.style.cssText = 'padding:6px 12px;border-radius:4px;cursor:pointer;color:#b3261e;';
     del.addEventListener('click', () => {
       if (current) { current.remove(); current = null; handle.style.display = 'none'; undoMgr.checkpoint(); markDirty(); }
@@ -31,7 +33,7 @@
 
     const tip = doc.createElement('div');
     tip.setAttribute('data-ws2-ui', '');
-    tip.textContent = '此块暂不支持编辑';
+    tip.textContent = T('editor.blockNotEditable');
     tip.style.cssText = 'position:absolute;display:none;z-index:99999;background:#333;color:#fff;font-size:12px;padding:3px 8px;border-radius:4px;font-family:-apple-system,sans-serif;pointer-events:none;';
     doc.documentElement.appendChild(tip);
 

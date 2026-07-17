@@ -36,7 +36,7 @@ async function seedWorkspace(dir) {
 async function launch() {
   const a = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_NO_CLOSE_DIALOG: '1', WS2_USERDATA: path.join(tmp, 'userdata'), WS2_FOLDER_IN: wsDir },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_NO_CLOSE_DIALOG: '1', WS2_USERDATA: path.join(tmp, 'userdata'), WS2_FOLDER_IN: wsDir },
   });
   const p = await a.firstWindow();
   await p.waitForLoadState('domcontentloaded');

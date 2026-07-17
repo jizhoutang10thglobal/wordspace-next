@@ -1,5 +1,6 @@
 .arc-sidebar {
   width: 274px;
+  min-width: 240px; /* 兜底：顶排图标行 240 下刚好放得下，再窄图标会被裁掉（拖拽 JS 同夹 240） */
   position: relative; /* 给宽度拖拽柄 .arc-resize 定位 */
   flex: none;
   background: var(--c-bg-sunken);
@@ -9,24 +10,63 @@
   min-height: 0;
   user-select: none;
 }
-.arc-sidebar.is-collapsed { width: 48px; }
+/* （沉浸收起后不再有 .is-collapsed 细轨——收起=流内零渲染，见下方 arc-peek 段。） */
 /* 侧栏宽度拖拽柄（F1，对齐真 app 的 .sb-resize）：贴右边界、col-resize；只在展开态渲染。 */
 .arc-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 30; }
 .arc-resize:hover { background: var(--c-accent); opacity: 0.35; }
-.arc-top-collapsed { justify-content: center; padding: 0; }
 
-/* top: traffic + nav */
+/* ------------------------------------------------------------------ */
+/* 沉浸收起（Wendi 对标 Arc，2026-07-16）：收起=流内零渲染，内容四边贴满。 */
+/* 重开走左缘热区 hover peek / Cmd+\。真 app 对应欠账见 docs/features/immersive-collapse.md */
+/* ------------------------------------------------------------------ */
+
+/* 左缘热区：6px 隐形条，唯一职责是接住「鼠标滑到最左」这个意图 */
+.arc-edge-hot {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: 6px;
+  z-index: 240; /* 压过内容与文档浮层，低于 modal(1000) */
+}
+
+/* peek 悬浮层：完整侧栏盖在内容上滑进滑出，不推挤布局（Arc 签名交互） */
+.arc-peek {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  z-index: 240;
+  transform: translateX(-103%); /* 多 3% 连阴影一起藏干净 */
+  visibility: hidden; /* 藏起时不可 tab 聚焦；0s 延迟到滑出动画结束 */
+  transition: transform var(--dur-slow) var(--ease),
+    visibility 0s linear var(--dur-slow);
+}
+.arc-peek.is-on {
+  /* 静止态 transform:none——挂着 translateX(0) 会让本容器劫持内部 fixed 弹层（右键菜单等）
+     的包含块（doc-linking 原型踩过的坑）；none 与 translateX 之间过渡可正常插值 */
+  transform: none;
+  visibility: visible;
+  transition: transform var(--dur-slow) var(--ease-enter), visibility 0s;
+}
+.arc-peek .arc-sidebar {
+  height: 100%;
+  border-right: 1px solid var(--c-border-strong);
+  border-radius: 0 var(--r-lg) var(--r-lg) 0; /* 墨圆：悬浮层右侧收圆角 */
+  box-shadow: var(--shadow-pop);
+}
+.arc-peek .arc-resize { display: none; } /* 悬浮态不改停靠宽度 */
+
+/* top: traffic + nav。整行最小内容宽必须 ≤ 侧栏 min-width(240) − 右边框 1，否则窄宽度下右端图标被裁：
+   padding 20 + 红绿灯 48 + gap 8 + 导航 6×26+5 = 237 ≤ 239。往这排加图标前先重算这笔账。 */
 .arc-top {
   height: var(--h-titlebar);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 0 10px;
   flex: none;
 }
-.arc-traffic { display: flex; gap: 8px; flex: none; }
+.arc-traffic { display: flex; gap: 6px; flex: none; }
 .arc-traffic span { width: 12px; height: 12px; border-radius: var(--r-pill); display: block; }
 .arc-top-nav { display: flex; align-items: center; gap: 1px; margin-left: auto; }
+.arc-top-nav .arc-ico { width: 26px; }
 .arc-ico {
   display: flex; align-items: center; justify-content: center;
   width: 28px; height: 28px; border-radius: var(--r-pill); color: var(--c-text-2);

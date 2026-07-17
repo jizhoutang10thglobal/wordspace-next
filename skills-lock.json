@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "wordspace": {
+      "source": "wordspace-ai/skills",
+      "sourceType": "github",
+      "skillPath": "wordspace/SKILL.md",
+      "computedHash": "8211c48668cb21da29e21bdc61b97cfc25fc80505eacb6940d0839cf94dfc745"
+    }
+  }
+}
