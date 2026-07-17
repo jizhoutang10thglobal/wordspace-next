@@ -26,7 +26,7 @@
 - **KD2 树外文件也收编,身份=abs 外部标签(↗)**:添加的文件夹不含当前文档时,收编成 abs 身份外部标签——与现行「工作区存在时打开根外文件」(`openTabFromAbs` 的 rel=null 分支)完全一致。原则:**侧栏一旦在场,任何打开中的真文档必须以标签形态可见**;「viewer 无标签」只在 0 根(侧栏藏着)时合法。
 - **KD3 纯身份登记,绝不动内容,且只在文档面可见时收编**(doc review 对抗员+可行性员同抓的 P1,已裁定):收编只改 tabState(建 entry、`open:true`、`activeRel` 指向它)+ `persistTabs()` + `renderZones()`,**不 reload 文档、不触碰编辑器/自动保存/dirty**;并且**引擎入口先判「当前激活面是不是文档」——web/temp 标签激活时(`window.__webIsActive()` 或 activeRel 为 web/temp key)整个收编跳过**。理由:①WS2Tabs.openEntry 无条件切 activeRel(`src/lib/tabs.js` ≈:69-76),web view 挂屏时抢激活=「标签栏显示文档 is-active、屏幕显示网页,⌘W/⌘S/地址栏作用到看不见的标签」——本仓为这类状态劈开修过两轮(SH-4/浏览器 P1-2),不再造;②跳过(而非「登记但不激活」)还结构性消灭「用户关掉收编标签后被下一次树到货复活」的循环——文档面不可见时引擎不跑,重入统一靠 KD4 兜底(用户把文档带回前台/树里点它,那是**有意重建**)。Wendi/Colin 的复现场景(正看着文档时添加文件夹)不受影响,照常收编+激活。*此为 plan 默认语义,Colin review 时可改(见 Open questions)。*
 - **KD4 同文档早退守卫加兜底带子**(防御第二层):`shell.js` `openDoc` 的 `p === docPath` 早退分支,在 return 前确保当前文档已有 entry(无则经 `__sbHooks.onOpen(docPath)` 补建——onOpen 本就幂等地走建标签漏斗)。主修靠 KD1;这层保证即使将来出现新的「viewer 无 entry」路径,用户点一下树也能自愈,也是 KD3 跳过语义下的官方重入通道。
-- **KD5 temp/网页标签排除 + 查看器态显式不覆盖**:temp/web 沿用现有判定(`isTempEntry`/`isWebKey`);读当前文档用现成 seam `window.__shellDocPath()`(shell.js ≈:939,sidebar 已在 3 处消费)。实现时确认它对 tempDoc 返回什么——若返回 null/非路径则天然豁免,否则显式排除。**PDF/图片查看器态(showViewer)`docPath` 恒为 null**(shell.js ≈:533 显式清,「非可编辑文件没有保存目标」),以 docPath 为钥匙的引擎对它天然空转——**本轮显式不覆盖**(树里重点即建标签、showViewer 无同文档早退,无死胡同),契约措辞相应收窄(U3),要不要纳入见 Open questions。
+- **KD5 temp/网页标签排除;查看器态纳入收编(Colin 2026-07-17 拍板)**:temp/web 沿用现有判定(`isTempEntry`/`isWebKey`);读当前编辑器文档用现成 seam `window.__shellDocPath()`(shell.js ≈:939)。实现时确认它对 tempDoc 返回什么——若返回 null/非路径则天然豁免,否则显式排除。**PDF/图片查看器态(showViewer)`docPath` 恒为 null**(shell.js ≈:533 显式清)——**Colin 拍板一起修**:shell 新增只读 seam(如 `window.__shellViewerFile()` 返回 `{abs, kind}` 或 null,showViewer 设、关闭/切走清),引擎取「当前打开面文件」= `__shellDocPath()`(编辑器)?? `__shellViewerFile()`(查看器),同一条收编管线;查看器分支 kind 用 seam 自带的(pdf/img/other),不走扩展名推定。工作区模式下查看器文件本就有标签(openNode→showViewer→onOpen),收编后行为对齐。
 
 ## 实现单元
 
@@ -47,6 +47,7 @@
   6. 重启恢复:收编后重启(同 `WS2_USERDATA`)→ rel 标签与激活态恢复(persistTabs 生效)。
   8. **KD3 门(正向)**:0 根 viewer 开着文档 → 开一个网页标签(web 激活,web 标签不依赖工作区)→ 添加文件夹 → **不收编**:标签区无该文档、网页标签仍 is-active、web view 不被顶走;随后在树里点该文档 → U2 兜底建 entry(有意重入)。
   9. **不复活**:收编 → 开网页标签 → 后台 × 关掉该文档标签 → 再触发一次树到货(加第二根)→ 标签数不变(KD3 门挡住重收编)。
+  10. **查看器纳入(拍板②)**:0 根冷开一个 PDF(`WS2_OPEN_FILE` 指 .pdf)→ 添加其所在文件夹 → 标签区出现该 PDF(kind 正确,点击进查看器不是编辑器)。
 - **Verification**:场景 1(修前红/修后绿)= 变异证据的正向;变异自检=注释掉挂点调用 → 场景 1 翻红(先 commit 再变异)。
 
 ### U2. 同文档早退守卫兜底(防御层)
@@ -63,22 +64,22 @@
 
 - **Goal**:行为契约落 spec,防将来漂移/被"修回去"。
 - **Dependencies**:U1/U2 定稿。
-- **Files**:`docs/features/workspace-file-tree.md`(#253 已建的「外部标签收编」节,追加 viewer 收编契约,措辞**收窄到编辑器文档**:侧栏在场 ⇒ **编辑器中打开的 html/md 文档**必有标签(PDF/图片查看器态另案,见 Open questions);web/temp 激活时收编跳过、树点重入=有意重建;0 根 viewer 无标签仍是设计而非 bug;**两文档先后打开只收编最后一个(docPath 单槽)——现状语义,写明防止将来被当 bug 报**)。
+- **Files**:`docs/features/workspace-file-tree.md`(#253 已建的「外部标签收编」节,追加 viewer 收编契约:**侧栏在场 ⇒ 任何打开中的真文件(编辑器 html/md + 查看器 PDF/图片)必有标签**(Colin 2026-07-17 拍板纳入查看器);web/temp 激活时收编跳过、树点重入=有意重建;0 根 viewer 无标签仍是设计而非 bug;**先后打开多个只收编当前显示的那个(单槽)——现状语义,写明防止将来被当 bug 报**)。
 - **Test expectation: none** —— 纯文档;门在 U1/U2 的 e2e。
 
 ## Scope boundaries
 
 - **不改** 0 根时 viewer 不建标签的既有设计(幽灵标签守卫保留)。
 - **不做** viewer 态本身的跨重启恢复(收编后自然由 tabs 持久化接管;0 根 viewer 关掉即走,现状不变)。
-- **不覆盖 PDF/图片查看器态**(showViewer,docPath=null;树里重点即建标签、无死胡同;纳入与否见 Open questions)。
 - **不改** 0 根切临时文档清 docPath 的既有行为(此后原 viewer 文档无从收编——前置于本 fix,引擎救不了)。
 - **ui-demo 不移植**:mock 恒有工作区、无单文件 viewer 双态,无此 bug(记「真 app 独有,不算漂移」)。
 - 多窗口不存在(单窗 app),不设防。
 
-## Open questions(留 Colin 拍,不阻塞执行)
+## 已拍板(Colin 2026-07-17,AskUserQuestion)
 
-1. **PDF/图片查看器文件要不要纳入「侧栏在场必有标签」契约?** 现状:0 根双击 PDF(.pdf fileAssociations 刚随 #250 上线)→ 添加文件夹 → 无标签(同款症状换个文件类型);但树里重点即建标签,非死胡同。纳入需给 showViewer 加当前 node seam(本 PR 外工作量)。本 plan 默认**不纳入**+契约措辞收窄。
-2. **web/temp 激活时收编语义**:plan 已裁定「跳过收编、树点重入」(KD3,理由=不劈激活态+不复活关掉的标签)。另一选项是「登记 open 但不激活」(标签区可见但需防复活循环)。默认按 KD3 执行,Colin review 时可改。
+1. **开工**:按本 plan 实现,一 bug 一 PR。
+2. **PDF/图片查看器文件纳入收编**(「一起修」)——KD5 已更新:shell 加只读 `__shellViewerFile()` seam,查看器文件与编辑器文档走同一收编管线;U1 测试场景补查看器一条(场景 10)。
+3. **web 标签激活时不冒标签**(「不冒,不打扰」)——KD3 的跳过语义定案。
 
 ## 验收
 
