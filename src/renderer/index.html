@@ -102,9 +102,14 @@
   </div>
 </aside>
 
-<!-- 沉浸收起（Arc 对标）：左缘 6px 隐形热区——hover 滑出悬浮侧栏（peek）。常驻浮钮 sb-reopen
-     已删（Colin 拍板「纯 Arc 式」：零可见 UI，重开=hover peek / Cmd+\）。仅 body.is-sb-collapsed 时显示。 -->
+<!-- 沉浸收起（Arc 对标）：左缘 10px 边带（=沉浸窗框左条）——hover 滑出悬浮侧栏（peek）。常驻浮钮
+     sb-reopen 已删（Colin 拍板「纯 Arc 式」，重开=hover peek / Cmd+\）。仅 body.is-sb-collapsed 时显示。 -->
 <div id="sb-edge-hot" class="sb-edge-hot" aria-hidden="true"></div>
+<!-- 沉浸窗框拖拽带（Wendi 2026-07-17）：top/right/bottom 三条 app-region:drag 的 10px 边带，
+     收起态窗口的唯一拖动手柄；左边带=sb-edge-hot（不设 drag——drag 区吞鼠标事件会哑掉 peek 触发）。 -->
+<div class="win-frame win-frame-top" aria-hidden="true"></div>
+<div class="win-frame win-frame-right" aria-hidden="true"></div>
+<div class="win-frame win-frame-bottom" aria-hidden="true"></div>
 
 <!-- 编辑区（照搬 ui-demo Canvas chrome）。 -->
 <section id="main" class="ws-main-doc">
