@@ -207,20 +207,43 @@
   window.__webStatus = (key) => webState[key] || null;
   window.__webEnsureLoaded = (key, url) => { if (!live.has(key) && url) { live.add(key); window.ws2.webLoadUrl(key, url); } }; // 后台标签建 view 加载,不 attach
 
-  // DOM 弹层（⌘T modal / SaveModal / 关闭确认 / ⌘P 面板 / AI 接入）会被原生 view 盖住 →
+  // DOM 弹层（⌘T modal / SaveModal / 关闭确认 / ⌘P 面板 / AI 接入 / 更新面板）会被原生 view 盖住 →
   // 弹层存在期间临时摘掉 view,关掉后若激活的还是网页标签再挂回（视觉正确;标签状态不动）。
+  // 摘掉会露出底下的空态/文档层（Wendi 2026-07-16「更新弹窗背景变白」）→ 摘之前先对 view 截一帧
+  // 垫在弹层下（.web-snap，z 在弹层之下），视觉上「页面还在」；截图失败/超时(250ms)退回素底——
+  // 弹层绝不能被截图卡住。快照垫好(或放弃)才摘 view：先摘会拍不到画面，也会闪一帧素底。
   let overlayPaused = false;
+  let snapEl = null;
   const OVERLAY_SEL = '.sb-modal-overlay, #fp-overlay, .aiax-overlay';
   try {
     new MutationObserver(() => {
       const has = !!document.querySelector(OVERLAY_SEL);
       if (has && attachedKey && !overlayPaused) {
         overlayPaused = true;
-        window.ws2.webHideAll();
+        const key = attachedKey;
+        const timeout = new Promise((r) => setTimeout(() => r(null), 250));
+        Promise.race([window.ws2.webCapture(key).catch(() => null), timeout]).then((dataUrl) => {
+          if (dataUrl && overlayPaused && attachedKey === key) {
+            if (snapEl) snapEl.remove();
+            const b = viewBounds();
+            const img = document.createElement('img');
+            img.className = 'web-snap';
+            img.src = dataUrl;
+            img.style.cssText = `left:${b.x}px;top:${b.y}px;width:${b.width}px;height:${b.height}px`;
+            document.body.appendChild(img);
+            snapEl = img;
+          }
+          window.ws2.webHideAll();
+        });
       } else if (!has && overlayPaused) {
         overlayPaused = false;
         const e = activeEntry();
         if (e && T.isWebEntry(e) && e.url && attachedKey === keyOf(e)) window.ws2.webShow(attachedKey, viewBounds());
+        // 等 view 真挂回（原生 attach 下一帧生效）再撤快照，避免闪一帧素底；
+        // 引用局部化：紧接着又开新弹层时，迟到的撤图不能误删新快照。
+        const el = snapEl;
+        snapEl = null;
+        if (el) requestAnimationFrame(() => requestAnimationFrame(() => el.remove()));
       }
     }).observe(document.body, { childList: true });
   } catch { /* MutationObserver 恒可用;防御 */ }

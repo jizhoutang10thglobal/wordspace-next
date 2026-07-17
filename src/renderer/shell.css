@@ -619,6 +619,8 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(-103%); 
 /* 弹窗入场：轻轻落定（上移+缩放），不垫假纸 */
 @keyframes ws-modal-pop { from { opacity: 0; transform: translateY(10px) scale(0.975); } to { opacity: 1; transform: none; } }
 .sb-modal-overlay { position: fixed; inset: 0; z-index: 400; background: rgba(28, 25, 23, 0.32); display: flex; align-items: center; justify-content: center; padding: 24px; animation: ws-modal-fade var(--dur-fast) var(--ease-enter); }
+/* 弹层期间垫底的网页快照（弹层要摘原生 view，快照让「页面还在」；z 在弹层 400 之下） */
+.web-snap { position: fixed; z-index: 390; pointer-events: none; }
 .sb-modal { width: 520px; max-width: calc(100vw - 32px); background: var(--c-surface); border-radius: var(--r-lg); box-shadow: var(--shadow-modal); display: flex; flex-direction: column; max-height: calc(100vh - 48px); overflow: hidden; transform-origin: center 40%; animation: ws-modal-pop var(--dur-slow) var(--ease-enter); }
 .sb-modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px 14px; border-bottom: 1px solid var(--c-divider); }
 .sb-modal-head-text { min-width: 0; flex: 1; }

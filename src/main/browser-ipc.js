@@ -30,6 +30,8 @@ function registerBrowserIpc() {
   ipcMain.on('webtab-nav', (_e, key, action) => webTabs.nav(String(key), String(action)));
   ipcMain.on('webtab-show', (_e, key, bounds) => { webTabs.show(String(key), sanitizeBounds(bounds)); webTabs.wireFoundInPage(String(key)); });
   ipcMain.on('webtab-hide-all', () => webTabs.hideAll());
+  ipcMain.handle('webtab-capture', (_e, key) => webTabs.capture(String(key))); // 弹层摘 view 前的垫底快照
+
   ipcMain.on('webtab-bounds', (_e, key, bounds) => webTabs.setBounds(String(key), sanitizeBounds(bounds)));
   ipcMain.on('webtab-close', (_e, key) => webTabs.destroy(String(key)));
   ipcMain.on('webtab-find', (_e, key, text, opts) => webTabs.find(String(key), String(text == null ? '' : text), opts && typeof opts === 'object' ? { forward: opts.forward !== false, findNext: !!opts.findNext } : {}));
