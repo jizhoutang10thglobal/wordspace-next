@@ -340,10 +340,30 @@ await waitSeams()
   await openPopover()
   await page.waitForTimeout(400)
   await page.screenshot({ path: '/tmp/ws-downloads-light.png' })
-  await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
-  await page.waitForTimeout(300)
+  // 暗图走用户真实路径:预设外观偏好 → 整页重载(首帧即暗) → 重建同款场景。
+  // ⚠ 别用「中途 setAttribute('data-theme')」再截图:计算样式会变暗,但 headless Chromium 在
+  // 网页标签(半透明合成层)场景下光栅化出**陈旧的亮色帧**——实测复现,截出来的"暗图"是白的,
+  // 且无断言时静默假绿。下面的亮度强断言就是防这门再哑(读 computed 亮度,不查 class/attr)。
+  await page.evaluate(() => localStorage.setItem('ws-appearance', 'dark'))
+  await page.reload({ waitUntil: 'networkidle' })
+  await waitSeams()
+  await page.evaluate(() => window.__wsStore.getState().openWebTab('https://flowdesk.app', 'FlowDesk'))
+  await page.waitForSelector('.fd-dl-btn')
+  await page.click('.fd-dl-btn >> nth=2') // 大文件 → 在途(fail/interrupted/seed 各态已在记录里)
+  await page.waitForTimeout(1200)
+  await openPopover()
+  await page.waitForTimeout(400)
+  const darkLum = await page.evaluate(() => {
+    const lum = (el) => {
+      const m = getComputedStyle(el).backgroundColor.match(/\d+/g).map(Number)
+      return (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255
+    }
+    return { sidebar: lum(document.querySelector('.arc-sidebar')), popover: lum(document.querySelector('.dlp')) }
+  })
+  ok(darkLum.sidebar < 0.3, `暗态侧栏亮度 < 0.3(实测 ${darkLum.sidebar.toFixed(2)})`)
+  ok(darkLum.popover < 0.3, `暗态 popover 亮度 < 0.3(实测 ${darkLum.popover.toFixed(2)})`)
   await page.screenshot({ path: '/tmp/ws-downloads-dark.png' })
-  await page.evaluate(() => document.documentElement.removeAttribute('data-theme'))
+  await page.evaluate(() => localStorage.setItem('ws-appearance', 'system'))
   console.log('shot /tmp/ws-downloads-light.png + /tmp/ws-downloads-dark.png')
 }
 
