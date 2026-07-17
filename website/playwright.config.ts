@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 4000;
+// 端口可用 WS_SITE_PORT 覆写：本仓常态多 session 并行，4000 常被别的 session 的
+// dev server 占着——reuseExistingServer 会静默复用那个「旧站」，整套测试测错对象。
+const PORT = Number(process.env.WS_SITE_PORT ?? 4000);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({
@@ -21,7 +23,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run start`,
+    command: `npx next start -p ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

@@ -665,3 +665,154 @@ p {
   max-width: 48ch;
   margin: 0 auto var(--sp-xl);
 }
+
+/* ═══ Changelog（/changelog）════════════════════════════════════════ */
+
+.cl-main {
+  padding: var(--sp-3xl) var(--sp-lg) var(--sp-3xl);
+}
+
+.cl-head h1 {
+  font-size: 34px;
+  letter-spacing: -0.02em;
+  margin: 0 0 var(--sp-sm);
+  color: var(--text-primary);
+}
+
+.cl-sub {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+.cl-entries {
+  margin-top: var(--sp-2xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2xl);
+}
+
+.cl-entry {
+  padding-top: var(--sp-xl);
+  border-top: 1px solid var(--border-standard);
+}
+
+.cl-entry__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-md);
+  flex-wrap: wrap;
+}
+
+.cl-entry__version {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 19px;
+  font-weight: 650;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.cl-entry__version:hover {
+  color: var(--accent-dim);
+}
+
+.cl-entry__date {
+  color: var(--text-tertiary);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cl-entry__note {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.cl-entry__lead {
+  margin: var(--sp-md) 0 0;
+  font-size: 16.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-wrap: balance;
+}
+
+.cl-group {
+  margin-top: var(--sp-lg);
+}
+
+.cl-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-standard);
+  color: var(--text-secondary);
+  background: var(--bg-ink);
+}
+
+.cl-badge--new {
+  color: var(--accent-dim);
+  border-color: var(--accent-border);
+  background: var(--accent-subtle);
+}
+
+.cl-badge--latest {
+  color: var(--text-inverse);
+  background: var(--accent-dim);
+  border-color: transparent;
+}
+
+.cl-items {
+  margin: var(--sp-sm) 0 0;
+  padding-left: 1.15em;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cl-items li {
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+  max-width: 46em;
+}
+
+.cl-items li::marker {
+  color: var(--accent);
+}
+
+.cl-items strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.cl-dev-note {
+  margin-top: var(--sp-3xl);
+  padding-top: var(--sp-lg);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: 13.5px;
+}
+
+.cl-dev-note a {
+  color: var(--text-secondary);
+}
+
+/* header 右侧导航（目前只有更新日志一项） */
+.site-header__nav {
+  display: flex;
+  gap: var(--sp-lg);
+  align-items: center;
+}
+
+.site-header__nav a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14.5px;
+}
+
+.site-header__nav a:hover {
+  color: var(--accent-dim);
+}
