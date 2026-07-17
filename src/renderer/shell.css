@@ -851,16 +851,85 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(-103%); 
 
 /* 空态 */
 /* 修 VC-8：最小窗高（520）下空态标题+提示+两按钮+10 条最近文档 ≈500px、flex 居中会上下同时裁切且无滚动。允许竖向滚。 */
-.ws-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; overflow-y: auto; }
+/* ---- 空态 = 导览页(方案 3「时间流」,Wendi 2026-07-17;ui-demo #259 移植)。 ----
+   保守口径:卡片/瓦片零阴影(细边+底色差),hover=墨条滑入,omnibox 焦点=墨线划过;
+   老的居中标题+裸路径 recent-list 已退役。spec docs/features/start-page.md */
+.ws-empty-wrap { flex: 1; display: flex; overflow-y: auto; }
 .ws-empty-wrap[hidden] { display: none; }
-.ws-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 520px; padding: 0 40px; text-align: center; animation: ws-view-in var(--dur-page) var(--ease-enter) both; }
-.ws-empty-title { font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--c-text); }
-.ws-empty-note { font-size: var(--fs-md); color: var(--c-text-3); margin-bottom: 10px; }
-.ws-empty-actions { display: flex; align-items: center; gap: 10px; }
-.ws-empty-ghost { border: 1px solid var(--c-border-strong); border-radius: var(--r-pill); }
-#recent-list { width: 100%; margin-top: 18px; text-align: left; }
-#recent-list li { padding: 9px 12px; border-radius: var(--r-sm); cursor: pointer; color: var(--c-text-2); font-size: var(--fs-base); transition: background var(--dur-fast) var(--ease); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#recent-list li:hover { background: var(--c-hover); color: var(--c-text); }
+.sp { flex: 1; min-width: 0; display: flex; gap: 48px; padding: 56px 60px 40px; background: var(--c-bg); animation: ws-view-in var(--dur-page) var(--ease-enter) both; }
+.sp-col { flex: 1.7; min-width: 0; max-width: 640px; }
+.sp-rail { flex: 1; max-width: 240px; padding-top: 10px; }
+.sp-greet { font-size: 34px; font-weight: 650; letter-spacing: -0.015em; color: var(--c-text); margin: 0 0 2px; }
+.sp-date { font-size: var(--fs-md); color: var(--c-text-3); margin-bottom: 26px; }
+
+.sp-omni {
+  position: relative; display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px;
+  background-color: var(--c-bg-rail);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat; background-position: left bottom; background-size: 0% 2px;
+  border-radius: var(--r-md);
+  transition: background-color var(--dur-fast) var(--ease), background-size var(--dur-slow) var(--ease-enter);
+}
+.sp-omni:focus-within { background-color: var(--c-surface); background-size: 100% 2px; }
+.sp-omni-ico { flex: none; color: var(--c-text-3); }
+#sp-omni-input { flex: 1; min-width: 0; border: none; background: none; outline: none; font-family: var(--font-ui); font-size: var(--fs-lg); color: var(--c-text); }
+#sp-omni-input::placeholder { color: var(--c-text-3); }
+.sp-sug {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 80;
+  padding: 4px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 9px;
+  box-shadow: var(--shadow-pop); display: flex; flex-direction: column; gap: 1px;
+}
+.sp-sug[hidden] { display: none; }
+.sp-sug-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 7px 9px; border-radius: var(--r-sm); color: var(--c-text-2); font-size: var(--fs-base); border: 0; background: transparent; }
+.sp-sug-item.is-sel { background: var(--c-accent-tint); }
+.sp-sug-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text); }
+.sp-sug-meta { flex: none; font-size: var(--fs-xs); color: var(--c-text-3); }
+.sp-sug-web { color: var(--c-text-2); font-size: var(--fs-sm); }
+
+.sp-flow { margin-top: 10px; }
+.sp-grp-cap { display: flex; align-items: center; gap: 10px; font-family: var(--font-mono); font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-text-3); margin: 22px 0 6px; }
+.sp-grp-cap::after { content: ""; flex: 1; height: 1px; background: var(--c-border); }
+.sp-row {
+  display: flex; align-items: center; gap: 11px; width: 100%; height: 38px; padding: 0 10px;
+  border: 0; border-radius: var(--r-md); text-align: left; font-size: var(--fs-md); color: var(--c-text);
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
+}
+.sp-row:hover { background-size: 100% 100%; }
+.sp-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-row-meta { flex: none; display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--c-text-3); font-variant-numeric: tabular-nums; }
+.sp-chip { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: var(--r-pill); background: var(--c-bg-sunken); border: 1px solid var(--c-border); font-size: var(--fs-xs); color: var(--c-text-3); }
+.sp-empty { margin-top: 28px; font-size: var(--fs-sm); color: var(--c-text-3); }
+
+.sp-fico { flex: none; width: 22px; height: 27px; border: 1.5px solid var(--c-border-strong); border-radius: 3px; background: var(--c-surface); position: relative; }
+.sp-fico::before { content: ""; position: absolute; left: 4px; right: 4px; top: 5px; height: 1.5px; background: var(--c-border-strong); box-shadow: 0 4px 0 var(--c-border), 0 8px 0 var(--c-border), 0 12px 0 var(--c-border); }
+.sp-fico.is-md::after { content: "M↓"; position: absolute; right: -5px; bottom: -5px; font-family: var(--font-mono); font-size: 7px; padding: 0 3px; border-radius: 3px; background: var(--c-accent-tint); color: var(--c-accent); }
+
+.sp-rail-cap { font-family: var(--font-mono); font-size: 10px; font-weight: var(--fw-semibold); letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-text-3); margin: 4px 0 10px; }
+.sp-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 26px; }
+.sp-tile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  height: 66px; border: 1px solid var(--c-border); border-radius: var(--r-lg); background: var(--c-surface);
+  font-size: var(--fs-xs); color: var(--c-text-2); padding: 0 6px;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.sp-tile:hover { background: var(--c-hover); border-color: var(--c-border-strong); }
+.sp-tile-chip { width: 20px; height: 20px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 650; }
+.sp-tile-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sp-acts { display: flex; flex-direction: column; gap: 9px; }
+.sp-act {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px;
+  border-radius: var(--r-pill); border: 1px solid var(--c-border-strong); background: var(--c-surface);
+  color: var(--c-text-2); font-size: var(--fs-base); font-weight: var(--fw-medium);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), transform var(--dur-instant) var(--ease);
+}
+.sp-act:hover { background: var(--c-hover); color: var(--c-text); }
+.sp-act:active { transform: scale(0.97); }
+.sp-act-ink { background: var(--c-ink); border-color: var(--c-ink); color: var(--c-text-invert); }
+.sp-act-ink:hover { background: var(--c-ink-hover); color: var(--c-text-invert); }
+
+@media (max-width: 860px) { .sp { flex-direction: column; padding: 36px 28px; gap: 30px; } .sp-rail { max-width: none; } }
 
 /* 右上角浮动 actions（Colin 2026-07-02：收成一个 ⋯ 菜单）。top 居中于 52px 文档头条：(52-30)/2≈11。 */
 /* 修 VC-5：z-index 提到基础编辑浮层（格式条 z60 / 焦点框 z55 / hover 框 z50，挂 body 顶层）之上——
