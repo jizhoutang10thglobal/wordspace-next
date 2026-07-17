@@ -76,7 +76,10 @@ function createWindow() {
     // 只有真退出（Cmd+Q → before-quit 先行；自动更新 quitAndInstall → before-quit-for-update 先行）
     // 才继续往下销毁 + 未保存守卫。
     // Windows/Linux 不驻留：按平台惯例关窗即退（走下面守卫 → window-all-closed → quit）。
-    if (process.platform === 'darwin' && !quitting) {
+    // WS2_DARWIN_PERSIST_SIM（isPackaged 闸,seam 惯例）：非 mac 的 CI 上强制走这条驻留分支——
+    // 「更新退出被驻留守卫吞掉」的 e2e 门要在 Linux CI 也有牙（bug 本体是 darwin-only 的）。
+    const darwinPersist = process.platform === 'darwin' || (!app.isPackaged && process.env.WS2_DARWIN_PERSIST_SIM);
+    if (darwinPersist && !quitting) {
       e.preventDefault();
       webTabs.setAllAudioMuted(true); // 隐藏驻留：后台网页别继续放声/烧 CPU（P2-11；标签静音已砍,只能整体静音）
       win.hide();
@@ -257,6 +260,20 @@ function pushUpdateEvent(evt) {
   }
 }
 
+// 用户点了「重启安装」→ **动作点直置 quitting=true 放行退出，零事件依赖**。
+// ⚠ 为什么不能靠事件（二次血教训，Colin 2026-07-17 复现）：native Squirrel 的 quitAndInstall 逐窗
+// close 前发的 'before-quit-for-update' 挂在 require('electron').autoUpdater（AutoUpdater 接口，
+// electron.d.ts:1995）上——**不是 app 的事件**。2026-07-16 那版 app.on('before-quit-for-update')
+// 是给不存在的事件挂监听、从未触发过：quitting 恒 false → darwin 驻留守卫把更新的关窗 preventDefault
+// 吞掉 → 窗口只是 hide、Squirrel 永远等不到全关 →「点了重启,app 还赖在 Dock 里」。
+function beginQuitForUpdate(fire) {
+  quitting = true;
+  try { fire(); } catch (e) {
+    quitting = false; // 安装序列没启动成功：复位，别让下次红叉从「隐藏驻留」漂移成「真退出」
+    if (updLog) updLog.error('quitAndInstall threw: ' + ((e && e.stack) || e));
+  }
+}
+
 function setupAutoUpdater() {
   // IPC 桥 dev/packaged 都建：dev 要能弹「开发模式」面板，e2e 靠 __ws2UpdateSim 驱动整条 UI 链。
   ipcMain.handle('update-get-status', () => updatePayload());
@@ -266,11 +283,18 @@ function setupAutoUpdater() {
     pushUpdateEvent({ type: 'download-started' }); // shouldStartDownload 判真 → 真正开下载
   });
   ipcMain.handle('update-install', async () => {
-    if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.install++; return; }
+    if (!app.isPackaged) {
+      if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.install++;
+      // 退出链 e2e（WS2_UPDATE_QUIT_SIM，isPackaged 闸）：走与真路径**同一个** beginQuitForUpdate，
+      // 用「逐窗 close」模拟 native quitAndInstall 的关窗序列（全关 → window-all-closed → app.quit()，
+      // 与 Squirrel 时序同构）。门守的是「darwin 隐藏驻留守卫吞掉更新退出」这条链。
+      if (process.env.WS2_UPDATE_QUIT_SIM) beginQuitForUpdate(() => { for (const w of BrowserWindow.getAllWindows()) w.close(); });
+      return;
+    }
     if (!autoUpdater) return;
     await maybeRepairBundleOwnership(); // 免密修复（一次性）：失败/跳过都不拦安装，最坏回到 ShipIt 提权老路径
     if (updLog) updLog.info('user chose quitAndInstall');
-    autoUpdater.quitAndInstall();
+    beginQuitForUpdate(() => autoUpdater.quitAndInstall());
   });
 
   if (!app.isPackaged) {
@@ -460,15 +484,16 @@ if (!app.requestSingleInstanceLock()) {
     // push 队列——让 seam 也过 scheme 白名单，e2e 才能验「file:// 不开标签」这道门。
     if (!app.isPackaged && process.env.WS2_OPEN_URL) openExternalUrlFromOS(process.env.WS2_OPEN_URL);
   });
-  // 真退出的第一信号：打上标志，close 守卫据此放行销毁而不是隐藏。两个事件都要接——
-  // Cmd+Q 走 before-quit；autoUpdater.quitAndInstall() **不走 before-quit**，它发专用的
-  // before-quit-for-update 再逐窗 close、全关后才 app.quit()（electron.d.ts + 实测）。
-  // ⚠ 血教训（2026-07-16）：此前只接 before-quit 并注释称"quitAndInstall 也会先发 before-quit"——
-  // 假的。结果 quitAndInstall 的关窗被 darwin 隐藏驻留守卫 preventDefault 吞掉：窗口只是藏起来、
-  // app 不退、安装永远等不到 window-all-closed →「点了重启没反应」（updater.log 2026-07-15 四连击实锤，
-  // 所谓"成功"的几次全是用户手动 Cmd+Q 救的）。
+  // 真退出的第一信号：打上标志，close 守卫据此放行销毁而不是隐藏。
+  // Cmd+Q 走 before-quit；autoUpdater.quitAndInstall() **不走 before-quit**（它逐窗 close、全关后才 quit）。
+  // ⚠ 血教训一（2026-07-16）：只接 before-quit → quitAndInstall 的关窗被 darwin 驻留守卫吞掉,点了重启没反应
+  //   （updater.log 2026-07-15 四连击实锤）。
+  // ⚠ 血教训二（2026-07-17 Colin 复现）：上一版补的 app.on('before-quit-for-update') 也是哑的——该事件挂在
+  //   require('electron').autoUpdater（AutoUpdater 接口，electron.d.ts:1995）上，**不是 app 事件**，从未触发。
+  //   主修已改为动作点直置（update-install handler → beginQuitForUpdate，零事件依赖）；下面在**正确的发射器**
+  //   上再挂一份兜底（防未来其他路径触发 native quitAndInstall，如 autoInstallOnAppQuit）。
   app.on('before-quit', () => { quitting = true; });
-  app.on('before-quit-for-update', () => { quitting = true; });
+  try { require('electron').autoUpdater.on('before-quit-for-update', () => { quitting = true; }); } catch { /* 平台无 native autoUpdater：安静跳过 */ }
   // macOS：隐藏驻留中点 Dock 图标 → 把窗口带回来（标准 mac 行为）。
   app.on('activate', () => focusWindow());
   app.on('window-all-closed', () => app.quit());
