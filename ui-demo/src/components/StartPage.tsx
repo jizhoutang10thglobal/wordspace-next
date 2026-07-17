@@ -4,6 +4,7 @@ import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
 import { useBookmarks, BM_BAR } from '../mock/bookmarks'
+import { useHistory } from '../mock/history'
 import { useT } from '../i18n'
 import { relTime } from '../lib/format'
 import { groupKey, GROUP_ORDER, folderLabel, type RecencyGroup } from '../lib/recency'
@@ -83,6 +84,19 @@ export default function StartPage() {
   const dateLine = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
 
   const tiles = bookmarks.filter((b) => b.folderId === BM_BAR).slice(0, 6)
+  // 最常访问:历史按 url 计数取前 4(只算真网页,glass 搜索页不算;与书签去重)
+  const history = useHistory((s) => s.entries)
+  const mostVisited = useMemo(() => {
+    const bmUrls = new Set(tiles.map((b) => b.url))
+    const byUrl = new Map<string, { url: string; title: string; n: number }>()
+    for (const h of history) {
+      if (!/^https?:/i.test(h.url) || bmUrls.has(h.url)) continue
+      const cur = byUrl.get(h.url)
+      if (cur) cur.n++
+      else byUrl.set(h.url, { url: h.url, title: h.title, n: 1 })
+    }
+    return [...byUrl.values()].sort((a, b) => b.n - a.n).slice(0, 4)
+  }, [history, tiles])
   const groupTitle: Record<RecencyGroup, string> = {
     today: t('start.today'),
     yesterday: t('start.yesterday'),
@@ -165,12 +179,25 @@ export default function StartPage() {
       <aside className="sp-rail">
         {tiles.length > 0 && (
           <>
-            <div className="sp-rail-cap">{t('start.favorites')}</div>
+            <div className="sp-rail-cap">{t('start.bookmarks')}</div>
             <div className="sp-tiles">
               {tiles.map((b) => (
                 <button key={b.id} className="sp-tile" title={b.url} onClick={() => goWeb(b.url)}>
                   <TileChip label={b.title} seed={b.url} />
                   <span className="sp-tile-name">{b.title}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {mostVisited.length > 0 && (
+          <>
+            <div className="sp-rail-cap">{t('start.mostVisited')}</div>
+            <div className="sp-tiles">
+              {mostVisited.map((m) => (
+                <button key={m.url} className="sp-tile" title={m.url} onClick={() => goWeb(m.url)}>
+                  <TileChip label={m.title} seed={m.url} />
+                  <span className="sp-tile-name">{m.title}</span>
                 </button>
               ))}
             </div>

@@ -899,7 +899,12 @@ export const useStore = create<State>()(
           const closing = s.tabs.find((t) => t.id === tabId)
           const tabs = s.tabs.filter((t) => t.id !== tabId)
           let activeTabId = s.activeTabId
-          if (s.activeTabId === tabId) activeTabId = tabs[tabs.length - 1]?.id ?? ''
+          if (s.activeTabId === tabId) {
+            // 继任只在普通标签里找——置顶是「钉住」不是「打开」,不自动接管激活;
+            // 普通标签关光了就回导览页(空态),与真 app 语义一致(Colin 2026-07-17 实测抓出)。
+            const unpinned = tabs.filter((t) => !t.pinned)
+            activeTabId = unpinned[unpinned.length - 1]?.id ?? ''
+          }
           // 记进「刚关闭」栈，供 ⌘⇧T 重开（临时未保存文档不记，重开也没内容）
           const closedTabs = closing && !closing.docId ? [closing, ...s.closedTabs].slice(0, 15) : s.closedTabs
           return { tabs, activeTabId, closedTabs }
