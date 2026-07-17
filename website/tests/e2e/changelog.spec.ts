@@ -5,6 +5,8 @@ import { expect, test } from '@playwright/test';
 // 页面与正本（../CHANGELOG.md）绑定断言：不是「页面上有点内容」这种弱门——
 // 从正本解析出最新版本号/首条条目，断言页面真渲染了它们（parser 坏/数据源断 → 红）。
 const changelogMd = readFileSync(path.join(__dirname, '..', '..', '..', 'CHANGELOG.md'), 'utf8');
+const changelogEnMd = readFileSync(path.join(__dirname, '..', '..', '..', 'CHANGELOG.en.md'), 'utf8');
+const enVersions = [...changelogEnMd.matchAll(/^## (v\d+\.\d+\.\d+) — (\d{4}-\d{2}-\d{2})/gm)];
 const versions = [...changelogMd.matchAll(/^## (v\d+\.\d+\.\d+) — (\d{4}-\d{2}-\d{2})/gm)];
 const latest = versions[0];
 
@@ -39,6 +41,32 @@ test.describe('/changelog', () => {
     await page.goto('/');
     await page.getByTestId('nav-changelog').click();
     await expect(page).toHaveURL(/\/changelog$/);
+    await expect(page.getByRole('heading', { level: 1, name: '更新日志' })).toBeVisible();
+  });
+
+  test('中英切换：默认中文，点 English 全页切英文（内容真来自 CHANGELOG.en.md），选择持久化', async ({ page }) => {
+    // 双语同步门（文件层）：en 最新版本必须与 zh 一致（构建门的镜像断言，红=发版漏写英文）
+    expect(enVersions[0][1]).toBe(latest[1]);
+
+    await page.goto('/changelog');
+    await expect(page.getByRole('heading', { level: 1, name: '更新日志' })).toBeVisible();
+    await page.getByTestId('cl-lang-en').click();
+    await expect(page.getByRole('heading', { level: 1, name: 'Changelog' })).toBeVisible();
+    // 条目内容真来自英文正本：en 首个列表行文字出现在页面
+    const firstEnBullet = changelogEnMd
+      .split('\n')
+      .find((l) => l.startsWith('- '))!
+      .slice(2)
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/`([^`]*)`/g, '$1');
+    await expect(page.locator('.cl-items li').first()).toContainText(firstEnBullet.slice(0, 20));
+    // 最新徽标也切英文；版本骨架不变（条目数仍= zh 版本数,en 缺的回落 zh）
+    await expect(page.locator('.cl-badge--latest')).toHaveText('Latest');
+    expect(await page.locator('.cl-entry').count()).toBe(versions.length);
+    // 刷新后记住选择
+    await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Changelog' })).toBeVisible();
+    await page.getByTestId('cl-lang-zh').click();
     await expect(page.getByRole('heading', { level: 1, name: '更新日志' })).toBeVisible();
   });
 
