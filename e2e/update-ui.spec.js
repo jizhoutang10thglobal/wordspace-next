@@ -115,6 +115,27 @@ test('启动补拉：renderer 重载后从 main 缓存恢复 pill（事件先于
   await expect(page.locator('.up-card')).toHaveCount(0); // 补拉只挂 pill，不自动弹面板
 });
 
+test('更新日志入口：available/uptodate 面板有「更新日志」，点击真到主进程且面板收起', async () => {
+  // available 态：发现新版 → 面板带更新日志按钮
+  await sim({ type: 'checking', manual: true });
+  await sim({ type: 'available', version: '6.6.6', notes: [] });
+  const card = page.locator('.up-card');
+  await expect(card).toHaveAttribute('data-state', 'available');
+  const btn = page.locator('.up-btn[data-act="changelog"]');
+  await expect(btn).toHaveText('更新日志');
+  await btn.click();
+  expect((await simCalls()).changelog).toBe(1); // 主进程真收到 update-open-changelog
+  await expect(card).toHaveCount(0); // 开网页标签前面板先收（弹层在会摘 view）
+
+  // uptodate 态：已是最新 → 「最近更新了什么」
+  await sim({ type: 'checking', manual: true });
+  await sim({ type: 'not-available' });
+  await expect(card).toHaveAttribute('data-state', 'uptodate');
+  await page.locator('.up-btn[data-act="changelog"]').click();
+  expect((await simCalls()).changelog).toBe(2);
+  await expect(card).toHaveCount(0);
+});
+
 test('下载进度推送不重建面板：同一张卡原地更新（防闪烁），焦点不被反复抢', async () => {
   // 进入 downloading 面板态
   await sim({ type: 'checking', manual: true });

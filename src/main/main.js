@@ -122,6 +122,10 @@ function sendMenu(cmd) {
 // 看不到其他人的报告。别换成数据库页链接（那会暴露所有人的 bug）。
 const BUG_REPORT_URL = 'https://humble-blanket-79b.notion.site/11f77f0ceeb647f899bcbe2798963b42?pvs=105';
 
+// 更新日志页（正本=仓库根 CHANGELOG.md,官网构建时渲染）。菜单/更新面板入口都开成 app 内网页标签
+// （吃自己浏览器的狗粮）,不跳系统浏览器。
+const CHANGELOG_URL = 'https://wordspace.ai/changelog';
+
 // 外观三态的唯一枢纽：偏好持久化 + nativeTheme.themeSource（驱动 mac 窗框/系统菜单/对话框/网页标签，
 // R3/R6）+ 重建菜单勾选态 + 广播 renderer（chrome data-theme + ⋯菜单/settings 同步 + 切换过渡）。
 // ⚠ renderer chrome 走 data-theme 属性而非 prefers-color-scheme：Electron 里 themeSource 改变不 live 更新
@@ -184,7 +188,7 @@ function buildMenu() {
   });
   // 撤销/重做不用系统 role：必须走编辑器自己的统一撤销栈
   const template = [
-    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: t('menu.checkUpdates'), click: () => manualCheckForUpdates() }, { label: t('menu.settings'), accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: t('menu.reportIssue'), click: () => shell.openExternal(BUG_REPORT_URL) }, { label: t('menu.aiAccess'), click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: t('menu.appearance'), submenu: [appearanceItem(t('common.apprSystem'), 'system'), appearanceItem(t('common.apprLight'), 'light'), appearanceItem(t('common.apprDark'), 'dark')] }, { label: t('menu.perfDiag'), click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: t('common.quit'), accelerator: 'CmdOrCtrl+Q' }] },
+    { label: 'Wordspace Next', submenu: [{ role: 'about' }, { label: t('menu.checkUpdates'), click: () => manualCheckForUpdates() }, { label: t('menu.changelog'), click: () => openExternalUrlFromOS(CHANGELOG_URL) }, { label: t('menu.settings'), accelerator: 'CmdOrCtrl+,', click: () => sendMenu('open-settings') }, { label: t('menu.reportIssue'), click: () => shell.openExternal(BUG_REPORT_URL) }, { label: t('menu.aiAccess'), click: () => sendMenu('ai-access') }, { type: 'separator' }, { label: t('menu.appearance'), submenu: [appearanceItem(t('common.apprSystem'), 'system'), appearanceItem(t('common.apprLight'), 'light'), appearanceItem(t('common.apprDark'), 'dark')] }, { label: t('menu.perfDiag'), click: () => sendMenu('perf-diag') }, { type: 'separator' }, { role: 'quit', label: t('common.quit'), accelerator: 'CmdOrCtrl+Q' }] },
     {
       label: t('menu.file'),
       submenu: [
@@ -296,6 +300,10 @@ function setupAutoUpdater() {
     if (updLog) updLog.info('user chose quitAndInstall');
     beginQuitForUpdate(() => autoUpdater.quitAndInstall());
   });
+  ipcMain.handle('update-open-changelog', () => {
+    if (!app.isPackaged) { if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.changelog++; return; }
+    openExternalUrlFromOS(CHANGELOG_URL); // 开成 app 内网页标签（含就绪排队与 scheme 白名单）
+  });
 
   if (!app.isPackaged) {
     // e2e seam（照 __ws2WebTabs 惯例，仅非打包态）：注入状态事件驱动面板/pill，动作调用只计数不真跑。
@@ -303,7 +311,7 @@ function setupAutoUpdater() {
     // + calls.authShown 计数（弹说明分支被走到时 +1，配 WS2_BUNDLE_OWNED/WS2_AUTH_DIALOG_RESPONSE 断言）。
     global.__ws2UpdateSim = {
       push: (evt) => pushUpdateEvent(evt),
-      calls: { download: 0, install: 0, authShown: 0 },
+      calls: { download: 0, install: 0, changelog: 0, authShown: 0 },
       payload: () => updatePayload(),
       authExplain: () => maybeExplainInstallAuth(),
     };

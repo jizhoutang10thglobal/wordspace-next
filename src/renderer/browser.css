@@ -106,7 +106,7 @@
 .sb-fav.is-open .sb-fav-caret { transform: rotate(90deg); }
 .sb-fav-label {
   font-family: var(--font-mono); font-size: var(--fs-xs); font-weight: var(--fw-semibold);
-  letter-spacing: var(--tracking-label); color: var(--c-text-3);
+  letter-spacing: var(--tracking-label); color: var(--c-text-3); text-transform: uppercase; /* 与 .sb-sec-label 同款分区栏标（style.md「分区栏标」：等宽+宽字距+大写；中文下 uppercase 隐形、英文缺它就穿帮 */
   transition: color var(--dur-fast) var(--ease);
 }
 .sb-fav-head:hover .sb-fav-label { color: var(--c-text-2); }
@@ -117,10 +117,9 @@
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: var(--r-pill);
   color: var(--c-text-3);
-  opacity: 0; /* 收起时保持干净：hover 标题行或展开态才显现（§4.3） */
-  transition: opacity var(--dur-fast) var(--ease);
+  /* 常显（Wendi 2026-07-17：与标签页区常显「+」统一,Colin 拍板「都一直出现」——推翻 07-13 hover 才显;
+     三栏行尾口径一致:动作入口常显、caret 常显） */
 }
-.sb-fav-head:hover .sb-fav-manage, .sb-fav.is-open .sb-fav-manage { opacity: 1; }
 .sb-fav-manage:hover { background: var(--c-hover); color: var(--c-text); }
 .sb-fav-list { padding: 2px 0; }
 .sb-fav-group { margin: 4px 0 2px; padding: 0 8px; font-size: var(--fs-xs); color: var(--c-text-3); }

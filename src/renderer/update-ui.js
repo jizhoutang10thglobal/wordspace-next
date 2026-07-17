@@ -20,6 +20,10 @@
     if (id === 'download') window.ws2.updateDownload();
     else if (id === 'install') window.ws2.updateInstall();
     else if (id === 'check') window.ws2.updateCheck();
+    else if (id === 'changelog') {
+      closePanel(); // 更新日志开成网页标签，先收面板（弹层在，view 会被摘除守卫压着）
+      window.ws2.updateOpenChangelog();
+    }
   }
 
   function renderPill(pill) {
@@ -159,6 +163,7 @@
         btn.className = 'up-btn' + (b.primary ? ' up-btn-primary' : '');
         btn.dataset.act = b.id;
         btn.textContent = b.label;
+        if (b.title) btn.title = b.title;
         btn.addEventListener('click', () => act(b.id));
         foot.appendChild(btn);
       }

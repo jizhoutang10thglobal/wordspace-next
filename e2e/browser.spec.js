@@ -416,6 +416,11 @@ test('⌘D 收藏落书签栏 + 收藏区默认收起点开 + 点收藏聚焦已
   // 收藏区：默认收起（只有标题行）,点标题行展开出书签
   await expect(page.locator('#sb-fav')).toBeVisible();
   await expect(page.locator('#sb-fav-list')).toBeHidden();
+  // 管理入口**常显**（Wendi 2026-07-17 与标签页「+」统一,§4.3/§15）——强断言:鼠标不在收藏行上时
+  // 真实 computed opacity 也是 1（旧行为 opacity:0 hover 才显 = 此处翻红;查 computed 非查 class,防哑门）
+  await page.mouse.move(600, 400); // 鼠标挪去编辑区,确保没 hover 收藏行
+  expect(await page.locator('#sb-fav-manage').evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+  expect(await page.locator('#sb-tabs .sb-zone-add').evaluate((el) => getComputedStyle(el).opacity)).toBe('1'); // 与「+」口径一致的对照
   await page.locator('#sb-fav-head').click();
   await expect(page.locator('#sb-fav-list .sb-fav-row')).toHaveCount(1);
   // 点收藏 = 已开该网址 → 聚焦,不堆新标签（拍板#3）

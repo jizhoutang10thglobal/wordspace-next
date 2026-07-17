@@ -149,6 +149,7 @@ function panelModel(status, currentVersion) {
         body,
         buttons: [
           { id: 'download', label: i18n.t('update.downloadInstall'), primary: true },
+          { id: 'changelog', label: i18n.t('update.changelogBtn'), title: i18n.t('update.changelogTip') },
           { id: 'close', label: i18n.t('update.later') },
         ],
       };
@@ -173,6 +174,7 @@ function panelModel(status, currentVersion) {
         body: [{ t: 'p', text: i18n.t('update.readyBody', { target: v || i18n.t('update.newVersionNoun') }) }],
         buttons: [
           { id: 'install', label: i18n.t('update.restartNow'), primary: true },
+          { id: 'changelog', label: i18n.t('update.changelogBtn') },
           { id: 'close', label: i18n.t('update.laterAutoInstall') },
         ],
       };
@@ -181,7 +183,10 @@ function panelModel(status, currentVersion) {
         state: 'uptodate',
         title: i18n.t('update.checkTitle'),
         body: [{ t: 'p', text: currentVersion ? i18n.t('update.uptodateWithVer', { ver: currentVersion }) : i18n.t('update.uptodate') }],
-        buttons: [{ id: 'close', label: i18n.t('common.ok') }],
+        buttons: [
+          { id: 'changelog', label: i18n.t('update.recentChanges') },
+          { id: 'close', label: i18n.t('common.ok') },
+        ],
       };
     case 'error':
       return {
