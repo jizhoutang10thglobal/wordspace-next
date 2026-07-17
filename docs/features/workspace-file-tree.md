@@ -82,6 +82,21 @@ no-op，不与第二段的 wsReadTree 打架。
 （原 e2e `UX4`）；Wendi 2026-07-14 报滚动刺眼，Colin 拍板拆成「展开保留、滚动去掉」（e2e 改写为 `UX4v3`，
 scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
 
+## 外部标签收编（2026-07-17，Wendi bug）
+
+标签身份两类（`src/lib/tabs.js` keyOf）：工作区内 = `rootId:rel`，工作区外 = 绝对路径 abs（↗ 标记）。
+**收编契约**：外部标签指向的文件一旦出现在某个已加载的树里，标签就并进 rel 身份——↗ 消失、
+open/pinned 取并集、激活跟随、abs 旧条目销毁（引擎 = `sidebar.js` `mergeExternalDupes`）。触发点 =
+所有「树内容到货」处：`loadRootTree`（添加文件夹/启动/复活）、`loadLazyTop`/`loadDirChildren`
+（简化模式逐层加载）、`adoptRoot`（吸收/撤销移除带树进来）、`loadTabs` 末尾（启动自愈存量坏状态，
+不带 rootId = 对全部根收编）。
+
+沿革：引擎原本只为「根失联/被移除期间开过里面的文件、复活后去重」建（MR-ADV-5），只挂在
+`validateRootEntries`（复活/重定位路径）。最常见的「先开单独文件、**再**添加它所在的文件夹」没接线——
+外部 ↗ 永驻还被持久化；重启时激活恢复经 onOpen 按树重解析，同一文件翻出两条标签（Wendi 2026-07-16 报）。
+门：`e2e/tabs.spec.js` 「先开工作区外文件、再添加其所在文件夹为根」+「启动自愈」两条（先写测试后修复，
+修复前双红 = 变异证据）。
+
 ## 树交互契约（bug-hunt 2026-07-15）
 
 一批 P2/P3 探索测试修复沉淀的行为契约（实现均在 `src/renderer/sidebar.js`，除注明外）：
