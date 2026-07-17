@@ -106,6 +106,7 @@
 .up-foot {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap; /* ready 态三按钮（含长文案「稍后…」）挤不下时换行，不溢出卡片 */
   gap: 8px;
   padding: 12px 18px 16px;
 }

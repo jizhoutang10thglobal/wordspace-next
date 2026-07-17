@@ -2,6 +2,7 @@
 module.exports = {
   // Wordspace Next menu
   checkUpdates: 'Check for Updates…',
+  changelog: 'Changelog…',
   settings: 'Settings…',
   reportIssue: 'Report an Issue / Feedback…',
   aiAccess: 'AI Access…',
