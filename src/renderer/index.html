@@ -185,16 +185,46 @@
       <div id="ws-bl-list" class="ws-bl-list" hidden></div>
     </div>
 
-    <!-- 空态（无文档时） -->
+    <!-- 空态（无文档时）= 导览页（方案 3「时间流」，Wendi 2026-07-17；spec docs/features/start-page.md）。
+         ⚠ #home / #home-open / #home-open-folder 三个 id 是 30+ e2e 位点的锚（openWorkspace 惯例 +
+         「回空态」可见性断言），改结构不改 id。动态区（问候/时间流/瓦片）由 start-page.js 渲染。 -->
     <div id="home" class="ws-empty-wrap">
-      <div class="ws-empty">
-        <div class="ws-empty-title">Wordspace Next</div>
-        <div class="ws-empty-note" data-i18n="shell.emptyDocNote">打开一个 HTML / Markdown 文档，或把一个文件夹当工作区</div>
-        <div class="ws-empty-actions">
-          <button id="home-open" class="top-share" data-i18n="shell.openDocBtn">打开文档</button>
-          <button id="home-open-folder" class="ta-ghost ws-empty-ghost" data-i18n="shell.openFolderBtn">打开文件夹</button>
+      <div class="sp">
+        <div class="sp-col">
+          <h1 class="sp-greet" id="sp-greet"></h1>
+          <div class="sp-date" id="sp-date"></div>
+          <div class="sp-omni" id="sp-omni">
+            <svg class="sp-omni-ico" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+            <input id="sp-omni-input" type="text" spellcheck="false" autocomplete="off" data-i18n-ph="start.omniPlaceholder" placeholder="搜索文件,或输入网址">
+            <div class="sp-sug" id="sp-sug" hidden></div>
+          </div>
+          <div class="sp-flow" id="sp-flow"></div>
         </div>
-        <ul id="recent-list"></ul>
+        <aside class="sp-rail">
+          <div id="sp-tiles-wrap" hidden>
+            <div class="sp-rail-cap" data-i18n="start.bookmarks">书签</div>
+            <div class="sp-tiles" id="sp-tiles"></div>
+          </div>
+          <div id="sp-mv-wrap" hidden>
+            <div class="sp-rail-cap" data-i18n="start.mostVisited">最常访问</div>
+            <div class="sp-tiles" id="sp-mv"></div>
+          </div>
+          <div class="sp-rail-cap" data-i18n="start.begin">开始</div>
+          <div class="sp-acts">
+            <button id="home-new" class="sp-act sp-act-ink">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              <span data-i18n="start.newDoc">新建文档</span>
+            </button>
+            <button id="home-open" class="sp-act">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+              <span data-i18n="shell.openDocBtn">打开文档</span>
+            </button>
+            <button id="home-open-folder" class="sp-act">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6M9 13h6"/></svg>
+              <span data-i18n="shell.openFolderBtn">打开文件夹</span>
+            </button>
+          </div>
+        </aside>
       </div>
     </div>
 
@@ -288,6 +318,7 @@
 <script src="../lib/search-engines.js"></script>
 <script src="sidebar.js"></script>
 <script src="browser.js"></script>
+<script src="start-page.js"></script>
 <script src="update-ui.js"></script>
 <script src="appearance-ui.js"></script>
 </body>

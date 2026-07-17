@@ -1012,15 +1012,9 @@ async function save() {
 }
 
 async function renderRecents() {
-  const list = await window.ws2.recents();
-  const ul = document.getElementById('recent-list');
-  ul.innerHTML = '';
-  for (const r of list) {
-    const li = document.createElement('li');
-    li.textContent = baseName(r.path) + ' ' + r.path;
-    li.onclick = () => openDoc(r.path);
-    ul.appendChild(li);
-  }
+  // 空态已换成导览页(start-page.js 渲染时间流);这里只做委托——openDoc 成功后照旧调本函数刷新。
+  // 模块加载序:shell.js 先于 start-page.js,boot 那次调用落空没关系,start-page 自己首渲。
+  if (window.__startPage) window.__startPage.refresh();
 }
 
 // 另存为（Colin 2026-07-02：自动保存后「保存」钮失义；另存为=把当前文档复制存到任意位置）。
