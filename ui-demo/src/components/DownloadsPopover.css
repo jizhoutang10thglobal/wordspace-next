@@ -1,0 +1,150 @@
+/* 下载 popover + 工具栏进度环（纸方墨圆：popover=纸方 --r-md/--shadow-pop/1px 细边；
+   控件=墨圆 --r-pill）。全部走 token，不写死色值。 */
+
+/* —— 工具栏入口：零态纯图标；有在途 = 进度环（--c-accent 细线）+ 活动计数徽标（P2）—— */
+.dl-ring-wrap {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dl-ring { position: absolute; inset: 0; transform: rotate(-90deg); }
+.dl-ring-track { fill: none; stroke: var(--c-border-strong); stroke-width: 2; }
+.dl-ring-bar {
+  fill: none;
+  stroke: var(--c-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--dur-fast) linear;
+}
+.dl-ring-glyph { position: relative; color: var(--c-accent); }
+.dl-badge {
+  position: absolute;
+  top: -5px;
+  right: -8px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: var(--r-pill);
+  background: var(--c-accent);
+  color: var(--c-text-invert);
+  font-size: 9px;
+  font-weight: var(--fw-semibold);
+  line-height: 13px;
+  text-align: center;
+}
+
+/* —— popover 本体 —— */
+/* veil：物理盖住整个视口（含网页 iframe——iframe 会吞 click，document 级 click-outside 收不到）。 */
+.dlp-veil { position: fixed; inset: 0; z-index: 190; }
+.dlp {
+  position: fixed;
+  z-index: 191;
+  width: 340px;
+  max-height: min(480px, calc(100vh - 96px));
+  display: flex;
+  flex-direction: column;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  animation: ws-pop-in var(--dur-slow) var(--ease-enter);
+}
+.dlp-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px;
+}
+.dlp-title { font-size: var(--fs-base); font-weight: 650; color: var(--c-text); }
+.dlp-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-pill);
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+  background: var(--c-surface);
+}
+.dlp-clear:hover { background: var(--c-hover); color: var(--c-text); }
+
+/* 超高内滚（列表自己滚，头部钉住） */
+.dlp-list {
+  overflow-y: auto;
+  padding: 0 6px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--r-sm);
+}
+.dl-row:hover { background: var(--c-hover); }
+.dl-row-ico { flex: none; color: var(--c-text-2); }
+.dl-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dl-name {
+  font-size: var(--fs-sm);
+  color: var(--c-text);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.dl-status {
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.dl-status.is-danger { color: var(--c-danger); }
+/* 文件已被删除：整行置灰（R6 可识别） */
+.dl-row.is-missing .dl-row-ico,
+.dl-row.is-missing .dl-name { color: var(--c-text-3); }
+
+/* 进行中的细进度条：只有 width 在动（行 DOM 不重建） */
+.dl-bar {
+  display: block;
+  height: 2px;
+  margin-top: 2px;
+  border-radius: var(--r-pill);
+  background: var(--c-border);
+  overflow: hidden;
+}
+.dl-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--c-accent);
+  border-radius: var(--r-pill);
+  transition: width var(--dur-fast) linear;
+}
+
+.dl-acts { flex: none; display: flex; gap: 2px; }
+.dl-act {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-pill);
+  color: var(--c-text-3);
+}
+.dl-act:hover { background: var(--c-hover); color: var(--c-text); }
+.dl-act.is-danger:hover { background: var(--c-danger-tint); color: var(--c-danger); }
+
+.dlp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 34px 20px 38px;
+  text-align: center;
+}
+.dlp-empty-ico { color: var(--c-text-3); }
+.dlp-empty-text { font-size: var(--fs-sm); color: var(--c-text-2); }
+.dlp-empty-hint { font-size: var(--fs-xs); color: var(--c-text-3); max-width: 240px; }
