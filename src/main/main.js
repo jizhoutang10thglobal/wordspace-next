@@ -47,6 +47,10 @@ function createWindow() {
   webTabs.init(() => win); // 网页标签 view 管理器（浏览器 feature）：attach/事件都以这个窗口为宿主
   if (!app.isPackaged) global.__ws2WebTabs = webTabs; // e2e seam：app.evaluate 沙箱无 require,经 global 取 registry（照 WS2_CTXMENU_PROBE 惯例,打包态不暴露）
   win.on('closed', () => { docWatcher.close(); webTabs.destroyAll(); }); // 关窗即停文件监听 + 销毁全部 web view（防 webContents 泄漏）
+  // 沉浸窗框非全屏恒有（Colin 2026-07-18）：真全屏进/出 → 广播 renderer 挂/摘 body.is-win-fullscreen（摘/恢复 10px 框）。
+  // 显式传 true/false（不查 win.isFullScreen()）——语义直白，且让 e2e 能用 win.emit('enter-full-screen') 确定性驱动整条链。
+  win.on('enter-full-screen', () => broadcastFullscreen(true));
+  win.on('leave-full-screen', () => broadcastFullscreen(false));
   // 修 MP-5：did-finish-load（主框架加载完成）后置就绪并 flush 排队的 open-file。
   // ⚠ 不用 did-start-loading 重置——它对 iframe（文档 frame）导航也触发，会把每次开文档都误判成 renderer 未就绪、
   // 而 did-finish-load 只认主框架、不会再触发 → rendererReady 永久卡 false（residency 唤醒开文档就废）。
@@ -136,6 +140,10 @@ function effectiveTheme() {
 }
 function broadcastAppearance(pref) {
   if (win && !win.isDestroyed()) win.webContents.send('appearance-changed', { pref, effective: effectiveTheme() });
+}
+// 沉浸窗框（Colin 2026-07-18）：全屏进/出广播给 renderer，唯一真相源=win.on('enter/leave-full-screen')。
+function broadcastFullscreen(isFs) {
+  if (win && !win.isDestroyed()) win.webContents.send('fullscreen-changed', !!isFs);
 }
 function applyAppearance(pref) {
   const p = appearanceStore.setPref(pref);
@@ -473,6 +481,8 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('set-appearance', (_e, pref) => applyAppearance(pref));
     // OS 主题变化（pref=system 时 shouldUseDarkColors 翻转）→ 重播 effective，让 renderer 实时跟随。
     nativeTheme.on('updated', () => broadcastAppearance(appearanceStore.getPref()));
+    // 沉浸窗框：renderer 启动查全屏初值（冷启动可能已在全屏）。live 变化走 enter/leave-full-screen 广播。
+    ipcMain.handle('get-fullscreen', () => (win && !win.isDestroyed() ? win.isFullScreen() : false));
     // 语言:启动读偏好 + 装字典 + 设 imperative t 当前语言(在 buildMenu/createWindow 前，让首个窗口首帧就对)。
     // 无「OS 语言变化」监听——app.getLocale 只启动读一次，跟随系统改语言要重启(平台限制,plan 决策1)。
     languageStore.init(app.getPath('userData'));
