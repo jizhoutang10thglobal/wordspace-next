@@ -1,0 +1,278 @@
+/* 默认屏导览页(方案 3「时间流」)。保守口径:卡片/瓦片零阴影,1px 细边+底色差;
+   hover=墨条滑入;omnibox 焦点=墨线划过(全站签名);入场 stagger 落定。 */
+.sp {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 48px;
+  padding: 56px 60px 40px;
+  background: var(--c-bg);
+  overflow-y: auto;
+}
+.sp-col { flex: 1.7; min-width: 0; max-width: 640px; }
+.sp-rail { flex: 1; max-width: 240px; padding-top: 10px; }
+
+/* 刊头问候(editorial 大字,海报感) */
+.sp-greet {
+  font-size: var(--fs-4xl);
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  color: var(--c-text);
+  margin: 0 0 2px;
+  animation: ws-stagger-in var(--dur) var(--ease-enter) both;
+}
+.sp-date {
+  font-size: var(--fs-md);
+  color: var(--c-text-3);
+  margin-bottom: 26px;
+  animation: ws-stagger-in var(--dur) var(--ease-enter) both;
+  animation-delay: 40ms;
+}
+
+/* ---- 统一 omnibox:输入框焦点 = 墨线从左划过(签名动作,同 .cm-omnibar) ---- */
+.sp-omni {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 14px;
+  background-color: var(--c-bg-rail);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  border-radius: var(--r-md);
+  transition: background-color var(--dur-fast) var(--ease),
+    background-size var(--dur-slow) var(--ease-enter);
+  animation: ws-stagger-in var(--dur) var(--ease-enter) both;
+  animation-delay: 80ms;
+}
+.sp-omni:focus-within {
+  background-color: var(--c-surface);
+  background-size: 100% 2px;
+}
+.sp-omni-ico { flex: none; color: var(--c-text-3); }
+.sp-omni-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg);
+  color: var(--c-text);
+}
+.sp-omni-input::placeholder { color: var(--c-text-3); }
+.sp-omni-kbd {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--c-border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--r-sm);
+  background: var(--c-bg-sunken);
+  color: var(--c-text-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/* 候选下拉(真浮层 → 允许一层极淡阴影) */
+.sp-sug {
+  position: absolute;
+  left: 0; right: 0; top: calc(100% + 6px);
+  z-index: 30;
+  padding: 4px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 9px;
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: ws-pop-in var(--dur-fast) var(--ease-enter);
+}
+.sp-sug-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  color: var(--c-text-2);
+  font-size: var(--fs-base);
+}
+.sp-sug-item.is-sel { background: var(--c-accent-tint); color: var(--c-text); }
+.sp-sug-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--c-text); }
+.sp-sug-meta { flex: none; font-size: var(--fs-xs); color: var(--c-text-3); }
+.sp-sug-web { color: var(--c-text-3); }
+.sp-sug-web .sp-sug-name { color: var(--c-text-2); font-size: var(--fs-sm); }
+
+/* ---- 时间流 ---- */
+.sp-flow { margin-top: 10px; animation: ws-stagger-in var(--dur) var(--ease-enter) both; animation-delay: 120ms; }
+.sp-grp { margin-top: 22px; }
+.sp-grp-cap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+  margin-bottom: 6px;
+}
+.sp-grp-cap::after { content: ""; flex: 1; height: 1px; background: var(--c-border); }
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: var(--r-md);
+  text-align: left;
+  font-size: var(--fs-md);
+  color: var(--c-text);
+  /* hover 语汇:墨条从左滑入 */
+  background: linear-gradient(var(--c-hover), var(--c-hover)) left center / 0% 100% no-repeat;
+  transition: background-size var(--dur) var(--ease);
+}
+.sp-row:hover { background-size: 100% 100%; }
+.sp-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-row-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+  font-variant-numeric: tabular-nums;
+}
+.sp-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: var(--c-bg-sunken);
+  border: 1px solid var(--c-border);
+  font-size: var(--fs-xs);
+  color: var(--c-text-3);
+}
+.sp-empty { margin-top: 28px; font-size: var(--fs-sm); color: var(--c-text-3); }
+
+/* 文档小图标(纸方,同草图 fico 惯例) */
+.sp-fico {
+  flex: none;
+  width: 22px;
+  height: 27px;
+  border: 1.5px solid var(--c-border-strong);
+  border-radius: 3px;
+  background: var(--c-surface);
+  position: relative;
+}
+.sp-fico::before {
+  content: "";
+  position: absolute;
+  left: 4px; right: 4px; top: 5px;
+  height: 1.5px;
+  background: var(--c-border-strong);
+  box-shadow: 0 4px 0 var(--c-border), 0 8px 0 var(--c-border), 0 12px 0 var(--c-border);
+}
+.sp-fico.is-md::after {
+  content: "M↓";
+  position: absolute;
+  right: -5px; bottom: -5px;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--c-accent-tint);
+  color: var(--c-accent);
+}
+
+/* ---- 右栏 ---- */
+.sp-rail-cap {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+  margin: 4px 0 10px;
+  animation: ws-stagger-in var(--dur) var(--ease-enter) both;
+  animation-delay: 100ms;
+}
+.sp-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 26px;
+  animation: ws-stagger-in var(--dur) var(--ease-enter) both;
+  animation-delay: 140ms;
+}
+.sp-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 66px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+  background: var(--c-surface);
+  font-size: var(--fs-xs);
+  color: var(--c-text-2);
+  padding: 0 6px;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.sp-tile:hover { background: var(--c-hover); border-color: var(--c-border-strong); }
+.sp-tile-chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 650;
+}
+.sp-tile-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.sp-acts {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  animation: ws-stagger-in var(--dur) var(--ease-enter) both;
+  animation-delay: 180ms;
+}
+.sp-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--c-border-strong);
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    transform var(--dur-instant) var(--ease);
+}
+.sp-act:hover { background: var(--c-hover); color: var(--c-text); }
+.sp-act:active { transform: scale(0.97); }
+.sp-act-ink { background: var(--c-ink); border-color: var(--c-ink); color: var(--c-text-invert); }
+.sp-act-ink:hover { background: var(--c-ink-hover); color: var(--c-text-invert); }
+
+@media (max-width: 860px) {
+  .sp { flex-direction: column; padding: 36px 28px; gap: 30px; }
+  .sp-rail { max-width: none; }
+  .sp-tiles { grid-template-columns: repeat(3, 1fr); }
+}
