@@ -49,6 +49,11 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
 - app 侧：`feat/browser-port` 分支（2026-07-11，按正本 §14 验收清单全量移植；合 main 后以 merge commit 为准）
 - 2026-07-13 收藏区 header 重样式（栏标化 + 对齐网格，正本 §4.3 已更新，Wendi「视觉乱」反馈）：
   ui-demo PR #170 + app PR `fix/app-sidebar-fav-align`，两侧同步落地，此项无欠账。
+- 2026-07-17 **收藏区栏标补 uppercase**（Colin 英文界面真机抓到：`Bookmarks` 混排、PINNED/TABS/FILES
+  全大写）：`.sb-fav-label` 抄了 `.sb-sec-label` 配方（等宽/fs-xs/semibold/tracking-label/text-3）却漏
+  `text-transform: uppercase`——中文下隐形，i18n 英文一开就穿帮。app PR `fix/sidebar-fav-uppercase`；
+  配 e2e 一致性门 `e2e/sidebar-typography.spec.js`（computed style 比对收藏头 vs 全部区块头 + 锚死
+  uppercase，任何一侧再漂移即翻红）。栏标规范正本在 `docs/style.md`「分区栏标」。
 - 2026-07-14 **User-Agent 归一（反 CAPTCHA）**：app PR `fix/browser-ua`（Wendi「网页搜索总弹人机验证」）。
   正本 §11.7 记契约；`web-tabs.js` `ensureSession` + `web-tabs-policy.js` `browserUA()`。真 app 独有
   （ui-demo 是 iframe mock、无 Electron session，不移植、不算漂移）。
