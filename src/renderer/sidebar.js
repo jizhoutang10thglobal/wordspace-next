@@ -2605,15 +2605,27 @@
 
   // peek=完整侧栏悬浮盖在内容上，不推挤布局；进 120ms/出 240ms 缓冲防误触发/闪烁。
   // 红绿灯随收起藏、peek/展开时现（hiddenInset 下灯浮在内容上，收起不藏=悬空）。
+  // web 态（Wendi 2026-07-17）：滑出前先对页面截帧垫底、摘掉原生 view（__webPeekSnap，照更新弹窗
+  // 白背景的快照方案）——页面纹丝不动，替换原「同宽右移让位」的推挤。截图异步（≤250ms），
+  // peekPending 是取消旗：截图期间鼠标已离开就不再滑出。
   let peekTimer = 0;
+  let peekPending = false;
   const peekOn = () => document.body.classList.contains('is-sb-peek');
   function openPeek() {
     if (!sidebarEl || !sidebarEl.classList.contains('is-collapsed') || peekOn()) return;
-    document.body.classList.add('is-sb-peek');
-    if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true);
-    if (window.__webPeekPush) window.__webPeekPush(true); // web 态：原生 view 同宽右移让出侧栏带（DOM 盖不住它，只能推）
+    peekPending = true;
+    const finish = () => {
+      if (!peekPending || peekOn() || !sidebarEl.classList.contains('is-collapsed')) return;
+      peekPending = false;
+      document.body.classList.add('is-sb-peek');
+      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true);
+    };
+    if (window.__webPeekSnap) window.__webPeekSnap(true, finish);
+    else finish();
   }
   function closePeek(immediate) {
+    peekPending = false;
+    if (window.__webPeekSnap) window.__webPeekSnap(false); // 幂等：挂回 view/撤快照/取消在途截图
     if (!peekOn()) return;
     const done = () => {
       document.body.classList.remove('is-sb-peek', 'is-sb-peek-out');
@@ -2624,7 +2636,6 @@
       document.body.classList.add('is-sb-peek-out');
       setTimeout(done, 340); // --dur-slow 320ms + 余量
     }
-    if (window.__webPeekPush) window.__webPeekPush(false);
   }
   function peekEnter() { clearTimeout(peekTimer); peekTimer = setTimeout(openPeek, 120); }
   function peekLeave() { clearTimeout(peekTimer); peekTimer = setTimeout(() => closePeek(false), 240); }
@@ -2633,8 +2644,8 @@
     sidebarEl.addEventListener('mouseenter', () => { if (peekOn()) clearTimeout(peekTimer); });
     sidebarEl.addEventListener('mouseleave', () => { if (peekOn()) peekLeave(); });
   }
-  // 网页 view 在前台时 DOM 收不到鼠标（原生 view 压着）→ 主进程指针 watcher 代打（ipc.js ws-edge-watch）。
-  if (window.ws2 && window.ws2.onEdge) window.ws2.onEdge((entering) => { if (entering) peekEnter(); else peekLeave(); });
+  // （原「网页 view 前台时主进程指针 watcher 代打」已删：沉浸窗框让 #main 内缩 10px，
+  //   左边带永远是 DOM 地盘，#sb-edge-hot 在 web 态也能收到鼠标——触发只此一条。）
 
   function setSidebarCollapsed(v) {
     if (!sidebarEl) return;
@@ -2642,7 +2653,6 @@
     sidebarEl.classList.toggle('is-collapsed', v);
     document.body.classList.toggle('is-sb-collapsed', v);
     if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(!v);
-    if (window.__webEdgeWatch) window.__webEdgeWatch(); // browser.js 按 收起×web态 开/关主进程 watcher
     // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
     if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
   }

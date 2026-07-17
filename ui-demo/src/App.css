@@ -19,6 +19,19 @@
   background: var(--c-bg);
 }
 
+/* 沉浸收起的 Arc 式窗框（Wendi 2026-07-17）：侧栏收起后内容四周留 10px chrome 色边框带,
+   内容成一块带细边微圆角的「纸」。ui-demo 纯视觉;真 app 里这圈是 -webkit-app-region: drag
+   的窗口拖动区。左带兼 peek 触发锚点（.arc-edge-hot 与之重合,见 ArcSidebar.css）。 */
+.ws-body.is-immersive {
+  padding: 10px;
+  background: var(--c-bg-chrome);
+}
+.ws-body.is-immersive .ws-main {
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  overflow: clip; /* 只裁圆角,不成为滚动容器（hidden 会被 scrollIntoView 悄悄滚偏） */
+}
+
 /* 路由视图容器:占满主区并作为路由内容的 flex 父;key 变化时整体落定入场 */
 .ws-route {
   flex: 1;
