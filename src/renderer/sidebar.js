@@ -3097,7 +3097,15 @@
       if (document.querySelector('.sb-modal-overlay')) return;
       if (tabState.activeRel) {
         const act = tabState.entries.find((e) => keyOf(e) === tabState.activeRel);
-        if (act && act.pinned) return; // ⌘W 对置顶标签无效（spec §4.4/§7,同浏览器防误关）
+        if (act && act.pinned) {
+          // ⌘W 不销毁置顶标签（spec §4.4/§7,同浏览器防误关）——但也不再是「死无操作」。
+          // Wendi 2026-07-17：关光普通标签后激活项回落到置顶标签,此时 ⌘W 什么都不发生=被困死、
+          // 又没有关 app 的路。改为：取消激活、回起始页（置顶标签留着,下次点还在）。此时已是真·空态,
+          // 再按 ⌘W 就命中下面的 winClose 分支 → 关窗口。⌘W 永远有反馈 + 始终有关 app 的路径。
+          applyTabs({ entries: tabState.entries, activeRel: null }); // 清激活 + 重渲染（置顶行不再高亮）
+          if (window.__shellCloseDoc) window.__shellCloseDoc(); // 摘 web view（内部自带 __webDetach）+ 露出起始页 + 清 docPath
+          return;
+        }
         closeTabRel(tabState.activeRel);
         return;
       }
