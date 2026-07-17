@@ -133,6 +133,9 @@
 .co-btn-primary:hover { background: #122763; }
 .co-btn-ghost { font-size: 15px; font-weight: 600; color: #16181c; padding: 12px 18px; border: 1px solid #d8dade; border-radius: 9px; }
 .co-btn-ghost:hover { background: #f6f7f9; }
+/* 白皮书下载(U3):公司站自己的风格 */
+.co-btn-dl { display: inline-flex; align-items: center; gap: 7px; }
+.co-btn-dl svg { color: var(--co-accent); }
 
 .co-features {
   max-width: 980px; margin: 0 auto; padding: 40px 44px 80px;
@@ -213,6 +216,17 @@
 .fd-hero-meta { display: flex; gap: 22px; justify-content: center; margin-top: 22px; }
 .fd-hero-meta span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #8b8d9c; }
 .fd-hero-meta svg { color: var(--fd-accent); }
+
+/* 下载触发点(U3):FlowDesk 自己的站内风格(演示网页,不走 app token) */
+.fd-dl { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 30px; }
+.fd-dl-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 600; color: #e7e8ee;
+  padding: 9px 16px; border: 1px solid #2a2c38; border-radius: 8px;
+}
+.fd-dl-btn:hover { background: #16171f; border-color: #3a3d4d; }
+.fd-dl-btn svg { color: var(--fd-accent); }
+.fd-dl-note { margin-top: 14px; font-size: 12px; color: #6b6d7c; text-align: center; }
 
 .fd-logos { max-width: 880px; margin: 0 auto; padding: 30px 40px 50px; text-align: center; }
 .fd-logos > span { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #6b6d7c; }

@@ -24,6 +24,7 @@
 | 收藏纯逻辑 + Netscape 互通 | `ui-demo/src/mock/bookmarks.ts` | `src/lib/bookmarks.js` |
 | 历史纯逻辑（60s 合并/cap500） | `ui-demo/src/mock/history.ts` | `src/lib/web-history.js` |
 | 右键菜单 builder（双胞胎） | `ui-demo/src/lib/webCtxMenu.ts` | `src/lib/web-context-menu.js` |
+| 下载（正本 §4.11，2026-07-17 恢复） | `ui-demo/src/mock/downloads.ts`（记录+假进度引擎）+ `ui-demo/src/lib/downloads.ts`（纯逻辑，移植整体搬）+ `DownloadsPopover.tsx` + `ArcSidebar.tsx` 入口 | **未移植**（现仍是 will-download cancel 旧行为，见下欠账） |
 | omnibox 输入判定 / 引擎表 | `ui-demo/src/mock/browser.ts` / `browserSettings.ts` | `src/lib/url-input.js` + `tld-set.js` / `search-engines.js` |
 | 决策纯逻辑（权限/scheme/缩放步进） | 散在组件里 | `src/lib/web-tabs-policy.js` |
 | 标签模型的 web 身份类 | `ui-demo/src/mock/store.ts` | `src/lib/tabs.js`（`web:` 前缀 / updateEntry / 关闭栈） |
@@ -35,7 +36,8 @@
 
 见正本 §13「刻意差异表」（mock 渲染方式 / DOM vs 原生菜单 / 缩放全局 vs 每标签 /
 关标签焦点 / 历史触发点 / favicon / 默认引擎 glass vs Bing / 新标签瓦片演示位 vs 书签栏前 N /
-normalize TLD 真验证 / 权限 default-deny 白名单 / ⌘/ 面板暂缺），
+normalize TLD 真验证 / 权限 default-deny 白名单 / ⌘/ 面板暂缺 / **下载 mock vs 真下载**（假进度+
+无真落盘+访达=演示 toast，2026-07-17）），
 均为拍板差异，日期与拍板人在正本 §15 决策日志。不在该表里的行为差异都算漂移。
 另：**默认浏览器为真 app 独有**（正本 §10.6，2026-07-13）——ui-demo 不移植，不算漂移。
 
@@ -46,6 +48,9 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
 ## 对齐锚点
 
 - ui-demo 侧：PR #150 合入 main 的 commit（2026-07-10，正本定稿 + 六项拍板落地）
+- 2026-07-17 **下载（标准档）ui-demo 定稿**（分支 `feat/ui-demo-downloads`，正本 §4.11/§12/§13/§15
+  同 PR 还账）：mock 站触发点/工具栏进度环/popover/右键存储/toast 三连/持久化记录全套；
+  门 = `ui-demo/scripts/test-downloads.mjs`（含变异自检记录）。真 app 侧未动，欠账见下。
 - app 侧：`feat/browser-port` 分支（2026-07-11，按正本 §14 验收清单全量移植；合 main 后以 merge commit 为准）
 - 2026-07-13 收藏区 header 重样式（栏标化 + 对齐网格，正本 §4.3 已更新，Wendi「视觉乱」反馈）：
   ui-demo PR #170 + app PR `fix/app-sidebar-fav-align`，两侧同步落地，此项无欠账。
@@ -122,6 +127,15 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
 
 ## 欠账
 
+- **下载真 app 移植（正本 §4.11，2026-07-17 恢复拍板后 ui-demo 已先行定稿，app 侧全部待做）**：
+  ① `web-tabs.js` `will-download` 从 cancel+toast 改真接 `DownloadItem`（`setSavePath` 锁「下载」文件夹 +
+  对真磁盘 uniquify + 进度节流推 renderer + 文件名清洗，§11.5）；② 工具栏入口/进度环/popover 进
+  `browser.js`+`browser.css`（popover 关闭走 veil——原生 view 吞 click，同 ui-demo 理由）；③ 「在访达中
+  显示」= `shell.showItemInFolder`（只定位不打开）；④ **原生右键菜单双胞胎同步**：`web-context-menu.js`
+  补 `save-link`/`save-image`（ui-demo `webCtxMenu.ts` 已加，两侧结构必须同构——本次 ui-demo 侧改动即
+  产生的漂移，此行就是账）；⑤ e2e 覆盖完成/取消/重名改名路径 + 变异自检，**测试下载产物进 `.gitignore`**；
+  ⑥ 下载被 cancel 造成的 `-3 ERR_ABORTED` 语义要与 `navSeq` 提交沿契约再验证一遍（正本 §10.2：下载触发的
+  中止型导航不该动错误页/恢复逻辑）。
 - **打包冒烟 / Windows 未验**（正本 §13「仍开放」；dev 态 mac 全绿，签名打包后的 WebContentsView/
   持久化路径未实测）。
 - **默认浏览器仅 macOS**（正本 §10.6）：Windows/Linux 未做（Win 要安装器注册表 + `second-instance`
