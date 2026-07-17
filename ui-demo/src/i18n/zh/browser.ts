@@ -83,6 +83,8 @@ export default {
   ctxCopyLink: '拷贝链接',
   ctxCopyImage: '拷贝图片',
   ctxCopyImageUrl: '拷贝图片地址',
+  ctxSaveImage: '存储图片',
+  ctxSaveLink: '链接另存为',
   ctxCopy: '拷贝',
   ctxSearchSelection: '用 Glass 搜索「{q}」',
   ctxCut: '剪切',

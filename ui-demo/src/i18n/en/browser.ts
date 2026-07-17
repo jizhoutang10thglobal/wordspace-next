@@ -83,6 +83,8 @@ export default {
   ctxCopyLink: 'Copy link',
   ctxCopyImage: 'Copy image',
   ctxCopyImageUrl: 'Copy image address',
+  ctxSaveImage: 'Save image',
+  ctxSaveLink: 'Save link as',
   ctxCopy: 'Copy',
   ctxSearchSelection: 'Search Glass for "{q}"',
   ctxCut: 'Cut',
