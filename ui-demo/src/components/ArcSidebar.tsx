@@ -1059,7 +1059,9 @@ export default function ArcSidebar() {
     return () => document.removeEventListener('keydown', onKey)
   }, [toggleSidebar, openNewTab, saveActiveDoc, openFind, navigate, t])
 
-  // F6：切到某个文件标签页时，在左侧树展开它所在根 + 祖先文件夹并滚动定位（高亮由 is-active 负责）。
+  // F6/UX4v3：切到某个文件标签页时，在左侧树展开它所在根 + 祖先文件夹（高亮由 is-active 负责)。
+  // ⚠ 不滚动视口——真 app 2026-07-14 已拍「展开保留、滚动去掉」(Wendi 报滚动刺眼:文件靠下时
+  // 整棵树被顶走);ui-demo 原来还带 scrollIntoView,2026-07-17 Colin 实测抓出,对齐删除。
   useEffect(() => {
     const path = activeTab?.fileName ? activeTab.url : ''
     const rootId = activeTab?.rootId
@@ -1067,10 +1069,6 @@ export default function ArcSidebar() {
     const parts = path.split('/').filter(Boolean)
     const dirs = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'))
     revealFolders(rootId, dirs)
-    const id = window.setTimeout(() => {
-      scrollRef.current?.querySelector('.arc-file.is-active')?.scrollIntoView({ block: 'nearest' })
-    }, 40)
-    return () => window.clearTimeout(id)
   }, [activeTabId, activeTab?.url, activeTab?.fileName, activeTab?.rootId, revealFolders])
 
   // sticky ancestor：滚动时给「当前正吸顶」的祖先文件夹标 is-stuck，最深那条标 is-stuck-last（加吸顶阴影）。
