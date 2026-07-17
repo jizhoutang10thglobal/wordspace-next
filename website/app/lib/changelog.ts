@@ -16,6 +16,8 @@ import path from 'node:path';
 
 const RAW_FALLBACK_URL =
   'https://raw.githubusercontent.com/jizhoutang10thglobal/wordspace-next/main/CHANGELOG.md';
+const RAW_FALLBACK_URL_EN =
+  'https://raw.githubusercontent.com/jizhoutang10thglobal/wordspace-next/main/CHANGELOG.en.md';
 
 export type ChangelogItem = {
   /** 行内已按 **粗体** 切好段：odd index 为粗体段 */
@@ -57,9 +59,10 @@ export function parseChangelog(md: string): ChangelogEntry[] {
 
   for (const raw of md.split('\n')) {
     const line = raw.trimEnd();
-    const h2 = line.match(/^##\s+(v\d+\.\d+\.\d+)\s+—\s+(\d{4}-\d{2}-\d{2})(?:（(.+)）)?\s*$/);
+    // note 括号兼容中英：zh 全角（…），en 半角 (…)
+    const h2 = line.match(/^##\s+(v\d+\.\d+\.\d+)\s+—\s+(\d{4}-\d{2}-\d{2})(?:（(.+)）|\s+\((.+)\))?\s*$/);
     if (h2) {
-      cur = { version: h2[1], date: h2[2], note: h2[3] ?? null, lead: null, groups: [] };
+      cur = { version: h2[1], date: h2[2], note: h2[3] ?? h2[4] ?? null, lead: null, groups: [] };
       curGroup = null;
       entries.push(cur);
       continue;
@@ -90,16 +93,36 @@ export function parseChangelog(md: string): ChangelogEntry[] {
   return entries;
 }
 
-export async function loadChangelog(): Promise<ChangelogEntry[]> {
+async function loadOne(file: string, rawUrl: string): Promise<ChangelogEntry[]> {
   let md: string | null = null;
   try {
-    md = await readFile(path.join(process.cwd(), '..', 'CHANGELOG.md'), 'utf8');
+    md = await readFile(path.join(process.cwd(), '..', file), 'utf8');
   } catch {
-    const res = await fetch(RAW_FALLBACK_URL, { cache: 'no-store' });
+    const res = await fetch(rawUrl, { cache: 'no-store' });
     if (res.ok) md = await res.text();
   }
-  if (!md) throw new Error('changelog: CHANGELOG.md unreadable (fs ../ and raw fallback both failed)');
+  if (!md) throw new Error(`changelog: ${file} unreadable (fs ../ and raw fallback both failed)`);
   const entries = parseChangelog(md);
-  if (entries.length === 0) throw new Error('changelog: parsed zero entries — format drift?');
+  if (entries.length === 0) throw new Error(`changelog: ${file} parsed zero entries — format drift?`);
   return entries;
+}
+
+export async function loadChangelog(): Promise<ChangelogEntry[]> {
+  return loadOne('CHANGELOG.md', RAW_FALLBACK_URL);
+}
+
+/**
+ * 英文镜像 + 双语同步门（构建时）：en 的最新版本必须与 zh 一致——发版只写中文漏英文时
+ * next build 直接挂（部署红，响亮可见），这是「每版双语同写」约定的真门（docs/releasing.md）。
+ * 历史条目允许 en 缺失（页面按版本回落 zh），门只咬最新版。
+ */
+export async function loadChangelogEn(): Promise<ChangelogEntry[]> {
+  const [zh, en] = await Promise.all([loadChangelog(), loadOne('CHANGELOG.en.md', RAW_FALLBACK_URL_EN)]);
+  if (zh[0].version !== en[0].version) {
+    throw new Error(
+      `changelog: latest version mismatch — zh ${zh[0].version} vs en ${en[0].version}. ` +
+        '发版要同步更新 CHANGELOG.md 与 CHANGELOG.en.md（docs/releasing.md「双语同写」）。',
+    );
+  }
+  return en;
 }
