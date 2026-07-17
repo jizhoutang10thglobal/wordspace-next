@@ -535,6 +535,52 @@ test('外部文件磁盘删了 → 重启静默丢弃该标签', async () => {
   await expect(extTab(outside)).toHaveCount(0); // 静默丢（path-exists 校验剔除）
 });
 
+test('先开工作区外文件、再添加其所在文件夹为根 → 外部标签并进新根（Wendi bug 2026-07-17）', async () => {
+  await openWorkspace();
+  const dir2 = path.join(tmp, '第二文件夹');
+  await fs.mkdir(dir2, { recursive: true });
+  const inside = path.join(dir2, 'x.html');
+  await fs.writeFile(inside, HTML('XX'), 'utf8');
+  await stubPick(inside);
+  await page.click('#doc-menu-btn');
+  await page.click('#open-btn');
+  await expect(extTab(inside)).toHaveClass(/sb-tab-ext/); // 此刻确实是外部标签
+  // 把文件所在的文件夹添加为第二个根
+  await app.evaluate(({ }, d) => { process.env.WS2_FOLDER_IN = d; }, dir2);
+  await page.click('#sb-add-root');
+  await expect(page.locator('.sb-root-head', { hasText: '第二文件夹' })).toBeVisible();
+  // 标签被收编：abs 身份换成 rel 身份，↗ 外部标记消失，激活态跟随，编辑器内容不动
+  const claimed = page.locator('#sb-tabs .sb-tab[data-rel="x.html"]');
+  await expect(claimed).toBeVisible();
+  await expect(claimed).not.toHaveClass(/sb-tab-ext/);
+  await expect(extTab(inside)).toHaveCount(0); // abs 身份的旧条目销毁，不留双胞胎
+  await expect(claimed).toHaveClass(/is-active/);
+  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('XX');
+  // 从树里点同一个文件 → 命中同一条标签，不翻倍（修前：abs ≠ rootId:rel 两个身份 → 两条标签）
+  await page.click('.sb-file[data-rel="x.html"]');
+  await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(1);
+});
+
+test('已持久化的外部标签、其文件夹其实已是根 → 启动自愈并进根（Wendi 已中招的存量状态）', async () => {
+  await openWorkspace();
+  const wsJson = path.join(tmp, 'userdata', 'workspace.json');
+  await expect.poll(async () => {
+    try { return (await fs.readFile(wsJson, 'utf8')).includes('workspace'); } catch { return false; }
+  }, { timeout: 4000 }).toBe(true);
+  await app.close();
+  // 直接把「坏状态」写进 store：a.html 在根内，标签却是 abs 外部身份（修复前版本会持久化出这种状态）
+  const raw = JSON.parse(await fs.readFile(wsJson, 'utf8'));
+  const absA = path.join(wsDir, 'a.html');
+  raw.tabs = { entries: [{ abs: absA, kind: 'html', title: 'a.html', open: true, pinned: false }], activeRel: absA };
+  await fs.writeFile(wsJson, JSON.stringify(raw), 'utf8');
+  ({ a: app, p: page } = await launch({ WS2_USERDATA: path.join(tmp, 'userdata') }));
+  await expect(page.locator('#sidebar.sb-on')).toBeVisible();
+  const healed = page.locator('#sb-tabs .sb-tab[data-rel="a.html"]');
+  await expect(healed).toBeVisible(); // 启动后已收编成 rel 身份
+  await expect(healed).not.toHaveClass(/sb-tab-ext/);
+  await expect(page.locator('#sb-tabs .sb-tab')).toHaveCount(1);
+});
+
 test('去重不打架：工作区内 a.html + 工作区外 a.html（同名异位）→ 两个独立标签', async () => {
   await openWorkspace();
   const outside = path.join(tmp, 'a.html'); // basename 同名，但在工作区外
