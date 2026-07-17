@@ -164,9 +164,7 @@
 .arc-fav-head:hover .arc-fav-title { color: var(--c-text-2); }
 .arc-fav-count { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-3); }
 .arc-fav-spacer { flex: 1; }
-/* 管理入口默认淡出，hover 标题行或展开时才显（收起态保持干净）;caret 常显做展开指示 */
-.arc-fav-head .arc-ico-sm { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
-.arc-fav-head:hover .arc-ico-sm, .arc-fav.is-open .arc-fav-head .arc-ico-sm { opacity: 1; }
+/* 管理入口常显（Wendi 2026-07-17：与标签页区常显「+」统一,Colin 拍板「都一直出现」——推翻 07-13 hover 才显）;caret 常显做展开指示 */
 .arc-fav-body { padding: 2px 0 4px; }
 .arc-fav-folder { margin-bottom: 4px; }
 .arc-fav-folder-name {

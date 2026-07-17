@@ -117,10 +117,9 @@
   display: inline-flex; align-items: center; justify-content: center;
   border-radius: var(--r-pill);
   color: var(--c-text-3);
-  opacity: 0; /* 收起时保持干净：hover 标题行或展开态才显现（§4.3） */
-  transition: opacity var(--dur-fast) var(--ease);
+  /* 常显（Wendi 2026-07-17：与标签页区常显「+」统一,Colin 拍板「都一直出现」——推翻 07-13 hover 才显;
+     三栏行尾口径一致:动作入口常显、caret 常显） */
 }
-.sb-fav-head:hover .sb-fav-manage, .sb-fav.is-open .sb-fav-manage { opacity: 1; }
 .sb-fav-manage:hover { background: var(--c-hover); color: var(--c-text); }
 .sb-fav-list { padding: 2px 0; }
 .sb-fav-group { margin: 4px 0 2px; padding: 0 8px; font-size: var(--fs-xs); color: var(--c-text-3); }
