@@ -14,6 +14,14 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-20 — 隐藏驻留只走 hideForResidency:别再直接 win.hide()(全屏会黑屏)
+
+**是什么**:Wendi/Colin 报「全屏下点左上角关闭 → 黑屏」。根因宿主实测(2/2 复现):**macOS 不接受对原生全屏窗口的 `orderOut:`**——`win.hide()` 被静默吞掉,窗口没藏、独占的全屏 Space 也没拆,用户面对一块空 Space 就是那片黑;非全屏同一条路立刻 `isVisible()=false`(对照组)。已修(#285):抽 `src/lib/window-residency.js` 的 `hideForResidency()` 收口——全屏先 `setFullScreen(false)`、等 `leave-full-screen` 再 `hide()`,回来是窗口态(对齐原生 mac 红灯语义)。
+
+**怎么 apply**:① **动窗口生命周期(close/hide/隐藏驻留/退出流)时,一律走 `hideForResidency(win)`,别再直接 `win.hide()`**——直接调就是这个 bug 的回归。② 更普遍的教训:**任何「窗口态相关」的行为,写之前先问一句「全屏时成立吗」**;全屏是 2026-07-18 才随沉浸窗框进入本 app 关注面,此前写的窗口逻辑都没考虑过它(这次就是 close 路径漏检),updater 退出/下载弹窗/新窗口这些路径值得顺手复查。③ 门的分工照这个先例:CI 侧用注入替身锁**顺序不变量**(`test/window-residency.test.js`,跑得动 Linux),真机行为放宿主脚本(`scripts/verify-fullscreen-close.js`,非 mac 以退出码 2 报错、不静默跳过)——因为 CI 的 xvfb 无窗口管理器、`setFullScreen` 不可靠,而判据是 `isFullScreen()` 的真 OS 状态,`win.emit` 伪造不了(与 `immersive.spec.js:156` 同款结论)。
+
+**来源**:PR #285,fix/fullscreen-close-black
+
 ## 2026-07-18 — 浏览器下载进真 app(will-download 真接)+ 工具栏 7 钮尺寸账 + OVERLAY_SEL 竞态修复
 
 **是什么**：浏览器下载(标准档)移植进真 app(PR #278):will-download 从「一律 cancel」换成真接 DownloadItem 落盘 + 下载管理 UI(工具栏进度环 + popover 列表 + 右键存图/链接另存为)。推翻 2026-07-09「不做下载」旧拍板(Colin 2026-07-17 拍板恢复)。附带两处共享核心改动 + 一个潜伏竞态修复。
