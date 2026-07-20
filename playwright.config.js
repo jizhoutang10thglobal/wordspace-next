@@ -9,6 +9,9 @@ module.exports = {
   timeout: 30000,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
+  // 无漏测第一道（e2e 策略 U2/KD6）：CI 上误提交的 test.only 会把全套收窄成一条却让门绿——直接报错拒收。
+  // 本地不设（调试时 .only 方便），仅 CI 强制。配 e2e-all 的「收集 spec 数 ≥ 地板」共同挡漏测。
+  forbidOnly: !!process.env.CI,
   reporter: [['list']],
   use: {}
 };
