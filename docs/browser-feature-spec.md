@@ -506,12 +506,15 @@ localStorage（key `ws-fav-open`）。`openBookmark(url,title)`：先按 url 找
   不是原条目原地复位。
 - **工具栏入口 + popover 列表**（不做 `/downloads` 整页路由）：入口图标**常显**（对齐历史图标）；有在途时
   叠进度环（聚合百分比 = 当前批次 Σ已收/Σ总量，单条先完成环不回退）+ 活动计数徽标。点开 = popover 列表：
-  每条含文件名（中段截断，title 全名）/ 状态 / 逐状态操作（进行中=取消；完成=在访达中显示+移除；可重试态=
-  重试+移除；fileMissing=置灰仅移除）；顶部「清空记录」只清终态、在途保留。**popover 关闭必须走 veil 层**
-  （盖到网页区时 iframe/原生 view 会吞 click，document 级 click-outside 靠不住）。
-- **通知**：开始 = 短 neutral toast（侧栏收起时唯一可见反馈）；完成 = success toast + action「显示」打开
+  每条含文件名（中段截断，title 全名）/ 状态 / 逐状态操作（进行中=取消；完成=**打开**+在访达中显示+移除；
+  可重试态=重试+移除；fileMissing=置灰仅移除）；顶部「清空记录」只清终态、在途保留。**popover 锁进侧栏宽度、
+  不覆盖网页区**（Colin 2026-07-20 真机反馈：不该盖真网页；文件名窄一点靠中段截断 + title 全名兜底）；
+  **关闭三管**：veil（覆盖侧栏区含下载图标 → 点即关）+ Esc + 图标 toggle。**「打开」= 用户手动用系统默认 app
+  打开（≠ §11.5「绝不**自动**打开」红线，自动打开仍不做）**。
+- **通知**：开始 = 短 neutral toast；完成 = success toast + action「显示」打开
   popover；失败 = danger；启动时有条目被转 interrupted = neutral 计数条。进行中**不用** progress-tone toast
-  （它永不自动消失，进度归工具栏入口管）。
+  （它永不自动消失，进度归工具栏入口管）。**toast 择位（Colin 2026-07-20）**：侧栏开着 = 侧栏内紧凑小 toast
+  （锚下载图标下方、锁侧栏宽、**不顶网页**）；侧栏收起 = over-web（下载图标看不见时唯一反馈，P6）。
 - **记录持久化**：只存元数据（文件名/来源/大小/状态/时间），CAP 100 从最老端挤**终态**条目（在途绝不挤）。
 
 **ui-demo 参考实现**：`mock/downloads.ts`（persist `wordspace-downloads` + 模块级假进度定时器 + rehydrate
@@ -809,18 +812,24 @@ main → renderer (push)
 
 **真 app 下载落地细则（U6 补，2026-07-18；spike 实证 + 移植修正）**
 
-1. **popover 覆盖机制 = 注册 `.dlp-overlay` 进 `OVERLAY_SEL`（摘原生 view + 快照垫底），不锁侧栏宽**——
-   对 plan 原 KTD「popover 锁侧栏宽、不注册 OVERLAY_SEL、`window blur` 关」的**实现修正**（非漂移）。理由：
-   ① ui-demo 定稿卡片就是 340px（宽于侧栏），锁侧栏宽放不下、破坏保真；② 原生 `WebContentsView` 恒在 HTML
-   层之上，卡片盖到网页区时不摘 view 就被网页盖住（与更新面板同约束）。落地=打开即摘 view + 页面快照垫底，
-   关闭走 **veil + Esc**（网页区原生 view 吞 click，document 级 click-outside 靠不住，与 ui-demo veil 同理）。
+1. **popover 锁进侧栏宽度、不覆盖网页区**（Colin 2026-07-20 真机反馈：不该盖真网页）——**推翻 2026-07-18 那版
+   「注册 `.dlp-overlay` 进 `OVERLAY_SEL`、摘原生 view + 快照垫底」的实现，回到 plan 原 KTD 方向**。落地：`anchorPos`
+   读 `#sidebar` rect 把 card 锁进侧栏宽（`left=sb.left+8` / `width=sb.width-16`），右缘绝不越进 `#main`；文件名窄
+   一点靠 `truncateMiddle` + title 全名兜底（Colin 已接受此取舍）。**`.dlp-overlay` 从 `OVERLAY_SEL` 拿掉** →
+   popover 不再摘原生 view（侧栏区本就没有原生 view 覆盖，veil 收得到侧栏区 click）；**连带把「快速开关 popover →
+   `webHideAll` 把刚挂回的 view 又藏了」那个竞态（原对抗审查 P2）根拔了**。关闭三管：veil（覆盖侧栏区含下载图标 →
+   点即关）+ Esc + 图标 toggle。**`window blur` 实证不 fire**（spike：`view.webContents.focus()` 后宿主 renderer
+   `document.hasFocus()` 仍 `true`）→ 不 depend on blur。快捷键守卫仍保留 `.dlp-overlay`（弹层开着拦快捷键是另一回事）。
 2. **真 app `failed` = `DownloadItem` done('interrupted')**（服务端 RST / 磁盘满等运行时失败，spike 实证）；
    mock 的「确定性 40% failed」是 demo 触发器，真 app 无等价确定触发（靠真实服务端错误）。
 3. **静默网络停滞：真 app 停在 `downloading`**（socket 销毁后 8s 内不 fire done，与 Chrome 同款）——不像 mock
    有定时器终结；只有退出 app → load-sanitize 才翻 `interrupted`（不做「实时网络失败→failed」的 UI 预期）。
-4. **完成/失败 toast 降级为纯文案**：真 app 走 `web-toast` 单字符串通道 → 纯文本，**无** §4.11 契约的可点
-   「显示」action、**无** danger tone（通道所限）。进度环 + popover 入口常显兜底，用户仍可一键点开。要补需扩
-   toast 通道带 action/tone（欠账记 `docs/features/browser.md`）。
+4. **toast = renderer 从 `downloads-changed` 状态迁移 diff 派生**（Colin 2026-07-20，**替换原「主进程 `web-toast`
+   单字符串通道发」**）：首帧只建基线不炸历史条目、同条目同迁移只发一次；started/completed/failed 发，
+   canceled/interrupted 不发（对齐原主进程口径）。**择位**：侧栏开着 = 侧栏内紧凑小 toast（`.dl-toast`，锚下载
+   图标下方、锁侧栏宽、**不调 `webToastInset`、不顶网页**）；侧栏收起 = over-web 兜底（下载图标看不见时唯一反馈，
+   P6）。仍是**纯文案**——**无** §4.11 契约的可点「显示」action、**无** danger tone（进度环 + popover 入口常显兜底，
+   用户仍可一键点开；要补需扩 toast 通道带 action/tone，欠账记 `docs/features/browser.md`）。
 5. **启动时「N 个下载被转 interrupted」的计数 toast 未做**（§4.11「启动=neutral 计数条」）：load-sanitize 静默
    翻转、不额外通知（欠账记 `docs/features/browser.md`）。
 
@@ -863,9 +872,10 @@ main → renderer (push)
 - [ ] §12 砍除清单没有被做回来（下载已于 2026-07-17 拍板恢复、移出砍除范围，见 §12 该行标注；
   其余各条仍有效）。
 - [x] 下载（§4.11）：真接 `will-download`（删旧 cancel+toast）/uniquify 防覆盖/工具栏入口+popover/
-  重试=新条目/完成通知/「在访达中显示」只定位；e2e 覆盖完成/取消/重名路径（含变异自检），下载产物
-  走 `WS2_DL_DIR`=tmpdir 零落盘（无需 `.gitignore` 条目）。**真 app 落地 2026-07-18，见 §13 落地细则
-  + `docs/features/browser.md`；toast action/tone + 启动计数条降级，记欠账。**
+  重试=新条目/完成通知/「在访达中显示」只定位/**完成加「打开」（`shell.openPath` 用户手动打开，≠自动打开）**；
+  e2e 覆盖完成/取消/重名/「打开」路径（含变异自检），下载产物走 `WS2_DL_DIR`=tmpdir 零落盘（无需 `.gitignore` 条目）。
+  **真 app 落地 2026-07-18；2026-07-20 真机反馈打磨（popover 锁侧栏宽不覆盖网页 + toast 双态择位 + 加「打开」，
+  见 §13 落地细则 #1/#4）；toast action/tone + 启动计数条降级，记欠账 `docs/features/browser.md`。**
 
 ---
 

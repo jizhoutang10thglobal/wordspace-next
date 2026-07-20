@@ -254,7 +254,10 @@
   // 弹层绝不能被截图卡住。快照垫好(或放弃)才摘 view：先摘会拍不到画面，也会闪一帧素底。
   let overlayPaused = false;
   let snapEl = null;
-  const OVERLAY_SEL = '.sb-modal-overlay, #fp-overlay, .aiax-overlay, .dlp-overlay';
+  // ⚠ 下载 popover(.dlp-overlay)**不在**这里——它锁在侧栏宽度内、不覆盖网页区(Colin 2026-07-20)，
+  // 无需摘原生 view。把它从 OVERLAY_SEL 拿掉后，「快速开关下载 popover → webHideAll 把刚挂回的 view 又藏了」
+  // 那个竞态(原对抗审查 P2)被根拔。快捷键守卫(:~1192)仍保留 .dlp-overlay——弹层开着拦快捷键是另一回事。
+  const OVERLAY_SEL = '.sb-modal-overlay, #fp-overlay, .aiax-overlay';
   try {
     new MutationObserver(() => {
       const has = !!document.querySelector(OVERLAY_SEL);
@@ -1208,8 +1211,9 @@
   // renderer 无 require → truncateMiddle/aggregateProgress/formatBytes/逐状态操作在这里内联等价实现
   // （照 ui-demo src/lib/downloads.ts；逐状态操作可见性照 spec §4.11 表）。
   // 增量渲染（P5，updater 狂闪血教训）：进度高频推送只改 stroke-dashoffset/徽标/进度条 width/状态文本，
-  // 绝不整卡整列重建、绝不抢焦点。popover 根挂 document.body 直接子节点 + 注册 .dlp-overlay 进 OVERLAY_SEL
-  // → 打开即摘原生 view + 快照垫底，340px 卡片在快照上完整渲染、veil 收得到 click。
+  // 绝不整卡整列重建、绝不抢焦点。popover 根挂 document.body，**锁在侧栏宽度内、不覆盖网页区**（Colin 2026-07-20）
+  // → 不摘原生 view（不进 OVERLAY_SEL）；侧栏区无原生 view 覆盖，veil 收得到侧栏区 click。关闭三管：veil + Esc + 图标 toggle
+  // （blur 实证不 fire、不用，见 spec §13）。toast 从 downloads-changed 状态迁移 diff 派生（不再由主进程发）。
   (function initDownloads() {
     const navDl = document.getElementById('nav-downloads');
     if (!navDl || !window.ws2 || !window.ws2.dlList || !window.ws2.onDownloadsChanged) return; // 老 preload/DOM 不齐时安静退场
@@ -1227,6 +1231,8 @@
     let listEl = null, emptyEl = null, clearBtn = null; // popover 持久子元素
     const rowEls = new Map(); // id -> 行 DOM（增量复用）
     let onEsc = null;
+    let dlLastStates = null;  // id -> state 基线（null=还没建基线；首帧只建基线、不把历史条目炸成 toast）
+    let dlPillEl = null, dlPillTimer = null; // 侧栏内紧凑小 toast（侧栏开着专用，不顶网页）
 
     // —— 纯逻辑内联（照 ui-demo lib/downloads.ts）——
     function truncateMiddle(name, max) {
@@ -1274,6 +1280,7 @@
     const ICO_FILE = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>';
     const ICO_X = '<path d="M18 6L6 18M6 6l12 12"/>';
     const ICO_REVEAL = '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/><path d="M2 11h20"/>';
+    const ICO_OPEN = '<path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>'; // 「打开」（外链式 = 用默认 app 打开）
     const ICO_RETRY = '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>';
     const ICO_DL = '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>';
     const ICO_TRASH = '<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>';
@@ -1319,6 +1326,14 @@
         if (r && r.missing) toast(window.wsT('browser.dlRevealToast', { name: e.filename }));
       } catch (err) { /* 主进程不可用 */ }
     }
+    // 「打开」= 用户手动用系统默认 app 打开（≠自动打开红线，见 web-tabs dlOpen 注释）。缺失走同一条 missing toast（照 doReveal）。
+    async function doOpen(e) {
+      if (!window.ws2.dlOpen) return;
+      try {
+        const r = await window.ws2.dlOpen(e.id);
+        if (r && r.missing) toast(window.wsT('browser.dlRevealToast', { name: e.filename }));
+      } catch (err) { /* 主进程不可用 */ }
+    }
 
     // 动作区（随 state 变才重建；进行中态每帧不动这里）
     function buildActs(actsEl, e) {
@@ -1333,6 +1348,7 @@
         actsEl.appendChild(b);
       };
       if (s === 'downloading') mk(ICO_X, 14, 'is-danger', 'browser.dlCancel', () => window.ws2.dlCancel(e.id));
+      if (canReveal(s)) mk(ICO_OPEN, 13, '', 'browser.dlOpen', () => doOpen(e)); // 打开是主动作 → 放「在访达中显示」前
       if (canReveal(s)) mk(ICO_REVEAL, 14, '', 'browser.dlReveal', () => doReveal(e));
       if (canRetry(s)) mk(ICO_RETRY, 13, '', 'browser.dlRetry', () => window.ws2.dlRetry(e.id));
       if (canRemove(s)) mk(ICO_X, 14, 'is-danger', 'browser.dlRemove', () => window.ws2.dlRemove(e.id));
@@ -1420,19 +1436,18 @@
       rowEls.forEach((row, id) => { if (!seen.has(id)) { row.remove(); rowEls.delete(id); } });
     }
 
-    // anchorPos（照 ui-demo：读 [data-dl-anchor] rect、钳窗口内；无按钮回落左上，卡片 340 + 边距 = 356）
+    // anchorPos（Colin 2026-07-20 改：锁进侧栏宽度，右缘绝不越过侧栏右缘、绝不进网页区 → 不再需要摘原生 view）。
+    // left 贴侧栏左内边距、width = 侧栏宽 - 16；top 在下载图标下方。文件名窄一点可接受（truncateMiddle + title 全名兜底）。
     function anchorPos() {
-      const el = document.querySelector('[data-dl-anchor]');
-      if (el) {
-        const r = el.getBoundingClientRect();
-        if (r.width > 0 && r.bottom > 0) {
-          return {
-            left: Math.max(10, Math.min(r.left - 8, window.innerWidth - 356)),
-            top: Math.min(r.bottom + 8, window.innerHeight - 120),
-          };
-        }
+      const sbEl = document.getElementById('sidebar');
+      const anchor = document.querySelector('[data-dl-anchor]');
+      const sb = sbEl ? sbEl.getBoundingClientRect() : null;
+      const a = anchor ? anchor.getBoundingClientRect() : null;
+      if (sb && sb.width > 0) {
+        const top = a && a.bottom > 0 ? Math.min(a.bottom + 8, window.innerHeight - 120) : Math.round(sb.top + 52);
+        return { left: Math.round(sb.left + 8), top: Math.round(top), width: Math.max(200, Math.round(sb.width - 16)) };
       }
-      return { left: 12, top: 52 };
+      return { left: 12, top: 52, width: 300 }; // 防御回落（侧栏测不到宽时；正常路径下侧栏可见才点得到入口）
     }
 
     function openPop() {
@@ -1449,6 +1464,7 @@
       const pos = anchorPos();
       card.style.left = pos.left + 'px';
       card.style.top = pos.top + 'px';
+      card.style.width = pos.width + 'px'; // 锁侧栏宽（CSS 不再写死 340）
       const head = document.createElement('header');
       head.className = 'dlp-head';
       const title = document.createElement('span');
@@ -1485,7 +1501,7 @@
       card.appendChild(listEl);
       overlay.appendChild(veil);
       overlay.appendChild(card);
-      document.body.appendChild(overlay); // 直接挂 body（OVERLAY_SEL 非 subtree observer 要求）
+      document.body.appendChild(overlay); // 直接挂 body（popover 锁侧栏宽、不覆盖网页 → 不进 OVERLAY_SEL、不摘 view）
       popEl = overlay;
       rowEls.clear();
       renderList();
@@ -1506,14 +1522,57 @@
 
     navDl.addEventListener('click', () => { if (popEl) closePop(); else openPop(); });
 
-    // 状态源：主进程推送 → 环 + 列表（列表仅开着时）都刷
+    // —— 下载 toast（Colin 2026-07-20 改：主进程不再发，renderer 从状态迁移 diff 派生，按侧栏收起态择位）——
+    // 侧栏内紧凑小 toast：锚在下载图标下方、锁进侧栏宽（侧栏区无原生 view 覆盖 → 可见），3s 自动消失，
+    // **不调 webToastInset、不顶网页**。比 over-web 深条小。
+    function showDlPill(msg) {
+      if (dlPillEl) dlPillEl.remove();
+      clearTimeout(dlPillTimer);
+      dlPillEl = document.createElement('div');
+      dlPillEl.className = 'dl-toast';
+      dlPillEl.textContent = msg;
+      document.body.appendChild(dlPillEl);
+      const sbEl = document.getElementById('sidebar');
+      const sb = sbEl ? sbEl.getBoundingClientRect() : null;
+      const a = navDl.getBoundingClientRect();
+      if (sb && sb.width > 0) {
+        dlPillEl.style.left = Math.round(sb.left + 8) + 'px';
+        dlPillEl.style.top = Math.round((a.bottom > 0 ? a.bottom : sb.top + 44) + 8) + 'px';
+        dlPillEl.style.maxWidth = Math.max(140, Math.round(sb.width - 16)) + 'px';
+      } else {
+        dlPillEl.style.left = '12px'; dlPillEl.style.top = '52px'; dlPillEl.style.maxWidth = '240px';
+      }
+      dlPillTimer = setTimeout(() => { if (dlPillEl) { dlPillEl.remove(); dlPillEl = null; } }, 3000);
+    }
+    // 侧栏开 = 侧栏内小 toast（不顶网页）；侧栏收起 = 现有 over-web 兜底（P6：那时下载图标看不见，over-web 是唯一反馈）。
+    function dlToast(msg) {
+      if (document.body.classList.contains('is-sb-collapsed')) toastOverWeb(msg);
+      else showDlPill(msg);
+    }
+    // 状态迁移 diff → 派生 toast。首帧（dlLastStates=null）只建基线不发；同条目同迁移只发一次（比对 lastStates）。
+    // started/completed/failed 发，canceled/interrupted/fileMissing 不发（对齐原主进程口径：取消不打扰、中断静默）。
+    function deriveToasts(list) {
+      const nextMap = new Map(list.map((e) => [e.id, e.state]));
+      if (dlLastStates === null) { dlLastStates = nextMap; return; } // 首帧只建基线（历史 completed 不炸 toast）
+      for (const e of list) {
+        const prev = dlLastStates.get(e.id);
+        if (prev === e.state) continue;
+        if (prev === undefined && e.state === 'downloading') dlToast(window.wsT('browser.dlStarted', { name: e.filename }));
+        else if (e.state === 'completed') dlToast(window.wsT('browser.dlDone', { name: e.filename }));
+        else if (e.state === 'failed') dlToast(window.wsT('browser.dlFailed', { name: e.filename }));
+      }
+      dlLastStates = nextMap;
+    }
+
+    // 状态源：主进程推送 → 派生 toast + 环 + 列表（列表仅开着时）都刷
     window.ws2.onDownloadsChanged((data) => {
       entries = Array.isArray(data) ? data : [];
+      deriveToasts(entries);
       renderToolbar();
       if (popEl) renderList();
     });
-    // 启动补拉一次（拿既有下载记录 → 环初态正确）
-    window.ws2.dlList().then((data) => { entries = Array.isArray(data) ? data : []; renderToolbar(); if (popEl) renderList(); }).catch(() => { /* keep default */ });
+    // 启动补拉一次（拿既有下载记录 → 环初态正确 + 建 toast 基线，历史条目不炸 toast）
+    window.ws2.dlList().then((data) => { entries = Array.isArray(data) ? data : []; deriveToasts(entries); renderToolbar(); if (popEl) renderList(); }).catch(() => { /* keep default */ });
   })();
 
   // 初始 chrome 态
