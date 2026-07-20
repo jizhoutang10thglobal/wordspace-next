@@ -56,3 +56,4 @@
 }
 .ws-stub-title { font-size: var(--fs-xl); font-weight: var(--fw-semibold); color: var(--c-text-2); }
 .ws-stub-note { font-size: var(--fs-sm); color: var(--c-text-3); }
+/* [GATE-PROBE 临时] ui-demo-only 改动验 docs-only 放行 */
