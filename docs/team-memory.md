@@ -14,6 +14,16 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-20 — ⚠更正 07-18 那条:下载 popover 已改「锁侧栏宽、不走 OVERLAY_SEL」(Colin 真机反馈)
+
+**是什么**:Colin 真机跑 #278 后反馈「popover 不该盖真网页」,已改(PR #286):下载 popover 从「340px 覆盖网页区 + 走 OVERLAY_SEL 摘 view+截图垫底」**推翻**成「锁进侧栏宽度、右缘=侧栏右缘−8px、绝不进网页区」(`anchorPos` 读 `#sidebar` rect)。附带 toast 改小(侧栏开着走侧栏内小 toast 不顶网页 72px、收起才 over-web)+ 加「打开」按钮(`shell.openPath` 用户手动打开)。
+**怎么 apply**:
+① **07-18 广播里「下载 popover 是 OVERLAY_SEL 最新先例」这句作废**——它现在**不走** OVERLAY_SEL 了。要「DOM 弹层盖网页」的先例去看别的(modal/Cmd+P/AI 面板仍在 OVERLAY_SEL)。
+② **新增设计取舍先例**:DOM 弹层**该不该盖网页**是个选择——盖网页(要视觉覆盖内容区)就注册 OVERLAY_SEL、接受「摘 view+冻结截图」;**不该盖网页**(侧栏类)就 `anchorPos` 读 `#sidebar` rect 锁进侧栏宽、别碰 OVERLAY_SEL(更简单、无冻结、无 webHideAll 竞态)。下载 popover 现在是后者先例。
+③ **07-18 修的 OVERLAY_SEL webHideAll 竞态守卫仍有效**——保护的是仍在 OVERLAY_SEL 里的弹层(modal 等),不受本次影响。
+④ 教训:**真机反馈能推翻 e2e+设计都覆盖不到的主观 UX 判断**——popover 覆盖网页在 ui-demo 里 Colin 验收过、e2e 全绿,但真网页上体验不对;真机走查不可替代。
+**来源**:PR #286(承接 #278);spec §4.11/§13 已改。
+
 ## 2026-07-18 — 浏览器下载进真 app(will-download 真接)+ 工具栏 7 钮尺寸账 + OVERLAY_SEL 竞态修复
 
 **是什么**：浏览器下载(标准档)移植进真 app(PR #278):will-download 从「一律 cancel」换成真接 DownloadItem 落盘 + 下载管理 UI(工具栏进度环 + popover 列表 + 右键存图/链接另存为)。推翻 2026-07-09「不做下载」旧拍板(Colin 2026-07-17 拍板恢复)。附带两处共享核心改动 + 一个潜伏竞态修复。
