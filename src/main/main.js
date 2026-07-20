@@ -6,6 +6,7 @@ const docWatcher = require('./doc-watcher');
 const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
 const webPolicy = require('../lib/web-tabs-policy');
+const { hideForResidency } = require('../lib/window-residency');
 const i18n = require('../lib/i18n');
 const { ZH, EN } = require('../i18n');
 const languageStore = require('./language-store');
@@ -86,7 +87,10 @@ function createWindow() {
     if (darwinPersist && !quitting) {
       e.preventDefault();
       webTabs.setAllAudioMuted(true); // 隐藏驻留：后台网页别继续放声/烧 CPU（P2-11；标签静音已砍,只能整体静音）
-      win.hide();
+      // ⚠ 不能直接 win.hide()：全屏（独占 Space）下 macOS 吞掉 orderOut:，窗口藏不掉、Space 也不拆，
+      // 用户面对一块空 Space = 黑屏（Wendi/Colin 2026-07-20 报，宿主两轮复现）。收口进
+      // hideForResidency：全屏先退、等 leave-full-screen 再藏（src/lib/window-residency.js）。
+      hideForResidency(win);
       return;
     }
     if (!isDirty) return;
