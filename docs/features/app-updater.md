@@ -15,6 +15,10 @@
   + 按钮「下载并安装」（主）/「以后再说」。
 - 下载中：进度条（percent）+ 明细「42% · 55.0 MB / 132.0 MB · 3.2 MB/s」+「后台下载」（关面板留 pill）。
   首个进度事件到达前进度条走不定动画、明细显示「正在开始下载…」。
+- **点「后台下载」（或 ×/Esc/点遮罩）关掉面板后，同状态的后续推送不再把它弹回来**（Colin 2026-07-17
+  实机：手动下载每 ~200ms 一条 progress，一关就被下一条打脸重开 →「不停跳出来」）。记住关面板时所处的
+  状态（`dismissedAtState`），只有**状态跃迁**（如 downloading→ready）才重新弹——「全程跟进」跟的是里程碑、
+  不是每个进度 tick。后台下载期间 pill 照常跟进度，随时可点 pill 重新开面板。
 - 已就绪：「立即重启安装」（主）/「稍后（退出时自动安装）」。稍后 = electron-updater
   autoInstallOnAppQuit 默认行为，真退出（Cmd+Q）时装；mac 点红叉只是隐藏窗口、不触发安装。
 - 已是最新：「已是最新版本（当前 vX.Y.Z）」。
@@ -101,5 +105,9 @@ electron-updater 差分三条件：新老两版 release 都有 blockmap + 本地
 - ~~before-quit-for-update 的行为门只在 darwin 有牙~~（已解决：`e2e/update-quit.spec.js` 用
   `WS2_DARWIN_PERSIST_SIM` 在任何平台强制驻留分支，Linux CI 也有牙）。
 - mac 差分实效未实测（要连发两版带 blockmap 的 release 才能观察真实节省比例）。
+- 「后台下载」抑制弹回的已知小 gap：下载中点了后台下载、又在**同一个下载期间**点菜单「检查更新…」，
+  `manualCheckForUpdates` 会重推**同一个 downloading 状态**，被同状态抑制吞掉 → 菜单点了面板不弹（pill
+  仍在，点 pill 可重开）。要让显式「检查更新」永远弹面板，需 main 侧给这次重推打个 forcePanel 信号让
+  renderer 无视 dismissedAtState——本次没做（避免动 main.js，与 #248 免密安装那摊解耦）。
 - 每标签缩放同款限制：Electron zoom 按 host 传播——与本 feature 无关，见 browser.md。
 - 更新失败的 updater.log 尚无「一键导出/上报」入口，用户要手动去 userData 找。
