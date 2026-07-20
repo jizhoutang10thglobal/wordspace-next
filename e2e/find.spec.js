@@ -83,7 +83,7 @@ test.afterEach(async ({}, testInfo) => {
   app = null; page = null; frame = null;
 });
 
-test('FIND-1: Cmd+F 开查找条 + 真高亮匹配（range 建对 + 像素真变 + 变异探针）', async () => {
+test.only('FIND-1: Cmd+F 开查找条 + 真高亮匹配（range 建对 + 像素真变 + 变异探针）', async () => {
   await launch();
   await openDoc(FIND_DOC);
 
