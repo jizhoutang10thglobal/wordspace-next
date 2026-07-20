@@ -79,6 +79,10 @@ jobs:
   # 要让红 e2e 真挡住 merge，需在 GitHub 把本 job 设为 main 的 required status check。
   # 独立 job，绝不继承上面 test job 的 ELECTRON_SKIP_BINARY_DOWNLOAD=1
   # ——e2e 要真 Electron 二进制；CI runner 无防火墙能正常下载。
+  # 分片并行（2026-07-20，e2e 策略 plan U2）：把串行全量 e2e（~416 条 ~11 分）切成 4 个矩阵分片并跑，
+  # 墙上时间到绿 ~13→~5 分。每片仍 workers:1（跨 runner 分片天然隔离，规避多 Electron 单机抢端口/单实例锁：
+  # browser/web-downloads 起本地 http server，单机并发会撞端口）。fail-fast:false=一片红不取消别片，才看得全。
+  # ⚠ required status check 从 `e2e` 迁到下面的 `e2e-all` 聚合门——分片后 `e2e` 这个名不再存在。
   e2e:
     needs: changes
     if: ${{ needs.changes.outputs.app == 'true' }}
@@ -86,6 +90,10 @@ jobs:
     # （libasound2→libasound2t64 等）会让 playwright install-deps 补不全 Electron
     # 的 Chromium 系统库、正常 app 也启动失败 → 门误红。22.04 上这套组合成熟稳定。
     runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -95,4 +103,61 @@ jobs:
       - run: npm ci
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: npx playwright install-deps chromium
-      - run: xvfb-run -a --server-args="-screen 0 1280x720x24" npm run test:e2e
+      # --shard=i/4：Playwright 把测试列表按 test 数/顺序切给这一片；--reporter=blob 产可合并的中间报告。
+      - run: xvfb-run -a --server-args="-screen 0 1280x720x24" npx playwright test --shard=${{ matrix.shard }}/4 --reporter=blob
+      # 上传本片 blob，给 e2e-all 合并数「无漏测」。!cancelled() 保证红片也传（合并要看全）。
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 3
+
+  # 聚合门（fail-closed，e2e 策略 plan U2/KD4）：分片后 required status check 迁到这个稳定名 `e2e-all`。
+  # 迁移序（Colin 手动，一次性）：① 先把 e2e-all 加进 branch protection required（保留 e2e）+ 开 admin-merge；
+  # ② admin-merge 携带本改动的 PR（它的 e2e 这个 check 不再上报，预期）；③ e2e-all 在 main 出现后再删 e2e。
+  # ⚠ fail-closed：只有「changes 真成功 且 判定纯 ui-demo」才放行；changes 自己挂掉/output 空/app==true 一律
+  # 要求 e2e 真绿——否则「探测 job 挂了→分片被 skip→门却绿」就是 S1-S4 的假绿，绝不允许（KD6）。
+  e2e-all:
+    needs: [changes, e2e]
+    if: ${{ always() }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Gate（fail-closed）
+        run: |
+          cr="${{ needs.changes.result }}"; app="${{ needs.changes.outputs.app }}"; er="${{ needs.e2e.result }}"
+          echo "changes.result=$cr  app=$app  e2e.result=$er"
+          if [ "$cr" = "success" ] && [ "$app" = "false" ]; then
+            echo "docs-only（纯 ui-demo，e2e 合规 skip）→ 放行"; exit 0
+          fi
+          if [ "$er" != "success" ]; then
+            echo "::error::e2e 未全绿（result=$er）或 changes 异常 → 门红（fail-closed）"; exit 1
+          fi
+          echo "e2e 全绿 → 继续做无漏测检查"
+      # 无漏测强制（KD6，adversarial）：合并 blob 数 spec 数，低于地板 = 疑似 test.only/skip/spec 改名/空分片 → 红。
+      - uses: actions/checkout@v4
+        if: ${{ needs.changes.outputs.app == 'true' && needs.e2e.result == 'success' }}
+      - uses: actions/setup-node@v4
+        if: ${{ needs.changes.outputs.app == 'true' && needs.e2e.result == 'success' }}
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+        if: ${{ needs.changes.outputs.app == 'true' && needs.e2e.result == 'success' }}
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.changes.outputs.app == 'true' && needs.e2e.result == 'success' }}
+        with:
+          pattern: blob-report-*
+          path: all-blobs
+          merge-multiple: true
+      - name: 无漏测（收集 spec 数 ≥ 地板）
+        if: ${{ needs.changes.outputs.app == 'true' && needs.e2e.result == 'success' }}
+        run: |
+          npx playwright merge-reports --reporter=json all-blobs > merged.json
+          count=$(node -e "const r=require('./merged.json');let n=0;const w=s=>{n+=(s.specs||[]).length;(s.suites||[]).forEach(w)};(r.suites||[]).forEach(w);console.log(n)")
+          floor=400
+          echo "collected e2e specs = $count (floor=$floor, 当前实测 416)"
+          if [ "$count" -lt "$floor" ]; then
+            echo "::error::收集到的 e2e 用例数 $count < 地板 $floor → 疑似漏测（test.only/describe.skip/spec 改名/空分片）→ 门红"; exit 1
+          fi
+          echo "无漏测检查通过"
