@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Download, X, RotateCw, FolderOpen, Trash2, FileText, FileImage, FileArchive, File as FileIcon } from 'lucide-react'
+import { Download, X, RotateCw, FolderOpen, ExternalLink, Trash2, FileText, FileImage, FileArchive, File as FileIcon } from 'lucide-react'
 import { useDownloads, type DownloadEntry } from '../mock/downloads'
 import { useUI } from '../mock/ui'
 import { useStore } from '../mock/store'
@@ -21,20 +21,21 @@ function extIconOf(name: string) {
   return FileIcon
 }
 
-// 锚定位：开合那刻查工具栏按钮的真实 rect（停靠/peek 两态都适用），越界钳到窗口内；
-// 按钮不存在（沉浸收起、toast「显示」路径）→ 回落左上角固定位。
-function anchorPos(): { left: number; top: number } {
-  const el = document.querySelector('[data-dl-anchor]')
-  if (el) {
-    const r = el.getBoundingClientRect()
-    if (r.width > 0 && r.bottom > 0) {
-      return {
-        left: Math.max(10, Math.min(r.left - 8, window.innerWidth - 356)),
-        top: Math.min(r.bottom + 8, window.innerHeight - 120),
-      }
+// 锚定位（Colin 2026-07-20：锁进侧栏宽度、不覆盖内容区，与真 app 对齐）：读 .arc-sidebar rect 定
+// left/width（left 贴侧栏左内边距、width = 侧栏宽 - 16），right 绝不越过侧栏右缘；top 在下载图标下方。
+// 侧栏测不到宽（沉浸收起、toast「显示」路径）→ 回落左上角固定位。
+function anchorPos(): { left: number; top: number; width: number } {
+  const sb = document.querySelector('.arc-sidebar')
+  const anchor = document.querySelector('[data-dl-anchor]')
+  if (sb) {
+    const r = sb.getBoundingClientRect()
+    if (r.width > 0) {
+      const a = anchor?.getBoundingClientRect()
+      const top = a && a.bottom > 0 ? Math.min(a.bottom + 8, window.innerHeight - 120) : Math.round(r.top + 52)
+      return { left: Math.round(r.left + 8), top: Math.round(top), width: Math.max(200, Math.round(r.width - 16)) }
     }
   }
-  return { left: 12, top: 52 }
+  return { left: 12, top: 52, width: 300 }
 }
 
 function Row({ e }: { e: DownloadEntry }) {
@@ -61,6 +62,8 @@ function Row({ e }: { e: DownloadEntry }) {
 
   // 「在访达中显示」演示语义（mock 边界）：只 toast 告知定位，绝无打开文件的语义（AE3/R11）。
   const reveal = () => toast(t('browser.dlRevealToast', { name: e.filename }), 'neutral')
+  // 「打开」演示语义（mock 边界）：真 app 是 shell.openPath 用户手动打开（≠自动打开红线）；mock 只 toast 告知。
+  const open = () => toast(t('browser.dlOpenToast', { name: e.filename }), 'neutral')
 
   return (
     <div className={`dl-row${e.state === 'fileMissing' ? ' is-missing' : ''}`} data-state={e.state}>
@@ -75,6 +78,9 @@ function Row({ e }: { e: DownloadEntry }) {
       <div className="dl-acts">
         {e.state === 'downloading' && (
           <button className="dl-act is-danger" title={t('browser.dlCancel')} onClick={() => cancelDownload(e.id)}><X size={14} /></button>
+        )}
+        {canReveal(e.state) && (
+          <button className="dl-act" title={t('browser.dlOpen')} onClick={open}><ExternalLink size={13} /></button>
         )}
         {canReveal(e.state) && (
           <button className="dl-act" title={t('browser.dlReveal')} onClick={reveal}><FolderOpen size={14} /></button>
@@ -115,7 +121,7 @@ export default function DownloadsPopover() {
   return createPortal(
     <>
       <div className="dlp-veil" onClick={closeDownloads} />
-      <div className="dlp" style={{ left: pos.left, top: pos.top }} role="dialog" aria-label={t('browser.dlTitle')}>
+      <div className="dlp" style={{ left: pos.left, top: pos.top, width: pos.width }} role="dialog" aria-label={t('browser.dlTitle')}>
         <header className="dlp-head">
           <span className="dlp-title">{t('browser.dlTitle')}</span>
           {hasTerminal && (
