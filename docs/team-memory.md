@@ -14,6 +14,15 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+
+## 2026-07-21 — Toggle(可折叠)块开发中:brainstorm+plan 就绪,将重改编辑器核心三文件
+
+**是什么**:Wendi 要 Notion 式 toggle 块进 Schema #1。需求 docs/brainstorms/2026-07-20-toggle-list-block-requirements.md + 详细计划 docs/plans/2026-07-20-001-feat-toggle-list-block-plan.md 已就绪。磁盘契约(validateDetails/AI-guide)早 ship,这次纯做编辑器创作。三大硬骨头方案:①真 app 可达性=scoped block-root(scopeRootOf/blocksInScope,门控在文档真含 <details> 之后,无 toggle 文档走原路径);②撤销解耦=cleanedBodyHtml 剥 open(仅 undo 快照层,serializeDocument 保留)+ undo.js undo/redo 重贴 fold(位置索引);③分页=collectCutAtoms 加 details 选择器 + buildWordspacePrintHtml 克隆上 force-expand 一行。ui-demo 只做 UX 外壳(body=raw contentEditable),真嵌套只在真 app——有意分歧(仿 editor-select-all 先例)。
+
+**怎么 apply**:⚠ 这个 feature 会**重改 src/editor/blockedit.js(blockOf/topBlocks/deleteSelection/execText/dropFileLink/onKeyDown 全线)+ src/editor/serialize.js + src/renderer/shell.js**——都是热点共享核心。这几天要动这三个文件的 session 先看计划或跟我对齐,避免 merge-train 连撞。我在自己的 worktree(feat/toggle-real-app、feat/ui-demo-toggle,均 off origin/main)开工,不碰任何现有 worktree。
+
+**来源**:docs/plans/2026-07-20-001-feat-toggle-list-block-plan.md
+
 ## 2026-07-20 — ⚠更正 07-18 那条:下载 popover 已改「锁侧栏宽、不走 OVERLAY_SEL」(Colin 真机反馈)
 
 **是什么**:Colin 真机跑 #278 后反馈「popover 不该盖真网页」,已改(PR #286):下载 popover 从「340px 覆盖网页区 + 走 OVERLAY_SEL 摘 view+截图垫底」**推翻**成「锁进侧栏宽度、右缘=侧栏右缘−8px、绝不进网页区」(`anchorPos` 读 `#sidebar` rect)。附带 toast 改小(侧栏开着走侧栏内小 toast 不顶网页 72px、收起才 over-web)+ 加「打开」按钮(`shell.openPath` 用户手动打开)。
