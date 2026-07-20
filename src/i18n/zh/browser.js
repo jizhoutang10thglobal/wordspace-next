@@ -26,6 +26,7 @@ module.exports = {
   dlCancel: '取消',
   dlRetry: '重新下载',
   dlRemove: '从记录中移除',
+  dlOpen: '打开',
   dlReveal: '在访达中显示',
   dlRevealToast: '找不到「{name}」，文件可能已被移动或删除',
   // omnibox 星标
