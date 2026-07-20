@@ -160,6 +160,7 @@ contextBridge.exposeInMainWorld('ws2', {
   dlClear: () => ipcRenderer.send('dl-clear'),
   dlRemove: (id) => ipcRenderer.send('dl-remove', id),
   dlReveal: (id) => ipcRenderer.invoke('dl-reveal', id),
+  dlOpen: (id) => ipcRenderer.invoke('dl-open', id),
   onDownloadsChanged: (cb) => ipcRenderer.on('downloads-changed', (_e, data) => cb(data)),
   // 浏览器设置（搜索引擎；真 app 默认 Bing,拍板）
   browserSettings: () => ipcRenderer.invoke('browser-settings'),
