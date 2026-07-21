@@ -5,6 +5,30 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.11.0 — 2026-07-21
+
+A collapsible Toggle block in the editor, downloads in the browser, and the sidebar fused with the window frame.
+
+### Added
+
+- **Toggle block**: a new collapsible block in the editor — insert it with `/toggle`, edit the title row, and put anything inside (paragraphs, lists, images, tables, even nested toggles); click the chevron to fold / unfold, and the folded state is saved with the file; Find auto-expands a collapsed toggle when a match is inside; exporting to PDF expands everything so nothing is lost; plain text and toggles convert back and forth
+- **Browser downloads**: the built-in browser can download — a toolbar download button with a progress ring and a downloads list, right-click "Save image / Save link as" on web pages, and download history is kept
+- **Immersive frame**: a thin window frame now surrounds the content whenever you're not full-screen (not only when the sidebar is collapsed), and you can drag the window by it; the sidebar and frame are fused into one surface
+
+### Improved
+
+- **Basic editor**: deleting a block now uses the more intuitive "select, then Delete" — the separate "Delete this block" button is gone
+- **Folders**: very large folders (simplified loading mode) now show their path, just like every other folder
+- **File tree**: the highlight follows the currently open tab
+
+### Fixed
+
+- **Context menu**: no longer clipped near the bottom of the window — it flips upward instead
+- **Window**: closing a window while in full-screen no longer goes black
+- **Updates**: closing the panel while an update is downloading no longer pops it back open
+- **Immersive frame**: the top border no longer covers the sidebar's top icon buttons
+- **Browser downloads**: a batch of polish (downloads-list width, notifications, an "Open" action once a download finishes)
+
 ## v0.10.6 — 2026-07-17
 
 The default screen (no tabs open) is now a start page.
