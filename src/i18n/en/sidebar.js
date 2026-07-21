@@ -37,7 +37,6 @@ module.exports = {
 
   // ---- root header / disconnected root ----
   rootHeadTitle: '{path} · Drag to reorder folders',
-  rootHeadTitleLazy: '{path} · Simplified mode (very large folder, loaded on demand)',
   newDoc: 'New document',
   moveToTop: 'Move to top',
   removeRoot: 'Remove (files stay on disk)',
@@ -56,9 +55,7 @@ module.exports = {
   hugePickAnother: 'Pick another folder',
   hugeOpenAnyway: 'Open anyway',
 
-  // ---- simplified (lazy) large root: badge + per-level loading placeholder + level-truncation note ----
-  lazyTag: 'Simplified',
-  lazyTagTitle: 'This folder is very large (over 150,000 items). Wordspace loads it level by level on demand; filtering / quick-open only cover directories you’ve already browsed',
+  // ---- simplified (lazy) large root: per-level loading placeholder + level-truncation note + point-of-use degradation hints ----
   readingLevel: 'Reading…',
   dirTruncatedNote: 'This folder has too many direct items — showing only the first portion',
   lazyFilterHint: 'Simplified mode: only searches directories you’ve already browsed',

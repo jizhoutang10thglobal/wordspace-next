@@ -37,7 +37,6 @@ module.exports = {
 
   // ---- 根标题行 / 失联根 ----
   rootHeadTitle: '{path} · 拖动可调整文件夹顺序',
-  rootHeadTitleLazy: '{path} · 简化模式（超大文件夹，按需加载）',
   newDoc: '新建文档',
   moveToTop: '移到最上面',
   removeRoot: '移除（磁盘文件不动）',
@@ -56,9 +55,7 @@ module.exports = {
   hugePickAnother: '换一个文件夹',
   hugeOpenAnyway: '仍要打开',
 
-  // ---- 简化模式（lazy）大根：徽标 + 逐层加载占位 + 单层截断提示 ----
-  lazyTag: '简化模式',
-  lazyTagTitle: '这个文件夹很大（超过 15 万个项目），Wordspace 按需逐层加载，筛选/快速打开只覆盖已浏览过的目录',
+  // ---- 简化模式（lazy）大根：逐层加载占位 + 单层截断提示 + 用到时的降级提示 ----
   readingLevel: '正在读取…',
   dirTruncatedNote: '此文件夹的直接项目过多，仅显示前一部分',
   lazyFilterHint: '简化模式：仅搜索已浏览过的目录',
