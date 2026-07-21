@@ -670,6 +670,7 @@
 
     function turnInto(el, item) {
       if (!el) return el;
+      if (el.tagName === 'SUMMARY') el = el.parentElement || el; // P0：编辑 summary 时「转为」→ 作用于整个 toggle（否则 retag 掉 summary → 零 summary 非合规字节）
       // toggle→文本（U9/R2）：源是 <details>、目标非 details → summary 内容 → 目标块，正文块提到其后（零内容丢失）。
       // 必须在下面 containerLines 计算之前——否则 details 的 summary+正文会被误当「多段容器」拍平。
       if (el.tagName === 'DETAILS' && item.tag !== 'details') {
@@ -815,6 +816,10 @@
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
       const r = sel.getRangeAt(0);
+      // P2：选区跨 summary 边界（一端在 summary、另一端不在同一 summary）→ 安全空操作（return true 拦掉调用方的
+      // 原生 execCommand('delete')，否则原生会把正文并进 summary / 删出 summary-only → 非合规）。同一 summary 内选区放行原生。
+      const sumOf = (n) => { const e = n && (n.nodeType === 3 ? n.parentElement : n); return e && e.closest ? e.closest('summary') : null; };
+      if (sumOf(r.startContainer) !== sumOf(r.endContainer)) return true;
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (!sBlk || !eBlk) return false; // 选区落在块外/覆盖层 → 不碰
       if (sBlk === eBlk) {
@@ -847,8 +852,10 @@
         while (eB.firstChild) sB.appendChild(eB.firstChild); // 末块剩余并入起块
         eB.remove();
       }
-      if (!eEditable) eB.remove(); // 结构末块整删
-      if (!sEditable) sB.remove(); // 结构起块整删
+      // P2 clamp：结构端点只在「整块被选中」（端块本身=该顶层结构块）时整删；若选区只是**部分进入**其体内
+      //（eBlk 是它的后代、eBlk!==eB），则夹住不删——绝不销毁用户未选中的正文块（如 toggle 里选区外的 b2）。
+      if (!eEditable && eBlk === eB) eB.remove();
+      if (!sEditable && sBlk === sB) sB.remove();
       // toggle 体 ≥1 块铁则：作用域删空 → 补一个空 <p>（summary-only 是死胡同）
       if (scopeRoot !== blockRoot && blocksInScope(scopeRoot).length === 0) scopeRoot.appendChild(doc.createElement('p'));
       markDirty(); if (undoMgr) undoMgr.checkpoint();
@@ -1251,7 +1258,11 @@
     }
     function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; grip.style.display = 'none'; } }
     // 折叠持久化（KD4/R8）：原生 toggle 事件 → markDirty 触发自动保存；绝不 checkpoint（折叠不是撤销步 KD5）。
-    function onToggle(e) { if (e.target && e.target.tagName === 'DETAILS') markDirty(); }
+    function onToggle(e) {
+      if (!e.target || e.target.tagName !== 'DETAILS') return;
+      if (e.target.__wsFindReveal) { e.target.__wsFindReveal = false; return; } // 查找揭示触发的展开：只读，不标 dirty、不落盘（P2）
+      markDirty();
+    }
     function onClick(e) {
       // 点到覆盖层（手柄/菜单/气泡）自身：交给它们各自的 handler，这里忽略
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
@@ -1269,7 +1280,7 @@
         e.preventDefault();
         const det = sumT.parentElement;
         const sr = sumT.getBoundingClientRect();
-        if ((e.clientX - sr.left) < 20) { det.open = !det.open; return; } // chevron 区 → 折叠
+        if ((e.clientX - sr.left) < 20) { det.open = !det.open; if (editingEl !== sumT) { try { sumT.blur(); } catch (x) {} } return; } // chevron 区 → 折叠；非编辑态 blur summary（防折叠后按空格被原生激活重开，P3）
         if (editingEl !== sumT) enterEdit(sumT, { mode: 'point', x: e.clientX, y: e.clientY });
         return;
       }
@@ -1543,9 +1554,10 @@
         const sel = doc.getSelection();
         if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 非折叠选区前面已处理；这里只管折叠光标
         if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内 Delete 会误吞下一段（B 组）
-        const blocks = topBlocks();
+        const dScope = scopeRootOf(editingEl); // P1：作用域感知（原用 topBlocks → 体内块 indexOf=-1 → 误吞顶层首块）
+        const blocks = (dScope === blockRoot) ? topBlocks() : blocksInScope(dScope);
         const next = blocks[blocks.indexOf(editingEl) + 1];
-        if (!next) return;
+        if (!next) return; // 作用域末块 → 无内块可合并（绝不跨作用域）
         if (classify(next) === 'list' || !isEditableEl(next)) return; // 下一块是列表/图片/分隔线 → 不吞
         const cur = editingEl;
         // 两块都得是叶子文字块才拼接——cur/next 是透明包裹块（div.lead>p）时平搬子节点会造 <p><p>/容器直挂裸文本（A 组）。
@@ -1563,19 +1575,24 @@
         if (e.isComposing || e.keyCode === 229) return;
         const sel = doc.getSelection();
         if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 有选区 → 交原生
-        const blocks = topBlocks();
+        const aScope = scopeRootOf(editingEl); // P1/P2：作用域感知（原用 topBlocks → 体内块 idx=-1 → 跳到 blocks[0] 顶层块）
+        const blocks = (aScope === blockRoot) ? topBlocks() : blocksInScope(aScope);
         const idx = blocks.indexOf(editingEl);
         if (e.key === 'ArrowRight') {
           if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内按 → 会越过空格直接跳块（B 组）
-          const next = blocks[idx + 1]; if (!next) return;
+          let next = blocks[idx + 1];
+          if (!next && aScope !== blockRoot) next = aScope.nextElementSibling; // toggle 体末 → 跨到 details 后的外层块
+          if (!next || next.hasAttribute('data-ws2-ui')) return;
           e.preventDefault();
           if (isEditableEl(next)) enterEdit(next, { mode: 'start' });
           else { selectBlock(next); positionGrip(next); }
         } else {
           if (!isCaretAtStart(doc, editingEl)) return; // 不在块首 → 原生
-          const prev = blocks[idx - 1]; if (!prev) return;
+          let prev = blocks[idx - 1];
+          if (!prev && aScope !== blockRoot) prev = summaryOf(aScope); // toggle 体首 → 跨回 summary
+          if (!prev) return;
           e.preventDefault();
-          if (isEditableEl(prev)) enterEdit(prev, { mode: 'end' });
+          if (prev.tagName === 'SUMMARY' || isEditableEl(prev)) enterEdit(prev, { mode: 'end' });
           else { selectBlock(prev); positionGrip(prev); }
         }
         return;
@@ -1590,19 +1607,25 @@
         const degenerate = box.height === 0 && box.top === 0; // 空块等取不到 caret 位置
         const caret = degenerate ? { top: er.top, bottom: er.bottom, left: er.left } : box;
         const lh = (degenerate ? Math.min(er.height, 24) : box.height) || 20;
-        const blocks = topBlocks();
+        const aScope = scopeRootOf(editingEl); // P2：作用域感知（原 topBlocks → 体内块跳顶层）
+        const blocks = (aScope === blockRoot) ? topBlocks() : blocksInScope(aScope);
         const idx = blocks.indexOf(editingEl);
         if (e.key === 'ArrowDown') {
           if (caret.bottom < er.bottom - lh * 0.5) return; // 不在末行 → 原生
-          const next = blocks[idx + 1]; if (!next) return;
+          let next = blocks[idx + 1];
+          if (!next && aScope !== blockRoot) next = aScope.nextElementSibling; // toggle 体末 → 外层块
+          if (!next || next.hasAttribute('data-ws2-ui')) return;
           e.preventDefault();
           if (isEditableEl(next)) { const nr = next.getBoundingClientRect(); enterEdit(next, { mode: 'point', x: caret.left, y: nr.top + lh * 0.5 }); }
           else { selectBlock(next); positionGrip(next); }
         } else {
           if (caret.top > er.top + lh * 0.5) return; // 不在首行 → 原生
-          const prev = blocks[idx - 1]; if (!prev) return;
+          let prev = blocks[idx - 1];
+          if (!prev && aScope !== blockRoot) prev = summaryOf(aScope); // toggle 体首 → summary
+          if (!prev) return;
           e.preventDefault();
-          if (isEditableEl(prev)) { const pr = prev.getBoundingClientRect(); enterEdit(prev, { mode: 'point', x: caret.left, y: pr.bottom - lh * 0.5 }); }
+          if (prev.tagName === 'SUMMARY') enterEdit(prev, { mode: 'end' });
+          else if (isEditableEl(prev)) { const pr = prev.getBoundingClientRect(); enterEdit(prev, { mode: 'point', x: caret.left, y: pr.bottom - lh * 0.5 }); }
           else { selectBlock(prev); positionGrip(prev); }
         }
         return;

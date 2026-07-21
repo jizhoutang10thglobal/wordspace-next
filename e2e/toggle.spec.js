@@ -366,6 +366,101 @@ test('U8: 自嵌守卫（details 不拖进自己体）', async () => {
   expect(await conformOf(await serialize())).toBe(true);
 });
 
+// ======== bug-sweep 回归门（对抗审查抓到的真 bug，修后加门防复发）========
+
+// BF-P0：编辑 summary 时「转为」绝不产非 conform（原 bug：retag 掉 summary → 零 summary）。修=转为作用于整个 toggle。
+test('BF-P0: 编辑 summary 时转为 → 仍合规（不 retag 掉 summary）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<details open id="dt"><summary id="sm">标题ABC</summary><p>正文</p></details></body></html>');
+  await frame.locator('#sm').click();
+  await frame.locator('#sm').selectText();
+  await frame.locator('.ws-fmtbar [title="转为"]').click();
+  await frame.locator('.ws-fmtbar-menu-item', { hasText: '正文' }).click();
+  await page.waitForTimeout(200);
+  const html = await serialize();
+  expect(await conformOf(html), '编辑 summary 转为后必须仍合规（原 bug 是非合规）').toBe(true);
+  // 每个残留 details 都恰有一个 summary（不存在零 summary 的 details）
+  const bad = await frame.locator('body').evaluate(() => [...document.querySelectorAll('details')].some((d) => d.querySelectorAll(':scope > summary').length !== 1));
+  expect(bad, '不该有零/多 summary 的 details').toBe(false);
+  expect(html).toMatch(/标题ABC/); // 内容没丢
+});
+
+// BF-P1：前向 Delete 在 toggle 体末块绝不吞顶层块（原 bug：topBlocks→indexOf=-1→合并 blocks[0]）。
+test('BF-P1: Delete 体末块不吞顶层块', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="alpha">ALPHA</p><details open id="dt"><summary>t</summary><p id="beta">BETA</p></details></body></html>');
+  await frame.locator('#beta').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(150);
+  const st = await frame.locator('body').evaluate(() => ({
+    alpha: (document.getElementById('alpha') || {}).textContent,
+    beta: (document.querySelector('#dt > p') || {}).textContent,
+    alphaTop: !!(document.getElementById('alpha') && document.getElementById('alpha').parentElement.tagName === 'BODY'),
+  }));
+  expect(st.alpha, 'ALPHA 必须原封不动（原 bug：被吞进 toggle 体）').toBe('ALPHA');
+  expect(st.alphaTop).toBe(true);
+  expect(st.beta).toBe('BETA');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// BF：方向键从体内不跳到 blocks[0]；体首 ←/↑ 回 summary（原 bug：topBlocks→teleport 顶层）。
+test('BF: 方向键从 toggle 体内不 teleport 顶层 + 体首←回 summary', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="top">TOP</p><details open id="dt"><summary>S</summary><p id="b1">B1</p></details></body></html>');
+  await frame.locator('#b1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowRight'); // 体末 → 无外层块（details 是最后）→ 不动，绝不跳 TOP
+  await page.waitForTimeout(120);
+  let ed = await editInfo();
+  expect(ed && ed.inDetails, 'ArrowRight 不该 teleport 到顶层 TOP').toBe(true);
+  await frame.locator('#b1').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowLeft'); // 体首 → 回 summary
+  await page.waitForTimeout(120);
+  ed = await editInfo();
+  expect(ed && ed.tag, 'ArrowLeft 体首应回 summary').toBe('SUMMARY');
+});
+
+// BF-P2：查找自动展开是「只读揭示」——纯搜索不把折叠态改写进磁盘（原 bug：markDirty→autosave 落 open）。
+test('BF-P2: 查找自动展开不改写磁盘折叠态', async () => {
+  await launch();
+  const docPath = await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="p1">前段</p><details id="dt"><summary>标题</summary><p id="bd">藏着SECRETQQ的正文</p></details></body></html>');
+  await page.waitForTimeout(200);
+  await menu('find-in-doc');
+  await expect(page.locator('.ws-docfind')).toBeVisible();
+  await page.locator('.ws-docfind-input').fill('SECRETQQ');
+  await page.waitForTimeout(1600); // 过 autosave 去抖
+  expect(await detailsOpen(), '实时 DOM 应展开（可见）').toBe(true);
+  const disk = await fs.readFile(docPath, 'utf8');
+  expect(disk, '纯搜索绝不把折叠态写进磁盘：details 仍无 open').not.toMatch(/<details open/);
+  expect(disk).toMatch(/<details[^>]*><summary>标题<\/summary>/); // details 仍在、折叠（无 open）
+});
+
+// BF-P2：跨作用域部分删（顶层→toggle 体内）夹住，不销毁选区外的正文块（原 bug：整删 details 丢 b2）。
+test('BF-P2: 跨作用域部分删不丢未选中的 toggle 正文', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="top">AAAA</p><details open id="dt"><summary id="sm">S</summary><p id="b1">BBBB</p><p id="b2">CCCC</p></details></body></html>');
+  await frame.locator('#top').click();
+  await setCrossSel('top', 2, 'b1', 2); // 从 top 中间选进 b1 中间（跨 summary 边界进体内）
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(200);
+  const st = await frame.locator('body').evaluate(() => ({
+    hasDt: !!document.getElementById('dt'),
+    b2: (document.getElementById('b2') || {}).textContent,
+    summary: !!(document.getElementById('dt') && document.getElementById('dt').querySelector(':scope > summary')),
+  }));
+  expect(st.hasDt, 'toggle 不该被整删').toBe(true);
+  expect(st.b2, '选区外的 b2 CCCC 必须存活（原 bug：随整删丢失）').toBe('CCCC');
+  expect(st.summary).toBe(true);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 // U12（R11）：app 内查找命中折叠 toggle 里的文字 → 自动展开其 details 祖先，匹配可见。
 test('U12: 查找命中折叠 toggle 内文字 → 自动展开', async () => {
   await launch();
