@@ -312,21 +312,19 @@ test('U13: 多行粘贴——体内多块 / summary 单行', async () => {
   await launch();
   await openDoc(SIMPLE);
   await insertToggle();
-  // summary 内多行粘贴 → 合成单行
+  // summary 内多行粘贴 → 合成单行（poll 等 paste 真落进 DOM；固定睡在慢 CI 上会在 insertText 前读到空 summary → flake，见 team-memory 2026-07-21 CI 门条）
   await app.evaluate(({ clipboard }) => clipboard.writeText('标一\n标二'));
   await page.keyboard.press('Meta+v');
-  await page.waitForTimeout(200);
-  const sumShape = await frame.locator('body').evaluate(() => { const d = document.querySelector('details'); return { text: d.querySelector(':scope > summary').textContent, summaryCount: d.querySelectorAll(':scope > summary').length }; });
-  expect(sumShape.text, 'summary 多行粘贴应合成单行').toBe('标一 标二');
-  expect(sumShape.summaryCount, '绝不产生第二个 summary').toBe(1);
+  await expect.poll(async () => frame.locator('body').evaluate(() => document.querySelector('details').querySelector(':scope > summary').textContent), { message: 'summary 多行粘贴应合成单行' }).toBe('标一 标二');
+  // 落定后再查「绝不第二个 summary」——负向不变量不折进 poll（空态也满足 ===1 = 假绿）
+  const summaryCount = await frame.locator('body').evaluate(() => document.querySelector('details').querySelectorAll(':scope > summary').length);
+  expect(summaryCount, '绝不产生第二个 summary').toBe(1);
 
   // 进正文块，多行粘贴 → 劈成多个体内块
   await page.keyboard.press('Enter'); // → 首正文块
   await app.evaluate(({ clipboard }) => clipboard.writeText('体一\n体二\n体三'));
   await page.keyboard.press('Meta+v');
-  await page.waitForTimeout(250);
-  const bodyPs = await frame.locator('body').evaluate(() => { const d = document.querySelector('details'); return [...d.children].filter((c) => c.tagName === 'P').map((p) => p.textContent); });
-  expect(bodyPs, '多行粘贴劈成多个体内块').toEqual(['体一', '体二', '体三']);
+  await expect.poll(async () => frame.locator('body').evaluate(() => [...document.querySelector('details').children].filter((c) => c.tagName === 'P').map((p) => p.textContent).join('|')), { message: '多行粘贴劈成多个体内块' }).toBe('体一|体二|体三');
   expect(await conformOf(await serialize())).toBe(true);
 });
 
