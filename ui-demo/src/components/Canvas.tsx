@@ -50,7 +50,8 @@ const isEditable = (b: Block) => !b.designed && EDITABLE.includes(b.type)
 // 表格 / 代码是「原生编辑」块：单元格 / 代码行是 contentEditable，Enter/Backspace/方向键/Tab
 // 一律交给浏览器原生（新行、合行、行内导航），块编辑器的结构性快捷键（新建块、并块、跨块导航、
 // 斜杠、@提及）在这类块里全部让路。
-const isRawEditBlock = (b: Block | undefined) => !!b && (b.type === 'table' || b.type === 'code')
+const isRawEditBlock = (b: Block | undefined) =>
+  !!b && (b.type === 'table' || b.type === 'code' || b.type === 'toggle')
 
 // 斜杠 `/` 插入菜单的条目（插入块 / 转换块 / AI）。kw 供拼音/英文筛选。
 const SLASH_ITEMS: {
@@ -76,6 +77,7 @@ const SLASH_ITEMS: {
   { key: 'callout', label: 'editor.callout', kw: 'callout tishi', type: 'callout' },
   { key: 'table', label: 'editor.table', kw: 'table biaoge grid', type: 'table' },
   { key: 'code', label: 'editor.code', kw: 'code daima pre snippet', type: 'code' },
+  { key: 'toggle', label: 'editor.toggle', kw: 'toggle zhedie collapse details expand shouqi zhankai', type: 'toggle' },
   { key: 'image', label: 'editor.image', kw: 'image img tupian picture photo zhaopian', type: 'image' },
   { key: 'divider', label: 'editor.divider', kw: 'divider hr fengexian', type: 'divider' },
   { key: 'ai', label: 'editor.slashAi', kw: 'ai', type: 'ai' },
@@ -1258,8 +1260,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       checkpoint()
       if (it.type === 'divider') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
-      } else if (it.type === 'table' || it.type === 'code') {
-        // 表格/代码：插入带默认内容的新块并进编辑（单元格/代码行随即可点改）
+      } else if (it.type === 'table' || it.type === 'code' || it.type === 'toggle') {
+        // 表格/代码/折叠：插入带默认内容的新块并进编辑（单元格/代码行/summary 随即可点改）。
+        // toggle 走 raw-edit 路径：进编辑态使 isRawEditBlock 生效，focusBlockAt 把光标落进 summary。
         editBlock(addBlock(doc.id, slash.blockId, it.type))
       } else if (it.type === 'list' && empty) {
         // 空块插列表：不在聚焦块上 setBlockType（p→ul 交换会触发 blur 把空 innerHTML 回写、

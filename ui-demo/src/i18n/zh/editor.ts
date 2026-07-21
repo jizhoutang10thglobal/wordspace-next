@@ -12,6 +12,7 @@ export default {
   callout: '提示',
   table: '表格',
   code: '代码',
+  toggle: '折叠列表',
   image: '图片',
   divider: '分隔线',
   slashDoclink: '🔗 链接到文档',
@@ -217,6 +218,8 @@ export default {
   newListItem: '列表项',
   newQuote: '引用内容',
   newCallout: '提示内容',
+  newToggleSummary: '折叠标题',
+  newToggleBody: '折叠内容',
   tableColumn: '列 {n}',
   tableCell: '单元格',
 }

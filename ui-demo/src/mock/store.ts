@@ -177,6 +177,9 @@ interface State {
     listStyle?: ListStyle,
   ) => void
   duplicateBlock: (docId: string, blockId: string) => string
+  // 折叠块展开/收起：只改 block.open + 触脏（updatedAt），刻意不 checkpoint——
+  // 折叠是「阅读态」不是内容编辑，绝不占撤销步（对齐真 app KTD5）。
+  setBlockOpen: (docId: string, blockId: string, open: boolean) => void
 
   // 撤销/重做（编辑器历史）。checkpoint 由 Canvas 在每次用户手势前调一次，决定撤销粒度；
   // _past/_future 不在 persist 的 partialize 里（不持久化到 localStorage）。
@@ -363,6 +366,11 @@ const DEFAULT_CODE_HTML =
   `<div class="ws-code-line">function hello() {</div>` +
   `<div class="ws-code-line">  return 'world'</div>` +
   `<div class="ws-code-line">}</div>`
+// 折叠块默认内容：summary 标题 + 一段正文 body（占位文案随当前语言生成，故用函数而非 const）。
+// 展开态不写进 html 的 open 属性——open 由 block.open 单独持有（setBlockOpen 改它、不改 html），
+// 避免两处 open 漂移；打印导出（printExport）再强制展开。
+const DEFAULT_TOGGLE_HTML = (): string =>
+  `<details><summary>${t('editor.newToggleSummary')}</summary><p>${t('editor.newToggleBody')}</p></details>`
 
 const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
   const base: Record<BlockType, Partial<Block>> = {
@@ -376,6 +384,7 @@ const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
     embed: { html: '' },
     table: { html: defaultTableHtml() },
     code: { html: DEFAULT_CODE_HTML },
+    toggle: { html: DEFAULT_TOGGLE_HTML(), open: true },
   }
   const block = { id: uid('b'), type, ...base[type] } as Block
   if (type === 'list') block.listStyle = listStyle ?? 'bulleted'
@@ -1022,6 +1031,23 @@ export const useStore = create<State>()(
                         : undefined,
                     }
                   }),
+                },
+          ),
+        })),
+
+      // 折叠块展开/收起：只翻 block.open + 触脏，不 checkpoint（折叠不进撤销史）。
+      setBlockOpen: (docId, blockId, open) =>
+        set((s) => ({
+          docs: s.docs.map((d) =>
+            d.id !== docId
+              ? d
+              : {
+                  ...d,
+                  updatedAt: Date.now(),
+                  updatedBy: s.meId,
+                  blocks: d.blocks.map((b) =>
+                    b.id === blockId ? { ...b, open } : b,
+                  ),
                 },
           ),
         })),

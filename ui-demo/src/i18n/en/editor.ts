@@ -12,6 +12,7 @@ export default {
   callout: 'Callout',
   table: 'Table',
   code: 'Code',
+  toggle: 'Toggle list',
   image: 'Image',
   divider: 'Divider',
   slashDoclink: '🔗 Link to document',
@@ -216,6 +217,8 @@ export default {
   newListItem: 'List item',
   newQuote: 'Quote',
   newCallout: 'Callout',
+  newToggleSummary: 'Toggle heading',
+  newToggleBody: 'Toggle body',
   tableColumn: 'Column {n}',
   tableCell: 'Cell',
 }
