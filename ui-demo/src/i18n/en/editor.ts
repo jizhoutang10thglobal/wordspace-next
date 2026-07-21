@@ -102,6 +102,7 @@ export default {
   turnIntoText: 'Turn into Text',
   turnIntoHeading: 'Turn into Heading',
   turnIntoQuote: 'Turn into Quote',
+  turnIntoToggle: 'Turn into Toggle list',
   insertBelow: 'Insert below',
 
   // AI placeholder modal

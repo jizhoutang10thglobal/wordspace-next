@@ -412,7 +412,7 @@
 /* body 缩进对齐 chevron 右缘；单一 raw-HTML 区（有意分歧：ui-demo 不做真嵌套块） */
 .ws-toggle-body {
   margin: 2px 0 4px 28px;
-  outline: none;
+  outline: none; min-height: 1.5em; /* 空 body 也留可点高度 */
   font-size: var(--fs-lg); line-height: var(--lh-doc); color: var(--c-text);
 }
 /* 折叠态显式藏 body：open 受 block.open 控（React 收起时删 open 属性）。不靠 UA 的

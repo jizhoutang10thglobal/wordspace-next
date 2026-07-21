@@ -102,6 +102,7 @@ export default {
   turnIntoText: '转为正文',
   turnIntoHeading: '转为标题',
   turnIntoQuote: '转为引用',
+  turnIntoToggle: '转为折叠列表',
   insertBelow: '在下方插入',
 
   // AI 占位弹窗

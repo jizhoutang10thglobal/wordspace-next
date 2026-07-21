@@ -346,6 +346,24 @@ const fromListHtml = (html: string): string => {
     : html.replace(/<\/?li[^>]*>/gi, '')
 }
 
+// 段落 ↔ 折叠 的形态转换（转块保内容，对称 to/from-List）：
+// 转折叠 = 现内容塞进 summary + 一个空 body <p>；离开折叠 = summary 文本在前、body 各块摊平，
+// 块边界转 <br>、保留行内标记（<strong>/<a> 等）。open 由 setBlockType 单独置（不进 html）。
+const toToggleHtml = (html: string): string =>
+  `<details><summary>${html.trim()}</summary></details>` // 空 body → ToggleBlockView 显示占位符
+const fromToggleHtml = (html: string): string => {
+  const summary = (html.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i)?.[1] ?? '').trim()
+  const body = html
+    .replace(/^[\s\S]*?<\/summary>/i, '') // 丢掉 <details…><summary…>…</summary>
+    .replace(/<\/details>\s*$/i, '')
+    .replace(/<(p|div|h[1-6]|blockquote|li)\b[^>]*>/gi, '') // 去块级开标签
+    .replace(/<\/(p|div|h[1-6]|blockquote|li)>/gi, '<br>') // 块级闭标签 → 换行
+    .replace(/<\/?(ul|ol|details)\b[^>]*>/gi, '') // 列表/details 容器标签直接去
+    .replace(/(\s*<br>\s*)+$/i, '') // 收尾多余 <br>
+    .trim()
+  return [summary, body].filter(Boolean).join('<br>')
+}
+
 // 撤销历史用的 docs 深拷贝（只拷到 blocks 这层，够本 mock 用）。
 const cloneDocs = (docs: Doc[]): Doc[] =>
   docs.map((d) => ({ ...d, blocks: d.blocks.map((b) => ({ ...b })) }))
@@ -1016,10 +1034,16 @@ export const useStore = create<State>()(
                     if (b.id !== blockId) return b
                     const wasList = b.type === 'list'
                     const willList = type === 'list'
-                    // 跨列表边界时同步转换内容形态（幂等：内容已就位则不动）
-                    let html = b.html
-                    if (willList && !wasList) html = toListHtml(b.html)
-                    else if (!willList && wasList) html = fromListHtml(b.html)
+                    const wasToggle = b.type === 'toggle'
+                    const willToggle = type === 'toggle'
+                    // 先把源内容摊平成行内 html（离开列表拆 <li>、离开折叠取 summary+body），
+                    // 再按目标形态包装（进列表包 <li>、进折叠包 <summary>+空 body）。
+                    let content = b.html
+                    if (wasList && !willList) content = fromListHtml(b.html)
+                    else if (wasToggle && !willToggle) content = fromToggleHtml(b.html)
+                    let html = content
+                    if (willToggle && !wasToggle) html = toToggleHtml(content)
+                    else if (willList && !wasList) html = toListHtml(content)
                     return {
                       ...b,
                       type,
@@ -1029,6 +1053,8 @@ export const useStore = create<State>()(
                       listStyle: willList
                         ? listStyle ?? b.listStyle ?? 'bulleted'
                         : undefined,
+                      // 进折叠给默认展开；离开折叠清掉 open（否则残留脏字段）
+                      open: willToggle ? b.open ?? true : undefined,
                     }
                   }),
                 },

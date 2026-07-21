@@ -750,10 +750,13 @@ function collectCutAtoms(host: HTMLElement): CutAtom[] {
   const base = host.getBoundingClientRect().top
   const atoms: CutAtom[] = []
   host
-    .querySelectorAll<HTMLElement>('li, p, blockquote, figure, hr, h1, h2, h3, h4, .ws-code-line')
+    .querySelectorAll<HTMLElement>('li, p, blockquote, figure, hr, h1, h2, h3, h4, details, .ws-code-line')
     .forEach((e) => {
       if (e.closest('table')) return
       if (e.closest('pre') && !e.classList.contains('ws-code-line')) return
+      // 折叠 <details> 的隐藏后代不参与切分（display:none、几何为 0）。用 parentElement.closest
+      // 而非 e.closest——后者含自身、会把折叠 details 本身也排掉；我们要保留它的 summary 高度原子。
+      if (e.parentElement && e.parentElement.closest('details:not([open])')) return
       atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'el', el: e })
     })
   host.querySelectorAll<HTMLElement>('tr').forEach((e) => {
