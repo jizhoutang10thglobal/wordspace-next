@@ -14,6 +14,17 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-21 — CI e2e 门改了：required check 现在是 `{test, e2e-all}` 不是 `e2e`，且分片并行
+
+**是什么**：e2e 策略优化（#284 合）动了 CI 和 branch protection 两处，影响所有 session 的 PR 合并：
+① e2e 从单 job 切成 **4 片 matrix 并行**（CI 里显示 `e2e (1)`..`e2e (4)`）+ 一个 `e2e-all` 聚合门（fail-closed：分片有红 / 掉测 / docs-app 判定异常都会红）。
+② **branch protection 的 required status check 从 `e2e` 迁成 `{test, e2e-all}`**，strict=true（要求 PR 与 main 同步），enforce_admins=true（管理员也受门约束）。
+③ 掉测地板：全量 spec < 400 条 → `e2e-all` 红（现 420，余量 20；将来删测超 20 要在同 PR 显式下调地板）。
+
+**怎么 apply**：① 你的 PR 现在等的绿灯名字是 `e2e-all`（聚合），不是旧的 `e2e`——脚本 / 文档里 hardcode `e2e` 作 required check 的地方要改。② **strict=true 的副作用**：main 一动，你在飞的 PR 就 BEHIND、auto-merge 会卡住不自动合，要 `gh pr update-branch <PR>` 手动追一次（多 PR 排队时一个一个来，别同时 update 互相挤 stale）。③ 本机开发别再「动共享核心=全量重跑 420 条」——CLAUDE.md #283 已改成「跑受影响 spec + 5-spec 冒烟子集，全量交 CI」。④ **教训**：`waitForTimeout→expect.poll` 主要是消 flake **不是提速**（硬睡多卡在 autosave 1.2s / Electron 重启）；想真提速只能合并 beforeAll 单启动，风险大要 shuffle 证明——**别天真地删测 / 删睡提速**（负向断言更是绝不能折进 poll，会假绿）。
+
+**来源**：plan #281 / CI+分支保护 #284 / U1 CLAUDE.md #283 / U3 审计 docs/e2e-audit-2026-07-20.md #294。
+
 ## 2026-07-21 — Feature Board 有卡片规范了，往 board 加卡照它来（含去重铁律）
 
 **是什么**：整理了 Notion Feature Board（60→52 张：全部 F 编号化、去重、归对模块、退休卡进归档页），并立了一页《卡片规范》。六条：R1 卡=一个用户叫得出名字的能力（不是 dev 增量、不是整个模块）；R2 必填五样=编号 F## ＋功能＋一句话简介（为什么）＋工作量 S/M/L ＋模块；R3 目标 M，XL 不许当一张卡（要拆或提升为模块）；R4 命名用产品口吻名词短语，去掉 `feat:` / `phase N` / 实现术语 / 标题里的字面换行，Wordspace 统一大写；R5 拆合判据（太大→拆；按实现阶段拆的→合成一张、阶段进 spec 不上板；备忘卡→并进真卡；两代重复→留 F 编号那张、退休另一张；小开关如深色/i18n→留成 S 卡别过度合并）；R6 板子只有两层：模块=史诗 → 卡=feature，dev 增量（phase 1/2/3）活在 spec/PR 不上板。
