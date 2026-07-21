@@ -1725,7 +1725,17 @@
         return;
       }
       if (!dragFrom) { e.preventDefault(); return; }
-      e.preventDefault(); const el = blockOf(e.target); if (el && el !== dragFrom) { const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING; if (before) el.after(dragFrom); else el.before(dragFrom); if (undoMgr) undoMgr.checkpoint(); markDirty(); } clearDrop(); dragFrom = null;
+      e.preventDefault();
+      const el = blockOf(e.target); // scoped：落在 toggle 体内块 → el 是体内块，.before/.after 落体内（进/出/内自动获得，U8/R6）
+      // 自嵌守卫：details 不能拖进自己的体（无限嵌套）。
+      if (el && el !== dragFrom && !(dragFrom.contains && dragFrom.contains(el))) {
+        const srcScope = scopeRootOf(dragFrom); // 源作用域（判拖出后 ≥1 体块铁则）
+        const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING;
+        if (before) el.after(dragFrom); else el.before(dragFrom);
+        if (srcScope !== blockRoot && srcScope !== scopeRootOf(dragFrom) && blocksInScope(srcScope).length === 0) srcScope.appendChild(doc.createElement('p')); // 拖出后源 toggle 空了 → 补空 p
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+      }
+      clearDrop(); dragFrom = null;
     }
     // U3-B6：把侧栏拖来的文件插成链接。落点=drop 处 caret；落在装饰/空白/边距 → 最近可编辑块末尾兜底
     //（静默失败 = 用户以为没做出来，L8）；跨根/无身份/自链 → 明确 toast，绝不静默。

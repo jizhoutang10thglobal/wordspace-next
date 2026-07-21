@@ -307,6 +307,42 @@ test('U10: 撤销还原正文但不重折叠（OPEN 承重变体）', async () =
   expect(await detailsOpen(), 'Cmd+Z 后 toggle 必须仍展开（fold 不进撤销，_applyFold 保住）').toBe(true);
 });
 
+// 合成拖拽（原生拖拽在 Playwright+iframe 里卡死、自动化不了，仓库既有做法）：hover 源→grip dragstart 设 dragFrom→drop 落目标。
+async function synthDrag(hoverSel, tgtSel) {
+  await frame.locator(hoverSel).hover();
+  await page.waitForTimeout(80);
+  await frame.locator('.ws-grip').dispatchEvent('dragstart');
+  await frame.locator(tgtSel).dispatchEvent('drop');
+  await page.waitForTimeout(150);
+}
+
+// U8（R6）：拖块进 toggle 体（scoped .before/.after 自动获得）。
+test('U8: 拖块进 toggle 体', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<details open id="dt"><summary>标题</summary><p id="body1">体内</p></details><p id="src">要拖进去的</p></body></html>');
+  await synthDrag('#src', '#body1');
+  const inBody = await frame.locator('body').evaluate(() => { const s = document.getElementById('src'); return s ? !!s.closest('#dt') : 'gone'; });
+  expect(inBody, '#src 应进入 toggle 体（scoped drop）').toBe(true);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U8（R6）：自嵌守卫——details 不能拖进自己的体（无限嵌套）。
+test('U8: 自嵌守卫（details 不拖进自己体）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<details open id="dt"><summary>标题</summary><p id="inner">体内块</p></details></body></html>');
+  await synthDrag('#dt > summary', '#inner'); // hover summary → dragFrom=#dt；drop 落在它自己的体内块
+  const st = await frame.locator('body').evaluate(() => {
+    const dt = document.getElementById('dt'), inner = document.getElementById('inner');
+    return { dtTop: !!(dt && dt.parentElement.tagName === 'BODY'), innerInDt: !!(inner && inner.closest('details') === dt), selfNest: !!(dt && dt.querySelector('details')) };
+  });
+  expect(st.dtTop, '自嵌被拒 → #dt 仍在顶层').toBe(true);
+  expect(st.innerInDt).toBe(true);
+  expect(st.selfNest, '不该产生自嵌套 details').toBe(false);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 // U12（R11）：app 内查找命中折叠 toggle 里的文字 → 自动展开其 details 祖先，匹配可见。
 test('U12: 查找命中折叠 toggle 内文字 → 自动展开', async () => {
   await launch();
