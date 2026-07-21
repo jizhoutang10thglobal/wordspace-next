@@ -14,6 +14,16 @@
 **收起 = 沉浸**:侧栏收起后流内零渲染——没有 48px 细轨、没有常驻浮钮,内容区只隔一圈 10px
 窗框(网页标签 = 页面即窗口;文档标签保留文档头)。
 
+**侧栏与窗框融合 = 一块 chrome 表面**(Wendi 2026-07-21「边框和左侧边栏的融合…还是尴尬」+
+「对 Arc 来说,左侧边栏是浮在整个窗口上面的一个卡片」→ Arc 图层模型:窗=连续 chrome 底,
+内容=浮在上面的圆角纸,侧栏不是独立面板、是 chrome 底上的内容):侧栏底色=窗框同色
+(`--c-bg-chrome`)、无右边线,「侧栏+缝+框」一块表面,内容纸(#main 1px 边+圆角)独享层级。
+连带:`.sb-sticky` 吸顶实底同步 chrome;`.sb-tab.is-active` 白 puck 对比降一档(Arc 同款观感);
+sunken 保留给「凹一档」语义的小卡(失联根/挂载路径头)。**全屏例外**:摘框摘缝后侧栏与内容纸
+直接相邻,补回 1px `border-right` 分界(限展开态——收起态 width:0 时 border 仍画 1px 会露线)。
+门=`e2e/immersive.spec.js`「融合」(同色+非透明探针+边线,变异自检三向)。ui-demo 同步
+(ArcSidebar.css .arc-sidebar / .arc-folder-head 吸顶)。
+
 **10px 窗框带 = 非全屏恒有**(Wendi 2026-07-17 初稿只做收起态,Colin 2026-07-18 拍板扩「不仅收起态,
 不收起也要有!只要不是全屏就要有」):内容四周均匀内缩 10px,露出 chrome 色(`--c-bg-chrome`)边框带,
 内容区加 1px `--c-border` 细边 + `--r-md` 微圆角(纸方:内容=一块纸)。**真 app 里这圈是
@@ -77,6 +87,8 @@
 - 两侧:窗框扩「非全屏恒有」(Colin 2026-07-18 拍板「不仅收起态,不收起也要有!只要不是全屏就要有」,#271 扩展)——
   U1 真 app(shell.css 恒有 + 全屏检测接线)+ U2 ui-demo(App.css 恒有)+ U3 本 spec;
   plan=`docs/plans/2026-07-18-001-feat-frame-always-plan.md`。
+- 两侧:侧栏融合 + peek 红绿灯挪进浮卡(Wendi 2026-07-21 四点反馈之 1/3;分支 feat/arc-sidebar-fusion)。
+  同批反馈之 4「收起态无框」= v0.10.6 没带 #276 的发版问题,零代码;之 2「触发手感」待 Colin 对照 Arc 定案。
 - app 侧:分支 feat/immersive-frame-peek(2026-07-17,Wendi 视频反馈三连修)。**「同宽右移」定案已反转**:
   Wendi 拒绝内容被推(「挤过去又挤回很乱」)→ 改快照垫底(照更新弹窗白背景 #247 的 webCapture 方案):
   peek 滑出前对 view 截帧垫 .web-peek-snap、摘掉 view,页面视觉纹丝不动(Arc 同款);截图失败/超时
@@ -100,8 +112,11 @@
   「图标钮顶边归钮不归拖拽条」(elementFromPoint 真实层叠判定+变异自检)。
 - **peek 期间页面是冻结帧**(快照垫底的固有取舍):页面里的视频/动图在 peek 打开期间不动,
   收回即恢复;peek 是瞬态交互,可接受。
-- **红绿灯与 peek 悬浮卡的相对位置**:trafficLightPosition 定死 (14,14) 是窗口坐标,peek 卡内缩
-  10px 后灯在卡内偏上 4px,视觉可用但非像素完美;要精调得动 trafficLightPosition(影响展开态),单独小题。
+- ~~红绿灯与 peek 悬浮卡的相对位置~~:已解(Wendi 2026-07-21 点名「灯在哪个图层」)——
+  `ws-window-buttons` IPC 扩位置参数,openPeek 传 (24,24) 把灯挪进浮卡(卡 10px + 卡内 14 =
+  与展开态灯相对 chrome 面同位),收回/展开不传 = 归位 (14,14);main 侧先 `setWindowButtonPosition`
+  再 `setWindowButtonVisibility`,避免旧位闪现一帧。灯 = 浮卡图层的一部分,不再钉死窗角。
+  仍是 darwin-only + 无 getter,CI 验不了,宿主目验(下一条同款约束)。
 - **红绿灯可见性无 e2e**:setWindowButtonVisibility 无公开 getter,CI 又是 linux(is-mac 分支不跑),
   只有宿主探针(窗高==内容高)+目验兜着。
 - **.sb-head 加图标要重算账**:is-mac 下 让位 70+右 6+6×26+gap 6 = 238 ≤ min-width 240,余量 2px
