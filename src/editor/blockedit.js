@@ -36,6 +36,7 @@
     { key: 'numbered', labelKey: 'blockNumberedList', tag: 'ol' },
     { key: 'todo', labelKey: 'blockTodoList', tag: 'ul', cls: 'ws-todo' },
     { key: 'callout', labelKey: 'blockCallout', tag: 'div', cls: 'ws-callout' },
+    { key: 'toggle', labelKey: 'blockToggle', tag: 'details' }, // 可折叠块（Notion toggle）：newBlock 造 <details open><summary><p>，插入后光标落 summary
     { key: 'image', labelKey: 'blockImage', tag: null, image: true }, // 异步插入（走父层选图），不经 newBlock 同步造块
     { key: 'divider', labelKey: 'blockDivider', tag: 'hr' },
     { key: 'ai', labelKey: 'aiGenerate', tag: null, ai: true },
@@ -60,6 +61,7 @@
     // 带说明的图 <figure><img><figcaption> 也是图片原子块——不认的话会被当装饰块('other')，
     // 选中/块菜单/说明编辑全接不上（doc-images）。要求含 <img> 以排除非图 figure。
     if (t === 'FIGURE' && el.querySelector && el.querySelector('img')) return 'image';
+    if (t === 'DETAILS') return 'toggle'; // 可折叠块：容器本身不可文字编辑（灰选中/拖拽/删），summary + 正文块另行可编辑
     return 'other';
   }
   // 可文字编辑的块：标题/正文/列表/引用 + 含直接文字的 div（callout/裸文本容器）。其余（图片/分隔线/
@@ -212,6 +214,9 @@
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
     const TODO_CSS = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#9b9891;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
+    // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 纸方墨圆旋转 chevron + 正文缩进。
+    // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
+    const TOGGLE_CSS = 'details{margin:8px 0}details>summary{list-style:none;cursor:pointer;display:flex;align-items:flex-start;gap:6px}details>summary::-webkit-details-marker{display:none}details>summary::before{content:"\\25B6";display:inline-block;flex:none;margin-top:.2em;font-size:.7em;color:#8a8f96;transition:transform .12s ease}details[open]>summary::before{transform:rotate(90deg)}details>*:not(summary){margin-left:18px}';
     // §0 决策1 固定色板（块级上色 class；也是入盘 color CSS 的单一来源）。
     const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
     const COLOR_CSS = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
@@ -438,6 +443,16 @@
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
     }
+    // toggle chevron/marker CSS 烤进存盘文件（照 ensureTodoStyle/ensureCalloutStyle 范式，属性查重，S9）。
+    function ensureToggleStyle() {
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="toggle"]')) return; // 属性查重
+      const st = doc.createElement('style');
+      st.id = 'ws-toggle-style';
+      st.setAttribute('data-ws-schema-css', 'toggle');
+      st.textContent = TOGGLE_CSS;
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
     // attach 时对齐语义 CSS 与文档现状（两件事，都不 markDirty——样式归编辑器托管、不算用户
     // 编辑，下次真实编辑保存时随文件落盘）：
     // ① 升级：旧文件带着 v1 版语义 CSS（老勾选框偏上、老灰阶）→ 覆写成当前版；
@@ -451,6 +466,7 @@
       const pairs = [
         ['todo', TODO_CSS, 'ws-todo-style', 'ul.ws-todo'],
         ['callout', CALLOUT_CSS, 'ws-callout-style', '.ws-callout'],
+        ['toggle', TOGGLE_CSS, 'ws-toggle-style', 'details'],
         ['color', COLOR_CSS, 'ws-color-style', '[class*="ws-color-"]'],
       ];
       for (const [kind, css, id, presentSel] of pairs) {
@@ -509,6 +525,7 @@
       else if (item.tag === 'div' && item.cls === 'ws-callout') { el = doc.createElement('div'); el.className = 'ws-callout'; el.textContent = T('editor.calloutContent'); }
       else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.textContent = T('editor.quoteContent'); }
       else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.textContent = T('editor.newHeading'); }
+      else if (item.tag === 'details') { el = doc.createElement('details'); el.setAttribute('open', ''); el.appendChild(doc.createElement('summary')); el.appendChild(doc.createElement('p')); ensureToggleStyle(); } // 折叠块种子：<details open><summary></summary><p></p></details>（默认展开，光标由 applySlash 落 summary）
       else { el = doc.createElement('p'); }
       ensureBlockStyle(item.cls);
       return el;
@@ -1022,7 +1039,8 @@
       const empty = !el || (el.textContent || '').trim() === '';
       // 图片：异步取文件后插入。空块原地替换（已拍板②）。不在此 checkpoint——picker 可取消。
       if (it.image) { pickAndInsertImage(el, empty && isEditableEl(el)); return; }
-      if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
+      if (it.tag === 'details') { const nx = insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); } // 折叠块：插入后光标落 summary（不是整块 details）
+      else if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
       else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
       else { const nx = insertAfter(el, it); enterEdit(nx, { mode: 'start' }); }
     }
