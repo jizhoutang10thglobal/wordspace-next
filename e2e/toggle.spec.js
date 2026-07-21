@@ -285,3 +285,39 @@ test('U7: Tab 嵌入 details 体 / Shift-Tab 移出', async () => {
   expect(where, 'Shift-Tab 应把 #tab 移出到 details 后').toBe('OUT');
   expect(await conformOf(await serialize())).toBe(true);
 });
+
+// U10（KD5）承重断言：toggle 展开态下改正文 → Cmd+Z 还原正文，但 toggle 仍展开（快照剥了 open，
+// 只有 _applyFold 能保住 open；这条正是变异自检打的地方——不做重贴则 undo 后 toggle 塌成折叠）。
+test('U10: 撤销还原正文但不重折叠（OPEN 承重变体）', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await insertToggle();
+  await page.keyboard.type('标题');
+  await page.keyboard.press('Enter');       // → 正文块
+  await page.keyboard.type('OLD');
+  await page.waitForTimeout(700);           // checkpoint
+  await page.keyboard.type(' NEW');
+  await page.waitForTimeout(700);           // checkpoint
+  expect(await detailsOpen()).toBe(true);
+  await page.keyboard.press('Meta+z');      // 撤销 " NEW"
+  await page.waitForTimeout(250);
+  const bodyText = await frame.locator('body').evaluate(() => { const p = document.querySelector('details > p'); return p ? p.textContent : null; });
+  expect(bodyText, 'Cmd+Z 应还原正文到 OLD').toBe('OLD');
+  expect(await detailsOpen(), 'Cmd+Z 后 toggle 必须仍展开（fold 不进撤销，_applyFold 保住）').toBe(true);
+});
+
+// U10：折叠不是撤销步——折叠后 Cmd+Z 撤的是内容编辑，不是折叠。
+test('U10: 折叠不消耗撤销步', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await insertToggle();
+  await page.keyboard.type('标题T');
+  await page.waitForTimeout(700);           // 标题编辑 checkpoint
+  // 折叠（chevron 区）——不该压撤销步
+  await frame.locator('details > summary').click({ position: { x: 5, y: 8 } });
+  await page.waitForTimeout(200);
+  expect(await detailsOpen()).toBe(false);
+  await page.keyboard.press('Meta+z');      // 应撤「标题T」编辑，不是折叠
+  await page.waitForTimeout(250);
+  expect(await summaryText(), 'Cmd+Z 应撤内容编辑（标题清空），证明折叠没占撤销步').toBe('');
+});
