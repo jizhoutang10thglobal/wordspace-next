@@ -28,6 +28,10 @@ export default {
   deleteRow: 'Delete row',
   blockGripTitle: 'Drag to reorder · click for menu',
 
+  // Toggle block chevron accessibility labels
+  toggleCollapse: 'Collapse',
+  toggleExpand: 'Expand',
+
   // Pagination
   pageN: 'Page {n}',
 

@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { GripVertical, MoreHorizontal } from 'lucide-react'
+import { ChevronRight, GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { IS_MAC } from '../lib/platform'
@@ -275,6 +275,163 @@ function ImageBlockView({
 }
 
 // ---------------------------------------------------------------------------
+// 折叠块（toggle · Schema #1 <details>）：UX 外壳。summary = 可编辑标题行；body = 单一
+// 原始 HTML contentEditable 区（有意分歧 KTD3：ui-demo 不做真嵌套块，body 是一整块 raw HTML；
+// 真嵌套只在真 app 承载）。两区各自 stopPropagation（照 figcaption），Enter/Backspace 到不了
+// 文档级快捷键。折叠靠自绘 chevron（纸方墨圆）驱动 setBlockOpen——native disclosure 被 summary
+// onClick 的 preventDefault 掐掉（open 受 block.open 控），点 summary 文字只落光标、绝不折叠。
+function parseToggleHtml(html: string): { summary: string; body: string } {
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  const details = tmp.querySelector('details')
+  if (!details) return { summary: '', body: html }
+  const summaryEl = details.querySelector('summary')
+  const summary = summaryEl ? summaryEl.innerHTML : ''
+  const clone = details.cloneNode(true) as HTMLElement
+  clone.querySelector('summary')?.remove()
+  return { summary, body: clone.innerHTML }
+}
+
+function ToggleBlockView({
+  doc,
+  block,
+  registerEl,
+}: {
+  doc: Doc
+  block: Block
+  registerEl: (id: string, el: HTMLElement | null) => void
+}) {
+  const t = useT()
+  const updateBlockHtml = useStore((s) => s.updateBlockHtml)
+  const setBlockOpen = useStore((s) => s.setBlockOpen)
+  const checkpoint = useStore((s) => s.checkpoint)
+  const parsed = useMemo(() => parseToggleHtml(block.html), [block.html])
+  const sumRef = useRef<HTMLElement | null>(null)
+  const bodyRef = useRef<HTMLElement | null>(null)
+  const sumFocused = useRef(false)
+  const bodyFocused = useRef(false)
+
+  const open = block.open ?? true
+
+  // 未聚焦时把 store 内容同步进各区（聚焦时不动，避免和光标打架）——照 BlockRow.setNode。
+  const setSum = useCallback(
+    (el: HTMLElement | null) => {
+      sumRef.current = el
+      if (el && !sumFocused.current && el.innerHTML !== parsed.summary)
+        el.innerHTML = parsed.summary
+    },
+    [parsed.summary],
+  )
+  const setBody = useCallback(
+    (el: HTMLElement | null) => {
+      bodyRef.current = el
+      if (el && !bodyFocused.current && el.innerHTML !== parsed.body)
+        el.innerHTML = parsed.body
+    },
+    [parsed.body],
+  )
+  useLayoutEffect(() => {
+    if (sumRef.current && !sumFocused.current && sumRef.current.innerHTML !== parsed.summary)
+      sumRef.current.innerHTML = parsed.summary
+    if (bodyRef.current && !bodyFocused.current && bodyRef.current.innerHTML !== parsed.body)
+      bodyRef.current.innerHTML = parsed.body
+  }, [parsed.summary, parsed.body])
+
+  // 任一区失焦：读两区活内容重建 block.html（summary + body），变了才 checkpoint+写回。
+  // 折叠态（open）不进 html——由 block.open 单独持有，打印时强制展开（printExport）。
+  const persist = () => {
+    const summary = sumRef.current?.innerHTML ?? parsed.summary
+    const body = bodyRef.current?.innerHTML ?? parsed.body
+    const html = `<details><summary>${summary}</summary>${body}</details>`
+    if (html !== block.html) {
+      checkpoint()
+      updateBlockHtml(doc.id, block.id, html)
+    }
+  }
+  const onSumBlur = () => {
+    sumFocused.current = false
+    persist()
+  }
+  const onBodyBlur = () => {
+    bodyFocused.current = false
+    persist()
+  }
+  const onSummaryKey = (e: React.KeyboardEvent) => {
+    e.stopPropagation() // 别让 Enter/Backspace 漏到文档级快捷键（会插块/删块）
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault() // summary 单行：Enter 不换行、不折叠，直接提交失焦
+      ;(e.target as HTMLElement).blur()
+    }
+  }
+
+  return (
+    <details
+      className="ws-toggle"
+      open={open}
+      data-block={block.id}
+      ref={(el) => registerEl(block.id, el)}
+    >
+      <summary
+        className="ws-toggle-summary"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          // 掐掉 native disclosure（open 受 block.open 控）+ 阻止块级灰选；点文字只落光标不折叠。
+          e.stopPropagation()
+          e.preventDefault()
+        }}
+      >
+        <button
+          type="button"
+          className="ws-toggle-chevron"
+          contentEditable={false}
+          aria-label={open ? t('editor.toggleCollapse') : t('editor.toggleExpand')}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setBlockOpen(doc.id, block.id, !open)
+          }}
+        >
+          <ChevronRight size={16} strokeWidth={2.2} />
+        </button>
+        <span
+          className="ws-toggle-summary-text"
+          contentEditable
+          suppressContentEditableWarning
+          spellCheck={false}
+          data-placeholder={t('editor.newToggleSummary')}
+          ref={setSum}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={onSummaryKey}
+          onFocus={() => {
+            sumFocused.current = true
+          }}
+          onBlur={onSumBlur}
+        />
+      </summary>
+      <div
+        className="ws-toggle-body"
+        contentEditable
+        suppressContentEditableWarning
+        spellCheck={false}
+        data-placeholder={t('editor.newToggleBody')}
+        ref={setBody}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        onFocus={() => {
+          bodyFocused.current = true
+        }}
+        onBlur={onBodyBlur}
+      />
+    </details>
+  )
+}
+
+// ---------------------------------------------------------------------------
 function BlockRow({
   doc,
   block,
@@ -456,6 +613,8 @@ function BlockRow({
     inner = (
       <ImageBlockView doc={doc} block={block} selected={selected} registerEl={registerEl} />
     )
+  } else if (block.type === 'toggle') {
+    inner = <ToggleBlockView doc={doc} block={block} registerEl={registerEl} />
   } else if (block.type === 'heading') {
     const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3'
     inner = <L className={`ws-h ws-h${block.level ?? 2}`} {...editProps} />
@@ -1039,17 +1198,22 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       requestAnimationFrame(() => {
         const el = blockEls.current.get(id)
         if (!el) return
-        el.focus()
+        // 折叠块：块根是 <details>（不可编辑）——把焦点/光标落进 summary 文字区（唯一标题编辑点）。
+        const target =
+          el.tagName === 'DETAILS'
+            ? ((el.querySelector('.ws-toggle-summary-text') as HTMLElement | null) ?? el)
+            : el
+        target.focus()
         const sel = window.getSelection()
         if (!sel) return
         let range: Range | null = null
         if (caret.mode === 'point' && caret.x != null && caret.y != null) {
           const pt = caretRangeAtPoint(caret.x, caret.y)
-          if (pt && el.contains(pt.startContainer)) range = pt // 落点须在块内，否则回退块末
+          if (pt && target.contains(pt.startContainer)) range = pt // 落点须在块内，否则回退块末
         }
         if (!range) {
           range = document.createRange()
-          range.selectNodeContents(el)
+          range.selectNodeContents(target)
           range.collapse(caret.mode === 'start')
         }
         sel.removeAllRanges()

@@ -28,6 +28,10 @@ export default {
   deleteRow: '删除此行',
   blockGripTitle: '拖动重排 · 点击打开菜单',
 
+  // 折叠块 chevron 无障碍标签
+  toggleCollapse: '收起',
+  toggleExpand: '展开',
+
   // 分页
   pageN: '第 {n} 页',
 
