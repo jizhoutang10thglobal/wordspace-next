@@ -82,7 +82,9 @@ function ensureSession() {
     const entry = { id, filename: name, sourceUrl, sizeBytes, receivedBytes: 0, state: 'downloading', startedAt: Date.now(), savePath };
     inflight.set(id, item);
     browserStore.setDownloads(downloadsLib.capDownloads([entry, ...browserStore.getDownloads()]));
-    sendToRenderer('web-toast', i18n.t('browser.dlStarted', { name })); // 收起态兜底:侧栏收起时唯一可见反馈
+    // 开始/完成/失败 toast 不在主进程发（Colin 2026-07-20：over-web toast 占一大块）——renderer 下载模块
+    // 从 downloads-changed 的状态迁移 diff 里派生 toast，按侧栏收起态择位（侧栏开=侧栏内小 toast 不顶网页；
+    // 收起=over-web 兜底）。主进程只负责推状态。
     flushDownloads(); // 状态迁移即推（不节流）
 
     // 5. updated：只写内存实时进度、节流广播（不写盘,进度值易失,重启本就翻 interrupted）。
@@ -100,9 +102,7 @@ function ensureSession() {
       browserStore.setDownloads(browserStore.getDownloads().map((e) => (e.id === id
         ? { ...e, state: terminal, receivedBytes: recv, sizeBytes: terminal === 'completed' ? (e.sizeBytes || recv) : e.sizeBytes }
         : e)));
-      if (terminal === 'completed') sendToRenderer('web-toast', i18n.t('browser.dlDone', { name }));
-      else if (terminal === 'failed') sendToRenderer('web-toast', i18n.t('browser.dlFailed', { name }));
-      // 取消不 toast（用户正看着,无需打扰）。
+      // 完成/失败/取消 toast 全不在这里发（见 will-download 的注释）——renderer 从 downloads-changed diff 派生。
       flushDownloads();
     });
   });
@@ -585,6 +585,19 @@ function dlReveal(id) {
   flushDownloads();
   return { ok: false, missing: true };
 }
+// 打开下载好的文件（Colin 2026-07-20）。⚠ 安全区分：这是**用户手动点「打开」**发起的（用系统默认 app 打开）——
+// 与 §11.5「绝不**自动**打开下载」红线不冲突（那条禁的是下载完成后 app 擅自打开；自动打开仍不做）。
+// existsSync 先过一道：文件在 → shell.openPath；已被删/移走 → 标 fileMissing + 返回 missing（照 dlReveal）。
+function dlOpen(id) {
+  const e = browserStore.getDownloads().find((x) => x.id === String(id));
+  if (!e) return { ok: false, missing: true };
+  let exists = false;
+  try { exists = !!(e.savePath && fs.existsSync(e.savePath)); } catch { exists = false; }
+  if (exists) { try { shell.openPath(e.savePath); } catch { /* 系统调用失败 */ } return { ok: true }; } // 用户手动打开（≠自动打开）
+  browserStore.setDownloads(browserStore.getDownloads().map((x) => (x.id === String(id) ? { ...x, state: 'fileMissing' } : x)));
+  flushDownloads();
+  return { ok: false, missing: true };
+}
 
 // ---- 右键菜单（原生）----
 function ctxProbeOn() { try { return !!process.env.WS2_CTXMENU_PROBE && !app.isPackaged; } catch { return false; } }
@@ -658,6 +671,6 @@ module.exports = {
   init, setHistoryHook, setDownloadsHook, createView, show, hide, hideAll, capture, setBounds, destroy, destroyAll,
   navigate, loadUrlDirect, nav, find, stopFind, wireFoundInPage, setZoom, printToPdf,
   openCtxMenu, executeCtxAction, recordHistory, setAllAudioMuted,
-  downloadsList, dlCancel, dlRetry, dlClear, dlRemove, dlReveal,
+  downloadsList, dlCancel, dlRetry, dlClear, dlRemove, dlReveal, dlOpen,
   _registry: registry,
 };

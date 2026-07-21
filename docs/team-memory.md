@@ -14,6 +14,38 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-21 — Feature Board 有卡片规范了，往 board 加卡照它来（含去重铁律）
+
+**是什么**：整理了 Notion Feature Board（60→52 张：全部 F 编号化、去重、归对模块、退休卡进归档页），并立了一页《卡片规范》。六条：R1 卡=一个用户叫得出名字的能力（不是 dev 增量、不是整个模块）；R2 必填五样=编号 F## ＋功能＋一句话简介（为什么）＋工作量 S/M/L ＋模块；R3 目标 M，XL 不许当一张卡（要拆或提升为模块）；R4 命名用产品口吻名词短语，去掉 `feat:` / `phase N` / 实现术语 / 标题里的字面换行，Wordspace 统一大写；R5 拆合判据（太大→拆；按实现阶段拆的→合成一张、阶段进 spec 不上板；备忘卡→并进真卡；两代重复→留 F 编号那张、退休另一张；小开关如深色/i18n→留成 S 卡别过度合并）；R6 板子只有两层：模块=史诗 → 卡=feature，dev 增量（phase 1/2/3）活在 spec/PR 不上板。
+**怎么 apply**：往 Feature Board 加卡前——①先搜有没有重复的现有卡（这次清掉的一大批就是「施工代无编号糙卡 vs 规划代 F 卡」两代重复，别再造）；②照规范写五样必填、产品口吻命名；③编号续排 F##（**当前最大 F60，下一张从 F61 起；老编号一律不动不重排**，specs/代码/记忆里到处引用 F##，重排会全断）。谁直接改真 app 新增了用户能力，除更新 feature spec 外也在 board 建卡。
+**来源**：Notion Feature Board 整理（Colin 拍 D1–D5，2026-07-21）；规范页 https://app.notion.com/p/3a4f2e70d0e781309780e34c3bb5f185 ，归档页（合并/退休卡，可恢复）https://app.notion.com/p/3a4f2e70d0e781a48633f344233c8c87
+
+## 2026-07-21 — 浏览器下载功能全链路完整落 main,但 Colin 说「先不发版」(别当发版就绪)
+
+**是什么**:下载 feature 从调研到真 app + UX 打磨已**全部合入 main**(#262 需求 → #272 ui-demo → #278 真 app 实现 U1-U6 → #286 UX 打磨:toast 改小/popover 锁侧栏宽/加打开)。Colin 2026-07-20 真机验收三改动通过,**但明确说先不发版**(2026-07-20 口头拍板)。
+**怎么 apply**:
+① **别把 main 上有下载功能当作发版就绪信号**——Colin 要自己定发版时机,且要先走完真机 checklist(自动化够不着的:非 mac 工具栏尺寸 / 真实网站下载 / 访达真打开 / 快速开关 popover)。
+② **若你在 cut release / 打 tag**:知道 main 带着完整下载功能,但 **Colin 说 hold**——发版前务必跟他确认,别顺手带出去。
+③ 下载功能已终态:will-download 真接落盘、右键存图、popover **锁侧栏宽不盖网页**(见 07-20 更正条,不走 OVERLAY_SEL)、toast 双态、「打开」按钮。契约 spec §4.11。
+**来源**:PR #286(承接 #278);Colin 2026-07-20「先不发版」。
+## 2026-07-21 — Toggle(可折叠)块开发中:brainstorm+plan 就绪,将重改编辑器核心三文件
+
+**是什么**:Wendi 要 Notion 式 toggle 块进 Schema #1。需求 docs/brainstorms/2026-07-20-toggle-list-block-requirements.md + 详细计划 docs/plans/2026-07-20-001-feat-toggle-list-block-plan.md 已就绪。磁盘契约(validateDetails/AI-guide)早 ship,这次纯做编辑器创作。三大硬骨头方案:①真 app 可达性=scoped block-root(scopeRootOf/blocksInScope,门控在文档真含 <details> 之后,无 toggle 文档走原路径);②撤销解耦=cleanedBodyHtml 剥 open(仅 undo 快照层,serializeDocument 保留)+ undo.js undo/redo 重贴 fold(位置索引);③分页=collectCutAtoms 加 details 选择器 + buildWordspacePrintHtml 克隆上 force-expand 一行。ui-demo 只做 UX 外壳(body=raw contentEditable),真嵌套只在真 app——有意分歧(仿 editor-select-all 先例)。
+
+**怎么 apply**:⚠ 这个 feature 会**重改 src/editor/blockedit.js(blockOf/topBlocks/deleteSelection/execText/dropFileLink/onKeyDown 全线)+ src/editor/serialize.js + src/renderer/shell.js**——都是热点共享核心。这几天要动这三个文件的 session 先看计划或跟我对齐,避免 merge-train 连撞。我在自己的 worktree(feat/toggle-real-app、feat/ui-demo-toggle,均 off origin/main)开工,不碰任何现有 worktree。
+
+**来源**:docs/plans/2026-07-20-001-feat-toggle-list-block-plan.md
+
+## 2026-07-20 — ⚠更正 07-18 那条:下载 popover 已改「锁侧栏宽、不走 OVERLAY_SEL」(Colin 真机反馈)
+
+**是什么**:Colin 真机跑 #278 后反馈「popover 不该盖真网页」,已改(PR #286):下载 popover 从「340px 覆盖网页区 + 走 OVERLAY_SEL 摘 view+截图垫底」**推翻**成「锁进侧栏宽度、右缘=侧栏右缘−8px、绝不进网页区」(`anchorPos` 读 `#sidebar` rect)。附带 toast 改小(侧栏开着走侧栏内小 toast 不顶网页 72px、收起才 over-web)+ 加「打开」按钮(`shell.openPath` 用户手动打开)。
+**怎么 apply**:
+① **07-18 广播里「下载 popover 是 OVERLAY_SEL 最新先例」这句作废**——它现在**不走** OVERLAY_SEL 了。要「DOM 弹层盖网页」的先例去看别的(modal/Cmd+P/AI 面板仍在 OVERLAY_SEL)。
+② **新增设计取舍先例**:DOM 弹层**该不该盖网页**是个选择——盖网页(要视觉覆盖内容区)就注册 OVERLAY_SEL、接受「摘 view+冻结截图」;**不该盖网页**(侧栏类)就 `anchorPos` 读 `#sidebar` rect 锁进侧栏宽、别碰 OVERLAY_SEL(更简单、无冻结、无 webHideAll 竞态)。下载 popover 现在是后者先例。
+③ **07-18 修的 OVERLAY_SEL webHideAll 竞态守卫仍有效**——保护的是仍在 OVERLAY_SEL 里的弹层(modal 等),不受本次影响。
+④ 教训:**真机反馈能推翻 e2e+设计都覆盖不到的主观 UX 判断**——popover 覆盖网页在 ui-demo 里 Colin 验收过、e2e 全绿,但真网页上体验不对;真机走查不可替代。
+**来源**:PR #286(承接 #278);spec §4.11/§13 已改。
+
 ## 2026-07-20 — 隐藏驻留只走 hideForResidency:别再直接 win.hide()(全屏会黑屏)
 
 **是什么**:Wendi/Colin 报「全屏下点左上角关闭 → 黑屏」。根因宿主实测(2/2 复现):**macOS 不接受对原生全屏窗口的 `orderOut:`**——`win.hide()` 被静默吞掉,窗口没藏、独占的全屏 Space 也没拆,用户面对一块空 Space 就是那片黑;非全屏同一条路立刻 `isVisible()=false`(对照组)。已修(#285):抽 `src/lib/window-residency.js` 的 `hideForResidency()` 收口——全屏先 `setFullScreen(false)`、等 `leave-full-screen` 再 `hide()`,回来是窗口态(对齐原生 mac 红灯语义)。
