@@ -276,11 +276,32 @@
 
     const docOf = () => doc;
     function topBlocks() { return [...blockRoot.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')); }
+    // ---- toggle 嵌套作用域（scoped block-root，U6）：<details> 体是自己的编辑作用域，与已发版多根 keyOf=rootId:rel 同心智 ----
+    // 作用域根 = 直接子元素是「块」的容器：blockRoot 或 <details>（其子 = summary + 正文块）。
+    function scopeRootOf(node) {
+      let el = node; if (el && el.nodeType === 3) el = el.parentElement;
+      while (el && el !== blockRoot) { if (el.tagName === 'DETAILS') return el; el = el.parentElement; }
+      return blockRoot;
+    }
+    // 作用域内的「块」= 作用域根的直接元素子（排除覆盖层 + summary）。
+    function blocksInScope(root) { return [...root.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui') && c.tagName !== 'SUMMARY'); }
+    function summaryOf(det) { return (det && [...det.children].find((c) => c.tagName === 'SUMMARY')) || null; }
+    // 把块上卷到它所属的顶层块（blockRoot 的直接子）——跨作用域整块删 / 顶层操作用。
+    function topScopeOf(el) { while (el && el.parentElement && el.parentElement !== blockRoot) el = el.parentElement; return (el && el.parentElement === blockRoot) ? el : null; }
     function blockOf(node) {
       let el = node; if (el && el.nodeType === 3) el = el.parentElement;
-      while (el && el.parentElement && el.parentElement !== blockRoot) el = el.parentElement;
-      // 块 = blockRoot 的直接子元素。点到容器外/空白（el.parentElement !== blockRoot）→ null（取消选中）
-      if (!el || el.parentElement !== blockRoot || el.hasAttribute('data-ws2-ui')) return null;
+      if (!el) return null;
+      // 门控：文档无 <details> → 原扁平逻辑（既有 200+ e2e 零风险，对抗验证要求）
+      if (!blockRoot.querySelector('details')) {
+        while (el.parentElement && el.parentElement !== blockRoot) el = el.parentElement;
+        return (el.parentElement === blockRoot && !el.hasAttribute('data-ws2-ui')) ? el : null;
+      }
+      // 有 toggle：停在 parent 是作用域根（blockRoot 或 details）的元素 = scoped 块
+      while (el.parentElement && el.parentElement !== blockRoot && el.parentElement.tagName !== 'DETAILS') el = el.parentElement;
+      if (el.hasAttribute('data-ws2-ui')) return null;
+      const p = el.parentElement;
+      if (p !== blockRoot && !(p && p.tagName === 'DETAILS')) return null; // 作用域外 / 空白
+      if (el.tagName === 'SUMMARY') return p; // summary 节点 → 归属其 details（供跨块删保护 / 灰选整块）
       return el;
     }
 
@@ -702,9 +723,10 @@
       return next;
     }
     function removeBlock(el) {
-      const blocks = topBlocks();
+      const scope = scopeRootOf(el); // U6：作用域感知——toggle 体内删块按体内计数；≥1 块铁则（summary-only 死胡同）
+      const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
       if (blocks.length <= 1) {
-        // 删到只剩一块 → 清空成空正文进编辑，避免空白死状态
+        // 删到作用域只剩一块 → 清空成空正文进编辑，避免空白死状态
         const p = fmt.retagElement(el, 'p'); p.innerHTML = '';
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         enterEdit(p, { mode: 'start' });
@@ -735,7 +757,9 @@
       if (!sel || sel.rangeCount === 0) return;
       if (sel.isCollapsed) { doc.execCommand(cmd, false, null); markDirty(); persistEditing(); return; } // 折叠：作用于光标
       const full = sel.getRangeAt(0);
-      const tops = topBlocks();
+      // 作用域感知（U6）：跨作用域（选区横跨 summary/正文/外层）格式化会注入跨界 span → 非合规，直接拒绝（安全）。
+      if (scopeRootOf(full.startContainer) !== scopeRootOf(full.endContainer)) return;
+      const tops = blocksInScope(scopeRootOf(full.startContainer));
       let i = tops.indexOf(blockOf(full.startContainer)), j = tops.indexOf(blockOf(full.endContainer));
       if (i < 0 || j < 0) { doc.execCommand(cmd, false, null); markDirty(); persistEditing(); return; } // 兜底
       if (i > j) { const t = i; i = j; j = t; }
@@ -776,31 +800,37 @@
         doc.execCommand('delete'); markDirty(); if (undoMgr) undoMgr.scheduleCheckpoint();
         return true;
       }
-      // 跨块：Range 规范上 startContainer 在 endContainer 之前 → sBlk 在 eBlk 之前
-      const tops = topBlocks();
-      const i = tops.indexOf(sBlk), j = tops.indexOf(eBlk);
+      // 跨块（作用域感知，U6）：同作用域 → 用该作用域块列表（含 toggle 体内）；跨作用域 → 上卷到顶层块，
+      // details 端点 isEditableEl=false → 整块删（保护其 summary，绝不部分裁剪成非合规）。
+      const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
+      const crossScope = sScope !== eScope;
+      const scopeRoot = crossScope ? blockRoot : sScope;
+      const tops = blocksInScope(scopeRoot);
+      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      const i = tops.indexOf(sB), j = tops.indexOf(eB);
       if (i < 0 || j < 0 || i > j) return false;
-      // 修 ED-A2/A3：端点是结构块（table/details/figure/img 等非叶子文字块）时，Range 部分裁剪会把表格削成
-      // 非矩形（table-ragged）、把 details 的 <summary> 删掉（details-summary）→ 落盘非合规。只对可编辑叶子块
-      // 做部分裁剪，结构端点改成整块删除（「从 h2 中间选到表格中间删」= 删 h2 尾巴 + 整删表格，绝不产非法结构）。
-      const sEditable = isEditableEl(sBlk), eEditable = isEditableEl(eBlk);
-      if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sBlk, sBlk.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
-      if (eEditable) { const r2 = doc.createRange(); r2.setStart(eBlk, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
-      for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === blockRoot) m.remove(); }                            // 删中间整块
-      const prefixEnd = sEditable ? sBlk.lastChild : null; // 接合点（合并前 prefix 末尾）
-      if (sEditable && eEditable && SM.canMerge(sBlk, eBlk)) { // 两端都是存活的叶子文字块才节点级拼接（挡透明包裹块/空容器/void）
-        while (eBlk.firstChild) sBlk.appendChild(eBlk.firstChild); // 末块剩余并入起块
-        eBlk.remove();
+      // 修 ED-A2/A3（推广到作用域）：端点是结构块（table/details/figure/img）时 Range 部分裁剪会削 summary/table
+      // → 落盘非合规。只对可编辑叶子块部分裁剪，结构端点整块删。
+      const sEditable = isEditableEl(sB), eEditable = isEditableEl(eB);
+      if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sB, sB.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
+      if (eEditable) { const r2 = doc.createRange(); r2.setStart(eB, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
+      for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === scopeRoot) m.remove(); }                            // 删中间整块（作用域内）
+      const prefixEnd = sEditable ? sB.lastChild : null; // 接合点（合并前 prefix 末尾）
+      if (sEditable && eEditable && SM.canMerge(sB, eB)) { // 两端都是存活的叶子文字块才节点级拼接
+        while (eB.firstChild) sB.appendChild(eB.firstChild); // 末块剩余并入起块
+        eB.remove();
       }
-      if (!eEditable) eBlk.remove(); // 结构末块整删
-      if (!sEditable) sBlk.remove(); // 结构起块整删
+      if (!eEditable) eB.remove(); // 结构末块整删
+      if (!sEditable) sB.remove(); // 结构起块整删
+      // toggle 体 ≥1 块铁则：作用域删空 → 补一个空 <p>（summary-only 是死胡同）
+      if (scopeRoot !== blockRoot && blocksInScope(scopeRoot).length === 0) scopeRoot.appendChild(doc.createElement('p'));
       markDirty(); if (undoMgr) undoMgr.checkpoint();
       // 光标/选中落点：优先存活的起块，其次存活的末块，再次删除处附近块
-      let anchor = sEditable && sBlk.parentElement ? sBlk : (eEditable && eBlk.parentElement ? eBlk : null);
-      if (!anchor) { const rest = topBlocks(); anchor = rest[Math.min(i, rest.length - 1)] || rest[0] || null; }
+      let anchor = sEditable && sB.parentElement ? sB : (eEditable && eB.parentElement ? eB : null);
+      if (!anchor) { const rest = blocksInScope(scopeRoot); anchor = rest[Math.min(i, rest.length - 1)] || rest[0] || null; }
       if (anchor && isEditableEl(anchor)) {
         enterEdit(anchor, { mode: 'keep' });
-        try { const cr = doc.createRange(); if (anchor === sBlk && prefixEnd && prefixEnd.parentNode === sBlk) cr.setStartAfter(prefixEnd); else cr.setStart(anchor, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
+        try { const cr = doc.createRange(); if (anchor === sB && prefixEnd && prefixEnd.parentNode === sB) cr.setStartAfter(prefixEnd); else cr.setStart(anchor, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
       } else if (anchor) { selectBlock(anchor); positionGrip(anchor); }
       return true;
     }
@@ -1265,7 +1295,16 @@
           return;
         }
         if (e.key === ' ') { e.preventDefault(); doc.execCommand('insertText', false, ' '); return; } // 原生 summary 空格会折叠——拦默认、手动插空格
-        if (e.key === 'Backspace' && isCaretAtStart(doc, editingEl)) { e.preventDefault(); return; } // 起始退格：先拦住不让 generic 合并 details（U7 扩展回退/解包）
+        if (e.key === 'Backspace' && isCaretAtStart(doc, editingEl)) {
+          e.preventDefault();
+          const det = editingEl.parentElement;
+          const bodyEmpty = blocksInScope(det).every((b) => (b.textContent || '').trim() === '');
+          if ((editingEl.textContent || '').trim() === '' && bodyEmpty) {
+            const p = doc.createElement('p'); det.replaceWith(p); // 空 toggle：解包成空正文（逃生，键盘可删）
+            if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(p, { mode: 'start' });
+          }
+          return; // 非空：拦住不让 generic 合并 details
+        }
         return; // 其它键（含字符/方向/'/'）交原生编辑 summary
       }
       // 触发斜杠
@@ -1343,7 +1382,20 @@
           if (splitBlock()) { e.preventDefault(); return; }
           return;
         }
+        // toggle 体内末块回车退出（U7）：空的末正文块 → 跳出 toggle，在 details 后新建正文块（体内保留 ≥1 块）
+        const escScope = scopeRootOf(editingEl);
+        if (escScope !== blockRoot) {
+          const bs = blocksInScope(escScope);
+          if (bs[bs.length - 1] === editingEl && (editingEl.textContent || '').trim() === '') {
+            e.preventDefault();
+            if (bs.length > 1) editingEl.remove(); // ≥1 体块铁则：仅不止一块时删空块
+            const nx = insertAfter(escScope, itemByKey('text')); // escScope=details，.after 落外层
+            enterEdit(nx, { mode: 'start' });
+            return;
+          }
+        }
         // 段末回车 → 新建空正文块（标题/引用末尾回车也续为正文，对齐 Notion；故用 itemByKey('text') 而非劈块）
+        // toggle 体内非末/非空块：insertAfter 用 .after → 落体内（作用域正确，自动获得）
         e.preventDefault();
         const nx = insertAfter(editingEl, itemByKey('text'));
         enterEdit(nx, { mode: 'start' });
@@ -1361,7 +1413,17 @@
       // 其它块也吞掉 Tab，避免它把光标跳出编辑区。
       if (e.key === 'Tab' && editingEl) {
         e.preventDefault();
-        if (classify(editingEl) !== 'list') return;
+        if (classify(editingEl) !== 'list') {
+          // toggle 嵌套（U7）：Tab 把块嵌进前一个 <details> 体；Shift-Tab 把体内块移出到 details 后。
+          const scope = scopeRootOf(editingEl);
+          if (e.shiftKey) {
+            if (scope !== blockRoot) { const det = scope; det.after(editingEl); if (blocksInScope(det).length === 0) det.appendChild(doc.createElement('p')); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(editingEl, { mode: 'keep' }); } // ≥1 体块铁则
+          } else {
+            const prev = editingEl.previousElementSibling;
+            if (prev && prev.tagName === 'DETAILS') { prev.setAttribute('open', ''); prev.appendChild(editingEl); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(editingEl, { mode: 'keep' }); } // 展开被嵌入的 toggle 免内容隐身
+          }
+          return;
+        }
         const sel = doc.getSelection();
         const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
         const li = node && node.closest ? node.closest('li') : null;
@@ -1397,9 +1459,13 @@
         if (e.isComposing || e.keyCode === 229) return;
         if (classify(editingEl) === 'list') return; // 列表内 Backspace 交原生（删项/退格），不走块级合并
         if (!isCaretAtStart(doc, editingEl)) return;
-        const blocks = topBlocks();
+        const scope = scopeRootOf(editingEl); // U6：作用域感知合并/退格
+        const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
         const idx = blocks.indexOf(editingEl);
-        if (idx <= 0) return;
+        if (idx <= 0) {
+          if (scope !== blockRoot) { e.preventDefault(); const s = summaryOf(scope); if (s) enterEdit(s, { mode: 'end' }); return; } // toggle 体首块起始退格 → 光标回 summary 末（绝不删 summary）
+          return; // 顶层首块 → 原 no-op
+        }
         const prev = blocks[idx - 1];
         const cur = editingEl;
         const curEmpty = (cur.textContent || '').trim() === '';

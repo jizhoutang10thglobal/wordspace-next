@@ -52,6 +52,15 @@ async function insertToggle() {
 }
 const detailsOpen = () => frame.locator('body').evaluate(() => { const d = document.querySelector('details'); return d ? d.hasAttribute('open') : null; });
 const summaryText = () => frame.locator('body').evaluate(() => { const s = document.querySelector('details > summary'); return s ? s.textContent : null; });
+const editInfo = () => frame.locator('body').evaluate(() => { const e = document.querySelector('[data-ws2-editing]'); return e ? { tag: e.tagName, parent: e.parentElement.tagName, inDetails: !!e.closest('details') } : null; });
+// 设跨块选区（还原拖选态），照 app.spec setCrossSel 范式。
+async function setCrossSel(a, b, c, d) {
+  await frame.locator('body').evaluate((body, [a, b, c, d]) => {
+    const r = document.createRange(); r.setStart(document.getElementById(a).firstChild, b); r.setEnd(document.getElementById(c).firstChild, d);
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }, [a, b, c, d]);
+  await frame.locator('body').evaluate(() => new Promise((res) => { let n = 0; const chk = () => { const s = document.getSelection(); if (s && s.rangeCount && !s.isCollapsed) res(); else if (n++ > 90) res(); else requestAnimationFrame(chk); }; chk(); }));
+}
 
 test.afterEach(async () => {
   if (app) { await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {}); await app.close().catch(() => {}); }
@@ -168,4 +177,111 @@ test('U5: chevron 折叠 → open 落盘持久化 + 展开恢复', async () => {
   expect(await detailsOpen()).toBe(true);
   disk = await fs.readFile(docPath, 'utf8');
   expect(disk, '展开态应落盘：details open').toMatch(/<details open[^>]*><summary>标题<\/summary>/);
+});
+
+// U6: 正文块=一等嵌套块——体内可编辑、Enter 体内分裂、slash 体内插块、嵌套 toggle 全合规。
+test('U6: toggle 体内块可编辑 + Enter 分裂 + slash 插块 + 嵌套 toggle', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await insertToggle();
+  await page.keyboard.type('外标题');
+  await page.keyboard.press('Enter');       // → 首正文块
+  await page.keyboard.type('正文一');
+  await page.keyboard.press('Enter');       // 体内分裂 → 第二正文块（.after 落体内）
+  await page.keyboard.type('正文二');
+  await page.waitForTimeout(120);
+  // 断言：details 体内有 2 个 p，且都在 details 内
+  const bodyPs = await frame.locator('body').evaluate(() => {
+    const d = document.querySelector('details');
+    return [...d.children].filter((c) => c.tagName === 'P').map((p) => p.textContent);
+  });
+  expect(bodyPs).toEqual(['正文一', '正文二']);
+
+  // slash 体内插无序列表
+  await page.keyboard.type('/');
+  await expect(frame.locator('.ws-slashmenu')).toBeVisible();
+  await frame.locator('.ws-slashmenu-item', { hasText: '无序列表' }).click();
+  await page.waitForTimeout(150);
+  const hasBodyUl = await frame.locator('body').evaluate(() => { const d = document.querySelector('details'); return !!d.querySelector(':scope > ul'); });
+  expect(hasBodyUl, '列表应作为一等块插进 toggle 体内').toBe(true);
+
+  // 嵌套 toggle：把光标移回体内某块，slash 折叠
+  await frame.locator('details > p').first().click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('/');
+  await expect(frame.locator('.ws-slashmenu')).toBeVisible();
+  await frame.locator('.ws-slashmenu-item', { hasText: '折叠' }).click();
+  await page.waitForTimeout(150);
+  await page.keyboard.type('内标题');
+  await page.waitForTimeout(150);
+
+  const html = await serialize();
+  expect(html, '嵌套 toggle：details 内含 details').toMatch(/<details open[^>]*>[\s\S]*<details open[^>]*><summary>内标题<\/summary>/);
+  expect(await conformOf(html), '嵌套 toggle 文档必须合规').toBe(true);
+  // 嵌套块独立可选中：点内层 summary 编辑，data-ws2-editing 落在内层 summary（非外层 details）
+  expect((await editInfo()).tag).toBe('SUMMARY');
+});
+
+// U6: 体内同作用域跨块删（≥1 块铁则：删空补空 p，不留 summary-only 死胡同）。
+test('U6: toggle 体内跨块删除保持合规 + ≥1 块铁则', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<details open id="dt"><summary id="sm">标题</summary><p id="b1">正文一</p><p id="b2">正文二</p></details></body></html>');
+  await frame.locator('#b1').click();
+  await setCrossSel('b1', 0, 'b2', 3); // 体内跨两块全选
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(200);
+  const html = await serialize();
+  expect(await conformOf(html), '体内跨块删后仍合规').toBe(true);
+  // ≥1 块铁则：details 仍有 summary + 至少一个正文块（非 summary-only）
+  const shape = await frame.locator('body').evaluate(() => { const d = document.querySelector('#dt'); return { summary: !!d.querySelector(':scope > summary'), bodyCount: [...d.children].filter((c) => c.tagName !== 'SUMMARY' && !c.hasAttribute('data-ws2-ui')).length }; });
+  expect(shape.summary).toBe(true);
+  expect(shape.bodyCount).toBeGreaterThanOrEqual(1);
+});
+
+// U7: Enter 空末块退出 toggle + Backspace 首块回 summary。
+test('U7: Enter 空末块退出 + Backspace 首块回 summary', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await insertToggle();
+  await page.keyboard.type('标题');
+  await page.keyboard.press('Enter');   // → 首正文块
+  await page.keyboard.type('B1');
+  await page.keyboard.press('Enter');   // 分裂出空的第二块（末块）
+  await page.keyboard.press('Enter');   // 空末块回车 → 退出 toggle
+  await page.waitForTimeout(150);
+  const exited = await editInfo();
+  expect(exited.inDetails, 'Enter 空末块应退出 toggle').toBe(false);
+  expect(exited.parent).toBe('BODY'); // 落在外层（blockRoot=body）
+  // toggle 体内仍 ≥1 块（空末块被移除、留 B1）
+  const bodyCount = await frame.locator('body').evaluate(() => { const d = document.querySelector('details'); return [...d.children].filter((c) => c.tagName !== 'SUMMARY' && !c.hasAttribute('data-ws2-ui')).length; });
+  expect(bodyCount).toBe(1);
+
+  // Backspace 首块起始 → 回 summary 末
+  await frame.locator('details > p').first().click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(120);
+  expect((await editInfo()).tag, 'Backspace 首块起始应把光标送回 summary').toBe('SUMMARY');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U7: Tab 把块嵌进前一个 details / Shift-Tab 移出。
+test('U7: Tab 嵌入 details 体 / Shift-Tab 移出', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<details open id="dt"><summary>标题</summary><p>正文</p></details><p id="tab">要嵌入的块</p></body></html>');
+  await frame.locator('#tab').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(150);
+  let where = await frame.locator('body').evaluate(() => { const t = document.getElementById('tab'); return t ? t.parentElement.tagName + (t.closest('#dt') ? '#dt' : '') : 'GONE'; });
+  expect(where, 'Tab 应把 #tab 嵌进 details 体').toBe('DETAILS#dt');
+  expect(await conformOf(await serialize())).toBe(true);
+
+  await page.keyboard.press('Shift+Tab');
+  await page.waitForTimeout(150);
+  where = await frame.locator('body').evaluate(() => { const t = document.getElementById('tab'); return t ? (t.parentElement.tagName === 'BODY' && !t.closest('details') ? 'OUT' : 'IN') : 'GONE'; });
+  expect(where, 'Shift-Tab 应把 #tab 移出到 details 后').toBe('OUT');
+  expect(await conformOf(await serialize())).toBe(true);
 });
