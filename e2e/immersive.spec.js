@@ -130,6 +130,34 @@ test('展开态窗框：非全屏恒有——#main 四周 10px + 三条 drag 带
   await expect(page.locator('#sb-edge-hot')).toBeHidden();
 });
 
+// 融合（Wendi 2026-07-21「边框和左侧边栏的融合…还是尴尬」→ Arc 图层模型：侧栏=窗框 chrome 表面
+// 的一部分,不是独立面板）：侧栏底色==body 窗框底色（同一块表面）+ 非透明（防 CSS 全废两个都
+// transparent 的假绿）+ 无右边线；真全屏（摘框摘缝）补回 1px 分界线。变异自检：侧栏底改回
+// sunken → 同色断言红；融合 CSS 整段删 → 非透明断言红；全屏补线删 → 全屏断言红。
+test('融合：侧栏底=窗框同色（一块 chrome 表面）、无右边线；全屏态补 1px 分界', async () => {
+  await openWorkspace();
+  const probe = await page.evaluate(() => {
+    const d = document.createElement('div');
+    d.style.background = 'var(--c-bg-chrome)';
+    document.body.appendChild(d);
+    const chrome = getComputedStyle(d).backgroundColor;
+    d.remove();
+    const sb = getComputedStyle(document.getElementById('sidebar'));
+    return { chrome, sbBg: sb.backgroundColor, sbBorderR: sb.borderRightWidth, bodyBg: getComputedStyle(document.body).backgroundColor };
+  });
+  expect(probe.sbBg, '侧栏底该非透明（CSS 全废假绿探针）').not.toMatch(/^rgba\(0, 0, 0, 0\)$|^transparent$/);
+  expect(probe.sbBg, '侧栏底≠body 窗框底（两块表面，融合破了）').toBe(probe.bodyBg);
+  expect(probe.sbBg, '侧栏底≠chrome 色（改回 sunken？）').toBe(probe.chrome);
+  expect(probe.sbBorderR, '侧栏右边线该删（分界交给内容纸的边）').toBe('0px');
+  // 真全屏：摘框摘缝后侧栏与内容直接相邻 → 补回 1px 分界线
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('enter-full-screen'));
+  await expect(page.locator('body')).toHaveClass(/is-win-fullscreen/, { timeout: 3000 });
+  expect(await page.locator('#sidebar').evaluate((el) => getComputedStyle(el).borderRightWidth), '全屏态该补 1px 分界线').toBe('1px');
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].emit('leave-full-screen'));
+  await expect(page.locator('body')).not.toHaveClass(/is-win-fullscreen/, { timeout: 3000 });
+  expect(await page.locator('#sidebar').evaluate((el) => getComputedStyle(el).borderRightWidth), '退全屏该回无线').toBe('0px');
+});
+
 test('展开态：侧栏图标钮顶边归钮不归拖拽条（顶 ~4px 可点，Colin 2026-07-18）', async () => {
   await openWorkspace(); // 展开态：窗框顶带横跨全宽、盖住侧栏头图标钮顶部
   // 在「钮 与 顶带」的重叠区打一个 elementFromPoint（钮顶 y≈6、顶带 0..10 → 取钮顶 +2px 落进重叠带）。
