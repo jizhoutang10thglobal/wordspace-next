@@ -697,7 +697,7 @@
     head.dataset.root = root.id;
     head.dataset.rel = '';
     head.dataset.depth = -1; // sticky ancestor：根标题是最外层祖先
-    head.title = window.wsT(lazy ? 'sidebar.rootHeadTitleLazy' : 'sidebar.rootHeadTitle', { path: root.path });
+    head.title = window.wsT('sidebar.rootHeadTitle', { path: root.path });
     head.draggable = true;
     const caret = document.createElement('span');
     caret.className = 'sb-caret' + (open ? ' is-open' : '');
@@ -709,20 +709,14 @@
     name.className = 'sb-name sb-root-name ws-truncate';
     name.textContent = root.name;
     head.append(caret, ico, name);
-    if (lazy) {
-      // 「简化模式」徽标：告诉用户这个大文件夹按需加载、部分功能受限（hover 解释）。复用失联根的小 tag 样式，
-      // 零新增 CSS；tag 后不再挂 path（省空间），path 进 title。
-      const tag = document.createElement('span');
-      tag.className = 'sb-root-miss-tag';
-      tag.textContent = window.wsT('sidebar.lazyTag');
-      tag.title = window.wsT('sidebar.lazyTagTitle');
-      head.appendChild(tag);
-    } else {
-      const pathEl = document.createElement('span');
-      pathEl.className = 'sb-root-path ws-truncate';
-      pathEl.textContent = root.path;
-      head.appendChild(pathEl);
-    }
+    // lazy（简化模式）根照常显示路径，跟其他根一视同仁——不再挂「Simplified」徽标（它借「优化」的名头撤了路径，
+    // 但路径显示与懒加载优化无关，只让 Desktop 跟别的根不一致、看着像 bug，Colin 2026-07-21 拍板撤）。
+    // 简化模式的功能降级（快速打开不含它 / @链接不可用）在**用到时**各自就地提示（Cmd+P 面板注脚 / @菜单灰字），
+    // 不靠这个恒显徽标。lazy 仍留在 head 的 sb-root-lazy class（隐形，无 CSS）供内部/测试识别。
+    const pathEl = document.createElement('span');
+    pathEl.className = 'sb-root-path ws-truncate';
+    pathEl.textContent = root.path;
+    head.appendChild(pathEl);
     head.onclick = () => {
       if (rootClosed.has(root.id)) rootClosed.delete(root.id);
       else rootClosed.add(root.id);
