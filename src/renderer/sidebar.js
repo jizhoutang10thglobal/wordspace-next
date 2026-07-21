@@ -667,7 +667,7 @@
   // 渲染收尾（全量 render() 与增量 renderRoot() 共用，防两条路径尾部逻辑漂移——可维护性 review）：
   // 高亮当前打开文件 + 全量重算 sticky 吸顶行缓存（只读 layout 遍历，便宜）+ 强制吸顶浮层下一帧重建。
   function afterRender() {
-    highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
+    highlightActive(); // 数据源 = 激活标签（见 highlightActive 注释），不再读 docPath
     cacheStickyRows();
     if (stickyEl) stickyEl.dataset.key = STICKY_FORCE; // 哨兵值：任何真 key（含空 pins 的 ''）都 ≠ 它 → 必重建
     renderSticky();
@@ -1550,11 +1550,26 @@
     }
   }
 
-  // ---- 当前打开文件高亮 ----
-  function highlightActive(absPath) {
+  // ---- 树高亮 = 激活标签的投影（always linked，Wendi/Jizhou 2026-07-20）----
+  // 判定源是「激活标签 entry」，**不再读 shell 的 docPath**：web 态 docPath 仍指被盖住的旧文档（会残留），
+  // viewer 态 docPath 是 null（重渲染就丢）。网页/临时标签 → 无高亮；文档/查看器/已收编进树的外部文件
+  // → 亮其行；行不在（根外未收编 / lazy 未加载层 / 失联根）→ 无高亮。afterRender（树重渲染）与
+  // renderZones（标签激活/增删）两处都调它，任一变化都保持同步。
+  function activeHighlightNode() {
+    const key = tabState.activeRel;
+    if (!key) return null; // 起始页
+    const entry = tabState.entries.find((e) => keyOf(e) === key);
+    if (!entry || window.WS2Tabs.isWebEntry(entry) || isTempEntry(entry)) return null;
+    return findEntryNode(entry); // rel→findNode / abs→findNodeByAbs；查不到 = 树里没这行 → 无高亮
+  }
+  function highlightActive() {
     treeEl.querySelectorAll('.sb-file.is-active').forEach((el) => el.classList.remove('is-active'));
-    if (!absPath) return;
-    const row = treeEl.querySelector('.sb-file[data-abs="' + cssAttr(absPath) + '"]');
+    const node = activeHighlightNode();
+    if (!node) return;
+    // 行定位用解析出的**树节点**自身属性（node.rootId+node.rel，每个文件节点都有）——单一来源，与判定同源。
+    // 禁止在 renderer 侧用根路径拼 abs 串：rel 用 '/'、Windows node.abs 用 '\\'，拼出的串对不上行的 data-abs，
+    // win 构建会整体静默哑掉；用 data-root+data-rel 无此坑。
+    const row = treeEl.querySelector('.sb-file[data-root="' + cssAttr(node.rootId) + '"][data-rel="' + cssAttr(node.rel) + '"]');
     if (row) row.classList.add('is-active');
   }
   // 转义属性选择器里的引号/反斜杠
@@ -1929,7 +1944,7 @@
     if (node) openTabEntry({ rootId: node.rootId, rel: node.rel, kind: node.kind || 'html', title: node.name }); // 根内：真 rel 标签
     else openTabEntry({ abs, kind: 'html', title: leaf }); // 根外：abs 身份外部标签（↗），沿用外部文件标签模型
     if (window.__shellFinalizeTemp) await window.__shellFinalizeTemp(tempId, abs, node ? node.name : leaf);
-    if (node) { expandToFile(node.rootId, node.rel); highlightActive(abs); }
+    if (node) expandToFile(node.rootId, node.rel); // 高亮由 openTabEntry 上面那次的 renderZones 按激活标签刷（单一真相源）
     const nodeRoot = node ? rootOf(node.rootId) : null;
     const place = node
       ? (nodeRoot ? nodeRoot.name : window.wsT('sidebar.workspace')) + (node.rel.indexOf('/') >= 0 ? ' / ' + node.rel.split('/').slice(0, -1).join('/') : '')
@@ -2045,6 +2060,10 @@
   function openTabRow(entry, reveal = true) {
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
       if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry)); // renderTemp 内部摘 web view（canLeaveActive 取消则不摘,网页态保留,P2-1）
+      // 切成功才更新 activeRel（照 closeOrRemove 的 __shellActiveTemp 校验模式）：否则 activeRel 停在旧文档，
+      // 树高亮会把旧文档行持续刷亮（违反 always linked）。守卫取消（切换被拦）则不动，保守。
+      const now = window.__shellActiveTemp && window.__shellActiveTemp();
+      if (now && now.id === keyOf(entry)) openTabEntry(entry);
       return;
     }
     // 网页标签（浏览器 feature）：激活 = openEntry（置顶纯快捷方式顺带变开）+ 交给 browser.js 的激活漏斗。
@@ -2310,6 +2329,7 @@
     const sbEl = document.getElementById('sidebar');
     if (sbEl) sbEl.classList.toggle('sb-on', rootsState.length > 0 || tabState.entries.length > 0);
     if (window.__webChromeSync) window.__webChromeSync(); // 激活/标签变化 → 同步地址栏值/导航条 disabled/星标
+    highlightActive(); // 树高亮跟随激活标签：renderZones 是全部标签变更（激活/增删/收编）的唯一会合点
   }
 
   // ---- 筛选输入（+ 清除钮，T8 对齐 ui-demo arc-filter-clear）----
@@ -3170,7 +3190,8 @@
         }
         expandToFile(node.rootId, node.rel, scroll);
       }
-      highlightActive(abs);
+      // 高亮不在这里预置（此刻 activeRel 还是旧值）：openTabEntry/openTabFromAbs 内的 renderZones 会在
+      // activeRel 更新后按激活标签推导刷新（单一真相源，见 highlightActive）。
       if (node) {
         openTabEntry({ rootId: node.rootId, rel: node.rel, kind: node.kind || 'other', title: node.name });
       } else if (abs) {
