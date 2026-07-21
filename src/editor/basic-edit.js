@@ -1,13 +1,15 @@
 // 非合规 HTML 的「基础编辑器」（Feature 3）。见 docs/plans/2026-07-01-002-...-plan.md +
 // origin ../wordspace-next-ui-demo/docs/brainstorms/2026-07-01-nonconform-html-editing-requirements.md。
 //
-// 跑在父层、操作 doc-frame 的 contentDocument（iframe sandbox 不跑文档 JS）。三能力：
-//   A 富就地文字（B/I/U/S + 文字色/高亮/清除）· B 删整块 · C 空间切块（方向键按渲染几何）。
-// 编辑器 chrome（格式条/焦点框）全走**宿主浮层**（append 到 document.body、position:fixed、
-// 视口坐标），绝不注进 iframe DOM（KD-b）。唯一注进 iframe 的是编辑态：body.contentEditable + cursor
-// —— cursor 走 adoptedStyleSheets（不写 body.style、不进序列化），contentEditable 由序列化前的剥除契约摘掉。
+// 跑在父层、操作 doc-frame 的 contentDocument（iframe sandbox 不跑文档 JS）。能力：
+//   A 富就地文字（B/I/U/S + 文字色/高亮/清除）· 删除全走 contenteditable 原生「选中 + Delete」。
+// 编辑器 chrome（格式条）走**宿主浮层**（append 到 document.body、position:fixed、视口坐标），绝不注进
+// iframe DOM（KD-b）。唯一注进 iframe 的是编辑态：body.contentEditable + cursor —— cursor 走
+// adoptedStyleSheets（不写 body.style、不进序列化），contentEditable 由序列化前的剥除契约摘掉。
 // 保存不走 block 编辑器的 Schema 规整；结构级保真（KD-c）。色/高亮用 CSSOM span（WS2Format.wrapInlineStyle）
-// 非 execCommand foreColor（KD-g）。导航/定位用渲染几何（nearestInDir），编辑/删除用节点身份。
+// 非 execCommand foreColor（KD-g）。
+// 无删除 chrome：曾有 Esc 块模式 + 右上「删除此块」chip，因按钮不可靠/不可发现整体撤除（Colin 2026-07-21）。
+// collectBlocks/nearestInDir 仍导出（纯函数 + 单测），当前 attach 不再内部使用。
 (function (global) {
   const fmt = (typeof WS2Format !== 'undefined') ? WS2Format
     : (typeof require !== 'undefined' ? require('./format.js') : null);
@@ -17,8 +19,6 @@
   const TEXT_COLORS = ['#1a1a1a', '#b3261e', '#b06000', '#188038', '#1a73e8', '#7b1fa2'];
   const HILITE_COLORS = ['#fff59d', '#ffd6d6', '#d7f0db', '#dbe9ff', '#f3e3ff'];
   const CE_MARK = 'data-ws2-basic-ce';
-  const READONLY_TAGS = new Set(['IMG', 'HR', 'IFRAME', 'SVG', 'VIDEO', 'AUDIO', 'EMBED', 'OBJECT', 'CANVAS']);
-  const isReadOnly = (el) => !!el && READONLY_TAGS.has(el.tagName);
 
   // ---- 纯逻辑（导出可 jsdom 单测）----
   // 块收集：img/hr/iframe/table/ul/ol/svg 当原子块 + 「有直接文字且父无直接文字」的元素当叶子文字块。
@@ -95,7 +95,6 @@
     if (html != null) e.innerHTML = html;
     return e;
   }
-  const TRASH = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>';
   const SVG = {
     bold: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h7a4 4 0 0 1 0 8H6zM6 12h8a4 4 0 0 1 0 8H6z"/></svg>',
     italic: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 4h-9M14 20H5M15 4L9 20"/></svg>',
@@ -107,9 +106,6 @@
   function attach(doc, opts) {
     opts = opts || {};
     const win = opts.win || doc.defaultView;
-    // 修 ED-B2：iframe sandbox 无 allow-modals，contentWindow.confirm 静默返回 false（大块删除的二次确认
-    // 因此恒「取消」→ 删除对整篇挂一个大 div 的文档整体失效）。用宿主窗口的 confirm（blockedit addLink 同法）。
-    const hostWin = (opts.host && opts.host.ownerDocument && opts.host.ownerDocument.defaultView) || win;
     const markDirty = opts.markDirty || function () {};
     const body = doc.body;
     if (!body) return { detach() {}, reposition() {}, serialize: () => serialize(doc) };
@@ -123,10 +119,6 @@
     const frameRect = () => (frameEl ? frameEl.getBoundingClientRect() : { top: 0, left: 0 });
     // iframe 内元素 rect → 宿主视口坐标（focus/hover 浮层在 document.body、position:fixed）
     const toHost = (r) => { const fr = frameRect(); return { top: fr.top + r.top, left: fr.left + r.left, width: r.width, height: r.height }; };
-
-    let mode = 'text';          // 'text' 点字改 | 'block' 方向键切块
-    let blocks = collectBlocks(body);
-    let focusEl = null;
 
     // ==== A：富文字格式条 ====
     const bar = el('div', 'ws-fmtbar nce-bubble');
@@ -159,7 +151,6 @@
     document.body.appendChild(bar);
 
     function refreshBubble() {
-      if (mode !== 'text') { hideBar(); return; }
       const sel = doc.getSelection && doc.getSelection();
       if (!sel || sel.isCollapsed || sel.rangeCount === 0) { hideBar(); return; }
       const r = sel.getRangeAt(0).getBoundingClientRect();
@@ -171,80 +162,21 @@
     }
     function hideBar() { if (barShown) { bar.hidden = true; barShown = false; } closeMenu(); }
 
-    // ==== B/C：焦点框 + 悬停删除（宿主浮层）====
-    const focusBox = el('div', 'nce-focus'); focusBox.hidden = true;
-    const focusDel = el('button', 'nce-focus-del', TRASH + '<span>' + T('editor.deleteThisBlock') + '</span>');
-    focusDel.title = T('editor.deleteThisBlockKey');
-    focusDel.addEventListener('mousedown', (e) => e.preventDefault());
-    focusDel.addEventListener('click', () => { if (focusEl) removeBlock(focusEl, true); });
-    focusBox.appendChild(focusDel);
-    document.body.appendChild(focusBox);
-
-    // 悬停虚线框+🗑 已撤（Wendi 2026-07-14：整表/整页大块被框成巨型蓝框、🗑 在视口外，读作渲染 bug）。
-    // 删块走 Esc 块模式（主动进入）或 contenteditable 原生选中删除。见 docs/features/basic-edit.md。
-    function placeBox(box, elm) { const h = toHost(elm.getBoundingClientRect()); box.style.top = h.top + 'px'; box.style.left = h.left + 'px'; box.style.width = h.width + 'px'; box.style.height = h.height + 'px'; }
-    function setFocus(elm) {
-      focusEl = elm || null;
-      if (!focusEl) { focusBox.hidden = true; return; }
-      try { focusEl.scrollIntoView({ block: 'nearest' }); } catch (e) {}
-      placeBox(focusBox, focusEl); focusBox.hidden = false;
-    }
-    function clearFocus() { focusEl = null; focusBox.hidden = true; }
-
-    function enterBlockMode(fromEl) {
-      mode = 'block'; hideBar();
-      try { body.contentEditable = 'false'; } catch (e) {}
-      setFocus(fromEl || blocks[0] || null);
-    }
-    function enterTextMode() {
-      mode = 'text'; clearFocus();
-      try { body.contentEditable = 'true'; } catch (e) {}
-    }
-    function caretInto(elm) {
-      enterTextMode();
-      try { const rng = doc.createRange(); rng.selectNodeContents(elm); rng.collapse(true); const sel = doc.getSelection(); sel.removeAllRanges(); sel.addRange(rng); } catch (e) {}
-    }
-    function removeBlock(elm, keepNext) {
-      // 破坏性兜底（doc-review）：一块几乎是整篇 → 二次确认
-      try {
-        const br = elm.getBoundingClientRect(); const bb = body.getBoundingClientRect();
-        const frac = (br.width * br.height) / Math.max(1, bb.width * bb.height);
-        if (frac > 0.85 && hostWin.confirm && !hostWin.confirm(T('editor.deleteAlmostWholeDoc'))) return;
-      } catch (e) {}
-      const next = keepNext ? (nearestInDir(elm, 'down', blocks) || nearestInDir(elm, 'up', blocks)) : null;
-      elm.remove();
-      blocks = collectBlocks(body);
-      markDirty();
-      if (keepNext) setFocus(next && blocks.includes(next) ? next : blocks[0] || null);
-      else if (focusEl === elm) clearFocus();
-    }
+    // ==== B：删块 ====
+    // 无任何删除 chrome（Colin 2026-07-21 拍板）：不出「删除此块」按钮、不设 Esc 块模式。删除整段/整块
+    // 一律走 contenteditable 原生「选中内容 + Delete/Backspace」——编辑器保持「安静的纸」，零浮层。
+    // （历史：曾有 Esc 块模式 + 右上「删除此块」chip；因按钮不可靠 / 不可发现，整体撤除。见 docs/features/basic-edit.md）
 
     // ==== 事件 ====
+    // 删除全走原生（选中 + Delete），故只留：格式条跟随选区 + dirty 标记 + 滚动重定位格式条。
     const onSelChange = () => refreshBubble();
     const onInput = () => markDirty();
-    const onMouseDown = () => { if (mode === 'block') enterTextMode(); };
-    const onScroll = () => { refreshBubble(); if (focusEl) placeBox(focusBox, focusEl); };
-    const DIR = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        const a = doc.getSelection && doc.getSelection().anchorNode;
-        const start = a ? (a.nodeType === 3 ? a.parentElement : a) : null;
-        enterBlockMode(blocks.find((x) => start && x.contains(start)) || null);
-        return;
-      }
-      if (mode !== 'block') return;
-      if (DIR[e.key]) { e.preventDefault(); const n = focusEl ? nearestInDir(focusEl, DIR[e.key], blocks) : blocks[0]; if (n) setFocus(n); }
-      else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (focusEl) removeBlock(focusEl, true); }
-      else if (e.key === 'Enter') { e.preventDefault(); if (focusEl && !isReadOnly(focusEl)) caretInto(focusEl); }
-    };
+    const onScroll = () => refreshBubble();
 
     doc.addEventListener('selectionchange', onSelChange);
     doc.addEventListener('mouseup', onSelChange);
     doc.addEventListener('keyup', onSelChange);
     doc.addEventListener('input', onInput);
-    doc.addEventListener('mousedown', onMouseDown, true);
-    doc.addEventListener('keydown', onKeyDown, true);
     doc.addEventListener('scroll', onScroll, true);
 
     return {
@@ -253,13 +185,11 @@
         doc.removeEventListener('mouseup', onSelChange);
         doc.removeEventListener('keyup', onSelChange);
         doc.removeEventListener('input', onInput);
-        doc.removeEventListener('mousedown', onMouseDown, true);
-        doc.removeEventListener('keydown', onKeyDown, true);
         doc.removeEventListener('scroll', onScroll, true);
-        bar.remove(); focusBox.remove();
+        bar.remove();
         try { body.removeAttribute('contenteditable'); body.removeAttribute(CE_MARK); } catch (e) {}
       },
-      reposition() { if (barShown) refreshBubble(); if (focusEl) placeBox(focusBox, focusEl); },
+      reposition() { if (barShown) refreshBubble(); },
       serialize() { return serialize(doc); },
     };
   }
