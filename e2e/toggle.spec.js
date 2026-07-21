@@ -40,6 +40,19 @@ const conformOf = (html) => page.evaluate((h) => {
 
 const SIMPLE = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><p id="p1">正文一段</p></body></html>';
 
+// 在 #p1 后 slash 插入一个 toggle，返回后光标在 summary（编辑态）。
+async function insertToggle() {
+  await frame.locator('#p1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('/');
+  await expect(frame.locator('.ws-slashmenu')).toBeVisible();
+  await frame.locator('.ws-slashmenu-item', { hasText: '折叠' }).click();
+  await page.waitForTimeout(200);
+}
+const detailsOpen = () => frame.locator('body').evaluate(() => { const d = document.querySelector('details'); return d ? d.hasAttribute('open') : null; });
+const summaryText = () => frame.locator('body').evaluate(() => { const s = document.querySelector('details > summary'); return s ? s.textContent : null; });
+
 test.afterEach(async () => {
   if (app) { await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {}); await app.close().catch(() => {}); }
   app = null; page = null; frame = null;
@@ -98,4 +111,61 @@ test('U4: slash 插入 toggle 种子 + 光标落 summary + 入盘 chevron CSS', 
   expect(html).toMatch(/<details open[^>]*><summary><\/summary><p><\/p><\/details>/); // 种子形态入盘（open 可能序列化成 open=""）
   expect(html).not.toMatch(/ws-grip|ws-fmtbar|ws-slashmenu|data-ws2-ce|contenteditable/); // 覆盖层/编辑态不泄漏
   expect(await conformOf(html), 'toggle 文档必须合规（走块编辑器，非基础编辑器）').toBe(true);
+});
+
+// U5: summary 编辑（原生激活拦截：Space 不折叠）+ Enter→首正文块 + 合规往返。
+test('U5: summary 可编辑 + Space 不折叠 + Enter 进正文', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await insertToggle(); // 光标在 summary
+  await page.keyboard.type('标题');
+  await page.keyboard.press('Space');
+  await page.keyboard.type('A');
+  await page.waitForTimeout(120);
+  expect(await detailsOpen(), 'Space 不该折叠 toggle').toBe(true);
+  expect(await summaryText()).toBe('标题 A'); // 空格插入、无折叠
+
+  await page.keyboard.press('Enter'); // → 首正文块
+  await page.waitForTimeout(120);
+  const editing = await frame.locator('body').evaluate(() => {
+    const e = document.querySelector('[data-ws2-editing]');
+    return e ? { tag: e.tagName, inDetails: !!e.closest('details') } : null;
+  });
+  expect(editing, 'Enter 后应在编辑正文块').toEqual({ tag: 'P', inDetails: true });
+  await page.keyboard.type('正文');
+  await page.waitForTimeout(150);
+
+  const html = await serialize();
+  expect(html).toMatch(/<details open[^>]*><summary>标题 A<\/summary><p>正文<\/p><\/details>/);
+  expect(await conformOf(html)).toBe(true);
+  expect(html).not.toMatch(/data-ws2-ce|contenteditable/); // 编辑态不泄漏
+});
+
+// U5: chevron 折叠 → 真落盘持久化（'toggle' 事件 → markDirty → 自动保存）。这是持久化承重断言。
+test('U5: chevron 折叠 → open 落盘持久化 + 展开恢复', async () => {
+  await launch();
+  const docPath = await openDoc(SIMPLE);
+  await insertToggle();
+  await page.keyboard.type('标题');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('正文');
+  await page.mouse.click(1200, 800); // 退出编辑
+  await page.waitForTimeout(200);
+  expect(await detailsOpen()).toBe(true);
+
+  // 点 chevron 区（summary 左缘 5px 内）→ 折叠
+  await frame.locator('details > summary').click({ position: { x: 5, y: 8 } });
+  await page.waitForTimeout(1500); // 等自动保存（~1.2s 去抖）
+  expect(await detailsOpen(), 'chevron 应折叠').toBe(false);
+  let disk = await fs.readFile(docPath, 'utf8');
+  expect(disk, '折叠态应落盘：details 无 open').toMatch(/<details><summary>标题<\/summary>/);
+  expect(disk).not.toMatch(/<details open/);
+  expect(await conformOf(disk)).toBe(true);
+
+  // 再点 → 展开，落盘恢复 open
+  await frame.locator('details > summary').click({ position: { x: 5, y: 8 } });
+  await page.waitForTimeout(1500);
+  expect(await detailsOpen()).toBe(true);
+  disk = await fs.readFile(docPath, 'utf8');
+  expect(disk, '展开态应落盘：details open').toMatch(/<details open[^>]*><summary>标题<\/summary>/);
 });

@@ -1187,6 +1187,8 @@
       positionFmtbar();
     }
     function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; grip.style.display = 'none'; } }
+    // 折叠持久化（KD4/R8）：原生 toggle 事件 → markDirty 触发自动保存；绝不 checkpoint（折叠不是撤销步 KD5）。
+    function onToggle(e) { if (e.target && e.target.tagName === 'DETAILS') markDirty(); }
     function onClick(e) {
       // 点到覆盖层（手柄/菜单/气泡）自身：交给它们各自的 handler，这里忽略
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
@@ -1197,6 +1199,17 @@
       // 点图片说明（figcaption）→ 进说明编辑；不走块选中（否则 blockOf 上卷到 figure、选中整张图）。
       const capT = e.target && e.target.closest && e.target.closest('figcaption');
       if (capT && classify(capT.parentElement) === 'image') { if (captionEl !== capT) enterCaptionEdit(capT, false); return; }
+      // toggle 标题（summary）：拦原生折叠；点 chevron 区（内容左缘 20px 内）折叠，点文字进 summary 编辑放光标。
+      // 不走 blockOf（会上卷到 details 灰选中整块）。folding 由我们控（原生 toggle 事件仍会 → markDirty）。
+      const sumT = e.target && e.target.closest && e.target.closest('summary');
+      if (sumT && sumT.parentElement && sumT.parentElement.tagName === 'DETAILS') {
+        e.preventDefault();
+        const det = sumT.parentElement;
+        const sr = sumT.getBoundingClientRect();
+        if ((e.clientX - sr.left) < 20) { det.open = !det.open; return; } // chevron 区 → 折叠
+        if (editingEl !== sumT) enterEdit(sumT, { mode: 'point', x: e.clientX, y: e.clientY });
+        return;
+      }
       const el = blockOf(e.target);
       if (!el) {
         // 文末续写：点最后一块下方、且在文档列水平范围内的空白 → 进末块(若空可编辑)或末尾新建正文块
@@ -1240,6 +1253,20 @@
         // 光标移动键（←→/Home/End/PageUp-Down）或其它键 → 关菜单、交原生：caret 移走后再 applySlash 会从错位删字
         slash = null; slashMenu.style.display = 'none';
         return;
+      }
+      // toggle 标题（summary）编辑：拦原生折叠激活 + 定义边界。summary 放不了块——不触发 slash、不走 generic 块键盘。
+      if (editingEl && editingEl.tagName === 'SUMMARY') {
+        if (e.isComposing || e.keyCode === 229) return; // IME 组字交原生
+        if (e.key === 'Enter') { // → 首正文块（U7 再扩：空末块退出等）
+          e.preventDefault(); e.stopPropagation();
+          const det = editingEl.parentElement;
+          const bodyEl = det && [...det.children].find((c) => c.nodeType === 1 && c.tagName !== 'SUMMARY');
+          if (bodyEl) enterEdit(bodyEl, { mode: 'start' });
+          return;
+        }
+        if (e.key === ' ') { e.preventDefault(); doc.execCommand('insertText', false, ' '); return; } // 原生 summary 空格会折叠——拦默认、手动插空格
+        if (e.key === 'Backspace' && isCaretAtStart(doc, editingEl)) { e.preventDefault(); return; } // 起始退格：先拦住不让 generic 合并 details（U7 扩展回退/解包）
+        return; // 其它键（含字符/方向/'/'）交原生编辑 summary
       }
       // 触发斜杠
       if (e.key === '/' && editingEl && !e.metaKey && !e.ctrlKey) {
@@ -1669,6 +1696,7 @@
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
     doc.addEventListener('paste', onPaste);
+    doc.addEventListener('toggle', onToggle, true); // 折叠事件不冒泡→捕获相 + 委托 doc（撑过 innerHTML 重写/嵌套/后加 toggle）
     doc.documentElement.addEventListener('mouseleave', onDocLeave);
 
     function detach() {
@@ -1687,6 +1715,7 @@
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
       doc.removeEventListener('paste', onPaste);
+      doc.removeEventListener('toggle', onToggle, true);
       exitEdit();
       [grip, fmtbar, blockMenu, slashMenu].forEach((n) => n.remove());
     }
