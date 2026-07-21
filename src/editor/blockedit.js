@@ -866,6 +866,8 @@
     function splitBlock() {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || !editingEl) return false;
+      if (editingEl.tagName === 'SUMMARY') return false; // U13 防御纵深：绝不劈 summary（否则产第二个 summary → 非合规）
+      if (editingEl.tagName === 'DETAILS') return false; // details 容器本身不可编辑，别劈
       if (!sel.isCollapsed) doc.execCommand('delete'); // 选中文字后回车：先删选区，再在塌陷点劈
       const r = sel.getRangeAt(0);
       const el = editingEl;
@@ -1695,7 +1697,8 @@
       }
       e.preventDefault();
       const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
-      if (!editingEl || lines.length <= 1) { doc.execCommand('insertText', false, lines.join(' ')); return; } // 单行/非编辑态：普通纯文本插入
+      // 单行 / 非编辑态 / summary（放不了块，多行会劈出第二个 summary → 非合规）→ 合成单行插入。U13。
+      if (!editingEl || lines.length <= 1 || editingEl.tagName === 'SUMMARY') { doc.execCommand('insertText', false, lines.join(' ')); return; }
       doc.execCommand('insertText', false, lines[0]);
       for (let i = 1; i < lines.length; i++) {
         if (splitBlock()) { if (lines[i]) doc.execCommand('insertText', false, lines[i]); } // splitBlock 劈出同类型新块（不嵌套）+ 光标移到新块首

@@ -307,6 +307,29 @@ test('U10: 撤销还原正文但不重折叠（OPEN 承重变体）', async () =
   expect(await detailsOpen(), 'Cmd+Z 后 toggle 必须仍展开（fold 不进撤销，_applyFold 保住）').toBe(true);
 });
 
+// U13（R14）：多行粘贴——体内劈成多块（scoped splitBlock）；summary 内合成单行（绝不劈出第二个 summary）。
+test('U13: 多行粘贴——体内多块 / summary 单行', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await insertToggle();
+  // summary 内多行粘贴 → 合成单行
+  await app.evaluate(({ clipboard }) => clipboard.writeText('标一\n标二'));
+  await page.keyboard.press('Meta+v');
+  await page.waitForTimeout(200);
+  const sumShape = await frame.locator('body').evaluate(() => { const d = document.querySelector('details'); return { text: d.querySelector(':scope > summary').textContent, summaryCount: d.querySelectorAll(':scope > summary').length }; });
+  expect(sumShape.text, 'summary 多行粘贴应合成单行').toBe('标一 标二');
+  expect(sumShape.summaryCount, '绝不产生第二个 summary').toBe(1);
+
+  // 进正文块，多行粘贴 → 劈成多个体内块
+  await page.keyboard.press('Enter'); // → 首正文块
+  await app.evaluate(({ clipboard }) => clipboard.writeText('体一\n体二\n体三'));
+  await page.keyboard.press('Meta+v');
+  await page.waitForTimeout(250);
+  const bodyPs = await frame.locator('body').evaluate(() => { const d = document.querySelector('details'); return [...d.children].filter((c) => c.tagName === 'P').map((p) => p.textContent); });
+  expect(bodyPs, '多行粘贴劈成多个体内块').toEqual(['体一', '体二', '体三']);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 // 合成拖拽（原生拖拽在 Playwright+iframe 里卡死、自动化不了，仓库既有做法）：hover 源→grip dragstart 设 dragFrom→drop 落目标。
 async function synthDrag(hoverSel, tgtSel) {
   await frame.locator(hoverSel).hover();
