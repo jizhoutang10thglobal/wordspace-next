@@ -61,7 +61,11 @@
   // body 的「干净 innerHTML」：克隆后按同一白名单剥掉编辑器标记/contenteditable。供 undo 快照用——
   // 这样编辑器选中/编辑态属性 toggle 不会被当成内容变更（且与存盘用同一套剥除规则，不误删用户 data-ws2-*）。
   function cleanedBodyHtml(body) {
-    return cleanRoot(body.cloneNode(true)).innerHTML;
+    const clone = cleanRoot(body.cloneNode(true));
+    // U10（KD5）：撤销快照/判脏基准里剥掉 <details open> —— 折叠态不进撤销历史（内容撤销不该重折叠/展开
+    // 用户手动折叠的 toggle）。这只影响撤销层；serializeDocument（存盘）走 cleanRoot 不剥、open 照常落盘（R7）。
+    clone.querySelectorAll('details[open]').forEach((d) => d.removeAttribute('open'));
+    return clone.innerHTML;
   }
 
   const api = { serializeDocument, cleanedBodyHtml, OVERLAY_VAL };
