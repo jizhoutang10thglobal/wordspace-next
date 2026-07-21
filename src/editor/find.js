@@ -137,6 +137,13 @@
     var r = matches[active];
     if (!r) return;
     var el = r.startContainer && r.startContainer.parentElement;
+    // U12（R11）：命中落在折叠的 toggle 里 → 先展开所有折叠的 <details> 祖先，否则高亮落在 display:none 的隐藏节点、
+    // 滚动到 0 高看不见（Chromium 原生 find 同款自动展开）。设 open 触发 toggle 事件→markDirty（编辑器已监听）。
+    var anc = el;
+    while (anc && anc !== (cd() && cd().body)) {
+      if (anc.tagName === 'DETAILS' && !anc.open) anc.open = true;
+      anc = anc.parentElement;
+    }
     if (el && el.scrollIntoView) {
       try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
       catch (e) { try { el.scrollIntoView(); } catch (e2) {} }

@@ -31,6 +31,7 @@ async function openDoc(html) {
   return docPath;
 }
 const serialize = () => page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
+const menu = (cmd) => app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0].webContents.send('menu', c), cmd);
 const editingTag = () => frame.locator('body').evaluate(() => { const e = document.querySelector('[data-ws2-editing]'); return e ? e.tagName : null; });
 // 校验器判磁盘字节是否合规（reparse，不信 meta 自称）
 const conformOf = (html) => page.evaluate((h) => {
@@ -304,6 +305,26 @@ test('U10: 撤销还原正文但不重折叠（OPEN 承重变体）', async () =
   const bodyText = await frame.locator('body').evaluate(() => { const p = document.querySelector('details > p'); return p ? p.textContent : null; });
   expect(bodyText, 'Cmd+Z 应还原正文到 OLD').toBe('OLD');
   expect(await detailsOpen(), 'Cmd+Z 后 toggle 必须仍展开（fold 不进撤销，_applyFold 保住）').toBe(true);
+});
+
+// U12（R11）：app 内查找命中折叠 toggle 里的文字 → 自动展开其 details 祖先，匹配可见。
+test('U12: 查找命中折叠 toggle 内文字 → 自动展开', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="p1">前段</p><details id="dt"><summary>标题</summary><p id="bd">藏着SECRETZZZ的正文</p></details></body></html>');
+  await page.waitForTimeout(200);
+  expect(await detailsOpen(), '初始应折叠').toBe(false);
+  const bodyHiddenBefore = await frame.locator('body').evaluate(() => document.getElementById('bd').offsetHeight);
+  expect(bodyHiddenBefore, '折叠时正文应隐藏（offsetHeight 0）').toBe(0);
+
+  await menu('find-in-doc');
+  await expect(page.locator('.ws-docfind')).toBeVisible();
+  await page.locator('.ws-docfind-input').fill('SECRETZZZ');
+  await page.waitForTimeout(400); // 搜索 + 定位当前匹配 + 自动展开
+
+  expect(await detailsOpen(), '查找命中折叠体 → 应自动展开 details').toBe(true);
+  const bodyShownAfter = await frame.locator('body').evaluate(() => document.getElementById('bd').offsetHeight);
+  expect(bodyShownAfter, '展开后正文可见（offsetHeight > 0）').toBeGreaterThan(0);
 });
 
 // U9（R2）：段落 → toggle（格式条「转为」→折叠），内容成 summary、空正文体。
