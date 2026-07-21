@@ -14,6 +14,14 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-22 — v0.11.0 已发布，发版基线挪到此
+
+**是什么**：v0.11.0 已签名公证发布（tag 打在 `7225cc2` = #309 合并点，Release 页 + mac arm64/x64 + win x64 产物 + 自动更新清单齐全）。这版给用户的三大新功能：**折叠块**（编辑器新增 Notion 式可折叠块 #299）、**浏览器下载** #278、**沉浸窗框融合** #303/#307/#276；外加一批改进修复（含 Wendi 报的右键菜单被窗口底边裁 #304、大根「Simplified」徽标撤路径 #309、基础编辑器删除块改走原生选中+Delete #305）。CHANGELOG.md / CHANGELOG.en.md 双语正本已随 #310 合进 main。
+
+**怎么 apply**：① **v0.11.0 之后合进 main 的改动都算下一版的未发版内容**——问「main 上没发版的改动」或写下一版 changelog 时，从 tag `v0.11.0` 往后数（`git log v0.11.0..origin/main`），别再从 v0.10.6 数。② 发版方式没变（tag `vX.Y.Z` 触发 Release workflow，本仓既有模式=tag 打在功能提交上、changelog 可独立随后合，见 docs/releasing.md）。③ **changelog 双语同写是硬门**：每版必须同步更新 CHANGELOG.md + CHANGELOG.en.md，官网构建校验两份「最新版本号一致」，漏英文构建直接挂（`website/app/lib/changelog.ts` loadChangelogEn）。版本标题格式严格 `## vX.Y.Z — YYYY-MM-DD`、分组 `### 新增/改进/修复` ⟷ `### Added/Improved/Fixed`，写完最好用该正则实跑校验一遍再合。
+
+**来源**：tag `v0.11.0` / 发版 Release workflow / changelog PR #310 / docs/releasing.md
+
 ## 2026-07-21 — CI e2e 门改了：required check 现在是 `{test, e2e-all}` 不是 `e2e`，且分片并行
 
 **是什么**：e2e 策略优化（#284 合）动了 CI 和 branch protection 两处，影响所有 session 的 PR 合并：
