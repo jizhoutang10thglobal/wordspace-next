@@ -1277,9 +1277,16 @@
     return s.split('Error: ').pop().slice(0, 80);
   }
 
+  let ctxDismiss = null; // 滚动/缩放关闭菜单的监听器引用（关菜单时拆掉）
   function closeContextMenu() {
     const m = document.getElementById('sb-ctx');
     if (m) m.remove();
+    if (ctxDismiss) {
+      const sbBody = document.getElementById('sb-body');
+      if (sbBody) sbBody.removeEventListener('scroll', ctxDismiss);
+      window.removeEventListener('resize', ctxDismiss);
+      ctxDismiss = null;
+    }
   }
   function showContextMenu(x, y, items) {
     closeContextMenu();
@@ -1297,8 +1304,30 @@
       menu.appendChild(b);
     }
     document.body.appendChild(menu);
-    menu.style.left = x + 'px'; // 单 CSSOM 属性，CSP 安全
-    menu.style.top = y + 'px';
+    // 视口感知定位：默认左上角贴点击点；右侧放不下翻到点击点左边、下方放不下翻到上边（菜单底贴点击点），
+    // 再夹进视口留 6px 边距。用 offsetWidth/Height（布局尺寸，不受 pop-in transform 干扰；
+    // getBoundingClientRect 会把入场动画的 scale/translate 算进去，不能拿来定位）。全是单 CSSOM 属性，CSP 安全。
+    const M = 6;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    let left = x;
+    let top = y;
+    if (left + mw > vw - M) left = x - mw; // 右溢出 → 翻左
+    if (left < M) left = M;
+    if (left + mw > vw - M) left = Math.max(M, vw - M - mw); // 极窄视口兜底
+    if (top + mh > vh - M) top = y - mh; // 下溢出 → 翻上，菜单底边落在点击点
+    if (top < M) top = M;
+    if (top + mh > vh - M) top = Math.max(M, vh - M - mh); // 极矮视口兜底
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    // 菜单是 fixed，不会跟着 #sb-body 的内容滚动——开着菜单滚侧栏会让它「脱离」右键的那一行（Wendi 反馈）。
+    // 标准做法：滚动/窗口缩放即关菜单，而不是让它飘在原地。
+    ctxDismiss = () => closeContextMenu();
+    const sbBody = document.getElementById('sb-body');
+    if (sbBody) sbBody.addEventListener('scroll', ctxDismiss, { passive: true });
+    window.addEventListener('resize', ctxDismiss);
     setTimeout(() => {
       const off = (e) => {
         if (!e.target.closest('#sb-ctx')) closeContextMenu();
@@ -2651,7 +2680,7 @@
       document.body.classList.add('is-sb-peek');
       // 灯挪进浮卡（卡 top/left 10px + 卡内 14 = 24，与展开态灯相对 chrome 面同位）——灯属于浮卡图层，
       // 不再钉死窗角压在卡边上（spec 旧欠账「peek 卡内偏上 4px」，Wendi 2026-07-21 点名）。收回/展开不传 pos = 归位。
-      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true, { x: 24, y: 24 });
+      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true, { x: 24, y: 22 }); // 展开位(14,12)+浮卡内缩 10
     };
     if (window.__webPeekSnap) window.__webPeekSnap(true, finish);
     else finish();
@@ -2685,6 +2714,9 @@
     closePeek(true); // 状态翻转前清 peek 残留（peek 里点 toggle 展开走这里）
     sidebarEl.classList.toggle('is-collapsed', v);
     document.body.classList.toggle('is-sb-collapsed', v);
+    // toggle 钮两形态(Colin 2026-07-21「收起后不知道哪个钮是恢复」):图标切换走 CSS
+    // (body.is-sb-collapsed 显 open 形态),tooltip 这里同步——本函数是 is-sb-collapsed 唯一写点,全路径覆盖。
+    if (toggleBtn && window.wsT) toggleBtn.title = window.wsT(v ? 'sidebar.expandSidebarTitle' : 'sidebar.toggleSidebarTitle');
     if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(!v);
     // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
     if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());

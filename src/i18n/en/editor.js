@@ -12,6 +12,7 @@ module.exports = {
   blockTodoList: 'To-do list',
   blockQuote: 'Quote',
   blockCallout: 'Callout',
+  blockToggle: 'Toggle',
   blockImage: 'Image',
   blockDivider: 'Divider',
   aiGenerate: '✦ AI generate (coming soon)',

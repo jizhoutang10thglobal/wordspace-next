@@ -937,7 +937,7 @@ function registerIpc() {
     const w = BrowserWindow.fromWebContents(e.sender);
     if (w && !w.isDestroyed()) {
       try {
-        w.setWindowButtonPosition(pos && pos.x >= 0 && pos.y >= 0 ? { x: pos.x, y: pos.y } : { x: 14, y: 14 });
+        w.setWindowButtonPosition(pos && pos.x >= 0 && pos.y >= 0 ? { x: pos.x, y: pos.y } : { x: 14, y: 12 }); // 归位=构造值（y=12 对齐账见 main.js）
         w.setWindowButtonVisibility(!!visible);
       } catch { /* 非 hiddenInset 窗框会抛 */ }
     }
