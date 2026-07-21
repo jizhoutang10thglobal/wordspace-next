@@ -38,11 +38,11 @@
 
 /* —— popover 本体 —— */
 /* veil：物理盖住整个视口（含网页 iframe——iframe 会吞 click，document 级 click-outside 收不到）。 */
+/* Colin 2026-07-20：popover 锁进侧栏宽、不覆盖内容区（宽度由 JS 按 .arc-sidebar rect 内联设，与真 app 对齐）。 */
 .dlp-veil { position: fixed; inset: 0; z-index: 190; }
 .dlp {
   position: fixed;
   z-index: 191;
-  width: 340px;
   max-height: min(480px, calc(100vh - 96px));
   display: flex;
   flex-direction: column;

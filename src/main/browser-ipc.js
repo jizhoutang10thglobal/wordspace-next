@@ -135,6 +135,7 @@ function registerBrowserIpc() {
   ipcMain.on('dl-clear', () => webTabs.dlClear());
   ipcMain.on('dl-remove', (_e, id) => webTabs.dlRemove(String(id)));
   ipcMain.handle('dl-reveal', (_e, id) => webTabs.dlReveal(String(id)));
+  ipcMain.handle('dl-open', (_e, id) => webTabs.dlOpen(String(id))); // 用户手动打开（≠自动打开，见 web-tabs dlOpen 注释）
 
   // ---- 浏览器设置（真 app 引擎表无 glass,默认 Bing,spec §4.10/§13）----
   ipcMain.handle('browser-settings', () => ({ ...browserStore.getSettings(), engines: engines.ORDER.map((k) => ({ key: k, name: engines.ENGINES[k].name })) }));

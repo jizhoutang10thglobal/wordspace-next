@@ -26,6 +26,7 @@ module.exports = {
   dlCancel: 'Cancel',
   dlRetry: 'Download again',
   dlRemove: 'Remove from list',
+  dlOpen: 'Open',
   dlReveal: 'Show in Finder',
   dlRevealToast: 'Can\'t find "{name}" — it may have been moved or deleted',
   // Omnibox star
