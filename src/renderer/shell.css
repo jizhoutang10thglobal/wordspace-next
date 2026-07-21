@@ -273,10 +273,15 @@ ul { list-style: none; }
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--c-bg-sunken);
-  border-right: 1px solid var(--c-border);
+  /* Arc 图层模型（Wendi 2026-07-21 融合反馈）：侧栏不是独立面板，是窗框 chrome 表面的一部分——
+     底色与窗框同色、无右边线，「侧栏+框」一块表面，内容纸（#main 细边+圆角）独享层级。
+     旧 sunken 底 + border-right 会切出两块表面（Wendi「边框和左侧边栏的融合…还是尴尬」）。 */
+  background: var(--c-bg-chrome);
   user-select: none;
 }
+/* 全屏例外：摘框摘缝后侧栏与内容纸直接相邻，无 1px 分界（融合前由 border-right 提供）——全屏态补回。
+   :not(.is-collapsed) 限定：width:0 的收起态 border 仍画 1px，会在全屏左缘露一条线。 */
+body.is-win-fullscreen .sb.sb-on:not(.is-collapsed) { border-right: 1px solid var(--c-border); }
 /* 侧栏宽度拖拽柄（UX5 / Wendi F1）：贴右边界、col-resize；收起态不显示。 */
 .sb-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 10; }
 .sb-resize:hover { background: var(--c-accent); opacity: 0.35; }
@@ -413,7 +418,7 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
    （top 跟 scrollTop）。实底色遮住下方滚动内容；padding 对齐 .sb-body 横向 padding 让克隆行与真行对齐。 */
 .sb-sticky {
   position: absolute; left: 0; right: 0; top: 0; z-index: 6;
-  padding: 0 8px; background: var(--c-bg-sunken);
+  padding: 0 8px; background: var(--c-bg-chrome); /* 实底遮滚动内容，必须=侧栏底（融合后=chrome） */
   pointer-events: none;
 }
 .sb-sticky:empty { display: none; }
@@ -570,7 +575,8 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
 .sb-tab:hover .sb-tab-pin, .sb-tab:hover .sb-tab-close { opacity: 1; }
 .sb-tab-pin.is-pinned { opacity: 1; color: var(--c-accent); } /* 已钉的常显（在置顶区） */
 .sb-tab-pin:hover, .sb-tab-close:hover { background: var(--c-active); color: var(--c-text); }
-/* 激活态 = 白纸 puck 落在 sunken 槽上（对齐 ui-demo arc-tab.is-active）——纯底色对比，零阴影（保守口径）。
+/* 激活态 = 白纸 puck 落在 chrome 底上（对齐 ui-demo arc-tab.is-active；融合后侧栏底=chrome，
+   对比比旧 sunken 槽弱一档=Arc 同款观感）——纯底色对比，零阴影（保守口径）。
    跟文件树的蓝底 selection（.sb-file.is-active 不动）区分开。 */
 .sb-tab.is-active { background: var(--c-surface); color: var(--c-text); }
 .sb-tab.is-active .sb-ico { color: var(--c-accent); }

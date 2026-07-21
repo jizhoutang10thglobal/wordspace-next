@@ -2658,7 +2658,9 @@
       if (!peekPending || peekOn() || !sidebarEl.classList.contains('is-collapsed')) return;
       peekPending = false;
       document.body.classList.add('is-sb-peek');
-      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true);
+      // 灯挪进浮卡（卡 top/left 10px + 卡内 14 = 24，与展开态灯相对 chrome 面同位）——灯属于浮卡图层，
+      // 不再钉死窗角压在卡边上（spec 旧欠账「peek 卡内偏上 4px」，Wendi 2026-07-21 点名）。收回/展开不传 pos = 归位。
+      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true, { x: 24, y: 24 });
     };
     if (window.__webPeekSnap) window.__webPeekSnap(true, finish);
     else finish();
