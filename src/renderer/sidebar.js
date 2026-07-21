@@ -2631,7 +2631,7 @@
       document.body.classList.add('is-sb-peek');
       // 灯挪进浮卡（卡 top/left 10px + 卡内 14 = 24，与展开态灯相对 chrome 面同位）——灯属于浮卡图层，
       // 不再钉死窗角压在卡边上（spec 旧欠账「peek 卡内偏上 4px」，Wendi 2026-07-21 点名）。收回/展开不传 pos = 归位。
-      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true, { x: 24, y: 24 });
+      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true, { x: 24, y: 22 }); // 展开位(14,12)+浮卡内缩 10
     };
     if (window.__webPeekSnap) window.__webPeekSnap(true, finish);
     else finish();
@@ -2665,6 +2665,9 @@
     closePeek(true); // 状态翻转前清 peek 残留（peek 里点 toggle 展开走这里）
     sidebarEl.classList.toggle('is-collapsed', v);
     document.body.classList.toggle('is-sb-collapsed', v);
+    // toggle 钮两形态(Colin 2026-07-21「收起后不知道哪个钮是恢复」):图标切换走 CSS
+    // (body.is-sb-collapsed 显 open 形态),tooltip 这里同步——本函数是 is-sb-collapsed 唯一写点,全路径覆盖。
+    if (toggleBtn && window.wsT) toggleBtn.title = window.wsT(v ? 'sidebar.expandSidebarTitle' : 'sidebar.toggleSidebarTitle');
     if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(!v);
     // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
     if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());

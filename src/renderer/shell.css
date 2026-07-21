@@ -313,6 +313,11 @@ body.is-win-fullscreen .sb.sb-on:not(.is-collapsed) { border-right: 1px solid va
 body.is-mac .sb-head { padding: 0 6px 0 70px; gap: 1px; }
 body.is-mac .sb-head .sb-icobtn { width: 22px; }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+/* toggle 两形态(Colin 2026-07-21):展开态显「收起」(左箭头),收起/peek 态显「展开」(右箭头)——
+   peek 浮卡里 body.is-sb-collapsed 仍挂着,天然显展开形态,用户在浮卡里能认出恢复钮。 */
+#sb-toggle .sb-tgl-open { display: none; }
+body.is-sb-collapsed #sb-toggle .sb-tgl-close { display: none; }
+body.is-sb-collapsed #sb-toggle .sb-tgl-open { display: block; }
 /* 图标钮 = 墨圆 + hover 墨条滑入（对齐 ui-demo .arc-ico） */
 .sb-icobtn {
   flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
