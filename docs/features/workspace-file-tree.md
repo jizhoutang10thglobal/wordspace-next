@@ -78,9 +78,37 @@ no-op，不与第二段的 wsReadTree 打架。
 | Ctrl+Tab 循环切换 | 否 | 否 | 同上。`reveal=false` |
 | 外部打开 / Finder 双击 / 命令面板 F6 定位 / 存盘后定位 / drag-rebase 重激活 / 冷启动恢复 | 是 | 是 | 「主动去找某文件」或程序化重激活，展开+滚动都有助定位。`reveal=true`（默认） |
 
-高亮（`highlightActive`）恒执行。**沿革**：原「点标签自动展开+滚动定位」是 Wendi 2026-07-03 的 F6-①
-（原 e2e `UX4`）；Wendi 2026-07-14 报滚动刺眼，Colin 拍板拆成「展开保留、滚动去掉」（e2e 改写为 `UX4v3`，
-scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
+高亮见下节（`highlightActive` 跟随激活标签，与 reveal/滚动是两回事）。**沿革**：原「点标签自动展开+滚动
+定位」是 Wendi 2026-07-03 的 F6-①（原 e2e `UX4`）；Wendi 2026-07-14 报滚动刺眼，Colin 拍板拆成「展开保留、
+滚动去掉」（e2e 改写为 `UX4v3`，scrollIntoView 探针做强门）。改动别把滚动加回点标签路径。
+
+## 树高亮跟随激活标签（always linked，2026-07-21）
+
+**契约（Wendi/Jizhou 2026-07-20 拍板）**：右边渲染区显示什么，左边文件树就定位什么——高亮是**激活标签**的
+投影，不是「上次打开的文档」的投影。按激活标签类型：
+
+| 激活标签 | 树高亮 |
+|---|---|
+| 文档（html/md，根内 rel 或外部已收编） | 亮其树行 |
+| 查看器文件（PDF/图片等非 html/md，根内或已收编） | 亮其树行 |
+| 网页标签 | 无高亮（网页不在文件树里） |
+| 临时文档（未落盘） | 无高亮 |
+| 起始页（无任何激活标签） | 无高亮 |
+| 外部文件 ↗（abs 身份，尚未收编进任何根的树） | 无高亮（树里无行）；一旦其文件夹被添加为根、收编进树 → 亮该行 |
+
+**已知例外**：激活文件所在的根**失联**、或**lazy 大根的未加载层**里 → 树里没有那行 → 无高亮（「树里有行才
+亮得上」，与现状一致，非 bug）。
+
+**判定源**：`sidebar.js` 的 `highlightActive` 从 `tabState.activeRel` 对应的 entry 推导（web/temp → 无；
+其余用 `findEntryNode` 解析树节点，查不到 → 无高亮），**不再读 shell 的 `__shellDocPath`**。病根（修前）：
+docPath 在网页态仍指被盖住的旧文档（残留高亮）、在查看器态是 null（树一重渲染 `afterRender` 就把高亮冲掉）。
+`afterRender`（树重渲染）与 `renderZones`（标签激活/增删/收编的唯一会合点）两处都调 `highlightActive`，任一
+变化都保持同步。行定位用 entry 的 `data-root`+`data-rel`（外部文件回落 `data-abs`）选择器，**禁止在 renderer
+侧用根路径拼 abs**（Windows 反斜杠会对不上、win 构建静默哑）。
+
+**ui-demo 是参考基准、零改动**：其 `ArcSidebar.tsx` FileRow 早就从 activeTab 纯推导（网页标签无 `fileName`
+→ 自动无高亮），本次是把真 app 对齐到这套语义，非漂移。门：`e2e/tree-highlight.spec.js`（外部链接/omnibox/
+键盘切换/查看器重渲染/临时/收编窗口，变异自检：判定源改回 docPath 或删 renderZones 刷新即翻红）。
 
 ## 外部标签收编（2026-07-17，Wendi bug）
 
@@ -165,7 +193,8 @@ open/pinned 取并集、激活跟随、abs 旧条目销毁（引擎 = `sidebar.j
 | 维度 | ui-demo | 真 app |
 |---|---|---|
 | 忽略规则/噪音判定/受影响目录归并 | （无——mock 数据） | `src/lib/file-tree.js`（`IGNORE`/`BUNDLE_EXTS`/`isNoisePath`/`affectedDirsOf`） |
-| 标签点击 reveal 三态 | 同上 | `src/renderer/sidebar.js`（`openTabRow(entry, reveal)` / `tabRow` onclick / `expandToFile(rootId,rel,scroll)` / `suppressScrollOnce` / `highlightActive`）+ `e2e/tabs.spec.js` `UX4v3` |
+| 标签点击 reveal 三态 | 同上 | `src/renderer/sidebar.js`（`openTabRow(entry, reveal)` / `tabRow` onclick / `expandToFile(rootId,rel,scroll)` / `suppressScrollOnce`）+ `e2e/tabs.spec.js` `UX4v3` |
+| 树高亮跟随激活标签（always linked） | `ui-demo/src/components/ArcSidebar.tsx`（FileRow 从 activeTab 推导，参考基准） | `src/renderer/sidebar.js`（`highlightActive` / `activeHighlightNode` / `findEntryNode`，`afterRender`+`renderZones` 两处调用）+ `e2e/tree-highlight.spec.js` |
 | 扫描（全量 + 子树级） | 同上 | `src/main/workspace.js`（`walk`/`readTree`/`readSubtrees`/`fillInos`） |
 | watcher（噪音丢弃/pending 收集/去抖/flush） | 同上 | `src/main/workspace-watcher.js` |
 | renderer（单飞/子树 patch/聚焦收口） | 同上 | `src/renderer/sidebar.js`（`onTreeChanged`/`patchSubtrees`/focus 接线） |
