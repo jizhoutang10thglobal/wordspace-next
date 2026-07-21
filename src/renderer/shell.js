@@ -184,6 +184,7 @@ const markDirty = () => { setDirty(true); scheduleAutoSave(); };
 // before：flush 待定编辑成独立 undo 快照（免撤销修复时连带撤销之前的打字）；after：标脏 + checkpoint 修复后状态。
 window.__wsBeforeDocEdit = () => { if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
 window.__wsAfterDocEdit = () => { markDirty(); if (undoMgr && undoMgr.checkpoint) undoMgr.checkpoint(); };
+window.__wsBuildPrintHtml = () => buildWordspacePrintHtml(); // e2e seam：验导出前处理（U11 toggle force-expand 等）；生产不调
 // U5 改名/移动：把 moves 应用到「打开中文档」的内存 DOM（主进程重写时跳过了它，避免和自动保存打架——
 // 内存改 + 走正常保存管线，脏文档也不会被覆盖）。moves=[[oldRel,newRel],…]。返回改的链接数。
 // 主进程重写引用时跳过打开中的文档（怕和自动保存/未存编辑打架），改在这里对它的 DOM 内存改。
@@ -1414,6 +1415,9 @@ function buildWordspacePrintHtml() {
     n.removeAttribute('data-ws-pushed');
     if (!n.getAttribute('style')) n.removeAttribute('style');
   });
+  // U11/R13：导出/打印前把所有 <details> 强制展开（折叠体 display:none 不进 PDF = 静默丢内容）。
+  // 只改这份 detached 克隆 → 实时编辑器 DOM 与磁盘文件不动、无需还原（导出渲染窗 javascript:false，force-expand 须烤进 HTML）。
+  root.querySelectorAll('details').forEach((d) => d.setAttribute('open', ''));
   const head = root.querySelector('head') || root;
   const style = cd.createElement('style'); style.textContent = WS2BlockEdit.EDITOR_CSS; head.appendChild(style);
   // 分页文档：打印辅助（body 版式还原 + break-inside 断行口径 + pre 折行）烤进打印 HTML、不入盘。

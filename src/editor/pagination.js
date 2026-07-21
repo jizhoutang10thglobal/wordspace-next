@@ -55,9 +55,13 @@
     const base = host.getBoundingClientRect().top;
     const rel = (v) => (v - base) / zoom;
     const atoms = [];
-    host.querySelectorAll('li, p, blockquote, figure, hr, h1, h2, h3, h4').forEach((e) => {
+    host.querySelectorAll('li, p, blockquote, figure, hr, h1, h2, h3, h4, details').forEach((e) => {
       if (e.closest('table') || e.closest('pre')) return;
       if (e.hasAttribute('data-ws2-ui')) return;
+      // U11：展开的 toggle 体内块本就被深查收进来（体内块边界=切点，长 toggle 在块边界分页）；把 details 自身也纳入
+      // → 嵌套 toggle 成整块切点（summary+首块放不下时整体移下页，不孤立 summary）。折叠 toggle 的隐藏子孙不当切点
+      //（closest 含自身，故查 parentElement → 折叠 toggle 自身仍以 summary 高供整块切点）。
+      if (e.parentElement && e.parentElement.closest('details:not([open])')) return;
       atoms.push({ top: rel(e.getBoundingClientRect().top), kind: 'el', el: e });
     });
     host.querySelectorAll('tr').forEach((e) => {

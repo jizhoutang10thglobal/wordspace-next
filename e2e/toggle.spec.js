@@ -306,6 +306,29 @@ test('U10: 撤销还原正文但不重折叠（OPEN 承重变体）', async () =
   expect(await detailsOpen(), 'Cmd+Z 后 toggle 必须仍展开（fold 不进撤销，_applyFold 保住）').toBe(true);
 });
 
+// U11（AE4/R13）：导出前把折叠的 toggle 强制展开——折叠内容绝不从 PDF 丢失。承重断言=打印 HTML 里
+// 每个 <details> 都带 open（force-expand 决定渲染时正文可见=进 PDF）。
+test('U11: 导出 print HTML 强制展开所有 toggle（折叠内容不丢）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="p1">前段</p><details id="dt"><summary>折叠标题</summary><p>折叠正文SECRET</p></details></body></html>');
+  await page.waitForTimeout(200);
+  // 实时 DOM：toggle 折叠（无 open）
+  expect(await detailsOpen()).toBe(false);
+  const printHtml = await page.evaluate(() => window.__wsBuildPrintHtml());
+  // 承重：打印 HTML 里每个 details 都带 open（force-expand），折叠正文内容在
+  const detailsInfo = await page.evaluate((h) => {
+    const d = new DOMParser().parseFromString(h, 'text/html');
+    const dets = [...d.querySelectorAll('details')];
+    return { count: dets.length, allOpen: dets.every((x) => x.hasAttribute('open')), hasBody: /折叠正文SECRET/.test(h) };
+  }, printHtml);
+  expect(detailsInfo.count).toBeGreaterThan(0);
+  expect(detailsInfo.allOpen, '导出 print HTML 里所有 details 必须 force-expand（open）').toBe(true);
+  expect(detailsInfo.hasBody).toBe(true);
+  // 且实时 DOM 不被导出改动（force-expand 只作用于克隆）
+  expect(await detailsOpen(), '导出不该改实时 DOM 的折叠态').toBe(false);
+});
+
 // U10：折叠不是撤销步——折叠后 Cmd+Z 撤的是内容编辑，不是折叠。
 test('U10: 折叠不消耗撤销步', async () => {
   await launch();
