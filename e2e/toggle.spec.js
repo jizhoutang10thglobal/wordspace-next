@@ -306,6 +306,48 @@ test('U10: 撤销还原正文但不重折叠（OPEN 承重变体）', async () =
   expect(await detailsOpen(), 'Cmd+Z 后 toggle 必须仍展开（fold 不进撤销，_applyFold 保住）').toBe(true);
 });
 
+// U9（R2）：段落 → toggle（格式条「转为」→折叠），内容成 summary、空正文体。
+test('U9: 段落转 toggle（内容成 summary）', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#p1').click();
+  await frame.locator('#p1').selectText();
+  await frame.locator('.ws-fmtbar [title="转为"]').click();
+  await frame.locator('.ws-fmtbar-menu-item', { hasText: '折叠' }).click();
+  await page.waitForTimeout(200);
+  const shape = await frame.locator('body').evaluate(() => {
+    const d = document.querySelector('details');
+    if (!d) return { ok: false };
+    const s = d.querySelector(':scope > summary');
+    return { ok: true, summaryText: s ? s.textContent : null, bodyCount: [...d.children].filter((c) => c.tagName === 'P').length, noP1: !document.getElementById('p1') };
+  });
+  expect(shape.ok).toBe(true);
+  expect(shape.summaryText).toBe('正文一段'); // 段落内容成了 summary
+  expect(shape.bodyCount).toBe(1);            // 空正文体
+  expect(shape.noP1).toBe(true);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U9（R2）：toggle → 文本（块菜单「转为正文」），summary + 全部正文块零丢失、按序。
+test('U9: toggle 转文本（内容零丢失）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<details open id="dt"><summary>标题S</summary><p>正文B1</p><p>正文B2</p></details></body></html>');
+  await frame.locator('#dt > summary').hover();
+  await page.waitForTimeout(150);
+  await frame.locator('.ws-grip').click();
+  await page.waitForTimeout(150);
+  await frame.locator('.ws-blockmenu-item', { hasText: '转为正文' }).click();
+  await page.waitForTimeout(200);
+  const result = await frame.locator('body').evaluate(() => ({
+    hasDetails: !!document.querySelector('details'),
+    texts: [...document.body.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')).map((c) => c.tagName + ':' + c.textContent),
+  }));
+  expect(result.hasDetails, 'toggle 应已转成文本').toBe(false);
+  expect(result.texts, 'summary + 两正文块全在、按序').toEqual(['P:标题S', 'P:正文B1', 'P:正文B2']);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 // U11（AE4/R13）：导出前把折叠的 toggle 强制展开——折叠内容绝不从 PDF 丢失。承重断言=打印 HTML 里
 // 每个 <details> 都带 open（force-expand 决定渲染时正文可见=进 PDF）。
 test('U11: 导出 print HTML 强制展开所有 toggle（折叠内容不丢）', async () => {

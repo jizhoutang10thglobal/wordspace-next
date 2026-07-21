@@ -670,6 +670,20 @@
 
     function turnInto(el, item) {
       if (!el) return el;
+      // toggle→文本（U9/R2）：源是 <details>、目标非 details → summary 内容 → 目标块，正文块提到其后（零内容丢失）。
+      // 必须在下面 containerLines 计算之前——否则 details 的 summary+正文会被误当「多段容器」拍平。
+      if (el.tagName === 'DETAILS' && item.tag !== 'details') {
+        const summary = summaryOf(el);
+        const bodyBlocks = blocksInScope(el);
+        const tgtTag = (item.tag && item.tag[0] === 'h') ? item.tag : (item.tag === 'blockquote' ? 'blockquote' : 'p');
+        const target = doc.createElement(tgtTag);
+        if (summary) { while (summary.firstChild) target.appendChild(summary.firstChild); }
+        el.replaceWith(target);
+        let ref = target;
+        for (const b of bodyBlocks) { ref.after(b); ref = b; } // 正文块按序提到 target 之后
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return target;
+      }
       // 修 P1：源是「多段容器块」(callout/quote 含 <p> 子) 时，先把内部块拍平成「行」——否则块级 <p> 被
       // 原样搬进目标块，产 <ul><li><p>..</p></li> / <p><p>..</p></p> 等非法结构（闭合破坏）。列表源(<ul>/<ol>)
       // 由下面既有的 flattenListToPhrasing 分支处理，这里只管非列表容器；转容器目标(引用/callout)保留 <p> 不拍。
@@ -697,6 +711,19 @@
         const next = fmt.retagElement(el, 'hr');
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return next;
+      }
+      if (item.tag === 'details') {
+        // 文本→toggle（U9/R2）：源块行内内容 → summary；正文=空 <p>。容器源(callout/quote)拍平成行、列表源拍平 phrasing。
+        const det = doc.createElement('details'); det.setAttribute('open', '');
+        const summary = doc.createElement('summary');
+        if (containerLines) { containerLines.forEach((line, i) => { if (i > 0) summary.appendChild(doc.createElement('br')); summary.appendChild(line); }); }
+        else if (el.tagName === 'UL' || el.tagName === 'OL') { summary.appendChild(SM.flattenListToPhrasing(el)); }
+        else { while (el.firstChild) summary.appendChild(el.firstChild); }
+        det.appendChild(summary); det.appendChild(doc.createElement('p'));
+        el.replaceWith(det);
+        ensureToggleStyle();
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return det;
       }
       // 修 A1：源是列表、目标非列表（正文/标题/引用/callout）→ 先把 li 拍平成 phrasing，
       // 否则 retag 后 <li> 孤儿挂在 <blockquote>/<p> 下（非法 HTML）。
@@ -963,14 +990,14 @@
       if (menu) { togglePopMenu(menu); return; }
       menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
       menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
-      [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList']].forEach(([key, labelKey]) => {
+      [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList'], ['toggle', 'blockToggle']].forEach(([key, labelKey]) => {
         const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.textContent = T('editor.' + labelKey);
         it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
         it.addEventListener('click', (e) => {
           e.preventDefault(); e.stopPropagation();
           const item = SLASH_ITEMS.find((x) => x.key === key);
           const target = editingEl || selectedEl;
-          if (target && item) { const nx = turnInto(target, item); menu.style.display = 'none'; if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx); }
+          if (target && item) { const nx = turnInto(target, item); menu.style.display = 'none'; if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx); }
         });
         menu.appendChild(it);
       });
@@ -1006,6 +1033,10 @@
       // 属性搬到 h2 上）。非可编辑块只留插入/复制/删除。
       if (isEditableEl(el)) {
         sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading'); sub(T('editor.turnToQuote'), itemByKey('quote'), 'quote');
+        const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
+      } else if (classify(el) === 'toggle') {
+        // 选中的 toggle → 转文本/标题（U9：toggle→text，summary 内容成段、正文块提到其后，零丢失）
+        sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading');
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       }
       // 图片块（无说明）：加说明 → figure/figcaption + 进说明编辑（doc-images U5）
