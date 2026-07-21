@@ -132,7 +132,7 @@ contextBridge.exposeInMainWorld('ws2', {
 
   // ---- 沉浸窗框（immersive-collapse spec）----
   platform: process.platform, // renderer 判 is-mac（hiddenInset 红绿灯让位只在 darwin 生效）
-  setWindowButtons: (v) => ipcRenderer.send('ws-window-buttons', !!v),
+  setWindowButtons: (v, pos) => ipcRenderer.send('ws-window-buttons', !!v, pos || null), // pos=peek 浮卡挪灯（卡内 24,24）；不传归位 (14,14)
   // 窗框非全屏恒有（Colin 2026-07-18）：真全屏时摘框。renderer 查启动初值 + 听 live 变化，挂/摘 body.is-win-fullscreen。
   getFullscreen: () => ipcRenderer.invoke('get-fullscreen'),
   onFullscreenChanged: (cb) => ipcRenderer.on('fullscreen-changed', (_e, isFs) => cb(isFs)),
@@ -160,6 +160,7 @@ contextBridge.exposeInMainWorld('ws2', {
   dlClear: () => ipcRenderer.send('dl-clear'),
   dlRemove: (id) => ipcRenderer.send('dl-remove', id),
   dlReveal: (id) => ipcRenderer.invoke('dl-reveal', id),
+  dlOpen: (id) => ipcRenderer.invoke('dl-open', id),
   onDownloadsChanged: (cb) => ipcRenderer.on('downloads-changed', (_e, data) => cb(data)),
   // 浏览器设置（搜索引擎；真 app 默认 Bing,拍板）
   browserSettings: () => ipcRenderer.invoke('browser-settings'),

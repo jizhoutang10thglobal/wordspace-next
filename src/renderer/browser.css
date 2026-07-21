@@ -485,14 +485,41 @@ body.ws-web-on #ws-degrade-notice { display: none !important; }
 /* 活动态：环 + 小图标（accent）+ 徽标 */
 .dl-ring-wrap.is-active .dl-glyph { width: 9px; height: 9px; color: var(--c-accent); }
 
+/* ---- 侧栏内紧凑下载 toast（Colin 2026-07-20）---- */
+/* 侧栏开着时的小反馈：锚下载图标下方、锁侧栏宽（宽度 JS 内联）、3s 自动消失、不顶网页。
+   比 over-web 深条小；纸方墨圆：纸底 + accent 左色条 + 极淡阴影。收起态仍走 over-web（P6）。 */
+.dl-toast {
+  position: fixed;
+  z-index: 397;
+  box-sizing: border-box;
+  padding: 7px 11px 7px 13px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: var(--fs-sm);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  animation: ws-pop-in var(--dur-slow) var(--ease-enter);
+}
+.dl-toast::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--c-accent);
+}
+
 /* ---- popover 本体 ---- */
-/* veil：物理盖住整个视口（含原生 view 摘除后垫底的 .web-snap，z390）；点它关闭。 */
+/* veil：盖整个视口收侧栏区 click（网页区在原生 view 之下、吞 click，靠 Esc/图标 toggle 关，spec §4.11）。
+   Colin 2026-07-20：popover 锁进侧栏宽、不覆盖网页 → 不摘原生 view（宽度由 JS 按 #sidebar rect 内联设）。 */
 .dlp-overlay { position: fixed; inset: 0; z-index: 396; }
 .dlp-veil { position: fixed; inset: 0; z-index: 395; }
 .dlp {
   position: fixed;
   z-index: 396;
-  width: 340px;
   max-height: min(480px, calc(100vh - 96px));
   display: flex;
   flex-direction: column;

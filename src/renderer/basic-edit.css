@@ -78,34 +78,4 @@
 }
 .ws-fmtbar-swatch:hover { transform: scale(1.12); }
 
-/* ---- 焦点框 + 删除（U3，宿主浮层 position:fixed；块模式 Esc 后）---- */
-.nce-focus {
-  position: fixed;
-  z-index: 55;
-  pointer-events: none;
-  border: 2px solid var(--c-accent); /* T5：ui-demo nce-focus 用 accent */
-  border-radius: 6px;
-  /* 焦点光晕跟 accent 同源（功能性焦点表达，非装饰阴影；对齐 ui-demo nce-focus） */
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent) 15%, transparent);
-}
-.nce-focus[hidden] { display: none; }
-.nce-focus-del {
-  position: absolute;
-  top: -30px;
-  right: -2px;
-  pointer-events: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 9px;
-  background: var(--c-ink);
-  color: var(--c-text-invert);
-  border: 0;
-  border-radius: var(--r-md);
-  font-size: 12px;
-  cursor: pointer;
-  /* 浮在内容上的操作 chip（真浮层）：暖墨投影，对齐 ui-demo nce-focus-del */
-  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.25);
-}
-.nce-focus-del:hover { background: var(--c-ink-hover); }
+/* 焦点框 + 「删除此块」chip 已整体撤除（Colin 2026-07-21）：删除全走原生选中 + Delete，编辑器零删除浮层。 */

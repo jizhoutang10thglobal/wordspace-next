@@ -86,7 +86,20 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   打掉回滚翻红 P4）+ `e2e/browser.spec.js` 安全不变式改真下载落盘（读真磁盘字节）+ 右键 probe 补 save-link；
   测试产物走 `WS2_DL_DIR`=tmpdir 零落盘。navSeq 提交沿契约与下载触发的 `-3 ERR_ABORTED` 已由
   `e2e/browser.spec.js`「P1 恢复不误触发」再验证（下载中止型导航不动错误页/恢复逻辑）。真 app 独有的后端
-  （ui-demo 是 mock 假进度，见 §13 差异表）。
+  （ui-demo 是 mock 假进度，见 §13 差异表）。⚠ 本条里「popover 注册 `.dlp-overlay` 进 `OVERLAY_SEL` 摘 view」
+  **已被 2026-07-20 打磨推翻**（改锁侧栏宽不摘 view），见下条。
+- 2026-07-20 **下载 UX 真机反馈打磨（标准档，`fix/downloads-ux-polish`，Colin 真机三点）**，两侧同步：
+  ① **popover 锁进侧栏宽度、不覆盖网页区**：`anchorPos` 读 `#sidebar` rect 锁宽（`left=sb.left+8`/`width=sb.width-16`），
+  `.dlp-overlay` 从 `OVERLAY_SEL` 拿掉 → 不再摘原生 view，**连带根拔「快速开关 popover→`webHideAll` 竞态」**
+  （原对抗审查 P2）；关闭三管 veil+Esc+图标 toggle；`window blur` spike 实证不 fire（不用）。ui-demo 同步锁
+  `.arc-sidebar` 宽。② **toast 改小、侧栏开着不顶网页**：主进程删 3 处 `web-toast` 发送，renderer 从
+  `downloads-changed` 状态迁移 diff 派生 toast（首帧只建基线、同迁移只发一次）；侧栏开=侧栏内紧凑 `.dl-toast`
+  （不调 `webToastInset`），收起=over-web 兜底。③ **completed 加「打开」按钮**：`web-tabs.js dlOpen`
+  （`existsSync? shell.openPath : missing`，**用户手动打开 ≠ §11.5 自动打开红线**）+ `browser-ipc dl-open` +
+  preload `dlOpen` + `buildActs` 放「在访达中显示」前 + i18n `browser.dlOpen` 双语。门：node:test 760 + i18n 三门
+  + `e2e/web-downloads.spec.js`（改 popover 用例=删摘 view 断言、加锁侧栏宽断言；加「打开」e2e + 侧栏开着 toast
+  e2e=view bounds 无 72px inset；变异探针④=打掉 dlOpen 的 `shell.openPath` 翻红）；ui-demo `i18n:scan` 三门 +
+  vite build + 亮/暗手验（popover 不盖内容、开按钮、toast 小；暗态像素解码）。正本 §4.11/§13 落地细则 #1/#4 同 PR 更新。
 
 ## bug-hunt 修复批（2026-07-15，探索测试 `docs/plans/bug-hunt-2026-07-14/`）
 
@@ -140,10 +153,11 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
 
 ## 欠账
 
-- **下载 toast 的 action/tone + 启动 interrupted 计数条**（U6 记账，非阻塞降级）：真 app 完成/失败 toast 走
-  `web-toast` 单字符串通道 = 纯文案，无正本 §4.11 的可点「显示」action / danger tone；启动时「N 个下载被转
-  interrupted」的 neutral 计数条未做（load-sanitize 静默翻转）。进度环 + popover 入口常显兜底，用户仍可一键
-  点开。要补需扩 toast 通道带 action/tone（正本 §13 落地细则 4/5 已记降级）。**下载主体 U1–U6 已落地，见上
+- **下载 toast 的 action/tone + 启动 interrupted 计数条**（U6 记账，非阻塞降级）：真 app 下载 toast 现由 renderer
+  从 `downloads-changed` 状态迁移 diff 派生（2026-07-20 打磨，替换原主进程 `web-toast` 单字符串通道），仍是
+  **纯文案** = 无正本 §4.11 的可点「显示」action / danger tone；启动时「N 个下载被转 interrupted」的 neutral
+  计数条未做（load-sanitize 静默翻转）。进度环 + popover 入口常显兜底，用户仍可一键点开。要补需扩 toast 通道
+  带 action/tone（正本 §13 落地细则 4/5 已记降级）。**下载主体 U1–U6 已落地，见上
   「对齐锚点」2026-07-18 条**。
 - **打包冒烟 / Windows 未验**（正本 §13「仍开放」；dev 态 mac 全绿，签名打包后的 WebContentsView/
   持久化路径未实测）。

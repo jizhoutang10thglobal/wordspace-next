@@ -930,10 +930,17 @@ function registerIpc() {
 
   // ---- 沉浸窗框（immersive-collapse，spec=docs/features/immersive-collapse.md）----
   // 红绿灯随侧栏收起隐藏/展开恢复（darwin 专属；hiddenInset 下灯浮在内容上，收起要跟着藏）。
-  ipcMain.on('ws-window-buttons', (e, visible) => {
+  // pos（可选）：peek 浮卡把灯挪进卡内（Wendi 2026-07-21「灯在哪个图层」——灯属于浮卡，不是钉死窗角），
+  // 不传 = 归位构造时的 trafficLightPosition (14,14)。先挪位再显隐，避免在旧位置闪现一帧。
+  ipcMain.on('ws-window-buttons', (e, visible, pos) => {
     if (process.platform !== 'darwin') return;
     const w = BrowserWindow.fromWebContents(e.sender);
-    if (w && !w.isDestroyed()) { try { w.setWindowButtonVisibility(!!visible); } catch { /* 非 hiddenInset 窗框会抛 */ } }
+    if (w && !w.isDestroyed()) {
+      try {
+        w.setWindowButtonPosition(pos && pos.x >= 0 && pos.y >= 0 ? { x: pos.x, y: pos.y } : { x: 14, y: 12 }); // 归位=构造值（y=12 对齐账见 main.js）
+        w.setWindowButtonVisibility(!!visible);
+      } catch { /* 非 hiddenInset 窗框会抛 */ }
+    }
   });
   // （原「左缘指针 watcher」已删，Wendi 2026-07-17 沉浸窗框：#main 内缩 10px 后左边带永远是
   //   DOM 地盘，#sb-edge-hot 在 web 态也能收到鼠标，peek 触发统一走 DOM 一条路径。）
