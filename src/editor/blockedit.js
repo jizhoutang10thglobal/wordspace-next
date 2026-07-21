@@ -216,7 +216,7 @@
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
     // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 纸方墨圆旋转 chevron + 正文缩进。
     // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
-    const TOGGLE_CSS = 'details{margin:8px 0}details>summary{list-style:none;cursor:pointer;display:flex;align-items:flex-start;gap:6px}details>summary::-webkit-details-marker{display:none}details>summary::before{content:"\\25B6";display:inline-block;flex:none;margin-top:.2em;font-size:.7em;color:#8a8f96;transition:transform .12s ease}details[open]>summary::before{transform:rotate(90deg)}details>*:not(summary){margin-left:18px}';
+    const TOGGLE_CSS = 'details{margin:8px 0}details>summary{list-style:none;cursor:pointer;display:flex;align-items:flex-start;gap:6px}details>summary::-webkit-details-marker{display:none}details>summary::before{content:"\\25B6";flex:none;display:inline-flex;align-items:center;justify-content:center;width:1.1em;height:1.75em;color:#787c82;transition:transform .12s ease}details[open]>summary::before{transform:rotate(90deg)}details>*:not(summary){margin-left:22px}';
     // §0 决策1 固定色板（块级上色 class；也是入盘 color CSS 的单一来源）。
     const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
     const COLOR_CSS = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
