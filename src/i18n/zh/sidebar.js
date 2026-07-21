@@ -183,6 +183,7 @@ module.exports = {
   diagHint: '打开后滚动/切换来复现卡顿，看「长任务」实时涨 · 每 1 秒刷新',
   resizeHint: '拖拽调整侧栏宽度',
   toggleSidebarTitle: '收起侧栏 ⌘\\',
+  expandSidebarTitle: '展开侧栏 ⌘\\',
   navBack: '后退',
   navForward: '前进',
   reloadTitle: '刷新 ⌘R',

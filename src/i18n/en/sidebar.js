@@ -183,6 +183,7 @@ module.exports = {
   diagHint: 'Scroll/switch to reproduce jank and watch “long tasks” climb live · refreshes every 1s',
   resizeHint: 'Drag to resize the sidebar',
   toggleSidebarTitle: 'Collapse sidebar ⌘\\',
+  expandSidebarTitle: 'Expand sidebar ⌘\\',
   navBack: 'Back',
   navForward: 'Forward',
   reloadTitle: 'Reload ⌘R',

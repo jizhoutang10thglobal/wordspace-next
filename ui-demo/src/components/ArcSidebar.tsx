@@ -1,7 +1,8 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
-  PanelLeft,
+  PanelLeftClose,
+  PanelLeftOpen,
   ChevronLeft,
   ChevronRight,
   RotateCw,
@@ -1200,11 +1201,12 @@ export default function ArcSidebar() {
           <span style={{ background: '#28c840' }} />
         </div>
         <div className="arc-top-nav">
+          {/* 两形态(Colin 2026-07-21,同真 app #sb-toggle):展开=收起形态(左箭头),收起/peek=展开形态(右箭头) */}
           <button
             className="arc-ico"
-            title={t('sidebar.collapseSidebarHint', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })}
+            title={t(collapsed ? 'sidebar.expandSidebarHint' : 'sidebar.collapseSidebarHint', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })}
             onClick={() => { toggleSidebar(); coach('toggle-sidebar', t('sidebar.coachToggleSidebar', { key: IS_MAC ? '⌘\\' : 'Ctrl+\\' })) }}
-          ><PanelLeft size={15} /></button>
+          >{collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}</button>
           <button className="arc-ico" title={t('sidebar.navBack')} onClick={goBack} disabled={!canBack}><ChevronLeft size={16} /></button>
           <button className="arc-ico" title={t('sidebar.navForward')} onClick={goForward} disabled={!canFwd}><ChevronRight size={16} /></button>
           <button

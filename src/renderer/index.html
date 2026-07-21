@@ -17,8 +17,11 @@
   <!-- 顶栏导航条（浏览器 spec §4.1）：收起侧栏 / 后退 / 前进 / 刷新 / 历史 / 查找文件。
        后退/前进/刷新按「当前标签能否导航」实时 disabled（文档标签暂无导航历史 → 恒灰；网页标签由 browser.js 驱动）。 -->
   <div class="sb-head">
+    <!-- 两形态(Colin 2026-07-21「收起后不知道哪个钮是恢复」):展开态=面板+左箭头(点我收起),
+         收起/peek 态=面板+右箭头(点我展开)。切换走 CSS(body.is-sb-collapsed),tooltip 在 setSidebarCollapsed 同步。 -->
     <button id="sb-toggle" class="sb-icobtn" title="收起侧栏 ⌘\" data-i18n-title="sidebar.toggleSidebarTitle">
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      <svg class="sb-tgl-close" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m16 15-3-3 3-3"/></svg>
+      <svg class="sb-tgl-open" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m14 9 3 3-3 3"/></svg>
     </button>
     <button id="nav-back" class="sb-icobtn" title="后退" data-i18n-title="sidebar.navBack" disabled>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
