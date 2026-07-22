@@ -78,6 +78,25 @@ test('非 todo 段落：undo 后立刻打字不被吞（全块型中招）', asy
   expect(await conformOf(await serialize())).toBe(true);
 });
 
+// 对抗审查 P2：上方结构变动 + 无 checkpoint 导航到下方块 + undo → pre-undo 下标套 post-undo 树落无关块。
+// id 恢复兜住锚点块（有 id）这一常见子集：undo 后按 id 精确找回原编辑块，打字落对块。
+test('锚点块：结构变动后 undo，打字落回原 id 块（非相邻错块）', async () => {
+  await launch();
+  await openDoc('<p id="a">AAA</p><p id="b">BBB</p><p id="c">CCC</p>');
+  await frame.locator('#a').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter'); // a 后插新块（上方结构变动）
+  await page.keyboard.type('X');
+  await page.waitForTimeout(650); // checkpoint
+  await frame.locator('#c').click(); // 无 checkpoint 导航到下方 #c
+  await page.keyboard.press('End');
+  await menu('undo'); // undo → 新块+X 消失，#c 下标左移
+  await page.waitForTimeout(150);
+  await page.keyboard.type('Z'); // 按 id 恢复应落回 #c（path-only 会落到旧下标处的无关块）
+  await expect.poll(() => frame.locator('#c').textContent(), { message: 'undo 后打字应落回原 id 编辑块' }).toBe('CCCZ');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 test('fallback：undo 后原编辑块已不存在 → 打字落首个可编辑块、不被吞', async () => {
   await launch();
   await openDoc('<p id="p1">段落</p>');

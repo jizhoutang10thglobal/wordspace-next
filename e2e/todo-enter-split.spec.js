@@ -110,6 +110,35 @@ test('普通列表 li 带 id 末尾 Enter：新项无 id（两类列表都兜）
   expect(await conformOf(await serialize())).toBe(true);
 });
 
+test('嵌套子列表项 Enter：新项无 id/无勾选（对抗审查——嵌套形态也要剥）', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li>顶<ul class="ws-todo"><li id="c1" data-checked="true">子已完成</li></ul></li></ul>');
+  await frame.locator('#c1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  const nested = await frame.locator('#lst li ul.ws-todo > li').evaluateAll((els) => els.map((l) => ({ text: l.textContent.trim(), id: l.id || null, checked: l.getAttribute('data-checked') })));
+  expect(nested.length, '嵌套列表分裂成 2 项').toBe(2);
+  const content = nested.find((l) => l.text === '子已完成');
+  const empty = nested.find((l) => l.text === '');
+  expect(content, '内容项保留 id+勾选').toEqual({ text: '子已完成', id: 'c1', checked: 'true' });
+  expect(empty.id, '嵌套新空项无 id').toBe(null);
+  expect(empty.checked, '嵌套新空项无 data-checked').toBe(null);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('空的已勾带 id 非末项 Enter：源项 id/勾选不被误剥（对抗审查 P3）', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li id="a1" data-checked="true"><br></li><li>乙</li></ul>');
+  await frame.locator('#a1').click();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  const src = await frame.locator('#a1').evaluate((l) => ({ id: l.id || null, checked: l.getAttribute('data-checked') }));
+  expect(src.id, '源空项 id 不被误剥').toBe('a1');
+  expect(src.checked, '源空项勾选不被误剥').toBe('true');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 test('回归：分裂后菜单 undo 一步 → 还原单项原状（含 id/勾选）', async () => {
   await launch();
   await openDoc('<ul id="lst" class="ws-todo"><li id="a1" data-checked="true">已完成的事</li></ul>');

@@ -80,6 +80,42 @@ test('末项尾 Delete 遇不可并块（图片）：安全 no-op、不崩', asy
   expect(await conformOf(await serialize())).toBe(true);
 });
 
+test('空段落 Delete 吞列表首项：不留前导空行 br（对抗审查 P2）', async () => {
+  await launch();
+  await openDoc('<p id="p0"><br></p><ul id="lst" class="ws-todo"><li>甲</li><li>乙</li></ul>');
+  await frame.locator('#p0').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Delete');
+  await expect.poll(() => frame.locator('#p0').textContent(), { message: '首项并入空段落' }).toBe('甲');
+  const firstNode = await frame.locator('#p0').evaluate((p) => p.firstChild ? p.firstChild.nodeName : null);
+  expect(firstNode, '段落首节点不该是 br（无前导空行）').not.toBe('BR');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('空末项 Delete 吞下一段落：不留前导空行 br（对抗审查 P2）', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li>甲</li><li id="last"><br></li></ul><p id="p9">尾段</p>');
+  await frame.locator('#last').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Delete');
+  await expect.poll(() => frame.locator('#last').textContent(), { message: '下一段并入空末项' }).toBe('尾段');
+  const firstNode = await frame.locator('#last').evaluate((l) => l.firstChild ? l.firstChild.nodeName : null);
+  expect(firstNode, '末项首节点不该是 br（无前导空行）').not.toBe('BR');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('空项 Delete 吞已勾下一项：采纳其勾选态（对抗审查 P3——删空行不清邻项勾选）', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li id="e"><br></li><li data-checked="true">乙</li></ul>');
+  await frame.locator('#e').click();
+  await page.keyboard.press('Delete');
+  await expect.poll(() => frame.locator('#lst > li').count()).toBe(1);
+  const merged = await frame.locator('#lst > li').first().evaluate((l) => ({ text: l.textContent.trim(), checked: l.getAttribute('data-checked') }));
+  expect(merged.text).toBe('乙');
+  expect(merged.checked, '合并后保留下一项的勾选态').toBe('true');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 test('回归：首项行首 Backspace 并入上一段落（#319 未回归）', async () => {
   await launch();
   await openDoc('<p id="p0">上</p><ul id="lst" class="ws-todo"><li id="f">甲</li></ul>');

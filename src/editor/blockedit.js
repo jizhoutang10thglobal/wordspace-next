@@ -1513,19 +1513,20 @@
           // 无 post-split 清理 → 已勾项回车产「天生已勾」的新项 + 重复 id 入盘坏锚点。记录分裂前直接子 li 集，
           // 一次性 input 后取差集找新 li，按内容判定剥属性：空项剥（都非空则文档序更后者剥，对齐 splitBlock 剥后块）。
           if (!listSplitPending) {
-            const ul0 = editingEl, before0 = new Set([...editingEl.querySelectorAll(':scope > li')]), src0 = li;
+            const ul0 = li.parentElement, before0 = new Set([...li.parentElement.children].filter((x) => x.tagName === 'LI')), src0 = li; // 锚在**当前 li 所属的 ul**（可能是嵌套子列表），不是顶层 editingEl——否则嵌套项分裂的产物是孙节点、不入差集，跳过清理
             listSplitPending = true;
             const onSplit = () => {
               doc.removeEventListener('input', onSplit);
               listSplitPending = false;
               if (!ul0.isConnected) return;
-              const products = [src0, ...[...ul0.querySelectorAll(':scope > li')].filter((x) => !before0.has(x))].filter((x) => x && x.isConnected && x.parentElement === ul0);
+              const products = [src0, ...[...ul0.children].filter((x) => x.tagName === 'LI' && !before0.has(x))].filter((x) => x && x.isConnected && x.parentElement === ul0);
               if (products.length < 2) return; // 没真分裂 / 结构异常 → 不动
-              const empties = products.filter((x) => (x.textContent || '').trim() === '');
-              let strip;
-              if (empties.length) strip = empties; // 空项（End/Home 回车产物）
-              else { const s = products.slice().sort((a, b) => ((a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1)); strip = [s[s.length - 1]]; } // 都非空（劈半）→ 剥文档序更后者
-              for (const x of strip) { x.removeAttribute('id'); x.removeAttribute('data-checked'); }
+              const hasContent = (x) => (x.textContent || '').trim() !== '';
+              // 保留「原始内容的延续」那个 li（其 id/勾选保住），剥其余（新段）：
+              //   src0 有内容（End/劈半：src0=光标前半）→ 留 src0；src0 空但有内容项（Home：内容搬去新 li）→ 留内容项；都空 → 留 src0（原项）。
+              let keep = src0;
+              if (!hasContent(src0)) { const nonEmpty = products.filter(hasContent); if (nonEmpty.length) keep = nonEmpty[0]; }
+              for (const x of products) { if (x !== keep) { x.removeAttribute('id'); x.removeAttribute('data-checked'); } }
             };
             doc.addEventListener('input', onSplit);
           }
@@ -1743,6 +1744,9 @@
           if ((curLi.textContent || '').trim() === '' && nextLi && nextLi.tagName === 'LI') {
             e.preventDefault();
             if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空项占位 br
+            // 空项被下一项内容填充 → 采纳下一项的勾选态/锚点（内容搬上来了、状态跟内容走；否则删空行会把下一任务的勾清掉，对抗审查 P3）
+            if (nextLi.getAttribute('data-checked') === 'true') curLi.setAttribute('data-checked', 'true'); else curLi.removeAttribute('data-checked');
+            if (!curLi.id && nextLi.id) curLi.id = nextLi.id;
             const joinAt = nextLi.firstChild;
             while (nextLi.firstChild) curLi.appendChild(nextLi.firstChild);
             nextLi.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -1757,6 +1761,7 @@
             const nb = bs[bs.indexOf(editingEl) + 1];
             if (nb && isEditableEl(nb) && isLeafTextBlock(nb)) {
               e.preventDefault();
+              if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空目标末项占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
               const joinAt = nb.firstChild;
               while (nb.firstChild) curLi.appendChild(nb.firstChild);
               nb.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -1780,6 +1785,7 @@
           const firstLi = next.querySelector(':scope > li');
           if (firstLi && !firstLi.querySelector(':scope > ul, :scope > ol') && isLeafTextBlock(cur)) {
             e.preventDefault();
+            if (cur.childNodes.length === 1 && cur.firstChild && cur.firstChild.nodeName === 'BR') cur.firstChild.remove(); // 剥空目标段落占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
             if (firstLi.childNodes.length === 1 && firstLi.firstChild && firstLi.firstChild.nodeName === 'BR') firstLi.firstChild.remove();
             const joinAt = firstLi.firstChild;
             while (firstLi.firstChild) cur.appendChild(firstLi.firstChild);
@@ -2315,12 +2321,15 @@
       while (n && n !== body) { const p = n.parentNode; if (!p) return null; path.unshift(Array.prototype.indexOf.call(p.children, n)); n = p; }
       return n === body ? path : null;
     }
-    function snapshotEdit() { return editingEl ? blockPathOf(editingEl) : null; }
-    function restoreEdit(path) {
+    function snapshotEdit() { return editingEl ? { path: blockPathOf(editingEl), id: editingEl.id || null } : null; }
+    function restoreEdit(snap) {
       let target = null;
-      if (path) { let n = body; for (const i of path) { if (!n || !n.children || i < 0 || i >= n.children.length) { n = null; break; } n = n.children[i]; } target = n; }
-      // 路径失效 / 落到非可编辑块（hr/figure/details——resolvePath 照样返回、不算 null）→ 落第一个可编辑块，保证打字有宿主。
-      if (!target || !isEditableEl(target)) target = topBlocks().find((b) => isEditableEl(b)) || null;
+      // ① 优先按 id 精确找：锚点块（有 id）跨 body.innerHTML 重写稳定，避开「pre-undo 下标套 post-undo 树 → 落无关块」（对抗审查 P2）。
+      if (snap && snap.id) { const byId = doc.getElementById(snap.id); if (byId && body.contains(byId) && isEditableEl(byId)) target = byId; }
+      // ② 退结构路径（无 id 时）：仍是 v1 取舍——编辑块上方结构变动时同一下标语义已变、可能落相邻块，见 spec 欠账。
+      if (!target && snap && snap.path) { let n = body; for (const i of snap.path) { if (!n || !n.children || i < 0 || i >= n.children.length) { n = null; break; } n = n.children[i]; } if (n && isEditableEl(n)) target = n; }
+      // ③ 兜底：首个可编辑块，保证打字有宿主（绝不落非可编辑 body/hr/figure/details → 吞字）。
+      if (!target) target = topBlocks().find((b) => isEditableEl(b)) || null;
       if (target) enterEdit(target, { mode: 'end' });
     }
 
