@@ -581,10 +581,11 @@
     function newBlock(item) {
       let el;
       if (item.tag === 'hr') { el = doc.createElement('hr'); }
-      else if (item.tag === 'ul' || item.tag === 'ol') { el = doc.createElement(item.tag); if (item.cls) el.className = item.cls; const li = doc.createElement('li'); li.textContent = T('editor.listItem'); el.appendChild(li); }
-      else if (item.tag === 'div' && item.cls === 'ws-callout') { el = doc.createElement('div'); el.className = 'ws-callout'; el.textContent = T('editor.calloutContent'); }
-      else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.textContent = T('editor.quoteContent'); }
-      else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.textContent = T('editor.newHeading'); }
+      // U9/create-2：种空产物、不种 i18n 占位文本——applySlash 非空块分支光标折叠到占位**之前**，占位会前插+入盘（「买菜列表项」）。
+      else if (item.tag === 'ul' || item.tag === 'ol') { el = doc.createElement(item.tag); if (item.cls) el.className = item.cls; const li = doc.createElement('li'); li.appendChild(doc.createElement('br')); el.appendChild(li); } // 空 li 补 br（U1：ws-todo 空 li 无 br 零高落不住 caret）
+      else if (item.tag === 'div' && item.cls === 'ws-callout') { el = doc.createElement('div'); el.className = 'ws-callout'; el.appendChild(doc.createElement('br')); }
+      else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.appendChild(doc.createElement('br')); }
+      else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.appendChild(doc.createElement('br')); }
       else if (item.tag === 'details') { el = doc.createElement('details'); el.setAttribute('open', ''); el.appendChild(doc.createElement('summary')); el.appendChild(doc.createElement('p')); ensureToggleStyle(); } // 折叠块种子：<details open><summary></summary><p></p></details>（默认展开，光标由 applySlash 落 summary）
       else { el = doc.createElement('p'); }
       ensureBlockStyle(item.cls);
