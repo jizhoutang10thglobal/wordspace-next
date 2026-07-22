@@ -1262,6 +1262,9 @@
     function onMouseDown(e) {
       if (e.button !== 0) return; // 只管左键
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      // 点菜单外任何地方 → 关斜杠菜单（Wendi 2026-07-22：以前点别处不关、只能删掉「/」才关，反直觉）。
+      // 上面已对 data-ws2-ui 覆盖层（含斜杠菜单及其项）early-return，故点菜单项走不到这、不会误关。
+      if (slash) { slash = null; slashMenu.style.display = 'none'; }
       if (e.target && e.target.closest && e.target.closest('figcaption')) return; // 说明编辑：交原生放光标/选词，不启块拖选
       // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
       // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
