@@ -18,6 +18,7 @@
     'data-ws2-ce', 'data-ws2-sc', 'data-ws2-block', 'data-ws2-container',
     'data-ws2-canvas', 'data-ws2-eid', 'data-ws2-editing',
     'data-ws2-selected', 'data-ws2-drop', // 块编辑：灰选中 / 拖拽投放标记（仅交互态，存盘剥除）
+    'data-ws2-rangesel', // 块编辑：跨块拖选的块级高亮标记（仅交互态，存盘剥除）
     'data-ws2-root', // 块容器标记（给空块占行高等结构 CSS 用，存盘剥除）
   ]);
 
