@@ -19,7 +19,8 @@
   const CORNER_W = 80;   // 左上角唤出区宽(≈红绿灯那片)
   const CORNER_H = 48;   // 左上角唤出区高
   const CARD_PAD = 24;   // peek 卡右缘的离开缓冲
-  const FS_TOP = 8;      // 全屏顶缘唤出带高(Colin 2026-07-22:全屏推顶=顶栏下拉+侧栏同滑出,灯只活在卡上)
+  const FS_TOP = 48;     // 全屏顶缘唤出带高——要盖住 macOS 顶栏下拉整条(~37px)+接近余量:第一版 8px 太苛刻,
+  // 光标悬在降下来的顶栏上(y~25)就掉出区外、卡又缩回(Colin 实测「特定区域才出、再挪就没了」)
 
   // 光标是否落在「唤出触发区」(左缘带 ∪ 左上角区;全屏时再 ∪ 顶缘带全宽)。
   function inTriggerZone(bounds, pt, fullscreen) {
