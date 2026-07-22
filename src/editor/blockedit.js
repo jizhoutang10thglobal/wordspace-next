@@ -1462,6 +1462,19 @@
         const sel = doc.getSelection();
         if (sel && sel.rangeCount && !sel.isCollapsed && deleteSelection()) { e.preventDefault(); return; }
       }
+      // 跨块/无主选区上直接打字（拖选或 ⌘A 全选后想「重打」替换）：此时 editingEl=null、焦点在不可编辑的
+      // focusCatcher 上，原生没有编辑宿主 → 字被丢、毫无反应（Wendi 反馈）。先 deleteSelection 把跨块选区删成
+      // 一个干净块+光标（返回 true = 它接管了跨块/无主选区），再把这个字插进落好的块。单块内编辑态选区
+      // deleteSelection 返回 false → 不拦、交原生正常覆盖，不影响正常打字。
+      if (e.key && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing && e.keyCode !== 229) {
+        const sel = doc.getSelection();
+        if (sel && sel.rangeCount && !sel.isCollapsed && deleteSelection()) {
+          e.preventDefault();
+          try { doc.execCommand('insertText', false, e.key); } catch (x) {}
+          markDirty();
+          return;
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
         const sel = doc.getSelection();
         if (sel && sel.rangeCount && !sel.isCollapsed) {
