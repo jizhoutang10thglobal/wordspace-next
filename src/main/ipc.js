@@ -18,6 +18,7 @@ const { assertInsideWorkspace, kindOf, isNoisePath, affectedDirsOf } = require('
 const { TEMPLATES } = require('../lib/doc-templates');
 const rootsLib = require('../lib/roots');
 const tabsLib = require('../lib/tabs'); // 吸收时把持久化标签同步 rebase（双导出 IIFE，主进程可 require）
+const edgeZones = require('../lib/edge-zones'); // 收起态 peek 触发区纯几何（光标轮询 watcher 用）
 const linkIndex = require('./link-index'); // U2 文档互链索引（可丢弃缓存，多根 rootId:rel 键）
 const linkRewrite = require('./link-rewrite'); // U5 改名/移动 → 字节保真重写引用
 const wsLinks = require('../lib/links'); // 路径代数（invertMoves/resolveHref/relHref）
@@ -942,8 +943,45 @@ function registerIpc() {
       } catch { /* 非 hiddenInset 窗框会抛 */ }
     }
   });
-  // （原「左缘指针 watcher」已删，Wendi 2026-07-17 沉浸窗框：#main 内缩 10px 后左边带永远是
-  //   DOM 地盘，#sb-edge-hot 在 web 态也能收到鼠标，peek 触发统一走 DOM 一条路径。）
+  // ---- 收起态 peek 触发的光标轮询 watcher（Wendi 2026-07-22「必须精确停在缝上」→ Arc 式宽容触发）----
+  // 07-17 曾删过一版指针 watcher（当时结论「左带永属 DOM,触发单一化」）。但 DOM 事件有结构性缺口：
+  // ①光标甩过头落到【窗外】= DOM 永远收不到 ②快速划过 10px 缝 + 120ms 停留会被取消 ③没有左上角唤出区。
+  // Arc 的手感正是全局光标监听。故恢复轮询——只在收起态跑（renderer 开关）、只在窗口聚焦时判定、
+  // 90ms 一拍、几何判定抽纯函数 edge-zones.js（node:test 钉住）、interval 内 try/catch（xvfb 下
+  // getCursorScreenPoint 可能抛,别崩主进程——2026-07 血账）。DOM 热区 #sb-edge-hot 保留（e2e 走它 + 双保险）。
+  // 信号语义(renderer 各取所需,防「卡区=没开时的内容区」误开):
+  //   trigger = 光标在唤出区(左缘带/左上角) → renderer 立即 openPeek(首拍即开,不再要 120ms 停留)
+  //   dwell   = 光标在驻留区(唤出区 ∪ 卡区+缓冲) → false 且 peek 开着 → renderer 宽限收起
+  // 只在 (trigger,dwell) 二元组翻转时 send,不每拍轰 renderer。
+  let edgeTimer = null;
+  let edgeLastKey = -1;
+  ipcMain.on('ws-edge-watch', (e, on, cardWidth) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (edgeTimer) { clearInterval(edgeTimer); edgeTimer = null; }
+    edgeLastKey = -1;
+    if (!on || !w || w.isDestroyed()) return;
+    const { screen } = require('electron');
+    // armed=光标动过才开始判定——触发语义是「光标【进入】唤出区」,不是「恰好静止在区里」。
+    // 这同时堵死 xvfb 的坑:CI 里全局光标常驻 (0,0)(Playwright 合成事件不动 OS 光标),正落在
+    // 左上角触发区——不 arm 的话所有收起态 e2e 会被 watcher 误开 peek。
+    let armed = false;
+    let prevPt = null;
+    edgeTimer = setInterval(() => {
+      try {
+        if (w.isDestroyed()) { clearInterval(edgeTimer); edgeTimer = null; return; }
+        if (!w.isFocused()) return; // 失焦静默(不发信号)——关卡交给 DOM mouseleave/用户操作,别在 CI 聚焦抖动时误关
+        const pt = screen.getCursorScreenPoint();
+        if (prevPt && (pt.x !== prevPt.x || pt.y !== prevPt.y)) armed = true;
+        prevPt = pt;
+        if (!armed) return; // 未 armed 完全静默——首拍发 (false,false) 会把 DOM 开出的 peek 误关(CI 实翻过)
+        const b = w.getBounds();
+        const trigger = edgeZones.inTriggerZone(b, pt);
+        const dwell = edgeZones.inDwellZone(b, pt, cardWidth);
+        const key = (trigger ? 2 : 0) + (dwell ? 1 : 0);
+        if (key !== edgeLastKey) { edgeLastKey = key; w.webContents.send('ws-edge-hover', trigger, dwell); }
+      } catch { /* xvfb/竞态：吞掉,下一拍再试 */ }
+    }, 90);
+  });
 
   // 浏览器 feature 的 IPC 面（webtab:*/bm:*/hist:*/browser-settings）。
   registerBrowserIpc();
