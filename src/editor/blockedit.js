@@ -744,10 +744,18 @@
           while (next.firstChild) next.removeChild(next.firstChild);
           for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); padLi(li); next.appendChild(li); } // 容器每段 → 一个 <li>（空段补 br）
         } else if (!next.querySelector('li')) {
-          const li = doc.createElement('li');
-          while (next.firstChild) li.appendChild(next.firstChild);
-          padLi(li);
-          next.appendChild(li);
+          // U10/create-3：内容含顶层 <br>（如 todo→文本往返产物「甲<br>乙<br>丙」）→ 按 <br> 拆行、每行一个 <li>，
+          // 别塞进单个 li 塌成一项（回程往返销毁列表结构）。空行跳过（对齐粘贴防悬空守卫），≥2 行才走多 li。
+          const groups = []; let cur = [];
+          for (const n of [...next.childNodes]) { if (n.nodeName === 'BR') { groups.push(cur); cur = []; } else cur.push(n); }
+          groups.push(cur);
+          const nonEmpty = groups.filter((g) => g.some((n) => (n.textContent || '').trim() || n.nodeType === 1));
+          while (next.firstChild) next.removeChild(next.firstChild);
+          if (nonEmpty.length >= 2) {
+            for (const g of nonEmpty) { const li = doc.createElement('li'); g.forEach((n) => li.appendChild(n)); padLi(li); next.appendChild(li); }
+          } else {
+            const li = doc.createElement('li'); (nonEmpty[0] || []).forEach((n) => li.appendChild(n)); padLi(li); next.appendChild(li);
+          }
         }
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return next;
