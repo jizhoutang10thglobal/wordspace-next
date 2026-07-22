@@ -347,6 +347,161 @@ test('待办删空退格：单项列表整块 de-list 成段落、不留空 <ul>
   expect(await editingId(), '光标落在新段落').not.toBeNull();
 });
 
+// Wendi bug6：跨块/全选删除一个含待办的选区，deleteSelection 裁掉待办的 <li> 后会剩一个非法空
+// <ul></ul>（无 li 无勾选框的 ghost 死块）。修：deleteSelection 把裁空的列表端点就地换成空 <p>（放合并前，
+// 两端都空 <p> 时并成一个干净空块）。断言锚 = 序列化字节无空 <ul></ul> + 合规 + 塌成一个空块。
+test('全选/跨块删待办+段落：不留空 <ul></ul> ghost、塌成一个干净空块、合规（Wendi bug6）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><ul class="ws-todo"><li id="li1">测试bug</li></ul><p id="p1">测试bug</p></body></html>');
+  await frame.locator('#li1').click();
+  await page.waitForTimeout(100);
+  // 块级全选（等价 ⌘A⌘A 选全篇 / 拖选全部）：range 罩住首块(ul)到末块(p)
+  await frame.locator('body').evaluate(() => {
+    const d = document, ul = d.querySelector('ul.ws-todo'), p = d.getElementById('p1');
+    const r = d.createRange(); r.setStart(ul, 0); r.setEnd(p, p.childNodes.length);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r); d.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(200);
+  const html = await serialize();
+  expect(html, '跨块删待办后绝不留空 <ul></ul> ghost').not.toMatch(EMPTY_UL);
+  expect(await conformOf(), '删后文档合规').toBe(true);
+  expect(await blockCount(), '全删塌成一个干净空块').toBe(1);
+  expect(await frame.locator('ul.ws-todo').count(), '待办列表已消失（de-list 成段落）').toBe(0);
+});
+
+// 回归：部分跨块选区（待办→段落）删除仍保留未选中的头尾内容，不塌成空 <ul>。
+test('部分跨块删待办+段落：保留未选中头尾、不留空 <ul>、合规（Wendi bug6 回归）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><ul class="ws-todo"><li id="li1">AA保留删除</li></ul><p id="p1">删除保留DD</p></body></html>');
+  await frame.locator('#li1').click();
+  await page.waitForTimeout(100);
+  await frame.locator('body').evaluate(() => {
+    const d = document, li = d.getElementById('li1'), p = d.getElementById('p1');
+    const r = d.createRange(); r.setStart(li.firstChild, 2); r.setEnd(p.firstChild, 3); // 选 "保留删除"→"删除保"
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r); d.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(200);
+  const html = await serialize();
+  expect(html).not.toMatch(EMPTY_UL);
+  expect(html, '待办头 AA 保留').toMatch(/AA/);
+  expect(html, '段落尾 留DD 保留').toMatch(/留DD/);
+  expect(await conformOf()).toBe(true);
+});
+
+// Wendi bug6 追加：整个待办列表被删空后剩的不是"无 li 的空 <ul>"（那个 #318 已修），而是"有空 <li> 的
+// <ul><li></li></ul>"——空 <li> 零高，其绝对定位的勾选框 ::before 悬空盖到下一行文字上（视频截图）。
+// 修：fixEmptyList 判定从"无 li"扩成"整列表无文字内容"，空 <li> 列表也 de-list 成段落。
+test('删空整个待办列表：勾选框不悬空遮挡下一行（无零高块，Wendi bug6 追加）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><ul class="ws-todo"><li id="t1">待办一</li><li id="t2">待办二</li></ul><p id="pp">普通段落内容</p></body></html>');
+  await frame.locator('#t1').click();
+  await page.waitForTimeout(100);
+  // 选 两个待办项 + 段落头（段落留"落内容"）——把整个待办列表删空、段落还有内容
+  await frame.locator('body').evaluate(() => {
+    const d = document, t1 = d.getElementById('t1'), p = d.getElementById('pp');
+    const r = d.createRange(); r.setStart(t1.firstChild, 0); r.setEnd(p.firstChild, 3);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r); d.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(250);
+  const html = await serialize();
+  expect(html, '段落尾内容保留').toMatch(/落内容/);
+  expect(await conformOf()).toBe(true);
+  // 强断言（几何）：不得残留近零高的块——零高块的绝对定位勾选框会悬空盖到下一行（就是那个 bug）。
+  const zeroH = await frame.locator('body').evaluate(() => [...document.body.children]
+    .filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui'))
+    .filter((b) => b.getBoundingClientRect().height < 3)
+    .map((b) => b.tagName + '.' + b.className));
+  expect(zeroH, '删空整列表后不得残留零高空待办（勾选框会悬空遮挡下一行）').toEqual([]);
+});
+
+// Wendi bug3（2026-07-21 视频）：两个列表块紧挨着（或段落后接列表），在第二块的行首按 Backspace，
+// 光标「应该跳到上面那个 block」（并入上一块），但实际「跳进了当前 block、没上移」——什么都没发生。
+// 病根：非空列表项行首退格一律交原生（blockedit.js），而每个块是独立 contenteditable，原生跨不到
+// 上一个块 → 哑掉。修：首 li 行首退格时自己把内容并入上一块（对齐「同一个 ul 内 li→li」的原生合并）。
+// 强断言：Backspace 后【块数减少 + 文字合并进上一块 + 光标落上一块】。修前必红（两块纹丝不动）。
+async function caretToLiStart(sel) {
+  // 真实导航：点进目标 li，Home 到行首（避开程序化设 range 可能绕过的路径）
+  await frame.locator(sel).click();
+  await page.keyboard.press('Home');
+  await page.waitForTimeout(120);
+}
+test('Wendi bug3：第二个列表块行首退格 → 并入上一块（不再原地哑掉）', async () => {
+  await launch();
+  // 两个独立 ws-todo 块（第一项 checked=true 当存活标记）
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<ul class="ws-todo"><li data-checked="true">第一项AAA</li></ul>'
+    + '<ul class="ws-todo"><li data-checked="false" id="li2">第二项BBB</li></ul></body></html>');
+  await caretToLiStart('#li2');
+  await page.keyboard.press('Backspace');
+  await expect.poll(() => frame.locator('ul.ws-todo').count(), { message: '两个 todo 块没合并（修前哑掉的 bug）' }).toBe(1);
+  const li = frame.locator('ul.ws-todo > li');
+  await expect(li).toHaveCount(1);
+  expect((await li.first().textContent()).replace(/\s/g, ''), '第二项没并入第一项').toBe('第一项AAA第二项BBB');
+  expect(await li.first().getAttribute('data-checked'), '上面那项(存活块)的勾选态该保留=从上块来').toBe('true');
+  // 光标落在上面那个块（= 合并后的列表），不是留在原第二块
+  expect(await editingId(), '光标没跳到上面的块').toBe('UL');
+  expect(await conformOf(), '合并后文档仍合规').toBe(true);
+});
+
+test('Wendi bug3：段落后接待办，待办项行首退格 → 并入段落', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="head">前面段落PP</p><ul class="ws-todo"><li data-checked="false" id="li2">待办项BBB</li></ul></body></html>');
+  await caretToLiStart('#li2');
+  await page.keyboard.press('Backspace');
+  // 待办项文字并入段落、列表清空后删掉（不留空 <ul>）
+  await expect.poll(() => frame.locator('ul.ws-todo').count(), { message: '待办项没并入段落' }).toBe(0);
+  expect((await frame.locator('#head').textContent()).replace(/\s/g, ''), '待办文字没接到段落末').toBe('前面段落PP待办项BBB');
+  expect(await editingId(), '光标该落在段落').toBe('head');
+  expect(await conformOf(), '并入段落后仍合规').toBe(true);
+});
+
+// Wendi bug3 的三个对抗审查 finding 回归门（嵌套子列表/子列表末项/空目标块）：
+test('Wendi bug3 边界：嵌套打头不被撕 / 子列表前插入 / 空目标不留空行', async () => {
+  await launch();
+  // Finding A：以嵌套子列表打头的列表块，内层项行首退格【不能】把内层项撕进上一段、留幽灵空子列表。
+  // （cli.parentElement===editingEl 守卫挡掉——内层 li 的父是内层 ul，不是块本身）。
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="head">hello</p><ul><li><ul><li id="x">xxx</li></ul></li></ul></body></html>');
+  await frame.locator('#x').click(); await page.keyboard.press('Home'); await page.waitForTimeout(150);
+  await page.keyboard.press('Backspace'); await page.waitForTimeout(200);
+  expect(await frame.locator('#head').textContent(), 'A: 内层嵌套项被撕进上一段（应纹丝不动）').toBe('hello');
+  expect(await conformOf(), 'A: 仍合规、无幽灵空子列表致非法').toBe(true);
+
+  // Finding B：上一块列表末项自带子列表时，并入文字要插在子列表【前】（接到该项文字末尾），不吊到子项下面。
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<ul><li>A<ul><li>A1</li></ul></li></ul><ul><li id="li2">B</li></ul></body></html>');
+  await frame.locator('#li2').click(); await page.keyboard.press('Home'); await page.waitForTimeout(150);
+  await page.keyboard.press('Backspace'); await page.waitForTimeout(200);
+  const bOrder = await frame.locator('body').evaluate(() => {
+    const topUls = [...document.body.children].filter((c) => c.tagName === 'UL');
+    if (topUls.length !== 1) return { topUls: topUls.length };
+    const li = topUls[0].querySelector(':scope > li');
+    const sub = li.querySelector(':scope > ul');
+    // 该项「直接文字」(不含子列表) = 子列表前的 text
+    let directText = '';
+    for (const n of li.childNodes) { if (n === sub) break; directText += n.textContent; }
+    return { topUls: 1, directText: directText.replace(/\s/g, ''), hasSub: !!sub, subText: sub ? sub.textContent.replace(/\s/g, '') : '' };
+  });
+  expect(bOrder.topUls, 'B: 两列表没合并成一个').toBe(1);
+  expect(bOrder.directText, 'B: 文字没接到「A」末尾（吊到子列表下面了？）').toBe('AB');
+  expect(bOrder.hasSub && bOrder.subText === 'A1', 'B: 子列表 A1 该保留在原位').toBe(true);
+
+  // Finding C：并入空目标块（空段 <p><br></p>）不留前导空行 <br>。
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<p id="head"><br></p><ul class="ws-todo"><li data-checked="false" id="li2">B待办</li></ul></body></html>');
+  await frame.locator('#li2').click(); await page.keyboard.press('Home'); await page.waitForTimeout(150);
+  await page.keyboard.press('Backspace'); await page.waitForTimeout(200);
+  expect((await frame.locator('#head').evaluate((el) => el.innerHTML)).replace(/\s/g, ''), 'C: 空目标并入后留了前导 <br> 空行').toBe('B待办');
+  expect(await conformOf(), 'C: 并入空段后仍合规').toBe(true);
+});
+
 // Tab 缩进：列表第二项按 Tab → 嵌进第一项的子列表。
 test('Tab 缩进：列表项嵌套成子列表', async () => {
   await launch();

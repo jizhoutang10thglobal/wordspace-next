@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { JSDOM } = require('jsdom');
 const blocks = require('../src/editor/blocks.js');
-const { serializeDocument, OVERLAY_VAL } = require('../src/editor/serialize.js');
+const { serializeDocument, OVERLAY_VAL, cleanRoot } = require('../src/editor/serialize.js');
+const SER = { cleanRoot };
 
 const SAMPLE = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><style>p { color: red; }</style></head><body><div class="wrap"><p>一段文字</p><table><tbody><tr><td>x</td></tr></tbody></table></div><script>var a = 1;</' + 'script></body></html>';
 
@@ -63,6 +64,8 @@ test('whitelist is exact, not prefix: keeps author data-ws2-* but strips editor 
   assert.ok(!out.includes('data-ws2-eid'), 'data-ws2-eid 应被剥');
   assert.ok(!out.includes('data-ws2-rangesel'), 'data-ws2-rangesel（跨块选区交互态）应被剥,绝不入盘');
   assert.ok(out.includes('跨块高亮态'), '被标记的块内容本身必须存盘不丢');
+  assert.ok(!out.includes('data-ws2-clip'), 'data-ws2-clip（内部粘贴剪贴板哨兵）万一漏进 DOM 也应被剥,绝不入盘');
+  assert.ok(SER.cleanRoot, 'cleanRoot 应导出（块编辑器内部富复制粘贴复用同一套剥除白名单）');
   // 用户自带属性 + 内联样式（拖动/缩放写的几何）保留
   assert.ok(out.includes('data-ws2-foo="keep"'), '用户自带 data-ws2-foo 必须保留（非前缀剥）');
   assert.ok(out.includes('left:'), '内联样式（画布几何）必须保留');

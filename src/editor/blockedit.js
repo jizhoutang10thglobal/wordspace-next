@@ -876,7 +876,7 @@
       const crossScope = sScope !== eScope;
       const scopeRoot = crossScope ? blockRoot : sScope;
       const tops = blocksInScope(scopeRoot);
-      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      let sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
       const i = tops.indexOf(sB), j = tops.indexOf(eB);
       if (i < 0 || j < 0 || i > j) return false;
       // 修 ED-A2/A3（推广到作用域）：端点是结构块（table/details/figure/img）时 Range 部分裁剪会削 summary/table
@@ -885,6 +885,14 @@
       if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sB, sB.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
       if (eEditable) { const r2 = doc.createRange(); r2.setStart(eB, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
       for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === scopeRoot) m.remove(); }                            // 删中间整块（作用域内）
+      // 修 bug6：裁剪把列表端点的 <li> 删光后会剩一个非法空 <ul></ul>（无 li 无勾选框的 ghost 死块，
+      // 且后续打字会灌进 <ul> 变非合规）。把裁空的列表块就地换成空 <p>（de-list），放在合并前——
+      // 两端都成空 <p> 时下面的 canMerge 会把它们并成一个干净空块（对齐"选全部再删=一个空块"）。
+      // 裁空的列表端点：整列表已无文字内容（无 <li>，或只剩空 <li> —— 空 <li> 是零高，其绝对定位的勾选框
+      // ::before 会悬空盖到下一块上，Wendi 反馈的"复选框遮挡后面文字"）→ 就地换成空 <p>（de-list）。
+      // 只在整列表空时换；还有内容的项保留（部分删不动列表）。
+      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && b.parentNode && (b.textContent || '').trim() === '' && !b.querySelector('img, figure, table')) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
+      sB = fixEmptyList(sB); eB = fixEmptyList(eB);
       const prefixEnd = sEditable ? sB.lastChild : null; // 接合点（合并前 prefix 末尾）
       if (sEditable && eEditable && SM.canMerge(sB, eB)) { // 两端都是存活的叶子文字块才节点级拼接
         while (eB.firstChild) sB.appendChild(eB.firstChild); // 末块剩余并入起块
@@ -1032,23 +1040,43 @@
       fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; });
       pop.style.display = open ? 'none' : 'flex';
     }
+    // 当前编辑/选中块对应的「转为」菜单项 key——打开菜单时高亮它（Wendi 2026-07-22：看不出当前是几级标题）。
+    // 直接看 tagName（classify 把 H1–H4 都归 'heading'、分不出级），列表按 ws-todo class 区分待办。
+    function turnMenuActiveKey() {
+      const el = editingEl || selectedEl; if (!el) return null;
+      const t = el.tagName;
+      if (t === 'P') return 'text';
+      if (t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') return t.toLowerCase();
+      if (t === 'BLOCKQUOTE') return 'quote';
+      if (t === 'OL') return 'numbered';
+      if (t === 'UL') return (el.classList && el.classList.contains('ws-todo')) ? 'todo' : 'list';
+      if (t === 'DETAILS') return 'toggle';
+      return null;
+    }
+    function markTurnMenuActive(menu) {
+      const cur = turnMenuActiveKey();
+      menu.querySelectorAll('.ws-fmtbar-menu-item').forEach((it) => it.classList.toggle('ws-fmtbar-menu-item--on', it.dataset.key === cur));
+    }
     function openTurnMenu() {
       let menu = fmtbar.querySelector('.ws-fmtbar-menu');
-      if (menu) { togglePopMenu(menu); return; }
-      menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
-      menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
-      [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList'], ['toggle', 'blockToggle']].forEach(([key, labelKey]) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.textContent = T('editor.' + labelKey);
-        it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        it.addEventListener('click', (e) => {
-          e.preventDefault(); e.stopPropagation();
-          const item = SLASH_ITEMS.find((x) => x.key === key);
-          const target = editingEl || selectedEl;
-          if (target && item) { const nx = turnInto(target, item); menu.style.display = 'none'; if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx); }
+      if (!menu) {
+        menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
+        menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
+        // 标题给全 H1–H4（此前漏了 H4，与斜杠菜单不一致——Wendi 2026-07-22「我只有 123，它没有 4」）。
+        [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['h4', 'blockH4'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList'], ['toggle', 'blockToggle']].forEach(([key, labelKey]) => {
+          const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.dataset.key = key; it.textContent = T('editor.' + labelKey);
+          it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+          it.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const item = SLASH_ITEMS.find((x) => x.key === key);
+            const target = editingEl || selectedEl;
+            if (target && item) { const nx = turnInto(target, item); menu.style.display = 'none'; if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx); }
+          });
+          menu.appendChild(it);
         });
-        menu.appendChild(it);
-      });
-      fmtbar.appendChild(menu);
+        fmtbar.appendChild(menu);
+      }
+      markTurnMenuActive(menu); // 菜单缓存复用，每次打开都按当前块刷新高亮（不能只在建时标一次）
       togglePopMenu(menu);
     }
     function togglePopMenu(menu) { const open = menu.style.display !== 'none'; fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); menu.style.display = open ? 'none' : 'block'; }
@@ -1234,6 +1262,9 @@
     function onMouseDown(e) {
       if (e.button !== 0) return; // 只管左键
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      // 点菜单外任何地方 → 关斜杠菜单（Wendi 2026-07-22：以前点别处不关、只能删掉「/」才关，反直觉）。
+      // 上面已对 data-ws2-ui 覆盖层（含斜杠菜单及其项）early-return，故点菜单项走不到这、不会误关。
+      if (slash) { slash = null; slashMenu.style.display = 'none'; }
       if (e.target && e.target.closest && e.target.closest('figcaption')) return; // 说明编辑：交原生放光标/选词，不启块拖选
       // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
       // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
@@ -1570,7 +1601,44 @@
             }
             return;
           }
-          return; // 非空列表项 / 删字 → 交原生
+          // 非空列表项 + 光标在【首 li】行首(= 整个列表块起点):原生跨不到上一个块(每个块是独立
+          // contenteditable),会哑掉——列表块紧跟列表块/段落时,第二块行首按 Backspace「没反应、不上移」
+          // (Wendi 2026-07-21：应跳到上面那个 block,却留在了当前 block)。自己把首 li 内容并入上一块,
+          // 对齐「同一个 ul 内 li→li」的原生合并语义(case A 一直是对的,这里补齐跨块那半)。
+          // cli 必须是 editingEl 的【直接子 li】：closest('li') 会取到最深的嵌套项,「嵌套子列表打头
+          // 的块」里内层项会被误当整块首 li 撕进上一块、留幽灵空子列表(对抗审查 Finding A)。
+          // 且 cli 自身不能带子列表(搬块级子节点进段落=非法嵌套)——这两类罕见,交原生 no-op 可接受。
+          if (cli && cli.parentElement === editingEl && !cli.previousElementSibling && isCaretAtStart(doc, editingEl)
+              && !cli.querySelector(':scope > ul, :scope > ol')) {
+            const scope = scopeRootOf(editingEl);
+            const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
+            const idx = blocks.indexOf(editingEl);
+            const prev = idx > 0 ? blocks[idx - 1] : null;
+            // 上一块是列表 → 并入其末项(与 case A 内合并同效,两项拼成一个 item);叶子文字块(段落/
+            // 标题/引用) → 并入其末尾(列表项并入段落)。上一块不可编辑/无 → 不吞,落到下面交原生 no-op。
+            let target = null;
+            if (prev && classify(prev) === 'list') target = [...prev.children].reverse().find((c) => c.tagName === 'LI') || null;
+            else if (prev && isEditableEl(prev) && isLeafTextBlock(prev)) target = prev;
+            if (target) {
+              e.preventDefault();
+              const ul = editingEl;
+              // 空目标块的占位 <br>(空段/空 li 的 `<p><br></p>`)→ 剥掉,免并入后留前导空行(Finding C)。
+              if (target.childNodes.length === 1 && target.firstChild.nodeName === 'BR') target.firstChild.remove();
+              // target 末项自带子列表时,文字插在子列表【前】(接到该项文字末尾),否则会吊到子项下面(Finding B)。
+              const nestedInTarget = target.querySelector(':scope > ul, :scope > ol');
+              const joinAt = cli.firstChild; // 接合点(合并后光标停它前面 = target 原末尾);cli 必非空(空项已在上面分流)
+              while (cli.firstChild) { if (nestedInTarget) target.insertBefore(cli.firstChild, nestedInTarget); else target.appendChild(cli.firstChild); }
+              cli.remove();
+              if (!ul.querySelector('li')) ul.remove(); // cur 列表空了 → 删掉空 <ul>
+              if (undoMgr) undoMgr.checkpoint();
+              markDirty();
+              enterEdit(prev, { mode: 'end' });
+              // joinAt 恒非空且已移进 target → setStartBefore 恒有效(不补 <br>：cli 非空,总有真内容,补 br 会留空行 Finding C)
+              try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
+              return;
+            }
+          }
+          return; // 非首 li / 删字 / 上一块不可并 → 交原生（native 在 ul 内合并 li，正确）
         }
         if (!isCaretAtStart(doc, editingEl)) return;
         const scope = scopeRootOf(editingEl); // U6：作用域感知合并/退格
@@ -1767,10 +1835,132 @@
     // 修 ED-A5：外部拖放（dragFrom 为空=不是内部块拖拽）一律吞掉，别让浏览器默认 insertFromDrop 把带任意
     // 标签的富 HTML（div/h1/span style/a…）插进 contenteditable → 落盘非合规。粘贴那道「只取纯文本」的闸在
     // drop 路径不存在，这里补上（拖放直接拒绝，用户仍可 Cmd+V 走纯文本粘贴）。
+    // ===== 内部富复制粘贴（Wendi bug5①，Colin 2026-07-22 拍板）=====
+    // 复制：把选中内容清成「本编辑器自己的、已合规」HTML，打隐形哨兵 data-ws2-clip 进剪贴板。
+    // 粘贴：带哨兵 = 本编辑器内部复制的 → **保留格式**（待办/标题/列表/引用 + 行内 B/I/U/链接）；
+    //   不带哨兵 = 外部来源（Word/Notion/网页）→ **仍走纯文本兜底**（ED-A4 合规红线，绝不让外部富文本污染文档）。
+    // 内部内容粘贴时再过一遍 cleanRoot（与存盘同一套白名单）剥编辑器标记（纵深防御，不盲信剪贴板）。
+    const SER_MOD = (typeof WS2Serialize !== 'undefined') ? WS2Serialize
+      : (typeof require !== 'undefined' ? require('./serialize.js') : null);
+    function cleanInPlace(node) { if (SER_MOD && SER_MOD.cleanRoot) SER_MOD.cleanRoot(node); return node; }
+    function cleanClone(node) { return cleanInPlace(node.cloneNode(true)); }
+    const CLIP = 'data-ws2-clip';
+
+    function onCopy(e) {
+      const cd = e.clipboardData; if (!cd || !cd.setData) return; // 无剪贴板 API → 交原生
+      const sel = doc.getSelection();
+      // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
+      if ((!sel || sel.isCollapsed) && selectedEl) {
+        cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
+        cd.setData('text/plain', selectedEl.textContent || '');
+        e.preventDefault(); return;
+      }
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 无选区 → 交原生
+      const r = sel.getRangeAt(0);
+      const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
+      if (!sBlk || !eBlk) return; // 落在块外/覆盖层 → 交原生（不接管）
+      const norm = (s) => (s || '').replace(/\s+/g, '');
+      const sameBlock = sBlk === eBlk;
+      // 整块判定（选中覆盖了整个块的文字，如选完一整行待办）→ 当块级复制、保留块类型（正是 Wendi 的场景）。
+      const wholeBlock = sameBlock && norm(sel.toString()).length > 0 && norm(sel.toString()) === norm(sBlk.textContent);
+      if (sameBlock && !wholeBlock) {
+        // ② 行内：选一段字 → 保留 B/I/U/S/行内代码/链接/颜色等行内格式。
+        // cloneContents 只克隆选中节点：选中「<b> 里的字」时得到纯文本、丢掉 <b> → 把选区逐层裹进它所在的
+        // 行内格式祖先(到块为止)，把格式补回来。跨越 <b> 边界的选区 commonAncestor=块，循环不触发、cloneContents 已含 <b>。
+        let frag = r.cloneContents();
+        const INLINE_FMT = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, S: 1, STRIKE: 1, CODE: 1, A: 1, MARK: 1, SUB: 1, SUP: 1, SPAN: 1 };
+        let anc = r.commonAncestorContainer;
+        anc = anc && anc.nodeType === 1 ? anc : (anc && anc.parentElement);
+        while (anc && anc !== sBlk && INLINE_FMT[anc.tagName]) { const wrap = anc.cloneNode(false); wrap.appendChild(frag); frag = wrap; anc = anc.parentElement; }
+        const w = doc.createElement('span'); w.appendChild(frag); cleanInPlace(w);
+        cd.setData('text/html', '<span ' + CLIP + '="i">' + w.innerHTML + '</span>');
+        cd.setData('text/plain', sel.toString());
+        e.preventDefault(); return;
+      }
+      // ③ 块级：取选区罩住的**完整**顶层块 i..j（整块，不做部分裁剪 → 每个剪贴板块都是完整合规块）
+      const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
+      const crossScope = sScope !== eScope;
+      const scopeRoot = crossScope ? blockRoot : sScope;
+      const tops = blocksInScope(scopeRoot);
+      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      let i = tops.indexOf(sB), j = tops.indexOf(eB);
+      if (i < 0 || j < 0) return;
+      if (i > j) { const t = i; i = j; j = t; }
+      let html = '';
+      for (let k = i; k <= j; k++) html += cleanClone(tops[k]).outerHTML;
+      cd.setData('text/html', '<div ' + CLIP + '="b">' + html + '</div>');
+      cd.setData('text/plain', sel.toString());
+      e.preventDefault();
+    }
+
+    // 跨文档粘贴：把待办/callout/toggle 的语义 CSS 注进目标文档 head（否则粘进还没这类块的文档，勾选框/折叠不渲染）。
+    function ensurePastedStyles(el) {
+      if (!el || el.nodeType !== 1) return;
+      const hit = (sel) => (el.matches && el.matches(sel)) || (el.querySelector && el.querySelector(sel));
+      if (hit('ul.ws-todo')) ensureTodoStyle();
+      if (hit('.ws-callout')) ensureCalloutStyle();
+      if (el.tagName === 'DETAILS' || hit('details')) ensureToggleStyle();
+    }
+
+    // 行内富粘贴：把行内 HTML 手动插到光标处（execCommand('insertHTML') 在本 contenteditable 里是哑的 no-op，
+    // 实测不插——改手动 range.insertNode，可靠且不会造块嵌套；undo 由调用方 checkpoint 兜）。
+    function insertInlineAtCaret(innerHtml) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const r = sel.getRangeAt(0);
+      if (!r.collapsed) r.deleteContents();
+      const tpl = doc.createElement('template'); tpl.innerHTML = innerHtml;
+      const nodes = [...tpl.content.childNodes];
+      r.insertNode(tpl.content);
+      const lastNode = nodes[nodes.length - 1];
+      if (lastNode) { try { const nr = doc.createRange(); nr.setStartAfter(lastNode); nr.collapse(true); sel.removeAllRanges(); sel.addRange(nr); } catch (x) { /* 光标落点尽力而为 */ } }
+    }
+
+    // 块级富粘贴：把完整块序列按已拍板落点插入（Colin 2026-07-22）：
+    //   空正文块 → 整块换成粘贴内容；光标块首 → 插在前；块末 → 插在后；块中 → splitBlock 劈开插中间；
+    //   灰选中块 → 插其后；无编辑无选中 → 追加末尾。光标落最后一块末尾。
+    function insertBlocksAtCaret(blocks) {
+      if (!blocks.length) return;
+      blocks.forEach(ensurePastedStyles);
+      const last = blocks[blocks.length - 1];
+      const frag = doc.createDocumentFragment();
+      blocks.forEach((b) => frag.appendChild(b));
+      if (editingEl && classify(editingEl) === 'text' && (editingEl.textContent || '').trim() === '') {
+        const host = editingEl; exitEdit(); host.replaceWith(frag); // 空正文块整块替换（不留空行，对齐 Notion）
+      } else if (editingEl) {
+        if (isCaretAtStart(doc, editingEl)) editingEl.before(frag);
+        else if (isCaretAtRealEnd(doc, editingEl)) editingEl.after(frag);
+        else { const beforeHalf = editingEl; if (splitBlock()) beforeHalf.after(frag); else beforeHalf.after(frag); } // 块中：劈开，插在前半之后（=后半之前）
+      } else if (selectedEl) { selectedEl.after(frag); }
+      else { blockRoot.appendChild(frag); }
+      if (last && last.isConnected) { if (isEditableEl(last)) enterEdit(last, { mode: 'end' }); else selectBlock(last); }
+    }
+
     // 修 ED-A4：粘贴只取纯文本，且多行文本自己按 \n 劈成同类型兄弟块——不交给 execCommand 处理换行。
     // 原来 shell 的 paste 用 execCommand('insertText', 带换行的文本)：Chromium 会把 \n 转成段落切分、
     // 在标题块里塞 <p>（<h2><p>..</p></h2>），reparse 后原样保留 → 持久非合规；段落块里也多出垃圾空 <p> + 活 DOM/磁盘分叉。
     function onPaste(e) {
+      // 内部富粘贴优先：剪贴板 HTML 带本编辑器哨兵 → 保留格式（外部无哨兵的 HTML 一律不走这、落纯文本兜底）。
+      const richHtml = e.clipboardData && e.clipboardData.getData ? e.clipboardData.getData('text/html') : '';
+      if (richHtml && richHtml.indexOf(CLIP) !== -1) {
+        const tpl = doc.createElement('template'); tpl.innerHTML = richHtml;
+        const clip = tpl.content.querySelector('[' + CLIP + ']');
+        if (clip) {
+          e.preventDefault();
+          const mode = clip.getAttribute(CLIP); // 先读哨兵值,再清——cleanInPlace 会把 data-ws2-clip 本身剥掉
+          cleanInPlace(clip); // 纵深防御：再按存盘白名单剥一遍编辑器标记（含哨兵）
+          if (mode === 'i' && editingEl && editingEl.tagName !== 'DETAILS') {
+            insertInlineAtCaret(clip.innerHTML);
+          } else {
+            const blocks = [...clip.children].filter((c) => c.nodeType === 1);
+            if (blocks.length) insertBlocksAtCaret(blocks);
+            else if (editingEl) insertInlineAtCaret(clip.innerHTML); // 行内哨兵但非编辑态兜底
+          }
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          return;
+        }
+      }
       const cd = e.clipboardData || (typeof window !== 'undefined' && window.clipboardData);
       const text = cd && cd.getData ? cd.getData('text/plain') : '';
       // 文本优先（已拍板①）：有可用文本 → 走下面纯文本粘贴不变；仅当无文本时才收图片（纯图剪贴板）。
@@ -1922,6 +2112,7 @@
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
     doc.addEventListener('paste', onPaste);
+    doc.addEventListener('copy', onCopy); // 内部富复制：⌘C 写带哨兵的干净 HTML（⌘X 走 keydown 里的 execCommand('copy') 也经此）
     doc.addEventListener('toggle', onToggle, true); // 折叠事件不冒泡→捕获相 + 委托 doc（撑过 innerHTML 重写/嵌套/后加 toggle）
     doc.documentElement.addEventListener('mouseleave', onDocLeave);
 
@@ -1941,6 +2132,7 @@
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
       doc.removeEventListener('paste', onPaste);
+      doc.removeEventListener('copy', onCopy);
       doc.removeEventListener('toggle', onToggle, true);
       exitEdit();
       [grip, fmtbar, blockMenu, slashMenu].forEach((n) => n.remove());
@@ -1978,9 +2170,11 @@
   [contenteditable='true']{outline:none;}
   /* 空块/图片说明的占位文案（:empty::before content）随语言，在 attach 期用 t() 拼进 adoptedStyleSheets，不写死在这。 */
   /* 空块也占一行高度——否则非编辑态的空块（没占位符）塌成 0 高，连按 Enter 建的空白行全叠在一处、看着「换不了行」。
-     用 em 跟字号缩放（空标题行更高）。纯渲染、不进序列化。 */
+     必须用 1lh（＝该块自己的 line-height），不能用固定的 1.6em：各块行高不同（p=1.75、h1=1.3…），固定 em 对不上，
+     导致空块比有字的块矮一截（p 实测 25.6 vs 28）——于是块在「空↔有字」间翻转时下面所有行会跳 2.4px（Wendi 2026-07-22
+     报「上下插入时这行会上下抖动、纵坐标没固定住」的根因）。1lh 让空块精确等于有字时的一行高，翻转零位移。纯渲染、不进序列化。 */
   [data-ws2-root] > p:empty, [data-ws2-root] > h1:empty, [data-ws2-root] > h2:empty,
-  [data-ws2-root] > h3:empty, [data-ws2-root] > blockquote:empty, [data-ws2-root] > .ws-callout:empty{min-height:1.6em;}
+  [data-ws2-root] > h3:empty, [data-ws2-root] > blockquote:empty, [data-ws2-root] > .ws-callout:empty{min-height:1lh;}
   /* 选中/编辑高亮只用 box-shadow + background（不影响布局），绝不用 padding/margin——否则 padding 把文字推右。 */
   [data-ws2-selected]:not([data-ws2-editing]){border-radius:4px;box-shadow:0 0 0 2px rgba(0,0,0,.16),0 0 0 6px rgba(0,0,0,.05);background:rgba(0,0,0,.03);}
   /* 图片块选中框:暗色文档=对 html 施 invert 滤镜、并对 img 二次施同款把图还原真色——这层双反色会把
@@ -2012,8 +2206,11 @@
   .ws-fmtbar-ai:hover{background:rgba(26,115,232,.08);}
   .ws-fmtbar-holder{position:relative;display:inline-flex;}
   .ws-fmtbar-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:100000;min-width:132px;padding:4px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);}
-  .ws-fmtbar-menu-item{display:block;width:100%;height:30px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
+  .ws-fmtbar-menu-item{display:flex;align-items:center;width:100%;height:30px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
   .ws-fmtbar-menu-item:hover{background:#f0f1f3;}
+  /* 当前块类型高亮 + 右侧勾（Wendi 2026-07-22：看不出当前是几级标题） */
+  .ws-fmtbar-menu-item--on{color:#1a73e8;font-weight:600;}
+  .ws-fmtbar-menu-item--on::after{content:'\\2713';margin-left:auto;color:#1a73e8;}
   .ws-fmtbar-swatches{position:absolute;top:calc(100% + 6px);left:0;z-index:100000;gap:4px;padding:7px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);}
   .ws-fmtbar-swatch{width:20px;height:20px;border-radius:3px;border:1px solid #e4e6e9;cursor:pointer;padding:0;}
 
