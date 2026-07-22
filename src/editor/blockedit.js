@@ -1790,8 +1790,31 @@
       }
       e.preventDefault();
       const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
-      // 单行 / 非编辑态 / summary（放不了块，多行会劈出第二个 summary → 非合规）→ 合成单行插入。U13。
-      if (!editingEl || lines.length <= 1 || editingEl.tagName === 'SUMMARY') { doc.execCommand('insertText', false, lines.join(' ')); return; }
+      if (lines.length <= 1) { doc.execCommand('insertText', false, lines[0] || ''); return; }
+      // bug2：无编辑目标（灰选 / 光标在块内但未 enterEdit）时先进编辑，别直接 lines.join(' ') 把多行拼成一行。
+      if (!editingEl) {
+        const s0 = doc.getSelection();
+        const fromSel = s0 && s0.anchorNode ? blockOf(s0.anchorNode) : null;
+        const tgt = (selectedEl && isEditableEl(selectedEl) && selectedEl) || (fromSel && isEditableEl(fromSel) && fromSel) || null;
+        if (tgt) enterEdit(tgt, { mode: 'end' });
+      }
+      // 实在无块可放（无光标）/ summary（放不下块，多行会劈出第二个 summary → 非合规）→ 只能合成单行。U13。
+      if (!editingEl || editingEl.tagName === 'SUMMARY') { doc.execCommand('insertText', false, lines.join(' ')); return; }
+      // bug2 列表：每行一个新 <li>（同一 ul 内、继承 li 类型），绝不建新 <ul>、绝不丢行。
+      // （通用 splitBlock 按 editingEl.tagName=UL 建块 → 会造出新 <ul> 且后续行灌进空 ul 丢失，multi-bullet 并成一行。）
+      if (classify(editingEl) === 'list') {
+        const s1 = doc.getSelection();
+        const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
+        let li = n1 && n1.closest ? n1.closest('li') : null;
+        if (li && editingEl.contains(li)) {
+          doc.execCommand('insertText', false, lines[0]); // 第一行接当前 li（尊重光标处）
+          for (let i = 1; i < lines.length; i++) { const nli = doc.createElement('li'); nli.textContent = lines[i]; li.after(nli); li = nli; }
+          const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); // 光标落最后一个新 li 末尾
+          const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r);
+          if (undoMgr) undoMgr.checkpoint(); markDirty();
+          return;
+        }
+      }
       doc.execCommand('insertText', false, lines[0]);
       for (let i = 1; i < lines.length; i++) {
         if (splitBlock()) { if (lines[i]) doc.execCommand('insertText', false, lines[i]); } // splitBlock 劈出同类型新块（不嵌套）+ 光标移到新块首
