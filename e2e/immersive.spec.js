@@ -344,8 +344,13 @@ test('peek 假红绿灯：peek 现/收起前隐、三颗齐、点最小化走真
   const fl = await page.locator('#sb-fakelights').boundingBox();
   expect(fl.x, '假灯该在卡内让位区').toBeGreaterThan(10);
   expect(fl.x + fl.width, '假灯不该越过 70px 让位区').toBeLessThan(10 + 70);
-  // 点「最小化」→ 真窗控(IPC ws-win-ctl 全链路;xvfb 支持 minimize)
-  await page.locator('.sb-fl-min').click();
-  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isMinimized()), { timeout: 3000 }).toBe(true);
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].restore());
+  // 点「关闭」→ 真窗控(IPC ws-win-ctl 全链路)。用 close 不用 minimize:xvfb 没有窗口管理器,
+  // minimize/fullscreen 是 WM 功能、isMinimized() 在 CI 永 false(CI 实翻过);close 无需 WM。
+  // 口径兼两平台:linux=销毁(窗口数 0)、mac=隐藏驻留(仍 1 但不可见)——「销毁或全不可见」都证明链路通。
+  // minimize/fullscreen 语义宿主人工验过(Colin 2026-07-22)。
+  await page.locator('.sb-fl-close').click();
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => {
+    const ws = BrowserWindow.getAllWindows();
+    return ws.length === 0 || ws.every((w) => !w.isVisible());
+  }), { timeout: 3000 }).toBe(true);
 });
