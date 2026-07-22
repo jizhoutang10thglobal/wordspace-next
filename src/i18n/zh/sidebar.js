@@ -181,6 +181,9 @@ module.exports = {
   resizeHint: '拖拽调整侧栏宽度',
   toggleSidebarTitle: '收起侧栏 ⌘\\',
   expandSidebarTitle: '展开侧栏 ⌘\\',
+  flClose: '关闭',
+  flMinimize: '最小化',
+  flFullscreen: '全屏',
   navBack: '后退',
   navForward: '前进',
   reloadTitle: '刷新 ⌘R',
@@ -195,4 +198,7 @@ module.exports = {
   emptyOpenBtn: '打开文件夹',
   aiAccessTitle: 'AI 接入',
   expandSidebarTitle: '展开侧栏 ⌘\\',
+  flClose: '关闭',
+  flMinimize: '最小化',
+  flFullscreen: '全屏',
 };

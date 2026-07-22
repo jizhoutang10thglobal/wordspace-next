@@ -492,6 +492,14 @@ ipcMain.on('set-dirty', (_e, v) => { isDirty = !!v; });
 // renderer 的 Cmd+W 空态「关窗口」入口：统一走 win.close()，由上面 close 守卫按平台分流
 // （macOS=隐藏驻留 / 其他平台=真关 → 退出），别在 renderer 里自己 hide 绕开语义收口。
 ipcMain.on('win-close', () => { if (win && !win.isDestroyed()) win.close(); });
+// peek 浮卡里的 DOM 假红绿灯(mac,Wendi 2026-07-22「把这3个按钮放到卡片上」)的窗控入口:
+// Electron 不能把原生灯搬进 DOM 卡片(AppKit 可以、Arc 就是这么干的),假灯点击走这条。
+ipcMain.on('ws-win-ctl', (_e, action) => {
+  if (!win || win.isDestroyed()) return;
+  if (action === 'close') win.close();          // 与 win-close 同语义(close 守卫按平台分流)
+  else if (action === 'minimize') win.minimize();
+  else if (action === 'fullscreen') win.setFullScreen(!win.isFullScreen()); // 绿灯=全屏切换(macOS 惯例)
+});
 
 // 单实例：第二次启动（如再双击一个文件）不另起进程，而是把 argv 里的路径交给已运行实例并聚焦窗口。
 // 这也是 Windows 文件关联能用的关键——否则双击只会无脑再开一个空窗口。
