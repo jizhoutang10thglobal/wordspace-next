@@ -735,13 +735,17 @@
         if (item.cls) next.className = item.cls; else next.removeAttribute('class');
         if (item.cls === 'ws-todo') ensureTodoStyle();
         else next.querySelectorAll('li[data-checked]').forEach((li) => li.removeAttribute('data-checked')); // A3：todo→普通列表，清残留勾选态
+        // 空 li（无元素子且无非空白文字）在 ws-todo list-style:none 下无 line box、高度 0、落不住 caret、
+        // 后续输入被静默吞掉（create-1）→ 补 <br> 占位。containerLines 与 else 两条建 li 路径都要过（容器块含真空 <p></p> 时同样中招）。
+        const padLi = (li) => { if (!li.firstChild || (!li.querySelector('*') && !li.textContent.trim())) li.appendChild(doc.createElement('br')); };
         if (containerLines) {
           while (next.firstChild) next.removeChild(next.firstChild);
-          for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); next.appendChild(li); } // 容器每段 → 一个 <li>
+          for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); padLi(li); next.appendChild(li); } // 容器每段 → 一个 <li>（空段补 br）
         } else if (!next.querySelector('li')) {
           const li = doc.createElement('li');
           while (next.firstChild) li.appendChild(next.firstChild);
-          next.appendChild(li); // 空内容时得到 <ul><li></li></ul>（合法、可继续编辑）
+          padLi(li);
+          next.appendChild(li);
         }
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return next;
@@ -1876,6 +1880,34 @@
       const sameBlock = sBlk === eBlk;
       // 整块判定（选中覆盖了整个块的文字，如选完一整行待办）→ 当块级复制、保留块类型（正是 Wendi 的场景）。
       const wholeBlock = sameBlock && norm(sel.toString()).length > 0 && norm(sel.toString()) === norm(sBlk.textContent);
+      // U3/clip-1：同一列表块内跨 li 选区 → 走块级打包（保留待办项类型 + 勾选态），别落行内分支携带裸 <li>。
+      // blockOf 把整个 <ul> 当一个块 → 选部分项时 sameBlock && !wholeBlock 会误入行内分支、cloneContents 出裸 li，
+      // 粘进段落成 <p>…<li> 非法嵌套、整篇降级、勾选语义丢失。单 li 内选区（sLi===eLi）不进此分支、维持行内。
+      if (sameBlock && (sBlk.tagName === 'UL' || sBlk.tagName === 'OL')) {
+        const kids = [...sBlk.children].filter((c) => c.tagName === 'LI');
+        // 归一到 sBlk 的**直接子** li：选区落在嵌套子项时 closest('li') 取到的是最深 li（不在 kids 里），
+        // 直接 indexOf 会得 -1 → kids[-1].cloneNode 抛 TypeError、onCopy 崩、复制静默回落原生丢待办格式。
+        const topLiOf = (n) => {
+          let li = n && n.nodeType === 1 ? n : (n && n.parentElement);
+          li = li && li.closest ? li.closest('li') : null;
+          while (li && li.parentElement !== sBlk) { const up = li.parentElement && li.parentElement.closest ? li.parentElement.closest('li') : null; if (!up || up === li) { li = null; break; } li = up; }
+          return li;
+        };
+        // 端点落在 li 边界外（endContainer=ul 本身）→ 回落首/末项。
+        const sLi = topLiOf(r.startContainer) || kids[0], eLi = topLiOf(r.endContainer) || kids[kids.length - 1];
+        let i = sLi ? kids.indexOf(sLi) : -1, j = eLi ? kids.indexOf(eLi) : -1;
+        if (i >= 0 && j >= 0 && sLi !== eLi) { // 都归到顶层 kids 且跨项才走块级；退化情形（i/j=-1，如空列表）安全回落
+
+          if (i > j) { const t = i; i = j; j = t; }
+          const listFrag = doc.createElement(sBlk.tagName);
+          if (sBlk.className) listFrag.className = sBlk.className;
+          for (let k = i; k <= j; k++) listFrag.appendChild(kids[k].cloneNode(true));
+          cleanInPlace(listFrag);
+          cd.setData('text/html', '<div ' + CLIP + '="b">' + listFrag.outerHTML + '</div>');
+          cd.setData('text/plain', sel.toString());
+          e.preventDefault(); return;
+        }
+      }
       if (sameBlock && !wholeBlock) {
         // ② 行内：选一段字 → 保留 B/I/U/S/行内代码/链接/颜色等行内格式。
         // cloneContents 只克隆选中节点：选中「<b> 里的字」时得到纯文本、丢掉 <b> → 把选区逐层裹进它所在的
@@ -1920,9 +1952,23 @@
     function insertInlineAtCaret(innerHtml) {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0) return;
+      const tpl = doc.createElement('template'); tpl.innerHTML = innerHtml;
+      // 纵深防御（clip-1）：片段含块级元素 → 绝不行内 range.insertNode（会造 <p><li>/<p><p> 非法嵌套），改走块级。
+      // 裸 <li> 先裹进 <ul>（li 不能当顶层块；任一 li 带 data-checked 则视为 ws-todo）。
+      if (tpl.content.querySelector('li,ul,ol,p,div,h1,h2,h3,h4,h5,h6,blockquote,details,table,figure,hr')) {
+        const kids = [...tpl.content.children].filter((c) => c.nodeType === 1);
+        const bareLis = kids.filter((c) => c.tagName === 'LI');
+        let blocks = kids;
+        if (kids.length && bareLis.length === kids.length) {
+          const ul = doc.createElement('ul');
+          if (bareLis.some((li) => li.hasAttribute('data-checked'))) ul.className = 'ws-todo';
+          kids.forEach((li) => ul.appendChild(li));
+          blocks = [ul];
+        }
+        if (blocks.length) { insertBlocksAtCaret(blocks); return; }
+      }
       const r = sel.getRangeAt(0);
       if (!r.collapsed) r.deleteContents();
-      const tpl = doc.createElement('template'); tpl.innerHTML = innerHtml;
       const nodes = [...tpl.content.childNodes];
       r.insertNode(tpl.content);
       const lastNode = nodes[nodes.length - 1];
@@ -1966,7 +2012,28 @@
             insertInlineAtCaret(clip.innerHTML);
           } else {
             const blocks = [...clip.children].filter((c) => c.nodeType === 1);
-            if (blocks.length) insertBlocksAtCaret(blocks);
+            // U3/clip-1：单一列表包粘进**同类**列表编辑态 → 逐项并入当前 li 之后（保留 data-checked），
+            // 别走 insertBlocksAtCaret（它对列表目标会 splitBlock 劈出 2-3 个相邻 ul，违反 bug2「绝不建新 ul」）。
+            // 类型必须一致（tag + ws-todo 与否）：否则 ws-todo 项并进普通 ul 会留下不渲染的死 data-checked、
+            // ol 项并进 todo 丢编号语义——跨类型改走块级插入（自成一块，保住各自语义）。
+            let merged = false;
+            const bt = blocks.length === 1 ? blocks[0] : null;
+            const sameListType = bt && editingEl && editingEl.tagName === bt.tagName && editingEl.classList.contains('ws-todo') === bt.classList.contains('ws-todo');
+            if (bt && (bt.tagName === 'UL' || bt.tagName === 'OL') && editingEl && classify(editingEl) === 'list' && sameListType) {
+              const s1 = doc.getSelection();
+              const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
+              let li = n1 && n1.closest ? n1.closest('li') : null;
+              const srcLis = [...blocks[0].children].filter((c) => c.tagName === 'LI');
+              if (li && editingEl.contains(li) && srcLis.length) {
+                for (const sLi of srcLis) { li.after(sLi); li = sLi; }
+                ensurePastedStyles(editingEl);
+                const rr = doc.createRange(); rr.selectNodeContents(li); rr.collapse(false);
+                s1.removeAllRanges(); s1.addRange(rr);
+                merged = true;
+              }
+            }
+            if (merged) { /* 已逐项并入当前列表 */ }
+            else if (blocks.length) insertBlocksAtCaret(blocks);
             else if (editingEl) insertInlineAtCaret(clip.innerHTML); // 行内哨兵但非编辑态兜底
           }
           if (undoMgr) undoMgr.checkpoint();
