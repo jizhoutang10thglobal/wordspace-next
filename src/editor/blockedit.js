@@ -888,7 +888,10 @@
       // 修 bug6：裁剪把列表端点的 <li> 删光后会剩一个非法空 <ul></ul>（无 li 无勾选框的 ghost 死块，
       // 且后续打字会灌进 <ul> 变非合规）。把裁空的列表块就地换成空 <p>（de-list），放在合并前——
       // 两端都成空 <p> 时下面的 canMerge 会把它们并成一个干净空块（对齐"选全部再删=一个空块"）。
-      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && !b.querySelector('li') && b.parentNode) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
+      // 裁空的列表端点：整列表已无文字内容（无 <li>，或只剩空 <li> —— 空 <li> 是零高，其绝对定位的勾选框
+      // ::before 会悬空盖到下一块上，Wendi 反馈的"复选框遮挡后面文字"）→ 就地换成空 <p>（de-list）。
+      // 只在整列表空时换；还有内容的项保留（部分删不动列表）。
+      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && b.parentNode && (b.textContent || '').trim() === '' && !b.querySelector('img, figure, table')) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
       sB = fixEmptyList(sB); eB = fixEmptyList(eB);
       const prefixEnd = sEditable ? sB.lastChild : null; // 接合点（合并前 prefix 末尾）
       if (sEditable && eEditable && SM.canMerge(sB, eB)) { // 两端都是存活的叶子文字块才节点级拼接
