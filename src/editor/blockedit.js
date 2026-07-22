@@ -1730,7 +1730,42 @@
       // （Wendi Bug7「合并段」——原来只能向后合并，块末按 Delete 撞墙没反应）。块中间交原生删字。
       if (e.key === 'Delete' && editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
-        if (classify(editingEl) === 'list') return; // 列表内交原生（删项/删字）
+        // U7/select-3：镜像 Backspace，让列表 Delete 前向合并不再撞墙（原来直接 return 交原生，但每个块是
+        // 独立 contenteditable、原生跨不出块边界 → 末项尾/段末遇列表全 no-op，与 Backspace 侧不对称）。
+        if (classify(editingEl) === 'list') {
+          const s0 = doc.getSelection();
+          if (!s0 || s0.rangeCount === 0 || !s0.isCollapsed) return; // 非折叠已前处理
+          const n0 = s0.anchorNode ? (s0.anchorNode.nodeType === 1 ? s0.anchorNode : s0.anchorNode.parentElement) : null;
+          const curLi = n0 && n0.closest ? n0.closest('li') : null;
+          if (!curLi || curLi.parentElement !== editingEl) return; // 嵌套子项 / 定位不到顶层 li → 交原生
+          const nextLi = curLi.nextElementSibling;
+          // c) 空 li Delete → 前向并入下一 li（镜像 Backspace 空 li）
+          if ((curLi.textContent || '').trim() === '' && nextLi && nextLi.tagName === 'LI') {
+            e.preventDefault();
+            if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空项占位 br
+            const joinAt = nextLi.firstChild;
+            while (nextLi.firstChild) curLi.appendChild(nextLi.firstChild);
+            nextLi.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
+            if (joinAt && joinAt.parentNode === curLi) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+            else if (!curLi.firstChild) curLi.appendChild(doc.createElement('br'));
+            return;
+          }
+          // a) 末项尾 Delete + ul 有下一叶子文字块 → 并入末项（不可并块 → 安全 no-op）。判末项 li 自身末尾（不是 ul）
+          if (!nextLi && isCaretAtRealEnd(doc, curLi)) {
+            const scope = scopeRootOf(editingEl);
+            const bs = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
+            const nb = bs[bs.indexOf(editingEl) + 1];
+            if (nb && isEditableEl(nb) && isLeafTextBlock(nb)) {
+              e.preventDefault();
+              const joinAt = nb.firstChild;
+              while (nb.firstChild) curLi.appendChild(nb.firstChild);
+              nb.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
+              if (joinAt && joinAt.parentNode === curLi) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+              return;
+            }
+          }
+          return; // 其它 list 内 Delete（非空非末 / 中间删字）→ 交原生
+        }
         const sel = doc.getSelection();
         if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 非折叠选区前面已处理；这里只管折叠光标
         if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内 Delete 会误吞下一段（B 组）
@@ -1738,8 +1773,25 @@
         const blocks = (dScope === blockRoot) ? topBlocks() : blocksInScope(dScope);
         const next = blocks[blocks.indexOf(editingEl) + 1];
         if (!next) return; // 作用域末块 → 无内块可合并（绝不跨作用域）
-        if (classify(next) === 'list' || !isEditableEl(next)) return; // 下一块是列表/图片/分隔线 → 不吞
         const cur = editingEl;
+        // b) 段末 Delete、下一块是列表 → 吞列表首项（首 li 行内内容并入段落；列表剩余保留、掏空则删 ul）。
+        // 首 li 含嵌套子列表 → no-op（镜像 Backspace 首 li 守卫 `!cli.querySelector 子列表`，避免 <p><ul> 非法）。
+        if (classify(next) === 'list') {
+          const firstLi = next.querySelector(':scope > li');
+          if (firstLi && !firstLi.querySelector(':scope > ul, :scope > ol') && isLeafTextBlock(cur)) {
+            e.preventDefault();
+            if (firstLi.childNodes.length === 1 && firstLi.firstChild && firstLi.firstChild.nodeName === 'BR') firstLi.firstChild.remove();
+            const joinAt = firstLi.firstChild;
+            while (firstLi.firstChild) cur.appendChild(firstLi.firstChild);
+            firstLi.remove();
+            if (!next.querySelector(':scope > li')) next.remove(); // 列表掏空 → 删 ul
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            if (joinAt && joinAt.parentNode === cur) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+            return;
+          }
+          return; // 首 li 空/含嵌套 / cur 非叶子 → no-op
+        }
+        if (!isEditableEl(next)) return; // 下一块图片/分隔线 → 不吞
         // 两块都得是叶子文字块才拼接——cur/next 是透明包裹块（div.lead>p）时平搬子节点会造 <p><p>/容器直挂裸文本（A 组）。
         if (!isLeafTextBlock(cur) || !isLeafTextBlock(next)) return;
         e.preventDefault();
@@ -2255,9 +2307,26 @@
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
     }
 
+    // U8/clip-3：undo/redo 用 body.innerHTML 整体重写、正在编辑的块被销毁、焦点回落非可编辑 BODY →
+    // 后续打字无宿主被静默吞。runUndoRedo 在重写**前** snapshotEdit 记录编辑块结构路径，reset 后 restoreEdit
+    // 按同路径在新 body 里重进编辑（mode:'end'）。光标精确位置不还原（v1 取舍）。
+    function blockPathOf(el) {
+      const path = []; let n = el;
+      while (n && n !== body) { const p = n.parentNode; if (!p) return null; path.unshift(Array.prototype.indexOf.call(p.children, n)); n = p; }
+      return n === body ? path : null;
+    }
+    function snapshotEdit() { return editingEl ? blockPathOf(editingEl) : null; }
+    function restoreEdit(path) {
+      let target = null;
+      if (path) { let n = body; for (const i of path) { if (!n || !n.children || i < 0 || i >= n.children.length) { n = null; break; } n = n.children[i]; } target = n; }
+      // 路径失效 / 落到非可编辑块（hr/figure/details——resolvePath 照样返回、不算 null）→ 落第一个可编辑块，保证打字有宿主。
+      if (!target || !isEditableEl(target)) target = topBlocks().find((b) => isEditableEl(b)) || null;
+      if (target) enterEdit(target, { mode: 'end' });
+    }
+
     // reposition：缩放/窗口尺寸变后重定位手柄+气泡。编辑态 selectedEl=null、当前块在 hoverEl，故跟 onScroll 一样
     // 用 hoverEl 兜底（否则编辑中缩放，手柄会漂在缩放前的旧坐标）。
-    return { detach, reset, deselect, reposition: () => { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); } };
+    return { detach, reset, deselect, snapshotEdit, restoreEdit, reposition: () => { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); } };
   }
 
   // ===== 注入到 iframe 的编辑器样式（ui-demo Canvas.css 移植；选择器既命中 .ws-* 也命中裸标签）=====

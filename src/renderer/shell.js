@@ -321,9 +321,10 @@ function detachEditors() {
 // 重挂 WS2BasicEdit 内核（只重挂内核，shell 加在 doc 上的 keydown/wheel 监听还有效、不能重加）。
 function runUndoRedo(isRedo) {
   if (!undoMgr) return;
+  const editPath = blockEdit && blockEdit.snapshotEdit ? blockEdit.snapshotEdit() : null; // U8/clip-3：重写前记录编辑块路径
   const changed = isRedo ? undoMgr.redo() : undoMgr.undo();
   if (!changed) return;
-  if (blockEdit) blockEdit.reset();
+  if (blockEdit) { blockEdit.reset(); if (blockEdit.restoreEdit) blockEdit.restoreEdit(editPath); } // U8：重写后按路径重进编辑，别让焦点落非可编辑 body → 打字被吞
   if (basicEdit) {
     basicEdit.detach();
     basicEdit = WS2BasicEdit.attach(frame.contentDocument, { win: frame.contentWindow, host: mainEl, markDirty });
