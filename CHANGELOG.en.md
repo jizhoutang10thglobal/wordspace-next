@@ -5,6 +5,26 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.11.5 — 2026-07-22
+
+A batch of editor experience fixes, and a smoother sidebar feel.
+
+### Improved
+
+- **Editor**: copy & paste inside the app now keeps formatting (pasting from other apps stays plain text)
+- **Editor**: dragging a selection across blocks now highlights whole rows, so you can see exactly which lines are selected
+- **Editor**: the "Turn into" menu now includes Heading 4 and highlights the current block type
+- **Sidebar**: much easier to summon when collapsed — slide the mouse to the window's left edge, the top-left corner, or push to the top of the screen in full-screen, and the sidebar slides out; the window buttons (close / minimize / full-screen) live right on the floating sidebar card
+
+### Fixed
+
+- **Editor**: clicking a block no longer makes the document jump; empty lines match text-line height, so inserting content no longer jitters neighboring lines
+- **To-dos / lists**: deleting items empty no longer leaves an undeletable ghost block or a stray checkbox
+- **Lists**: pressing Delete at the start of a line now correctly merges it into the line above (previously nothing happened)
+- **Lists**: pasting multi-line text into a list creates one item per line — no more collapsing into one line or losing lines
+- **Editor**: the slash menu closes when you click elsewhere — no need to delete the "/" first
+- **Editor**: typing right after selecting across blocks now works immediately, instead of doing nothing
+
 ## v0.11.0 — 2026-07-21
 
 A collapsible Toggle block in the editor, downloads in the browser, and the sidebar fused with the window frame.
