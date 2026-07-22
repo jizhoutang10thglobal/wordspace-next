@@ -735,13 +735,16 @@
         if (item.cls) next.className = item.cls; else next.removeAttribute('class');
         if (item.cls === 'ws-todo') ensureTodoStyle();
         else next.querySelectorAll('li[data-checked]').forEach((li) => li.removeAttribute('data-checked')); // A3：todo→普通列表，清残留勾选态
+        // 空 li（无元素子且无非空白文字）在 ws-todo list-style:none 下无 line box、高度 0、落不住 caret、
+        // 后续输入被静默吞掉（create-1）→ 补 <br> 占位。containerLines 与 else 两条建 li 路径都要过（容器块含真空 <p></p> 时同样中招）。
+        const padLi = (li) => { if (!li.firstChild || (!li.querySelector('*') && !li.textContent.trim())) li.appendChild(doc.createElement('br')); };
         if (containerLines) {
           while (next.firstChild) next.removeChild(next.firstChild);
-          for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); next.appendChild(li); } // 容器每段 → 一个 <li>
+          for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); padLi(li); next.appendChild(li); } // 容器每段 → 一个 <li>（空段补 br）
         } else if (!next.querySelector('li')) {
           const li = doc.createElement('li');
           while (next.firstChild) li.appendChild(next.firstChild);
-          if (!li.firstChild) li.appendChild(doc.createElement('br')); // 空内容补 <br>：否则 ws-todo 空 li 无 line box、高度 0、Blink 落不住 caret，后续输入被静默吞掉（create-1）
+          padLi(li);
           next.appendChild(li);
         }
         if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -1882,11 +1885,19 @@
       // 粘进段落成 <p>…<li> 非法嵌套、整篇降级、勾选语义丢失。单 li 内选区（sLi===eLi）不进此分支、维持行内。
       if (sameBlock && (sBlk.tagName === 'UL' || sBlk.tagName === 'OL')) {
         const kids = [...sBlk.children].filter((c) => c.tagName === 'LI');
-        const liOf = (n) => { n = n && n.nodeType === 1 ? n : (n && n.parentElement); return n && n.closest ? n.closest('li') : null; };
-        // 端点落在 li 边界外（如 endContainer 是 ul 本身）→ 归一到最近覆盖的 li。
-        const sLi = liOf(r.startContainer) || kids[0], eLi = liOf(r.endContainer) || kids[kids.length - 1];
-        if (sLi && eLi && sLi !== eLi && sBlk.contains(sLi) && sBlk.contains(eLi)) {
-          let i = kids.indexOf(sLi), j = kids.indexOf(eLi);
+        // 归一到 sBlk 的**直接子** li：选区落在嵌套子项时 closest('li') 取到的是最深 li（不在 kids 里），
+        // 直接 indexOf 会得 -1 → kids[-1].cloneNode 抛 TypeError、onCopy 崩、复制静默回落原生丢待办格式。
+        const topLiOf = (n) => {
+          let li = n && n.nodeType === 1 ? n : (n && n.parentElement);
+          li = li && li.closest ? li.closest('li') : null;
+          while (li && li.parentElement !== sBlk) { const up = li.parentElement && li.parentElement.closest ? li.parentElement.closest('li') : null; if (!up || up === li) { li = null; break; } li = up; }
+          return li;
+        };
+        // 端点落在 li 边界外（endContainer=ul 本身）→ 回落首/末项。
+        const sLi = topLiOf(r.startContainer) || kids[0], eLi = topLiOf(r.endContainer) || kids[kids.length - 1];
+        let i = sLi ? kids.indexOf(sLi) : -1, j = eLi ? kids.indexOf(eLi) : -1;
+        if (i >= 0 && j >= 0 && sLi !== eLi) { // 都归到顶层 kids 且跨项才走块级；退化情形（i/j=-1，如空列表）安全回落
+
           if (i > j) { const t = i; i = j; j = t; }
           const listFrag = doc.createElement(sBlk.tagName);
           if (sBlk.className) listFrag.className = sBlk.className;
@@ -2001,10 +2012,14 @@
             insertInlineAtCaret(clip.innerHTML);
           } else {
             const blocks = [...clip.children].filter((c) => c.nodeType === 1);
-            // U3/clip-1：单一列表包粘进同类列表编辑态 → 逐项并入当前 li 之后（保留 data-checked），
+            // U3/clip-1：单一列表包粘进**同类**列表编辑态 → 逐项并入当前 li 之后（保留 data-checked），
             // 别走 insertBlocksAtCaret（它对列表目标会 splitBlock 劈出 2-3 个相邻 ul，违反 bug2「绝不建新 ul」）。
+            // 类型必须一致（tag + ws-todo 与否）：否则 ws-todo 项并进普通 ul 会留下不渲染的死 data-checked、
+            // ol 项并进 todo 丢编号语义——跨类型改走块级插入（自成一块，保住各自语义）。
             let merged = false;
-            if (blocks.length === 1 && (blocks[0].tagName === 'UL' || blocks[0].tagName === 'OL') && editingEl && classify(editingEl) === 'list') {
+            const bt = blocks.length === 1 ? blocks[0] : null;
+            const sameListType = bt && editingEl && editingEl.tagName === bt.tagName && editingEl.classList.contains('ws-todo') === bt.classList.contains('ws-todo');
+            if (bt && (bt.tagName === 'UL' || bt.tagName === 'OL') && editingEl && classify(editingEl) === 'list' && sameListType) {
               const s1 = doc.getSelection();
               const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
               let li = n1 && n1.closest ? n1.closest('li') : null;
