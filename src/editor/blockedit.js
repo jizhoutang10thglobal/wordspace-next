@@ -591,6 +591,20 @@
       ensureBlockStyle(item.cls);
       return el;
     }
+    // U12/U13：列表项出列/outdent 前，把它的后继兄弟收编进它自己的子列表（继承父列表 tag/class）——
+    // 否则后继项留在原父列表里、文档顺序跑到出列项之前（keys-5 错序）。无后继则 no-op。
+    function absorbTrailingSiblings(li) {
+      if (!li || !li.nextElementSibling) return;
+      const parentList = li.parentElement;
+      if (!parentList) return;
+      let sub = li.lastElementChild;
+      if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
+        sub = doc.createElement(parentList.tagName.toLowerCase());
+        if (parentList.className) sub.className = parentList.className;
+        li.appendChild(sub);
+      }
+      while (li.nextElementSibling) sub.appendChild(li.nextElementSibling);
+    }
     function insertAfter(refEl, item) {
       const el = newBlock(item);
       if (refEl && refEl.after) refEl.after(el); else blockRoot.appendChild(el);
@@ -1511,12 +1525,30 @@
           const sel = doc.getSelection();
           const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
           const li = node && node.closest ? node.closest('li') : null;
-          if (li && (li.textContent || '').trim() === '' && !li.nextElementSibling) {
-            e.preventDefault();
-            const ul = editingEl; li.remove();
-            if (ul.querySelector('li')) { const nx = insertAfter(ul, itemByKey('text')); enterEdit(nx, { mode: 'start' }); }
-            else { const p = turnInto(ul, itemByKey('text')); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
-            return;
+          // U12/keys-3：嵌套空项 Enter → outdent 成宿主 li 的下一个兄弟（保持列表内、仍是列表项），
+          // 而不是以顶层 editingEl 为锚把新段插到整个列表之后 + 留幽灵空嵌套 ul。出列前收编后继兄弟（keys-5 同款）。
+          if (li && (li.textContent || '').trim() === '') {
+            const plist = li.parentElement;
+            const hostLi = plist && plist.parentElement;
+            const isNested = plist && plist !== editingEl && hostLi && hostLi.tagName === 'LI';
+            if (isNested) {
+              e.preventDefault();
+              absorbTrailingSiblings(li);
+              hostLi.after(li);
+              if (!plist.querySelector('li')) plist.remove(); // 掏空的嵌套 ul 移除
+              if (!li.firstChild) li.appendChild(doc.createElement('br'));
+              if (undoMgr) undoMgr.checkpoint(); markDirty();
+              try { const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
+              return;
+            }
+            if (!li.nextElementSibling) {
+              // 顶层空末项 → 退出列表（双回车退出，既有行为）
+              e.preventDefault();
+              const ul = editingEl; li.remove();
+              if (ul.querySelector('li')) { const nx = insertAfter(ul, itemByKey('text')); enterEdit(nx, { mode: 'start' }); }
+              else { const p = turnInto(ul, itemByKey('text')); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
+              return;
+            }
           }
           // U6/keys-2：非空/非末项 → 交原生新建 <li>。原生 li split 克隆源 li 全部属性（id/data-checked），
           // 无 post-split 清理 → 已勾项回车产「天生已勾」的新项 + 重复 id 入盘坏锚点。记录分裂前直接子 li 集，
@@ -1597,6 +1629,7 @@
           const parentList = li.parentElement;
           const hostLi = parentList && parentList.parentElement;
           if (hostLi && hostLi.tagName === 'LI') {
+            absorbTrailingSiblings(li); // U13/keys-5：出列前收编后继兄弟为 li 的子项，否则它们文档顺序跑到出列项之前（错序）
             hostLi.after(li);
             if (parentList && !parentList.querySelector('li')) parentList.remove();
             if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -1632,23 +1665,35 @@
           const cli = lnode && lnode.closest ? lnode.closest('li') : null;
           if (cli && editingEl.contains(cli) && (cli.textContent || '').trim() === '') {
             // 空列表项退格——原生会把整张 <ul> 塌成空 <ul></ul>（ghost 死块）。自己接管：
-            //   有上一项 → 合并上去（删空项、光标落上一项末，仍留列表内，backspace=往回走）；
-            //   首项/唯一项 → de-list：在原列表前插一个空正文段落，列表空了就删掉。
+            //   有上一项 → 合并上去（删空项、光标落上一项末，仍留列表内）；
+            //   嵌套首空项（U12/keys-3）→ 删空项 + 掏空的嵌套 ul 移除、光标落宿主 li 内容末尾（锚真实父列表，不是顶层 editingEl）；
+            //   顶层首/唯一项 → de-list：在原列表前插一个空正文段落，列表空了就删掉。
             e.preventDefault();
-            const ul = editingEl;
+            const plist = cli.parentElement; // 真实父列表（可能是嵌套子列表）
             const prevLi = cli.previousElementSibling;
             cli.remove();
             if (undoMgr) undoMgr.checkpoint();
             markDirty();
             if (prevLi) {
               if (!prevLi.firstChild) prevLi.appendChild(doc.createElement('br')); // 上一项也空 → 补 <br>，否则光标落进去 selection 会变 null（实测）
-              enterEdit(ul, { mode: 'end' });
+              enterEdit(editingEl, { mode: 'end' });
               try { const r = doc.createRange(); r.selectNodeContents(prevLi); r.collapse(false); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
+            } else if (plist !== editingEl) {
+              // U12：嵌套首空项——无同级 prevLi → 掏空的嵌套 ul 移除，光标落宿主 li 内容末尾（在其嵌套子列表之前）
+              const hostLi = plist.parentElement;
+              if (!plist.querySelector('li')) plist.remove();
+              enterEdit(editingEl, { mode: 'end' });
+              if (hostLi && hostLi.tagName === 'LI') {
+                if (!hostLi.firstChild) hostLi.appendChild(doc.createElement('br'));
+                let anchor = null;
+                for (const n of hostLi.childNodes) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) break; anchor = n; }
+                try { const r = doc.createRange(); if (anchor) r.setStartAfter(anchor); else r.setStart(hostLi, 0); r.collapse(true); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
+              }
             } else {
               const p = doc.createElement('p');
               p.appendChild(doc.createElement('br')); // 空段落必带 <br>，光标才落得进
-              ul.parentNode.insertBefore(p, ul); // de-list 的正文放原列表之前
-              if (!ul.querySelector('li')) ul.remove(); // 唯一项 → 删掉空列表
+              plist.parentNode.insertBefore(p, plist); // de-list 的正文放原列表之前
+              if (!plist.querySelector('li')) plist.remove(); // 唯一项 → 删掉空列表
               enterEdit(p, { mode: 'start' });
             }
             return;
