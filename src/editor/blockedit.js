@@ -876,7 +876,7 @@
       const crossScope = sScope !== eScope;
       const scopeRoot = crossScope ? blockRoot : sScope;
       const tops = blocksInScope(scopeRoot);
-      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      let sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
       const i = tops.indexOf(sB), j = tops.indexOf(eB);
       if (i < 0 || j < 0 || i > j) return false;
       // 修 ED-A2/A3（推广到作用域）：端点是结构块（table/details/figure/img）时 Range 部分裁剪会削 summary/table
@@ -885,6 +885,11 @@
       if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sB, sB.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
       if (eEditable) { const r2 = doc.createRange(); r2.setStart(eB, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
       for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === scopeRoot) m.remove(); }                            // 删中间整块（作用域内）
+      // 修 bug6：裁剪把列表端点的 <li> 删光后会剩一个非法空 <ul></ul>（无 li 无勾选框的 ghost 死块，
+      // 且后续打字会灌进 <ul> 变非合规）。把裁空的列表块就地换成空 <p>（de-list），放在合并前——
+      // 两端都成空 <p> 时下面的 canMerge 会把它们并成一个干净空块（对齐"选全部再删=一个空块"）。
+      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && !b.querySelector('li') && b.parentNode) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
+      sB = fixEmptyList(sB); eB = fixEmptyList(eB);
       const prefixEnd = sEditable ? sB.lastChild : null; // 接合点（合并前 prefix 末尾）
       if (sEditable && eEditable && SM.canMerge(sB, eB)) { // 两端都是存活的叶子文字块才节点级拼接
         while (eB.firstChild) sB.appendChild(eB.firstChild); // 末块剩余并入起块
