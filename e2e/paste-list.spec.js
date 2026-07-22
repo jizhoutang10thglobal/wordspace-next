@@ -83,3 +83,15 @@ test('回归：多行粘贴进普通文本块 → 仍分成多个段落块', asy
   await expect.poll(async () => frame.locator('p').count(), { message: '文本块多行粘贴应分成多段' }).toBe(3);
   expect(await conformOf(await serialize())).toBe(true);
 });
+
+test('结尾换行 / 空行粘贴进 todo：绝不产生悬空空 <li>（点不进删不掉的回归 bug）', async () => {
+  await launch();
+  await openDoc('<ul class="ws-todo"><li id="li1">打头</li></ul>');
+  await frame.locator('#li1').click();
+  await page.keyboard.press('End');
+  await pasteMultiline('甲\n乙\n'); // 结尾一个换行 → split 出末尾空串
+  await expect.poll(async () => (await liTexts('ul.ws-todo')).join('｜'), { message: '结尾换行不该多出空项' }).toBe('打头甲｜乙');
+  const emptyLi = await frame.locator('ul.ws-todo > li').evaluateAll((ls) => ls.filter((l) => !l.textContent.trim()).length);
+  expect(emptyLi, '绝不产生空 <li>（悬空复选框）').toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
+});

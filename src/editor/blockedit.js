@@ -1808,7 +1808,7 @@
         let li = n1 && n1.closest ? n1.closest('li') : null;
         if (li && editingEl.contains(li)) {
           doc.execCommand('insertText', false, lines[0]); // 第一行接当前 li（尊重光标处）
-          for (let i = 1; i < lines.length; i++) { const nli = doc.createElement('li'); nli.textContent = lines[i]; li.after(nli); li = nli; }
+          for (let i = 1; i < lines.length; i++) { if (!lines[i].trim()) continue; const nli = doc.createElement('li'); nli.textContent = lines[i]; li.after(nli); li = nli; } // 跳过空行/结尾换行：绝不建悬空空 <li>（无文字→点不进删不掉，回归 bug）
           const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); // 光标落最后一个新 li 末尾
           const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r);
           if (undoMgr) undoMgr.checkpoint(); markDirty();
