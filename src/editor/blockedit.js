@@ -233,6 +233,7 @@
     let fmtShown = false;    // 格式气泡是否显示——「粘住」用：选区折叠后不立即关，直到离开该块
     let dragStart = null;    // 拖拽选择起点 {x,y}（mousedown 记、mouseup 清）；用来分辨「点击」vs「拖选」
     let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
+    let listSplitPending = false; // U6：list 回车交原生分裂后，一次性 input 里剥新 li 的克隆 id/data-checked（防栈叠）
     let captionEl = null;    // 正在编辑的图片说明 figcaption（不同于 editingEl/selectedEl：块级破坏性键盘分支对它 inert）
     let captionOrig = '';    // 进说明编辑时的原文本（判是否真变、决定要不要 checkpoint）
     let captionWasNew = false; // 本次说明由「加说明」新建（空白失焦即撤销=降回裸 img，且不留空撤销步）
@@ -1508,7 +1509,27 @@
             else { const p = turnInto(ul, itemByKey('text')); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
             return;
           }
-          return; // 非空/非末项 → 交原生（新建 <li>）
+          // U6/keys-2：非空/非末项 → 交原生新建 <li>。原生 li split 克隆源 li 全部属性（id/data-checked），
+          // 无 post-split 清理 → 已勾项回车产「天生已勾」的新项 + 重复 id 入盘坏锚点。记录分裂前直接子 li 集，
+          // 一次性 input 后取差集找新 li，按内容判定剥属性：空项剥（都非空则文档序更后者剥，对齐 splitBlock 剥后块）。
+          if (!listSplitPending) {
+            const ul0 = editingEl, before0 = new Set([...editingEl.querySelectorAll(':scope > li')]), src0 = li;
+            listSplitPending = true;
+            const onSplit = () => {
+              doc.removeEventListener('input', onSplit);
+              listSplitPending = false;
+              if (!ul0.isConnected) return;
+              const products = [src0, ...[...ul0.querySelectorAll(':scope > li')].filter((x) => !before0.has(x))].filter((x) => x && x.isConnected && x.parentElement === ul0);
+              if (products.length < 2) return; // 没真分裂 / 结构异常 → 不动
+              const empties = products.filter((x) => (x.textContent || '').trim() === '');
+              let strip;
+              if (empties.length) strip = empties; // 空项（End/Home 回车产物）
+              else { const s = products.slice().sort((a, b) => ((a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) ? -1 : 1)); strip = [s[s.length - 1]]; } // 都非空（劈半）→ 剥文档序更后者
+              for (const x of strip) { x.removeAttribute('id'); x.removeAttribute('data-checked'); }
+            };
+            doc.addEventListener('input', onSplit);
+          }
+          return; // 非空/非末项 → 交原生（新建 <li>），分裂后 onSplit 清理克隆属性
         }
         if (!isCaretAtRealEnd(doc, editingEl)) {
           // 段落中间/块首回车 → 在光标处劈成两个同类型块（换段）。绝不交原生（原生塞嵌套 <p>，写坏文档，Bug7）。
