@@ -741,7 +741,8 @@
         } else if (!next.querySelector('li')) {
           const li = doc.createElement('li');
           while (next.firstChild) li.appendChild(next.firstChild);
-          next.appendChild(li); // 空内容时得到 <ul><li></li></ul>（合法、可继续编辑）
+          if (!li.firstChild) li.appendChild(doc.createElement('br')); // 空内容补 <br>：否则 ws-todo 空 li 无 line box、高度 0、Blink 落不住 caret，后续输入被静默吞掉（create-1）
+          next.appendChild(li);
         }
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return next;
