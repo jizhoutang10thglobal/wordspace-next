@@ -41,6 +41,10 @@
     for (const el of all) {
       if (el.hasAttribute('data-ws2-ce')) el.removeAttribute('contenteditable');
       if (el.hasAttribute('data-ws2-sc')) el.removeAttribute('spellcheck');
+      // 空 style="" 通用剥除：Blink 原生删除/typing-style 机制会往块元素上留空 style（app 从不写），
+      // 入盘即中 Schema 校验器 block-style 规则 → 整篇非合规、重开永久降级基础编辑（select-1）。
+      // 空 style 是语义 no-op，剥它不碰保真红线；**非空** style 照旧保留、照旧判违规（那是真越权）。
+      if (el.hasAttribute('style') && !el.getAttribute('style')) el.removeAttribute('style');
       for (const a of [...el.attributes]) {
         if (WS2_MARKERS.has(a.name)) el.removeAttribute(a.name);
       }
