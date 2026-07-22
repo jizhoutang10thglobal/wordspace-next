@@ -1515,7 +1515,39 @@
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）
       if (e.key === 'Backspace' && editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
-        if (classify(editingEl) === 'list') return; // 列表内 Backspace 交原生（删项/退格），不走块级合并
+        if (classify(editingEl) === 'list') {
+          // 空列表项起始退格：原生 contentEditable 会把整张 <ul>/<ol> 塌成空 <ul></ul>（残留 ghost 块——
+          // 无 li 无勾选框、拖柄还在、再退格删不掉、往里打字灌进 <ul> 变非合规。Wendi bug4 待办删空即中）。
+          // 自己接管空 li 退格（非空/删字仍交原生）：有上一项→合并上去（光标落上一项末，列表保留）；
+          // 是唯一项→整块退成正文（de-list）；是首项但后面还有项→删首项、光标落新首项起始。
+          const lsel = doc.getSelection();
+          const lnode = lsel && lsel.anchorNode ? (lsel.anchorNode.nodeType === 1 ? lsel.anchorNode : lsel.anchorNode.parentElement) : null;
+          const cli = lnode && lnode.closest ? lnode.closest('li') : null;
+          if (cli && editingEl.contains(cli) && (cli.textContent || '').trim() === '') {
+            // 空列表项退格——原生会把整张 <ul> 塌成空 <ul></ul>（ghost 死块）。自己接管：
+            //   有上一项 → 合并上去（删空项、光标落上一项末，仍留列表内，backspace=往回走）；
+            //   首项/唯一项 → de-list：在原列表前插一个空正文段落，列表空了就删掉。
+            e.preventDefault();
+            const ul = editingEl;
+            const prevLi = cli.previousElementSibling;
+            cli.remove();
+            if (undoMgr) undoMgr.checkpoint();
+            markDirty();
+            if (prevLi) {
+              if (!prevLi.firstChild) prevLi.appendChild(doc.createElement('br')); // 上一项也空 → 补 <br>，否则光标落进去 selection 会变 null（实测）
+              enterEdit(ul, { mode: 'end' });
+              try { const r = doc.createRange(); r.selectNodeContents(prevLi); r.collapse(false); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
+            } else {
+              const p = doc.createElement('p');
+              p.appendChild(doc.createElement('br')); // 空段落必带 <br>，光标才落得进
+              ul.parentNode.insertBefore(p, ul); // de-list 的正文放原列表之前
+              if (!ul.querySelector('li')) ul.remove(); // 唯一项 → 删掉空列表
+              enterEdit(p, { mode: 'start' });
+            }
+            return;
+          }
+          return; // 非空列表项 / 删字 → 交原生
+        }
         if (!isCaretAtStart(doc, editingEl)) return;
         const scope = scopeRootOf(editingEl); // U6：作用域感知合并/退格
         const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);

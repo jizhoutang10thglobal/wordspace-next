@@ -302,6 +302,51 @@ test('待办：勾选切换 + 样式与 data-checked 随存盘保留', async () 
   expect(html).toMatch(/data-checked="true"/);
 });
 
+// Wendi bug4：删空一个待办项后再退格，原生 contentEditable 会把整张 <ul> 塌成空 <ul></ul>——
+// 一个无 li 无勾选框、拖柄还在、退格删不掉、打字灌进 <ul> 变非合规的 ghost 死块。修：空列表项退格
+// 自己接管（有上一项合并上去 / 首项唯一项 de-list 成段落），绝不留空 <ul>。
+const EMPTY_UL = /<ul[^>]*>\s*<\/ul>/; // 无 li 的空列表 = ghost 死块（conformOf 复用文件已有的无参版）
+
+test('待办删空退格：多项列表合并上去、不塌成空 <ul></ul>、全程合规（Wendi bug4）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><p id="head">前文</p><ul class="ws-todo"><li id="li1"></li><li id="li2">测</li></ul></body></html>');
+  await frame.locator('#li2').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Backspace'); // 删 "测" → li2 空
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Backspace'); // 空 li2 退格 → 合并到 li1（绝不塌成空 ul）
+  await page.waitForTimeout(150);
+  let html = await serialize();
+  expect(html, '空待办退格后绝不留空 <ul></ul>').not.toMatch(EMPTY_UL);
+  expect(await conformOf(), '删空待办后文档仍合规').toBe(true);
+  expect(await frame.locator('ul.ws-todo > li').count(), '合并上去后保留一个空待办项').toBe(1);
+  expect(await editingId(), '光标没丢（有编辑焦点）').not.toBeNull();
+  // 再退格：唯一空项 de-list 成正文段落，仍无空 ul、仍合规
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(150);
+  html = await serialize();
+  expect(html).not.toMatch(EMPTY_UL);
+  expect(await frame.locator('ul.ws-todo').count(), '列表已彻底退成正文').toBe(0);
+  expect(await conformOf()).toBe(true);
+});
+
+test('待办删空退格：单项列表整块 de-list 成段落、不留空 <ul>（Wendi bug4）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><p id="head">前文</p><ul class="ws-todo"><li id="li2">测</li></ul></body></html>');
+  await frame.locator('#li2').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Backspace'); // 删 "测"
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Backspace'); // 空唯一项退格 → 整块 de-list
+  await page.waitForTimeout(150);
+  const html = await serialize();
+  expect(html, '单项待办删空后不得留空 <ul></ul>').not.toMatch(EMPTY_UL);
+  expect(await frame.locator('ul.ws-todo').count(), '列表消失').toBe(0);
+  expect(html, '前文块保留').toMatch(/前文/);
+  expect(await conformOf()).toBe(true);
+  expect(await editingId(), '光标落在新段落').not.toBeNull();
+});
+
 // Tab 缩进：列表第二项按 Tab → 嵌进第一项的子列表。
 test('Tab 缩进：列表项嵌套成子列表', async () => {
   await launch();
