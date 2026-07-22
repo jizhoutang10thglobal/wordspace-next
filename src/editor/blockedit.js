@@ -1262,6 +1262,23 @@
     }
 
     // ---- 监听器（父层挂到 iframe doc）----
+    // 待办勾选框 gutter 命中判定（mousedown 与 click 两处共用，避免判据漂移，U5）：命中返回该行 li，否则 null。
+    // 点 ::before 时 e.target=li、点 padding 时=ul → 按 Y 兜底找该行 li；gutter = li 内容左缘左侧（::before left:-22），判 clientX < li.left+4。
+    function todoGutterHit(e) {
+      const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
+      if (!todoUl) return null;
+      let li = e.target.closest('li');
+      if (!li || li.parentElement !== todoUl) {
+        li = null;
+        for (const x of todoUl.children) {
+          if (x.tagName !== 'LI') continue;
+          const r = x.getBoundingClientRect();
+          if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
+        }
+      }
+      return (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) ? li : null;
+    }
+
     // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。
     function onMouseDown(e) {
       if (e.button !== 0) return; // 只管左键
@@ -1270,29 +1287,14 @@
       // 上面已对 data-ws2-ui 覆盖层（含斜杠菜单及其项）early-return，故点菜单项走不到这、不会误关。
       if (slash) { slash = null; slashMenu.style.display = 'none'; }
       if (e.target && e.target.closest && e.target.closest('figcaption')) return; // 说明编辑：交原生放光标/选词，不启块拖选
-      // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
-      // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
-      const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
-      if (todoUl) {
-        // 先定位该行 li（点 ::before 时 target=li，点 ul padding 时=ul，按 Y 兜底找该行）
-        let li = e.target.closest('li');
-        if (!li || li.parentElement !== todoUl) {
-          li = null;
-          for (const x of todoUl.children) {
-            if (x.tagName !== 'LI') continue;
-            const r = x.getBoundingClientRect();
-            if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
-          }
-        }
-        // 勾选框 gutter = li 内容左缘左侧（::before left:-20..-5）。判 clientX 落在 li 左缘附近及左侧。
-        // 不硬编码 ul padding：§0 删 canvas 后 ul 回默认 padding(40)≠旧 canvas 的 22，原 `ul.left+22` 边界失效、点不中勾选框。
-        if (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) {
-          e.preventDefault();
-          li.setAttribute('data-checked', li.getAttribute('data-checked') === 'true' ? 'false' : 'true');
-          if (undoMgr) undoMgr.checkpoint();
-          markDirty();
-          return;
-        }
+      // 待办勾选：点 gutter（勾选框）→ 切 data-checked、不放光标（判定见 todoGutterHit，与 onClick 共用，U5）。
+      const gLi = todoGutterHit(e);
+      if (gLi) {
+        e.preventDefault();
+        gLi.setAttribute('data-checked', gLi.getAttribute('data-checked') === 'true' ? 'false' : 'true');
+        if (undoMgr) undoMgr.checkpoint();
+        markDirty();
+        return;
       }
       dragStart = { x: e.clientX, y: e.clientY };
       wallDropped = false;
@@ -1339,6 +1341,8 @@
     function onClick(e) {
       // 点到覆盖层（手柄/菜单/气泡）自身：交给它们各自的 handler，这里忽略
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      // 待办勾选框 gutter：mousedown 已切 data-checked，这下 click 只吞掉——绝不进编辑/放光标、绝不再 toggle（U5/check-1）。
+      if (todoGutterHit(e)) { e.preventDefault(); return; }
       // 刚用鼠标拖选了文字（单块或跨块）→ 松手的这下 click 触发时选区仍非折叠 → 一律保留、什么都不做，
       // 否则会把选区折叠掉、气泡闪退（这是用户报的根因）。纯点击时 mousedown 已先把选区折叠成光标，不受影响。
       const _sel = doc.getSelection();
