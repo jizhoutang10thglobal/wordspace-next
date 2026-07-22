@@ -233,6 +233,7 @@
     let fmtShown = false;    // 格式气泡是否显示——「粘住」用：选区折叠后不立即关，直到离开该块
     let dragStart = null;    // 拖拽选择起点 {x,y}（mousedown 记、mouseup 清）；用来分辨「点击」vs「拖选」
     let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
+    let listSplitPending = false; // U6：list 回车交原生分裂后，一次性 input 里剥新 li 的克隆 id/data-checked（防栈叠）
     let captionEl = null;    // 正在编辑的图片说明 figcaption（不同于 editingEl/selectedEl：块级破坏性键盘分支对它 inert）
     let captionOrig = '';    // 进说明编辑时的原文本（判是否真变、决定要不要 checkpoint）
     let captionWasNew = false; // 本次说明由「加说明」新建（空白失焦即撤销=降回裸 img，且不留空撤销步）
@@ -1262,6 +1263,23 @@
     }
 
     // ---- 监听器（父层挂到 iframe doc）----
+    // 待办勾选框 gutter 命中判定（mousedown 与 click 两处共用，避免判据漂移，U5）：命中返回该行 li，否则 null。
+    // 点 ::before 时 e.target=li、点 padding 时=ul → 按 Y 兜底找该行 li；gutter = li 内容左缘左侧（::before left:-22），判 clientX < li.left+4。
+    function todoGutterHit(e) {
+      const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
+      if (!todoUl) return null;
+      let li = e.target.closest('li');
+      if (!li || li.parentElement !== todoUl) {
+        li = null;
+        for (const x of todoUl.children) {
+          if (x.tagName !== 'LI') continue;
+          const r = x.getBoundingClientRect();
+          if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
+        }
+      }
+      return (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) ? li : null;
+    }
+
     // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。
     function onMouseDown(e) {
       if (e.button !== 0) return; // 只管左键
@@ -1270,29 +1288,14 @@
       // 上面已对 data-ws2-ui 覆盖层（含斜杠菜单及其项）early-return，故点菜单项走不到这、不会误关。
       if (slash) { slash = null; slashMenu.style.display = 'none'; }
       if (e.target && e.target.closest && e.target.closest('figcaption')) return; // 说明编辑：交原生放光标/选词，不启块拖选
-      // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
-      // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
-      const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
-      if (todoUl) {
-        // 先定位该行 li（点 ::before 时 target=li，点 ul padding 时=ul，按 Y 兜底找该行）
-        let li = e.target.closest('li');
-        if (!li || li.parentElement !== todoUl) {
-          li = null;
-          for (const x of todoUl.children) {
-            if (x.tagName !== 'LI') continue;
-            const r = x.getBoundingClientRect();
-            if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
-          }
-        }
-        // 勾选框 gutter = li 内容左缘左侧（::before left:-20..-5）。判 clientX 落在 li 左缘附近及左侧。
-        // 不硬编码 ul padding：§0 删 canvas 后 ul 回默认 padding(40)≠旧 canvas 的 22，原 `ul.left+22` 边界失效、点不中勾选框。
-        if (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) {
-          e.preventDefault();
-          li.setAttribute('data-checked', li.getAttribute('data-checked') === 'true' ? 'false' : 'true');
-          if (undoMgr) undoMgr.checkpoint();
-          markDirty();
-          return;
-        }
+      // 待办勾选：点 gutter（勾选框）→ 切 data-checked、不放光标（判定见 todoGutterHit，与 onClick 共用，U5）。
+      const gLi = todoGutterHit(e);
+      if (gLi) {
+        e.preventDefault();
+        gLi.setAttribute('data-checked', gLi.getAttribute('data-checked') === 'true' ? 'false' : 'true');
+        if (undoMgr) undoMgr.checkpoint();
+        markDirty();
+        return;
       }
       dragStart = { x: e.clientX, y: e.clientY };
       wallDropped = false;
@@ -1339,6 +1342,8 @@
     function onClick(e) {
       // 点到覆盖层（手柄/菜单/气泡）自身：交给它们各自的 handler，这里忽略
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      // 待办勾选框 gutter：mousedown 已切 data-checked，这下 click 只吞掉——绝不进编辑/放光标、绝不再 toggle（U5/check-1）。
+      if (todoGutterHit(e)) { e.preventDefault(); return; }
       // 刚用鼠标拖选了文字（单块或跨块）→ 松手的这下 click 触发时选区仍非折叠 → 一律保留、什么都不做，
       // 否则会把选区折叠掉、气泡闪退（这是用户报的根因）。纯点击时 mousedown 已先把选区折叠成光标，不受影响。
       const _sel = doc.getSelection();
@@ -1504,7 +1509,28 @@
             else { const p = turnInto(ul, itemByKey('text')); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
             return;
           }
-          return; // 非空/非末项 → 交原生（新建 <li>）
+          // U6/keys-2：非空/非末项 → 交原生新建 <li>。原生 li split 克隆源 li 全部属性（id/data-checked），
+          // 无 post-split 清理 → 已勾项回车产「天生已勾」的新项 + 重复 id 入盘坏锚点。记录分裂前直接子 li 集，
+          // 一次性 input 后取差集找新 li，按内容判定剥属性：空项剥（都非空则文档序更后者剥，对齐 splitBlock 剥后块）。
+          if (!listSplitPending) {
+            const ul0 = li.parentElement, before0 = new Set([...li.parentElement.children].filter((x) => x.tagName === 'LI')), src0 = li; // 锚在**当前 li 所属的 ul**（可能是嵌套子列表），不是顶层 editingEl——否则嵌套项分裂的产物是孙节点、不入差集，跳过清理
+            listSplitPending = true;
+            const onSplit = () => {
+              doc.removeEventListener('input', onSplit);
+              listSplitPending = false;
+              if (!ul0.isConnected) return;
+              const products = [src0, ...[...ul0.children].filter((x) => x.tagName === 'LI' && !before0.has(x))].filter((x) => x && x.isConnected && x.parentElement === ul0);
+              if (products.length < 2) return; // 没真分裂 / 结构异常 → 不动
+              const hasContent = (x) => (x.textContent || '').trim() !== '';
+              // 保留「原始内容的延续」那个 li（其 id/勾选保住），剥其余（新段）：
+              //   src0 有内容（End/劈半：src0=光标前半）→ 留 src0；src0 空但有内容项（Home：内容搬去新 li）→ 留内容项；都空 → 留 src0（原项）。
+              let keep = src0;
+              if (!hasContent(src0)) { const nonEmpty = products.filter(hasContent); if (nonEmpty.length) keep = nonEmpty[0]; }
+              for (const x of products) { if (x !== keep) { x.removeAttribute('id'); x.removeAttribute('data-checked'); } }
+            };
+            doc.addEventListener('input', onSplit);
+          }
+          return; // 非空/非末项 → 交原生（新建 <li>），分裂后 onSplit 清理克隆属性
         }
         if (!isCaretAtRealEnd(doc, editingEl)) {
           // 段落中间/块首回车 → 在光标处劈成两个同类型块（换段）。绝不交原生（原生塞嵌套 <p>，写坏文档，Bug7）。
@@ -1705,7 +1731,46 @@
       // （Wendi Bug7「合并段」——原来只能向后合并，块末按 Delete 撞墙没反应）。块中间交原生删字。
       if (e.key === 'Delete' && editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
-        if (classify(editingEl) === 'list') return; // 列表内交原生（删项/删字）
+        // U7/select-3：镜像 Backspace，让列表 Delete 前向合并不再撞墙（原来直接 return 交原生，但每个块是
+        // 独立 contenteditable、原生跨不出块边界 → 末项尾/段末遇列表全 no-op，与 Backspace 侧不对称）。
+        if (classify(editingEl) === 'list') {
+          const s0 = doc.getSelection();
+          if (!s0 || s0.rangeCount === 0 || !s0.isCollapsed) return; // 非折叠已前处理
+          const n0 = s0.anchorNode ? (s0.anchorNode.nodeType === 1 ? s0.anchorNode : s0.anchorNode.parentElement) : null;
+          const curLi = n0 && n0.closest ? n0.closest('li') : null;
+          if (!curLi || curLi.parentElement !== editingEl) return; // 嵌套子项 / 定位不到顶层 li → 交原生
+          const nextLi = curLi.nextElementSibling;
+          // c) 空 li Delete → 前向并入下一 li（镜像 Backspace 空 li）
+          if ((curLi.textContent || '').trim() === '' && nextLi && nextLi.tagName === 'LI') {
+            e.preventDefault();
+            if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空项占位 br
+            // 空项被下一项内容填充 → 采纳下一项的勾选态/锚点（内容搬上来了、状态跟内容走；否则删空行会把下一任务的勾清掉，对抗审查 P3）
+            if (nextLi.getAttribute('data-checked') === 'true') curLi.setAttribute('data-checked', 'true'); else curLi.removeAttribute('data-checked');
+            if (!curLi.id && nextLi.id) curLi.id = nextLi.id;
+            const joinAt = nextLi.firstChild;
+            while (nextLi.firstChild) curLi.appendChild(nextLi.firstChild);
+            nextLi.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
+            if (joinAt && joinAt.parentNode === curLi) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+            else if (!curLi.firstChild) curLi.appendChild(doc.createElement('br'));
+            return;
+          }
+          // a) 末项尾 Delete + ul 有下一叶子文字块 → 并入末项（不可并块 → 安全 no-op）。判末项 li 自身末尾（不是 ul）
+          if (!nextLi && isCaretAtRealEnd(doc, curLi)) {
+            const scope = scopeRootOf(editingEl);
+            const bs = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
+            const nb = bs[bs.indexOf(editingEl) + 1];
+            if (nb && isEditableEl(nb) && isLeafTextBlock(nb)) {
+              e.preventDefault();
+              if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空目标末项占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
+              const joinAt = nb.firstChild;
+              while (nb.firstChild) curLi.appendChild(nb.firstChild);
+              nb.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
+              if (joinAt && joinAt.parentNode === curLi) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+              return;
+            }
+          }
+          return; // 其它 list 内 Delete（非空非末 / 中间删字）→ 交原生
+        }
         const sel = doc.getSelection();
         if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 非折叠选区前面已处理；这里只管折叠光标
         if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内 Delete 会误吞下一段（B 组）
@@ -1713,8 +1778,26 @@
         const blocks = (dScope === blockRoot) ? topBlocks() : blocksInScope(dScope);
         const next = blocks[blocks.indexOf(editingEl) + 1];
         if (!next) return; // 作用域末块 → 无内块可合并（绝不跨作用域）
-        if (classify(next) === 'list' || !isEditableEl(next)) return; // 下一块是列表/图片/分隔线 → 不吞
         const cur = editingEl;
+        // b) 段末 Delete、下一块是列表 → 吞列表首项（首 li 行内内容并入段落；列表剩余保留、掏空则删 ul）。
+        // 首 li 含嵌套子列表 → no-op（镜像 Backspace 首 li 守卫 `!cli.querySelector 子列表`，避免 <p><ul> 非法）。
+        if (classify(next) === 'list') {
+          const firstLi = next.querySelector(':scope > li');
+          if (firstLi && !firstLi.querySelector(':scope > ul, :scope > ol') && isLeafTextBlock(cur)) {
+            e.preventDefault();
+            if (cur.childNodes.length === 1 && cur.firstChild && cur.firstChild.nodeName === 'BR') cur.firstChild.remove(); // 剥空目标段落占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
+            if (firstLi.childNodes.length === 1 && firstLi.firstChild && firstLi.firstChild.nodeName === 'BR') firstLi.firstChild.remove();
+            const joinAt = firstLi.firstChild;
+            while (firstLi.firstChild) cur.appendChild(firstLi.firstChild);
+            firstLi.remove();
+            if (!next.querySelector(':scope > li')) next.remove(); // 列表掏空 → 删 ul
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            if (joinAt && joinAt.parentNode === cur) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+            return;
+          }
+          return; // 首 li 空/含嵌套 / cur 非叶子 → no-op
+        }
+        if (!isEditableEl(next)) return; // 下一块图片/分隔线 → 不吞
         // 两块都得是叶子文字块才拼接——cur/next 是透明包裹块（div.lead>p）时平搬子节点会造 <p><p>/容器直挂裸文本（A 组）。
         if (!isLeafTextBlock(cur) || !isLeafTextBlock(next)) return;
         e.preventDefault();
@@ -2230,9 +2313,29 @@
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
     }
 
+    // U8/clip-3：undo/redo 用 body.innerHTML 整体重写、正在编辑的块被销毁、焦点回落非可编辑 BODY →
+    // 后续打字无宿主被静默吞。runUndoRedo 在重写**前** snapshotEdit 记录编辑块结构路径，reset 后 restoreEdit
+    // 按同路径在新 body 里重进编辑（mode:'end'）。光标精确位置不还原（v1 取舍）。
+    function blockPathOf(el) {
+      const path = []; let n = el;
+      while (n && n !== body) { const p = n.parentNode; if (!p) return null; path.unshift(Array.prototype.indexOf.call(p.children, n)); n = p; }
+      return n === body ? path : null;
+    }
+    function snapshotEdit() { return editingEl ? { path: blockPathOf(editingEl), id: editingEl.id || null } : null; }
+    function restoreEdit(snap) {
+      let target = null;
+      // ① 优先按 id 精确找：锚点块（有 id）跨 body.innerHTML 重写稳定，避开「pre-undo 下标套 post-undo 树 → 落无关块」（对抗审查 P2）。
+      if (snap && snap.id) { const byId = doc.getElementById(snap.id); if (byId && body.contains(byId) && isEditableEl(byId)) target = byId; }
+      // ② 退结构路径（无 id 时）：仍是 v1 取舍——编辑块上方结构变动时同一下标语义已变、可能落相邻块，见 spec 欠账。
+      if (!target && snap && snap.path) { let n = body; for (const i of snap.path) { if (!n || !n.children || i < 0 || i >= n.children.length) { n = null; break; } n = n.children[i]; } if (n && isEditableEl(n)) target = n; }
+      // ③ 兜底：首个可编辑块，保证打字有宿主（绝不落非可编辑 body/hr/figure/details → 吞字）。
+      if (!target) target = topBlocks().find((b) => isEditableEl(b)) || null;
+      if (target) enterEdit(target, { mode: 'end' });
+    }
+
     // reposition：缩放/窗口尺寸变后重定位手柄+气泡。编辑态 selectedEl=null、当前块在 hoverEl，故跟 onScroll 一样
     // 用 hoverEl 兜底（否则编辑中缩放，手柄会漂在缩放前的旧坐标）。
-    return { detach, reset, deselect, reposition: () => { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); } };
+    return { detach, reset, deselect, snapshotEdit, restoreEdit, reposition: () => { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); } };
   }
 
   // ===== 注入到 iframe 的编辑器样式（ui-demo Canvas.css 移植；选择器既命中 .ws-* 也命中裸标签）=====
