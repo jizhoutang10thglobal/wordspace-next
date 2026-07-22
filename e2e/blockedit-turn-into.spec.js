@@ -131,3 +131,13 @@ test('U10：手写 <p>a<br><br>b</p> 转 todo → 2 项、无悬空空 li', asyn
   expect(emptyLi, '无悬空空 li').toBe(0);
   expect(await conformOf10(await serialize10())).toBe(true);
 });
+
+test('U10 对抗审查：空行内元素夹在 <br> 间转 todo → 无零高死块 li', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>' + TODO_HEAD + '</head><body><p id="p1">甲<br><b></b><br>乙</p></body></html>');
+  await convertTo('#p1', 'todo');
+  await expect.poll(() => frame.locator('ul.ws-todo > li').count(), { message: '3 段（含空 <b> 段）→ 3 li' }).toBe(3);
+  const heights = await frame.locator('ul.ws-todo > li').evaluateAll((ls) => ls.map((l) => l.getBoundingClientRect().height));
+  expect(Math.min(...heights), '含空行内元素的 li 也不许零高（padLi 补 br）').toBeGreaterThan(0);
+  expect(await conformOf10(await serialize10())).toBe(true);
+});

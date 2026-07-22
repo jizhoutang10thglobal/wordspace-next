@@ -605,6 +605,13 @@
       }
       while (li.nextElementSibling) sub.appendChild(li.nextElementSibling);
     }
+    // 光标落 li **自身文字**末尾（在其嵌套子列表之前）——outdent/收编后 li 追加了子列表，
+    // selectNodeContents(li).collapse(false) 会落到子列表之后、打字进错位置（对抗审查 P2）。
+    function caretAtLiTextEnd(li) {
+      let anchor = null;
+      for (const n of li.childNodes) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) break; anchor = n; }
+      try { const r = doc.createRange(); if (anchor) r.setStartAfter(anchor); else r.setStart(li, 0); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
+    }
     function insertAfter(refEl, item) {
       const el = newBlock(item);
       if (refEl && refEl.after) refEl.after(el); else blockRoot.appendChild(el);
@@ -753,7 +760,9 @@
         else next.querySelectorAll('li[data-checked]').forEach((li) => li.removeAttribute('data-checked')); // A3：todo→普通列表，清残留勾选态
         // 空 li（无元素子且无非空白文字）在 ws-todo list-style:none 下无 line box、高度 0、落不住 caret、
         // 后续输入被静默吞掉（create-1）→ 补 <br> 占位。containerLines 与 else 两条建 li 路径都要过（容器块含真空 <p></p> 时同样中招）。
-        const padLi = (li) => { if (!li.firstChild || (!li.querySelector('*') && !li.textContent.trim())) li.appendChild(doc.createElement('br')); };
+        // 无「可视内容」（无非空白文字、且无 br/img/hr 等占行元素——空的 <b></b> 等空行内元素不算）→ 补 <br>，
+        // 否则 ws-todo 空 li 零高、落不住 caret、吞输入（create-1；对抗审查 P3：空行内元素夹在 <br> 间会漏补）。
+        const padLi = (li) => { if (!li.textContent.trim() && !li.querySelector('br,img,hr,input,figure')) li.appendChild(doc.createElement('br')); };
         if (containerLines) {
           while (next.firstChild) next.removeChild(next.firstChild);
           for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); padLi(li); next.appendChild(li); } // 容器每段 → 一个 <li>（空段补 br）
@@ -1532,13 +1541,14 @@
             const hostLi = plist && plist.parentElement;
             const isNested = plist && plist !== editingEl && hostLi && hostLi.tagName === 'LI';
             if (isNested) {
+              // 嵌套空项 Enter → outdent 成宿主下一兄弟；**不收编后继兄弟**（那是 U13 Shift-Tab 的事，item 非空才能安全承载
+              // 子列表——空项当子列表父项时 Chromium 不让在块级 ul 前打字，对抗审查实测）。后继兄弟留在宿主嵌套列表里。
               e.preventDefault();
-              absorbTrailingSiblings(li);
               hostLi.after(li);
               if (!plist.querySelector('li')) plist.remove(); // 掏空的嵌套 ul 移除
               if (!li.firstChild) li.appendChild(doc.createElement('br'));
               if (undoMgr) undoMgr.checkpoint(); markDirty();
-              try { const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
+              caretAtLiTextEnd(li); // 空项无子列表 → 光标落其内，打字正常
               return;
             }
             if (!li.nextElementSibling) {
@@ -1649,7 +1659,7 @@
             if (undoMgr) undoMgr.checkpoint(); markDirty();
           }
         }
-        try { const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); } catch (x) {}
+        caretAtLiTextEnd(li); // Tab/Shift-Tab 后光标落 li 文字末尾（在其子列表之前，对抗审查 P2）
         return;
       }
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）
