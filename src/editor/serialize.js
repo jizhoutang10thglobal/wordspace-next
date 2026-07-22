@@ -19,6 +19,7 @@
     'data-ws2-canvas', 'data-ws2-eid', 'data-ws2-editing',
     'data-ws2-selected', 'data-ws2-drop', // 块编辑：灰选中 / 拖拽投放标记（仅交互态，存盘剥除）
     'data-ws2-rangesel', // 块编辑：跨块拖选的块级高亮标记（仅交互态，存盘剥除）
+    'data-ws2-clip', // 块编辑：内部复制粘贴的剪贴板哨兵（只该出现在剪贴板 payload；万一漏进 DOM 也剥）
     'data-ws2-root', // 块容器标记（给空块占行高等结构 CSS 用，存盘剥除）
   ]);
 
@@ -69,7 +70,7 @@
     return clone.innerHTML;
   }
 
-  const api = { serializeDocument, cleanedBodyHtml, OVERLAY_VAL };
+  const api = { serializeDocument, cleanedBodyHtml, cleanRoot, OVERLAY_VAL };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2Serialize = api;
 })(typeof window !== 'undefined' ? window : globalThis);
