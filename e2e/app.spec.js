@@ -347,6 +347,51 @@ test('待办删空退格：单项列表整块 de-list 成段落、不留空 <ul>
   expect(await editingId(), '光标落在新段落').not.toBeNull();
 });
 
+// Wendi bug6：跨块/全选删除一个含待办的选区，deleteSelection 裁掉待办的 <li> 后会剩一个非法空
+// <ul></ul>（无 li 无勾选框的 ghost 死块）。修：deleteSelection 把裁空的列表端点就地换成空 <p>（放合并前，
+// 两端都空 <p> 时并成一个干净空块）。断言锚 = 序列化字节无空 <ul></ul> + 合规 + 塌成一个空块。
+test('全选/跨块删待办+段落：不留空 <ul></ul> ghost、塌成一个干净空块、合规（Wendi bug6）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><ul class="ws-todo"><li id="li1">测试bug</li></ul><p id="p1">测试bug</p></body></html>');
+  await frame.locator('#li1').click();
+  await page.waitForTimeout(100);
+  // 块级全选（等价 ⌘A⌘A 选全篇 / 拖选全部）：range 罩住首块(ul)到末块(p)
+  await frame.locator('body').evaluate(() => {
+    const d = document, ul = d.querySelector('ul.ws-todo'), p = d.getElementById('p1');
+    const r = d.createRange(); r.setStart(ul, 0); r.setEnd(p, p.childNodes.length);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r); d.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(200);
+  const html = await serialize();
+  expect(html, '跨块删待办后绝不留空 <ul></ul> ghost').not.toMatch(EMPTY_UL);
+  expect(await conformOf(), '删后文档合规').toBe(true);
+  expect(await blockCount(), '全删塌成一个干净空块').toBe(1);
+  expect(await frame.locator('ul.ws-todo').count(), '待办列表已消失（de-list 成段落）').toBe(0);
+});
+
+// 回归：部分跨块选区（待办→段落）删除仍保留未选中的头尾内容，不塌成空 <ul>。
+test('部分跨块删待办+段落：保留未选中头尾、不留空 <ul>、合规（Wendi bug6 回归）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><ul class="ws-todo"><li id="li1">AA保留删除</li></ul><p id="p1">删除保留DD</p></body></html>');
+  await frame.locator('#li1').click();
+  await page.waitForTimeout(100);
+  await frame.locator('body').evaluate(() => {
+    const d = document, li = d.getElementById('li1'), p = d.getElementById('p1');
+    const r = d.createRange(); r.setStart(li.firstChild, 2); r.setEnd(p.firstChild, 3); // 选 "保留删除"→"删除保"
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r); d.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(200);
+  const html = await serialize();
+  expect(html).not.toMatch(EMPTY_UL);
+  expect(html, '待办头 AA 保留').toMatch(/AA/);
+  expect(html, '段落尾 留DD 保留').toMatch(/留DD/);
+  expect(await conformOf()).toBe(true);
+});
+
 // Tab 缩进：列表第二项按 Tab → 嵌进第一项的子列表。
 test('Tab 缩进：列表项嵌套成子列表', async () => {
   await launch();
