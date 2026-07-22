@@ -181,6 +181,9 @@ module.exports = {
   resizeHint: 'Drag to resize the sidebar',
   toggleSidebarTitle: 'Collapse sidebar ⌘\\',
   expandSidebarTitle: 'Expand sidebar ⌘\\',
+  flClose: 'Close',
+  flMinimize: 'Minimize',
+  flFullscreen: 'Full screen',
   navBack: 'Back',
   navForward: 'Forward',
   reloadTitle: 'Reload ⌘R',
@@ -195,4 +198,7 @@ module.exports = {
   emptyOpenBtn: 'Open folder',
   aiAccessTitle: 'AI access',
   expandSidebarTitle: 'Expand sidebar ⌘\\',
+  flClose: 'Close',
+  flMinimize: 'Minimize',
+  flFullscreen: 'Full screen',
 };
