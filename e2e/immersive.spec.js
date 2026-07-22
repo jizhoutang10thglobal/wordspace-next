@@ -344,13 +344,10 @@ test('peek 假红绿灯：peek 现/收起前隐、三颗齐、点最小化走真
   const fl = await page.locator('#sb-fakelights').boundingBox();
   expect(fl.x, '假灯该在卡内让位区').toBeGreaterThan(10);
   expect(fl.x + fl.width, '假灯不该越过 70px 让位区').toBeLessThan(10 + 70);
-  // 点「关闭」→ 真窗控(IPC ws-win-ctl 全链路)。用 close 不用 minimize:xvfb 没有窗口管理器,
-  // minimize/fullscreen 是 WM 功能、isMinimized() 在 CI 永 false(CI 实翻过);close 无需 WM。
-  // 口径兼两平台:linux=销毁(窗口数 0)、mac=隐藏驻留(仍 1 但不可见)——「销毁或全不可见」都证明链路通。
-  // minimize/fullscreen 语义宿主人工验过(Colin 2026-07-22)。
-  await page.locator('.sb-fl-close').click();
-  await expect.poll(() => app.evaluate(({ BrowserWindow }) => {
-    const ws = BrowserWindow.getAllWindows();
-    return ws.length === 0 || ws.every((w) => !w.isVisible());
-  }), { timeout: 3000 }).toBe(true);
+  // 假灯点击链路:主进程挂记录探针验「ws-win-ctl 真到达」。不断言窗控实效——CI 两头都验不动:
+  // minimize/fullscreen 是 WM 功能(xvfb 无 WM 永 no-op,CI 实翻过);close 在 linux 会销毁唯一窗口
+  // → app 进程退出 → 后续 evaluate 全崩(CI 也实翻过)。实效(真最小化/真全屏)宿主人工验过(Colin 07-22)。
+  await app.evaluate(({ ipcMain }) => { global.__flCtl = null; ipcMain.on('ws-win-ctl', (_e, a) => { global.__flCtl = a; }); });
+  await page.locator('.sb-fl-min').click();
+  await expect.poll(() => app.evaluate(() => global.__flCtl), { timeout: 3000 }).toBe('minimize');
 });
