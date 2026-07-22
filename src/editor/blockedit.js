@@ -1575,7 +1575,44 @@
             }
             return;
           }
-          return; // 非空列表项 / 删字 → 交原生
+          // 非空列表项 + 光标在【首 li】行首(= 整个列表块起点):原生跨不到上一个块(每个块是独立
+          // contenteditable),会哑掉——列表块紧跟列表块/段落时,第二块行首按 Backspace「没反应、不上移」
+          // (Wendi 2026-07-21：应跳到上面那个 block,却留在了当前 block)。自己把首 li 内容并入上一块,
+          // 对齐「同一个 ul 内 li→li」的原生合并语义(case A 一直是对的,这里补齐跨块那半)。
+          // cli 必须是 editingEl 的【直接子 li】：closest('li') 会取到最深的嵌套项,「嵌套子列表打头
+          // 的块」里内层项会被误当整块首 li 撕进上一块、留幽灵空子列表(对抗审查 Finding A)。
+          // 且 cli 自身不能带子列表(搬块级子节点进段落=非法嵌套)——这两类罕见,交原生 no-op 可接受。
+          if (cli && cli.parentElement === editingEl && !cli.previousElementSibling && isCaretAtStart(doc, editingEl)
+              && !cli.querySelector(':scope > ul, :scope > ol')) {
+            const scope = scopeRootOf(editingEl);
+            const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
+            const idx = blocks.indexOf(editingEl);
+            const prev = idx > 0 ? blocks[idx - 1] : null;
+            // 上一块是列表 → 并入其末项(与 case A 内合并同效,两项拼成一个 item);叶子文字块(段落/
+            // 标题/引用) → 并入其末尾(列表项并入段落)。上一块不可编辑/无 → 不吞,落到下面交原生 no-op。
+            let target = null;
+            if (prev && classify(prev) === 'list') target = [...prev.children].reverse().find((c) => c.tagName === 'LI') || null;
+            else if (prev && isEditableEl(prev) && isLeafTextBlock(prev)) target = prev;
+            if (target) {
+              e.preventDefault();
+              const ul = editingEl;
+              // 空目标块的占位 <br>(空段/空 li 的 `<p><br></p>`)→ 剥掉,免并入后留前导空行(Finding C)。
+              if (target.childNodes.length === 1 && target.firstChild.nodeName === 'BR') target.firstChild.remove();
+              // target 末项自带子列表时,文字插在子列表【前】(接到该项文字末尾),否则会吊到子项下面(Finding B)。
+              const nestedInTarget = target.querySelector(':scope > ul, :scope > ol');
+              const joinAt = cli.firstChild; // 接合点(合并后光标停它前面 = target 原末尾);cli 必非空(空项已在上面分流)
+              while (cli.firstChild) { if (nestedInTarget) target.insertBefore(cli.firstChild, nestedInTarget); else target.appendChild(cli.firstChild); }
+              cli.remove();
+              if (!ul.querySelector('li')) ul.remove(); // cur 列表空了 → 删掉空 <ul>
+              if (undoMgr) undoMgr.checkpoint();
+              markDirty();
+              enterEdit(prev, { mode: 'end' });
+              // joinAt 恒非空且已移进 target → setStartBefore 恒有效(不补 <br>：cli 非空,总有真内容,补 br 会留空行 Finding C)
+              try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
+              return;
+            }
+          }
+          return; // 非首 li / 删字 / 上一块不可并 → 交原生（native 在 ul 内合并 li，正确）
         }
         if (!isCaretAtStart(doc, editingEl)) return;
         const scope = scopeRootOf(editingEl); // U6：作用域感知合并/退格
