@@ -43,6 +43,15 @@ test('cardWidth 非法时退 260 默认', () => {
   assert.equal(Z.inDwellZone(B, { x: 100 + 260 + Z.CARD_PAD, y: 300 }, undefined), true);
 });
 
+test('全屏顶缘带:推顶全宽触发(顶栏下拉+侧栏同滑出);非全屏不触发(顶带是拖拽区)', () => {
+  const FS = { x: 0, y: 0, width: 1920, height: 1080 };
+  assert.equal(Z.inTriggerZone(FS, { x: 960, y: Z.FS_TOP }, true), true);      // 全屏推顶(屏中)
+  assert.equal(Z.inTriggerZone(FS, { x: 1900, y: 2 }, true), true);            // 顶右角也算(全宽)
+  assert.equal(Z.inTriggerZone(FS, { x: 960, y: Z.FS_TOP + 1 }, true), false); // 过了带高不算
+  assert.equal(Z.inTriggerZone(FS, { x: 960, y: 2 }, false), false);           // 非全屏顶缘不触发
+  assert.equal(Z.inDwellZone(FS, { x: 960, y: 2 }, 260, true), true);          // 驻留区含全屏顶缘
+});
+
 test('空参防御:bounds/pt 缺失返回 false 不抛', () => {
   assert.equal(Z.inTriggerZone(null, { x: 0, y: 0 }), false);
   assert.equal(Z.inTriggerZone(B, null), false);

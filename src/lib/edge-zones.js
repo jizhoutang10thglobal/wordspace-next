@@ -19,28 +19,36 @@
   const CORNER_W = 80;   // 左上角唤出区宽(≈红绿灯那片)
   const CORNER_H = 48;   // 左上角唤出区高
   const CARD_PAD = 24;   // peek 卡右缘的离开缓冲
+  const FS_TOP = 8;      // 全屏顶缘唤出带高(Colin 2026-07-22:全屏推顶=顶栏下拉+侧栏同滑出,灯只活在卡上)
 
-  // 光标是否落在「唤出触发区」(左缘带 ∪ 左上角区)。
-  function inTriggerZone(bounds, pt) {
+  // 光标是否落在「唤出触发区」(左缘带 ∪ 左上角区;全屏时再 ∪ 顶缘带全宽)。
+  function inTriggerZone(bounds, pt, fullscreen) {
     if (!bounds || !pt) return false;
     const inBandX = pt.x >= bounds.x - OUT && pt.x <= bounds.x + IN;
     const inBandY = pt.y >= bounds.y && pt.y <= bounds.y + bounds.height;
     if (inBandX && inBandY) return true;
     const inCorner = pt.x >= bounds.x && pt.x <= bounds.x + CORNER_W
       && pt.y >= bounds.y && pt.y <= bounds.y + CORNER_H;
-    return inCorner;
+    if (inCorner) return true;
+    // 全屏专属:顶缘带(与 macOS 菜单栏下拉同区)——推顶时侧栏跟着滑出,关闭钮在卡上、顶栏不重复放灯。
+    // 非全屏不做:窗顶那条是拖拽带,顶缘触发会跟拖窗打架。
+    if (fullscreen) {
+      return pt.y >= bounds.y && pt.y <= bounds.y + FS_TOP
+        && pt.x >= bounds.x && pt.x <= bounds.x + bounds.width;
+    }
+    return false;
   }
 
   // peek 开着时,光标是否仍在「驻留区」(触发区 ∪ 卡片区+右缘缓冲)——不在了才算离开。
-  function inDwellZone(bounds, pt, cardWidth) {
+  function inDwellZone(bounds, pt, cardWidth, fullscreen) {
     if (!bounds || !pt) return false;
-    if (inTriggerZone(bounds, pt)) return true;
+    if (inTriggerZone(bounds, pt, fullscreen)) return true;
     const w = (typeof cardWidth === 'number' && cardWidth > 0 ? cardWidth : 260) + CARD_PAD;
     return pt.x >= bounds.x - OUT && pt.x <= bounds.x + w
       && pt.y >= bounds.y && pt.y <= bounds.y + bounds.height;
   }
 
-  const api = { inTriggerZone, inDwellZone, OUT, IN, CORNER_W, CORNER_H, CARD_PAD };
+  const api = { inTriggerZone, inDwellZone, OUT, IN, CORNER_W, CORNER_H, CARD_PAD, FS_TOP };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.WS2EdgeZones = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

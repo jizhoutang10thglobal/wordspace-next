@@ -2651,16 +2651,11 @@
   // onFullscreenChanged → 挂/摘 body.is-win-fullscreen（CSS 全部走 body:not(.is-win-fullscreen) 组合表达）。
   // 启动初值查一次（冷启动可能已在全屏，如上次全屏中退出后系统恢复）。这条接线是「全屏无框」的唯一来源，
   // 摘掉它 → 全屏态收不到 → 框不摘（immersive.spec「全屏无框」变异自检据此翻红）。
-  function applyWinFullscreen(isFs) {
-    document.body.classList.toggle('is-win-fullscreen', !!isFs);
-    // 全屏下红绿灯必须可见(Colin 2026-07-22 抓的死胡同):收起态的 setWindowButtonVisibility(false)
-    // 会连带压掉 macOS 全屏「鼠标推顶,菜单栏下拉」里的灯——全屏+收起的新手找不到任何关闭钮。
-    // 进全屏强制恢复可见(全屏下灯只活在顶栏下拉里,不会悬浮在内容上);退全屏按收起态归位。
-    if (window.ws2 && window.ws2.setWindowButtons) {
-      const collapsed = sidebarEl && sidebarEl.classList.contains('is-collapsed');
-      window.ws2.setWindowButtons(isFs ? true : !collapsed);
-    }
-  }
+  // 全屏+收起的「找不到关闭钮」死胡同(Colin 2026-07-22)的解法迭代:一版是「进全屏强制恢复原生灯
+  // 可见(顶栏下拉带灯)」,但和 peek 卡上的假灯撞出重复灯——Colin 改拍:顶栏下拉**不放灯**,
+  // 全屏推顶时【侧栏 peek 跟着滑出】,灯只活在卡上(watcher 的全屏顶缘唤出带,edge-zones FS_TOP)。
+  // 故这里只管样式类;收起态灯保持隐藏,可见性仍由 setSidebarCollapsed 单点管。
+  function applyWinFullscreen(isFs) { document.body.classList.toggle('is-win-fullscreen', !!isFs); }
   if (window.ws2 && window.ws2.getFullscreen) {
     window.ws2.getFullscreen().then(applyWinFullscreen).catch(() => {});
     if (window.ws2.onFullscreenChanged) window.ws2.onFullscreenChanged(applyWinFullscreen);

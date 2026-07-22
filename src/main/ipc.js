@@ -975,8 +975,9 @@ function registerIpc() {
         prevPt = pt;
         if (!armed) return; // 未 armed 完全静默——首拍发 (false,false) 会把 DOM 开出的 peek 误关(CI 实翻过)
         const b = w.getBounds();
-        const trigger = edgeZones.inTriggerZone(b, pt);
-        const dwell = edgeZones.inDwellZone(b, pt, cardWidth);
+        const fs = w.isFullScreen(); // 全屏加顶缘唤出带(推顶=顶栏下拉+侧栏同滑出,Colin 2026-07-22)
+        const trigger = edgeZones.inTriggerZone(b, pt, fs);
+        const dwell = edgeZones.inDwellZone(b, pt, cardWidth, fs);
         const key = (trigger ? 2 : 0) + (dwell ? 1 : 0);
         if (key !== edgeLastKey) { edgeLastKey = key; w.webContents.send('ws-edge-hover', trigger, dwell); }
       } catch { /* xvfb/竞态：吞掉,下一拍再试 */ }
