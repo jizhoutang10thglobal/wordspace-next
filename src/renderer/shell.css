@@ -313,6 +313,23 @@ body.is-win-fullscreen .sb.sb-on:not(.is-collapsed) { border-right: 1px solid va
 body.is-mac .sb-head { padding: 0 6px 0 70px; gap: 1px; }
 body.is-mac .sb-head .sb-icobtn { width: 22px; }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+/* peek 浮卡 DOM 假红绿灯(Wendi 2026-07-22「把这3个按钮放到卡片上」):只在 mac 的 peek 态显——
+   原生灯搬不进 DOM 卡(Electron 无 AppKit standardWindowButton 重挂,Arc 是原生搬的),peek 全程
+   不显原生灯,假灯作为卡的一部分随卡滑入滑出、与图标排同处 40px 头天生对齐(杀掉 1.2px 账)。
+   绝对定位吃 is-mac 让位 70px 区(原生灯在展开态的家);观感对齐 ui-demo .arc-traffic,
+   色=macOS 原色;hover 整组出符号(macOS 行为)。点击走 ws-win-ctl(关/最小化/全屏)。 */
+.sb-fakelights { display: none; }
+body.is-mac.is-sb-peek .sb-fakelights {
+  display: flex; gap: 8px; align-items: center;
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+}
+.sb-fl { flex: none; width: 12px; height: 12px; border-radius: var(--r-pill); border: none; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; cursor: default; }
+.sb-fl svg { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.sb-fakelights:hover .sb-fl svg { opacity: 1; } /* hover 任一颗,三颗全出符号(macOS 同款) */
+.sb-fl-close { background: #ff5f57; }
+.sb-fl-min { background: #febc2e; }
+.sb-fl-zoom { background: #28c840; }
 /* toggle 两形态(Colin 2026-07-21):展开态显「收起」(左箭头),收起/peek 态显「展开」(右箭头)——
    peek 浮卡里 body.is-sb-collapsed 仍挂着,天然显展开形态,用户在浮卡里能认出恢复钮。 */
 #sb-toggle .sb-tgl-open { display: none; }

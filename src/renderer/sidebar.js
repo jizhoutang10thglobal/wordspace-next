@@ -2644,13 +2644,17 @@
   const edgeHot = document.getElementById('sb-edge-hot');
   // 沉浸收起（Arc 对标）：常驻浮钮 sb-reopen 已删（拍板「纯 Arc 式」零可见 UI），重开=左缘 hover peek / Cmd+\。
   // spec=docs/features/immersive-collapse.md
-  if (window.ws2 && window.ws2.platform === 'darwin') document.body.classList.add('is-mac'); // 红绿灯让位（hiddenInset）
+  if (window.ws2 && (window.ws2.platform === 'darwin' || window.ws2.fakeMac)) document.body.classList.add('is-mac'); // 红绿灯让位（hiddenInset）;fakeMac=e2e seam(linux CI 测 mac 专属分支)
 
   // 沉浸窗框非全屏恒有（Colin 2026-07-18 扩展 #271）：真全屏（macOS enter-full-screen / F11）时摘框。
   // 主进程 win.on('enter/leave-full-screen') → webContents.send('fullscreen-changed', bool) → preload
   // onFullscreenChanged → 挂/摘 body.is-win-fullscreen（CSS 全部走 body:not(.is-win-fullscreen) 组合表达）。
   // 启动初值查一次（冷启动可能已在全屏，如上次全屏中退出后系统恢复）。这条接线是「全屏无框」的唯一来源，
   // 摘掉它 → 全屏态收不到 → 框不摘（immersive.spec「全屏无框」变异自检据此翻红）。
+  // 全屏+收起的「找不到关闭钮」死胡同(Colin 2026-07-22)的解法迭代:一版是「进全屏强制恢复原生灯
+  // 可见(顶栏下拉带灯)」,但和 peek 卡上的假灯撞出重复灯——Colin 改拍:顶栏下拉**不放灯**,
+  // 全屏推顶时【侧栏 peek 跟着滑出】,灯只活在卡上(watcher 的全屏顶缘唤出带,edge-zones FS_TOP)。
+  // 故这里只管样式类;收起态灯保持隐藏,可见性仍由 setSidebarCollapsed 单点管。
   function applyWinFullscreen(isFs) { document.body.classList.toggle('is-win-fullscreen', !!isFs); }
   if (window.ws2 && window.ws2.getFullscreen) {
     window.ws2.getFullscreen().then(applyWinFullscreen).catch(() => {});
@@ -2672,9 +2676,10 @@
       if (!peekPending || peekOn() || !sidebarEl.classList.contains('is-collapsed')) return;
       peekPending = false;
       document.body.classList.add('is-sb-peek');
-      // 灯挪进浮卡（卡 top/left 10px + 卡内 14 = 24，与展开态灯相对 chrome 面同位）——灯属于浮卡图层，
-      // 不再钉死窗角压在卡边上（spec 旧欠账「peek 卡内偏上 4px」，Wendi 2026-07-21 点名）。收回/展开不传 pos = 归位。
-      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true, { x: 24, y: 22 }); // 展开位(14,12)+浮卡内缩 10
+      // 原生灯 peek 全程不显(Wendi 2026-07-22「灯不在卡片上」):此前灯瞬移到 (24,22),但卡要滑 320ms
+      // 才落位——滑入/滑出各有 ~1/3 秒灯悬空浮在内容上。原生灯搬不进 DOM 卡(Electron 无 AppKit 的
+      // standardWindowButton 重挂),改用卡内 DOM 假灯(#sb-fakelights,CSS 按 is-mac+is-sb-peek 显),
+      // 随卡滑入滑出、与图标排天生对齐。
     };
     if (window.__webPeekSnap) window.__webPeekSnap(true, finish);
     else finish();
@@ -2685,7 +2690,7 @@
     if (!peekOn()) return;
     const done = () => {
       document.body.classList.remove('is-sb-peek', 'is-sb-peek-out');
-      if (document.body.classList.contains('is-sb-collapsed') && window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(false);
+      // 原生灯 peek 全程未显,无需在此隐藏(假灯随 is-sb-peek 类摘除自然消失)
     };
     if (immediate) done();
     else {
@@ -2700,8 +2705,22 @@
     sidebarEl.addEventListener('mouseenter', () => { if (peekOn()) clearTimeout(peekTimer); });
     sidebarEl.addEventListener('mouseleave', () => { if (peekOn()) peekLeave(); });
   }
-  // （原「网页 view 前台时主进程指针 watcher 代打」已删：沉浸窗框让 #main 内缩 10px，
-  //   左边带永远是 DOM 地盘，#sb-edge-hot 在 web 态也能收到鼠标——触发只此一条。）
+  // 光标轮询触发(Wendi 2026-07-22「必须精确停在缝上」→ Arc 式宽容,主进程 ws-edge-watch):
+  // DOM 热区的结构性缺口=①甩出窗外收不到 ②快速划过+120ms 停留被取消 ③无左上角唤出区。
+  // 轮询首拍即开(不再要停留),trigger=唤出区(左缘带±/左上角) dwell=驻留区(∪卡区缓冲)。
+  // DOM 热区保留(e2e 走它+双保险);07-17 删过一版 watcher,当时是「冗余简化」,现在为手感恢复。
+  if (window.ws2 && window.ws2.onEdgeHover) {
+    window.ws2.onEdgeHover((trigger, dwell) => {
+      if (!sidebarEl || !sidebarEl.classList.contains('is-collapsed')) return;
+      if (trigger) { clearTimeout(peekTimer); openPeek(); }
+      else if (!dwell && peekOn()) peekLeave();
+      else if (dwell && peekOn()) clearTimeout(peekTimer); // 光标在卡上(可能从窗外进来,DOM 没收到 enter)→ 别关
+    });
+  }
+  const sbWidthNow = () => { const v = parseInt(getComputedStyle(sidebarEl).getPropertyValue('--sb-width'), 10); return v >= 180 && v <= 520 ? v : 260; };
+  // 假灯点击(peek 浮卡,mac):关/最小化/全屏——走主进程窗控(与原生灯同语义)。mousedown 拦掉防抢 peek 焦点。
+  const flBind = (cls, action) => { const b = document.querySelector('.sb-fl-' + cls); if (b) b.onclick = (e) => { e.stopPropagation(); if (window.ws2 && window.ws2.winCtl) window.ws2.winCtl(action); }; };
+  flBind('close', 'close'); flBind('min', 'minimize'); flBind('zoom', 'fullscreen');
 
   function setSidebarCollapsed(v) {
     if (!sidebarEl) return;
@@ -2712,6 +2731,7 @@
     // (body.is-sb-collapsed 显 open 形态),tooltip 这里同步——本函数是 is-sb-collapsed 唯一写点,全路径覆盖。
     if (toggleBtn && window.wsT) toggleBtn.title = window.wsT(v ? 'sidebar.expandSidebarTitle' : 'sidebar.toggleSidebarTitle');
     if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(!v);
+    if (window.ws2 && window.ws2.edgeWatch) window.ws2.edgeWatch(v, sbWidthNow()); // 光标轮询只在收起态跑
     // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
     if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
   }
