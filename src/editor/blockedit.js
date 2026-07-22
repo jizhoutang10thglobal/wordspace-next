@@ -1877,6 +1877,26 @@
       const sameBlock = sBlk === eBlk;
       // 整块判定（选中覆盖了整个块的文字，如选完一整行待办）→ 当块级复制、保留块类型（正是 Wendi 的场景）。
       const wholeBlock = sameBlock && norm(sel.toString()).length > 0 && norm(sel.toString()) === norm(sBlk.textContent);
+      // U3/clip-1：同一列表块内跨 li 选区 → 走块级打包（保留待办项类型 + 勾选态），别落行内分支携带裸 <li>。
+      // blockOf 把整个 <ul> 当一个块 → 选部分项时 sameBlock && !wholeBlock 会误入行内分支、cloneContents 出裸 li，
+      // 粘进段落成 <p>…<li> 非法嵌套、整篇降级、勾选语义丢失。单 li 内选区（sLi===eLi）不进此分支、维持行内。
+      if (sameBlock && (sBlk.tagName === 'UL' || sBlk.tagName === 'OL')) {
+        const kids = [...sBlk.children].filter((c) => c.tagName === 'LI');
+        const liOf = (n) => { n = n && n.nodeType === 1 ? n : (n && n.parentElement); return n && n.closest ? n.closest('li') : null; };
+        // 端点落在 li 边界外（如 endContainer 是 ul 本身）→ 归一到最近覆盖的 li。
+        const sLi = liOf(r.startContainer) || kids[0], eLi = liOf(r.endContainer) || kids[kids.length - 1];
+        if (sLi && eLi && sLi !== eLi && sBlk.contains(sLi) && sBlk.contains(eLi)) {
+          let i = kids.indexOf(sLi), j = kids.indexOf(eLi);
+          if (i > j) { const t = i; i = j; j = t; }
+          const listFrag = doc.createElement(sBlk.tagName);
+          if (sBlk.className) listFrag.className = sBlk.className;
+          for (let k = i; k <= j; k++) listFrag.appendChild(kids[k].cloneNode(true));
+          cleanInPlace(listFrag);
+          cd.setData('text/html', '<div ' + CLIP + '="b">' + listFrag.outerHTML + '</div>');
+          cd.setData('text/plain', sel.toString());
+          e.preventDefault(); return;
+        }
+      }
       if (sameBlock && !wholeBlock) {
         // ② 行内：选一段字 → 保留 B/I/U/S/行内代码/链接/颜色等行内格式。
         // cloneContents 只克隆选中节点：选中「<b> 里的字」时得到纯文本、丢掉 <b> → 把选区逐层裹进它所在的
@@ -1921,9 +1941,23 @@
     function insertInlineAtCaret(innerHtml) {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0) return;
+      const tpl = doc.createElement('template'); tpl.innerHTML = innerHtml;
+      // 纵深防御（clip-1）：片段含块级元素 → 绝不行内 range.insertNode（会造 <p><li>/<p><p> 非法嵌套），改走块级。
+      // 裸 <li> 先裹进 <ul>（li 不能当顶层块；任一 li 带 data-checked 则视为 ws-todo）。
+      if (tpl.content.querySelector('li,ul,ol,p,div,h1,h2,h3,h4,h5,h6,blockquote,details,table,figure,hr')) {
+        const kids = [...tpl.content.children].filter((c) => c.nodeType === 1);
+        const bareLis = kids.filter((c) => c.tagName === 'LI');
+        let blocks = kids;
+        if (kids.length && bareLis.length === kids.length) {
+          const ul = doc.createElement('ul');
+          if (bareLis.some((li) => li.hasAttribute('data-checked'))) ul.className = 'ws-todo';
+          kids.forEach((li) => ul.appendChild(li));
+          blocks = [ul];
+        }
+        if (blocks.length) { insertBlocksAtCaret(blocks); return; }
+      }
       const r = sel.getRangeAt(0);
       if (!r.collapsed) r.deleteContents();
-      const tpl = doc.createElement('template'); tpl.innerHTML = innerHtml;
       const nodes = [...tpl.content.childNodes];
       r.insertNode(tpl.content);
       const lastNode = nodes[nodes.length - 1];
@@ -1967,7 +2001,24 @@
             insertInlineAtCaret(clip.innerHTML);
           } else {
             const blocks = [...clip.children].filter((c) => c.nodeType === 1);
-            if (blocks.length) insertBlocksAtCaret(blocks);
+            // U3/clip-1：单一列表包粘进同类列表编辑态 → 逐项并入当前 li 之后（保留 data-checked），
+            // 别走 insertBlocksAtCaret（它对列表目标会 splitBlock 劈出 2-3 个相邻 ul，违反 bug2「绝不建新 ul」）。
+            let merged = false;
+            if (blocks.length === 1 && (blocks[0].tagName === 'UL' || blocks[0].tagName === 'OL') && editingEl && classify(editingEl) === 'list') {
+              const s1 = doc.getSelection();
+              const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
+              let li = n1 && n1.closest ? n1.closest('li') : null;
+              const srcLis = [...blocks[0].children].filter((c) => c.tagName === 'LI');
+              if (li && editingEl.contains(li) && srcLis.length) {
+                for (const sLi of srcLis) { li.after(sLi); li = sLi; }
+                ensurePastedStyles(editingEl);
+                const rr = doc.createRange(); rr.selectNodeContents(li); rr.collapse(false);
+                s1.removeAllRanges(); s1.addRange(rr);
+                merged = true;
+              }
+            }
+            if (merged) { /* 已逐项并入当前列表 */ }
+            else if (blocks.length) insertBlocksAtCaret(blocks);
             else if (editingEl) insertInlineAtCaret(clip.innerHTML); // 行内哨兵但非编辑态兜底
           }
           if (undoMgr) undoMgr.checkpoint();
