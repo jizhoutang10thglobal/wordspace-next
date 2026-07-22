@@ -1772,10 +1772,132 @@
     // 修 ED-A5：外部拖放（dragFrom 为空=不是内部块拖拽）一律吞掉，别让浏览器默认 insertFromDrop 把带任意
     // 标签的富 HTML（div/h1/span style/a…）插进 contenteditable → 落盘非合规。粘贴那道「只取纯文本」的闸在
     // drop 路径不存在，这里补上（拖放直接拒绝，用户仍可 Cmd+V 走纯文本粘贴）。
+    // ===== 内部富复制粘贴（Wendi bug5①，Colin 2026-07-22 拍板）=====
+    // 复制：把选中内容清成「本编辑器自己的、已合规」HTML，打隐形哨兵 data-ws2-clip 进剪贴板。
+    // 粘贴：带哨兵 = 本编辑器内部复制的 → **保留格式**（待办/标题/列表/引用 + 行内 B/I/U/链接）；
+    //   不带哨兵 = 外部来源（Word/Notion/网页）→ **仍走纯文本兜底**（ED-A4 合规红线，绝不让外部富文本污染文档）。
+    // 内部内容粘贴时再过一遍 cleanRoot（与存盘同一套白名单）剥编辑器标记（纵深防御，不盲信剪贴板）。
+    const SER_MOD = (typeof WS2Serialize !== 'undefined') ? WS2Serialize
+      : (typeof require !== 'undefined' ? require('./serialize.js') : null);
+    function cleanInPlace(node) { if (SER_MOD && SER_MOD.cleanRoot) SER_MOD.cleanRoot(node); return node; }
+    function cleanClone(node) { return cleanInPlace(node.cloneNode(true)); }
+    const CLIP = 'data-ws2-clip';
+
+    function onCopy(e) {
+      const cd = e.clipboardData; if (!cd || !cd.setData) return; // 无剪贴板 API → 交原生
+      const sel = doc.getSelection();
+      // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
+      if ((!sel || sel.isCollapsed) && selectedEl) {
+        cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
+        cd.setData('text/plain', selectedEl.textContent || '');
+        e.preventDefault(); return;
+      }
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 无选区 → 交原生
+      const r = sel.getRangeAt(0);
+      const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
+      if (!sBlk || !eBlk) return; // 落在块外/覆盖层 → 交原生（不接管）
+      const norm = (s) => (s || '').replace(/\s+/g, '');
+      const sameBlock = sBlk === eBlk;
+      // 整块判定（选中覆盖了整个块的文字，如选完一整行待办）→ 当块级复制、保留块类型（正是 Wendi 的场景）。
+      const wholeBlock = sameBlock && norm(sel.toString()).length > 0 && norm(sel.toString()) === norm(sBlk.textContent);
+      if (sameBlock && !wholeBlock) {
+        // ② 行内：选一段字 → 保留 B/I/U/S/行内代码/链接/颜色等行内格式。
+        // cloneContents 只克隆选中节点：选中「<b> 里的字」时得到纯文本、丢掉 <b> → 把选区逐层裹进它所在的
+        // 行内格式祖先(到块为止)，把格式补回来。跨越 <b> 边界的选区 commonAncestor=块，循环不触发、cloneContents 已含 <b>。
+        let frag = r.cloneContents();
+        const INLINE_FMT = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, S: 1, STRIKE: 1, CODE: 1, A: 1, MARK: 1, SUB: 1, SUP: 1, SPAN: 1 };
+        let anc = r.commonAncestorContainer;
+        anc = anc && anc.nodeType === 1 ? anc : (anc && anc.parentElement);
+        while (anc && anc !== sBlk && INLINE_FMT[anc.tagName]) { const wrap = anc.cloneNode(false); wrap.appendChild(frag); frag = wrap; anc = anc.parentElement; }
+        const w = doc.createElement('span'); w.appendChild(frag); cleanInPlace(w);
+        cd.setData('text/html', '<span ' + CLIP + '="i">' + w.innerHTML + '</span>');
+        cd.setData('text/plain', sel.toString());
+        e.preventDefault(); return;
+      }
+      // ③ 块级：取选区罩住的**完整**顶层块 i..j（整块，不做部分裁剪 → 每个剪贴板块都是完整合规块）
+      const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
+      const crossScope = sScope !== eScope;
+      const scopeRoot = crossScope ? blockRoot : sScope;
+      const tops = blocksInScope(scopeRoot);
+      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      let i = tops.indexOf(sB), j = tops.indexOf(eB);
+      if (i < 0 || j < 0) return;
+      if (i > j) { const t = i; i = j; j = t; }
+      let html = '';
+      for (let k = i; k <= j; k++) html += cleanClone(tops[k]).outerHTML;
+      cd.setData('text/html', '<div ' + CLIP + '="b">' + html + '</div>');
+      cd.setData('text/plain', sel.toString());
+      e.preventDefault();
+    }
+
+    // 跨文档粘贴：把待办/callout/toggle 的语义 CSS 注进目标文档 head（否则粘进还没这类块的文档，勾选框/折叠不渲染）。
+    function ensurePastedStyles(el) {
+      if (!el || el.nodeType !== 1) return;
+      const hit = (sel) => (el.matches && el.matches(sel)) || (el.querySelector && el.querySelector(sel));
+      if (hit('ul.ws-todo')) ensureTodoStyle();
+      if (hit('.ws-callout')) ensureCalloutStyle();
+      if (el.tagName === 'DETAILS' || hit('details')) ensureToggleStyle();
+    }
+
+    // 行内富粘贴：把行内 HTML 手动插到光标处（execCommand('insertHTML') 在本 contenteditable 里是哑的 no-op，
+    // 实测不插——改手动 range.insertNode，可靠且不会造块嵌套；undo 由调用方 checkpoint 兜）。
+    function insertInlineAtCaret(innerHtml) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const r = sel.getRangeAt(0);
+      if (!r.collapsed) r.deleteContents();
+      const tpl = doc.createElement('template'); tpl.innerHTML = innerHtml;
+      const nodes = [...tpl.content.childNodes];
+      r.insertNode(tpl.content);
+      const lastNode = nodes[nodes.length - 1];
+      if (lastNode) { try { const nr = doc.createRange(); nr.setStartAfter(lastNode); nr.collapse(true); sel.removeAllRanges(); sel.addRange(nr); } catch (x) { /* 光标落点尽力而为 */ } }
+    }
+
+    // 块级富粘贴：把完整块序列按已拍板落点插入（Colin 2026-07-22）：
+    //   空正文块 → 整块换成粘贴内容；光标块首 → 插在前；块末 → 插在后；块中 → splitBlock 劈开插中间；
+    //   灰选中块 → 插其后；无编辑无选中 → 追加末尾。光标落最后一块末尾。
+    function insertBlocksAtCaret(blocks) {
+      if (!blocks.length) return;
+      blocks.forEach(ensurePastedStyles);
+      const last = blocks[blocks.length - 1];
+      const frag = doc.createDocumentFragment();
+      blocks.forEach((b) => frag.appendChild(b));
+      if (editingEl && classify(editingEl) === 'text' && (editingEl.textContent || '').trim() === '') {
+        const host = editingEl; exitEdit(); host.replaceWith(frag); // 空正文块整块替换（不留空行，对齐 Notion）
+      } else if (editingEl) {
+        if (isCaretAtStart(doc, editingEl)) editingEl.before(frag);
+        else if (isCaretAtRealEnd(doc, editingEl)) editingEl.after(frag);
+        else { const beforeHalf = editingEl; if (splitBlock()) beforeHalf.after(frag); else beforeHalf.after(frag); } // 块中：劈开，插在前半之后（=后半之前）
+      } else if (selectedEl) { selectedEl.after(frag); }
+      else { blockRoot.appendChild(frag); }
+      if (last && last.isConnected) { if (isEditableEl(last)) enterEdit(last, { mode: 'end' }); else selectBlock(last); }
+    }
+
     // 修 ED-A4：粘贴只取纯文本，且多行文本自己按 \n 劈成同类型兄弟块——不交给 execCommand 处理换行。
     // 原来 shell 的 paste 用 execCommand('insertText', 带换行的文本)：Chromium 会把 \n 转成段落切分、
     // 在标题块里塞 <p>（<h2><p>..</p></h2>），reparse 后原样保留 → 持久非合规；段落块里也多出垃圾空 <p> + 活 DOM/磁盘分叉。
     function onPaste(e) {
+      // 内部富粘贴优先：剪贴板 HTML 带本编辑器哨兵 → 保留格式（外部无哨兵的 HTML 一律不走这、落纯文本兜底）。
+      const richHtml = e.clipboardData && e.clipboardData.getData ? e.clipboardData.getData('text/html') : '';
+      if (richHtml && richHtml.indexOf(CLIP) !== -1) {
+        const tpl = doc.createElement('template'); tpl.innerHTML = richHtml;
+        const clip = tpl.content.querySelector('[' + CLIP + ']');
+        if (clip) {
+          e.preventDefault();
+          const mode = clip.getAttribute(CLIP); // 先读哨兵值,再清——cleanInPlace 会把 data-ws2-clip 本身剥掉
+          cleanInPlace(clip); // 纵深防御：再按存盘白名单剥一遍编辑器标记（含哨兵）
+          if (mode === 'i' && editingEl && editingEl.tagName !== 'DETAILS') {
+            insertInlineAtCaret(clip.innerHTML);
+          } else {
+            const blocks = [...clip.children].filter((c) => c.nodeType === 1);
+            if (blocks.length) insertBlocksAtCaret(blocks);
+            else if (editingEl) insertInlineAtCaret(clip.innerHTML); // 行内哨兵但非编辑态兜底
+          }
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          return;
+        }
+      }
       const cd = e.clipboardData || (typeof window !== 'undefined' && window.clipboardData);
       const text = cd && cd.getData ? cd.getData('text/plain') : '';
       // 文本优先（已拍板①）：有可用文本 → 走下面纯文本粘贴不变；仅当无文本时才收图片（纯图剪贴板）。
@@ -1904,6 +2026,7 @@
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
     doc.addEventListener('paste', onPaste);
+    doc.addEventListener('copy', onCopy); // 内部富复制：⌘C 写带哨兵的干净 HTML（⌘X 走 keydown 里的 execCommand('copy') 也经此）
     doc.addEventListener('toggle', onToggle, true); // 折叠事件不冒泡→捕获相 + 委托 doc（撑过 innerHTML 重写/嵌套/后加 toggle）
     doc.documentElement.addEventListener('mouseleave', onDocLeave);
 
@@ -1923,6 +2046,7 @@
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
       doc.removeEventListener('paste', onPaste);
+      doc.removeEventListener('copy', onCopy);
       doc.removeEventListener('toggle', onToggle, true);
       exitEdit();
       [grip, fmtbar, blockMenu, slashMenu].forEach((n) => n.remove());
