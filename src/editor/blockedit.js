@@ -888,7 +888,10 @@
       // 修 bug6：裁剪把列表端点的 <li> 删光后会剩一个非法空 <ul></ul>（无 li 无勾选框的 ghost 死块，
       // 且后续打字会灌进 <ul> 变非合规）。把裁空的列表块就地换成空 <p>（de-list），放在合并前——
       // 两端都成空 <p> 时下面的 canMerge 会把它们并成一个干净空块（对齐"选全部再删=一个空块"）。
-      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && !b.querySelector('li') && b.parentNode) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
+      // 裁空的列表端点：整列表已无文字内容（无 <li>，或只剩空 <li> —— 空 <li> 是零高，其绝对定位的勾选框
+      // ::before 会悬空盖到下一块上，Wendi 反馈的"复选框遮挡后面文字"）→ 就地换成空 <p>（de-list）。
+      // 只在整列表空时换；还有内容的项保留（部分删不动列表）。
+      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && b.parentNode && (b.textContent || '').trim() === '' && !b.querySelector('img, figure, table')) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
       sB = fixEmptyList(sB); eB = fixEmptyList(eB);
       const prefixEnd = sEditable ? sB.lastChild : null; // 接合点（合并前 prefix 末尾）
       if (sEditable && eEditable && SM.canMerge(sB, eB)) { // 两端都是存活的叶子文字块才节点级拼接
@@ -1037,23 +1040,43 @@
       fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; });
       pop.style.display = open ? 'none' : 'flex';
     }
+    // 当前编辑/选中块对应的「转为」菜单项 key——打开菜单时高亮它（Wendi 2026-07-22：看不出当前是几级标题）。
+    // 直接看 tagName（classify 把 H1–H4 都归 'heading'、分不出级），列表按 ws-todo class 区分待办。
+    function turnMenuActiveKey() {
+      const el = editingEl || selectedEl; if (!el) return null;
+      const t = el.tagName;
+      if (t === 'P') return 'text';
+      if (t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') return t.toLowerCase();
+      if (t === 'BLOCKQUOTE') return 'quote';
+      if (t === 'OL') return 'numbered';
+      if (t === 'UL') return (el.classList && el.classList.contains('ws-todo')) ? 'todo' : 'list';
+      if (t === 'DETAILS') return 'toggle';
+      return null;
+    }
+    function markTurnMenuActive(menu) {
+      const cur = turnMenuActiveKey();
+      menu.querySelectorAll('.ws-fmtbar-menu-item').forEach((it) => it.classList.toggle('ws-fmtbar-menu-item--on', it.dataset.key === cur));
+    }
     function openTurnMenu() {
       let menu = fmtbar.querySelector('.ws-fmtbar-menu');
-      if (menu) { togglePopMenu(menu); return; }
-      menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
-      menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
-      [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList'], ['toggle', 'blockToggle']].forEach(([key, labelKey]) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.textContent = T('editor.' + labelKey);
-        it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        it.addEventListener('click', (e) => {
-          e.preventDefault(); e.stopPropagation();
-          const item = SLASH_ITEMS.find((x) => x.key === key);
-          const target = editingEl || selectedEl;
-          if (target && item) { const nx = turnInto(target, item); menu.style.display = 'none'; if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx); }
+      if (!menu) {
+        menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
+        menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
+        // 标题给全 H1–H4（此前漏了 H4，与斜杠菜单不一致——Wendi 2026-07-22「我只有 123，它没有 4」）。
+        [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['h4', 'blockH4'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList'], ['toggle', 'blockToggle']].forEach(([key, labelKey]) => {
+          const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.dataset.key = key; it.textContent = T('editor.' + labelKey);
+          it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+          it.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const item = SLASH_ITEMS.find((x) => x.key === key);
+            const target = editingEl || selectedEl;
+            if (target && item) { const nx = turnInto(target, item); menu.style.display = 'none'; if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx); }
+          });
+          menu.appendChild(it);
         });
-        menu.appendChild(it);
-      });
-      fmtbar.appendChild(menu);
+        fmtbar.appendChild(menu);
+      }
+      markTurnMenuActive(menu); // 菜单缓存复用，每次打开都按当前块刷新高亮（不能只在建时标一次）
       togglePopMenu(menu);
     }
     function togglePopMenu(menu) { const open = menu.style.display !== 'none'; fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); menu.style.display = open ? 'none' : 'block'; }
@@ -2157,8 +2180,11 @@
   .ws-fmtbar-ai:hover{background:rgba(26,115,232,.08);}
   .ws-fmtbar-holder{position:relative;display:inline-flex;}
   .ws-fmtbar-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:100000;min-width:132px;padding:4px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);}
-  .ws-fmtbar-menu-item{display:block;width:100%;height:30px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
+  .ws-fmtbar-menu-item{display:flex;align-items:center;width:100%;height:30px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
   .ws-fmtbar-menu-item:hover{background:#f0f1f3;}
+  /* 当前块类型高亮 + 右侧勾（Wendi 2026-07-22：看不出当前是几级标题） */
+  .ws-fmtbar-menu-item--on{color:#1a73e8;font-weight:600;}
+  .ws-fmtbar-menu-item--on::after{content:'\\2713';margin-left:auto;color:#1a73e8;}
   .ws-fmtbar-swatches{position:absolute;top:calc(100% + 6px);left:0;z-index:100000;gap:4px;padding:7px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);}
   .ws-fmtbar-swatch{width:20px;height:20px;border-radius:3px;border:1px solid #e4e6e9;cursor:pointer;padding:0;}
 
