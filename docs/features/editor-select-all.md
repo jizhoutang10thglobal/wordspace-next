@@ -35,15 +35,26 @@ ui-demo（`Canvas.tsx` ⌘A 分级）第二级到**块选中态**为止（单块
 homeless 跨块选区管线（当年注释明说「全文多块选中需多选基建，本期到块选中态为止」）。真 app 有
 完整跨块基建，直达全篇（王波语义）。**记有意分歧、不算漂移**；ui-demo 若日后建多选基建再对齐。
 
+## 跨块选区的块级高亮（Wendi 2026-07-22 bug5②）
+
+拖选/⌘A 全篇跨 **≥2 个顶层块**时，选区罩住的每个块整行给蓝底（`data-ws2-rangesel` + CSS），并隐掉这些块内的
+原生 `::selection`——对齐 Notion「哪几行都选中」，一眼看清选中范围。**单块内选区不标**（维持原生文字高亮）。
+判定用 `onSelectionChange → refreshRangeSel`，块枚举与 `deleteSelection` 同套作用域感知逻辑
+（`blockOf`/`scopeRootOf`/`topScopeOf`/`blocksInScope`）。纯 background/box-shadow、不用 padding/margin（不推文字）；
+`data-ws2-rangesel` 进 `serialize.js` WS2_MARKERS 剥除，仅交互态、绝不入盘。⌘A 第二级全篇选中也走这条 → 全篇块整片蓝。
+
 ## 文件映射与门
 
 | 层 | 位置 |
 |---|---|
 | 分级逻辑 + 全篇选区 + 焦点接盘 | `src/editor/blockedit.js`（onKeyDown mod+A 分支 / `selectWholeDoc` / `focusCatcher`） |
+| 跨块选区块级高亮 | `src/editor/blockedit.js`（`refreshRangeSel` / `onSelectionChange` / `data-ws2-rangesel` CSS）+ `src/editor/serialize.js` WS2_MARKERS |
 | 菜单去 role 化 | `src/main/main.js` buildMenu 编辑菜单 |
-| 门 | `e2e/app.spec.js` ED-SA（四段强断言：1 次=当前块文字、2 次=首尾块全进选区+已放墙、3 次=保持、全篇退格=内容真消失） |
+| 门 | `e2e/app.spec.js` ED-SA（四段强断言）；`e2e/block-range-select.spec.js`（块级高亮：读 computed background 真渲染蓝底 + 选区外不标 + 折叠清除 + 单块内不误标）；`test/serialize.test.js`（rangesel 剥除） |
 
 ## 欠账
 
 - 全篇选中后的「格式气泡」不弹（拖选跨块会弹）——键盘全选通常接删除/复制，暂不弹；要对齐再补。
 - Windows 真机键盘验证（王波是唯一 Windows 用户，CI xvfb 是 Linux；修复对 e.metaKey||e.ctrlKey 双查，理论全平台同路径）。
+- ui-demo 跨块选区块级高亮未做（其 Canvas.tsx 也只有单块 `.ws-block-selected`）——后续对齐项。
+- 复制粘贴保留块格式（Wendi bug5①）：现 onPaste 刻意只取纯文本（ED-A4 合规红线）；「内部复制保留格式」是产品决策+功能，待拍板，未做。
