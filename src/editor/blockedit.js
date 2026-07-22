@@ -358,6 +358,30 @@
 
     // ---- 选中 / 编辑 ----
     function clearSelectedAttr() { const p = body.querySelector('[data-ws2-selected]'); if (p) p.removeAttribute('data-ws2-selected'); }
+
+    // 跨块拖选的「块级高亮」（Wendi 2026-07-22）：拖选跨多块时原生只高亮文字片段、看不清选中了哪几行。
+    // 对齐 Notion——把选区罩住的每个顶层块整行标 data-ws2-rangesel（CSS 给蓝底 + 罩住的块内隐掉原生
+    // ::selection，只剩整行蓝）。仅跨块（≥2 块）才标；单块内选区维持原生文字高亮不动。data-ws2-rangesel
+    // 进 serialize 白名单剥除（纯交互态、绝不入盘）。同 deleteSelection 那套作用域感知块枚举，保持一致。
+    let rangeSelEls = [];
+    function clearRangeSel() { if (rangeSelEls.length) { rangeSelEls.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-rangesel')); rangeSelEls = []; } }
+    function refreshRangeSel() {
+      clearRangeSel();
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      const r = sel.getRangeAt(0);
+      const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
+      if (!sBlk || !eBlk || sBlk === eBlk) return; // 单块内 → 原生文字高亮已够，不标块级
+      const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
+      const crossScope = sScope !== eScope;
+      const scopeRoot = crossScope ? blockRoot : sScope;
+      const tops = blocksInScope(scopeRoot);
+      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      const i = tops.indexOf(sB), j = tops.indexOf(eB);
+      if (i < 0 || j < 0 || i > j) return;
+      for (let k = i; k <= j; k++) { const m = tops[k]; if (m) { m.setAttribute('data-ws2-rangesel', ''); rangeSelEls.push(m); } }
+    }
+
     function selectBlock(el) {
       exitEdit();
       clearSelectedAttr();
@@ -1684,7 +1708,7 @@
       enterEdit(turnInto(editingEl, item), { mode: 'start' });
     }
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
-    function onSelectionChange() { closeFmtPops(); positionFmtbar(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）
+    function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮
     function onCompStart() { if (slash) { slash = null; slashMenu.style.display = 'none'; } } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
     function onScroll() { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); if (blockMenu.style.display !== 'none') closeBlockMenu(); }
 
@@ -1861,6 +1885,7 @@
       blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标（空块占高度用，非装饰）
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
+      rangeSelEls = []; body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel')); // undo/redo 重写 body → 旧引用失效,按属性清
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
     }
 
@@ -1897,6 +1922,11 @@
   [data-ws2-editing]{border-radius:4px;background:rgba(0,0,0,.015);}
   [data-ws2-drop='top']{box-shadow:0 -2px 0 0 #1a73e8;}
   [data-ws2-drop='bottom']{box-shadow:0 2px 0 0 #1a73e8;}
+  /* 跨块拖选的块级高亮（Wendi 2026-07-22）：整行蓝底(box-shadow 外扩到左右边距、不占布局)，罩住的块内
+     隐掉原生 ::selection→只剩整行蓝(对齐 Notion「哪几行都选中」)。绝不用 padding/margin(推文字)。 */
+  [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
+  [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
+  [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}
 
   .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
