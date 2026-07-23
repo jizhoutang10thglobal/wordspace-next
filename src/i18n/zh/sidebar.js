@@ -146,10 +146,16 @@ module.exports = {
   createTabSub: '输入网址直接上网，或在下面新建一个文档（临时文档，保存时再选存到哪）',
   createDocSub: '在 {location}',
   omniPlaceholder: '搜索,或输入网址',
-  paradigm1: '范式 1',
+  paradigmLabel: '范式',
+  paradigmNotion: '类 Notion',
+  paradigmCurrent: '当前',
+  paradigmNotionDesc: '分块编辑的结构化文档',
   paradigm2: '范式 2',
   paradigm3: '范式 3',
   comingSoon: '敬请期待',
+  paradigmRailFoot: '未来每个范式有各自的编辑方式与模板',
+  paradigmSoon: '{name} · 还在路上',
+  paradigmSoonDesc: '每个范式是一套独立的编辑内核与文档结构。这个范式上线后，会在这里列出它自己的模板。',
 
   // ---- 命令面板 ----
   findPlaceholder: '按文件名查找…',

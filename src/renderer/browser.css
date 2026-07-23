@@ -400,34 +400,60 @@
   padding: 0 8px;
 }
 
-/* ---- ⌘T 二合一新建 modal 的地址栏行 + 范式选择（§4.5.1）---- */
+/* ---- ⌘T 二合一新建 modal（对齐 ui-demo CreateModal：omni 地址栏 + 左范式轨 + 右模板 pane）§4.5.1 ---- */
+.sb-modal-cm { width: 720px; }
+
+/* 顶部 Arc 式地址栏（temp/⌘T 入口）：全宽一条，聚焦时墨线从左划过；X 收进栏内右侧 */
 .sb-cm-omni {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 12px;
-  margin-bottom: 14px;
-  background: var(--c-bg);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-pill);
-  color: var(--c-text-3);
-  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--c-divider);
+  background-image: linear-gradient(var(--c-accent), var(--c-accent));
+  background-repeat: no-repeat;
+  background-position: left bottom;
+  background-size: 0% 2px;
+  transition: background-size var(--dur-slow) var(--ease-enter);
 }
-.sb-cm-omni:focus-within { border-color: var(--c-accent); box-shadow: 0 0 0 2px var(--c-accent-tint); }
-.sb-cm-omni-ico { display: inline-flex; }
-.sb-cm-omni-input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: var(--fs-sm); color: var(--c-text); }
-.sb-cm-sec { display: flex; align-items: center; gap: 8px; margin: 2px 0 10px; }
-.sb-cm-sec-label { flex: 1; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
-.sb-cm-para {
-  font-size: var(--fs-xs);
-  color: var(--c-text-3);
-  border: 1px solid var(--c-border);
-  border-radius: var(--r-pill);
-  padding: 2px 9px;
-  opacity: 0.55;
-}
-.sb-cm-para.is-on { color: var(--c-accent); border-color: var(--c-accent); background: var(--c-accent-tint); opacity: 1; }
+.sb-cm-omni:focus-within { background-size: 100% 2px; }
+.sb-cm-omni-ico { flex: none; display: inline-flex; color: var(--c-text-3); }
+.sb-cm-omni-input { flex: 1; min-width: 0; height: 30px; border: none; outline: none; background: none; font-family: var(--font-ui); font-size: var(--fs-lg); color: var(--c-text); }
+.sb-cm-omni-input::placeholder { color: var(--c-text-3); }
+.sb-cm-omni-x { flex: none; margin: 0; }
+
+/* 两栏：左「范式」轨 + 右「该范式的模板」 */
+.sb-cm-split { display: grid; grid-template-columns: 190px 1fr; min-height: 320px; max-height: calc(100vh - 160px); }
+
+/* 左：范式轨 */
+.sb-cm-rail { display: flex; flex-direction: column; gap: 4px; padding: 14px 12px; border-right: 1px solid var(--c-divider); background: var(--c-bg-sunken); }
+.sb-cm-rail-label { padding: 2px 8px 6px; font-size: var(--fs-xs); font-weight: var(--fw-semibold); letter-spacing: 0.06em; text-transform: uppercase; color: var(--c-text-3); }
+.sb-cm-para { display: flex; gap: 9px; align-items: flex-start; padding: 9px 10px; text-align: left; border: 1px solid transparent; border-radius: var(--r-md); background: transparent; transition: background-color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease); }
+.sb-cm-para:hover { background: var(--c-hover); }
+.sb-cm-para.is-active,
+.sb-cm-para.is-active:hover { background: var(--c-surface); border-color: var(--c-border); }
+.sb-cm-para.is-soon { opacity: 0.6; }
+.sb-cm-para.is-soon:hover { opacity: 0.82; }
+.sb-cm-para-ico { flex: none; display: grid; place-items: center; width: 26px; height: 26px; margin-top: 1px; border-radius: var(--r-sm); background: var(--c-bg-chrome); color: var(--c-text-2); }
+.sb-cm-para.is-active .sb-cm-para-ico { background: var(--c-accent-tint); color: var(--c-accent); }
+.sb-cm-para-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sb-cm-para-name { display: flex; align-items: center; gap: 6px; font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
+.sb-cm-para-tag { flex: none; padding: 1px 6px; border-radius: var(--r-pill); font-size: 10px; font-weight: var(--fw-semibold); background: var(--c-accent-tint); color: var(--c-accent); }
+.sb-cm-para-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.4; }
+.sb-cm-rail-foot { margin-top: auto; padding: 12px 8px 2px; font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.5; }
+
+/* 右：模板 pane（可用范式 = 卡片网格；未上线范式 = 占位） */
+.sb-cm-pane { display: flex; flex-direction: column; padding: 16px 18px; overflow-y: auto; }
+.sb-cm-grid { align-content: start; }
+.sb-cm-soon { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 30px 24px; text-align: center; }
+.sb-cm-soon-ico { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--c-bg-sunken); color: var(--c-text-3); }
+.sb-cm-soon-title { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+.sb-cm-soon-desc { max-width: 290px; font-size: var(--fs-sm); color: var(--c-text-3); line-height: 1.55; }
+
+/* 范式轨入场轻 stagger（ws-stagger-in 见 shell.css） */
+.sb-cm-para { animation: ws-stagger-in var(--dur) var(--ease-enter) both; }
+.sb-cm-para:nth-of-type(2) { animation-delay: 35ms; }
+.sb-cm-para:nth-of-type(3) { animation-delay: 70ms; }
 
 /* hidden 属性必须赢过上面的 display 声明（.web-error 的 flex 曾把隐藏态干掉——隐形全屏层拦点击）。
    P3-01：凡是「display:(inline-)flex + JS 会 toggle hidden」的类都得进这份清单,否则 flex 压过
