@@ -212,7 +212,7 @@
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
-    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
     // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 纸方墨圆旋转 chevron + 正文缩进。
     // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
@@ -1308,20 +1308,26 @@
 
     // ---- 监听器（父层挂到 iframe doc）----
     // 待办勾选框 gutter 命中判定（mousedown 与 click 两处共用，避免判据漂移，U5）：命中返回该行 li，否则 null。
-    // 点 ::before 时 e.target=li、点 padding 时=ul → 按 Y 兜底找该行 li；gutter = li 内容左缘左侧（::before left:-22），判 clientX < li.left+4。
+    // U24/check-4：几何收敛。勾选框 ::before 是 left:-22px width:16px（相对 li border-box 左缘）→ 框体 [li.left-22, li.left-6]。
+    // ① X 带 = 框体 ±4px 缓冲 = [li.left-26, li.left-2]；右缘距文字左缘（li.left+4）留 6px 非勾选区，消「文字左缘零缓冲误触」。
+    // ② Y 吸附最近直接子 li（±YTOL 容差），消项间 margin 死区；缝隙等距时吸附上方项（文档序更前）。
     function todoGutterHit(e) {
       const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
       if (!todoUl) return null;
-      let li = e.target.closest('li');
-      if (!li || li.parentElement !== todoUl) {
-        li = null;
-        for (const x of todoUl.children) {
-          if (x.tagName !== 'LI') continue;
-          const r = x.getBoundingClientRect();
-          if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
-        }
+      const lis = [...todoUl.children].filter((x) => x.tagName === 'LI');
+      if (!lis.length) return null;
+      const YTOL = 6; // 覆盖项间 .3em(~5px) margin 的一半有余，消死区又不过界误勾大片空白
+      let li = null, best = Infinity;
+      for (const x of lis) {
+        const r = x.getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; } // 落在 li 内 → 就是它
+        const d = Math.abs(e.clientY - (r.top + r.bottom) / 2);
+        if (d < best) { best = d; li = x; } // 缝隙里取中心最近的；平局用 < 保留先到的=上方项
       }
-      return (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) ? li : null;
+      if (!li) return null;
+      const r = li.getBoundingClientRect();
+      if (e.clientY < r.top - YTOL || e.clientY > r.bottom + YTOL) return null; // 离最近 li 也太远 → 不算勾选
+      return (e.clientX >= r.left - 26 && e.clientX <= r.left - 2) ? li : null;
     }
 
     // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。

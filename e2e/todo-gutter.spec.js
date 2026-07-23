@@ -95,3 +95,23 @@ test('U26：老文档含 data-checked="false" → 渲染未勾、点一下勾上
   await expect.poll(() => frame.locator('#li1').getAttribute('data-checked'), { message: '再点 → 属性彻底消失（清洗存量脏字节）' }).toBe(null);
   expect(await frame.locator('li[data-checked]').count(), 'li 上不留任何 data-checked').toBe(0);
 });
+
+test('U24：勾选框正中翻转 / 文字左缘-2px不翻转 / 项间缝隙吸附最近项 / cursor:pointer（check-4）', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li id="li1">甲甲甲</li><li id="li2">乙乙乙</li></ul>');
+  const b1 = await frame.locator('#li1').boundingBox();
+  const b2 = await frame.locator('#li2').boundingBox();
+  // ① 勾选框正中（li.left-14）→ 翻转
+  await page.mouse.click(b1.x - 14, b1.y + b1.height / 2);
+  await expect.poll(() => frame.locator('#li1').getAttribute('data-checked'), { message: '点框体正中翻转' }).toBe('true');
+  // ② 文字左缘 -2px（li.left+2，进 padding 但不在勾选带）→ 不翻转（旧带 clientX<li.left+4 会误触）
+  await page.mouse.click(b2.x + 2, b2.y + b2.height / 2);
+  await page.waitForTimeout(80);
+  expect(await frame.locator('#li2').getAttribute('data-checked'), '点文字左缘不翻转、进编辑').toBe(null);
+  // ③ 两项缝隙靠近 li2（li2 上缘之上 1px）→ 吸附翻转 li2（旧 Y 精确containment 是死区、不翻）
+  await page.mouse.click(b2.x - 12, b2.y - 1);
+  await expect.poll(() => frame.locator('#li2').getAttribute('data-checked'), { message: '缝隙点吸附最近项 li2' }).toBe('true');
+  // ④ 勾选框 ::before 的 cursor:pointer
+  const cur = await frame.locator('#li1').evaluate((li) => getComputedStyle(li, '::before').cursor);
+  expect(cur, '勾选框命中带 cursor:pointer').toBe('pointer');
+});
