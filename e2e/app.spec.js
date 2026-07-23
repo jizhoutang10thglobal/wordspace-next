@@ -1444,3 +1444,35 @@ test('ED-SA 列表：⌘A 分级——一次当前行 li、两次整列表、三
   expect(t3, '第 3 次 ⌘A 全篇（含列表外段落）').toContain('甲甲');
   expect(t3).toContain('后段落');
 });
+
+test('ED-SA 列表·嵌套：⌘A 在父行只选本行（不含子列表）、再按选整棵；光标在子项则选子项本行', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<ul id="lst" class="ws-todo"><li id="p">父行<ul><li id="ch">子行</li></ul></li><li id="q">末行</li></ul></body></html>');
+  const selText = () => frame.locator('body').evaluate((x) => (x.ownerDocument.getSelection().toString() || '').replace(/\s+/g, ''));
+  // 光标点在父行文字上（顶部左侧 = 「父行」文本，不落进下方块级子列表）
+  await frame.locator('#p').click({ position: { x: 8, y: 6 } });
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Meta+a');
+  expect(await selText(), '父行 ⌘A 只选「父行」、不含子行').toBe('父行');
+  await page.keyboard.press('Meta+a');
+  expect(await selText(), '再按选整棵列表（父行子行末行）').toBe('父行子行末行');
+  // 光标进子项
+  await frame.locator('#ch').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Meta+a');
+  expect(await selText(), '子项 ⌘A 选子项本行「子行」').toBe('子行');
+});
+
+test('ED-SA 列表·单项：⌘A 一次选该行、两次直接全篇（行=整列表时不卡在冗余档）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<ul id="lst" class="ws-todo"><li id="only">唯一项</li></ul><p id="after">尾段</p></body></html>');
+  const selText = () => frame.locator('body').evaluate((x) => (x.ownerDocument.getSelection().toString() || '').replace(/\s+/g, ''));
+  await frame.locator('#only').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Meta+a');
+  expect(await selText(), '单项列表一次选该行').toBe('唯一项');
+  await page.keyboard.press('Meta+a');
+  expect(await selText(), '再按直接全篇（含尾段）').toContain('尾段');
+});
