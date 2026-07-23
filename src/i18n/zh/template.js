@@ -3,4 +3,6 @@
 module.exports = {
   blankName: '空文档',
   blankDesc: '从一张白纸开始',
+  blankPagedName: '空白分页文档',
+  blankPagedDesc: '按页排版，像 Word',
 };
