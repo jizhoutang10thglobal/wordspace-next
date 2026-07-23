@@ -163,3 +163,20 @@ test('U17：todo 转 toggle 保 id + 首项进 summary、其余项各成正文 p
   expect(det.bodyPs, '其余项各成正文 p').toEqual(['乙', '丙']);
   expect(await conformOf10(await serialize10())).toBe(true);
 });
+
+// 对抗审查（structural reviewer）：首项行内内容为空（只含嵌套子列表 / 空 li）时，summary 会是空的、
+// 无 <br> 兜底 → toggle 标题不可见。conform 仍 true，CI 抓不到。
+test('U17 对抗审查：首项行内为空（仅嵌套子列表）转 toggle → summary 补 <br> 不空、内容不丢', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>' + TODO_HEAD + '</head><body><ul id="anchor1" class="ws-todo"><li><ul class="ws-todo"><li>child</li></ul></li><li>乙</li></ul></body></html>');
+  await convertTo('#anchor1', 'toggle');
+  await expect.poll(() => frame.locator('details').count()).toBe(1);
+  const info = await frame.locator('details').first().evaluate((d) => ({
+    summaryKids: d.querySelector('summary').childNodes.length,
+    bodyText: [...d.querySelectorAll(':scope > p')].map((p) => p.textContent.trim()),
+  }));
+  expect(info.summaryKids, '空首项的 summary 必须补 <br>、不留空标题').toBeGreaterThan(0);
+  expect(info.bodyText.join(','), '子列表/后继项内容不丢').toContain('child');
+  expect(info.bodyText.join(','), '后继项内容不丢').toContain('乙');
+  expect(await conformOf10(await serialize10())).toBe(true);
+});

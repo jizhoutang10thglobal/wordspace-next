@@ -28,7 +28,7 @@
 
 **勾选视觉不污染子项。** 勾选父项不划穿/不变灰未勾的嵌套子项——含子列表的勾选项只变灰不划线（避免 CSS 装饰传播），叶子勾选项照常灰+划线（check-2，PR-C 已修）。
 
-**markdown 快捷覆盖扩展。** 空正文块（或块首前缀）打 marker+空格转换，覆盖：`[x] `/`[X] ` → 首项已勾待办；块首 marker+空格 + 后面已有文字 → 转换且保留后缀文字（前缀触发）；非 1 起始序号 `3. ` → `ol[start=3]`。转换**只在敲下补全 marker 的那个空格**这一击发生（绑 `insertText`+space）——删字到 caret 恰停 marker 末（如「- x」删 x 剩「- 」）走 `deleteContentBackward`，绝不误转成列表（create-7，PR-D 已修）。
+**markdown 快捷覆盖扩展。** 空正文块（或块首前缀）打 marker+空格转换，覆盖：`[x] `/`[X] ` → 首项已勾待办；块首 marker+空格 + 后面已有文字 → 转换且保留后缀文字（前缀触发）；非 1 起始序号 `3. ` → `ol[start=3]`。转换**只在敲下补全 marker 的那个空格、且该空格紧邻块首文本节点里的 marker 末**这一击发生（绑 `insertText`+space + caret 恰停 `marker` 末的守卫）——① 删字到 caret 停 marker 末（如「- x」删 x 剩「- 」）走 `deleteContentBackward`，不误转；② 既有段落（磁盘/粘贴的「- 文本」）在任意位置敲空格，caret 不紧邻 marker，不误转、不吞 marker；③ 内容裹在行内元素里（`<b>…</b>`）时 marker 被打进行内元素、块首非文本节点，直接不转换（绝不清空整块丢内容）（create-7，PR-D 已修；②③ 由对抗审查补漏）。
 
 **空项 Enter 脱离列表。** 顶层空项（不止末项，中间/首位同样）Enter → 脱离列表：删空项、按位置劈 `ul`（首位段落插列表前 / 中间后继项移到新同类列表、段落夹中间），光标落空段落。源空项的 `id`/`data-checked` 不迁移到脱列段落（段落带 `data-checked` 即非合规）（keys-7，PR-D 已修）。
 
@@ -36,7 +36,7 @@
 
 **勾选与打字各自成步。** 打字后立刻点勾选框：`data-checked` 翻转前先 `checkpoint` 把 pending 打字冲成独立快照，一次 undo 只回退勾选、打字仍在（check-3，PR-D 已修）。
 
-**转换保锚点 / 不塌缩。** todo「转为」文本：产物剥掉遗留的 `ws-todo`/`ws-callout` 语义 class，用户自定义 class 保留（create-5，PR-D 已修）；todo「转为」toggle：保留源块 `id`（doc-linking 锚点不断）、首项行内进 `<summary>`、其余项各成一个正文 `<p>`（create-6，PR-D 已修）。
+**转换保锚点 / 不塌缩。** todo「转为」文本：产物剥掉遗留的 `ws-todo`/`ws-callout` 语义 class，用户自定义 class 保留（create-5，PR-D 已修）；todo「转为」toggle：保留源块 `id`（doc-linking 锚点不断）、首项行内进 `<summary>`、其余项各成一个正文 `<p>`（create-6，PR-D 已修）；首项行内为空（仅嵌套子列表 / 空 li）时 `<summary>` 补 `<br>`、不留不可见空标题（对抗审查补漏）。
 
 **（待 PR-E 移入契约）** 勾选热区几何、对比度、深色 emoji；块级粘贴 id 去重；外部「- [ ] 」纯文本转换。
 
@@ -72,3 +72,4 @@
 - **undo 后光标落点 v1 局限**：撤销/重做后按 id（锚点块）或结构路径重进编辑。**无 id 的块**在「编辑块上方发生结构增删 + 未产 checkpoint 就导航到下方块 + 撤销」这一特定序列下，光标可能落到相邻块（下标语义随 body 重写变化）。**永不吞字**（总有编辑宿主），且可再撤销恢复——精确落点的完整修复需 undo 追踪变更点，属独立设计改动，留作后续。
 - **多级裸嵌套 marker 层级不区分**（PR-C U11，P3 纯视觉）：todo 里的裸嵌套非 todo 列表统一 disc/decimal，不逐级切换 UA 的 disc→circle→square。非回归（改前完全无 marker），深层裸嵌套罕见。
 - **整表上色的 todo 里勾选父项的子列表被重置回正文色**（PR-C U14，P3 纯视觉）：给整个 ul.ws-todo 上 ws-color 主题后勾选带子列表的父项，子列表文字被 `color:#37352f` 重置、脱离主题色。非回归（改前继承成灰更糟），CSS 无法既反制灰色下渗又保留任意祖先主题色，属固有局限。
+- **`<ol>` 中段空项脱列后，后半段序号从 1 重启、不续接**（PR-D U15，by-design）：`ol[start=5]` 在中间空项 Enter 脱列后，后半 `<ol>` 只带 `class`、不带 `start`，C/D 显示为 1/2 而非 6/7。对齐 Notion/Docs（也重启），conform 不破；`ws-todo` 是 `<ul>` 无编号、不受影响。续接需按拆分位置重算 start（还要扣掉被删空项），复杂度不匹配收益，留作后续。

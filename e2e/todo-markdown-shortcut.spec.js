@@ -123,3 +123,41 @@ test('U18：非 1 起始序号「3. 」→ ol start=3、conform', async () => {
   await page.keyboard.type('第三项');
   expect(await conformOf(await serialize())).toBe(true);
 });
+
+// 对抗审查（PR-D 两名 reviewer 独立复现）：U18 去 $ 锚点后，触发只校验「敲了空格」不校验「空格紧邻 marker」，
+// 导致既有「- 文本」段落任意位置敲空格就误转 + 吞 marker；内容裹在行内元素里更会清空整块丢数据。
+test('U18 对抗审查 Defect2：既有段落「- hello」末尾敲空格不误转、不吞 marker', async () => {
+  await launch();
+  await openDoc('<p id="p1">- hello</p>'); // 磁盘/粘贴来的合规段落，load 不转换
+  await frame.locator('#p1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type(' '); // 敲空格，但不是补全 marker 那一击（caret 在文本末尾、远离 marker）
+  await page.waitForTimeout(120);
+  expect(await frame.locator('ul,ol').count(), '非补全 marker 的空格不该转列表').toBe(0);
+  const t = await frame.locator('#p1').textContent();
+  expect(t.startsWith('- hello'), 'marker 不被吞').toBe(true);
+});
+
+test('U18 对抗审查 Defect2b：光标在文本中段敲空格不误转（触发点须紧邻 marker）', async () => {
+  await launch();
+  await openDoc('<p id="p1">- 甲乙</p>');
+  await frame.locator('#p1').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); // 跨过「- 甲」
+  await page.keyboard.type(' '); // 中段空格
+  await page.waitForTimeout(120);
+  expect(await frame.locator('ul,ol').count(), '中段空格不该转列表').toBe(0);
+});
+
+test('U18 对抗审查 Defect1：内容裹在行内元素里前缀触发不清空整块（防数据丢失）', async () => {
+  await launch();
+  await openDoc('<p id="p1"><b>加粗内容</b></p>');
+  await frame.locator('#p1').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.type('# '); // marker 被打进 <b> 里，firstChild 是元素节点、非文本节点
+  await page.waitForTimeout(120);
+  const bodyText = await frame.locator('body').textContent();
+  expect(bodyText.includes('加粗内容'), '内容绝不能丢失').toBe(true);
+  expect(await frame.locator('b').count(), '<b> 仍在').toBeGreaterThan(0);
+  expect(await frame.locator('h1,ul,ol').count(), 'firstChild 非文本节点 → 不转换').toBe(0);
+});

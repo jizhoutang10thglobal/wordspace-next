@@ -804,6 +804,7 @@
           });
         }
         else { while (el.firstChild) summary.appendChild(el.firstChild); }
+        if (!summary.firstChild) summary.appendChild(doc.createElement('br')); // U17 对抗审查：首项行内为空（仅嵌套子列表 / 空 li）→ 补 <br>，避免不可见空标题
         det.appendChild(summary);
         if (bodyBlocks.length) bodyBlocks.forEach((b) => det.appendChild(b)); else det.appendChild(doc.createElement('p'));
         for (const a of [...el.attributes]) { if (a.name.indexOf('data-ws2') !== 0 && a.name !== 'class') det.setAttribute(a.name, a.value); } // 复制 id 等用户属性（锚点不断），ws2 哨兵/class 不带
@@ -2015,6 +2016,14 @@
       // U18/create-7：无论整块还是前缀触发，都只在「刚敲下补全 marker 的那个空格」这一击转换——
       // 绑 inputType，否则「删字后 caret 恰停 marker 末（如『- x』删 x 剩『- 』）」会把段落误转成列表（Notion 只在敲空格那击转）。
       if (!(e && e.inputType === 'insertText' && e.data === ' ')) return;
+      // U18 对抗审查（两名 reviewer 独立复现）：inputType 门只证明「敲了空格」，不证明「空格紧邻 marker」。
+      // 还须 marker 落在块首文本节点、且 caret 恰停 marker 末——否则：
+      // ① 既有段落（磁盘/粘贴的「- 文本」）在任意位置敲空格会被误转、并吞掉 marker；
+      // ② 内容裹在行内元素里（<b>…</b>）时 marker 被打进 <b>、firstChild 非文本节点，
+      //    下面 else 分支的 innerHTML='' 会清空整块丢内容。这条守卫两者都堵。
+      const first0 = editingEl.firstChild;
+      const sel0 = doc.getSelection();
+      if (!(first0 && first0.nodeType === 3 && sel0 && sel0.anchorNode === first0 && sel0.anchorOffset === m[0].length)) return;
       const t = m[1];
       const key = t[0] === '#' ? ['h1', 'h2', 'h3', 'h4'][t.length - 1]
         : (t === '-' || t === '*') ? 'list'
@@ -2026,8 +2035,8 @@
       if (!item) return;
       const checked = /^\[[xX]\]$/.test(t); // [x]/[X] → 首项勾选
       const startN = key === 'numbered' ? parseInt(t, 10) : 1;
-      if (whole) { editingEl.innerHTML = ''; } // 清 marker
-      else { const first = editingEl.firstChild; if (first && first.nodeType === 3) first.textContent = first.textContent.slice(m[0].length); else editingEl.innerHTML = ''; } // 前缀：只删块首 marker+空格，保留其余
+      if (whole) { editingEl.innerHTML = ''; } // 清 marker（整块仅 marker+空格）
+      else { first0.textContent = first0.textContent.slice(m[0].length); } // 前缀：guard 已保证 first0 是块首文本节点，只删其 marker+空格、保留其余（含后续行内元素）
       const conv = turnInto(editingEl, item);
       if (checked) { const li = conv.querySelector('li'); if (li) li.setAttribute('data-checked', 'true'); }
       if (key === 'numbered' && startN > 1 && conv.tagName === 'OL') conv.setAttribute('start', String(startN)); // 非 1 起始序号（校验器不拦 ol[start]）
