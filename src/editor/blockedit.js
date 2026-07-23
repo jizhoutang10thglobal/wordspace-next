@@ -1551,6 +1551,27 @@
               caretAtLiTextEnd(li); // 空项无子列表 → 光标落其内，打字正常
               return;
             }
+            // U15/keys-7：顶层空项且**有后继**（中间/首项）→ 脱离列表：删空项、按位置劈 ul、插空段落、光标进段落。
+            // 原来只认末项（!nextElementSibling），中间空项落 native 无限堆空项、双回车退出只对末项生效。
+            if (li.nextElementSibling) {
+              e.preventDefault();
+              const ul = editingEl;
+              const prev = li.previousElementSibling;
+              const next = li.nextElementSibling;
+              li.remove();
+              const p = doc.createElement('p'); p.appendChild(doc.createElement('br'));
+              if (prev) {
+                // 中间：后继项移到新同类列表，段落夹在两列表中间
+                const ul2 = doc.createElement(ul.tagName); if (ul.className) ul2.className = ul.className;
+                let n = next; while (n) { const nx = n.nextElementSibling; ul2.appendChild(n); n = nx; }
+                ul.after(p); p.after(ul2);
+              } else {
+                ul.before(p); // 首项：段落插在列表前
+              }
+              if (undoMgr) undoMgr.checkpoint(); markDirty();
+              enterEdit(p, { mode: 'start' });
+              return;
+            }
             if (!li.nextElementSibling) {
               // 顶层空末项 → 退出列表（双回车退出，既有行为）
               e.preventDefault();
