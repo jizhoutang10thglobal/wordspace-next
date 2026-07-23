@@ -5,6 +5,21 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.11.6 — 2026-07-23
+
+A big polish pass for to-dos and lists, and a cleaner New Document dialog.
+
+### Improved
+
+- **New document**: the New Document dialog is streamlined around Blank for now (the Meeting Notes / Project Proposal / Weekly Plan template set is temporarily retired)
+- **To-dos / lists**: tiered Select All inside a list — press once for the current line, twice for the whole list, three times for the whole document
+- **To-dos**: pasting plain-text `- [ ] task` from outside now becomes a to-do item automatically
+
+### Fixed
+
+- **To-dos / lists**: a big polish pass — steadier type conversion and round-trips, smoother rendering and keyboard handling for nested lists (indent / outdent), checkbox and selection visuals, and several clipboard-paste fixes
+- **Lists**: list and to-do items can now have their text color and highlight changed (they couldn't be selected before)
+
 ## v0.11.5 — 2026-07-22
 
 A batch of editor experience fixes, and a smoother sidebar feel.
