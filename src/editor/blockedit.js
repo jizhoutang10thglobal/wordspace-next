@@ -852,23 +852,29 @@
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0) return null;
       const r = sel.getRangeAt(0);
-      const topLiOf = (n) => {
-        let e = n && (n.nodeType === 3 ? n.parentElement : n);
-        e = e && e.closest ? e.closest('li') : null;
-        while (e && e.parentElement !== ul) { const up = e.parentElement && e.parentElement.closest ? e.parentElement.closest('li') : null; if (!up || up === e) return null; e = up; }
-        return e;
-      };
-      const sLi = topLiOf(r.startContainer), eLi = topLiOf(r.endContainer);
-      if (!sLi || !eLi) return null;
       const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
-      let i = allLis.indexOf(sLi), j = allLis.indexOf(eLi);
-      if (i < 0 || j < 0) return null;
-      if (i > j) { const t = i; i = j; j = t; }
+      if (!allLis.length) return null;
+      if (r.collapsed) { // 折叠光标 = 光标所在那一行（嵌套子项上卷到顶层 li）
+        let e = r.startContainer; e = e && (e.nodeType === 3 ? e.parentElement : e); e = e && e.closest ? e.closest('li') : null;
+        while (e && e.parentElement !== ul) { const up = e.parentElement && e.parentElement.closest ? e.parentElement.closest('li') : null; if (!up || up === e) { e = null; break; } e = up; }
+        return e ? [e] : null;
+      }
+      // 非折叠：取与选区**内容有非零交集**的直接子 li——按内容区间比，排除「只碰边界、零字符选中」的 li。
+      // （对抗审查：三击整行 / Home+Shift+↓ 会把 range 末端停在下一行最前沿 end=LI#next:0；用起止容器映射会误多抽一行。）
+      // compareBoundaryPoints 常量：END_TO_START=3（比 r.start vs liR.end）、START_TO_END=1（比 r.end vs liR.start）。
+      const hit = allLis.filter((li) => {
+        const liR = doc.createRange(); liR.selectNodeContents(li);
+        return r.compareBoundaryPoints(3, liR) < 0 && r.compareBoundaryPoints(1, liR) > 0; // r.start<liR.end && r.end>liR.start（严格重叠）
+      });
+      if (!hit.length) return null;
+      const i = allLis.indexOf(hit[0]), j = allLis.indexOf(hit[hit.length - 1]);
       return allLis.slice(i, j + 1);
     }
     // 「转为」只作用于选中的行：把 <ul>/<ol> 在选中 li 跨度处劈成 [前列表][选中行]（[后列表]），让选中 li 独占原 <ul>，
     // 再复用整块 turnInto——产物、class 迁移、data-checked 清理、conform 全走既有逻辑，零重复。全选（跨全部 li）= 整块转换。
     function turnIntoLines(ul, lis, item) {
+      // 目标就是当前列表类型（选中行「转为」它已经是的类型）→ 空操作，别把一张列表劈成三张（对抗审查 LOW）。
+      if (item.tag === ul.tagName.toLowerCase() && ((item.cls === 'ws-todo') === ul.classList.contains('ws-todo'))) return ul;
       const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
       const firstIdx = allLis.indexOf(lis[0]), lastIdx = allLis.indexOf(lis[lis.length - 1]);
       if (firstIdx < 0 || lastIdx < 0 || (firstIdx === 0 && lastIdx === allLis.length - 1)) return turnInto(ul, item); // 判不出 / 全选 → 整块
