@@ -807,7 +807,7 @@
         if (!summary.firstChild) summary.appendChild(doc.createElement('br')); // U17 对抗审查：首项行内为空（仅嵌套子列表 / 空 li）→ 补 <br>，避免不可见空标题
         det.appendChild(summary);
         if (bodyBlocks.length) bodyBlocks.forEach((b) => det.appendChild(b)); else det.appendChild(doc.createElement('p'));
-        for (const a of [...el.attributes]) { if (a.name.indexOf('data-ws2') !== 0 && a.name !== 'class') det.setAttribute(a.name, a.value); } // 复制 id 等用户属性（锚点不断），ws2 哨兵/class 不带
+        if (el.tagName === 'UL' || el.tagName === 'OL') { for (const a of [...el.attributes]) { if (a.name.indexOf('data-ws2') !== 0 && a.name !== 'class') det.setAttribute(a.name, a.value); } } // U17/create-6：仅**列表源**复制 id 等用户属性（锚点不断）；段落→toggle 维持既有「不迁移 id」行为（toggle.spec.js U9），ws2 哨兵/class 不带
         el.replaceWith(det);
         ensureToggleStyle();
         if (undoMgr) undoMgr.checkpoint(); markDirty();
