@@ -212,7 +212,7 @@
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
-    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
     // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 纸方墨圆旋转 chevron + 正文缩进。
     // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
@@ -381,6 +381,15 @@
       const i = tops.indexOf(sB), j = tops.indexOf(eB);
       if (i < 0 || j < 0 || i > j) return;
       for (let k = i; k <= j; k++) { const m = tops[k]; if (m) { m.setAttribute('data-ws2-rangesel', ''); rangeSelEls.push(m); } }
+    }
+    // U23/select-4：删除被一致化守卫拦成空操作时的可感知反馈——把当前跨块高亮的块短暂标 data-ws2-nope，
+    // 触发一段闪烁动画后自清（随 data-ws2-rangesel 高亮视觉语言走，不用系统 beep——app 无音频反馈先例）。
+    function flashNope() {
+      refreshRangeSel(); // 先刷新，确保标的是当前选区跨的块
+      const els = rangeSelEls.slice();
+      if (!els.length) return;
+      els.forEach((el) => el.setAttribute && el.setAttribute('data-ws2-nope', ''));
+      setTimeout(() => els.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-nope')), 420);
     }
 
     function selectBlock(el) {
@@ -906,7 +915,16 @@
       // P2：选区跨 summary 边界（一端在 summary、另一端不在同一 summary）→ 安全空操作（return true 拦掉调用方的
       // 原生 execCommand('delete')，否则原生会把正文并进 summary / 删出 summary-only → 非合规）。同一 summary 内选区放行原生。
       const sumOf = (n) => { const e = n && (n.nodeType === 3 ? n.parentElement : n); return e && e.closest ? e.closest('summary') : null; };
-      if (sumOf(r.startContainer) !== sumOf(r.endContainer)) return true;
+      if (sumOf(r.startContainer) !== sumOf(r.endContainer)) { flashNope(); return true; }
+      // U23/select-4：选区端点部分跨 details 边界（一端在 toggle 体内、另一端在外，或分属不同 toggle）→ 一致化为
+      // 空操作 + 反馈，绝不半删（旧行为：删 toggle 外那侧、体内被下面 P2 clamp 夹住不删 = 半应用，与选区高亮承诺不符）。
+      // toggle 被选区整体包含（两端都在其外、detOf 皆 null 且相等）→ 不拦，维持现状可整删（防回归）。
+      // 对抗审查：端点**锚在 details 元素本身**（selectWholeDoc 把 ⌘A 端点锚在首/末块元素上，:444-445）时，
+      // 该 details 是整体在选区一侧、不是「部分进入体内」——若 detOf 用 closest('details') 会把它自己算进去、
+      // 与另一端（段落=null）不等 → 误判成部分跨界、把「⌘A 全选删」在首/末为 toggle 的文档里整个吞成空操作（HIGH 回归）。
+      // 故：端点是 DETAILS 元素本身 → 取其**外层** details（嵌套时）或 null，绝不算它自己。
+      const detOf = (n) => { let e = n && (n.nodeType === 3 ? n.parentElement : n); if (!e || !e.closest) return null; if (e.tagName === 'DETAILS') return e.parentElement && e.parentElement.closest ? e.parentElement.closest('details') : null; return e.closest('details'); };
+      if (detOf(r.startContainer) !== detOf(r.endContainer)) { flashNope(); return true; }
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (!sBlk || !eBlk) return false; // 选区落在块外/覆盖层 → 不碰
       if (sBlk === eBlk) {
@@ -1308,20 +1326,26 @@
 
     // ---- 监听器（父层挂到 iframe doc）----
     // 待办勾选框 gutter 命中判定（mousedown 与 click 两处共用，避免判据漂移，U5）：命中返回该行 li，否则 null。
-    // 点 ::before 时 e.target=li、点 padding 时=ul → 按 Y 兜底找该行 li；gutter = li 内容左缘左侧（::before left:-22），判 clientX < li.left+4。
+    // U24/check-4：几何收敛。勾选框 ::before 是 left:-22px width:16px（相对 li border-box 左缘）→ 框体 [li.left-22, li.left-6]。
+    // ① X 带 = 框体 ±4px 缓冲 = [li.left-26, li.left-2]；右缘距文字左缘（li.left+4）留 6px 非勾选区，消「文字左缘零缓冲误触」。
+    // ② Y 吸附最近直接子 li（±YTOL 容差），消项间 margin 死区；缝隙等距时吸附上方项（文档序更前）。
     function todoGutterHit(e) {
       const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
       if (!todoUl) return null;
-      let li = e.target.closest('li');
-      if (!li || li.parentElement !== todoUl) {
-        li = null;
-        for (const x of todoUl.children) {
-          if (x.tagName !== 'LI') continue;
-          const r = x.getBoundingClientRect();
-          if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
-        }
+      const lis = [...todoUl.children].filter((x) => x.tagName === 'LI');
+      if (!lis.length) return null;
+      const YTOL = 6; // 覆盖项间 .3em(~5px) margin 的一半有余，消死区又不过界误勾大片空白
+      let li = null, best = Infinity;
+      for (const x of lis) {
+        const r = x.getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; } // 落在 li 内 → 就是它
+        const d = Math.abs(e.clientY - (r.top + r.bottom) / 2);
+        if (d < best) { best = d; li = x; } // 缝隙里取中心最近的；平局用 < 保留先到的=上方项
       }
-      return (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) ? li : null;
+      if (!li) return null;
+      const r = li.getBoundingClientRect();
+      if (e.clientY < r.top - YTOL || e.clientY > r.bottom + YTOL) return null; // 离最近 li 也太远 → 不算勾选
+      return (e.clientX >= r.left - 26 && e.clientX <= r.left - 2) ? li : null;
     }
 
     // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。
@@ -1337,7 +1361,9 @@
       if (gLi) {
         e.preventDefault();
         if (undoMgr) undoMgr.checkpoint(); // U20/check-3：改 data-checked 前先冲掉 pending 打字（500ms 防抖窗口内的输入）成独立快照，否则勾选与打字并进同一快照、一次 undo 双双回滚
-        gLi.setAttribute('data-checked', gLi.getAttribute('data-checked') === 'true' ? 'false' : 'true');
+        // U26/visual-5：取消勾选删属性、不写 data-checked="false"（脏字节、diff 噪音、三态负担）。CSS/判定只认 "true"，
+        // "false" 与无属性等价 → 存量老文档下次翻转时自然清洗。
+        if (gLi.getAttribute('data-checked') === 'true') gLi.removeAttribute('data-checked'); else gLi.setAttribute('data-checked', 'true');
         if (undoMgr) undoMgr.checkpoint();
         markDirty();
         return;
@@ -2184,6 +2210,20 @@
     //   灰选中块 → 插其后；无编辑无选中 → 追加末尾。光标落最后一块末尾。
     function insertBlocksAtCaret(blocks) {
       if (!blocks.length) return;
+      // U21/clip-4：插入前对每个块（含后代）去重 id——文档中已存在同 id（同文档复制粘贴）或本批次已占用才剥，
+      // 跨文档粘贴不撞 id 则保留（护住互链锚点价值）。对齐 splitBlock 剥后块 id 的先例。
+      const seenIds = new Set();
+      for (const b of blocks) {
+        const withId = [];
+        if (b.getAttribute && b.getAttribute('id')) withId.push(b);
+        if (b.querySelectorAll) withId.push(...b.querySelectorAll('[id]'));
+        for (const el of withId) {
+          const id = el.getAttribute('id');
+          if (!id) continue;
+          if (doc.getElementById(id) || seenIds.has(id)) el.removeAttribute('id');
+          else seenIds.add(id);
+        }
+      }
       blocks.forEach(ensurePastedStyles);
       const last = blocks[blocks.length - 1];
       const frag = doc.createDocumentFragment();
@@ -2274,6 +2314,45 @@
       }
       // 实在无块可放（无光标）/ summary（放不下块，多行会劈出第二个 summary → 非合规）→ 只能合成单行。U13。
       if (!editingEl || editingEl.tagName === 'SUMMARY') { doc.execCommand('insertText', false, lines.join(' ')); return; }
+      // U22/clip-5：外部纯文本多行**全部非空行**都匹配「- [ ] / - [x] 」→ 识别成 todo（只认纯文本模式、不引入外部富 HTML，
+      // 不违反 ED-A4）。任一行不匹配 → 整段回落既有纯文本粘贴（不做混合解析）。目标是**普通** bullet/numbered 列表则维持字面（本轮不扩）。
+      {
+        const TODO_LINE = /^- \[( |x|X)\] (.*)$/;
+        const nonEmpty = lines.filter((l) => l.trim() !== '');
+        if (nonEmpty.length && nonEmpty.every((l) => TODO_LINE.test(l))) {
+          const isList = classify(editingEl) === 'list';
+          const isTodo = isList && editingEl.classList.contains('ws-todo');
+          if (!isList || isTodo) {
+            const items = nonEmpty.map((l) => { const m = l.match(TODO_LINE); return { checked: /[xX]/.test(m[1]), text: m[2] }; });
+            const mkLi = (it) => { const li = doc.createElement('li'); if (it.text) li.textContent = it.text; if (it.checked) li.setAttribute('data-checked', 'true'); if (!li.firstChild) li.appendChild(doc.createElement('br')); return li; };
+            if (isTodo) { // 目标 todo 列表：逐行建 li 追加到当前 li 之后，仍单个 ul
+              const s1 = doc.getSelection();
+              const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
+              let li = n1 && n1.closest ? n1.closest('li') : null;
+              if (li && editingEl.contains(li)) {
+                // 对抗审查：目标 li 为空（刚建的 todo 就一个空项）→ 首个 item 就地填入、不留空 checkbox 行
+                // （对齐 insertBlocksAtCaret「空块整块替换、不留空行」原则）；非空则全部追加到其后（既有行为）。
+                let idx = 0;
+                if (!(li.textContent || '').trim() && !li.querySelector('img,figure,hr,input')) {
+                  while (li.firstChild) li.removeChild(li.firstChild);
+                  if (items[0].text) li.appendChild(doc.createTextNode(items[0].text));
+                  if (items[0].checked) li.setAttribute('data-checked', 'true'); else li.removeAttribute('data-checked');
+                  if (!li.firstChild) li.appendChild(doc.createElement('br'));
+                  idx = 1;
+                }
+                for (let k = idx; k < items.length; k++) { const nli = mkLi(items[k]); li.after(nli); li = nli; }
+                const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); s1.removeAllRanges(); s1.addRange(r);
+                ensureTodoStyle(); if (undoMgr) undoMgr.checkpoint(); markDirty(); return;
+              }
+            }
+            const ul = doc.createElement('ul'); ul.className = 'ws-todo'; // 非列表目标：构造 ws-todo 块插入
+            items.forEach((it) => ul.appendChild(mkLi(it)));
+            ensureTodoStyle();
+            insertBlocksAtCaret([ul]);
+            if (undoMgr) undoMgr.checkpoint(); markDirty(); return;
+          }
+        }
+      }
       // bug2 列表：每行一个新 <li>（同一 ul 内、继承 li 类型），绝不建新 <ul>、绝不丢行。
       // （通用 splitBlock 按 editingEl.tagName=UL 建块 → 会造出新 <ul> 且后续行灌进空 ul 丢失，multi-bullet 并成一行。）
       if (classify(editingEl) === 'list') {
@@ -2471,7 +2550,7 @@
   ul.ws-todo ul:not(.ws-todo) { list-style:disc; }
   ul.ws-todo ol:not(.ws-todo) { list-style:decimal; }
   .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
-  .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff;cursor:pointer; }
+  .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer; }
   /* U14/check-2：勾选视觉传播反制。text-decoration:line-through 按 CSS 装饰传播规则会绘穿全部 in-flow 后代、
      无法从后代 text-decoration:none 取消 → 含子列表的勾选项**不给自身加 line-through**（只变灰），避免划穿未勾子项；
      叶子勾选项（无子列表）照常灰+划线。嵌套列表 color 显式重置回正文色（color 是继承属性、会下渗）。 */
@@ -2503,6 +2582,9 @@
   [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
   [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
   [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}
+  /* U23/select-4：跨 toggle 边界删除被拦成空操作时的反馈——高亮块闪一下橙红（不推布局、不用 transform 免劫持包含块）。 */
+  @keyframes ws2-nope{0%,100%{background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16)}35%,65%{background:rgba(214,90,64,.30);box-shadow:0 0 0 4px rgba(214,90,64,.30)}}
+  [data-ws2-nope]{animation:ws2-nope .4s ease;}
 
   .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
