@@ -846,6 +846,37 @@
       if (undoMgr) undoMgr.checkpoint(); markDirty();
       return next;
     }
+    // Step 2（Colin 2026-07-23，方案 B 第 2 步）：从当前选区解析出「整块 <ul>/<ol> 里被选中的直接子 li 连续跨度」。
+    // 折叠光标 → 光标所在那一行；跨 li 选区 → 首末 li 之间的连续跨度；落在嵌套子项 → 上卷到含它的顶层 li。返回 li 数组或 null。
+    function selectedListLines(ul) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return null;
+      const r = sel.getRangeAt(0);
+      const topLiOf = (n) => {
+        let e = n && (n.nodeType === 3 ? n.parentElement : n);
+        e = e && e.closest ? e.closest('li') : null;
+        while (e && e.parentElement !== ul) { const up = e.parentElement && e.parentElement.closest ? e.parentElement.closest('li') : null; if (!up || up === e) return null; e = up; }
+        return e;
+      };
+      const sLi = topLiOf(r.startContainer), eLi = topLiOf(r.endContainer);
+      if (!sLi || !eLi) return null;
+      const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
+      let i = allLis.indexOf(sLi), j = allLis.indexOf(eLi);
+      if (i < 0 || j < 0) return null;
+      if (i > j) { const t = i; i = j; j = t; }
+      return allLis.slice(i, j + 1);
+    }
+    // 「转为」只作用于选中的行：把 <ul>/<ol> 在选中 li 跨度处劈成 [前列表][选中行]（[后列表]），让选中 li 独占原 <ul>，
+    // 再复用整块 turnInto——产物、class 迁移、data-checked 清理、conform 全走既有逻辑，零重复。全选（跨全部 li）= 整块转换。
+    function turnIntoLines(ul, lis, item) {
+      const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
+      const firstIdx = allLis.indexOf(lis[0]), lastIdx = allLis.indexOf(lis[lis.length - 1]);
+      if (firstIdx < 0 || lastIdx < 0 || (firstIdx === 0 && lastIdx === allLis.length - 1)) return turnInto(ul, item); // 判不出 / 全选 → 整块
+      const mkUl = () => { const u = doc.createElement(ul.tagName); if (ul.className) u.className = ul.className; return u; };
+      if (firstIdx > 0) { const b = mkUl(); for (let k = 0; k < firstIdx; k++) b.appendChild(allLis[k]); ul.before(b); }
+      if (lastIdx < allLis.length - 1) { const a = mkUl(); for (let k = lastIdx + 1; k < allLis.length; k++) a.appendChild(allLis[k]); ul.after(a); }
+      return turnInto(ul, item); // 此刻 ul 只剩选中 li → 产物替换 ul、留原位、前后列表夹住
+    }
     function removeBlock(el) {
       const scope = scopeRootOf(el); // U6：作用域感知——toggle 体内删块按体内计数；≥1 块铁则（summary-only 死胡同）
       const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
@@ -1137,7 +1168,17 @@
             e.preventDefault(); e.stopPropagation();
             const item = SLASH_ITEMS.find((x) => x.key === key);
             const target = editingEl || selectedEl;
-            if (target && item) { const nx = turnInto(target, item); menu.style.display = 'none'; if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx); }
+            if (target && item) {
+              // Step 2：列表 + 选区只覆盖部分行 → 只抽那几行（turnIntoLines）；整列表选中或非列表 → 整块 turnInto。
+              let nx;
+              if (target.tagName === 'UL' || target.tagName === 'OL') {
+                const lines = selectedListLines(target);
+                const allCount = [...target.children].filter((c) => c.tagName === 'LI').length;
+                nx = (lines && lines.length && lines.length < allCount) ? turnIntoLines(target, lines, item) : turnInto(target, item);
+              } else { nx = turnInto(target, item); }
+              menu.style.display = 'none';
+              if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx);
+            }
           });
           menu.appendChild(it);
         });
