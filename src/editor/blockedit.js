@@ -1039,8 +1039,8 @@
     function wrapMark(bg) {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-      if (!selWithinOneBlock()) return; // 跨块拒绝：否则 extractContents 把块级元素拽进 <mark>
       const range = sel.getRangeAt(0);
+      if (!fmt.clampRangeToBlock(doc, range, body)) return; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块（否则高亮没反应）
       const mk = doc.createElement('mark');
       if (bg) mk.style.background = bg;
       try { range.surroundContents(mk); } catch (e) { mk.appendChild(range.extractContents()); range.insertNode(mk); }
@@ -1049,8 +1049,8 @@
     function wrapCode() {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-      if (!selWithinOneBlock()) return; // 跨块拒绝：否则 extractContents 会把块级元素拽进 <code>
       const range = sel.getRangeAt(0);
+      if (!fmt.clampRangeToBlock(doc, range, body)) return; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块
       const code = doc.createElement('code');
       try { range.surroundContents(code); } catch (e) { code.appendChild(range.extractContents()); range.insertNode(code); }
       markDirty(); persistEditing();
@@ -1519,6 +1519,23 @@
           // 「块内已全选」判定剥空白比较——表格/列表的 sel.toString() 带 \t\n 分隔、textContent 没有，
           // 逐字比对会永远判「未全选」把第二级堵死。空块（无文字）第一次就直接升全篇。
           const norm = (s) => (s || '').replace(/\s+/g, '');
+          // 列表内多一档分级（Colin 2026-07-23）：① 选当前行 li 内容 → ② 选整个 <ul> → ③ 全篇。
+          // 列表 editingEl = 整个 <ul>，若直接走下面「一次选整块」，⌘A 一次就选全列表、随手打字覆盖整份 checklist（丢数据级）。
+          if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
+            const an = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
+            const li = an && an.closest ? an.closest('li') : null;
+            if (li && editingEl.contains(li)) {
+              const liRange = doc.createRange(); liRange.selectNodeContents(li);
+              const subList = li.querySelector(':scope > ul, :scope > ol');
+              if (subList) liRange.setEndBefore(subList); // 「本行」= li 起点到嵌套子列表之前（子列表各自独立、不算本行）
+              const liText = norm(liRange.toString());
+              const ulText = norm(editingEl.textContent);
+              const curText = norm(sel.toString());
+              if (liText.length > 0 && curText !== liText && curText !== ulText) { sel.removeAllRanges(); sel.addRange(liRange); return; } // ① 当前行
+              if (curText !== ulText) { const r = doc.createRange(); r.selectNodeContents(editingEl); sel.removeAllRanges(); sel.addRange(r); return; } // ② 整个列表
+              selectWholeDoc(); return; // ③ 全篇
+            }
+          }
           const blockText = norm(editingEl.textContent);
           const allInBlock = blockText.length > 0 && norm(sel.toString()) === blockText;
           if (blockText.length > 0 && !allInBlock) {
@@ -2304,7 +2321,9 @@
       }
       e.preventDefault();
       const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
-      if (lines.length <= 1) { doc.execCommand('insertText', false, lines[0] || ''); return; }
+      // U22/clip-5 扩展：单行也走 todo 识别——只有「单行且**不是** todo marker」才走字面文本早返回；
+      // 单行 `- [ ] x` / `- [x] x` 落到下面 U22 判断里转成待办（对齐打字 markdown 快捷键的直觉）。
+      if (lines.length <= 1 && !/^- \[( |x|X)\] /.test(lines[0] || '')) { doc.execCommand('insertText', false, lines[0] || ''); return; }
       // bug2：无编辑目标（灰选 / 光标在块内但未 enterEdit）时先进编辑，别直接 lines.join(' ') 把多行拼成一行。
       if (!editingEl) {
         const s0 = doc.getSelection();

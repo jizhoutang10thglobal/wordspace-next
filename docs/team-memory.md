@@ -14,6 +14,18 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-23 — docs/* 分支的代码文件冻在切分支那刻，别在这种工作目录里改代码+测
+
+**是什么**：`docs/xxx` 这类长期挂着的分支只往上加 docs commit，**src/ 代码文件停在当初从 main 切出去那一刻**、比 main 落后一大截（实测 `docs/doc-linking-app-plan` 的 blockedit.js 缺 i18n / image-ingest 等一批 main 早有的东西）。在这种分支的工作目录里改代码、跑 e2e 测绿，全是拿旧代码测的**假绿**；直接搬 main 会对不上（函数结构/依赖都变了，比如删了个在旧版没人用、在 main 还被别处调的函数就崩）。
+**怎么 apply**：动代码前先 `git branch --show-current` 看是不是 docs/* 之类；是的话**别在这个目录改代码**——开 origin/main 的临时 worktree（`git worktree add <dir> origin/main -b <br>`）在真 main 代码上重做+测+推 PR。`format.js` 这种被 git 当二进制的文件，`grep`/`git show|grep` 要加 `-a`，否则静默返空、会误判「我的代码没进去」。
+**来源**：修 Wendi「列表项没法改颜色」时踩的（PR #335）；呼应「本地绿≠CI 绿，先 rebase / 对 main」。
+
+## 2026-07-23 — 列表/待办项键盘选行改颜色·高亮·行内代码失灵：Shift+End 幽灵块边界被跨块守卫误伤
+
+**是什么**：在 `<li>` 里键盘选行（Home→Shift+End / 三击 / Shift+↓），浏览器把选区**尾端落到下一个 `<li>` 的 offset 0**（`selection.toString()` 尾巴那个 `\n` 就是块边界）→ 起块=li[0]、尾块=li[1]。`wrapInlineStyle`（文字色）/ `wrapMark`（高亮）/ `wrapCode`（行内代码）的跨块守卫 `startBlock!==endBlock` 判跨块 → 静默 return 不上色。加粗/斜体走 `execCommand`、自己处理块边界所以没事——现象是「粗细能改、颜色改不了」。
+**怎么 apply**：这类「选区尾端溢到相邻块幽灵边界」的误伤，用 format.js 新增的 `fmt.clampRangeToBlock(doc, range, body)`：溢出段零可见文字/媒体时把尾端夹回起块末尾再操作，真选进别块内容才拒绝。以后加任何「选区内行内操作 + 跨块守卫」都走它，别再裸判 `startBlock!==endBlock`。判「溢出段是否空」别用 `cloneContents().querySelector('*')`——它会撞上跨兄弟边界时被克隆成空壳的 li/ul，只认 `img/hr/video` 等真媒体。
+**来源**：PR #335（含 e2e 门 `e2e/blockedit-list-color.spec.js` + 变异自检）。
+
 ## 2026-07-22 — v0.11.0 已发布，发版基线挪到此
 
 **是什么**：v0.11.0 已签名公证发布（tag 打在 `7225cc2` = #309 合并点，Release 页 + mac arm64/x64 + win x64 产物 + 自动更新清单齐全）。这版给用户的三大新功能：**折叠块**（编辑器新增 Notion 式可折叠块 #299）、**浏览器下载** #278、**沉浸窗框融合** #303/#307/#276；外加一批改进修复（含 Wendi 报的右键菜单被窗口底边裁 #304、大根「Simplified」徽标撤路径 #309、基础编辑器删除块改走原生选中+Delete #305）。CHANGELOG.md / CHANGELOG.en.md 双语正本已随 #310 合进 main。
