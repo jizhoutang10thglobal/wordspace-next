@@ -14,6 +14,12 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-23 — 分页文档拆分为独立 Schema 2，「分页=Schema 1 版式」口径作废
+
+**是什么**：分页从「Schema 1 的可选版式」反转为独立 **Schema 2「分页文档」**；Schema 1 现在叫「流式文档」。判定只认内容：head 有可解析的 `<style data-ws-schema-css="page">` → schema-2；写坏 / 多余块 / 无 → 宽容回退 schema-1（不降级不惩罚）。拆分核心已合 main（**PR #340**）：新 `src/lib/schema-2-paged.js` descriptor（注册在 schema-1 兜底之前=归类优先级）+ `schema-registry` 唯一收口 + `shell.js` `routeDoc` 走 classify 得新变量 `docSchemaId`。**用户可感知的分页行为一字未变**（只动身份/路由层，V4 引擎零改）。计划=PR #333 / `docs/plans/2026-07-23-001-refactor-schema-2-paged-split-plan.md`。
+**怎么 apply**：①别再按「分页=Schema 1 版式」写 memory/文档/代码；判分页文档用 `classify().schemaId==='schema-2'`（渲染层看 `docSchemaId`），不是「conform + 有 page 块」。`docs/features/paged-doc.md` 已反转重写。②动 `shell.js` 的 `routeDoc`/`docConform` 面注意新增了 `docSchemaId`（不变式：`schemaId==='schema-2'` ⟺ `docPageCfg` 非空，由 routeDoc + applyPageSetup 共同维持）。③后续 **PR-B** 会把新建弹窗的「范式 2」解灰成「分页文档」+ 挂分页模板、**PR-C** 加页眉页脚、**PR-D** 同步 ui-demo、**PR-E** AI 资产——碰新建弹窗 / 页面设置 / paged-doc.md / schema AI 文档的当心撞车。④**本地跑测试务必 `npm run i18n:scan` 跟 `npm test` 一起跑**：CI 的 `test` job 是这俩，硬编码中文（哪怕内部 violation msg）也报红——本次实栽（新 descriptor 的 msg 忘走字典，本地只跑 npm test 漏了，CI 才抓到）。
+**来源**：PR #340（feat/schema-2-paged-split）、计划 PR #333、`docs/features/paged-doc.md`。
+
 ## 2026-07-23 — docs/* 分支的代码文件冻在切分支那刻，别在这种工作目录里改代码+测
 
 **是什么**：`docs/xxx` 这类长期挂着的分支只往上加 docs commit，**src/ 代码文件停在当初从 main 切出去那一刻**、比 main 落后一大截（实测 `docs/doc-linking-app-plan` 的 blockedit.js 缺 i18n / image-ingest 等一批 main 早有的东西）。在这种分支的工作目录里改代码、跑 e2e 测绿，全是拿旧代码测的**假绿**；直接搬 main 会对不上（函数结构/依赖都变了，比如删了个在旧版没人用、在 main 还被别处调的函数就崩）。
