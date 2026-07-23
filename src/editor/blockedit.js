@@ -1519,6 +1519,23 @@
           // 「块内已全选」判定剥空白比较——表格/列表的 sel.toString() 带 \t\n 分隔、textContent 没有，
           // 逐字比对会永远判「未全选」把第二级堵死。空块（无文字）第一次就直接升全篇。
           const norm = (s) => (s || '').replace(/\s+/g, '');
+          // 列表内多一档分级（Colin 2026-07-23）：① 选当前行 li 内容 → ② 选整个 <ul> → ③ 全篇。
+          // 列表 editingEl = 整个 <ul>，若直接走下面「一次选整块」，⌘A 一次就选全列表、随手打字覆盖整份 checklist（丢数据级）。
+          if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
+            const an = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
+            const li = an && an.closest ? an.closest('li') : null;
+            if (li && editingEl.contains(li)) {
+              const liRange = doc.createRange(); liRange.selectNodeContents(li);
+              const subList = li.querySelector(':scope > ul, :scope > ol');
+              if (subList) liRange.setEndBefore(subList); // 「本行」= li 起点到嵌套子列表之前（子列表各自独立、不算本行）
+              const liText = norm(liRange.toString());
+              const ulText = norm(editingEl.textContent);
+              const curText = norm(sel.toString());
+              if (liText.length > 0 && curText !== liText && curText !== ulText) { sel.removeAllRanges(); sel.addRange(liRange); return; } // ① 当前行
+              if (curText !== ulText) { const r = doc.createRange(); r.selectNodeContents(editingEl); sel.removeAllRanges(); sel.addRange(r); return; } // ② 整个列表
+              selectWholeDoc(); return; // ③ 全篇
+            }
+          }
           const blockText = norm(editingEl.textContent);
           const allInBlock = blockText.length > 0 && norm(sel.toString()) === blockText;
           if (blockText.length > 0 && !allInBlock) {
