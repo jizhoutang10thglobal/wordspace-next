@@ -2304,7 +2304,9 @@
       }
       e.preventDefault();
       const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
-      if (lines.length <= 1) { doc.execCommand('insertText', false, lines[0] || ''); return; }
+      // U22/clip-5 扩展：单行也走 todo 识别——只有「单行且**不是** todo marker」才走字面文本早返回；
+      // 单行 `- [ ] x` / `- [x] x` 落到下面 U22 判断里转成待办（对齐打字 markdown 快捷键的直觉）。
+      if (lines.length <= 1 && !/^- \[( |x|X)\] /.test(lines[0] || '')) { doc.execCommand('insertText', false, lines[0] || ''); return; }
       // bug2：无编辑目标（灰选 / 光标在块内但未 enterEdit）时先进编辑，别直接 lines.join(' ') 把多行拼成一行。
       if (!editingEl) {
         const s0 = doc.getSelection();
