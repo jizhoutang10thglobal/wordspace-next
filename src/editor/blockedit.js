@@ -382,6 +382,15 @@
       if (i < 0 || j < 0 || i > j) return;
       for (let k = i; k <= j; k++) { const m = tops[k]; if (m) { m.setAttribute('data-ws2-rangesel', ''); rangeSelEls.push(m); } }
     }
+    // U23/select-4：删除被一致化守卫拦成空操作时的可感知反馈——把当前跨块高亮的块短暂标 data-ws2-nope，
+    // 触发一段闪烁动画后自清（随 data-ws2-rangesel 高亮视觉语言走，不用系统 beep——app 无音频反馈先例）。
+    function flashNope() {
+      refreshRangeSel(); // 先刷新，确保标的是当前选区跨的块
+      const els = rangeSelEls.slice();
+      if (!els.length) return;
+      els.forEach((el) => el.setAttribute && el.setAttribute('data-ws2-nope', ''));
+      setTimeout(() => els.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-nope')), 420);
+    }
 
     function selectBlock(el) {
       exitEdit();
@@ -906,7 +915,12 @@
       // P2：选区跨 summary 边界（一端在 summary、另一端不在同一 summary）→ 安全空操作（return true 拦掉调用方的
       // 原生 execCommand('delete')，否则原生会把正文并进 summary / 删出 summary-only → 非合规）。同一 summary 内选区放行原生。
       const sumOf = (n) => { const e = n && (n.nodeType === 3 ? n.parentElement : n); return e && e.closest ? e.closest('summary') : null; };
-      if (sumOf(r.startContainer) !== sumOf(r.endContainer)) return true;
+      if (sumOf(r.startContainer) !== sumOf(r.endContainer)) { flashNope(); return true; }
+      // U23/select-4：选区端点部分跨 details 边界（一端在 toggle 体内、另一端在外，或分属不同 toggle）→ 一致化为
+      // 空操作 + 反馈，绝不半删（旧行为：删 toggle 外那侧、体内被下面 P2 clamp 夹住不删 = 半应用，与选区高亮承诺不符）。
+      // toggle 被选区整体包含（两端都在其外、detOf 皆 null 且相等）→ 不拦，维持现状可整删（防回归）。
+      const detOf = (n) => { const e = n && (n.nodeType === 3 ? n.parentElement : n); return e && e.closest ? e.closest('details') : null; };
+      if (detOf(r.startContainer) !== detOf(r.endContainer)) { flashNope(); return true; }
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (!sBlk || !eBlk) return false; // 选区落在块外/覆盖层 → 不碰
       if (sBlk === eBlk) {
@@ -2554,6 +2568,9 @@
   [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
   [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
   [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}
+  /* U23/select-4：跨 toggle 边界删除被拦成空操作时的反馈——高亮块闪一下橙红（不推布局、不用 transform 免劫持包含块）。 */
+  @keyframes ws2-nope{0%,100%{background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16)}35%,65%{background:rgba(214,90,64,.30);box-shadow:0 0 0 4px rgba(214,90,64,.30)}}
+  [data-ws2-nope]{animation:ws2-nope .4s ease;}
 
   .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
