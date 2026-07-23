@@ -19,8 +19,11 @@
 身份收口在 `src/lib/schema-registry.js`（descriptor 注册表，schema-2 注册在 schema-1 兜底之前 = 归类
 优先级）+ 被动 descriptor `src/lib/schema-2-paged.js`（detect: head 有 page 块；validate: 结构合规 +
 首个 page 块 parsePageCss 非 null）。`shell.js` 的 `routeDoc` 走 `classify()` 得 `docSchemaId`。
-**转换 = 内容变更**：页面设置开关写入/移除 page 块即在 schema-1 ↔ schema-2 间转换（开关的 UI 语义
-显性化 + 新建 modal 范式 2 解灰在 PR-B；页眉/页脚在 PR-C；ui-demo 同步在 PR-D）。
+**转换 = 内容变更**：页面设置开关写入/移除 page 块即在 schema-1 ↔ schema-2 间转换（PR-A 已让开关
+同步 `docSchemaId`；页面设置入口对流式/分页两种 schema 都开放 = 双向转换）。**新建入口**：新建弹窗
+范式轨的「分页文档」范式（= 原范式 2 解灰，PR-B 已做）→ 选它给「空白分页文档」模板（head 带 `@page`
+块 + `meta wordspace-schema=2`，新建即分页视图、磁盘 schema-2），见 `docs/features/new-document-modal.md`。
+页眉/页脚 + 分页专属 meta 的关分页保留语义在 PR-C；ui-demo 同步在 PR-D。
 
 > PR-A（已落）= 上表的身份/归类机制 + `routeDoc` 走 `docSchemaId`；分页的**用户可感知行为完全不变**
 > （每页一张纸/页界留白/导出分页/可导 md 全保留）。下面的行为契约描述现有分页行为，随 PR-B/C 增补
