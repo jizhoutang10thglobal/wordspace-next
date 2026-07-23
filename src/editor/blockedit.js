@@ -1632,6 +1632,7 @@
           return;
         }
         const sel = doc.getSelection();
+        const savedNode = sel ? sel.anchorNode : null, savedOffset = sel ? sel.anchorOffset : 0; // U19/keys-8：记原光标位置，移动后恢复（不甩项末）
         const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
         const li = node && node.closest ? node.closest('li') : null;
         if (!li || !editingEl.contains(li)) return;
@@ -1659,7 +1660,10 @@
             if (undoMgr) undoMgr.checkpoint(); markDirty();
           }
         }
-        caretAtLiTextEnd(li); // Tab/Shift-Tab 后光标落 li 文字末尾（在其子列表之前，对抗审查 P2）
+        // U19/keys-8：恢复原光标位置（anchorNode 随 li 一起移动、引用不失效）；失效才回退 li 文字末尾。
+        if (savedNode && savedNode.isConnected && li.contains(savedNode)) {
+          try { const max = savedNode.nodeType === 3 ? savedNode.length : savedNode.childNodes.length; const r = doc.createRange(); r.setStart(savedNode, Math.min(savedOffset, max)); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) { caretAtLiTextEnd(li); }
+        } else { caretAtLiTextEnd(li); }
         return;
       }
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）
