@@ -1955,8 +1955,8 @@
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
     }
 
-    function onInput() {
-      markDirty(); tryMarkdown();
+    function onInput(e) {
+      markDirty(); tryMarkdown(e);
       const M = mentionApi();
       if (M && M.isOpen()) { M.syncFromDom(); return; } // 菜单开着：从 DOM 真相重算 query（捕获任何输入法），别再触发新菜单
       maybeMentionTrigger();
@@ -1969,21 +1969,32 @@
     }
     // 行首 markdown：正文块里输入「marker + 空格」→ 转成对应块、清掉 marker。app 改真实 DOM、
     // 存盘读 live DOM，故可原地 turnInto（不像 ui-demo 受控编辑会被 blur 回写打架）。
-    function tryMarkdown() {
+    function tryMarkdown(e) {
       if (!editingEl || classify(editingEl) !== 'text') return; // 只在正文块（p）触发
-      const m = (editingEl.textContent || '').match(/^(#{1,4}|[-*]|1\.|\[\s?\]|>)[\s ]$/);
+      const _txt = editingEl.textContent || '';
+      const m = _txt.match(/^(#{1,4}|[-*]|\d+\.|\[[ xX]?\]|>)[\s ]/);
       if (!m) return;
+      const whole = _txt.length === m[0].length; // 整块只有 marker+空格（决定清空 vs 保留后缀）
+      // U18/create-7：无论整块还是前缀触发，都只在「刚敲下补全 marker 的那个空格」这一击转换——
+      // 绑 inputType，否则「删字后 caret 恰停 marker 末（如『- x』删 x 剩『- 』）」会把段落误转成列表（Notion 只在敲空格那击转）。
+      if (!(e && e.inputType === 'insertText' && e.data === ' ')) return;
       const t = m[1];
       const key = t[0] === '#' ? ['h1', 'h2', 'h3', 'h4'][t.length - 1]
         : (t === '-' || t === '*') ? 'list'
-        : t === '1.' ? 'numbered'
+        : /^\d+\.$/.test(t) ? 'numbered'
         : t[0] === '[' ? 'todo'
         : t === '>' ? 'quote' : null;
       if (!key) return;
       const item = SLASH_ITEMS.find((x) => x.key === key);
       if (!item) return;
-      editingEl.innerHTML = ''; // 清掉 marker
-      enterEdit(turnInto(editingEl, item), { mode: 'start' });
+      const checked = /^\[[xX]\]$/.test(t); // [x]/[X] → 首项勾选
+      const startN = key === 'numbered' ? parseInt(t, 10) : 1;
+      if (whole) { editingEl.innerHTML = ''; } // 清 marker
+      else { const first = editingEl.firstChild; if (first && first.nodeType === 3) first.textContent = first.textContent.slice(m[0].length); else editingEl.innerHTML = ''; } // 前缀：只删块首 marker+空格，保留其余
+      const conv = turnInto(editingEl, item);
+      if (checked) { const li = conv.querySelector('li'); if (li) li.setAttribute('data-checked', 'true'); }
+      if (key === 'numbered' && startN > 1 && conv.tagName === 'OL') conv.setAttribute('start', String(startN)); // 非 1 起始序号（校验器不拦 ol[start]）
+      enterEdit(conv, { mode: whole ? 'start' : 'end' });
     }
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
     function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮
