@@ -64,3 +64,26 @@ test('入盘 CSS 含视觉传播反制规则（磁盘直开等价）', async () 
   expect(html.includes(':not(:has(ul,ol))'), '入盘 ws-todo CSS 含反制规则（编辑器与磁盘同口径）').toBe(true);
   expect(await conformOf(html)).toBe(true);
 });
+
+// U25/visual-3：勾选框对比度达 WCAG 3:1（非文本对比，1.4.11）。读 computedStyle 真算相对亮度对比。
+function wcagRatio(c1, c2) {
+  const parse = (s) => (String(s).match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+  const lin = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const L = (c) => { const [r, g, b] = parse(c); return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b); };
+  const la = L(c1), lb = L(c2), hi = Math.max(la, lb), lo = Math.min(la, lb);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+test('U25：勾选框对比度达 WCAG 3:1（浅色：未勾边框/已勾蓝底/✓字形）（visual-3）', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li id="u">未勾项</li><li id="c" data-checked="true">已勾项</li></ul>');
+  const d = await frame.locator('body').evaluate(() => {
+    let paper = 'rgb(255, 255, 255)';
+    for (const el of [document.body, document.documentElement]) { const bg = getComputedStyle(el).backgroundColor; if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') { paper = bg; break; } }
+    const u = document.getElementById('u'), c = document.getElementById('c');
+    return { paper, uBorder: getComputedStyle(u, '::before').borderTopColor, cBg: getComputedStyle(c, '::before').backgroundColor, cGlyph: getComputedStyle(c, '::before').color };
+  });
+  expect(wcagRatio(d.uBorder, d.paper), `未勾边框 vs 纸底 ≥3:1（边框=${d.uBorder} 纸=${d.paper}）`).toBeGreaterThanOrEqual(3);
+  expect(wcagRatio(d.cBg, d.paper), `已勾蓝底 vs 纸底 ≥3:1（蓝=${d.cBg}）`).toBeGreaterThanOrEqual(3);
+  expect(wcagRatio(d.cGlyph, d.cBg), `✓ 字形 vs 蓝底 ≥3:1`).toBeGreaterThanOrEqual(3);
+});
