@@ -258,6 +258,30 @@ test('文件夹 + → 模板台只剩「空文档」一张卡（会议纪要/项
   await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('未命名');
 });
 
+test('新建弹窗 = 左范式轨 + 右模板 pane（对齐 ui-demo）：Notion 范式激活显空文档卡；点未上线范式 → 占位、无卡', async () => {
+  await openWorkspace();
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
+  await expect(page.locator('.sb-modal')).toBeVisible();
+  // 左：范式轨 3 档，第一档「类 Notion」激活（对齐 ui-demo，不再是横排 pill）
+  await expect(page.locator('.sb-cm-rail')).toBeVisible();
+  await expect(page.locator('.sb-cm-para')).toHaveCount(3);
+  await expect(page.locator('.sb-cm-para.is-active')).toHaveCount(1);
+  await expect(page.locator('.sb-cm-para.is-active')).toContainText('类 Notion');
+  // 右：Notion 范式下 = 模板网格 + 唯一空文档卡（blank-only）
+  await expect(page.locator('.sb-cm-pane .sb-modal-grid')).toBeVisible();
+  await expect(page.locator('.sb-card')).toHaveCount(1);
+  await expect(page.locator('.sb-cm-soon')).toHaveCount(0);
+  // 点「范式 2」（灰态未上线）→ 右侧换成占位、卡片消失
+  await page.locator('.sb-cm-para.is-soon').first().click();
+  await expect(page.locator('.sb-cm-soon')).toBeVisible();
+  await expect(page.locator('.sb-card')).toHaveCount(0);
+  await expect(page.locator('.sb-cm-para.is-active')).toContainText('范式 2');
+  // 切回「类 Notion」→ 卡片回来
+  await page.locator('.sb-cm-para').first().click();
+  await expect(page.locator('.sb-card')).toHaveCount(1);
+  await expect(page.locator('.sb-cm-soon')).toHaveCount(0);
+});
+
 test('同名新建去重：连建两次空文档 → 「未命名.html」+「未命名 2.html」', async () => {
   await openWorkspace();
   const folder = page.locator('.sb-dir[data-rel="数据"]');

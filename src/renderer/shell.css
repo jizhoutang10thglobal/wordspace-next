@@ -705,10 +705,12 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
 .sb-modal-body { padding: 14px 18px; overflow-y: auto; }
 .sb-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 /* 卡片零阴影（保守口径）：层级 = 1px 细边 + hover 底色差 */
-.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 64px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
-.sb-card:hover { background: var(--c-bg-chrome); border-color: var(--c-border-strong); border-top-color: var(--c-border-strong); }
-.sb-card-blank { border-top-color: var(--c-accent); }
-.sb-card-blank:hover { border-top-color: var(--c-accent); }
+.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 92px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.sb-card:hover { background: var(--c-hover); }
+.sb-card-ico { display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 4px; border-radius: var(--r-sm); background: var(--c-bg-sunken); color: var(--c-text-2); }
+.sb-card-blank { border-top-color: var(--c-border-strong); }
+.sb-card-blank:hover { border-color: var(--c-accent); border-top-color: var(--c-accent); }
+.sb-card-blank .sb-card-ico { background: var(--c-accent-tint); color: var(--c-accent); }
 .sb-card-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
 .sb-card-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.45; }
 

@@ -2433,6 +2433,13 @@
   // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。----
   // opts.temp：从「标签页 +」/ Cmd+T 来 → 建临时文档（不落盘，手动保存才进文件夹）；
   // 否则（文件夹 hover-+ / 右键新建）落点 dirRel、直接落盘。
+  // 新建文档弹窗内的图标（lucide 风格静态串→CSP 安全，同 omni globe 的做法）。
+  const CM_ICO_BLOCKS = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>';
+  const CM_ICO_LOCK = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+  const CM_ICO_LOCK_LG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+  const CM_ICO_FILE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>';
+  const CM_ICO_GLOBE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+
   async function openCreateModal(rootId, dirRel, opts) {
     if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：已有弹层（如 SaveModal）时不叠——Cmd+T 加速器穿透会走到这
     const temp = !!(opts && opts.temp);
@@ -2453,18 +2460,17 @@
       document.removeEventListener('keydown', onKey);
     }
     const modal = document.createElement('div');
-    modal.className = 'sb-modal';
-    const head = modalHead(temp ? window.wsT('sidebar.newTab') : window.wsT('sidebar.newDoc'), temp
-      ? window.wsT('sidebar.createTabSub')
-      : window.wsT('sidebar.createDocSub', { location: (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : '') }), close);
-    // ⌘T 二合一（spec §4.5.1）：顶部一条地址栏（自动聚焦）——Enter 开新网页标签并导航,关 modal。
-    let omniRow = null;
+    modal.className = 'sb-modal sb-modal-cm';
+
+    // ---- 顶部：temp 走 omni 地址栏（Arc 式，X 收进栏内）；非 temp 走标题头 ----
+    let topEl;
     if (temp) {
-      omniRow = document.createElement('div');
+      // ⌘T 二合一（spec §4.5.1）：顶部一条地址栏（自动聚焦）——Enter 开新网页标签并导航,关 modal。
+      const omniRow = document.createElement('div');
       omniRow.className = 'sb-cm-omni';
       const ico = document.createElement('span');
       ico.className = 'sb-cm-omni-ico';
-      ico.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+      ico.innerHTML = CM_ICO_GLOBE;
       const omniIn = document.createElement('input');
       omniIn.className = 'sb-cm-omni-input';
       omniIn.type = 'text';
@@ -2481,22 +2487,92 @@
           if (window.__webOpenInput) window.__webOpenInput(v);
         } else if (e.key === 'Escape') { e.preventDefault(); close(); }
       };
-      omniRow.append(ico, omniIn);
+      const x = document.createElement('button');
+      x.className = 'sb-modal-x sb-cm-omni-x';
+      x.setAttribute('aria-label', window.wsT('common.close'));
+      x.innerHTML = X_SVG16;
+      x.onclick = close;
+      omniRow.append(ico, omniIn, x);
       setTimeout(() => omniIn.focus(), 0);
+      topEl = omniRow;
+    } else {
+      topEl = modalHead(window.wsT('sidebar.newDoc'),
+        window.wsT('sidebar.createDocSub', { location: (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : '') }), close);
     }
-    const grid = document.createElement('div');
-    grid.className = 'sb-modal-grid';
-    for (const t of templates) {
+
+    // ---- 范式（对齐 ui-demo）：范式 1「类 Notion」可用；2/3 灰态占位，点选切右侧 pane ----
+    const paradigms = [
+      { id: 'notion', name: window.wsT('sidebar.paradigmNotion'), tag: window.wsT('sidebar.paradigmCurrent'), desc: window.wsT('sidebar.paradigmNotionDesc'), soon: false },
+      { id: 'p2', name: window.wsT('sidebar.paradigm2'), desc: window.wsT('sidebar.comingSoon'), soon: true },
+      { id: 'p3', name: window.wsT('sidebar.paradigm3'), desc: window.wsT('sidebar.comingSoon'), soon: true },
+    ];
+    let activeId = 'notion';
+
+    const split = document.createElement('div');
+    split.className = 'sb-cm-split';
+
+    // 左：范式轨
+    const rail = document.createElement('div');
+    rail.className = 'sb-cm-rail';
+    const railLabel = document.createElement('div');
+    railLabel.className = 'sb-cm-rail-label';
+    railLabel.textContent = window.wsT('sidebar.paradigmLabel');
+    rail.appendChild(railLabel);
+    const paraBtns = {};
+    for (const p of paradigms) {
+      const btn = document.createElement('button');
+      btn.className = 'sb-cm-para' + (p.id === activeId ? ' is-active' : '') + (p.soon ? ' is-soon' : '');
+      const pico = document.createElement('span');
+      pico.className = 'sb-cm-para-ico';
+      pico.innerHTML = p.soon ? CM_ICO_LOCK : CM_ICO_BLOCKS;
+      const ptext = document.createElement('span');
+      ptext.className = 'sb-cm-para-text';
+      const pname = document.createElement('span');
+      pname.className = 'sb-cm-para-name';
+      pname.textContent = p.name;
+      if (p.tag) {
+        const tag = document.createElement('span');
+        tag.className = 'sb-cm-para-tag';
+        tag.textContent = p.tag;
+        pname.appendChild(tag);
+      }
+      const pdesc = document.createElement('span');
+      pdesc.className = 'sb-cm-para-desc';
+      pdesc.textContent = p.desc;
+      ptext.append(pname, pdesc);
+      btn.append(pico, ptext);
+      btn.onclick = () => {
+        if (activeId === p.id) return;
+        activeId = p.id;
+        for (const id of Object.keys(paraBtns)) paraBtns[id].classList.toggle('is-active', id === activeId);
+        renderPane();
+      };
+      paraBtns[p.id] = btn;
+      rail.appendChild(btn);
+    }
+    const railFoot = document.createElement('div');
+    railFoot.className = 'sb-cm-rail-foot';
+    railFoot.textContent = window.wsT('sidebar.paradigmRailFoot');
+    rail.appendChild(railFoot);
+
+    // 右：该范式的模板（可用范式 = 卡片网格；未上线范式 = 占位）
+    const pane = document.createElement('div');
+    pane.className = 'sb-cm-pane';
+
+    function makeCard(t) {
       const card = document.createElement('button');
       card.className = 'sb-card' + (t.id === 'blank' ? ' sb-card-blank' : '');
       if (t.id !== 'blank' && t.accent) card.style.borderTopColor = t.accent; // 单 CSSOM 属性，CSP 安全
+      const cico = document.createElement('span');
+      cico.className = 'sb-card-ico';
+      cico.innerHTML = CM_ICO_FILE;
       const name = document.createElement('div');
       name.className = 'sb-card-name';
       name.textContent = t.name;
       const desc = document.createElement('div');
       desc.className = 'sb-card-desc';
       desc.textContent = t.desc || '';
-      card.append(name, desc);
+      card.append(cico, name, desc);
       card.onclick = async () => {
         close();
         // 新建文档一律默认名「未命名」（Colin 拍板：模板给内容不给名字，保存/落盘时用户再改名）。
@@ -2511,33 +2587,37 @@
         await refreshRoot(rootId);
         if (r && r.abs) openDoc(r.abs);
       };
-      grid.appendChild(card);
+      return card;
     }
-    const body = modalBody();
-    if (omniRow) {
-      body.appendChild(omniRow);
-      // 「新建文档」小节标 + 范式选择（范式 1 可用；2/3 灰态敬请期待,spec §4.5.1）
-      const secRow = document.createElement('div');
-      secRow.className = 'sb-cm-sec';
-      const secLabel = document.createElement('span');
-      secLabel.className = 'sb-cm-sec-label';
-      secLabel.textContent = window.wsT('sidebar.newDoc');
-      const p1 = document.createElement('span');
-      p1.className = 'sb-cm-para is-on';
-      p1.textContent = window.wsT('sidebar.paradigm1');
-      const p2 = document.createElement('span');
-      p2.className = 'sb-cm-para';
-      p2.textContent = window.wsT('sidebar.paradigm2');
-      p2.title = window.wsT('sidebar.comingSoon');
-      const p3 = document.createElement('span');
-      p3.className = 'sb-cm-para';
-      p3.textContent = window.wsT('sidebar.paradigm3');
-      p3.title = window.wsT('sidebar.comingSoon');
-      secRow.append(secLabel, p1, p2, p3);
-      body.appendChild(secRow);
+
+    function renderPane() {
+      pane.textContent = '';
+      const active = paradigms.find((p) => p.id === activeId) || paradigms[0];
+      if (active.soon) {
+        const soon = document.createElement('div');
+        soon.className = 'sb-cm-soon';
+        const sico = document.createElement('div');
+        sico.className = 'sb-cm-soon-ico';
+        sico.innerHTML = CM_ICO_LOCK_LG;
+        const stitle = document.createElement('div');
+        stitle.className = 'sb-cm-soon-title';
+        stitle.textContent = window.wsT('sidebar.paradigmSoon', { name: active.name });
+        const sdesc = document.createElement('div');
+        sdesc.className = 'sb-cm-soon-desc';
+        sdesc.textContent = window.wsT('sidebar.paradigmSoonDesc');
+        soon.append(sico, stitle, sdesc);
+        pane.appendChild(soon);
+        return;
+      }
+      const grid = document.createElement('div');
+      grid.className = 'sb-modal-grid sb-cm-grid';
+      for (const t of templates) grid.appendChild(makeCard(t));
+      pane.appendChild(grid);
     }
-    body.appendChild(grid);
-    modal.append(head, body);
+    renderPane();
+
+    split.append(rail, pane);
+    modal.append(topEl, split);
     overlay.appendChild(modal);
     wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);

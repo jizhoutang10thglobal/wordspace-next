@@ -117,9 +117,10 @@ test('UX2: Cmd+W 关当前标签 / Cmd+T 弹模板台（菜单 onMenu 路由）'
   // Cmd+T → 'new-tab' → __sbHooks.newTab 弹二合一新建 modal（浏览器 spec §4.5.1：地址栏 + 新建文档）
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
   await expect(page.locator('.sb-modal-overlay')).toBeVisible();
-  await expect(page.locator('.sb-modal-title')).toHaveText('新建标签页');
-  await expect(page.locator('.sb-cm-omni-input')).toBeVisible(); // 顶部地址栏行
-  await expect(page.locator('.sb-modal-grid')).toBeVisible(); // 下方仍是模板台
+  // 对齐 ui-demo：omni（Cmd+T）弹窗顶部是 Arc 式地址栏（无标题头），下面左范式轨 + 右模板 pane
+  await expect(page.locator('.sb-cm-omni-input')).toBeVisible(); // 顶部地址栏
+  await expect(page.locator('.sb-cm-rail')).toBeVisible(); // 左范式轨
+  await expect(page.locator('.sb-modal-grid')).toBeVisible(); // 右 pane 的模板台（Notion 范式默认）
 });
 
 // UX3（Wendi F5-②；2026-07-06 调整）：Cmd+F 改成文档内查找（find-in-doc），无块编辑器文档时回退聚焦

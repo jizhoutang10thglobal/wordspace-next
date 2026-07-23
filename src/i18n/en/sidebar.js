@@ -146,10 +146,16 @@ module.exports = {
   createTabSub: 'Enter a URL to go straight to the web, or create a document below (a temporary document — you choose where to save it later)',
   createDocSub: 'In {location}',
   omniPlaceholder: 'Search, or enter a URL',
-  paradigm1: 'Paradigm 1',
+  paradigmLabel: 'Paradigm',
+  paradigmNotion: 'Notion-like',
+  paradigmCurrent: 'Current',
+  paradigmNotionDesc: 'Structured block-based documents',
   paradigm2: 'Paradigm 2',
   paradigm3: 'Paradigm 3',
   comingSoon: 'Coming soon',
+  paradigmRailFoot: 'Each paradigm will have its own editing style and templates',
+  paradigmSoon: '{name} · on the way',
+  paradigmSoonDesc: 'Each paradigm is its own editing core and document structure. Once it ships, its templates will be listed here.',
 
   // ---- command palette ----
   findPlaceholder: 'Find by file name…',
