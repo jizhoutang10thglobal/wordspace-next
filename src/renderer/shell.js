@@ -1061,8 +1061,10 @@ if (docMenuBtn && docMenu) {
 }
 window.__shellOpenAiAccess = openAiAccessModal; // 侧栏页脚 AI 钮（sidebar.js）也开同一个弹窗
 
-// ---- 页面设置（分页文档 = Schema 1 可选版式）----
-// 只对「合规 html 文档 + 块编辑器已挂」开放（md 的入盘格式装不下 page 块；非合规走基础编辑不套页面概念）。
+// ---- 页面设置（= 流式 ↔ 分页文档转换入口）----
+// 分页文档 = 独立 Schema 2（2026-07-23 拆分，见 docs/features/paged-doc.md）；开关写入/移除 page 块
+// 即在 schema-1 流式 ↔ schema-2 分页 之间转换。对「合规 html + 块编辑器已挂」的两种 schema 都开放
+// （md 入盘格式装不下 page 块 → 永不给转换入口；非合规走基础编辑不套页面概念）。
 function updatePageSetupBtn() { // 惰性取元素：detachEditors 等调用点在 DOM 早期就会跑到
   const b = document.getElementById('page-setup-btn');
   if (b) b.disabled = !(blockEdit && (docPath || tempDoc) && !isMdPath(docPath || ''));
