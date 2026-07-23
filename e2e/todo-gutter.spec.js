@@ -57,7 +57,7 @@ test('每次点击恰好翻转一次（click 层不重复 toggle）', async () =
   await clickGutter('#li1');
   await expect.poll(() => frame.locator('#li1').getAttribute('data-checked')).toBe('true');
   await clickGutter('#li1');
-  await expect.poll(() => { const v = frame.locator('#li1').getAttribute('data-checked'); return v; }).toBe('false');
+  await expect.poll(() => frame.locator('#li1').getAttribute('data-checked'), { message: '取消勾选删属性、不写 "false"（U26/visual-5）' }).toBe(null);
 });
 
 test('回归：编辑该项文字时点勾选框 → 勾选翻转、光标留原位、继续打字落原处', async () => {
@@ -70,4 +70,28 @@ test('回归：编辑该项文字时点勾选框 → 勾选翻转、光标留原
   await page.keyboard.type('X');
   await expect.poll(() => frame.locator('#li1').textContent(), { message: '光标应留在末尾，X 落在末尾' }).toBe('买牛奶X');
   expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('U26：勾选→取消 → serialize 无 data-checked 属性（不写 "false"，visual-5）', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li id="li1">买牛奶</li></ul>');
+  await clickGutter('#li1');
+  await expect.poll(() => frame.locator('#li1').getAttribute('data-checked')).toBe('true');
+  await clickGutter('#li1'); // 取消
+  await expect.poll(() => frame.locator('#li1').getAttribute('data-checked')).toBe(null);
+  const html = await serialize();
+  const liChecked = await page.evaluate((h) => new DOMParser().parseFromString(h, 'text/html').querySelectorAll('li[data-checked]').length, html);
+  expect(liChecked, '存盘字节里 li 不留 data-checked 脏属性').toBe(0); // 注意别用 /data-checked/ 正则——注入的 ws-todo CSS 选择器文本本身含该串
+  expect(await conformOf(html)).toBe(true);
+});
+
+test('U26：老文档含 data-checked="false" → 渲染未勾、点一下勾上、再点属性彻底消失', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li id="li1" data-checked="false">遗留项</li></ul>');
+  // 渲染为未勾选（CSS 只认 true）
+  await clickGutter('#li1');
+  await expect.poll(() => frame.locator('#li1').getAttribute('data-checked')).toBe('true');
+  await clickGutter('#li1');
+  await expect.poll(() => frame.locator('#li1').getAttribute('data-checked'), { message: '再点 → 属性彻底消失（清洗存量脏字节）' }).toBe(null);
+  expect(await frame.locator('li[data-checked]').count(), 'li 上不留任何 data-checked').toBe(0);
 });

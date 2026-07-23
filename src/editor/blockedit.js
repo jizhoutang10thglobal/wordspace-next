@@ -1337,7 +1337,9 @@
       if (gLi) {
         e.preventDefault();
         if (undoMgr) undoMgr.checkpoint(); // U20/check-3：改 data-checked 前先冲掉 pending 打字（500ms 防抖窗口内的输入）成独立快照，否则勾选与打字并进同一快照、一次 undo 双双回滚
-        gLi.setAttribute('data-checked', gLi.getAttribute('data-checked') === 'true' ? 'false' : 'true');
+        // U26/visual-5：取消勾选删属性、不写 data-checked="false"（脏字节、diff 噪音、三态负担）。CSS/判定只认 "true"，
+        // "false" 与无属性等价 → 存量老文档下次翻转时自然清洗。
+        if (gLi.getAttribute('data-checked') === 'true') gLi.removeAttribute('data-checked'); else gLi.setAttribute('data-checked', 'true');
         if (undoMgr) undoMgr.checkpoint();
         markDirty();
         return;
