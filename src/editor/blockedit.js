@@ -2184,6 +2184,20 @@
     //   灰选中块 → 插其后；无编辑无选中 → 追加末尾。光标落最后一块末尾。
     function insertBlocksAtCaret(blocks) {
       if (!blocks.length) return;
+      // U21/clip-4：插入前对每个块（含后代）去重 id——文档中已存在同 id（同文档复制粘贴）或本批次已占用才剥，
+      // 跨文档粘贴不撞 id 则保留（护住互链锚点价值）。对齐 splitBlock 剥后块 id 的先例。
+      const seenIds = new Set();
+      for (const b of blocks) {
+        const withId = [];
+        if (b.getAttribute && b.getAttribute('id')) withId.push(b);
+        if (b.querySelectorAll) withId.push(...b.querySelectorAll('[id]'));
+        for (const el of withId) {
+          const id = el.getAttribute('id');
+          if (!id) continue;
+          if (doc.getElementById(id) || seenIds.has(id)) el.removeAttribute('id');
+          else seenIds.add(id);
+        }
+      }
       blocks.forEach(ensurePastedStyles);
       const last = blocks[blocks.length - 1];
       const frag = doc.createDocumentFragment();

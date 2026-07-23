@@ -167,3 +167,23 @@ test('跨类型粘贴不并入：ws-todo 项粘进普通 ul 不留死 data-check
   expect(await frame.locator('ul.ws-todo').count(), 'ws-todo 项应自成一块（源 + 粘贴）').toBe(2);
   expect(await conformOf(await serialize())).toBe(true);
 });
+
+test('U21：带 id 的块复制粘贴到同文档 → 第二份剥 id、无重复 id、原块 id 不动（clip-4）', async () => {
+  await launch();
+  await openDoc('<p id="a1">复制我</p><p id="p9">目标</p>');
+  await frame.locator('#a1').click();
+  await frame.locator('#a1').selectText();
+  await page.keyboard.press('ControlOrMeta+c');
+  await page.waitForTimeout(120);
+  await frame.locator('#p9').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('ControlOrMeta+v');
+  await page.waitForTimeout(200);
+  await expect.poll(() => frame.locator('p').count(), { message: '粘出一个新段落（原 2 + 粘贴 1）' }).toBe(3);
+  const idCount = await frame.locator('body').evaluate(() => document.querySelectorAll('[id="a1"]').length);
+  expect(idCount, '同 id 只此一份（原块），粘贴份已剥 id').toBe(1);
+  expect(await frame.locator('#a1').textContent(), '原块内容不动').toBe('复制我');
+  const dup = await frame.locator('body').evaluate(() => { const ids = [...document.querySelectorAll('[id]')].map((e) => e.id).filter(Boolean); return ids.length !== new Set(ids).size; });
+  expect(dup, '全文无重复 id').toBe(false);
+  expect(await conformOf(await serialize())).toBe(true);
+});
