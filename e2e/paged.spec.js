@@ -216,3 +216,52 @@ test('关分页还原：灰缝清空、page 块移除、磁盘无 @page、仍 co
   expect(raw.includes('data-ws-schema-css="page"')).toBe(false);
   expect(registry.classify(new JSDOM(raw).window.document).conform).toBe(true);
 });
+
+// PR-A 拆分核心：Schema 身份随「页面设置」转换在 schema-1(流式) ↔ schema-2(分页) 往返，内容无损。
+// 磁盘字节归类只认内容（page 块存在与否），验证转换真的改了身份、且不吞内容。
+test('身份往返：分页文档 关分页→schema-1、再开→schema-2，内容无损', async () => {
+  const dst = await openFixture('nested-list.html');
+  const diskState = async () => {
+    const raw = await fs.readFile(dst, 'utf8');
+    return { id: registry.classify(new JSDOM(raw).window.document).schemaId, hasTitle: raw.includes('深嵌套列表') };
+  };
+  // 内存态身份探针：既读 docSchemaId（PR-B/C 路由的载荷变量），又验不变式 schemaId==='schema-2' ⟺ paged。
+  // 磁盘态只能证「落盘字节变了」；内存态才能证 routeDoc/applyPageSetup 真把 docSchemaId 设对（否则它是哑变量）。
+  const memState = () => page.evaluate(() => window.__ws2DocSchema());
+  const assertInvariant = (m) => expect(m.schemaId === 'schema-2').toBe(m.paged);
+
+  let mem = await memState();
+  expect(mem.schemaId).toBe('schema-2'); // 打开分页文档 → 内存身份即 schema-2（gate routeDoc 的 docSchemaId 赋值）
+  assertInvariant(mem);
+  expect((await diskState()).id).toBe('schema-2'); // 磁盘态一致
+
+  // 关分页（页面设置取消勾选）→ 身份翻到流式
+  await page.click('#doc-menu-btn');
+  await page.click('#page-setup-btn');
+  await page.click('#pgs-on');
+  await page.waitForTimeout(400);
+  await page.click('#pgs-done');
+  mem = await memState();
+  expect(mem.schemaId).toBe('schema-1'); // 内存身份翻到流式（gate applyPageSetup 的 docSchemaId 同步）
+  assertInvariant(mem);                   // 不变式：关分页后 !paged 且 !=schema-2
+  await page.waitForTimeout(2000);        // 自动保存
+  let s = await diskState();
+  expect(s.id).toBe('schema-1');
+  expect(s.hasTitle).toBe(true);          // 内容存活
+
+  // 再开分页 → 引擎重挂 + 身份翻回分页
+  await page.click('#doc-menu-btn');
+  await page.click('#page-setup-btn');
+  await page.click('#pgs-on');
+  await page.waitForTimeout(400);
+  await page.click('#pgs-done');
+  const overlay = await frame.locator('body').evaluate((b) => b.ownerDocument.querySelectorAll('.ws-pgn-overlay').length);
+  expect(overlay).toBeGreaterThan(0);     // 分页引擎重新挂上
+  mem = await memState();
+  expect(mem.schemaId).toBe('schema-2');  // 内存身份翻回分页
+  assertInvariant(mem);
+  await page.waitForTimeout(2000);
+  s = await diskState();
+  expect(s.id).toBe('schema-2');
+  expect(s.hasTitle).toBe(true);
+});
