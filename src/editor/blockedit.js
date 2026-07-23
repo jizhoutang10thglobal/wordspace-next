@@ -789,13 +789,24 @@
         return next;
       }
       if (item.tag === 'details') {
-        // 文本→toggle（U9/R2）：源块行内内容 → summary；正文=空 <p>。容器源(callout/quote)拍平成行、列表源拍平 phrasing。
+        // 文本→toggle：源块行内内容 → summary；正文块提到 det 里。U17/create-6：列表源不再把所有项拍进 summary，
+        // 改为「首项 → summary，其余项各成一个正文 <p>」；并复制源块 id 等用户属性到 det（不走 retagElement 会丢锚点）。
         const det = doc.createElement('details'); det.setAttribute('open', '');
         const summary = doc.createElement('summary');
+        const bodyBlocks = [];
         if (containerLines) { containerLines.forEach((line, i) => { if (i > 0) summary.appendChild(doc.createElement('br')); summary.appendChild(line); }); }
-        else if (el.tagName === 'UL' || el.tagName === 'OL') { summary.appendChild(SM.flattenListToPhrasing(el)); }
+        else if (el.tagName === 'UL' || el.tagName === 'OL') {
+          [...el.querySelectorAll('li')].forEach((li, i) => {
+            const frag = doc.createDocumentFragment();
+            for (const n of [...li.childNodes]) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) continue; frag.appendChild(n.cloneNode(true)); } // 取该项行内内容（跳嵌套子列表）
+            if (i === 0) summary.appendChild(frag);
+            else { const p = doc.createElement('p'); if (frag.firstChild) p.appendChild(frag); else p.appendChild(doc.createElement('br')); bodyBlocks.push(p); }
+          });
+        }
         else { while (el.firstChild) summary.appendChild(el.firstChild); }
-        det.appendChild(summary); det.appendChild(doc.createElement('p'));
+        det.appendChild(summary);
+        if (bodyBlocks.length) bodyBlocks.forEach((b) => det.appendChild(b)); else det.appendChild(doc.createElement('p'));
+        for (const a of [...el.attributes]) { if (a.name.indexOf('data-ws2') !== 0 && a.name !== 'class') det.setAttribute(a.name, a.value); } // 复制 id 等用户属性（锚点不断），ws2 哨兵/class 不带
         el.replaceWith(det);
         ensureToggleStyle();
         if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -808,7 +819,7 @@
         const nx = fmt.retagElement(el, item.tag);
         while (nx.firstChild) nx.removeChild(nx.firstChild);
         nx.appendChild(frag);
-        if (item.cls) nx.className = item.cls; else if (nx.classList && nx.classList.contains('ws-callout')) nx.classList.remove('ws-callout');
+        if (item.cls) nx.className = item.cls; else if (nx.classList) { nx.classList.remove('ws-callout'); nx.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class（ws-callout/ws-todo），用户自定义 class 保留
         ensureBlockStyle(item.cls);
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return nx;
@@ -820,7 +831,7 @@
         while (next.firstChild) next.removeChild(next.firstChild);
         containerLines.forEach((line, i) => { if (i > 0) next.appendChild(doc.createElement('br')); next.appendChild(line); });
       }
-      if (item.cls) next.className = item.cls; else if (next.classList && next.classList.contains('ws-callout')) next.classList.remove('ws-callout');
+      if (item.cls) next.className = item.cls; else if (next.classList) { next.classList.remove('ws-callout'); next.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class，用户自定义 class 保留
       ensureBlockStyle(item.cls);
       if (undoMgr) undoMgr.checkpoint(); markDirty();
       return next;

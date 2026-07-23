@@ -141,3 +141,25 @@ test('U10 对抗审查：空行内元素夹在 <br> 间转 todo → 无零高死
   expect(Math.min(...heights), '含空行内元素的 li 也不许零高（padLi 补 br）').toBeGreaterThan(0);
   expect(await conformOf10(await serialize10())).toBe(true);
 });
+
+test('U16：todo 转文本不残留 ws-todo class、用户自定义 class 保留（create-5）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>' + TODO_HEAD + '</head><body><ul id="lst" class="ws-todo custom-x"><li>项</li></ul></body></html>');
+  await convertTo('#lst', 'text');
+  const cls = await frame.locator('p').first().getAttribute('class');
+  expect(cls || '', 'ws-todo 剥掉').not.toContain('ws-todo');
+  expect(cls || '', '用户自定义 class 保留').toContain('custom-x');
+  expect(await conformOf10(await serialize10())).toBe(true);
+});
+
+test('U17：todo 转 toggle 保 id + 首项进 summary、其余项各成正文 p（create-6）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>' + TODO_HEAD + '</head><body><ul id="anchor1" class="ws-todo"><li>甲</li><li>乙</li><li>丙</li></ul></body></html>');
+  await convertTo('#anchor1', 'toggle');
+  await expect.poll(() => frame.locator('details').count()).toBe(1);
+  const det = await frame.locator('details').first().evaluate((d) => ({ id: d.id, summary: d.querySelector('summary').textContent.trim(), bodyPs: [...d.querySelectorAll(':scope > p')].map((p) => p.textContent.trim()) }));
+  expect(det.id, 'toggle 保留源 id（锚点不断）').toBe('anchor1');
+  expect(det.summary, '首项进 summary').toBe('甲');
+  expect(det.bodyPs, '其余项各成正文 p').toEqual(['乙', '丙']);
+  expect(await conformOf10(await serialize10())).toBe(true);
+});
