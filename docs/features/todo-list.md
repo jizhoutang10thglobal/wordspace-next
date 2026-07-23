@@ -28,7 +28,17 @@
 
 **勾选视觉不污染子项。** 勾选父项不划穿/不变灰未勾的嵌套子项——含子列表的勾选项只变灰不划线（避免 CSS 装饰传播），叶子勾选项照常灰+划线（check-2，PR-C 已修）。
 
-**（待 PR-D~E 移入契约）** markdown 快捷覆盖扩展；勾选热区几何、对比度、深色 emoji；块级粘贴 id 去重；外部「- [ ] 」纯文本转换。
+**markdown 快捷覆盖扩展。** 空正文块（或块首前缀）打 marker+空格转换，覆盖：`[x] `/`[X] ` → 首项已勾待办；块首 marker+空格 + 后面已有文字 → 转换且保留后缀文字（前缀触发）；非 1 起始序号 `3. ` → `ol[start=3]`。转换**只在敲下补全 marker 的那个空格**这一击发生（绑 `insertText`+space）——删字到 caret 恰停 marker 末（如「- x」删 x 剩「- 」）走 `deleteContentBackward`，绝不误转成列表（create-7，PR-D 已修）。
+
+**空项 Enter 脱离列表。** 顶层空项（不止末项，中间/首位同样）Enter → 脱离列表：删空项、按位置劈 `ul`（首位段落插列表前 / 中间后继项移到新同类列表、段落夹中间），光标落空段落。源空项的 `id`/`data-checked` 不迁移到脱列段落（段落带 `data-checked` 即非合规）（keys-7，PR-D 已修）。
+
+**Tab 缩进保光标。** Tab 缩进列表项后光标保留在项内原位、不甩到项末（缩进重挂 DOM 后按记录的 anchorNode/offset 还原，失效才回退项末）（keys-8，PR-D 已修）。
+
+**勾选与打字各自成步。** 打字后立刻点勾选框：`data-checked` 翻转前先 `checkpoint` 把 pending 打字冲成独立快照，一次 undo 只回退勾选、打字仍在（check-3，PR-D 已修）。
+
+**转换保锚点 / 不塌缩。** todo「转为」文本：产物剥掉遗留的 `ws-todo`/`ws-callout` 语义 class，用户自定义 class 保留（create-5，PR-D 已修）；todo「转为」toggle：保留源块 `id`（doc-linking 锚点不断）、首项行内进 `<summary>`、其余项各成一个正文 `<p>`（create-6，PR-D 已修）。
+
+**（待 PR-E 移入契约）** 勾选热区几何、对比度、深色 emoji；块级粘贴 id 去重；外部「- [ ] 」纯文本转换。
 
 ## 文件映射
 
