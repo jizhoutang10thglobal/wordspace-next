@@ -1,8 +1,30 @@
 # 分页文档（paged doc）—— 对齐 spec
 
-产品口径（Colin 2026-07-08 拍板，Wendi 确认）：分页**不是**独立 Schema，是 Schema 1 文档的可选
-版式设置。真 app 入盘 = head 的 `<style data-ws-schema-css="page">` 装标准 `@page{size;margin}`
-（本就在 Schema 1 head 白名单内），带且可解析 → 分页视图/分页导出；写坏了只是分页不生效，不降级。
+**产品口径（Colin 2026-07-23 拍板，覆盖 2026-07-08 旧口径）：分页文档 = 独立 Schema 2「分页文档」**
+（Word 向，后续承载页眉/页脚/纸张等强分页功能）；Schema 1 =「流式文档」（类 Notion，不分页）。
+这**反转**了 2026-07-08 的「分页 = Schema 1 可选版式」定案（回到最初的 Schema 2 构想）。拆分计划见
+`docs/plans/2026-07-23-001-refactor-schema-2-paged-split-plan.md`，分 PR-A..E 落地；**V4 分页引擎与页面
+设置实现全部保留，只动身份/路由层**。
+
+真 app 入盘不变 = head 的 `<style data-ws-schema-css="page">` 装标准 `@page{size;margin}`（在 Schema head
+白名单内）。**归类只认内容**（不看 `<meta wordspace-schema>` 自称，校验器三铁律①）：
+
+| 磁盘文档 | 归类 | 行为 |
+|---|---|---|
+| 结构合规 + head 首个 page 块可解析 | **schema-2** | 完整块编辑 + V4 分页引擎 |
+| 结构合规 + 无 page 块 | schema-1 | 完整块编辑，流式 |
+| 结构合规 + page 块写坏/多余块 | schema-1（宽容回退） | 流式打开，分页不生效，**不降级不惩罚** |
+| 结构不合规 | null | 基础编辑降级 |
+
+身份收口在 `src/lib/schema-registry.js`（descriptor 注册表，schema-2 注册在 schema-1 兜底之前 = 归类
+优先级）+ 被动 descriptor `src/lib/schema-2-paged.js`（detect: head 有 page 块；validate: 结构合规 +
+首个 page 块 parsePageCss 非 null）。`shell.js` 的 `routeDoc` 走 `classify()` 得 `docSchemaId`。
+**转换 = 内容变更**：页面设置开关写入/移除 page 块即在 schema-1 ↔ schema-2 间转换（开关的 UI 语义
+显性化 + 新建 modal 范式 2 解灰在 PR-B；页眉/页脚在 PR-C；ui-demo 同步在 PR-D）。
+
+> PR-A（已落）= 上表的身份/归类机制 + `routeDoc` 走 `docSchemaId`；分页的**用户可感知行为完全不变**
+> （每页一张纸/页界留白/导出分页/可导 md 全保留）。下面的行为契约描述现有分页行为，随 PR-B/C 增补
+> 范式轨、转换文案、页眉页脚三节。
 
 ## 行为契约
 
