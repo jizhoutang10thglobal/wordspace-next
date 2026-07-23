@@ -2288,6 +2288,35 @@
       }
       // 实在无块可放（无光标）/ summary（放不下块，多行会劈出第二个 summary → 非合规）→ 只能合成单行。U13。
       if (!editingEl || editingEl.tagName === 'SUMMARY') { doc.execCommand('insertText', false, lines.join(' ')); return; }
+      // U22/clip-5：外部纯文本多行**全部非空行**都匹配「- [ ] / - [x] 」→ 识别成 todo（只认纯文本模式、不引入外部富 HTML，
+      // 不违反 ED-A4）。任一行不匹配 → 整段回落既有纯文本粘贴（不做混合解析）。目标是**普通** bullet/numbered 列表则维持字面（本轮不扩）。
+      {
+        const TODO_LINE = /^- \[( |x|X)\] (.*)$/;
+        const nonEmpty = lines.filter((l) => l.trim() !== '');
+        if (nonEmpty.length && nonEmpty.every((l) => TODO_LINE.test(l))) {
+          const isList = classify(editingEl) === 'list';
+          const isTodo = isList && editingEl.classList.contains('ws-todo');
+          if (!isList || isTodo) {
+            const items = nonEmpty.map((l) => { const m = l.match(TODO_LINE); return { checked: /[xX]/.test(m[1]), text: m[2] }; });
+            const mkLi = (it) => { const li = doc.createElement('li'); if (it.text) li.textContent = it.text; if (it.checked) li.setAttribute('data-checked', 'true'); if (!li.firstChild) li.appendChild(doc.createElement('br')); return li; };
+            if (isTodo) { // 目标 todo 列表：逐行建 li 追加到当前 li 之后，仍单个 ul
+              const s1 = doc.getSelection();
+              const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
+              let li = n1 && n1.closest ? n1.closest('li') : null;
+              if (li && editingEl.contains(li)) {
+                for (const it of items) { const nli = mkLi(it); li.after(nli); li = nli; }
+                const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); s1.removeAllRanges(); s1.addRange(r);
+                ensureTodoStyle(); if (undoMgr) undoMgr.checkpoint(); markDirty(); return;
+              }
+            }
+            const ul = doc.createElement('ul'); ul.className = 'ws-todo'; // 非列表目标：构造 ws-todo 块插入
+            items.forEach((it) => ul.appendChild(mkLi(it)));
+            ensureTodoStyle();
+            insertBlocksAtCaret([ul]);
+            if (undoMgr) undoMgr.checkpoint(); markDirty(); return;
+          }
+        }
+      }
       // bug2 列表：每行一个新 <li>（同一 ul 内、继承 li 类型），绝不建新 <ul>、绝不丢行。
       // （通用 splitBlock 按 editingEl.tagName=UL 建块 → 会造出新 <ul> 且后续行灌进空 ul 丢失，multi-bullet 并成一行。）
       if (classify(editingEl) === 'list') {
