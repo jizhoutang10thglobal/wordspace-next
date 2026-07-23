@@ -789,13 +789,25 @@
         return next;
       }
       if (item.tag === 'details') {
-        // 文本→toggle（U9/R2）：源块行内内容 → summary；正文=空 <p>。容器源(callout/quote)拍平成行、列表源拍平 phrasing。
+        // 文本→toggle：源块行内内容 → summary；正文块提到 det 里。U17/create-6：列表源不再把所有项拍进 summary，
+        // 改为「首项 → summary，其余项各成一个正文 <p>」；并复制源块 id 等用户属性到 det（不走 retagElement 会丢锚点）。
         const det = doc.createElement('details'); det.setAttribute('open', '');
         const summary = doc.createElement('summary');
+        const bodyBlocks = [];
         if (containerLines) { containerLines.forEach((line, i) => { if (i > 0) summary.appendChild(doc.createElement('br')); summary.appendChild(line); }); }
-        else if (el.tagName === 'UL' || el.tagName === 'OL') { summary.appendChild(SM.flattenListToPhrasing(el)); }
+        else if (el.tagName === 'UL' || el.tagName === 'OL') {
+          [...el.querySelectorAll('li')].forEach((li, i) => {
+            const frag = doc.createDocumentFragment();
+            for (const n of [...li.childNodes]) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) continue; frag.appendChild(n.cloneNode(true)); } // 取该项行内内容（跳嵌套子列表）
+            if (i === 0) summary.appendChild(frag);
+            else { const p = doc.createElement('p'); if (frag.firstChild) p.appendChild(frag); else p.appendChild(doc.createElement('br')); bodyBlocks.push(p); }
+          });
+        }
         else { while (el.firstChild) summary.appendChild(el.firstChild); }
-        det.appendChild(summary); det.appendChild(doc.createElement('p'));
+        if (!summary.firstChild) summary.appendChild(doc.createElement('br')); // U17 对抗审查：首项行内为空（仅嵌套子列表 / 空 li）→ 补 <br>，避免不可见空标题
+        det.appendChild(summary);
+        if (bodyBlocks.length) bodyBlocks.forEach((b) => det.appendChild(b)); else det.appendChild(doc.createElement('p'));
+        if (el.tagName === 'UL' || el.tagName === 'OL') { for (const a of [...el.attributes]) { if (a.name.indexOf('data-ws2') !== 0 && a.name !== 'class') det.setAttribute(a.name, a.value); } } // U17/create-6：仅**列表源**复制 id 等用户属性（锚点不断）；段落→toggle 维持既有「不迁移 id」行为（toggle.spec.js U9），ws2 哨兵/class 不带
         el.replaceWith(det);
         ensureToggleStyle();
         if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -808,7 +820,7 @@
         const nx = fmt.retagElement(el, item.tag);
         while (nx.firstChild) nx.removeChild(nx.firstChild);
         nx.appendChild(frag);
-        if (item.cls) nx.className = item.cls; else if (nx.classList && nx.classList.contains('ws-callout')) nx.classList.remove('ws-callout');
+        if (item.cls) nx.className = item.cls; else if (nx.classList) { nx.classList.remove('ws-callout'); nx.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class（ws-callout/ws-todo），用户自定义 class 保留
         ensureBlockStyle(item.cls);
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return nx;
@@ -820,7 +832,7 @@
         while (next.firstChild) next.removeChild(next.firstChild);
         containerLines.forEach((line, i) => { if (i > 0) next.appendChild(doc.createElement('br')); next.appendChild(line); });
       }
-      if (item.cls) next.className = item.cls; else if (next.classList && next.classList.contains('ws-callout')) next.classList.remove('ws-callout');
+      if (item.cls) next.className = item.cls; else if (next.classList) { next.classList.remove('ws-callout'); next.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class，用户自定义 class 保留
       ensureBlockStyle(item.cls);
       if (undoMgr) undoMgr.checkpoint(); markDirty();
       return next;
@@ -1324,6 +1336,7 @@
       const gLi = todoGutterHit(e);
       if (gLi) {
         e.preventDefault();
+        if (undoMgr) undoMgr.checkpoint(); // U20/check-3：改 data-checked 前先冲掉 pending 打字（500ms 防抖窗口内的输入）成独立快照，否则勾选与打字并进同一快照、一次 undo 双双回滚
         gLi.setAttribute('data-checked', gLi.getAttribute('data-checked') === 'true' ? 'false' : 'true');
         if (undoMgr) undoMgr.checkpoint();
         markDirty();
@@ -1551,6 +1564,27 @@
               caretAtLiTextEnd(li); // 空项无子列表 → 光标落其内，打字正常
               return;
             }
+            // U15/keys-7：顶层空项且**有后继**（中间/首项）→ 脱离列表：删空项、按位置劈 ul、插空段落、光标进段落。
+            // 原来只认末项（!nextElementSibling），中间空项落 native 无限堆空项、双回车退出只对末项生效。
+            if (li.nextElementSibling) {
+              e.preventDefault();
+              const ul = editingEl;
+              const prev = li.previousElementSibling;
+              const next = li.nextElementSibling;
+              li.remove();
+              const p = doc.createElement('p'); p.appendChild(doc.createElement('br'));
+              if (prev) {
+                // 中间：后继项移到新同类列表，段落夹在两列表中间
+                const ul2 = doc.createElement(ul.tagName); if (ul.className) ul2.className = ul.className;
+                let n = next; while (n) { const nx = n.nextElementSibling; ul2.appendChild(n); n = nx; }
+                ul.after(p); p.after(ul2);
+              } else {
+                ul.before(p); // 首项：段落插在列表前
+              }
+              if (undoMgr) undoMgr.checkpoint(); markDirty();
+              enterEdit(p, { mode: 'start' });
+              return;
+            }
             if (!li.nextElementSibling) {
               // 顶层空末项 → 退出列表（双回车退出，既有行为）
               e.preventDefault();
@@ -1632,6 +1666,7 @@
           return;
         }
         const sel = doc.getSelection();
+        const savedNode = sel ? sel.anchorNode : null, savedOffset = sel ? sel.anchorOffset : 0; // U19/keys-8：记原光标位置，移动后恢复（不甩项末）
         const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
         const li = node && node.closest ? node.closest('li') : null;
         if (!li || !editingEl.contains(li)) return;
@@ -1659,7 +1694,10 @@
             if (undoMgr) undoMgr.checkpoint(); markDirty();
           }
         }
-        caretAtLiTextEnd(li); // Tab/Shift-Tab 后光标落 li 文字末尾（在其子列表之前，对抗审查 P2）
+        // U19/keys-8：恢复原光标位置（anchorNode 随 li 一起移动、引用不失效）；失效才回退 li 文字末尾。
+        if (savedNode && savedNode.isConnected && li.contains(savedNode)) {
+          try { const max = savedNode.nodeType === 3 ? savedNode.length : savedNode.childNodes.length; const r = doc.createRange(); r.setStart(savedNode, Math.min(savedOffset, max)); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) { caretAtLiTextEnd(li); }
+        } else { caretAtLiTextEnd(li); }
         return;
       }
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）
@@ -1955,8 +1993,8 @@
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
     }
 
-    function onInput() {
-      markDirty(); tryMarkdown();
+    function onInput(e) {
+      markDirty(); tryMarkdown(e);
       const M = mentionApi();
       if (M && M.isOpen()) { M.syncFromDom(); return; } // 菜单开着：从 DOM 真相重算 query（捕获任何输入法），别再触发新菜单
       maybeMentionTrigger();
@@ -1969,21 +2007,40 @@
     }
     // 行首 markdown：正文块里输入「marker + 空格」→ 转成对应块、清掉 marker。app 改真实 DOM、
     // 存盘读 live DOM，故可原地 turnInto（不像 ui-demo 受控编辑会被 blur 回写打架）。
-    function tryMarkdown() {
+    function tryMarkdown(e) {
       if (!editingEl || classify(editingEl) !== 'text') return; // 只在正文块（p）触发
-      const m = (editingEl.textContent || '').match(/^(#{1,4}|[-*]|1\.|\[\s?\]|>)[\s ]$/);
+      const _txt = editingEl.textContent || '';
+      const m = _txt.match(/^(#{1,4}|[-*]|\d+\.|\[[ xX]?\]|>)[\s ]/);
       if (!m) return;
+      const whole = _txt.length === m[0].length; // 整块只有 marker+空格（决定清空 vs 保留后缀）
+      // U18/create-7：无论整块还是前缀触发，都只在「刚敲下补全 marker 的那个空格」这一击转换——
+      // 绑 inputType，否则「删字后 caret 恰停 marker 末（如『- x』删 x 剩『- 』）」会把段落误转成列表（Notion 只在敲空格那击转）。
+      if (!(e && e.inputType === 'insertText' && e.data === ' ')) return;
+      // U18 对抗审查（两名 reviewer 独立复现）：inputType 门只证明「敲了空格」，不证明「空格紧邻 marker」。
+      // 还须 marker 落在块首文本节点、且 caret 恰停 marker 末——否则：
+      // ① 既有段落（磁盘/粘贴的「- 文本」）在任意位置敲空格会被误转、并吞掉 marker；
+      // ② 内容裹在行内元素里（<b>…</b>）时 marker 被打进 <b>、firstChild 非文本节点，
+      //    下面 else 分支的 innerHTML='' 会清空整块丢内容。这条守卫两者都堵。
+      const first0 = editingEl.firstChild;
+      const sel0 = doc.getSelection();
+      if (!(first0 && first0.nodeType === 3 && sel0 && sel0.anchorNode === first0 && sel0.anchorOffset === m[0].length)) return;
       const t = m[1];
       const key = t[0] === '#' ? ['h1', 'h2', 'h3', 'h4'][t.length - 1]
         : (t === '-' || t === '*') ? 'list'
-        : t === '1.' ? 'numbered'
+        : /^\d+\.$/.test(t) ? 'numbered'
         : t[0] === '[' ? 'todo'
         : t === '>' ? 'quote' : null;
       if (!key) return;
       const item = SLASH_ITEMS.find((x) => x.key === key);
       if (!item) return;
-      editingEl.innerHTML = ''; // 清掉 marker
-      enterEdit(turnInto(editingEl, item), { mode: 'start' });
+      const checked = /^\[[xX]\]$/.test(t); // [x]/[X] → 首项勾选
+      const startN = key === 'numbered' ? parseInt(t, 10) : 1;
+      if (whole) { editingEl.innerHTML = ''; } // 清 marker（整块仅 marker+空格）
+      else { first0.textContent = first0.textContent.slice(m[0].length); } // 前缀：guard 已保证 first0 是块首文本节点，只删其 marker+空格、保留其余（含后续行内元素）
+      const conv = turnInto(editingEl, item);
+      if (checked) { const li = conv.querySelector('li'); if (li) li.setAttribute('data-checked', 'true'); }
+      if (key === 'numbered' && startN > 1 && conv.tagName === 'OL') conv.setAttribute('start', String(startN)); // 非 1 起始序号（校验器不拦 ol[start]）
+      enterEdit(conv, { mode: whole ? 'start' : 'end' });
     }
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
     function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮
