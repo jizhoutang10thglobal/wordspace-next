@@ -1324,6 +1324,7 @@
       const gLi = todoGutterHit(e);
       if (gLi) {
         e.preventDefault();
+        if (undoMgr) undoMgr.checkpoint(); // U20/check-3：改 data-checked 前先冲掉 pending 打字（500ms 防抖窗口内的输入）成独立快照，否则勾选与打字并进同一快照、一次 undo 双双回滚
         gLi.setAttribute('data-checked', gLi.getAttribute('data-checked') === 'true' ? 'false' : 'true');
         if (undoMgr) undoMgr.checkpoint();
         markDirty();
