@@ -232,3 +232,17 @@ test('U22：粘进已有 todo 列表 → 追加 3 项、勾选按 marker（clip-
   expect(await frame.locator('ul.ws-todo').count(), '仍是单个 ul（不劈）').toBe(1);
   expect(await conformOf(await serialize())).toBe(true);
 });
+
+test('U22 对抗审查：粘进只含一个空项的新 todo 列表 → 空项被填、不留空 checkbox 行（clip-5）', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li id="e1"><br></li></ul>'); // 刚建的 todo：一个空项，光标在其内
+  await frame.locator('#e1').click();
+  await setClipboardText('- [ ] 甲\n- [x] 乙\n- [ ] 丙');
+  await page.keyboard.press('ControlOrMeta+v');
+  await page.waitForTimeout(200);
+  await expect.poll(() => frame.locator('#lst > li').count(), { message: '空项被首个 item 填入、不留空行（3 项非 4 项）' }).toBe(3);
+  expect(await frame.locator('#lst > li').allTextContents()).toEqual(['甲', '乙', '丙']);
+  const checked = await frame.locator('#lst > li').evaluateAll((lis) => lis.map((li) => li.getAttribute('data-checked')));
+  expect(checked).toEqual([null, 'true', null]);
+  expect(await conformOf(await serialize())).toBe(true);
+});

@@ -919,7 +919,11 @@
       // U23/select-4：选区端点部分跨 details 边界（一端在 toggle 体内、另一端在外，或分属不同 toggle）→ 一致化为
       // 空操作 + 反馈，绝不半删（旧行为：删 toggle 外那侧、体内被下面 P2 clamp 夹住不删 = 半应用，与选区高亮承诺不符）。
       // toggle 被选区整体包含（两端都在其外、detOf 皆 null 且相等）→ 不拦，维持现状可整删（防回归）。
-      const detOf = (n) => { const e = n && (n.nodeType === 3 ? n.parentElement : n); return e && e.closest ? e.closest('details') : null; };
+      // 对抗审查：端点**锚在 details 元素本身**（selectWholeDoc 把 ⌘A 端点锚在首/末块元素上，:444-445）时，
+      // 该 details 是整体在选区一侧、不是「部分进入体内」——若 detOf 用 closest('details') 会把它自己算进去、
+      // 与另一端（段落=null）不等 → 误判成部分跨界、把「⌘A 全选删」在首/末为 toggle 的文档里整个吞成空操作（HIGH 回归）。
+      // 故：端点是 DETAILS 元素本身 → 取其**外层** details（嵌套时）或 null，绝不算它自己。
+      const detOf = (n) => { let e = n && (n.nodeType === 3 ? n.parentElement : n); if (!e || !e.closest) return null; if (e.tagName === 'DETAILS') return e.parentElement && e.parentElement.closest ? e.parentElement.closest('details') : null; return e.closest('details'); };
       if (detOf(r.startContainer) !== detOf(r.endContainer)) { flashNope(); return true; }
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (!sBlk || !eBlk) return false; // 选区落在块外/覆盖层 → 不碰
@@ -2326,7 +2330,17 @@
               const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
               let li = n1 && n1.closest ? n1.closest('li') : null;
               if (li && editingEl.contains(li)) {
-                for (const it of items) { const nli = mkLi(it); li.after(nli); li = nli; }
+                // 对抗审查：目标 li 为空（刚建的 todo 就一个空项）→ 首个 item 就地填入、不留空 checkbox 行
+                // （对齐 insertBlocksAtCaret「空块整块替换、不留空行」原则）；非空则全部追加到其后（既有行为）。
+                let idx = 0;
+                if (!(li.textContent || '').trim() && !li.querySelector('img,figure,hr,input')) {
+                  while (li.firstChild) li.removeChild(li.firstChild);
+                  if (items[0].text) li.appendChild(doc.createTextNode(items[0].text));
+                  if (items[0].checked) li.setAttribute('data-checked', 'true'); else li.removeAttribute('data-checked');
+                  if (!li.firstChild) li.appendChild(doc.createElement('br'));
+                  idx = 1;
+                }
+                for (let k = idx; k < items.length; k++) { const nli = mkLi(items[k]); li.after(nli); li = nli; }
                 const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); s1.removeAllRanges(); s1.addRange(r);
                 ensureTodoStyle(); if (undoMgr) undoMgr.checkpoint(); markDirty(); return;
               }

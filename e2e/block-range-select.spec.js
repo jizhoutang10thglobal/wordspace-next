@@ -125,3 +125,40 @@ test('U23 回归：选区整体罩住 toggle → 删除成功（不被 no-op 误
   expect(await frame.locator('details').count(), '整体包含的 toggle 应被删掉').toBe(0);
   expect(await conform23(await serialize23())).toBe(true);
 });
+
+// 对抗审查（PR-E delete reviewer）：detOf 用 closest('details') 把「端点锚在 details 元素本身」（⌘A 全选把端点
+// 锚在首/末块上）误算成部分跨界 → 文档首/末是 toggle 时「⌘A 全选删」整个吞成空操作（HIGH 回归）。
+test('U23 对抗审查：文档首块是 toggle，⌘A 全选删仍清空（detOf 不把 details 自身算进去）', async () => {
+  await openDoc('<details open><summary>标题S</summary><p>体内容</p></details><p id="p2">段落BBBB</p><p id="p3">段落CCCC</p>');
+  await frame.locator('#p2').click();
+  await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.press('ControlOrMeta+a'); // 双 ⌘A = 全篇
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(200);
+  const blocks = await readBlocks();
+  const nonUi = blocks.filter((b) => b.t !== '');
+  expect(nonUi.length, '全选删应清空（首块 toggle 不该让删除变空操作）').toBe(0);
+  expect(await conform23(await serialize23())).toBe(true);
+});
+
+test('U23 对抗审查：文档末块是 toggle，⌘A 全选删仍清空', async () => {
+  await openDoc('<p id="p1">段落AAAA</p><p id="p2">段落BBBB</p><details open><summary>末T</summary><p>末体</p></details>');
+  await frame.locator('#p1').click();
+  await page.keyboard.press('ControlOrMeta+a'); await page.keyboard.press('ControlOrMeta+a');
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(200);
+  expect((await readBlocks()).filter((b) => b.t !== '').length, '末块 toggle 时全选退格也清空').toBe(0);
+  expect(await conform23(await serialize23())).toBe(true);
+});
+
+test('U23 对抗审查：no-op 反馈标记 data-ws2-nope 不漏进存盘字节（serialize 白名单）', async () => {
+  await openDoc('<p id="pre">前段</p><ul class="ws-todo"><li id="t1">待办甲</li></ul><details open><summary id="sm">标题</summary><p id="bd">体内容</p></details>');
+  await frame.locator('#t1').click();
+  await selectAcross('#t1', '#bd'); // 部分跨 toggle → 触发 no-op + flashNope
+  await page.waitForTimeout(250);
+  await page.keyboard.press('Delete');
+  await expect.poll(() => frame.locator('[data-ws2-nope]').count(), { timeout: 700, intervals: [20, 30, 50] }).toBeGreaterThan(0); // 标记确实挂上了
+  const html = await serialize23(); // 挂着标记时序列化
+  expect(/data-ws2-nope/.test(html), '存盘字节绝不含 data-ws2-nope 交互标记').toBe(false);
+});
