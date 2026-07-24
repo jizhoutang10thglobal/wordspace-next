@@ -529,7 +529,12 @@ function BlockRow({
         `${editing ? ' ws-block-editing' : ''}` +
         `${dropEdge ? ` ws-block-drop-${dropEdge}` : ''}`
       }
-      style={block.indent ? { marginInlineStart: `${block.indent * 1.6}em` } : undefined}
+      style={
+        block.indent
+          ? // 用 transform 位移而非 margin：不改块宽度 → 不触发文字重排 → 下方块不跳动（去抖动，Colin 反馈）
+            { transform: `translateX(${block.indent * 1.6}em)` }
+          : undefined
+      }
       onClick={(e) => {
         e.stopPropagation()
         if (canEdit) onEdit(block.id, e.clientX, e.clientY)
