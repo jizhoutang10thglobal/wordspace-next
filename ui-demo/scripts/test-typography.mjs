@@ -83,5 +83,22 @@ eq(T.zihaoIdToPt('nope'), null, 'zihaoIdToPt(未知)=null')
   eq(gb.type.body.sizePt, 16, '国标正文三号 16pt')
 }
 
+// --- ptToPx + buildTypographyCss（U3 scoped CSS 生成，纯逻辑）---
+ok(Math.abs(T.ptToPx(16) - 21.333) < 0.01, 'ptToPx(16)≈21.33')
+{
+  const css = T.buildTypographyCss(T.getPreset('gb9704').type)
+  ok(css.includes('.ws-doc-paged .ws-p'), 'CSS 用 .ws-doc-paged .ws-p 类级选择器（盖过 base）')
+  ok(css.includes(`font-size:${T.ptToPx(16)}px`), '国标 CSS 字号 16pt→px')
+  ok(css.includes(`line-height:${T.ptToPx(29)}px`), '国标 CSS 固定行距 29pt→px')
+  ok(css.includes('text-indent:2em'), '国标 CSS 首行缩进 2em')
+  ok(css.includes('text-align:justify'), '国标 CSS 两端对齐')
+  ok(/font-family:[^;]*FangSong/.test(css), 'CSS font-family 含仿宋栈')
+}
+{
+  const css = T.buildTypographyCss(T.getPreset('apa').type)
+  ok(css.includes('line-height:2'), 'APA CSS 双倍行距（倍数模式）')
+  ok(css.includes('text-align:left'), 'APA CSS 左对齐')
+}
+
 if (fail) { console.log(`\n${fail} FAILED`); process.exit(1) }
 console.log('typography: all passed')
