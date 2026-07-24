@@ -9,11 +9,14 @@ module.exports = {
   discardClose: '放弃修改并关闭',
   unsavedMessage: '文档有未保存的修改',
   unsavedDetail: '关闭后未保存的修改将丢失。',
-  // 更新免密一次性修复对话框(main.js maybeRepairBundleOwnership，仅 mac)
-  repairAndInstall: '修复并继续安装',
-  skipRepair: '跳过（本次仍需输密码）',
-  repairTitle: '一次性修复：以后更新不再要密码',
-  repairDetail: '此前某次更新以管理员身份完成，应用文件被标成了系统所有——这就是每次更新都要输密码的原因。现在授权修复一次（把应用归属改回你），以后更新就不再需要密码。',
+  // 更新安装授权说明对话框(main.js maybeExplainInstallAuth，仅 mac)。
+  // 应用内 chown 修复已被 macOS App Management(TCC)证死——root 执行都被拦(2026-07-17 实锤)，
+  // 故只说明白 + 给「官网重装」直达（拖入替换一次即可永久免密）。
+  updateAuthTitle: '本次安装需要系统授权',
+  updateAuthDetail: '这台 Mac 上的应用文件归属于系统管理员（此前某次更新以管理员身份完成），macOS 因此每次更新都会要求授权，且系统保护使应用内无法自动修复。想以后更新永久免密：从官网重新下载一次，把 app 拖进「应用程序」替换（输一次密码即可）。',
+  updateAuthContinue: '继续安装（需授权）',
+  updateAuthReinstall: '去官网重装（以后免密）',
+  updateAuthCancel: '取消',
   // 文件/文件夹/导出对话框 title
   exportPdfTitle: '导出 PDF',
   relocateFolderTitle: '重新定位文件夹',

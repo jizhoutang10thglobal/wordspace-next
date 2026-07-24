@@ -8,7 +8,9 @@
 两条路径共用一个状态机（`idle / checking / available / downloading / ready / uptodate / error / dev`），
 面板和 pill 是同一状态的两种投影：
 
-**手动路径**（菜单「检查更新…」）：全程弹面板跟进。
+**手动路径**（菜单「检查更新…」）：全程弹面板跟进。**「跟进」只跟状态跃迁**：用户关掉面板
+（如点「后台下载」）后，同状态的推送不再自动弹回（否则 0.2s 一条的进度推送会把刚关的面板立刻
+打脸重开——Colin 2026-07-17 实踩）；状态跃迁（如 downloading→ready）才重新弹。
 - 检查中：spinner +「正在检查更新…」。
 - 发现新版：标题「发现新版本 vX.Y.Z」+ 该版 release notes 的人话段（GitHub release body 里
   `---` 分隔线以上的部分，见 docs/releasing.md 约定；markdown 归一成纯文本行，绝不 innerHTML）
@@ -60,12 +62,22 @@ window-all-closed →「点了重启,app 赖在 Dock 里、点开又是重启安
 native 关窗序列）+ `WS2_DARWIN_PERSIST_SIM`（任何平台强制驻留分支,让 Linux CI 也有牙）断言**进程真退出**，
 另有驻留语义对照门。若有未保存修改，脏守卫照常拦（弹确认，取消则本次不装、退出时自动安装兜底）。
 
-**更新免密（一次性归属修复，2026-07-16）**：bundle 一旦被提权安装写成 root 所有（Squirrel ShipIt 的
-授权兜底会造成这个，且此后自我延续），每次更新都会弹系统密码/指纹。修复：`update-install` 时检测
-bundle 根 + `Contents` 的 W_OK，不可写 → 弹一次性说明（「修复并继续安装」/「跳过」）→ 授权后
-`chown -R <uid>`（osascript with administrator privileges，命令构造在 `src/lib/mac-bundle-repair.js`，
-uid 数字校验 + shell/AppleScript 双层转义，有单测）→ 此后 ShipIt 恢复无提权替换、更新免密。
-跳过/失败不拦安装（落回 ShipIt 提权弹窗，不比现状差）；全程记 updater.log。
+**更新要密码的账（root-owned bundle，2026-07-16 定位 / 2026-07-17 修正方案）**：bundle 一旦被提权
+安装写成 root 所有（Squirrel ShipIt 的授权兜底会造成这个，且此后自我延续），每次更新 ShipIt 都要装
+提权 helper → 弹系统密码/指纹；**用户取消该授权 = Squirrel 中止安装、app 留在原地**（不是 bug，是
+授权链的必然）。⚠ **第一版「应用内 osascript+chown 修复」已证死**：macOS App Management(TCC) 连
+root 的 chown 都拦（2026-07-17 Colin 机器实锤：授权后每文件 Operation not permitted）——**任何
+「应用内改自身 bundle 归属/内容」的方案都会撞这道闸，别再试**。现行为（`maybeExplainInstallAuth`）：
+`update-install` 时判 bundle 根 + `Contents` 的**属主 uid 是不是当前用户**，非你所有 → 弹说明「本次
+安装需系统授权 / 想永久免密去官网重装一次（Finder 拖入替换，输一次密码，新 bundle 归属即当前用户，
+此后恢复无提权静默更新）」，按钮 = 继续安装（需授权）/ 去官网重装（系统浏览器开 wordspace.ai）/ 取消；
+后两者本次不装（更新保持就绪可再点）。归属健康时零打扰。全程记 updater.log。
+⚠ **判据必须是属主 uid，不能用 `fs.access(W_OK)`**（2026-07-17 Colin 拖 DMG 重装后实锤）：/Applications
+里已签名 app 的 W_OK 恒返回「不可写」（SIP/App Management 保护，连属主本人 `touch` 都被拒，与 bundle
+是否 root-owned 无关），用 W_OK 会把「归属已修好」误判成 root-owned → 每次更新都误弹授权说明。ShipIt
+免提权的真实判据是「.app 属主 == 你」（整包原子替换，不往 bundle 内写文件），故只看 `statSync().uid`。
+受影响机器的终端替代方案：`sudo chown -R "$(id -un)" "/Applications/Wordspace Next.app"`——但同受
+TCC 约束，终端需先在「隐私与安全性 → App 管理」授权，故对普通用户首选官网重装路线。
 
 **日志**：electron-updater 全部事件 + 状态迁移落 `userData/logs/updater.log`
 （`src/lib/file-log.js`，512KB 轮转、保两代）。用户报「更新没更上」先要这个文件。
@@ -79,7 +91,7 @@ electron-updater 差分三条件：新老两版 release 都有 blockmap + 本地
 | 维度 | ui-demo | 真 app |
 |---|---|---|
 | 状态机/展示模型（纯逻辑） | —— | `src/lib/update-status.js` |
-| 免密修复命令构造（纯逻辑） | —— | `src/lib/mac-bundle-repair.js` |
+| bundle 路径推导（纯逻辑，授权说明用） | —— | `src/lib/mac-bundle-repair.js` |
 | 文件日志 | —— | `src/lib/file-log.js` |
 | updater 接线 + IPC + sim seam | —— | `src/main/main.js`（setupAutoUpdater 段） |
 | 面板 + pill 渲染 | —— | `src/renderer/update-ui.js` / `.css` |

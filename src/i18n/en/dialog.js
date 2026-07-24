@@ -8,11 +8,14 @@ module.exports = {
   discardClose: 'Discard Changes and Close',
   unsavedMessage: 'The document has unsaved changes',
   unsavedDetail: 'Unsaved changes will be lost after closing.',
-  // One-time password-free update repair dialog (main.js maybeRepairBundleOwnership, macOS only)
-  repairAndInstall: 'Repair and Continue Installing',
-  skipRepair: 'Skip (you’ll still need your password this time)',
-  repairTitle: 'One-time fix: no password needed for future updates',
-  repairDetail: 'A previous update was completed as an administrator, so the app files ended up owned by the system — that’s why every update asks for your password. Authorize a one-time repair now (changing ownership back to you), and future updates won’t need a password.',
+  // Update install authorization explainer (main.js maybeExplainInstallAuth, macOS only).
+  // In-app chown repair is dead: macOS App Management (TCC) blocks it even as root (proven 2026-07-17),
+  // so we explain honestly + offer the website-reinstall route (drag-replace once = password-free forever).
+  updateAuthTitle: 'This installation requires system authorization',
+  updateAuthDetail: 'The app files on this Mac are owned by the system administrator (a previous update ran with admin rights). macOS therefore asks for authorization on every update, and system protection prevents fixing this from inside the app. To make future updates password-free: re-download from the website and drag the app into Applications to replace it (you’ll enter your password once).',
+  updateAuthContinue: 'Continue Installing (authorization required)',
+  updateAuthReinstall: 'Reinstall from Website (password-free afterwards)',
+  updateAuthCancel: 'Cancel',
   // File/folder/export dialog titles
   exportPdfTitle: 'Export PDF',
   relocateFolderTitle: 'Relocate Folder',

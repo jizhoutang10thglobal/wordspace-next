@@ -320,7 +320,7 @@ function setupAutoUpdater() {
       return;
     }
     if (!autoUpdater) return;
-    await maybeRepairBundleOwnership(); // 免密修复（一次性）：失败/跳过都不拦安装，最坏回到 ShipIt 提权老路径
+    if (!(await maybeExplainInstallAuth())) return; // 用户选了官网重装/取消：本次不装（更新仍就绪可再点）
     if (updLog) updLog.info('user chose quitAndInstall');
     beginQuitForUpdate(() => autoUpdater.quitAndInstall());
   });
@@ -331,7 +331,14 @@ function setupAutoUpdater() {
 
   if (!app.isPackaged) {
     // e2e seam（照 __ws2WebTabs 惯例，仅非打包态）：注入状态事件驱动面板/pill，动作调用只计数不真跑。
-    global.__ws2UpdateSim = { push: (evt) => pushUpdateEvent(evt), calls: { download: 0, install: 0, changelog: 0 }, payload: () => updatePayload() };
+    // authExplain(): maybeExplainInstallAuth 的直调入口（真 install handler dev 态提前 return，绕不到它）
+    // + calls.authShown 计数（弹说明分支被走到时 +1，配 WS2_BUNDLE_OWNED/WS2_AUTH_DIALOG_RESPONSE 断言）。
+    global.__ws2UpdateSim = {
+      push: (evt) => pushUpdateEvent(evt),
+      calls: { download: 0, install: 0, changelog: 0, authShown: 0 },
+      payload: () => updatePayload(),
+      authExplain: () => maybeExplainInstallAuth(),
+    };
     return;
   }
 
@@ -370,47 +377,66 @@ function manualCheckForUpdates() {
   autoUpdater.checkForUpdates().catch((e) => pushUpdateEvent({ type: 'error', message: e && e.message }));
 }
 
-// 更新免密的一次性修复（仅 mac）。病根（2026-07-16 Colin 机器实锤）：bundle 被某次提权安装写成
-// root:wheel 后，Squirrel ShipIt 每次替换都要管理员授权（密码/指纹），且提权装出的新 bundle 又是
-// root 的 → 每次更新都要密码。这里在 quitAndInstall 前检测 bundle 可写性：不可写 → 解释 + 请求授权
-// 一次，chown 回当前用户 → 此后 ShipIt 恢复无提权替换，更新免密。用户跳过/修复失败都不拦安装
-// （落回 ShipIt 自己的提权弹窗，不比现状差）。全程记 updater.log。
-async function maybeRepairBundleOwnership() {
-  if (process.platform !== 'darwin') return;
+// 更新安装授权说明（仅 mac）。历史：bundle 被某次提权安装写成 root:wheel 后，Squirrel ShipIt 每次
+// 替换都要管理员授权（密码/指纹），且提权装出的新 bundle 又是 root 的 → 每次更新都要密码。
+// ⚠ 第一版「应用内 osascript+chown 修复」已被实锤证死（2026-07-17 Colin 机器 updater.log）：
+// macOS App Management(TCC) 连 root 的 chown 都拦（每个文件 Operation not permitted）——用户白授权
+// 一次、归属纹丝不动。别再试任何「应用内改自身 bundle 归属/内容」的路子，都会撞同一道闸。
+// 现策略：装前把账算明白——「本次要授权」+「想永久免密：官网重装一次（Finder 拖入替换，
+// 输一次密码，装出来的 app 归属即当前用户，此后 ShipIt 恢复无提权静默更新）」。
+// 返回 false = 用户选了重装路线或取消，本次不调 quitAndInstall。
+async function maybeExplainInstallAuth() {
+  // WS2_BUNDLE_OWNED seam 在场 = e2e 强制驱动此逻辑（连非 mac CI 也有牙，照 WS2_DARWIN_PERSIST_SIM 先例）；
+  // 无 seam 的真实运行只在 mac 有意义（root-owned bundle 是 mac 概念），其他平台直接放行。
+  const forced = !app.isPackaged && process.env.WS2_BUNDLE_OWNED;
+  if (process.platform !== 'darwin' && !forced) return true;
   try {
     const fs = require('fs');
-    const repair = require('../lib/mac-bundle-repair');
-    const bundle = repair.bundlePathFromExe(app.getPath('exe'));
-    if (!bundle) return;
-    try {
-      // bundle 根 + Contents 都可写才算健康（ShipIt 替换要动整棵树；root:wheel 755 下两者都不可写）
-      await fs.promises.access(bundle, fs.constants.W_OK);
-      await fs.promises.access(path.join(bundle, 'Contents'), fs.constants.W_OK);
-      return;
-    } catch {}
-    if (updLog) updLog.warn('bundle not writable by current user, offering one-time ownership repair: ' + bundle);
+    const { bundlePathFromExe } = require('../lib/mac-bundle-repair');
+    const bundle = bundlePathFromExe(app.getPath('exe'));
+    if (!bundle) return true;
+    // 判据必须是「bundle 属主是不是当前用户」,不能用 fs.access(W_OK)——
+    // ⚠ 实锤（Colin 2026-07-17 拖 DMG 重装后）：/Applications 里已签名 app 的 W_OK 恒为「不可写」
+    // （SIP/App Management 保护，连属主本人 touch 都被拒），access(W_OK) 会把「归属已修好」误判成
+    // root-owned → 每次更新都误弹授权说明。ShipIt 免提权的真实判据是「.app 属主==你 且 父目录 /Applications
+    // 你能写」,和 bundle 内能否 touch 文件无关（它是整包原子替换）。故只看 uid。
+    let rootOwned = false;
+    // WS2_BUNDLE_OWNED seam（仅非打包态,照 seam 惯例）:e2e 强制归属判定,'root'=不健康 / 'self'=健康。
+    // 真机上 dev 态 bundle=node_modules/electron/dist（属主就是你）永远 healthy,门测不到「弹说明」分支。
+    if (!app.isPackaged && process.env.WS2_BUNDLE_OWNED) {
+      rootOwned = process.env.WS2_BUNDLE_OWNED === 'root';
+    } else {
+      try {
+        const st = await fs.promises.stat(bundle);
+        const stC = await fs.promises.stat(path.join(bundle, 'Contents'));
+        rootOwned = st.uid !== process.getuid() || stC.uid !== process.getuid();
+      } catch { return true; } // stat 失败（路径怪）不打扰、不拦装
+    }
+    if (!rootOwned) return true; // 归属健康（属主=你）：静默安装
+    if (updLog) updLog.warn('bundle owned by another user (root?), install needs ShipIt auth: ' + bundle);
     if (win && !win.isDestroyed() && !win.isVisible()) win.show(); // 隐藏驻留中弹 sheet 会隐形（同脏守卫的教训）
-    const r = await dialog.showMessageBox(win, {
-      type: 'info',
-      buttons: [i18n.t('dialog.repairAndInstall'), i18n.t('dialog.skipRepair')],
-      defaultId: 0,
-      cancelId: 1,
-      message: i18n.t('dialog.repairTitle'),
-      detail: i18n.t('dialog.repairDetail'),
-    });
-    if (r.response !== 0) { if (updLog) updLog.info('ownership repair skipped by user'); return; }
-    await new Promise((resolve) => {
-      const { execFile } = require('child_process');
-      execFile('osascript', repair.buildRepairArgs(process.getuid(), bundle), { timeout: 120000 }, (err, _out, stderr) => {
-        if (updLog) {
-          if (err) updLog.warn('ownership repair failed: ' + ((stderr || '').trim() || err.message)); // 用户取消授权也走这
-          else updLog.info('ownership repair succeeded: ' + bundle);
-        }
-        resolve(); // 成败都继续安装
+    if (global.__ws2UpdateSim) global.__ws2UpdateSim.calls.authShown++; // e2e：证明确实走到了「弹说明」分支
+    // WS2_AUTH_DIALOG_RESPONSE seam（非打包态）:原生对话框 e2e 点不了,注入按钮 index（0 继续/1 重装/2 取消）。
+    const r = (!app.isPackaged && process.env.WS2_AUTH_DIALOG_RESPONSE != null)
+      ? { response: Number(process.env.WS2_AUTH_DIALOG_RESPONSE) }
+      : await dialog.showMessageBox(win, {
+        type: 'info',
+        buttons: [i18n.t('dialog.updateAuthContinue'), i18n.t('dialog.updateAuthReinstall'), i18n.t('dialog.updateAuthCancel')],
+        defaultId: 0,
+        cancelId: 2,
+        message: i18n.t('dialog.updateAuthTitle'),
+        detail: i18n.t('dialog.updateAuthDetail'),
       });
-    });
+    if (r.response === 1) {
+      if (updLog) updLog.info('user chose website-reinstall route');
+      shell.openExternal('https://wordspace.ai'); // 系统浏览器：下载 DMG + Finder 拖入是浏览器外动作
+      return false;
+    }
+    if (r.response === 2) { if (updLog) updLog.info('install cancelled at auth explainer'); return false; }
+    return true;
   } catch (e) {
-    if (updLog) updLog.warn('ownership repair error: ' + (e && e.message));
+    if (updLog) updLog.warn('auth explainer error: ' + (e && e.message));
+    return true; // 说明失败不拦安装
   }
 }
 
