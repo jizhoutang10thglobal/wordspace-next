@@ -43,6 +43,9 @@ interface TypographyState {
   prune: (docId: string) => void
 }
 
+/** 无配置文档的默认——模块级常量，引用稳定（zustand 选择器返回新对象会触发重渲染循环）。 */
+const EMPTY_DOC: DocTypography = { config: DEFAULT_TYPOGRAPHY, lastPresetId: null }
+
 export const useTypography = create<TypographyState>()((set, get) => ({
   docs: loadDocs(),
   getDoc: (docId) => (docId && get().docs[docId]) || { config: DEFAULT_TYPOGRAPHY, lastPresetId: null },
@@ -106,6 +109,10 @@ export const useCustomPresets = create<CustomPresetsState>()((set, get) => ({
     }
   },
 }))
+
+/** 响应式取某文档排版配置（组件里用；默认 = 国标公文起点）。 */
+export const useDocTypography = (docId: string | undefined): DocTypography =>
+  useTypography((s) => (docId && s.docs[docId]) || EMPTY_DOC)
 
 /**
  * 套用预设（内置或自定义）：一键设 page（合并 @page 几何）+ type（排版）+ lastPresetId。
