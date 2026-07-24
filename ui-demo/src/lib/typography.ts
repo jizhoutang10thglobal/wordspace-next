@@ -54,7 +54,8 @@ export interface TypographyConfig {
 /** 具名标准预设 = 纸设置（Partial）+ 字设置。 */
 export interface Preset {
   id: string
-  nameKey: string // i18n key，渲染处 t(nameKey)
+  nameKey?: string // 内置预设：i18n key，渲染处 t(nameKey)
+  name?: string // 用户自定义预设：字面名（另存时输入），显示优先于 nameKey
   page: Partial<Pick<PageConfig, 'size' | 'orientation' | 'margin'>>
   type: TypographyConfig
 }
