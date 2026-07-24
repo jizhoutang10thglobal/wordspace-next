@@ -365,10 +365,12 @@
     // ---- 选中 / 编辑 ----
     function clearSelectedAttr() { const p = body.querySelector('[data-ws2-selected]'); if (p) p.removeAttribute('data-ws2-selected'); }
 
-    // 跨块拖选的「块级高亮」（Wendi 2026-07-22）：拖选跨多块时原生只高亮文字片段、看不清选中了哪几行。
-    // 对齐 Notion——把选区罩住的每个顶层块整行标 data-ws2-rangesel（CSS 给蓝底 + 罩住的块内隐掉原生
-    // ::selection，只剩整行蓝）。仅跨块（≥2 块）才标；单块内选区维持原生文字高亮不动。data-ws2-rangesel
-    // 进 serialize 白名单剥除（纯交互态、绝不入盘）。同 deleteSelection 那套作用域感知块枚举，保持一致。
+    // 跨块拖选的「块级高亮」（Wendi 2026-07-22 引入；Colin 2026-07-24 二轮改**精确模式**：「鼠标从哪
+    // 到哪，高亮就从哪到哪，不加不减」）——只有内容**完全被选区罩住**的行单位才整行标 data-ws2-rangesel
+    //（蓝底+隐原生 ::selection）；端点块部分选中保持原生文字高亮，不补全、不上卷。行单位 = 顶层块、
+    // toggle 的 summary 行、toggle 体内块（整个 toggle 被罩时标 details 本身）。唯一例外：端点落在
+    // table 内 → 该 table 整行蓝（部分裁剪表格必产非合规，删除只能整删=ED-A2，高亮预示之，所见即所删）。
+    // data-ws2-rangesel 进 serialize 白名单剥除（纯交互态、绝不入盘）。
     let rangeSelEls = [];
     function clearRangeSel() { if (rangeSelEls.length) { rangeSelEls.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-rangesel')); rangeSelEls = []; } }
     function refreshRangeSel() {
@@ -378,14 +380,34 @@
       const r = sel.getRangeAt(0);
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (!sBlk || !eBlk || sBlk === eBlk) return; // 单块内 → 原生文字高亮已够，不标块级
-      const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
-      const crossScope = sScope !== eScope;
-      const scopeRoot = crossScope ? blockRoot : sScope;
-      const tops = blocksInScope(scopeRoot);
-      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
-      const i = tops.indexOf(sB), j = tops.indexOf(eB);
-      if (i < 0 || j < 0 || i > j) return;
-      for (let k = i; k <= j; k++) { const m = tops[k]; if (m) { m.setAttribute('data-ws2-rangesel', ''); rangeSelEls.push(m); } }
+      const covered = (el) => {
+        // 元素内容完全 ⊆ 选区 = 块内容在选区**外**的溢出部分为空（无文字、无媒体原子）。不用
+        // compareBoundaryPoints 比端点——(p.firstChild,0) 会被判在 (p,0) 之后，「从文字头选到文字尾」
+        // 的整块选中会被误判未全罩。溢出法对空块/端点贴边全部正确（Range.setEnd 早于 start 时自动塌陷）。
+        try {
+          const br = doc.createRange(); br.selectNodeContents(el);
+          const before = br.cloneRange(); try { before.setEnd(r.startContainer, r.startOffset); } catch (x) { before.collapse(true); }
+          const after = br.cloneRange(); try { after.setStart(r.endContainer, r.endOffset); } catch (x) { after.collapse(false); }
+          const hasStuff = (rg) => rg.toString().trim() !== '' || !!rg.cloneContents().querySelector('img,figure,table,details,video,hr');
+          return !hasStuff(before) && !hasStuff(after);
+        } catch (x) { return false; }
+      };
+      const mark = (m) => { m.setAttribute('data-ws2-rangesel', ''); rangeSelEls.push(m); };
+      const walk = (root) => {
+        for (const b of blocksInScope(root)) {
+          if (!r.intersectsNode || !r.intersectsNode(b)) continue; // 选区外的块直接跳（intersectsNode 现代 Chromium 恒有）
+          if (b.tagName === 'DETAILS') {
+            if (covered(b)) { mark(b); continue; }        // 整个 toggle 被罩 → details 整行蓝
+            const sm = summaryOf(b);
+            if (sm && covered(sm)) mark(sm);              // summary 行被罩 → 整行蓝（预示解散）
+            walk(b);                                      // 体内行各自判（不上卷）
+            continue;
+          }
+          if (covered(b)) { mark(b); continue; }
+          if (b.tagName === 'TABLE') mark(b);             // 端点在表格内 → 整行蓝预示整删（ED-A2）
+        }
+      };
+      walk(blockRoot);
     }
 
     function selectBlock(el) {
@@ -965,11 +987,12 @@
         const eBlk0 = blockOf(r.endContainer);
         const ei = bodyBlocks.indexOf(eBlk0);
         if (ei < 0) return false; // 防御：end 不在体内顶层块（理论不可达）→ 不碰
-        let covered = false; // 全覆盖 = summary 起点前无文字 && end 在末块且终点后无内容（文字/媒体块都算内容）
+        let covered = false, preEmpty = false; // preEmpty = summary 起点前无文字（summary 整行被罩）
         try {
           const preR = doc.createRange(); preR.setStart(sum, 0); preR.setEnd(r.startContainer, r.startOffset);
           const postR = doc.createRange(); postR.setStart(r.endContainer, r.endOffset); postR.setEnd(eBlk0, eBlk0.childNodes.length);
-          covered = preR.toString().trim() === '' && ei === bodyBlocks.length - 1
+          preEmpty = preR.toString().trim() === '';
+          covered = preEmpty && ei === bodyBlocks.length - 1
             && postR.toString().trim() === '' && !postR.cloneContents().querySelector('img,figure,table,details,video,hr');
         } catch (x) { covered = false; }
         if (covered) {
@@ -982,15 +1005,37 @@
           else deselect();
           return true;
         }
-        // 部分覆盖：裁剪、不合并
+        // 末端体内块裁头（三分支共用）
+        const trimEnd = () => {
+          let eb = eBlk0;
+          if (isEditableEl(eb)) {
+            const r2 = doc.createRange(); r2.setStart(eb, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents();
+            eb = fixEmptyList(eb);
+            if ((eb.textContent || '').trim() === '' && !eb.querySelector('img,figure,table,details')) { eb.remove(); eb = null; } // 裁空即删
+          } else { eb.remove(); eb = null; } // 结构末块（img/table/嵌套 toggle）→ 整删（ED-A2）
+          return eb;
+        };
+        if (preEmpty) {
+          // 精确契约（Colin 2026-07-24 二轮）：summary 整行被罩 = toggle 解散——壳删掉、幸存体内块**原样提升**
+          //（去壳不转造，内容零丢失）。选区起点即 summary 头 ⇒ 前面无断口、无合并对象，光标落提升后首块头。
+          for (let k = ei - 1; k >= 0; k--) bodyBlocks[k].remove();
+          trimEnd();
+          const rest = blocksInScope(sDet);
+          rest.forEach((b) => sDet.parentElement.insertBefore(b, sDet));
+          const pb = sDet.previousElementSibling && rest.length === 0 ? sDet.previousElementSibling : null;
+          const nb2 = sDet.nextElementSibling;
+          sDet.remove();
+          markDirty(); if (undoMgr) undoMgr.checkpoint();
+          const anchor = rest.find((b) => isEditableEl(b)) || rest[0] || pb || nb2 || null;
+          if (anchor && isEditableEl(anchor)) enterEdit(anchor, { mode: 'start' });
+          else if (anchor) { selectBlock(anchor); positionGrip(anchor); }
+          else deselect();
+          return true;
+        }
+        // summary 部分被罩：裁剪、toggle 存活、跨壁不并（summary 吞正文 = 非合规红线不破）
         const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sum, sum.childNodes.length); r1.deleteContents(); // summary 裁尾
         for (let k = ei - 1; k >= 0; k--) bodyBlocks[k].remove(); // start 在 summary ⇒ end 块之前的正文块全在选区内 → 整删
-        let eb = eBlk0;
-        if (isEditableEl(eb)) {
-          const r2 = doc.createRange(); r2.setStart(eb, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); // 末块裁头
-          eb = fixEmptyList(eb);
-          if ((eb.textContent || '').trim() === '' && !eb.querySelector('img,figure,table,details')) eb.remove(); // 裁空即删（对齐普通跨块删除语义）
-        } else eb.remove(); // 结构末块（img/table/嵌套 toggle）→ 整删（对齐 ED-A2 结构端点整块删）
+        trimEnd();
         if (blocksInScope(sDet).length === 0) sDet.appendChild(doc.createElement('p')); // ≥1 正文块铁则
         markDirty(); if (undoMgr) undoMgr.checkpoint();
         enterEdit(sum, { mode: 'end' });
@@ -1011,17 +1056,118 @@
         doc.execCommand('delete'); markDirty(); if (undoMgr) undoMgr.scheduleCheckpoint();
         return true;
       }
-      // 跨块（作用域感知，U6）：同作用域 → 用该作用域块列表（含 toggle 体内）；跨作用域 → 上卷到顶层块，
-      // details 端点 isEditableEl=false → 整块删（保护其 summary，绝不部分裁剪成非合规）。
+      // 跨块（作用域感知，U6）。跨作用域走下面精确版（Colin 2026-07-24 二轮）；同作用域沿用原管线。
       const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
       const crossScope = sScope !== eScope;
-      const scopeRoot = crossScope ? blockRoot : sScope;
+      // ── 精确跨作用域删除（Colin 2026-07-24 二轮拍板）：「从哪删到哪」——起块裁尾、末块裁头、完全罩住的
+      // 顶层单位整删；summary 整行被罩 = toggle 解散（壳删、幸存体内块**原样提升**，去壳不转造）；summary
+      // 只被裁一半 = toggle 存活、跨壁不并（不吸不漏）；table 端点整删（部分裁剪必产非合规，ED-A2，高亮已
+      // 整行蓝预示）。合并「以上块为准」：断口两端同层且 canMerge → 下块剩余并入上块（上块是列表 → 并进
+      // 最后一项）。旧「端点上卷整块删」随精确契约废除。──
+      if (crossScope) {
+        const tops = blocksInScope(blockRoot);
+        const sTop = topScopeOf(sBlk), eTop = topScopeOf(eBlk);
+        const i = tops.indexOf(sTop), j = tops.indexOf(eTop);
+        if (i < 0 || j < 0 || i > j) return false;
+        let frontEnd = null, backEnd = null, anchorFallback = null;
+        // ── 前端（sTop）──
+        if (sTop.tagName === 'DETAILS') {
+          const sum = summaryOf(sTop);
+          if (sBlk === sTop) { // start 在 summary 内（blockOf(summary)=details）：summary 裁尾；体内块全在选区内 → 删光补 p
+            try { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sum, sum.childNodes.length); r1.deleteContents(); } catch (x) {}
+            blocksInScope(sTop).forEach((b) => b.remove());
+            sTop.appendChild(doc.createElement('p')); // ≥1 正文块铁则
+            anchorFallback = sum; // toggle 存活、跨壁不并，光标落 summary 尾
+          } else { // start 在体内块：summary 在选区前 → toggle 存活；起块裁尾、体内后续块删
+            const bb = blocksInScope(sTop), bi = bb.indexOf(sBlk);
+            if (bi < 0) return false;
+            for (let k = bb.length - 1; k > bi; k--) bb[k].remove();
+            if (isEditableEl(sBlk)) {
+              try { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sBlk, sBlk.childNodes.length); r1.deleteContents(); } catch (x) {}
+              anchorFallback = fixEmptyList(sBlk); // 列表裁空 de-list；体内唯一块留空=铁则等效
+            } else { sBlk.remove(); anchorFallback = sum; }
+            if (blocksInScope(sTop).length === 0) { const np = doc.createElement('p'); sTop.appendChild(np); anchorFallback = np; }
+          }
+        } else if (isEditableEl(sTop)) {
+          try { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sTop, sTop.childNodes.length); r1.deleteContents(); } catch (x) {}
+          frontEnd = fixEmptyList(sTop);
+          anchorFallback = frontEnd;
+        } else { // 端点落在 table/img 等结构块内 → 整删（ED-A2；高亮已整行蓝预示）
+          anchorFallback = sTop.previousElementSibling;
+          sTop.remove();
+        }
+        // ── 中间（完全罩住）整删 ──
+        for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === blockRoot) m.remove(); }
+        // ── 后端（eTop）──
+        if (eTop.tagName === 'DETAILS') {
+          const sum = summaryOf(eTop);
+          if (eBlk === eTop) { // end 在 summary 内：summary 裁头、toggle 存活、体内不动、跨壁不并
+            try { const r2 = doc.createRange(); r2.setStart(sum, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); } catch (x) {}
+          } else { // end 在体内块 ⇒ summary 整行夹在选区中 → 解散：壳删、被罩体内块删、末块裁头、幸存原样提升
+            const bb = blocksInScope(eTop), ei2 = bb.indexOf(eBlk);
+            if (ei2 >= 0) for (let k = ei2 - 1; k >= 0; k--) bb[k].remove();
+            if (isEditableEl(eBlk)) {
+              try { const r2 = doc.createRange(); r2.setStart(eBlk, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); } catch (x) {}
+              const eb = fixEmptyList(eBlk);
+              if ((eb.textContent || '').trim() === '' && !eb.querySelector('img,figure,table,details')) eb.remove(); // 裁空即删
+            } else if (eBlk !== eTop) eBlk.remove();
+            const rest = blocksInScope(eTop);
+            rest.forEach((b) => eTop.parentElement.insertBefore(b, eTop)); // 幸存体内块原样提升（去壳不转造）
+            eTop.remove();
+            backEnd = (rest.length && isEditableEl(rest[0])) ? rest[0] : null;
+          }
+        } else if (isEditableEl(eTop)) {
+          try { const r2 = doc.createRange(); r2.setStart(eTop, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); } catch (x) {}
+          backEnd = fixEmptyList(eTop);
+          if (backEnd && (backEnd.textContent || '').trim() === '' && !backEnd.querySelector('img,figure,table,details')) { backEnd.remove(); backEnd = null; } // 裁空即删
+        } else { eTop.remove(); } // table/img 末端整删
+        // ── 合并：以上块为准（同层 + 白名单）──
+        const finishAt = (el, prefixEnd2) => {
+          markDirty(); if (undoMgr) undoMgr.checkpoint();
+          enterEdit(el, { mode: 'keep' });
+          try { const cr = doc.createRange(); if (prefixEnd2 && prefixEnd2.parentNode) cr.setStartAfter(prefixEnd2); else cr.setStart(el, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
+        };
+        if (frontEnd && backEnd && frontEnd.parentElement && frontEnd.parentElement === backEnd.parentElement) {
+          if (SM.canMerge(frontEnd, backEnd)) {
+            const pe = frontEnd.lastChild;
+            while (backEnd.firstChild) frontEnd.appendChild(backEnd.firstChild);
+            backEnd.remove();
+            finishAt(frontEnd, pe);
+            return true;
+          }
+          if ((frontEnd.tagName === 'UL' || frontEnd.tagName === 'OL') && SM.isLeafTextBlock(backEnd)) {
+            const lis = [...frontEnd.children].filter((c) => c.tagName === 'LI');
+            const last = lis[lis.length - 1];
+            if (last) { // 上块是列表 → 下块剩余并进最后一项（Notion 同款）
+              const pe = last.lastChild;
+              while (backEnd.firstChild) last.appendChild(backEnd.firstChild);
+              backEnd.remove();
+              finishAt(frontEnd, pe);
+              return true;
+            }
+          }
+        }
+        markDirty(); if (undoMgr) undoMgr.checkpoint();
+        const anc = frontEnd || anchorFallback || backEnd;
+        if (anc && anc.tagName === 'SUMMARY') enterEdit(anc, { mode: 'end' });
+        else if (anc && isEditableEl(anc)) enterEdit(anc, { mode: (anc === backEnd && !frontEnd && !anchorFallback) ? 'start' : 'end' });
+        else if (anc && anc.parentElement) { selectBlock(anc); positionGrip(anc); }
+        else {
+          const rest2 = blocksInScope(blockRoot); const a2 = rest2[Math.min(i, rest2.length - 1)] || rest2[0] || null;
+          if (a2 && isEditableEl(a2)) enterEdit(a2, { mode: 'start' });
+          else if (a2) { selectBlock(a2); positionGrip(a2); }
+          else deselect();
+        }
+        return true;
+      }
+      // ── 同作用域（纯顶层块之间 / 同一 toggle 体内块之间）：原管线 ──
+      const scopeRoot = sScope;
       const tops = blocksInScope(scopeRoot);
-      let sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      let sB = sBlk, eB = eBlk;
       const i = tops.indexOf(sB), j = tops.indexOf(eB);
       if (i < 0 || j < 0 || i > j) return false;
-      // 修 ED-A2/A3（推广到作用域）：端点是结构块（table/details/figure/img）时 Range 部分裁剪会削 summary/table
-      // → 落盘非合规。只对可编辑叶子块部分裁剪，结构端点整块删。
+      // 修 ED-A2/A3：端点是结构块（table/figure/img）时 Range 部分裁剪会削出非合规 → 只对可编辑叶子块
+      // 部分裁剪，结构端点整块删。
       const sEditable = isEditableEl(sB), eEditable = isEditableEl(eB);
       if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sB, sB.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
       if (eEditable) { const r2 = doc.createRange(); r2.setStart(eB, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
@@ -1033,11 +1179,13 @@
       if (sEditable && eEditable && SM.canMerge(sB, eB)) { // 两端都是存活的叶子文字块才节点级拼接
         while (eB.firstChild) sB.appendChild(eB.firstChild); // 末块剩余并入起块
         eB.remove();
+      } else if (sEditable && eEditable && (sB.tagName === 'UL' || sB.tagName === 'OL') && SM.isLeafTextBlock(eB) && sB.parentElement === eB.parentElement) {
+        // 合并以上块为准（Colin 2026-07-24 二轮）：上块是列表 → 下块剩余并进最后一项（Notion 同款，原先留两截）
+        const lis = [...sB.children].filter((c) => c.tagName === 'LI');
+        const last = lis[lis.length - 1];
+        if (last) { const pe2 = last.lastChild; while (eB.firstChild) last.appendChild(eB.firstChild); eB.remove(); markDirty(); if (undoMgr) undoMgr.checkpoint(); enterEdit(sB, { mode: 'keep' }); try { const cr = doc.createRange(); if (pe2 && pe2.parentNode) cr.setStartAfter(pe2); else cr.setStart(last, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {} return true; }
       }
-      // U26：结构端点一律整删（旧 P2 clamp「部分进入体内则夹住不删」废除）——块级高亮 refreshRangeSel
-      // 早已把部分进入的 toggle **整块**标蓝（同款上卷），删除必须兑现所见即所删；也与 table 端点行为一致
-      //（ED-A2：从段落选到表格中间删 = 整删表格）。选区外的体内块随整块消失是块级选中语义（Notion 同款）。
-      if (!eEditable) eB.remove();
+      if (!eEditable) eB.remove(); // 结构端点整删（ED-A2）
       if (!sEditable) sB.remove();
       // toggle 体 ≥1 块铁则：作用域删空 → 补一个空 <p>（summary-only 是死胡同）
       if (scopeRoot !== blockRoot && blocksInScope(scopeRoot).length === 0) scopeRoot.appendChild(doc.createElement('p'));
@@ -1812,38 +1960,75 @@
           return;
         }
         const sel = doc.getSelection();
-        const savedNode = sel ? sel.anchorNode : null, savedOffset = sel ? sel.anchorOffset : 0; // U19/keys-8：记原光标位置，移动后恢复（不甩项末）
-        const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
-        const li = node && node.closest ? node.closest('li') : null;
-        if (!li || !editingEl.contains(li)) return;
+        if (!sel || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        // 目标 li（U1 多选）：折叠光标 = 光标所在行；跨行选区 = 与选区内容相交的所有最外层 li。
+        const allLis = [...editingEl.querySelectorAll('li')];
+        let targets;
+        if (sel.isCollapsed) {
+          const n = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+          const one = n && n.closest ? n.closest('li') : null;
+          targets = one && editingEl.contains(one) ? [one] : [];
+        } else {
+          targets = allLis.filter((li) => {
+            // 用 li「自身内容」范围（到其嵌套子列表之前），不含子列表——否则父项会因选区落在其子项上而误判相交。
+            const liR = doc.createRange();
+            liR.setStart(li, 0);
+            const subUl = [...li.children].find((c) => c.tagName === 'UL' || c.tagName === 'OL');
+            if (subUl) liR.setEndBefore(subUl); else liR.setEnd(li, li.childNodes.length);
+            return range.compareBoundaryPoints(Range.END_TO_START, liR) < 0 && range.compareBoundaryPoints(Range.START_TO_END, liR) > 0;
+          });
+          // 只留最外层——被其他选中 li 包含的嵌套子项随父项一起移动，不单独处理。
+          targets = targets.filter((li) => !targets.some((o) => o !== li && o.contains(li)));
+        }
+        if (!targets.length) return;
+        // 记录选区四端点，操作后原样恢复：缩进绝不动光标/选区。li reparent 后其内部文本节点引用仍有效。
+        const sc0 = range.startContainer, so0 = range.startOffset, ec0 = range.endContainer, eo0 = range.endOffset;
+        // 按直接父列表分组（各组内保 DOM 顺序）。
+        const groups = new Map();
+        for (const li of targets) { const p = li.parentElement; if (!groups.has(p)) groups.set(p, []); groups.get(p).push(li); }
+        let changed = false;
         if (e.shiftKey) {
-          const parentList = li.parentElement;
-          const hostLi = parentList && parentList.parentElement;
-          if (hostLi && hostLi.tagName === 'LI') {
-            absorbTrailingSiblings(li); // U13/keys-5：出列前收编后继兄弟为 li 的子项，否则它们文档顺序跑到出列项之前（错序）
-            hostLi.after(li);
-            if (parentList && !parentList.querySelector('li')) parentList.remove();
-            if (undoMgr) undoMgr.checkpoint(); markDirty();
+          // 同一 hostLi 下可能有多个子列表（合规文档允许一个 li 带多个直接子列表）；多组共享 hostLi 时
+          // 必须接续插入（记每个 host 的上次落点），不能每组都重锚 hostLi——否则后组会插到前组之前致错序（对抗审查）。
+          const lastRefByHost = new Map();
+          for (const [parentList, lis] of groups) {
+            const hostLi = parentList.parentElement;
+            if (!hostLi || hostLi.tagName !== 'LI') continue; // 已在顶层，无法再出列
+            absorbTrailingSiblings(lis[lis.length - 1]); // U13/keys-5：组末项收编后继非选中兄弟为子项，保序
+            let ref = lastRefByHost.get(hostLi) || hostLi;
+            for (const li of lis) { ref.after(li); ref = li; }
+            lastRefByHost.set(hostLi, ref);
+            if (!parentList.querySelector('li')) parentList.remove();
+            changed = true;
           }
         } else {
-          const prev = li.previousElementSibling;
-          if (prev && prev.tagName === 'LI') {
+          for (const [parentList, lis] of groups) {
+            const first = lis[0];
+            const prev = first.previousElementSibling;
+            if (!prev || prev.tagName !== 'LI') continue; // 组首无上一项可嵌 → 该组不缩进
             let sub = prev.lastElementChild;
             if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
               // D3：子列表继承 li 的直接父列表类型/class（如 todo 缩进仍是 todo），不是顶层 editingEl 的。
-              const parentList = li.parentElement;
               sub = doc.createElement(parentList.tagName.toLowerCase());
               if (parentList.className) sub.className = parentList.className;
               prev.appendChild(sub);
             }
-            sub.appendChild(li);
-            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            for (const li of lis) sub.appendChild(li);
+            changed = true;
           }
         }
-        // U19/keys-8：恢复原光标位置（anchorNode 随 li 一起移动、引用不失效）；失效才回退 li 文字末尾。
-        if (savedNode && savedNode.isConnected && li.contains(savedNode)) {
-          try { const max = savedNode.nodeType === 3 ? savedNode.length : savedNode.childNodes.length; const r = doc.createRange(); r.setStart(savedNode, Math.min(savedOffset, max)); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) { caretAtLiTextEnd(li); }
-        } else { caretAtLiTextEnd(li); }
+        if (changed) { if (undoMgr) undoMgr.checkpoint(); markDirty(); }
+        // U19：恢复原选区（端点文本节点随 li reparent 引用不变）→ 光标/多选原样保留、不跳。
+        try {
+          if (sc0.isConnected && ec0.isConnected) {
+            const clamp = (n, o) => Math.min(o, n.nodeType === 3 ? n.length : n.childNodes.length);
+            const r = doc.createRange();
+            r.setStart(sc0, clamp(sc0, so0));
+            r.setEnd(ec0, clamp(ec0, eo0));
+            const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r);
+          } else if (targets[0]) { caretAtLiTextEnd(targets[0]); }
+        } catch (x) { if (targets[0]) caretAtLiTextEnd(targets[0]); }
         return;
       }
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）

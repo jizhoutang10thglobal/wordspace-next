@@ -110,3 +110,56 @@
 /* 按住时滑块拉宽（蓄力感） */
 .pg-switch:not(:disabled):active .pg-switch-knob { width: 19px; }
 .pg-switch.is-on:not(:disabled):active .pg-switch-knob { transform: translateX(13px); }
+
+/* ===== U6 三分区扩展 ===== */
+.pg-sec-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+  margin: 18px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-divider);
+}
+.pg-sec-title:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+
+.pg-field-label-row { display: flex; align-items: center; justify-content: space-between; }
+.pg-seg-sm .pg-seg-item { padding: 2px 10px; font-size: 11px; }
+
+.pg-typo-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+.pg-num { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--c-text-2); }
+.pg-num .ws-input { width: 56px; text-align: center; }
+
+.pg-head-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.pg-head-lv { width: 52px; font-size: 12px; color: var(--c-text-2); flex: none; }
+.pg-head-sel {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.pg-head-size { width: 58px; text-align: center; flex: none; }
+.pg-head-bold {
+  width: 30px;
+  height: 28px;
+  border: 1px solid var(--c-border-strong);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  font-weight: 700;
+  cursor: pointer;
+  flex: none;
+}
+.pg-head-bold.is-on { background: var(--c-ink); color: #fff; border-color: var(--c-ink); }
+
+.pg-foot { justify-content: space-between; align-items: center; gap: 12px; }
+.pg-saveas { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+.pg-saveas-input { flex: 1; min-width: 0; max-width: 200px; }
+.pg-saveas-err { font-size: 12px; color: var(--c-danger); }
+.pg-saveas-note { font-size: 12px; color: var(--c-text-3); }

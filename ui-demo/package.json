@@ -14,6 +14,11 @@
     "audit:prepare": "node audit/expectations.mjs --pair",
     "test:links": "node scripts/test-links.mjs",
     "test:page": "node scripts/test-page.mjs",
+    "test:typography": "node scripts/test-typography.mjs",
+    "test:typography-store": "node scripts/test-typography-store.mjs",
+    "verify:typography": "node scripts/verify-typography.mjs",
+    "verify:paged": "node scripts/verify-paged-v4.mjs",
+    "smoke:paged": "node scripts/smoke-paged.mjs",
     "i18n:scan": "node scripts/i18n-scan.mjs && node scripts/i18n-parity.mjs && node scripts/i18n-usage.mjs"
   },
   "dependencies": {

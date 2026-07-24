@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Type, Heading, Quote, Plus, Copy, Trash2 } from 'lucide-react'
+import { Type, Heading, Quote, ChevronRight, Plus, Copy, Trash2 } from 'lucide-react'
 import { useT } from '../../i18n'
 import type { BlockType } from '../../types'
 
@@ -85,6 +85,17 @@ export default function BlockActionMenu({
           >
             <Quote size={15} strokeWidth={1.8} />
             <span>{t('editor.turnIntoQuote')}</span>
+          </button>
+          <button
+            className="ws-blockmenu-item"
+            role="menuitem"
+            onClick={() => {
+              onTurnInto('toggle')
+              onClose()
+            }}
+          >
+            <ChevronRight size={15} strokeWidth={1.8} />
+            <span>{t('editor.turnIntoToggle')}</span>
           </button>
 
           <div className="ws-blockmenu-sep" />
