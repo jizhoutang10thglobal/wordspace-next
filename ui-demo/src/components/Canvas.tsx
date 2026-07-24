@@ -40,6 +40,8 @@ import {
   pickImageFiles,
 } from '../lib/image'
 import { usePageConfig } from '../mock/paged'
+import { useDocTypography, applyPreset, useTypography } from '../mock/typography'
+import { buildTypographyCss } from '../lib/typography'
 import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
@@ -949,6 +951,22 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const pageCfg = usePageConfig(doc?.id)
   const paged = !!doc && pageCfg.on
   const pageBox = useMemo(() => pageBoxPx(pageCfg), [pageCfg])
+  // 标准化排版层（U3/KTD6）：per-doc 排版配置 → scoped CSS 注入 article（.ws-doc-paged .ws-p{…}
+  // 类级特异性盖过 base 硬编字号/行距）。typographyCss 变 → 重算依赖触发重排（下方 recalc effect）。
+  const typoDoc = useDocTypography(doc?.id)
+  const typographyCss = useMemo(() => (paged ? buildTypographyCss(typoDoc.config) : ''), [paged, typoDoc])
+  // 测试 seam（绑当前文档）：U5 工具栏未建前，Playwright 门经此施加排版；与真 app 的 __ws2DocSchema 探针同路子。
+  useEffect(() => {
+    if (typeof window === 'undefined' || !doc) return
+    ;(window as unknown as { __ws2Typo?: unknown }).__ws2Typo = {
+      docId: doc.id,
+      applyPreset: (pid: string) => applyPreset(doc.id, pid),
+      setSizePt: (pt: number) => {
+        const cur = useTypography.getState().getDoc(doc.id).config
+        useTypography.getState().setConfig(doc.id, { ...cur, body: { ...cur.body, sizePt: pt } })
+      },
+    }
+  }, [doc])
   const articleRef = useRef<HTMLElement | null>(null)
   // gaps[i] = 块 i 前的块级页间隙（null = 不切页，流内 PageGap spacer 真实推挤给出上下页边距）；
   // gutters = 超高块「跨页续排」时画在内容上的页界分隔线（top 相对纸 padding 盒、实测块顶算出，
@@ -1138,7 +1156,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       ro.disconnect()
       if (raf) cancelAnimationFrame(raf)
     }
-  }, [paged, doc, pageBox])
+    // typographyCss 入依赖：改字体/字号/行距 → 块高变 → 立即重排（+ RO 盯 .ws-blocks 兜底），
+    // 保证「改字号后每页仍=一张纸」（AE3，RISK-A 最高风险联动点）。
+  }, [paged, doc, pageBox, typographyCss])
 
   const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -2710,6 +2730,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         >
           {/* 模板版式 CSS：已作用域化到 .ws-doc.ws-tpl-on，只作用文档区、不漏 app 界面。 */}
           {scopedTplCss && <style>{scopedTplCss}</style>}
+          {/* 标准化排版层 CSS（U3/KTD6）：.ws-doc-paged .ws-p{…} 类级盖过 base 硬编字号/行距。 */}
+          {typographyCss && <style>{typographyCss}</style>}
           {!embedded && <DocHeader doc={doc} />}
           <div
             className="ws-blocks"
