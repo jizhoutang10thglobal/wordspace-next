@@ -99,6 +99,15 @@ ok(Math.abs(T.ptToPx(16) - 21.333) < 0.01, 'ptToPx(16)≈21.33')
   ok(css.includes('line-height:2'), 'APA CSS 双倍行距（倍数模式）')
   ok(css.includes('text-align:left'), 'APA CSS 左对齐')
 }
+// U4：标题各级 CSS
+{
+  const css = T.buildTypographyCss(T.getPreset('gb9704').type)
+  for (const lv of [1, 2, 3, 4]) ok(css.includes(`.ws-doc-paged .ws-h${lv}{`), `国标 CSS 含 H${lv} 规则`)
+  ok(/\.ws-h2\{[^}]*SimHei/.test(css), '国标 H2 黑体栈')
+  ok(/\.ws-h3\{[^}]*KaiTi/.test(css), '国标 H3 楷体栈')
+  ok(/\.ws-h4\{[^}]*FangSong/.test(css), '国标 H4 仿宋栈')
+  ok(/\.ws-h1\{[^}]*text-align:center/.test(css), '国标 H1 居中')
+}
 
 if (fail) { console.log(`\n${fail} FAILED`); process.exit(1) }
 console.log('typography: all passed')

@@ -19,14 +19,14 @@ page.on('dialog', (d) => d.accept())
 let fail = 0
 const assert = (cond, msg) => { if (!cond) { fail++; console.log('FAIL', msg) } else console.log('ok  ', msg) }
 
-// 稳法：seed ws-paged-docs 让样例文档 d-pg-longflow 开局即分页态（省掉 ⋯ 菜单导航，v4 harness 已 stale）
-const DOC_ID = 'd-pg-longflow'
+// 稳法：seed ws-paged-docs 让样例文档开局即分页态（省掉 ⋯ 菜单导航，v4 harness 已 stale）
 await page.goto(URL)
 await page.waitForTimeout(600)
-await page.evaluate((id) => {
+await page.evaluate(() => {
   localStorage.clear()
-  localStorage.setItem('ws-paged-docs', JSON.stringify({ [id]: { on: true, size: 'A4', orientation: 'portrait', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 }, pageNumbers: false } }))
-}, DOC_ID)
+  const cfg = { on: true, size: 'A4', orientation: 'portrait', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 }, pageNumbers: false }
+  localStorage.setItem('ws-paged-docs', JSON.stringify({ 'd-pg-longflow': cfg, 'd-pg-headings': cfg }))
+})
 await page.reload()
 await page.waitForTimeout(1500)
 
@@ -100,6 +100,23 @@ await applyPreset('apa')
   assert(near(b.lineHeight, 2 * b.fontSize, 3), `APA 双倍行距（got ${b?.lineHeight} vs ${(2 * b.fontSize).toFixed(1)}）`)
   assert(b.textAlign === 'left', `APA 左对齐（got ${b?.textAlign}）`)
   assert(/Times New Roman/i.test(b.fontFamily), `APA font-family 含 Times（got ${b?.fontFamily}）`)
+}
+
+// ==== D) 标题各级 H1–H4（AE7 + 加块渲染）====
+const headingFF = (sel) => page.evaluate((s) => {
+  const el = document.querySelector('article.ws-doc-paged ' + s)
+  return el ? getComputedStyle(el).fontFamily : null
+}, sel)
+await openDocPaged('标题密集')
+await applyPreset('gb9704')
+{
+  assert((await headingFF('.ws-h4')) !== null, '第 4 级标题块渲染为 <h4 class=ws-h4>（加块成功）')
+  const h1 = await headingFF('.ws-h1'), h2 = await headingFF('.ws-h2'), h3 = await headingFF('.ws-h3'), h4 = await headingFF('.ws-h4')
+  assert(/SimSun|Songti/i.test(h1), `国标 H1 小标宋（宋替身）（got ${h1}）`)
+  assert(/SimHei|Heiti/i.test(h2), `国标 H2 黑体（got ${h2}）`)
+  assert(/KaiTi/i.test(h3), `国标 H3 楷体（got ${h3}）`)
+  assert(/FangSong/i.test(h4), `国标 H4 仿宋（got ${h4}）`)
+  assert(new Set([h1, h2, h3, h4]).size === 4, '四级标题字体两两不同（靠字体区分层级）')
 }
 
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nALL PASSED')
