@@ -21,6 +21,10 @@ await build({ entryPoints: [new URL('../src/mock/typography.ts', import.meta.url
 const S = await import(pathToFileURL(out))
 // 注：applyPreset 内部经 usePaged.setConfig 写 localStorage 'ws-paged-docs'，
 // 故 page 同步直接读 shim 落盘内容验（不必单独实例化 paged store）。
+// paged store（单独 bundle，验 U7 的 prune；与 shim 共享同一份 localStorage）
+const pOut = join(dir, 'paged.mjs')
+await build({ entryPoints: [new URL('../src/mock/paged.ts', import.meta.url).pathname], bundle: true, format: 'esm', outfile: pOut, platform: 'neutral' })
+const P = await import(pathToFileURL(pOut))
 
 let fail = 0
 const ok = (c, m) => { if (!c) { fail++; console.log(`FAIL ${m}`) } }
@@ -77,14 +81,20 @@ S.applyPreset('doc1', 'gb9704')
   eq(d.config.body.sizePt, custom.type.body.sizePt, 'applyPreset 自定义 → config 应用')
 }
 
-// --- prune: 删文档清条目 ---
+// --- prune: 删文档清条目（typography + paged，U7 deleteDoc 接它们）---
 {
   S.useTypography.getState().prune('doc1')
-  ok(!('doc1' in S.useTypography.getState().docs), 'prune 后 doc1 不在 docs')
+  ok(!('doc1' in S.useTypography.getState().docs), 'typography.prune 后 doc1 不在 docs')
   const d = S.useTypography.getState().getDoc('doc1')
   eq(d.lastPresetId, null, 'prune 后 getDoc 回默认（lastPresetId=null）')
   const docs = LSget('ws-typography-docs')
   ok(!(docs && 'doc1' in docs), 'prune 后落盘也无 doc1')
+  // paged store 的 prune（P 独立实例，自包含：自己写 dx 再 prune dx）
+  ok(typeof P.usePaged.getState().prune === 'function', 'usePaged 有 prune 方法')
+  P.usePaged.getState().setConfig('dx', { on: true, size: 'A4', orientation: 'portrait', margin: { top: 1, right: 1, bottom: 1, left: 1 }, pageNumbers: false })
+  ok('dx' in (LSget('ws-paged-docs') ?? {}), 'usePaged.setConfig 写入 dx')
+  P.usePaged.getState().prune('dx')
+  ok(!('dx' in (LSget('ws-paged-docs') ?? {})), 'usePaged.prune 后落盘无 dx（删档清孤儿）')
 }
 
 if (fail) { console.log(`\n${fail} FAILED`); process.exit(1) }

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { usePaged } from './paged'
+import { useTypography } from './typography'
 import type {
   AgentEvent,
   Block,
@@ -1327,14 +1329,18 @@ export const useStore = create<State>()(
           tabs: s.tabs.map((t) => (t.docId === docId ? { ...t, title } : t)),
         })),
 
-      deleteDoc: (docId) =>
+      deleteDoc: (docId) => {
+        // 清分层 config store 的孤儿条目（分页几何 + 排版），避免 localStorage 无限累积（U7）
+        usePaged.getState().prune(docId)
+        useTypography.getState().prune(docId)
         set((s) => ({
           docs: s.docs.filter((d) => d.id !== docId),
           tabs: s.tabs.filter((t) => t.docId !== docId),
           // also drop its connected-folder file entry, so the tree doesn't keep a
           // dangling row pointing at a deleted doc
           files: s.files.filter((f) => f.docId !== docId),
-        })),
+        }))
+      },
 
       generateDoc: async (prompt, folderId, target) => {
         set({ aiBusy: true })

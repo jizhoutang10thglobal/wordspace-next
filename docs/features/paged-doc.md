@@ -69,6 +69,23 @@
 真 app=printToPDF preferCSSPageSize），块 `break-inside:avoid` 与屏显同口径；页码
 `@bottom-center counter(page)`（demo）/ footerTemplate（真 app）。
 
+**标准化排版层**（ui-demo v1，2026-07-24，U1–U7；真 app 移植 = 欠账）：分页文档在文档区上方有一条
+**排版工具栏**（预设下拉 / 中西文字体 / 字号 / 行距 / 对齐 / ⚙），配合 ⚙「页面设置」三分区弹窗
+（页面 / 排版 / 标题）。需求见 `docs/brainstorms/2026-07-24-schema-2-paged-standards-requirements.md`、
+计划见 `docs/plans/2026-07-24-002-feat-schema-2-paged-typography-plan.md`（已过 ce-doc-review）。
+- **五个具名标准预设**：国标公文 GB/T 9704-2012（硬值：A4 / 上37下35左28右26mm / 仿宋三号16pt /
+  固定行距29pt(版心225mm÷22行) / 首行缩进2字符 / 两端对齐 / H1小标宋二号居中·H2黑体·H3楷体·H4仿宋加粗）/
+  学术论文 / 商务 / APA / MLA。选预设一键设全套；改任意旋钮脱离预设（显示「自定义·基于X」，靠 `deriveActivePreset`
+  值反推 + tie-break）；可另存为自定义预设（重名拒绝防覆盖）。
+- **分层数据模型（KTD1）**：`PageConfig`（纯 @page 几何）不动，新建 `TypographyConfig`（正文 body +
+  标题 h1–h4）与之并列存储。中西文分设 = 一个 font-family 串「西文名… 中文名… 末尾唯一泛型」——泛型
+  混在中间会把 CJK 字符截胡到系统衬线（评审实证的假字体 bug），**务必只在末尾出现一次**。字号号↔pt
+  双显；mm/inch **恒存 mm 只换显示**（无往返累积误差）。
+- **应用机制（KTD6）**：排版经 scoped `<style>` 注入 article（`.ws-doc-paged .ws-p` / `.ws-h1..4` **类级
+  特异性**盖过 base 硬编字号/行距——article inline 继承压不过低层显式声明，这是评审抓的 correctness 硬伤）；
+  typography 变 → recalc 联动即时重排、每页仍严格=一张纸（最高风险联动点，Playwright computed-style 门验）。
+- **H4**：ui-demo 块模型本期加了第 4 级标题（heading level `1|2|3`→`1|2|3|4`，Colin 拍板），渲染 `<h4 class=ws-h4>`。
+
 **实现铁则**（V4 血泪，移植必守）：① 分页清理走「选择器全量扫荡」——contenteditable 回车会
 分裂元素并继承 style/data-ws-pushed，按引用清理永远漏掉克隆、padding 越积越大（「空行贼大」根因）；
 ② 灰缝锚定「实测推挤位置」（推完量锚点画缝），不用纯几何网格反推内容；③ 扫荡→测量→重推同帧
@@ -86,6 +103,10 @@
 | strip-on-persist | `Canvas.tsx` serializeClean | `src/editor/serialize.js` cleanRoot（[data-ws-pushed] 剥样式；spacer 带 OVERLAY sentinel 整删）+ `shell.js` buildWordspacePrintHtml 同款剥除 |
 | 导出 | `ui-demo/src/lib/printExport.ts` | `src/main/pdf-export.js` paged 路径（preferCSSPageSize + footerTemplate）+ `schema-page.js` PAGED_PRINT_CSS 烤进打印 HTML |
 | 验证门 | `ui-demo/scripts/verify-paged-v4.mjs` + `test-page.mjs` + `smoke-paged.mjs` | `e2e/paged.spec.js`（同断言口径：页高统一/真空带/编辑稳定/磁盘零污染/关分页还原）+ `test/schema-page.test.js` + `test/serialize.test.js` strip 断言 |
+| **标准化排版模型/预设** | `ui-demo/src/lib/typography.ts`（TypographyConfig / 五预设 / composeFontFamily / deriveActivePreset / buildTypographyCss） | 欠账（移植 = 排版入盘 `data-ws-schema-css="type"` + 校验白名单扩展） |
+| **排版存储** | `ui-demo/src/mock/typography.ts`（useTypography / useCustomPresets / applyPreset，localStorage 分层）+ `mock/paged.ts` prune | 欠账 |
+| **排版工具栏** | `ui-demo/src/components/TypographyToolbar.tsx`（原生 select/input+datalist，含 ARIA） | 欠账 |
+| **排版门** | `ui-demo/scripts/verify-typography.mjs`（Playwright computed-style）+ `test-typography.mjs` + `test-typography-store.mjs`（node） | 欠账 |
 
 ## 有意分歧
 
@@ -117,3 +138,12 @@
   真开 app 导出 PDF 看页码/分页位置由 Colin 宿主实测。
 - 页间空白点击的光标路由：app 侧统一路由到「上方最近块」末尾（合成块内点击，复用 blockedit
   enterEdit 全套判定）；demo routeCaretFromGap 的按点击位置就近选上/下块语义未逐一对齐。
+- **标准化排版层真 app 移植**（2026-07-24 起，ui-demo U1–U7 已合）：工具栏 + 五预设 + 分层排版模型 +
+  H4 块 + mm/inch + 另存预设都在 ui-demo；真 app align 时排版入盘 = 第二个 `data-ws-schema-css="type"` 块 +
+  Schema 校验白名单扩展（origin RISK-2），真 app Schema 本就封顶 h4、H4 天然对得上。字体是系统替身
+  （无仿宋_GB2312 等，视觉≈非逐字节国标；真合规可能得内嵌字体，RISK-B）。
+- **ui-demo 页眉/页脚未做**：真 app PR-C 已有页眉页脚，但 ui-demo `PageConfig` 无 header/footer 字段——加它
+  要动 `page.ts` + Canvas 每页覆盖层渲染 + 转义（类似真 app PR-C 独立一块），本期 defer。
+- **ui-demo paged Playwright 门 harness stale**：`verify-paged-v4.mjs` / `smoke-paged.mjs` 的 `openDocPaged`
+  用 ⋯-菜单导航，当前 main 上失效（`verify-typography.mjs` 已改用 seed localStorage 绕过、稳）；这两门
+  跑前需修 harness（本期已 npm-script 化，未修导航）。
