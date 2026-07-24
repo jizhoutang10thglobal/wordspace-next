@@ -439,10 +439,9 @@ test('BF-P2: 查找自动展开不改写磁盘折叠态', async () => {
   expect(disk).toMatch(/<details[^>]*><summary>标题<\/summary>/); // details 仍在、折叠（无 open）
 });
 
-// BF-P2（U26 翻转，Colin 2026-07-24「块操作与其他块同步」）：跨作用域删（顶层→toggle 体内）——
-// toggle 整删，兑现块级高亮承诺（refreshRangeSel 早把部分进入的 toggle 整块标蓝=所见即所删）；
-// 对齐 table 的 ED-A2 结构端点整块删。旧「夹住不删」是 deferred 空操作时代的保守解，随 U26 废除。
-test('BF-P2(U26): 跨作用域删（顶层→toggle 体内）→ toggle 整删 + 外块裁剪（所见即所删）', async () => {
+// BF-P2（精确契约二翻，Colin 2026-07-24 二轮：「从哪删到哪」）：跨作用域删（顶层→toggle 体内）——
+// 精确删：外块裁尾、summary 整行被罩=解散、末端体内块裁头、幸存体内块原样提升、断口两端以上块为准合并。
+test('BF-P2(精确): 顶层中→体内中 Delete → 精确删+解散+提升+两头接一条线', async () => {
   await launch();
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
     + '<p id="top">AAAA</p><details open id="dt"><summary id="sm">S</summary><p id="b1">BBBB</p><p id="b2">CCCC</p></details><p id="tail">DDDD</p></body></html>');
@@ -453,10 +452,14 @@ test('BF-P2(U26): 跨作用域删（顶层→toggle 体内）→ toggle 整删 +
   const st = await frame.locator('body').evaluate(() => ({
     hasDt: !!document.getElementById('dt'),
     top: (document.getElementById('top') || {}).textContent,
+    b2: (document.getElementById('b2') || {}).textContent,
+    b2Top: document.getElementById('b2') ? document.getElementById('b2').parentElement.tagName : null,
     tail: (document.getElementById('tail') || {}).textContent,
   }));
-  expect(st.hasDt, 'toggle 整删（高亮标了整块=所见即所删）').toBe(false);
-  expect(st.top, '外侧起块裁剪保留选区前文字').toBe('AA');
+  expect(st.hasDt, 'summary 被罩 → toggle 解散（壳删）').toBe(false);
+  expect(st.top, '外块裁尾 + 体内末块剩余并入（以上块为准接一条线）').toBe('AABB');
+  expect(st.b2, '幸存体内块内容零丢失').toBe('CCCC');
+  expect(st.b2Top, '幸存体内块原样提升为顶层').toBe('BODY');
   expect(st.tail, '选区外的后段不动').toBe('DDDD');
   expect(await conformOf(await serialize())).toBe(true);
 });
