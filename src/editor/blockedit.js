@@ -214,9 +214,14 @@
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
     const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
-    // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 纸方墨圆旋转 chevron + 正文缩进。
+    // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 细线 chevron + 正文缩进。
     // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
-    const TOGGLE_CSS = 'details{margin:8px 0}details>summary{list-style:none;cursor:pointer;display:flex;align-items:flex-start;gap:6px}details>summary::-webkit-details-marker{display:none}details>summary::before{content:"\\25B6";flex:none;display:inline-flex;align-items:center;justify-content:center;width:1.1em;height:1.75em;color:#787c82;transition:transform .12s ease}details[open]>summary::before{transform:rotate(90deg)}details>*:not(summary){margin-left:22px}';
+    // chevron 对齐 ui-demo 的 lucide 细线视觉（Wendi 2026-07-24「实心大三角丑、不 blend in」）：border 两边画「›」，
+    // 纯 CSS 零资源（文档自带 CSP 也拦不到，S4 教训不用 data:URI 图）。折叠指右 -45°、展开指下 45°；
+    // 几何：盒 .42em 居中于首行（margin-top=(1.75-.42)/2≈.67em），水平 .2+.42+.48=1.1em 占位与旧版等宽（正文缩进 22px 不变）。
+    // 线粗 1.5px = ui-demo lucide strokeWidth 2.2 @24viewBox×16px 的实际渲染粗细；hover 墨色加深（纸方墨圆）。
+    // 旧文档 attach 时 refreshSemanticStyles ①升级路径按内容 diff 自动覆写，无需迁移。
+    const TOGGLE_CSS = 'details{margin:8px 0}details>summary{list-style:none;cursor:pointer;display:flex;align-items:flex-start;gap:6px}details>summary::-webkit-details-marker{display:none}details>summary::before{content:"";flex:none;box-sizing:border-box;width:.42em;height:.42em;margin:.67em .48em 0 .2em;border-right:1.5px solid #8a8f96;border-bottom:1.5px solid #8a8f96;border-radius:.5px;transform:rotate(-45deg);transition:transform .15s ease,border-color .15s ease}details>summary:hover::before{border-color:#37352f}details[open]>summary::before{transform:rotate(45deg)}details>*:not(summary){margin-left:22px}';
     // §0 决策1 固定色板（块级上色 class；也是入盘 color CSS 的单一来源）。
     const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
     const COLOR_CSS = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');

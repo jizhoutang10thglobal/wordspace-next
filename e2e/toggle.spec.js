@@ -622,3 +622,34 @@ test('U24b: 非空块 slash 折叠 → 维持插入下方：原块内容不吞',
   expect(shape.nextIsDetails, '非空块 → details 插在其后').toBe(true);
   expect(await editingTag()).toBe('SUMMARY');
 });
+
+// U25（Wendi 2026-07-24「三角丑」）：chevron=细线两边框（对齐 ui-demo lucide 视觉），不是实心字符。
+// 强断言锚 computed-style：content 空串（非 \25B6 字符）+ 1.5px 细线 + 折叠/展开旋转相反。
+// U4 的 content!=none 挡不住「换回实心字符」的回退——这里把设计钉死。
+test('U25: chevron 细线样式强断言（content 空 + border 1.5px + 两态旋转）', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<details open id="d1"><summary>展开的</summary><p>体</p></details>'
+    + '<details id="d2"><summary>折叠的</summary><p>体</p></details></body></html>');
+  const probe = await frame.locator('body').evaluate(() => {
+    const read = (sel) => {
+      const s = document.querySelector(sel + ' > summary');
+      const b = getComputedStyle(s, '::before');
+      return { content: b.content, borderRW: b.borderRightWidth, borderBW: b.borderBottomWidth, transform: b.transform };
+    };
+    return { open: read('#d1'), closed: read('#d2') };
+  });
+  // 实心字符已死：content 是空串（"" 或 'none' 都不是 "\25B6"）
+  expect(probe.open.content).toBe('""');
+  // 细线在：两条边框 1.5px（下取整浏览器可能给 1.5 或 device 取整值，锚「非 0px」+ 数值 ≤2）
+  for (const st of [probe.open, probe.closed]) {
+    const w = parseFloat(st.borderRW);
+    expect(w, `border-right ${st.borderRW} 应为细线(0<w≤2px)`).toBeGreaterThan(0);
+    expect(w).toBeLessThanOrEqual(2);
+    expect(parseFloat(st.borderBW)).toBeGreaterThan(0);
+  }
+  // 两态旋转相反：都非 none 且互不相同（-45° vs 45°）
+  expect(probe.open.transform).not.toBe('none');
+  expect(probe.closed.transform).not.toBe('none');
+  expect(probe.open.transform).not.toBe(probe.closed.transform);
+});
