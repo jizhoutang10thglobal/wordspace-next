@@ -15,6 +15,7 @@
     "test:links": "node scripts/test-links.mjs",
     "test:page": "node scripts/test-page.mjs",
     "test:typography": "node scripts/test-typography.mjs",
+    "test:typography-store": "node scripts/test-typography-store.mjs",
     "i18n:scan": "node scripts/i18n-scan.mjs && node scripts/i18n-parity.mjs && node scripts/i18n-usage.mjs"
   },
   "dependencies": {
