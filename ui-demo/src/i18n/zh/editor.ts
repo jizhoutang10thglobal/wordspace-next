@@ -169,6 +169,9 @@ export default {
   marginRight: '右',
   pageNumbers: '导出 PDF 页脚页码',
   pageNumbersNote: '形如「2 / 5」，居中页脚',
+  pageHeader: '页眉',
+  pageFooter: '页脚',
+  pageHfPlaceholder: '每页显示（留空 = 不显示）',
 
   // 边距预设（page.ts）
   marginNormal: '普通',

@@ -82,6 +82,19 @@
 .pg-mm-input::-webkit-outer-spin-button,
 .pg-mm-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .pg-mm-input { -moz-appearance: textfield; appearance: textfield; }
+/* 页眉/页脚文本框：label 定宽 + 输入框吃剩余宽 */
+.pg-hf-row { gap: 10px; }
+.pg-hf-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 9px;
+  font-size: var(--fs-sm);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface);
+  color: var(--c-text);
+}
+.pg-hf-input:disabled { opacity: 0.5; }
 .pg-mm-unit { color: var(--c-text-3); font-size: var(--fs-xs); }
 
 /* switch：track 圆丸，on = 墨底；滑块 spring 滑动（style.md §5） */

@@ -15,7 +15,8 @@ export default {
   paradigmNotion: '类 Notion',
   paradigmCurrent: '当前',
   paradigmNotionDesc: '分块编辑的结构化文档',
-  paradigm2: '范式 2',
+  paradigmPaged: '分页文档',
+  paradigmPagedDesc: '按页排版，像 Word',
   paradigm3: '范式 3',
   comingSoon: '敬请期待',
   paradigmRailFoot: '未来每个范式有各自的编辑方式与模板',
@@ -25,6 +26,8 @@ export default {
   officialTemplates: '官方模板',
   blankDoc: '空白文档',
   blankDocDesc: '从一张白纸开始',
+  blankPagedDoc: '空白分页文档',
+  blankPagedDocDesc: '按页排版，像 Word',
 
   // 添加文件夹（AddFolderModal）
   addFolder: '添加文件夹',
