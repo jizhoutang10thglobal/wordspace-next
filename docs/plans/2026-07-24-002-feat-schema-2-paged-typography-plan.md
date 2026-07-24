@@ -31,7 +31,7 @@ status: active
 | R1–R5 预设库（≥5，脱离/另存） | U1（预设定义/脱离逻辑）+ U2（存储/另存/lastPresetId）+ U5（下拉）|
 | R6–R9 页面级（纸张/边距双单位/页眉页脚/页码）| U6（弹窗，边距双单位）；纸张/方向/页码已存在于 `PageSetupModal` |
 | R10–R15 正文排版 | U1（模型）+ U3（scoped-style 应用）+ U5（常用控件上栏）+ U6（其余进弹窗）|
-| R16–R17 标题各级 | U1（模型）+ U4（应用，H1–H3；H4 见 KTD8）+ U6（弹窗编辑）|
+| R16–R17 标题各级 H1–H4 | U1（模型）+ U4（加 level-4 块 + H1–H4 应用，KTD8）+ U6（弹窗编辑）|
 | R18–R20 顶部工具栏、仅分页显示、即时重排 | U5 + U3（分页联动）|
 | R21–R23 持久化 / 门控 / strip 分清 | U2（ui-demo localStorage 分层存储）；真 app 入盘 = deferred |
 | F1 套用预设 / F5 AI 自带 | U5（用户主动选预设）；F5 的 AI 自带块 = deferred（DEP-3）|
@@ -56,7 +56,7 @@ status: active
 
 - **KTD7 · 验证门双轨 + 强断言纪律（含 per-glyph 假绿告警）。** 页算变化→扩 `test-page.mjs`（node）。真渲染→照 `verify-paged-v4.mjs` 的 Playwright **computed-style 真像素**范式，**不查 class**，新建 `verify-typography.mjs` 挂 `package.json`（顺带补挂现有未 script 化的 paged 门）。**告警**：`getComputedStyle().fontFamily` 返回声明串（含"仿宋"）≠ 真 per-glyph 渲染字体——它验不了 KTD2 是否真分派对；per-glyph 正确性靠 U1 的字符串结构断言（泛型唯一且在末尾）+ 人工/截图抽验兜，测试注释写明此限。
 
-- **KTD8 · H4 标题级：ui-demo v1 只做 H1–H3，H4 随真 app align（评审发现，待 Colin 确认）。** ui-demo 块模型 heading 是 `level: 1|2|3`（`ui-demo/src/mock/pagedSamples.ts:40`），无 `.ws-h4`。加第 4 级要动块编辑器/斜杠菜单/markdown/schema，是跨切改动、超「排版层」范围。故 v1 预设只定义 H1–H3 标题样式（国标 H4=仿宋三号加粗 折进 H3 或暂缺），H4 完整支持随真 app align（真 app Schema 本就封顶 h4）。**这是本 plan 唯一需 Colin 拍的取舍**（见 Open Questions OQ-e）。
+- **KTD8 · H4 标题级：本期就给 ui-demo 加第 4 级标题块（Colin 2026-07-24 拍板）。** ui-demo 块模型 heading 现为 `level: 1|2|3`（`ui-demo/src/mock/pagedSamples.ts:40`），无 `.ws-h4`。为满足 origin R16「H1–H4」，本期给 ui-demo 块模型加 level 4：动 heading 块 type/level 联合类型、渲染器（`<h4 class="ws-h4">`）、斜杠/块菜单「标题 4」项、markdown `####`↔level 4（若 ui-demo 有 md 适配）、`.ws-h4` base CSS。这是跨块模型的改动、比纯排版层大，Colin 明确要在本期做进 ui-demo（真 app Schema 本就封顶 h4，将来 align 对得上）。落在 U4（含加块 + 上样式，可能拆 2 PR）。
 
 - **KTD9 · 控件复用 + 新建可输入下拉。** 分段/输入/按钮复用 `.pg-seg`/`.ws-input`/`.ws-btn`。字号/字体/行距是多选项，`.pg-seg` 装不下且无共享 select——U5 新建**可编辑 combobox**（下拉列表 + 同域自由数字输入，满足 R11「任意 pt」）+ 完整 ARIA/键盘（listbox/combobox、`aria-expanded`/`aria-activedescendant`、方向键/Enter/Esc），对齐现有 `role=radiogroup/switch` 无障碍口径。
 
@@ -68,7 +68,7 @@ status: active
 PageConfig（page.ts，不动）          TypographyConfig（新 typography.ts）
   on,size,orientation,               body:   { cnFont, latinFont, sizePt, lineHeight{mode:'multiple'|'fixedPt', value},
   margin{t,r,b,l}(mm), pageNumbers            firstIndentEm, align, spaceBeforePt, spaceAfterPt }
-                                     headings: { h1..h3: { cnFont, latinFont, sizePt, bold } }   ← H4 见 KTD8
+                                     headings: { h1..h4: { cnFont, latinFont, sizePt, bold } }   ← H4 = 本期加 level-4 块(KTD8)
 
 Preset = { id, nameKey, page: Partial<PageConfig>, type: TypographyConfig }
   预设库 = [国标公文, 学术论文, 商务, APA, MLA]（值来自 origin 附录 A）+ 用户 customPresets[]
@@ -184,23 +184,33 @@ flowchart LR
 
 ---
 
-### U4. 标题各级样式应用（H1–H3）
+### U4. 标题各级：ui-demo 加第 4 级标题块 + H1–H4 样式应用
 
-**Goal**：把 `TypographyConfig.headings` 每级样式（中西字体/字号/粗细）经 scoped `<style>` 应用到分页标题。
+**Goal**：给 ui-demo 块模型加第 4 级标题（level 4 = `<h4 class="ws-h4">`），并把 `TypographyConfig.headings` 每级样式（中西字体/字号/粗细）经 scoped `<style>` 应用到 H1–H4。
 
 **Requirements**：R16、R17、AE7、KTD6、KTD8。
 
-**Dependencies**：U3（共用 scoped-style 机制）。
+**Dependencies**：U3（共用 scoped-style 机制）。**可拆 2 PR**：先 U4a 加 level-4 块（块模型改动），再 U4b 上 H1–H4 排版样式。
 
-**Files**：`ui-demo/src/components/Canvas.tsx`（scoped CSS 追加 `.ws-doc-paged .ws-h1..3`）；`ui-demo/src/components/Canvas.css`。
+**Files**：
+- `ui-demo/src/mock/pagedSamples.ts`（`level: 1|2|3` → `1|2|3|4` 及其 `h()` 辅助）
+- ui-demo 块编辑器/渲染器（heading 块渲染 `<h4 class="ws-h4">`；实现者按现有 h1–h3 渲染点定位，Canvas 侧 heading block 渲染 + 类型联合）
+- ui-demo 斜杠/块菜单（加「标题 4」项，仿现有标题 1–3 项）
+- ui-demo markdown 适配（若有：`####` ↔ level 4；实现者确认 ui-demo 是否有 md↔block 适配层）
+- `ui-demo/src/components/Canvas.css`（新增 `.ws-h4` base 样式，仿 `.ws-h3`）
+- `ui-demo/src/components/Canvas.tsx`（scoped CSS 追加 `.ws-doc-paged .ws-h1..4`）
+- `ui-demo/src/i18n/{zh,en}/*`（若菜单项要文案）
 
-**Approach**：scoped `<style>` 里 `.ws-doc-paged .ws-h1/.ws-h2/.ws-h3{font-family=composeFontFamily; font-size; font-weight}` 从 config.headings 注入（类级盖过 base 硬编 px，KTD6）。国标公文预设下 H1 小标宋二号居中、H2 黑体三号、H3 楷体三号（靠字体区分层级）。**H4：v1 不做（KTD8）**——块模型无 level 4；预设 headings 只含 h1–h3。
+**Approach**：
+- **U4a 加块**：heading 块的 level 联合类型扩到 4；渲染器按 level 4 输出 `<h4 class="ws-h4">`；斜杠/块菜单加「标题 4」；`.ws-h4` base CSS（仿 h3 递减）；若有 md 适配则 `####`↔4。实现者先 grep 现有 h1–h3 的全部触点（渲染/菜单/类型/CSS/md）再逐点扩。
+- **U4b 上样式**：scoped `<style>` 里 `.ws-doc-paged .ws-h1/.ws-h2/.ws-h3/.ws-h4{font-family=composeFontFamily; font-size; font-weight}` 从 config.headings 注入（类级盖过 base，KTD6）。国标公文预设：H1 小标宋二号22pt居中、H2 黑体三号16pt、H3 楷体三号16pt、H4 仿宋三号16pt加粗（靠字体区分层级）。
 
 **Test scenarios**（`verify-typography.mjs` 追加）：
-- Covers AE7（**降为 H1–H3**）：套国标公文，量 h1/h2/h3 computed fontFamily 分别含 宋/黑/楷 栈（三级字体确有差异）。
-- 改 H2 字号一档 → 只 H2 变、H1/H3 不动；`deriveActivePreset` 转自定义。
+- **加块**：斜杠菜单能插入标题 4 → 渲染 `<h4 class="ws-h4">`；存盘 round-trip 保住 level 4（若有 md，`####` 往返）。
+- Covers AE7：套国标公文，量 h1/h2/h3/h4 computed fontFamily 分别含 宋/黑/楷/仿 栈（四级字体确有差异）。
+- 改 H2 字号一档 → 只 H2 变、其余级不动；`deriveActivePreset` 转自定义。
 
-**Verification**：Playwright 每级 computed 断言绿；变异——漏掉 h2 字体应用，AE7 断言必红。
+**Verification**：Playwright 加块 + 每级 computed 断言绿；变异——漏掉 h4 渲染或字体应用，加块/AE7 断言必红。
 
 ---
 
@@ -244,7 +254,7 @@ flowchart LR
 **Files**：`ui-demo/src/components/PageSetupModal.tsx`（扩堆叠分节）+ `.css`；`ui-demo/src/i18n/{zh,en}/editor.ts`。
 
 **Approach**：
-- **堆叠分节**（评审：tab vs 分节是硬 fork，本 plan 定**堆叠可折叠分节**——比 tab 简单、无焦点/滚动位管理、与现有单滚动 body 一致）：「页面」（纸张/方向/边距/页码 + 页眉页脚文本框）、「排版」（字体/字号/行距/首行缩进/对齐/段前段后）、「标题」（H1–H3 各字体/字号/粗细）。默认全展开，顺序页面→排版→标题。
+- **堆叠分节**（评审：tab vs 分节是硬 fork，本 plan 定**堆叠可折叠分节**——比 tab 简单、无焦点/滚动位管理、与现有单滚动 body 一致）：「页面」（纸张/方向/边距/页码 + 页眉页脚文本框）、「排版」（字体/字号/行距/首行缩进/对齐/段前段后）、「标题」（H1–H4 各字体/字号/粗细）。默认全展开，顺序页面→排版→标题。
 - **边距 mm↔inch**（KTD3）：显示层换算（存储恒 mm），切 inch 时四值按 `mmToInch` 显示保留 2 位、输入回写经 `inchToMm`。
 - **「另存为预设」流程明确**（评审：防数据丢失）：点按钮 → 弹内联命名输入（非二次弹窗）；**重名 = 拒绝 + 提示**（不静默覆盖——A1 存公司标准场景数据安全）；取消 = 关输入不改。→ `useCustomPresets.saveAs`。
 - 复用 `.pg-field`/`.pg-seg`/`.ws-input`/`.pg-switch` + U5 的 combobox。
@@ -282,10 +292,10 @@ flowchart LR
 
 ## Scope Boundaries
 
-**范围内（v1）**：U1–U7。五预设、中西字体分设（font-family 链，泛型唯一末尾）、mm/inch 双单位、正文全套排版、标题 **H1–H3**、段间距、顶部工具栏（可编辑 combobox + ARIA + 窄屏溢出）+ ⚙ 分节弹窗、ui-demo localStorage 分层存储（含 lastPresetId）、Playwright computed-style 门。
+**范围内（v1）**：U1–U7。五预设、中西字体分设（font-family 链，泛型唯一末尾）、mm/inch 双单位、正文全套排版、标题 **H1–H4（含给 ui-demo 加第 4 级标题块，KTD8）**、段间距、顶部工具栏（可编辑 combobox + ARIA + 窄屏溢出）+ ⚙ 分节弹窗、ui-demo localStorage 分层存储（含 lastPresetId）、Playwright computed-style 门。
 
 **Deferred to Follow-Up Work（本仓后续 PR）**：
-- **真 app align**：整体移植真 app，排版入盘 `data-ws-schema-css="type"` + Schema 校验白名单扩展（origin RISK-2）；**H4 完整支持**（真 app Schema 封顶 h4，块模型有第 4 级）。
+- **真 app align**：整体移植真 app，排版入盘 `data-ws-schema-css="type"` + Schema 校验白名单扩展（origin RISK-2）。
 - ui-demo 门是否进 CI（U7 记的独立决策）。
 
 **Deferred for later（origin 拍板，非本期）**：奇偶页镜像/首页差异化页眉页脚（国标页码奇右偶左降级为单一规则）；中文避头尾/标点禁则（靠浏览器 `line-break` 兜底）；跨组织共享模板池；真 app 字体内嵌。
@@ -302,7 +312,7 @@ flowchart LR
 
 ## Open Questions
 
-- **OQ-e（需 Colin 拍，KTD8）· H4 标题级怎么办？** ui-demo 块模型只有 H1–H3。选项：(a) v1 只做 H1–H3、国标 H4 折进 H3、完整 H4 随真 app align（**推荐**，避免跨切块模型改动）；(b) 本期给 ui-demo 加第 4 级 heading 块（动块编辑器/斜杠/markdown/schema，超「排版层」范围）。plan 默认走 (a)。
+- **OQ-e（已由 Colin 拍板 2026-07-24）· H4 = 本期给 ui-demo 加第 4 级标题块。** 选 (b)：本期就在 ui-demo 块模型加 level 4（U4 含加块 + H1–H4 样式），不折中。跨块模型改动是有意为之的范围包含（KTD8/U4）。
 - OQ-a（origin OQ1）真 app 排版 CSS 文件形状 / 校验白名单——deferred 到真 app align plan。
 - OQ-b（origin OQ2）字号档位——本 plan 定：列常用号（初号~小五约 12 档，附录 B）+ 可编辑 combobox 自由 pt（U1/U5）。
 - OQ-c（origin OQ4）自定义预设存储——ui-demo 全局 localStorage（U2）；真 app 存哪 deferred。
