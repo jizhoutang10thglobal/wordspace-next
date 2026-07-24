@@ -1140,7 +1140,6 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
 .ws-pgs-margins { flex-wrap: wrap; padding-left: 50px; font-size: var(--fs-sm); color: var(--c-text-secondary); }
 .ws-pgs-margins label { display: flex; align-items: center; gap: 4px; }
 .ws-pgs-margins input { width: 56px; height: 26px; border: 1px solid var(--c-divider); border-radius: var(--r-sm); padding: 0 6px; font-size: var(--fs-sm); background: var(--c-surface); color: var(--c-text); }
-.ws-pgs-hf { flex: 1; min-width: 0; height: 28px; border: 1px solid var(--c-divider); border-radius: var(--r-sm); padding: 0 8px; font-size: var(--fs-sm); background: var(--c-surface); color: var(--c-text); }
 .ws-pgs-toggle { cursor: pointer; user-select: none; }
 .ws-pgs-off { opacity: 0.4; pointer-events: none; }
 .ws-pgs-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
