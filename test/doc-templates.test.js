@@ -7,6 +7,7 @@ _i18n.configureI18n(require('../src/i18n').ZH, require('../src/i18n').EN);
 _i18n.setActiveLang('zh');
 const { TEMPLATES } = require('../src/lib/doc-templates.js');
 const { validate } = require('../src/lib/schema-validate.js');
+const registry = require('../src/lib/schema-registry.js');
 
 test('blank is the first template', () => {
   assert.equal(TEMPLATES[0].id, 'blank');
@@ -34,3 +35,19 @@ for (const t of TEMPLATES) {
     assert.equal(r.conform, true, `${t.id} 不符合 Schema: ` + JSON.stringify(r.violations, null, 2));
   });
 }
+
+// 模板按范式归类：blank → schema-1(流式) / blank-paged → schema-2(分页)。
+// 每个模板声明的 schema 字段必须与磁盘字节 classify 的结果一致（新建弹窗按 schema 过滤模板，错了会归错范式）。
+test('每个模板产出的 HTML classify 结果 == 声明的 schema 字段', () => {
+  for (const t of TEMPLATES) {
+    assert.ok(t.schema, `${t.id} 缺 schema 字段`);
+    const id = registry.classify(new JSDOM(t.html).window.document).schemaId;
+    assert.equal(id, t.schema, `${t.id} 应归类 ${t.schema}，实际 ${id}`);
+  }
+});
+
+test('存在分页文档模板（schema-2），新建弹窗「分页文档」范式有卡可选', () => {
+  const paged = TEMPLATES.filter((t) => t.schema === 'schema-2');
+  assert.ok(paged.length >= 1, '至少一张 schema-2 分页模板');
+  assert.match(paged[0].html, /data-ws-schema-css="page"/, '分页模板 head 带 page 块');
+});

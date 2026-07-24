@@ -36,6 +36,7 @@
     { key: 'numbered', labelKey: 'blockNumberedList', tag: 'ol' },
     { key: 'todo', labelKey: 'blockTodoList', tag: 'ul', cls: 'ws-todo' },
     { key: 'callout', labelKey: 'blockCallout', tag: 'div', cls: 'ws-callout' },
+    { key: 'toggle', labelKey: 'blockToggle', tag: 'details' }, // 可折叠块（Notion toggle）：newBlock 造 <details open><summary><p>，插入后光标落 summary
     { key: 'image', labelKey: 'blockImage', tag: null, image: true }, // 异步插入（走父层选图），不经 newBlock 同步造块
     { key: 'divider', labelKey: 'blockDivider', tag: 'hr' },
     { key: 'ai', labelKey: 'aiGenerate', tag: null, ai: true },
@@ -60,6 +61,7 @@
     // 带说明的图 <figure><img><figcaption> 也是图片原子块——不认的话会被当装饰块('other')，
     // 选中/块菜单/说明编辑全接不上（doc-images）。要求含 <img> 以排除非图 figure。
     if (t === 'FIGURE' && el.querySelector && el.querySelector('img')) return 'image';
+    if (t === 'DETAILS') return 'toggle'; // 可折叠块：容器本身不可文字编辑（灰选中/拖拽/删），summary + 正文块另行可编辑
     return 'other';
   }
   // 可文字编辑的块：标题/正文/列表/引用 + 含直接文字的 div（callout/裸文本容器）。其余（图片/分隔线/
@@ -210,8 +212,11 @@
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
-    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff}.ws-todo>li[data-checked="true"]{color:#9b9891;text-decoration:line-through}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
+    // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 纸方墨圆旋转 chevron + 正文缩进。
+    // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
+    const TOGGLE_CSS = 'details{margin:8px 0}details>summary{list-style:none;cursor:pointer;display:flex;align-items:flex-start;gap:6px}details>summary::-webkit-details-marker{display:none}details>summary::before{content:"\\25B6";flex:none;display:inline-flex;align-items:center;justify-content:center;width:1.1em;height:1.75em;color:#787c82;transition:transform .12s ease}details[open]>summary::before{transform:rotate(90deg)}details>*:not(summary){margin-left:22px}';
     // §0 决策1 固定色板（块级上色 class；也是入盘 color CSS 的单一来源）。
     const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
     const COLOR_CSS = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
@@ -228,6 +233,7 @@
     let fmtShown = false;    // 格式气泡是否显示——「粘住」用：选区折叠后不立即关，直到离开该块
     let dragStart = null;    // 拖拽选择起点 {x,y}（mousedown 记、mouseup 清）；用来分辨「点击」vs「拖选」
     let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
+    let listSplitPending = false; // U6：list 回车交原生分裂后，一次性 input 里剥新 li 的克隆 id/data-checked（防栈叠）
     let captionEl = null;    // 正在编辑的图片说明 figcaption（不同于 editingEl/selectedEl：块级破坏性键盘分支对它 inert）
     let captionOrig = '';    // 进说明编辑时的原文本（判是否真变、决定要不要 checkpoint）
     let captionWasNew = false; // 本次说明由「加说明」新建（空白失焦即撤销=降回裸 img，且不留空撤销步）
@@ -271,11 +277,32 @@
 
     const docOf = () => doc;
     function topBlocks() { return [...blockRoot.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')); }
+    // ---- toggle 嵌套作用域（scoped block-root，U6）：<details> 体是自己的编辑作用域，与已发版多根 keyOf=rootId:rel 同心智 ----
+    // 作用域根 = 直接子元素是「块」的容器：blockRoot 或 <details>（其子 = summary + 正文块）。
+    function scopeRootOf(node) {
+      let el = node; if (el && el.nodeType === 3) el = el.parentElement;
+      while (el && el !== blockRoot) { if (el.tagName === 'DETAILS') return el; el = el.parentElement; }
+      return blockRoot;
+    }
+    // 作用域内的「块」= 作用域根的直接元素子（排除覆盖层 + summary）。
+    function blocksInScope(root) { return [...root.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui') && c.tagName !== 'SUMMARY'); }
+    function summaryOf(det) { return (det && [...det.children].find((c) => c.tagName === 'SUMMARY')) || null; }
+    // 把块上卷到它所属的顶层块（blockRoot 的直接子）——跨作用域整块删 / 顶层操作用。
+    function topScopeOf(el) { while (el && el.parentElement && el.parentElement !== blockRoot) el = el.parentElement; return (el && el.parentElement === blockRoot) ? el : null; }
     function blockOf(node) {
       let el = node; if (el && el.nodeType === 3) el = el.parentElement;
-      while (el && el.parentElement && el.parentElement !== blockRoot) el = el.parentElement;
-      // 块 = blockRoot 的直接子元素。点到容器外/空白（el.parentElement !== blockRoot）→ null（取消选中）
-      if (!el || el.parentElement !== blockRoot || el.hasAttribute('data-ws2-ui')) return null;
+      if (!el) return null;
+      // 门控：文档无 <details> → 原扁平逻辑（既有 200+ e2e 零风险，对抗验证要求）
+      if (!blockRoot.querySelector('details')) {
+        while (el.parentElement && el.parentElement !== blockRoot) el = el.parentElement;
+        return (el.parentElement === blockRoot && !el.hasAttribute('data-ws2-ui')) ? el : null;
+      }
+      // 有 toggle：停在 parent 是作用域根（blockRoot 或 details）的元素 = scoped 块
+      while (el.parentElement && el.parentElement !== blockRoot && el.parentElement.tagName !== 'DETAILS') el = el.parentElement;
+      if (el.hasAttribute('data-ws2-ui')) return null;
+      const p = el.parentElement;
+      if (p !== blockRoot && !(p && p.tagName === 'DETAILS')) return null; // 作用域外 / 空白
+      if (el.tagName === 'SUMMARY') return p; // summary 节点 → 归属其 details（供跨块删保护 / 灰选整块）
       return el;
     }
 
@@ -332,6 +359,39 @@
 
     // ---- 选中 / 编辑 ----
     function clearSelectedAttr() { const p = body.querySelector('[data-ws2-selected]'); if (p) p.removeAttribute('data-ws2-selected'); }
+
+    // 跨块拖选的「块级高亮」（Wendi 2026-07-22）：拖选跨多块时原生只高亮文字片段、看不清选中了哪几行。
+    // 对齐 Notion——把选区罩住的每个顶层块整行标 data-ws2-rangesel（CSS 给蓝底 + 罩住的块内隐掉原生
+    // ::selection，只剩整行蓝）。仅跨块（≥2 块）才标；单块内选区维持原生文字高亮不动。data-ws2-rangesel
+    // 进 serialize 白名单剥除（纯交互态、绝不入盘）。同 deleteSelection 那套作用域感知块枚举，保持一致。
+    let rangeSelEls = [];
+    function clearRangeSel() { if (rangeSelEls.length) { rangeSelEls.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-rangesel')); rangeSelEls = []; } }
+    function refreshRangeSel() {
+      clearRangeSel();
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      const r = sel.getRangeAt(0);
+      const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
+      if (!sBlk || !eBlk || sBlk === eBlk) return; // 单块内 → 原生文字高亮已够，不标块级
+      const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
+      const crossScope = sScope !== eScope;
+      const scopeRoot = crossScope ? blockRoot : sScope;
+      const tops = blocksInScope(scopeRoot);
+      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      const i = tops.indexOf(sB), j = tops.indexOf(eB);
+      if (i < 0 || j < 0 || i > j) return;
+      for (let k = i; k <= j; k++) { const m = tops[k]; if (m) { m.setAttribute('data-ws2-rangesel', ''); rangeSelEls.push(m); } }
+    }
+    // U23/select-4：删除被一致化守卫拦成空操作时的可感知反馈——把当前跨块高亮的块短暂标 data-ws2-nope，
+    // 触发一段闪烁动画后自清（随 data-ws2-rangesel 高亮视觉语言走，不用系统 beep——app 无音频反馈先例）。
+    function flashNope() {
+      refreshRangeSel(); // 先刷新，确保标的是当前选区跨的块
+      const els = rangeSelEls.slice();
+      if (!els.length) return;
+      els.forEach((el) => el.setAttribute && el.setAttribute('data-ws2-nope', ''));
+      setTimeout(() => els.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-nope')), 420);
+    }
+
     function selectBlock(el) {
       exitEdit();
       clearSelectedAttr();
@@ -357,8 +417,9 @@
       el.setAttribute('contenteditable', 'true');
       el.setAttribute('data-ws2-ce', '');
       el.setAttribute('data-ws2-editing', '');
-      el.focus();
+      el.focus({ preventScroll: true }); // 不触发原生「聚焦滚进视野」（会把整块对齐→点击时文档跳，Wendi 2026-07-22）
       placeCaret(el, caret);
+      scrollCaretIntoViewIfNeeded(); // 只在光标越出视口时最小滚动露出它（键盘导航到屏外块仍可见）
       positionFmtbar();
     }
     function exitEdit() {
@@ -411,6 +472,19 @@
       if (!range) { range = doc.createRange(); range.selectNodeContents(target); range.collapse(caret.mode === 'start'); }
       sel.removeAllRanges(); sel.addRange(range);
     }
+    // 只在光标真落到视口外时最小滚动露出它——修 Wendi 2026-07-22「点击时文档上下跳」：enterEdit 的 el.focus()
+    // 原生「聚焦滚进视野」会把整块对齐、部分露出的块被一把顶进来 → 文档大跳。改成 focus 不滚 + 光标可见就不动，
+    // 只有光标越出视口（键盘方向键/退格合并到屏外块）才按最小量滚回，键盘导航仍不丢光标。
+    function scrollCaretIntoViewIfNeeded() {
+      const sel = doc.getSelection(); if (!sel || !sel.rangeCount) return;
+      let r = sel.getRangeAt(0).getBoundingClientRect();
+      if ((!r || (!r.height && !r.top && !r.bottom)) && editingEl) r = editingEl.getBoundingClientRect();
+      if (!r || (!r.height && !r.width)) return;
+      const vh = win.innerHeight || doc.documentElement.clientHeight || 0;
+      const m = 8;
+      if (r.top < m) win.scrollBy(0, r.top - m);
+      else if (r.bottom > vh - m) win.scrollBy(0, r.bottom - (vh - m));
+    }
 
     // ---- 块操作（复用 format.js）----
     // 待办勾选框样式烤进存盘文件：首次出现待办时往 <head> 注一个 <style id=ws-todo-style>（真实内容、
@@ -438,6 +512,16 @@
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
     }
+    // toggle chevron/marker CSS 烤进存盘文件（照 ensureTodoStyle/ensureCalloutStyle 范式，属性查重，S9）。
+    function ensureToggleStyle() {
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="toggle"]')) return; // 属性查重
+      const st = doc.createElement('style');
+      st.id = 'ws-toggle-style';
+      st.setAttribute('data-ws-schema-css', 'toggle');
+      st.textContent = TOGGLE_CSS;
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
     // attach 时对齐语义 CSS 与文档现状（两件事，都不 markDirty——样式归编辑器托管、不算用户
     // 编辑，下次真实编辑保存时随文件落盘）：
     // ① 升级：旧文件带着 v1 版语义 CSS（老勾选框偏上、老灰阶）→ 覆写成当前版；
@@ -451,6 +535,7 @@
       const pairs = [
         ['todo', TODO_CSS, 'ws-todo-style', 'ul.ws-todo'],
         ['callout', CALLOUT_CSS, 'ws-callout-style', '.ws-callout'],
+        ['toggle', TOGGLE_CSS, 'ws-toggle-style', 'details'],
         ['color', COLOR_CSS, 'ws-color-style', '[class*="ws-color-"]'],
       ];
       for (const [kind, css, id, presentSel] of pairs) {
@@ -505,13 +590,36 @@
     function newBlock(item) {
       let el;
       if (item.tag === 'hr') { el = doc.createElement('hr'); }
-      else if (item.tag === 'ul' || item.tag === 'ol') { el = doc.createElement(item.tag); if (item.cls) el.className = item.cls; const li = doc.createElement('li'); li.textContent = T('editor.listItem'); el.appendChild(li); }
-      else if (item.tag === 'div' && item.cls === 'ws-callout') { el = doc.createElement('div'); el.className = 'ws-callout'; el.textContent = T('editor.calloutContent'); }
-      else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.textContent = T('editor.quoteContent'); }
-      else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.textContent = T('editor.newHeading'); }
+      // U9/create-2：种空产物、不种 i18n 占位文本——applySlash 非空块分支光标折叠到占位**之前**，占位会前插+入盘（「买菜列表项」）。
+      else if (item.tag === 'ul' || item.tag === 'ol') { el = doc.createElement(item.tag); if (item.cls) el.className = item.cls; const li = doc.createElement('li'); li.appendChild(doc.createElement('br')); el.appendChild(li); } // 空 li 补 br（U1：ws-todo 空 li 无 br 零高落不住 caret）
+      else if (item.tag === 'div' && item.cls === 'ws-callout') { el = doc.createElement('div'); el.className = 'ws-callout'; el.appendChild(doc.createElement('br')); }
+      else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.appendChild(doc.createElement('br')); }
+      else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.appendChild(doc.createElement('br')); }
+      else if (item.tag === 'details') { el = doc.createElement('details'); el.setAttribute('open', ''); el.appendChild(doc.createElement('summary')); el.appendChild(doc.createElement('p')); ensureToggleStyle(); } // 折叠块种子：<details open><summary></summary><p></p></details>（默认展开，光标由 applySlash 落 summary）
       else { el = doc.createElement('p'); }
       ensureBlockStyle(item.cls);
       return el;
+    }
+    // U12/U13：列表项出列/outdent 前，把它的后继兄弟收编进它自己的子列表（继承父列表 tag/class）——
+    // 否则后继项留在原父列表里、文档顺序跑到出列项之前（keys-5 错序）。无后继则 no-op。
+    function absorbTrailingSiblings(li) {
+      if (!li || !li.nextElementSibling) return;
+      const parentList = li.parentElement;
+      if (!parentList) return;
+      let sub = li.lastElementChild;
+      if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
+        sub = doc.createElement(parentList.tagName.toLowerCase());
+        if (parentList.className) sub.className = parentList.className;
+        li.appendChild(sub);
+      }
+      while (li.nextElementSibling) sub.appendChild(li.nextElementSibling);
+    }
+    // 光标落 li **自身文字**末尾（在其嵌套子列表之前）——outdent/收编后 li 追加了子列表，
+    // selectNodeContents(li).collapse(false) 会落到子列表之后、打字进错位置（对抗审查 P2）。
+    function caretAtLiTextEnd(li) {
+      let anchor = null;
+      for (const n of li.childNodes) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) break; anchor = n; }
+      try { const r = doc.createRange(); if (anchor) r.setStartAfter(anchor); else r.setStart(li, 0); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
     }
     function insertAfter(refEl, item) {
       const el = newBlock(item);
@@ -632,6 +740,21 @@
 
     function turnInto(el, item) {
       if (!el) return el;
+      if (el.tagName === 'SUMMARY') el = el.parentElement || el; // P0：编辑 summary 时「转为」→ 作用于整个 toggle（否则 retag 掉 summary → 零 summary 非合规字节）
+      // toggle→文本（U9/R2）：源是 <details>、目标非 details → summary 内容 → 目标块，正文块提到其后（零内容丢失）。
+      // 必须在下面 containerLines 计算之前——否则 details 的 summary+正文会被误当「多段容器」拍平。
+      if (el.tagName === 'DETAILS' && item.tag !== 'details') {
+        const summary = summaryOf(el);
+        const bodyBlocks = blocksInScope(el);
+        const tgtTag = (item.tag && item.tag[0] === 'h') ? item.tag : (item.tag === 'blockquote' ? 'blockquote' : 'p');
+        const target = doc.createElement(tgtTag);
+        if (summary) { while (summary.firstChild) target.appendChild(summary.firstChild); }
+        el.replaceWith(target);
+        let ref = target;
+        for (const b of bodyBlocks) { ref.after(b); ref = b; } // 正文块按序提到 target 之后
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return target;
+      }
       // 修 P1：源是「多段容器块」(callout/quote 含 <p> 子) 时，先把内部块拍平成「行」——否则块级 <p> 被
       // 原样搬进目标块，产 <ul><li><p>..</p></li> / <p><p>..</p></p> 等非法结构（闭合破坏）。列表源(<ul>/<ol>)
       // 由下面既有的 flattenListToPhrasing 分支处理，这里只管非列表容器；转容器目标(引用/callout)保留 <p> 不拍。
@@ -644,13 +767,27 @@
         if (item.cls) next.className = item.cls; else next.removeAttribute('class');
         if (item.cls === 'ws-todo') ensureTodoStyle();
         else next.querySelectorAll('li[data-checked]').forEach((li) => li.removeAttribute('data-checked')); // A3：todo→普通列表，清残留勾选态
+        // 空 li（无元素子且无非空白文字）在 ws-todo list-style:none 下无 line box、高度 0、落不住 caret、
+        // 后续输入被静默吞掉（create-1）→ 补 <br> 占位。containerLines 与 else 两条建 li 路径都要过（容器块含真空 <p></p> 时同样中招）。
+        // 无「可视内容」（无非空白文字、且无 br/img/hr 等占行元素——空的 <b></b> 等空行内元素不算）→ 补 <br>，
+        // 否则 ws-todo 空 li 零高、落不住 caret、吞输入（create-1；对抗审查 P3：空行内元素夹在 <br> 间会漏补）。
+        const padLi = (li) => { if (!li.textContent.trim() && !li.querySelector('br,img,hr,input,figure')) li.appendChild(doc.createElement('br')); };
         if (containerLines) {
           while (next.firstChild) next.removeChild(next.firstChild);
-          for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); next.appendChild(li); } // 容器每段 → 一个 <li>
+          for (const line of containerLines) { const li = doc.createElement('li'); li.appendChild(line); padLi(li); next.appendChild(li); } // 容器每段 → 一个 <li>（空段补 br）
         } else if (!next.querySelector('li')) {
-          const li = doc.createElement('li');
-          while (next.firstChild) li.appendChild(next.firstChild);
-          next.appendChild(li); // 空内容时得到 <ul><li></li></ul>（合法、可继续编辑）
+          // U10/create-3：内容含顶层 <br>（如 todo→文本往返产物「甲<br>乙<br>丙」）→ 按 <br> 拆行、每行一个 <li>，
+          // 别塞进单个 li 塌成一项（回程往返销毁列表结构）。空行跳过（对齐粘贴防悬空守卫），≥2 行才走多 li。
+          const groups = []; let cur = [];
+          for (const n of [...next.childNodes]) { if (n.nodeName === 'BR') { groups.push(cur); cur = []; } else cur.push(n); }
+          groups.push(cur);
+          const nonEmpty = groups.filter((g) => g.some((n) => (n.textContent || '').trim() || n.nodeType === 1));
+          while (next.firstChild) next.removeChild(next.firstChild);
+          if (nonEmpty.length >= 2) {
+            for (const g of nonEmpty) { const li = doc.createElement('li'); g.forEach((n) => li.appendChild(n)); padLi(li); next.appendChild(li); }
+          } else {
+            const li = doc.createElement('li'); (nonEmpty[0] || []).forEach((n) => li.appendChild(n)); padLi(li); next.appendChild(li);
+          }
         }
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return next;
@@ -660,6 +797,31 @@
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return next;
       }
+      if (item.tag === 'details') {
+        // 文本→toggle：源块行内内容 → summary；正文块提到 det 里。U17/create-6：列表源不再把所有项拍进 summary，
+        // 改为「首项 → summary，其余项各成一个正文 <p>」；并复制源块 id 等用户属性到 det（不走 retagElement 会丢锚点）。
+        const det = doc.createElement('details'); det.setAttribute('open', '');
+        const summary = doc.createElement('summary');
+        const bodyBlocks = [];
+        if (containerLines) { containerLines.forEach((line, i) => { if (i > 0) summary.appendChild(doc.createElement('br')); summary.appendChild(line); }); }
+        else if (el.tagName === 'UL' || el.tagName === 'OL') {
+          [...el.querySelectorAll('li')].forEach((li, i) => {
+            const frag = doc.createDocumentFragment();
+            for (const n of [...li.childNodes]) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) continue; frag.appendChild(n.cloneNode(true)); } // 取该项行内内容（跳嵌套子列表）
+            if (i === 0) summary.appendChild(frag);
+            else { const p = doc.createElement('p'); if (frag.firstChild) p.appendChild(frag); else p.appendChild(doc.createElement('br')); bodyBlocks.push(p); }
+          });
+        }
+        else { while (el.firstChild) summary.appendChild(el.firstChild); }
+        if (!summary.firstChild) summary.appendChild(doc.createElement('br')); // U17 对抗审查：首项行内为空（仅嵌套子列表 / 空 li）→ 补 <br>，避免不可见空标题
+        det.appendChild(summary);
+        if (bodyBlocks.length) bodyBlocks.forEach((b) => det.appendChild(b)); else det.appendChild(doc.createElement('p'));
+        if (el.tagName === 'UL' || el.tagName === 'OL') { for (const a of [...el.attributes]) { if (a.name.indexOf('data-ws2') !== 0 && a.name !== 'class') det.setAttribute(a.name, a.value); } } // U17/create-6：仅**列表源**复制 id 等用户属性（锚点不断）；段落→toggle 维持既有「不迁移 id」行为（toggle.spec.js U9），ws2 哨兵/class 不带
+        el.replaceWith(det);
+        ensureToggleStyle();
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return det;
+      }
       // 修 A1：源是列表、目标非列表（正文/标题/引用/callout）→ 先把 li 拍平成 phrasing，
       // 否则 retag 后 <li> 孤儿挂在 <blockquote>/<p> 下（非法 HTML）。
       if (el.tagName === 'UL' || el.tagName === 'OL') {
@@ -667,7 +829,7 @@
         const nx = fmt.retagElement(el, item.tag);
         while (nx.firstChild) nx.removeChild(nx.firstChild);
         nx.appendChild(frag);
-        if (item.cls) nx.className = item.cls; else if (nx.classList && nx.classList.contains('ws-callout')) nx.classList.remove('ws-callout');
+        if (item.cls) nx.className = item.cls; else if (nx.classList) { nx.classList.remove('ws-callout'); nx.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class（ws-callout/ws-todo），用户自定义 class 保留
         ensureBlockStyle(item.cls);
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         return nx;
@@ -679,15 +841,53 @@
         while (next.firstChild) next.removeChild(next.firstChild);
         containerLines.forEach((line, i) => { if (i > 0) next.appendChild(doc.createElement('br')); next.appendChild(line); });
       }
-      if (item.cls) next.className = item.cls; else if (next.classList && next.classList.contains('ws-callout')) next.classList.remove('ws-callout');
+      if (item.cls) next.className = item.cls; else if (next.classList) { next.classList.remove('ws-callout'); next.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class，用户自定义 class 保留
       ensureBlockStyle(item.cls);
       if (undoMgr) undoMgr.checkpoint(); markDirty();
       return next;
     }
+    // Step 2（Colin 2026-07-23，方案 B 第 2 步）：从当前选区解析出「整块 <ul>/<ol> 里被选中的直接子 li 连续跨度」。
+    // 折叠光标 → 光标所在那一行；跨 li 选区 → 首末 li 之间的连续跨度；落在嵌套子项 → 上卷到含它的顶层 li。返回 li 数组或 null。
+    function selectedListLines(ul) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return null;
+      const r = sel.getRangeAt(0);
+      const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
+      if (!allLis.length) return null;
+      if (r.collapsed) { // 折叠光标 = 光标所在那一行（嵌套子项上卷到顶层 li）
+        let e = r.startContainer; e = e && (e.nodeType === 3 ? e.parentElement : e); e = e && e.closest ? e.closest('li') : null;
+        while (e && e.parentElement !== ul) { const up = e.parentElement && e.parentElement.closest ? e.parentElement.closest('li') : null; if (!up || up === e) { e = null; break; } e = up; }
+        return e ? [e] : null;
+      }
+      // 非折叠：取与选区**内容有非零交集**的直接子 li——按内容区间比，排除「只碰边界、零字符选中」的 li。
+      // （对抗审查：三击整行 / Home+Shift+↓ 会把 range 末端停在下一行最前沿 end=LI#next:0；用起止容器映射会误多抽一行。）
+      // compareBoundaryPoints 常量：END_TO_START=3（比 r.start vs liR.end）、START_TO_END=1（比 r.end vs liR.start）。
+      const hit = allLis.filter((li) => {
+        const liR = doc.createRange(); liR.selectNodeContents(li);
+        return r.compareBoundaryPoints(3, liR) < 0 && r.compareBoundaryPoints(1, liR) > 0; // r.start<liR.end && r.end>liR.start（严格重叠）
+      });
+      if (!hit.length) return null;
+      const i = allLis.indexOf(hit[0]), j = allLis.indexOf(hit[hit.length - 1]);
+      return allLis.slice(i, j + 1);
+    }
+    // 「转为」只作用于选中的行：把 <ul>/<ol> 在选中 li 跨度处劈成 [前列表][选中行]（[后列表]），让选中 li 独占原 <ul>，
+    // 再复用整块 turnInto——产物、class 迁移、data-checked 清理、conform 全走既有逻辑，零重复。全选（跨全部 li）= 整块转换。
+    function turnIntoLines(ul, lis, item) {
+      // 目标就是当前列表类型（选中行「转为」它已经是的类型）→ 空操作，别把一张列表劈成三张（对抗审查 LOW）。
+      if (item.tag === ul.tagName.toLowerCase() && ((item.cls === 'ws-todo') === ul.classList.contains('ws-todo'))) return ul;
+      const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
+      const firstIdx = allLis.indexOf(lis[0]), lastIdx = allLis.indexOf(lis[lis.length - 1]);
+      if (firstIdx < 0 || lastIdx < 0 || (firstIdx === 0 && lastIdx === allLis.length - 1)) return turnInto(ul, item); // 判不出 / 全选 → 整块
+      const mkUl = () => { const u = doc.createElement(ul.tagName); if (ul.className) u.className = ul.className; return u; };
+      if (firstIdx > 0) { const b = mkUl(); for (let k = 0; k < firstIdx; k++) b.appendChild(allLis[k]); ul.before(b); }
+      if (lastIdx < allLis.length - 1) { const a = mkUl(); for (let k = lastIdx + 1; k < allLis.length; k++) a.appendChild(allLis[k]); ul.after(a); }
+      return turnInto(ul, item); // 此刻 ul 只剩选中 li → 产物替换 ul、留原位、前后列表夹住
+    }
     function removeBlock(el) {
-      const blocks = topBlocks();
+      const scope = scopeRootOf(el); // U6：作用域感知——toggle 体内删块按体内计数；≥1 块铁则（summary-only 死胡同）
+      const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
       if (blocks.length <= 1) {
-        // 删到只剩一块 → 清空成空正文进编辑，避免空白死状态
+        // 删到作用域只剩一块 → 清空成空正文进编辑，避免空白死状态
         const p = fmt.retagElement(el, 'p'); p.innerHTML = '';
         if (undoMgr) undoMgr.checkpoint(); markDirty();
         enterEdit(p, { mode: 'start' });
@@ -718,7 +918,9 @@
       if (!sel || sel.rangeCount === 0) return;
       if (sel.isCollapsed) { doc.execCommand(cmd, false, null); markDirty(); persistEditing(); return; } // 折叠：作用于光标
       const full = sel.getRangeAt(0);
-      const tops = topBlocks();
+      // 作用域感知（U6）：跨作用域（选区横跨 summary/正文/外层）格式化会注入跨界 span → 非合规，直接拒绝（安全）。
+      if (scopeRootOf(full.startContainer) !== scopeRootOf(full.endContainer)) return;
+      const tops = blocksInScope(scopeRootOf(full.startContainer));
       let i = tops.indexOf(blockOf(full.startContainer)), j = tops.indexOf(blockOf(full.endContainer));
       if (i < 0 || j < 0) { doc.execCommand(cmd, false, null); markDirty(); persistEditing(); return; } // 兜底
       if (i > j) { const t = i; i = j; j = t; }
@@ -747,6 +949,19 @@
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
       const r = sel.getRangeAt(0);
+      // P2：选区跨 summary 边界（一端在 summary、另一端不在同一 summary）→ 安全空操作（return true 拦掉调用方的
+      // 原生 execCommand('delete')，否则原生会把正文并进 summary / 删出 summary-only → 非合规）。同一 summary 内选区放行原生。
+      const sumOf = (n) => { const e = n && (n.nodeType === 3 ? n.parentElement : n); return e && e.closest ? e.closest('summary') : null; };
+      if (sumOf(r.startContainer) !== sumOf(r.endContainer)) { flashNope(); return true; }
+      // U23/select-4：选区端点部分跨 details 边界（一端在 toggle 体内、另一端在外，或分属不同 toggle）→ 一致化为
+      // 空操作 + 反馈，绝不半删（旧行为：删 toggle 外那侧、体内被下面 P2 clamp 夹住不删 = 半应用，与选区高亮承诺不符）。
+      // toggle 被选区整体包含（两端都在其外、detOf 皆 null 且相等）→ 不拦，维持现状可整删（防回归）。
+      // 对抗审查：端点**锚在 details 元素本身**（selectWholeDoc 把 ⌘A 端点锚在首/末块元素上，:444-445）时，
+      // 该 details 是整体在选区一侧、不是「部分进入体内」——若 detOf 用 closest('details') 会把它自己算进去、
+      // 与另一端（段落=null）不等 → 误判成部分跨界、把「⌘A 全选删」在首/末为 toggle 的文档里整个吞成空操作（HIGH 回归）。
+      // 故：端点是 DETAILS 元素本身 → 取其**外层** details（嵌套时）或 null，绝不算它自己。
+      const detOf = (n) => { let e = n && (n.nodeType === 3 ? n.parentElement : n); if (!e || !e.closest) return null; if (e.tagName === 'DETAILS') return e.parentElement && e.parentElement.closest ? e.parentElement.closest('details') : null; return e.closest('details'); };
+      if (detOf(r.startContainer) !== detOf(r.endContainer)) { flashNope(); return true; }
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (!sBlk || !eBlk) return false; // 选区落在块外/覆盖层 → 不碰
       if (sBlk === eBlk) {
@@ -759,31 +974,47 @@
         doc.execCommand('delete'); markDirty(); if (undoMgr) undoMgr.scheduleCheckpoint();
         return true;
       }
-      // 跨块：Range 规范上 startContainer 在 endContainer 之前 → sBlk 在 eBlk 之前
-      const tops = topBlocks();
-      const i = tops.indexOf(sBlk), j = tops.indexOf(eBlk);
+      // 跨块（作用域感知，U6）：同作用域 → 用该作用域块列表（含 toggle 体内）；跨作用域 → 上卷到顶层块，
+      // details 端点 isEditableEl=false → 整块删（保护其 summary，绝不部分裁剪成非合规）。
+      const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
+      const crossScope = sScope !== eScope;
+      const scopeRoot = crossScope ? blockRoot : sScope;
+      const tops = blocksInScope(scopeRoot);
+      let sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      const i = tops.indexOf(sB), j = tops.indexOf(eB);
       if (i < 0 || j < 0 || i > j) return false;
-      // 修 ED-A2/A3：端点是结构块（table/details/figure/img 等非叶子文字块）时，Range 部分裁剪会把表格削成
-      // 非矩形（table-ragged）、把 details 的 <summary> 删掉（details-summary）→ 落盘非合规。只对可编辑叶子块
-      // 做部分裁剪，结构端点改成整块删除（「从 h2 中间选到表格中间删」= 删 h2 尾巴 + 整删表格，绝不产非法结构）。
-      const sEditable = isEditableEl(sBlk), eEditable = isEditableEl(eBlk);
-      if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sBlk, sBlk.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
-      if (eEditable) { const r2 = doc.createRange(); r2.setStart(eBlk, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
-      for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === blockRoot) m.remove(); }                            // 删中间整块
-      const prefixEnd = sEditable ? sBlk.lastChild : null; // 接合点（合并前 prefix 末尾）
-      if (sEditable && eEditable && SM.canMerge(sBlk, eBlk)) { // 两端都是存活的叶子文字块才节点级拼接（挡透明包裹块/空容器/void）
-        while (eBlk.firstChild) sBlk.appendChild(eBlk.firstChild); // 末块剩余并入起块
-        eBlk.remove();
+      // 修 ED-A2/A3（推广到作用域）：端点是结构块（table/details/figure/img）时 Range 部分裁剪会削 summary/table
+      // → 落盘非合规。只对可编辑叶子块部分裁剪，结构端点整块删。
+      const sEditable = isEditableEl(sB), eEditable = isEditableEl(eB);
+      if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sB, sB.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
+      if (eEditable) { const r2 = doc.createRange(); r2.setStart(eB, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
+      for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === scopeRoot) m.remove(); }                            // 删中间整块（作用域内）
+      // 修 bug6：裁剪把列表端点的 <li> 删光后会剩一个非法空 <ul></ul>（无 li 无勾选框的 ghost 死块，
+      // 且后续打字会灌进 <ul> 变非合规）。把裁空的列表块就地换成空 <p>（de-list），放在合并前——
+      // 两端都成空 <p> 时下面的 canMerge 会把它们并成一个干净空块（对齐"选全部再删=一个空块"）。
+      // 裁空的列表端点：整列表已无文字内容（无 <li>，或只剩空 <li> —— 空 <li> 是零高，其绝对定位的勾选框
+      // ::before 会悬空盖到下一块上，Wendi 反馈的"复选框遮挡后面文字"）→ 就地换成空 <p>（de-list）。
+      // 只在整列表空时换；还有内容的项保留（部分删不动列表）。
+      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && b.parentNode && (b.textContent || '').trim() === '' && !b.querySelector('img, figure, table')) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
+      sB = fixEmptyList(sB); eB = fixEmptyList(eB);
+      const prefixEnd = sEditable ? sB.lastChild : null; // 接合点（合并前 prefix 末尾）
+      if (sEditable && eEditable && SM.canMerge(sB, eB)) { // 两端都是存活的叶子文字块才节点级拼接
+        while (eB.firstChild) sB.appendChild(eB.firstChild); // 末块剩余并入起块
+        eB.remove();
       }
-      if (!eEditable) eBlk.remove(); // 结构末块整删
-      if (!sEditable) sBlk.remove(); // 结构起块整删
+      // P2 clamp：结构端点只在「整块被选中」（端块本身=该顶层结构块）时整删；若选区只是**部分进入**其体内
+      //（eBlk 是它的后代、eBlk!==eB），则夹住不删——绝不销毁用户未选中的正文块（如 toggle 里选区外的 b2）。
+      if (!eEditable && eBlk === eB) eB.remove();
+      if (!sEditable && sBlk === sB) sB.remove();
+      // toggle 体 ≥1 块铁则：作用域删空 → 补一个空 <p>（summary-only 是死胡同）
+      if (scopeRoot !== blockRoot && blocksInScope(scopeRoot).length === 0) scopeRoot.appendChild(doc.createElement('p'));
       markDirty(); if (undoMgr) undoMgr.checkpoint();
       // 光标/选中落点：优先存活的起块，其次存活的末块，再次删除处附近块
-      let anchor = sEditable && sBlk.parentElement ? sBlk : (eEditable && eBlk.parentElement ? eBlk : null);
-      if (!anchor) { const rest = topBlocks(); anchor = rest[Math.min(i, rest.length - 1)] || rest[0] || null; }
+      let anchor = sEditable && sB.parentElement ? sB : (eEditable && eB.parentElement ? eB : null);
+      if (!anchor) { const rest = blocksInScope(scopeRoot); anchor = rest[Math.min(i, rest.length - 1)] || rest[0] || null; }
       if (anchor && isEditableEl(anchor)) {
         enterEdit(anchor, { mode: 'keep' });
-        try { const cr = doc.createRange(); if (anchor === sBlk && prefixEnd && prefixEnd.parentNode === sBlk) cr.setStartAfter(prefixEnd); else cr.setStart(anchor, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
+        try { const cr = doc.createRange(); if (anchor === sB && prefixEnd && prefixEnd.parentNode === sB) cr.setStartAfter(prefixEnd); else cr.setStart(anchor, 0); cr.collapse(true); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
       } else if (anchor) { selectBlock(anchor); positionGrip(anchor); }
       return true;
     }
@@ -792,6 +1023,8 @@
     function splitBlock() {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || !editingEl) return false;
+      if (editingEl.tagName === 'SUMMARY') return false; // U13 防御纵深：绝不劈 summary（否则产第二个 summary → 非合规）
+      if (editingEl.tagName === 'DETAILS') return false; // details 容器本身不可编辑，别劈
       if (!sel.isCollapsed) doc.execCommand('delete'); // 选中文字后回车：先删选区，再在塌陷点劈
       const r = sel.getRangeAt(0);
       const el = editingEl;
@@ -843,8 +1076,8 @@
     function wrapMark(bg) {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-      if (!selWithinOneBlock()) return; // 跨块拒绝：否则 extractContents 把块级元素拽进 <mark>
       const range = sel.getRangeAt(0);
+      if (!fmt.clampRangeToBlock(doc, range, body)) return; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块（否则高亮没反应）
       const mk = doc.createElement('mark');
       if (bg) mk.style.background = bg;
       try { range.surroundContents(mk); } catch (e) { mk.appendChild(range.extractContents()); range.insertNode(mk); }
@@ -853,8 +1086,8 @@
     function wrapCode() {
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-      if (!selWithinOneBlock()) return; // 跨块拒绝：否则 extractContents 会把块级元素拽进 <code>
       const range = sel.getRangeAt(0);
+      if (!fmt.clampRangeToBlock(doc, range, body)) return; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块
       const code = doc.createElement('code');
       try { range.surroundContents(code); } catch (e) { code.appendChild(range.extractContents()); range.insertNode(code); }
       markDirty(); persistEditing();
@@ -911,23 +1144,53 @@
       fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; });
       pop.style.display = open ? 'none' : 'flex';
     }
+    // 当前编辑/选中块对应的「转为」菜单项 key——打开菜单时高亮它（Wendi 2026-07-22：看不出当前是几级标题）。
+    // 直接看 tagName（classify 把 H1–H4 都归 'heading'、分不出级），列表按 ws-todo class 区分待办。
+    function turnMenuActiveKey() {
+      const el = editingEl || selectedEl; if (!el) return null;
+      const t = el.tagName;
+      if (t === 'P') return 'text';
+      if (t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') return t.toLowerCase();
+      if (t === 'BLOCKQUOTE') return 'quote';
+      if (t === 'OL') return 'numbered';
+      if (t === 'UL') return (el.classList && el.classList.contains('ws-todo')) ? 'todo' : 'list';
+      if (t === 'DETAILS') return 'toggle';
+      return null;
+    }
+    function markTurnMenuActive(menu) {
+      const cur = turnMenuActiveKey();
+      menu.querySelectorAll('.ws-fmtbar-menu-item').forEach((it) => it.classList.toggle('ws-fmtbar-menu-item--on', it.dataset.key === cur));
+    }
     function openTurnMenu() {
       let menu = fmtbar.querySelector('.ws-fmtbar-menu');
-      if (menu) { togglePopMenu(menu); return; }
-      menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
-      menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
-      [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList']].forEach(([key, labelKey]) => {
-        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.textContent = T('editor.' + labelKey);
-        it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-        it.addEventListener('click', (e) => {
-          e.preventDefault(); e.stopPropagation();
-          const item = SLASH_ITEMS.find((x) => x.key === key);
-          const target = editingEl || selectedEl;
-          if (target && item) { const nx = turnInto(target, item); menu.style.display = 'none'; if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx); }
+      if (!menu) {
+        menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
+        menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
+        // 标题给全 H1–H4（此前漏了 H4，与斜杠菜单不一致——Wendi 2026-07-22「我只有 123，它没有 4」）。
+        [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['h4', 'blockH4'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList'], ['toggle', 'blockToggle']].forEach(([key, labelKey]) => {
+          const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.dataset.key = key; it.textContent = T('editor.' + labelKey);
+          it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+          it.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const item = SLASH_ITEMS.find((x) => x.key === key);
+            const target = editingEl || selectedEl;
+            if (target && item) {
+              // Step 2：列表 + 选区只覆盖部分行 → 只抽那几行（turnIntoLines）；整列表选中或非列表 → 整块 turnInto。
+              let nx;
+              if (target.tagName === 'UL' || target.tagName === 'OL') {
+                const lines = selectedListLines(target);
+                const allCount = [...target.children].filter((c) => c.tagName === 'LI').length;
+                nx = (lines && lines.length && lines.length < allCount) ? turnIntoLines(target, lines, item) : turnInto(target, item);
+              } else { nx = turnInto(target, item); }
+              menu.style.display = 'none';
+              if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx);
+            }
+          });
+          menu.appendChild(it);
         });
-        menu.appendChild(it);
-      });
-      fmtbar.appendChild(menu);
+        fmtbar.appendChild(menu);
+      }
+      markTurnMenuActive(menu); // 菜单缓存复用，每次打开都按当前块刷新高亮（不能只在建时标一次）
       togglePopMenu(menu);
     }
     function togglePopMenu(menu) { const open = menu.style.display !== 'none'; fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); menu.style.display = open ? 'none' : 'block'; }
@@ -959,6 +1222,10 @@
       // 属性搬到 h2 上）。非可编辑块只留插入/复制/删除。
       if (isEditableEl(el)) {
         sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading'); sub(T('editor.turnToQuote'), itemByKey('quote'), 'quote');
+        const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
+      } else if (classify(el) === 'toggle') {
+        // 选中的 toggle → 转文本/标题（U9：toggle→text，summary 内容成段、正文块提到其后，零丢失）
+        sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading');
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       }
       // 图片块（无说明）：加说明 → figure/figcaption + 进说明编辑（doc-images U5）
@@ -1022,7 +1289,8 @@
       const empty = !el || (el.textContent || '').trim() === '';
       // 图片：异步取文件后插入。空块原地替换（已拍板②）。不在此 checkpoint——picker 可取消。
       if (it.image) { pickAndInsertImage(el, empty && isEditableEl(el)); return; }
-      if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
+      if (it.tag === 'details') { const nx = insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); } // 折叠块：插入后光标落 summary（不是整块 details）
+      else if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
       else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
       else { const nx = insertAfter(el, it); enterEdit(nx, { mode: 'start' }); }
     }
@@ -1104,34 +1372,48 @@
     }
 
     // ---- 监听器（父层挂到 iframe doc）----
+    // 待办勾选框 gutter 命中判定（mousedown 与 click 两处共用，避免判据漂移，U5）：命中返回该行 li，否则 null。
+    // U24/check-4：几何收敛。勾选框 ::before 是 left:-22px width:16px（相对 li border-box 左缘）→ 框体 [li.left-22, li.left-6]。
+    // ① X 带 = 框体 ±4px 缓冲 = [li.left-26, li.left-2]；右缘距文字左缘（li.left+4）留 6px 非勾选区，消「文字左缘零缓冲误触」。
+    // ② Y 吸附最近直接子 li（±YTOL 容差），消项间 margin 死区；缝隙等距时吸附上方项（文档序更前）。
+    function todoGutterHit(e) {
+      const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
+      if (!todoUl) return null;
+      const lis = [...todoUl.children].filter((x) => x.tagName === 'LI');
+      if (!lis.length) return null;
+      const YTOL = 6; // 覆盖项间 .3em(~5px) margin 的一半有余，消死区又不过界误勾大片空白
+      let li = null, best = Infinity;
+      for (const x of lis) {
+        const r = x.getBoundingClientRect();
+        if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; } // 落在 li 内 → 就是它
+        const d = Math.abs(e.clientY - (r.top + r.bottom) / 2);
+        if (d < best) { best = d; li = x; } // 缝隙里取中心最近的；平局用 < 保留先到的=上方项
+      }
+      if (!li) return null;
+      const r = li.getBoundingClientRect();
+      if (e.clientY < r.top - YTOL || e.clientY > r.bottom + YTOL) return null; // 离最近 li 也太远 → 不算勾选
+      return (e.clientX >= r.left - 26 && e.clientX <= r.left - 2) ? li : null;
+    }
+
     // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。
     function onMouseDown(e) {
       if (e.button !== 0) return; // 只管左键
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      // 点菜单外任何地方 → 关斜杠菜单（Wendi 2026-07-22：以前点别处不关、只能删掉「/」才关，反直觉）。
+      // 上面已对 data-ws2-ui 覆盖层（含斜杠菜单及其项）early-return，故点菜单项走不到这、不会误关。
+      if (slash) { slash = null; slashMenu.style.display = 'none'; }
       if (e.target && e.target.closest && e.target.closest('figcaption')) return; // 说明编辑：交原生放光标/选词，不启块拖选
-      // 待办勾选：点 .ws-todo 列表的左侧勾选框 gutter（clientX 在内容左缘之外）→ 切 data-checked，不放光标。
-      // 点 ::before 时 e.target 是 li，点 padding 时是 ul，故按 Y 兜底找该行 li。
-      const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
-      if (todoUl) {
-        // 先定位该行 li（点 ::before 时 target=li，点 ul padding 时=ul，按 Y 兜底找该行）
-        let li = e.target.closest('li');
-        if (!li || li.parentElement !== todoUl) {
-          li = null;
-          for (const x of todoUl.children) {
-            if (x.tagName !== 'LI') continue;
-            const r = x.getBoundingClientRect();
-            if (e.clientY >= r.top && e.clientY <= r.bottom) { li = x; break; }
-          }
-        }
-        // 勾选框 gutter = li 内容左缘左侧（::before left:-20..-5）。判 clientX 落在 li 左缘附近及左侧。
-        // 不硬编码 ul padding：§0 删 canvas 后 ul 回默认 padding(40)≠旧 canvas 的 22，原 `ul.left+22` 边界失效、点不中勾选框。
-        if (li && li.parentElement === todoUl && e.clientX < li.getBoundingClientRect().left + 4) {
-          e.preventDefault();
-          li.setAttribute('data-checked', li.getAttribute('data-checked') === 'true' ? 'false' : 'true');
-          if (undoMgr) undoMgr.checkpoint();
-          markDirty();
-          return;
-        }
+      // 待办勾选：点 gutter（勾选框）→ 切 data-checked、不放光标（判定见 todoGutterHit，与 onClick 共用，U5）。
+      const gLi = todoGutterHit(e);
+      if (gLi) {
+        e.preventDefault();
+        if (undoMgr) undoMgr.checkpoint(); // U20/check-3：改 data-checked 前先冲掉 pending 打字（500ms 防抖窗口内的输入）成独立快照，否则勾选与打字并进同一快照、一次 undo 双双回滚
+        // U26/visual-5：取消勾选删属性、不写 data-checked="false"（脏字节、diff 噪音、三态负担）。CSS/判定只认 "true"，
+        // "false" 与无属性等价 → 存量老文档下次翻转时自然清洗。
+        if (gLi.getAttribute('data-checked') === 'true') gLi.removeAttribute('data-checked'); else gLi.setAttribute('data-checked', 'true');
+        if (undoMgr) undoMgr.checkpoint();
+        markDirty();
+        return;
       }
       dragStart = { x: e.clientX, y: e.clientY };
       wallDropped = false;
@@ -1169,9 +1451,17 @@
       positionFmtbar();
     }
     function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; grip.style.display = 'none'; } }
+    // 折叠持久化（KD4/R8）：原生 toggle 事件 → markDirty 触发自动保存；绝不 checkpoint（折叠不是撤销步 KD5）。
+    function onToggle(e) {
+      if (!e.target || e.target.tagName !== 'DETAILS') return;
+      if (e.target.__wsFindReveal) { e.target.__wsFindReveal = false; return; } // 查找揭示触发的展开：只读，不标 dirty、不落盘（P2）
+      markDirty();
+    }
     function onClick(e) {
       // 点到覆盖层（手柄/菜单/气泡）自身：交给它们各自的 handler，这里忽略
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
+      // 待办勾选框 gutter：mousedown 已切 data-checked，这下 click 只吞掉——绝不进编辑/放光标、绝不再 toggle（U5/check-1）。
+      if (todoGutterHit(e)) { e.preventDefault(); return; }
       // 刚用鼠标拖选了文字（单块或跨块）→ 松手的这下 click 触发时选区仍非折叠 → 一律保留、什么都不做，
       // 否则会把选区折叠掉、气泡闪退（这是用户报的根因）。纯点击时 mousedown 已先把选区折叠成光标，不受影响。
       const _sel = doc.getSelection();
@@ -1179,6 +1469,17 @@
       // 点图片说明（figcaption）→ 进说明编辑；不走块选中（否则 blockOf 上卷到 figure、选中整张图）。
       const capT = e.target && e.target.closest && e.target.closest('figcaption');
       if (capT && classify(capT.parentElement) === 'image') { if (captionEl !== capT) enterCaptionEdit(capT, false); return; }
+      // toggle 标题（summary）：拦原生折叠；点 chevron 区（内容左缘 20px 内）折叠，点文字进 summary 编辑放光标。
+      // 不走 blockOf（会上卷到 details 灰选中整块）。folding 由我们控（原生 toggle 事件仍会 → markDirty）。
+      const sumT = e.target && e.target.closest && e.target.closest('summary');
+      if (sumT && sumT.parentElement && sumT.parentElement.tagName === 'DETAILS') {
+        e.preventDefault();
+        const det = sumT.parentElement;
+        const sr = sumT.getBoundingClientRect();
+        if ((e.clientX - sr.left) < 20) { det.open = !det.open; if (editingEl !== sumT) { try { sumT.blur(); } catch (x) {} } return; } // chevron 区 → 折叠；非编辑态 blur summary（防折叠后按空格被原生激活重开，P3）
+        if (editingEl !== sumT) enterEdit(sumT, { mode: 'point', x: e.clientX, y: e.clientY });
+        return;
+      }
       const el = blockOf(e.target);
       if (!el) {
         // 文末续写：点最后一块下方、且在文档列水平范围内的空白 → 进末块(若空可编辑)或末尾新建正文块
@@ -1223,6 +1524,29 @@
         slash = null; slashMenu.style.display = 'none';
         return;
       }
+      // toggle 标题（summary）编辑：拦原生折叠激活 + 定义边界。summary 放不了块——不触发 slash、不走 generic 块键盘。
+      if (editingEl && editingEl.tagName === 'SUMMARY') {
+        if (e.isComposing || e.keyCode === 229) return; // IME 组字交原生
+        if (e.key === 'Enter') { // → 首正文块（U7 再扩：空末块退出等）
+          e.preventDefault(); e.stopPropagation();
+          const det = editingEl.parentElement;
+          const bodyEl = det && [...det.children].find((c) => c.nodeType === 1 && c.tagName !== 'SUMMARY');
+          if (bodyEl) enterEdit(bodyEl, { mode: 'start' });
+          return;
+        }
+        if (e.key === ' ') { e.preventDefault(); doc.execCommand('insertText', false, ' '); return; } // 原生 summary 空格会折叠——拦默认、手动插空格
+        if (e.key === 'Backspace' && isCaretAtStart(doc, editingEl)) {
+          e.preventDefault();
+          const det = editingEl.parentElement;
+          const bodyEmpty = blocksInScope(det).every((b) => (b.textContent || '').trim() === '');
+          if ((editingEl.textContent || '').trim() === '' && bodyEmpty) {
+            const p = doc.createElement('p'); det.replaceWith(p); // 空 toggle：解包成空正文（逃生，键盘可删）
+            if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(p, { mode: 'start' });
+          }
+          return; // 非空：拦住不让 generic 合并 details
+        }
+        return; // 其它键（含字符/方向/'/'）交原生编辑 summary
+      }
       // 触发斜杠
       if (e.key === '/' && editingEl && !e.metaKey && !e.ctrlKey) {
         const blockEl = editingEl;
@@ -1242,6 +1566,23 @@
           // 「块内已全选」判定剥空白比较——表格/列表的 sel.toString() 带 \t\n 分隔、textContent 没有，
           // 逐字比对会永远判「未全选」把第二级堵死。空块（无文字）第一次就直接升全篇。
           const norm = (s) => (s || '').replace(/\s+/g, '');
+          // 列表内多一档分级（Colin 2026-07-23）：① 选当前行 li 内容 → ② 选整个 <ul> → ③ 全篇。
+          // 列表 editingEl = 整个 <ul>，若直接走下面「一次选整块」，⌘A 一次就选全列表、随手打字覆盖整份 checklist（丢数据级）。
+          if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
+            const an = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
+            const li = an && an.closest ? an.closest('li') : null;
+            if (li && editingEl.contains(li)) {
+              const liRange = doc.createRange(); liRange.selectNodeContents(li);
+              const subList = li.querySelector(':scope > ul, :scope > ol');
+              if (subList) liRange.setEndBefore(subList); // 「本行」= li 起点到嵌套子列表之前（子列表各自独立、不算本行）
+              const liText = norm(liRange.toString());
+              const ulText = norm(editingEl.textContent);
+              const curText = norm(sel.toString());
+              if (liText.length > 0 && curText !== liText && curText !== ulText) { sel.removeAllRanges(); sel.addRange(liRange); return; } // ① 当前行
+              if (curText !== ulText) { const r = doc.createRange(); r.selectNodeContents(editingEl); sel.removeAllRanges(); sel.addRange(r); return; } // ② 整个列表
+              selectWholeDoc(); return; // ③ 全篇
+            }
+          }
           const blockText = norm(editingEl.textContent);
           const allInBlock = blockText.length > 0 && norm(sel.toString()) === blockText;
           if (blockText.length > 0 && !allInBlock) {
@@ -1265,6 +1606,19 @@
         const sel = doc.getSelection();
         if (sel && sel.rangeCount && !sel.isCollapsed && deleteSelection()) { e.preventDefault(); return; }
       }
+      // 跨块/无主选区上直接打字（拖选或 ⌘A 全选后想「重打」替换）：此时 editingEl=null、焦点在不可编辑的
+      // focusCatcher 上，原生没有编辑宿主 → 字被丢、毫无反应（Wendi 反馈）。先 deleteSelection 把跨块选区删成
+      // 一个干净块+光标（返回 true = 它接管了跨块/无主选区），再把这个字插进落好的块。单块内编辑态选区
+      // deleteSelection 返回 false → 不拦、交原生正常覆盖，不影响正常打字。
+      if (e.key && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing && e.keyCode !== 229) {
+        const sel = doc.getSelection();
+        if (sel && sel.rangeCount && !sel.isCollapsed && deleteSelection()) {
+          e.preventDefault();
+          try { doc.execCommand('insertText', false, e.key); } catch (x) {}
+          markDirty();
+          return;
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
         const sel = doc.getSelection();
         if (sel && sel.rangeCount && !sel.isCollapsed) {
@@ -1283,14 +1637,75 @@
           const sel = doc.getSelection();
           const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
           const li = node && node.closest ? node.closest('li') : null;
-          if (li && (li.textContent || '').trim() === '' && !li.nextElementSibling) {
-            e.preventDefault();
-            const ul = editingEl; li.remove();
-            if (ul.querySelector('li')) { const nx = insertAfter(ul, itemByKey('text')); enterEdit(nx, { mode: 'start' }); }
-            else { const p = turnInto(ul, itemByKey('text')); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
-            return;
+          // U12/keys-3：嵌套空项 Enter → outdent 成宿主 li 的下一个兄弟（保持列表内、仍是列表项），
+          // 而不是以顶层 editingEl 为锚把新段插到整个列表之后 + 留幽灵空嵌套 ul。出列前收编后继兄弟（keys-5 同款）。
+          if (li && (li.textContent || '').trim() === '') {
+            const plist = li.parentElement;
+            const hostLi = plist && plist.parentElement;
+            const isNested = plist && plist !== editingEl && hostLi && hostLi.tagName === 'LI';
+            if (isNested) {
+              // 嵌套空项 Enter → outdent 成宿主下一兄弟；**不收编后继兄弟**（那是 U13 Shift-Tab 的事，item 非空才能安全承载
+              // 子列表——空项当子列表父项时 Chromium 不让在块级 ul 前打字，对抗审查实测）。后继兄弟留在宿主嵌套列表里。
+              e.preventDefault();
+              hostLi.after(li);
+              if (!plist.querySelector('li')) plist.remove(); // 掏空的嵌套 ul 移除
+              if (!li.firstChild) li.appendChild(doc.createElement('br'));
+              if (undoMgr) undoMgr.checkpoint(); markDirty();
+              caretAtLiTextEnd(li); // 空项无子列表 → 光标落其内，打字正常
+              return;
+            }
+            // U15/keys-7：顶层空项且**有后继**（中间/首项）→ 脱离列表：删空项、按位置劈 ul、插空段落、光标进段落。
+            // 原来只认末项（!nextElementSibling），中间空项落 native 无限堆空项、双回车退出只对末项生效。
+            if (li.nextElementSibling) {
+              e.preventDefault();
+              const ul = editingEl;
+              const prev = li.previousElementSibling;
+              const next = li.nextElementSibling;
+              li.remove();
+              const p = doc.createElement('p'); p.appendChild(doc.createElement('br'));
+              if (prev) {
+                // 中间：后继项移到新同类列表，段落夹在两列表中间
+                const ul2 = doc.createElement(ul.tagName); if (ul.className) ul2.className = ul.className;
+                let n = next; while (n) { const nx = n.nextElementSibling; ul2.appendChild(n); n = nx; }
+                ul.after(p); p.after(ul2);
+              } else {
+                ul.before(p); // 首项：段落插在列表前
+              }
+              if (undoMgr) undoMgr.checkpoint(); markDirty();
+              enterEdit(p, { mode: 'start' });
+              return;
+            }
+            if (!li.nextElementSibling) {
+              // 顶层空末项 → 退出列表（双回车退出，既有行为）
+              e.preventDefault();
+              const ul = editingEl; li.remove();
+              if (ul.querySelector('li')) { const nx = insertAfter(ul, itemByKey('text')); enterEdit(nx, { mode: 'start' }); }
+              else { const p = turnInto(ul, itemByKey('text')); enterEdit(p, { mode: 'start' }); } // 列表空了 → 整块转正文
+              return;
+            }
           }
-          return; // 非空/非末项 → 交原生（新建 <li>）
+          // U6/keys-2：非空/非末项 → 交原生新建 <li>。原生 li split 克隆源 li 全部属性（id/data-checked），
+          // 无 post-split 清理 → 已勾项回车产「天生已勾」的新项 + 重复 id 入盘坏锚点。记录分裂前直接子 li 集，
+          // 一次性 input 后取差集找新 li，按内容判定剥属性：空项剥（都非空则文档序更后者剥，对齐 splitBlock 剥后块）。
+          if (!listSplitPending) {
+            const ul0 = li.parentElement, before0 = new Set([...li.parentElement.children].filter((x) => x.tagName === 'LI')), src0 = li; // 锚在**当前 li 所属的 ul**（可能是嵌套子列表），不是顶层 editingEl——否则嵌套项分裂的产物是孙节点、不入差集，跳过清理
+            listSplitPending = true;
+            const onSplit = () => {
+              doc.removeEventListener('input', onSplit);
+              listSplitPending = false;
+              if (!ul0.isConnected) return;
+              const products = [src0, ...[...ul0.children].filter((x) => x.tagName === 'LI' && !before0.has(x))].filter((x) => x && x.isConnected && x.parentElement === ul0);
+              if (products.length < 2) return; // 没真分裂 / 结构异常 → 不动
+              const hasContent = (x) => (x.textContent || '').trim() !== '';
+              // 保留「原始内容的延续」那个 li（其 id/勾选保住），剥其余（新段）：
+              //   src0 有内容（End/劈半：src0=光标前半）→ 留 src0；src0 空但有内容项（Home：内容搬去新 li）→ 留内容项；都空 → 留 src0（原项）。
+              let keep = src0;
+              if (!hasContent(src0)) { const nonEmpty = products.filter(hasContent); if (nonEmpty.length) keep = nonEmpty[0]; }
+              for (const x of products) { if (x !== keep) { x.removeAttribute('id'); x.removeAttribute('data-checked'); } }
+            };
+            doc.addEventListener('input', onSplit);
+          }
+          return; // 非空/非末项 → 交原生（新建 <li>），分裂后 onSplit 清理克隆属性
         }
         if (!isCaretAtRealEnd(doc, editingEl)) {
           // 段落中间/块首回车 → 在光标处劈成两个同类型块（换段）。绝不交原生（原生塞嵌套 <p>，写坏文档，Bug7）。
@@ -1298,7 +1713,20 @@
           if (splitBlock()) { e.preventDefault(); return; }
           return;
         }
+        // toggle 体内末块回车退出（U7）：空的末正文块 → 跳出 toggle，在 details 后新建正文块（体内保留 ≥1 块）
+        const escScope = scopeRootOf(editingEl);
+        if (escScope !== blockRoot) {
+          const bs = blocksInScope(escScope);
+          if (bs[bs.length - 1] === editingEl && (editingEl.textContent || '').trim() === '') {
+            e.preventDefault();
+            if (bs.length > 1) editingEl.remove(); // ≥1 体块铁则：仅不止一块时删空块
+            const nx = insertAfter(escScope, itemByKey('text')); // escScope=details，.after 落外层
+            enterEdit(nx, { mode: 'start' });
+            return;
+          }
+        }
         // 段末回车 → 新建空正文块（标题/引用末尾回车也续为正文，对齐 Notion；故用 itemByKey('text') 而非劈块）
+        // toggle 体内非末/非空块：insertAfter 用 .after → 落体内（作用域正确，自动获得）
         e.preventDefault();
         const nx = insertAfter(editingEl, itemByKey('text'));
         enterEdit(nx, { mode: 'start' });
@@ -1316,8 +1744,19 @@
       // 其它块也吞掉 Tab，避免它把光标跳出编辑区。
       if (e.key === 'Tab' && editingEl) {
         e.preventDefault();
-        if (classify(editingEl) !== 'list') return;
+        if (classify(editingEl) !== 'list') {
+          // toggle 嵌套（U7）：Tab 把块嵌进前一个 <details> 体；Shift-Tab 把体内块移出到 details 后。
+          const scope = scopeRootOf(editingEl);
+          if (e.shiftKey) {
+            if (scope !== blockRoot) { const det = scope; det.after(editingEl); if (blocksInScope(det).length === 0) det.appendChild(doc.createElement('p')); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(editingEl, { mode: 'keep' }); } // ≥1 体块铁则
+          } else {
+            const prev = editingEl.previousElementSibling;
+            if (prev && prev.tagName === 'DETAILS') { prev.setAttribute('open', ''); prev.appendChild(editingEl); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(editingEl, { mode: 'keep' }); } // 展开被嵌入的 toggle 免内容隐身
+          }
+          return;
+        }
         const sel = doc.getSelection();
+        const savedNode = sel ? sel.anchorNode : null, savedOffset = sel ? sel.anchorOffset : 0; // U19/keys-8：记原光标位置，移动后恢复（不甩项末）
         const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
         const li = node && node.closest ? node.closest('li') : null;
         if (!li || !editingEl.contains(li)) return;
@@ -1325,6 +1764,7 @@
           const parentList = li.parentElement;
           const hostLi = parentList && parentList.parentElement;
           if (hostLi && hostLi.tagName === 'LI') {
+            absorbTrailingSiblings(li); // U13/keys-5：出列前收编后继兄弟为 li 的子项，否则它们文档顺序跑到出列项之前（错序）
             hostLi.after(li);
             if (parentList && !parentList.querySelector('li')) parentList.remove();
             if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -1344,17 +1784,105 @@
             if (undoMgr) undoMgr.checkpoint(); markDirty();
           }
         }
-        try { const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); sel.removeAllRanges(); sel.addRange(r); } catch (x) {}
+        // U19/keys-8：恢复原光标位置（anchorNode 随 li 一起移动、引用不失效）；失效才回退 li 文字末尾。
+        if (savedNode && savedNode.isConnected && li.contains(savedNode)) {
+          try { const max = savedNode.nodeType === 3 ? savedNode.length : savedNode.childNodes.length; const r = doc.createRange(); r.setStart(savedNode, Math.min(savedOffset, max)); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) { caretAtLiTextEnd(li); }
+        } else { caretAtLiTextEnd(li); }
         return;
       }
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）
       if (e.key === 'Backspace' && editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
-        if (classify(editingEl) === 'list') return; // 列表内 Backspace 交原生（删项/退格），不走块级合并
+        if (classify(editingEl) === 'list') {
+          // 空列表项起始退格：原生 contentEditable 会把整张 <ul>/<ol> 塌成空 <ul></ul>（残留 ghost 块——
+          // 无 li 无勾选框、拖柄还在、再退格删不掉、往里打字灌进 <ul> 变非合规。Wendi bug4 待办删空即中）。
+          // 自己接管空 li 退格（非空/删字仍交原生）：有上一项→合并上去（光标落上一项末，列表保留）；
+          // 是唯一项→整块退成正文（de-list）；是首项但后面还有项→删首项、光标落新首项起始。
+          const lsel = doc.getSelection();
+          const lnode = lsel && lsel.anchorNode ? (lsel.anchorNode.nodeType === 1 ? lsel.anchorNode : lsel.anchorNode.parentElement) : null;
+          const cli = lnode && lnode.closest ? lnode.closest('li') : null;
+          if (cli && editingEl.contains(cli) && (cli.textContent || '').trim() === '') {
+            // 空列表项退格——原生会把整张 <ul> 塌成空 <ul></ul>（ghost 死块）。自己接管：
+            //   有上一项 → 合并上去（删空项、光标落上一项末，仍留列表内）；
+            //   嵌套首空项（U12/keys-3）→ 删空项 + 掏空的嵌套 ul 移除、光标落宿主 li 内容末尾（锚真实父列表，不是顶层 editingEl）；
+            //   顶层首/唯一项 → de-list：在原列表前插一个空正文段落，列表空了就删掉。
+            e.preventDefault();
+            const plist = cli.parentElement; // 真实父列表（可能是嵌套子列表）
+            const prevLi = cli.previousElementSibling;
+            cli.remove();
+            if (undoMgr) undoMgr.checkpoint();
+            markDirty();
+            if (prevLi) {
+              if (!prevLi.firstChild) prevLi.appendChild(doc.createElement('br')); // 上一项也空 → 补 <br>，否则光标落进去 selection 会变 null（实测）
+              enterEdit(editingEl, { mode: 'end' });
+              try { const r = doc.createRange(); r.selectNodeContents(prevLi); r.collapse(false); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
+            } else if (plist !== editingEl) {
+              // U12：嵌套首空项——无同级 prevLi → 掏空的嵌套 ul 移除，光标落宿主 li 内容末尾（在其嵌套子列表之前）
+              const hostLi = plist.parentElement;
+              if (!plist.querySelector('li')) plist.remove();
+              enterEdit(editingEl, { mode: 'end' });
+              if (hostLi && hostLi.tagName === 'LI') {
+                if (!hostLi.firstChild) hostLi.appendChild(doc.createElement('br'));
+                let anchor = null;
+                for (const n of hostLi.childNodes) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) break; anchor = n; }
+                try { const r = doc.createRange(); if (anchor) r.setStartAfter(anchor); else r.setStart(hostLi, 0); r.collapse(true); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
+              }
+            } else {
+              const p = doc.createElement('p');
+              p.appendChild(doc.createElement('br')); // 空段落必带 <br>，光标才落得进
+              plist.parentNode.insertBefore(p, plist); // de-list 的正文放原列表之前
+              if (!plist.querySelector('li')) plist.remove(); // 唯一项 → 删掉空列表
+              enterEdit(p, { mode: 'start' });
+            }
+            return;
+          }
+          // 非空列表项 + 光标在【首 li】行首(= 整个列表块起点):原生跨不到上一个块(每个块是独立
+          // contenteditable),会哑掉——列表块紧跟列表块/段落时,第二块行首按 Backspace「没反应、不上移」
+          // (Wendi 2026-07-21：应跳到上面那个 block,却留在了当前 block)。自己把首 li 内容并入上一块,
+          // 对齐「同一个 ul 内 li→li」的原生合并语义(case A 一直是对的,这里补齐跨块那半)。
+          // cli 必须是 editingEl 的【直接子 li】：closest('li') 会取到最深的嵌套项,「嵌套子列表打头
+          // 的块」里内层项会被误当整块首 li 撕进上一块、留幽灵空子列表(对抗审查 Finding A)。
+          // 且 cli 自身不能带子列表(搬块级子节点进段落=非法嵌套)——这两类罕见,交原生 no-op 可接受。
+          if (cli && cli.parentElement === editingEl && !cli.previousElementSibling && isCaretAtStart(doc, editingEl)
+              && !cli.querySelector(':scope > ul, :scope > ol')) {
+            const scope = scopeRootOf(editingEl);
+            const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
+            const idx = blocks.indexOf(editingEl);
+            const prev = idx > 0 ? blocks[idx - 1] : null;
+            // 上一块是列表 → 并入其末项(与 case A 内合并同效,两项拼成一个 item);叶子文字块(段落/
+            // 标题/引用) → 并入其末尾(列表项并入段落)。上一块不可编辑/无 → 不吞,落到下面交原生 no-op。
+            let target = null;
+            if (prev && classify(prev) === 'list') target = [...prev.children].reverse().find((c) => c.tagName === 'LI') || null;
+            else if (prev && isEditableEl(prev) && isLeafTextBlock(prev)) target = prev;
+            if (target) {
+              e.preventDefault();
+              const ul = editingEl;
+              // 空目标块的占位 <br>(空段/空 li 的 `<p><br></p>`)→ 剥掉,免并入后留前导空行(Finding C)。
+              if (target.childNodes.length === 1 && target.firstChild.nodeName === 'BR') target.firstChild.remove();
+              // target 末项自带子列表时,文字插在子列表【前】(接到该项文字末尾),否则会吊到子项下面(Finding B)。
+              const nestedInTarget = target.querySelector(':scope > ul, :scope > ol');
+              const joinAt = cli.firstChild; // 接合点(合并后光标停它前面 = target 原末尾);cli 必非空(空项已在上面分流)
+              while (cli.firstChild) { if (nestedInTarget) target.insertBefore(cli.firstChild, nestedInTarget); else target.appendChild(cli.firstChild); }
+              cli.remove();
+              if (!ul.querySelector('li')) ul.remove(); // cur 列表空了 → 删掉空 <ul>
+              if (undoMgr) undoMgr.checkpoint();
+              markDirty();
+              enterEdit(prev, { mode: 'end' });
+              // joinAt 恒非空且已移进 target → setStartBefore 恒有效(不补 <br>：cli 非空,总有真内容,补 br 会留空行 Finding C)
+              try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
+              return;
+            }
+          }
+          return; // 非首 li / 删字 / 上一块不可并 → 交原生（native 在 ul 内合并 li，正确）
+        }
         if (!isCaretAtStart(doc, editingEl)) return;
-        const blocks = topBlocks();
+        const scope = scopeRootOf(editingEl); // U6：作用域感知合并/退格
+        const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
         const idx = blocks.indexOf(editingEl);
-        if (idx <= 0) return;
+        if (idx <= 0) {
+          if (scope !== blockRoot) { e.preventDefault(); const s = summaryOf(scope); if (s) enterEdit(s, { mode: 'end' }); return; } // toggle 体首块起始退格 → 光标回 summary 末（绝不删 summary）
+          return; // 顶层首块 → 原 no-op
+        }
         const prev = blocks[idx - 1];
         const cur = editingEl;
         const curEmpty = (cur.textContent || '').trim() === '';
@@ -1395,15 +1923,73 @@
       // （Wendi Bug7「合并段」——原来只能向后合并，块末按 Delete 撞墙没反应）。块中间交原生删字。
       if (e.key === 'Delete' && editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
-        if (classify(editingEl) === 'list') return; // 列表内交原生（删项/删字）
+        // U7/select-3：镜像 Backspace，让列表 Delete 前向合并不再撞墙（原来直接 return 交原生，但每个块是
+        // 独立 contenteditable、原生跨不出块边界 → 末项尾/段末遇列表全 no-op，与 Backspace 侧不对称）。
+        if (classify(editingEl) === 'list') {
+          const s0 = doc.getSelection();
+          if (!s0 || s0.rangeCount === 0 || !s0.isCollapsed) return; // 非折叠已前处理
+          const n0 = s0.anchorNode ? (s0.anchorNode.nodeType === 1 ? s0.anchorNode : s0.anchorNode.parentElement) : null;
+          const curLi = n0 && n0.closest ? n0.closest('li') : null;
+          if (!curLi || curLi.parentElement !== editingEl) return; // 嵌套子项 / 定位不到顶层 li → 交原生
+          const nextLi = curLi.nextElementSibling;
+          // c) 空 li Delete → 前向并入下一 li（镜像 Backspace 空 li）
+          if ((curLi.textContent || '').trim() === '' && nextLi && nextLi.tagName === 'LI') {
+            e.preventDefault();
+            if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空项占位 br
+            // 空项被下一项内容填充 → 采纳下一项的勾选态/锚点（内容搬上来了、状态跟内容走；否则删空行会把下一任务的勾清掉，对抗审查 P3）
+            if (nextLi.getAttribute('data-checked') === 'true') curLi.setAttribute('data-checked', 'true'); else curLi.removeAttribute('data-checked');
+            if (!curLi.id && nextLi.id) curLi.id = nextLi.id;
+            const joinAt = nextLi.firstChild;
+            while (nextLi.firstChild) curLi.appendChild(nextLi.firstChild);
+            nextLi.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
+            if (joinAt && joinAt.parentNode === curLi) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+            else if (!curLi.firstChild) curLi.appendChild(doc.createElement('br'));
+            return;
+          }
+          // a) 末项尾 Delete + ul 有下一叶子文字块 → 并入末项（不可并块 → 安全 no-op）。判末项 li 自身末尾（不是 ul）
+          if (!nextLi && isCaretAtRealEnd(doc, curLi)) {
+            const scope = scopeRootOf(editingEl);
+            const bs = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
+            const nb = bs[bs.indexOf(editingEl) + 1];
+            if (nb && isEditableEl(nb) && isLeafTextBlock(nb)) {
+              e.preventDefault();
+              if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空目标末项占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
+              const joinAt = nb.firstChild;
+              while (nb.firstChild) curLi.appendChild(nb.firstChild);
+              nb.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
+              if (joinAt && joinAt.parentNode === curLi) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+              return;
+            }
+          }
+          return; // 其它 list 内 Delete（非空非末 / 中间删字）→ 交原生
+        }
         const sel = doc.getSelection();
         if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 非折叠选区前面已处理；这里只管折叠光标
         if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内 Delete 会误吞下一段（B 组）
-        const blocks = topBlocks();
+        const dScope = scopeRootOf(editingEl); // P1：作用域感知（原用 topBlocks → 体内块 indexOf=-1 → 误吞顶层首块）
+        const blocks = (dScope === blockRoot) ? topBlocks() : blocksInScope(dScope);
         const next = blocks[blocks.indexOf(editingEl) + 1];
-        if (!next) return;
-        if (classify(next) === 'list' || !isEditableEl(next)) return; // 下一块是列表/图片/分隔线 → 不吞
+        if (!next) return; // 作用域末块 → 无内块可合并（绝不跨作用域）
         const cur = editingEl;
+        // b) 段末 Delete、下一块是列表 → 吞列表首项（首 li 行内内容并入段落；列表剩余保留、掏空则删 ul）。
+        // 首 li 含嵌套子列表 → no-op（镜像 Backspace 首 li 守卫 `!cli.querySelector 子列表`，避免 <p><ul> 非法）。
+        if (classify(next) === 'list') {
+          const firstLi = next.querySelector(':scope > li');
+          if (firstLi && !firstLi.querySelector(':scope > ul, :scope > ol') && isLeafTextBlock(cur)) {
+            e.preventDefault();
+            if (cur.childNodes.length === 1 && cur.firstChild && cur.firstChild.nodeName === 'BR') cur.firstChild.remove(); // 剥空目标段落占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
+            if (firstLi.childNodes.length === 1 && firstLi.firstChild && firstLi.firstChild.nodeName === 'BR') firstLi.firstChild.remove();
+            const joinAt = firstLi.firstChild;
+            while (firstLi.firstChild) cur.appendChild(firstLi.firstChild);
+            firstLi.remove();
+            if (!next.querySelector(':scope > li')) next.remove(); // 列表掏空 → 删 ul
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            if (joinAt && joinAt.parentNode === cur) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+            return;
+          }
+          return; // 首 li 空/含嵌套 / cur 非叶子 → no-op
+        }
+        if (!isEditableEl(next)) return; // 下一块图片/分隔线 → 不吞
         // 两块都得是叶子文字块才拼接——cur/next 是透明包裹块（div.lead>p）时平搬子节点会造 <p><p>/容器直挂裸文本（A 组）。
         if (!isLeafTextBlock(cur) || !isLeafTextBlock(next)) return;
         e.preventDefault();
@@ -1419,19 +2005,24 @@
         if (e.isComposing || e.keyCode === 229) return;
         const sel = doc.getSelection();
         if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 有选区 → 交原生
-        const blocks = topBlocks();
+        const aScope = scopeRootOf(editingEl); // P1/P2：作用域感知（原用 topBlocks → 体内块 idx=-1 → 跳到 blocks[0] 顶层块）
+        const blocks = (aScope === blockRoot) ? topBlocks() : blocksInScope(aScope);
         const idx = blocks.indexOf(editingEl);
         if (e.key === 'ArrowRight') {
           if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内按 → 会越过空格直接跳块（B 组）
-          const next = blocks[idx + 1]; if (!next) return;
+          let next = blocks[idx + 1];
+          if (!next && aScope !== blockRoot) next = aScope.nextElementSibling; // toggle 体末 → 跨到 details 后的外层块
+          if (!next || next.hasAttribute('data-ws2-ui')) return;
           e.preventDefault();
           if (isEditableEl(next)) enterEdit(next, { mode: 'start' });
           else { selectBlock(next); positionGrip(next); }
         } else {
           if (!isCaretAtStart(doc, editingEl)) return; // 不在块首 → 原生
-          const prev = blocks[idx - 1]; if (!prev) return;
+          let prev = blocks[idx - 1];
+          if (!prev && aScope !== blockRoot) prev = summaryOf(aScope); // toggle 体首 → 跨回 summary
+          if (!prev) return;
           e.preventDefault();
-          if (isEditableEl(prev)) enterEdit(prev, { mode: 'end' });
+          if (prev.tagName === 'SUMMARY' || isEditableEl(prev)) enterEdit(prev, { mode: 'end' });
           else { selectBlock(prev); positionGrip(prev); }
         }
         return;
@@ -1446,19 +2037,25 @@
         const degenerate = box.height === 0 && box.top === 0; // 空块等取不到 caret 位置
         const caret = degenerate ? { top: er.top, bottom: er.bottom, left: er.left } : box;
         const lh = (degenerate ? Math.min(er.height, 24) : box.height) || 20;
-        const blocks = topBlocks();
+        const aScope = scopeRootOf(editingEl); // P2：作用域感知（原 topBlocks → 体内块跳顶层）
+        const blocks = (aScope === blockRoot) ? topBlocks() : blocksInScope(aScope);
         const idx = blocks.indexOf(editingEl);
         if (e.key === 'ArrowDown') {
           if (caret.bottom < er.bottom - lh * 0.5) return; // 不在末行 → 原生
-          const next = blocks[idx + 1]; if (!next) return;
+          let next = blocks[idx + 1];
+          if (!next && aScope !== blockRoot) next = aScope.nextElementSibling; // toggle 体末 → 外层块
+          if (!next || next.hasAttribute('data-ws2-ui')) return;
           e.preventDefault();
           if (isEditableEl(next)) { const nr = next.getBoundingClientRect(); enterEdit(next, { mode: 'point', x: caret.left, y: nr.top + lh * 0.5 }); }
           else { selectBlock(next); positionGrip(next); }
         } else {
           if (caret.top > er.top + lh * 0.5) return; // 不在首行 → 原生
-          const prev = blocks[idx - 1]; if (!prev) return;
+          let prev = blocks[idx - 1];
+          if (!prev && aScope !== blockRoot) prev = summaryOf(aScope); // toggle 体首 → summary
+          if (!prev) return;
           e.preventDefault();
-          if (isEditableEl(prev)) { const pr = prev.getBoundingClientRect(); enterEdit(prev, { mode: 'point', x: caret.left, y: pr.bottom - lh * 0.5 }); }
+          if (prev.tagName === 'SUMMARY') enterEdit(prev, { mode: 'end' });
+          else if (isEditableEl(prev)) { const pr = prev.getBoundingClientRect(); enterEdit(prev, { mode: 'point', x: caret.left, y: pr.bottom - lh * 0.5 }); }
           else { selectBlock(prev); positionGrip(prev); }
         }
         return;
@@ -1486,8 +2083,8 @@
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
     }
 
-    function onInput() {
-      markDirty(); tryMarkdown();
+    function onInput(e) {
+      markDirty(); tryMarkdown(e);
       const M = mentionApi();
       if (M && M.isOpen()) { M.syncFromDom(); return; } // 菜单开着：从 DOM 真相重算 query（捕获任何输入法），别再触发新菜单
       maybeMentionTrigger();
@@ -1500,24 +2097,43 @@
     }
     // 行首 markdown：正文块里输入「marker + 空格」→ 转成对应块、清掉 marker。app 改真实 DOM、
     // 存盘读 live DOM，故可原地 turnInto（不像 ui-demo 受控编辑会被 blur 回写打架）。
-    function tryMarkdown() {
+    function tryMarkdown(e) {
       if (!editingEl || classify(editingEl) !== 'text') return; // 只在正文块（p）触发
-      const m = (editingEl.textContent || '').match(/^(#{1,4}|[-*]|1\.|\[\s?\]|>)[\s ]$/);
+      const _txt = editingEl.textContent || '';
+      const m = _txt.match(/^(#{1,4}|[-*]|\d+\.|\[[ xX]?\]|>)[\s ]/);
       if (!m) return;
+      const whole = _txt.length === m[0].length; // 整块只有 marker+空格（决定清空 vs 保留后缀）
+      // U18/create-7：无论整块还是前缀触发，都只在「刚敲下补全 marker 的那个空格」这一击转换——
+      // 绑 inputType，否则「删字后 caret 恰停 marker 末（如『- x』删 x 剩『- 』）」会把段落误转成列表（Notion 只在敲空格那击转）。
+      if (!(e && e.inputType === 'insertText' && e.data === ' ')) return;
+      // U18 对抗审查（两名 reviewer 独立复现）：inputType 门只证明「敲了空格」，不证明「空格紧邻 marker」。
+      // 还须 marker 落在块首文本节点、且 caret 恰停 marker 末——否则：
+      // ① 既有段落（磁盘/粘贴的「- 文本」）在任意位置敲空格会被误转、并吞掉 marker；
+      // ② 内容裹在行内元素里（<b>…</b>）时 marker 被打进 <b>、firstChild 非文本节点，
+      //    下面 else 分支的 innerHTML='' 会清空整块丢内容。这条守卫两者都堵。
+      const first0 = editingEl.firstChild;
+      const sel0 = doc.getSelection();
+      if (!(first0 && first0.nodeType === 3 && sel0 && sel0.anchorNode === first0 && sel0.anchorOffset === m[0].length)) return;
       const t = m[1];
       const key = t[0] === '#' ? ['h1', 'h2', 'h3', 'h4'][t.length - 1]
         : (t === '-' || t === '*') ? 'list'
-        : t === '1.' ? 'numbered'
+        : /^\d+\.$/.test(t) ? 'numbered'
         : t[0] === '[' ? 'todo'
         : t === '>' ? 'quote' : null;
       if (!key) return;
       const item = SLASH_ITEMS.find((x) => x.key === key);
       if (!item) return;
-      editingEl.innerHTML = ''; // 清掉 marker
-      enterEdit(turnInto(editingEl, item), { mode: 'start' });
+      const checked = /^\[[xX]\]$/.test(t); // [x]/[X] → 首项勾选
+      const startN = key === 'numbered' ? parseInt(t, 10) : 1;
+      if (whole) { editingEl.innerHTML = ''; } // 清 marker（整块仅 marker+空格）
+      else { first0.textContent = first0.textContent.slice(m[0].length); } // 前缀：guard 已保证 first0 是块首文本节点，只删其 marker+空格、保留其余（含后续行内元素）
+      const conv = turnInto(editingEl, item);
+      if (checked) { const li = conv.querySelector('li'); if (li) li.setAttribute('data-checked', 'true'); }
+      if (key === 'numbered' && startN > 1 && conv.tagName === 'OL') conv.setAttribute('start', String(startN)); // 非 1 起始序号（校验器不拦 ol[start]）
+      enterEdit(conv, { mode: whole ? 'start' : 'end' });
     }
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
-    function onSelectionChange() { closeFmtPops(); positionFmtbar(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）
+    function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮
     function onCompStart() { if (slash) { slash = null; slashMenu.style.display = 'none'; } } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
     function onScroll() { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); if (blockMenu.style.display !== 'none') closeBlockMenu(); }
 
@@ -1530,10 +2146,209 @@
     // 修 ED-A5：外部拖放（dragFrom 为空=不是内部块拖拽）一律吞掉，别让浏览器默认 insertFromDrop 把带任意
     // 标签的富 HTML（div/h1/span style/a…）插进 contenteditable → 落盘非合规。粘贴那道「只取纯文本」的闸在
     // drop 路径不存在，这里补上（拖放直接拒绝，用户仍可 Cmd+V 走纯文本粘贴）。
+    // ===== 内部富复制粘贴（Wendi bug5①，Colin 2026-07-22 拍板）=====
+    // 复制：把选中内容清成「本编辑器自己的、已合规」HTML，打隐形哨兵 data-ws2-clip 进剪贴板。
+    // 粘贴：带哨兵 = 本编辑器内部复制的 → **保留格式**（待办/标题/列表/引用 + 行内 B/I/U/链接）；
+    //   不带哨兵 = 外部来源（Word/Notion/网页）→ **仍走纯文本兜底**（ED-A4 合规红线，绝不让外部富文本污染文档）。
+    // 内部内容粘贴时再过一遍 cleanRoot（与存盘同一套白名单）剥编辑器标记（纵深防御，不盲信剪贴板）。
+    const SER_MOD = (typeof WS2Serialize !== 'undefined') ? WS2Serialize
+      : (typeof require !== 'undefined' ? require('./serialize.js') : null);
+    function cleanInPlace(node) { if (SER_MOD && SER_MOD.cleanRoot) SER_MOD.cleanRoot(node); return node; }
+    function cleanClone(node) { return cleanInPlace(node.cloneNode(true)); }
+    const CLIP = 'data-ws2-clip';
+
+    function onCopy(e) {
+      const cd = e.clipboardData; if (!cd || !cd.setData) return; // 无剪贴板 API → 交原生
+      const sel = doc.getSelection();
+      // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
+      if ((!sel || sel.isCollapsed) && selectedEl) {
+        cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
+        cd.setData('text/plain', selectedEl.textContent || '');
+        e.preventDefault(); return;
+      }
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 无选区 → 交原生
+      const r = sel.getRangeAt(0);
+      const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
+      if (!sBlk || !eBlk) return; // 落在块外/覆盖层 → 交原生（不接管）
+      const norm = (s) => (s || '').replace(/\s+/g, '');
+      const sameBlock = sBlk === eBlk;
+      // 整块判定（选中覆盖了整个块的文字，如选完一整行待办）→ 当块级复制、保留块类型（正是 Wendi 的场景）。
+      const wholeBlock = sameBlock && norm(sel.toString()).length > 0 && norm(sel.toString()) === norm(sBlk.textContent);
+      // U3/clip-1：同一列表块内跨 li 选区 → 走块级打包（保留待办项类型 + 勾选态），别落行内分支携带裸 <li>。
+      // blockOf 把整个 <ul> 当一个块 → 选部分项时 sameBlock && !wholeBlock 会误入行内分支、cloneContents 出裸 li，
+      // 粘进段落成 <p>…<li> 非法嵌套、整篇降级、勾选语义丢失。单 li 内选区（sLi===eLi）不进此分支、维持行内。
+      if (sameBlock && (sBlk.tagName === 'UL' || sBlk.tagName === 'OL')) {
+        const kids = [...sBlk.children].filter((c) => c.tagName === 'LI');
+        // 归一到 sBlk 的**直接子** li：选区落在嵌套子项时 closest('li') 取到的是最深 li（不在 kids 里），
+        // 直接 indexOf 会得 -1 → kids[-1].cloneNode 抛 TypeError、onCopy 崩、复制静默回落原生丢待办格式。
+        const topLiOf = (n) => {
+          let li = n && n.nodeType === 1 ? n : (n && n.parentElement);
+          li = li && li.closest ? li.closest('li') : null;
+          while (li && li.parentElement !== sBlk) { const up = li.parentElement && li.parentElement.closest ? li.parentElement.closest('li') : null; if (!up || up === li) { li = null; break; } li = up; }
+          return li;
+        };
+        // 端点落在 li 边界外（endContainer=ul 本身）→ 回落首/末项。
+        const sLi = topLiOf(r.startContainer) || kids[0], eLi = topLiOf(r.endContainer) || kids[kids.length - 1];
+        let i = sLi ? kids.indexOf(sLi) : -1, j = eLi ? kids.indexOf(eLi) : -1;
+        if (i >= 0 && j >= 0 && sLi !== eLi) { // 都归到顶层 kids 且跨项才走块级；退化情形（i/j=-1，如空列表）安全回落
+
+          if (i > j) { const t = i; i = j; j = t; }
+          const listFrag = doc.createElement(sBlk.tagName);
+          if (sBlk.className) listFrag.className = sBlk.className;
+          for (let k = i; k <= j; k++) listFrag.appendChild(kids[k].cloneNode(true));
+          cleanInPlace(listFrag);
+          cd.setData('text/html', '<div ' + CLIP + '="b">' + listFrag.outerHTML + '</div>');
+          cd.setData('text/plain', sel.toString());
+          e.preventDefault(); return;
+        }
+      }
+      if (sameBlock && !wholeBlock) {
+        // ② 行内：选一段字 → 保留 B/I/U/S/行内代码/链接/颜色等行内格式。
+        // cloneContents 只克隆选中节点：选中「<b> 里的字」时得到纯文本、丢掉 <b> → 把选区逐层裹进它所在的
+        // 行内格式祖先(到块为止)，把格式补回来。跨越 <b> 边界的选区 commonAncestor=块，循环不触发、cloneContents 已含 <b>。
+        let frag = r.cloneContents();
+        const INLINE_FMT = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, S: 1, STRIKE: 1, CODE: 1, A: 1, MARK: 1, SUB: 1, SUP: 1, SPAN: 1 };
+        let anc = r.commonAncestorContainer;
+        anc = anc && anc.nodeType === 1 ? anc : (anc && anc.parentElement);
+        while (anc && anc !== sBlk && INLINE_FMT[anc.tagName]) { const wrap = anc.cloneNode(false); wrap.appendChild(frag); frag = wrap; anc = anc.parentElement; }
+        const w = doc.createElement('span'); w.appendChild(frag); cleanInPlace(w);
+        cd.setData('text/html', '<span ' + CLIP + '="i">' + w.innerHTML + '</span>');
+        cd.setData('text/plain', sel.toString());
+        e.preventDefault(); return;
+      }
+      // ③ 块级：取选区罩住的**完整**顶层块 i..j（整块，不做部分裁剪 → 每个剪贴板块都是完整合规块）
+      const sScope = scopeRootOf(r.startContainer), eScope = scopeRootOf(r.endContainer);
+      const crossScope = sScope !== eScope;
+      const scopeRoot = crossScope ? blockRoot : sScope;
+      const tops = blocksInScope(scopeRoot);
+      const sB = crossScope ? topScopeOf(sBlk) : sBlk, eB = crossScope ? topScopeOf(eBlk) : eBlk;
+      let i = tops.indexOf(sB), j = tops.indexOf(eB);
+      if (i < 0 || j < 0) return;
+      if (i > j) { const t = i; i = j; j = t; }
+      let html = '';
+      for (let k = i; k <= j; k++) html += cleanClone(tops[k]).outerHTML;
+      cd.setData('text/html', '<div ' + CLIP + '="b">' + html + '</div>');
+      cd.setData('text/plain', sel.toString());
+      e.preventDefault();
+    }
+
+    // 跨文档粘贴：把待办/callout/toggle 的语义 CSS 注进目标文档 head（否则粘进还没这类块的文档，勾选框/折叠不渲染）。
+    function ensurePastedStyles(el) {
+      if (!el || el.nodeType !== 1) return;
+      const hit = (sel) => (el.matches && el.matches(sel)) || (el.querySelector && el.querySelector(sel));
+      if (hit('ul.ws-todo')) ensureTodoStyle();
+      if (hit('.ws-callout')) ensureCalloutStyle();
+      if (el.tagName === 'DETAILS' || hit('details')) ensureToggleStyle();
+    }
+
+    // 行内富粘贴：把行内 HTML 手动插到光标处（execCommand('insertHTML') 在本 contenteditable 里是哑的 no-op，
+    // 实测不插——改手动 range.insertNode，可靠且不会造块嵌套；undo 由调用方 checkpoint 兜）。
+    function insertInlineAtCaret(innerHtml) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const tpl = doc.createElement('template'); tpl.innerHTML = innerHtml;
+      // 纵深防御（clip-1）：片段含块级元素 → 绝不行内 range.insertNode（会造 <p><li>/<p><p> 非法嵌套），改走块级。
+      // 裸 <li> 先裹进 <ul>（li 不能当顶层块；任一 li 带 data-checked 则视为 ws-todo）。
+      if (tpl.content.querySelector('li,ul,ol,p,div,h1,h2,h3,h4,h5,h6,blockquote,details,table,figure,hr')) {
+        const kids = [...tpl.content.children].filter((c) => c.nodeType === 1);
+        const bareLis = kids.filter((c) => c.tagName === 'LI');
+        let blocks = kids;
+        if (kids.length && bareLis.length === kids.length) {
+          const ul = doc.createElement('ul');
+          if (bareLis.some((li) => li.hasAttribute('data-checked'))) ul.className = 'ws-todo';
+          kids.forEach((li) => ul.appendChild(li));
+          blocks = [ul];
+        }
+        if (blocks.length) { insertBlocksAtCaret(blocks); return; }
+      }
+      const r = sel.getRangeAt(0);
+      if (!r.collapsed) r.deleteContents();
+      const nodes = [...tpl.content.childNodes];
+      r.insertNode(tpl.content);
+      const lastNode = nodes[nodes.length - 1];
+      if (lastNode) { try { const nr = doc.createRange(); nr.setStartAfter(lastNode); nr.collapse(true); sel.removeAllRanges(); sel.addRange(nr); } catch (x) { /* 光标落点尽力而为 */ } }
+    }
+
+    // 块级富粘贴：把完整块序列按已拍板落点插入（Colin 2026-07-22）：
+    //   空正文块 → 整块换成粘贴内容；光标块首 → 插在前；块末 → 插在后；块中 → splitBlock 劈开插中间；
+    //   灰选中块 → 插其后；无编辑无选中 → 追加末尾。光标落最后一块末尾。
+    function insertBlocksAtCaret(blocks) {
+      if (!blocks.length) return;
+      // U21/clip-4：插入前对每个块（含后代）去重 id——文档中已存在同 id（同文档复制粘贴）或本批次已占用才剥，
+      // 跨文档粘贴不撞 id 则保留（护住互链锚点价值）。对齐 splitBlock 剥后块 id 的先例。
+      const seenIds = new Set();
+      for (const b of blocks) {
+        const withId = [];
+        if (b.getAttribute && b.getAttribute('id')) withId.push(b);
+        if (b.querySelectorAll) withId.push(...b.querySelectorAll('[id]'));
+        for (const el of withId) {
+          const id = el.getAttribute('id');
+          if (!id) continue;
+          if (doc.getElementById(id) || seenIds.has(id)) el.removeAttribute('id');
+          else seenIds.add(id);
+        }
+      }
+      blocks.forEach(ensurePastedStyles);
+      const last = blocks[blocks.length - 1];
+      const frag = doc.createDocumentFragment();
+      blocks.forEach((b) => frag.appendChild(b));
+      if (editingEl && classify(editingEl) === 'text' && (editingEl.textContent || '').trim() === '') {
+        const host = editingEl; exitEdit(); host.replaceWith(frag); // 空正文块整块替换（不留空行，对齐 Notion）
+      } else if (editingEl) {
+        if (isCaretAtStart(doc, editingEl)) editingEl.before(frag);
+        else if (isCaretAtRealEnd(doc, editingEl)) editingEl.after(frag);
+        else { const beforeHalf = editingEl; if (splitBlock()) beforeHalf.after(frag); else beforeHalf.after(frag); } // 块中：劈开，插在前半之后（=后半之前）
+      } else if (selectedEl) { selectedEl.after(frag); }
+      else { blockRoot.appendChild(frag); }
+      if (last && last.isConnected) { if (isEditableEl(last)) enterEdit(last, { mode: 'end' }); else selectBlock(last); }
+    }
+
     // 修 ED-A4：粘贴只取纯文本，且多行文本自己按 \n 劈成同类型兄弟块——不交给 execCommand 处理换行。
     // 原来 shell 的 paste 用 execCommand('insertText', 带换行的文本)：Chromium 会把 \n 转成段落切分、
     // 在标题块里塞 <p>（<h2><p>..</p></h2>），reparse 后原样保留 → 持久非合规；段落块里也多出垃圾空 <p> + 活 DOM/磁盘分叉。
     function onPaste(e) {
+      // 内部富粘贴优先：剪贴板 HTML 带本编辑器哨兵 → 保留格式（外部无哨兵的 HTML 一律不走这、落纯文本兜底）。
+      const richHtml = e.clipboardData && e.clipboardData.getData ? e.clipboardData.getData('text/html') : '';
+      if (richHtml && richHtml.indexOf(CLIP) !== -1) {
+        const tpl = doc.createElement('template'); tpl.innerHTML = richHtml;
+        const clip = tpl.content.querySelector('[' + CLIP + ']');
+        if (clip) {
+          e.preventDefault();
+          const mode = clip.getAttribute(CLIP); // 先读哨兵值,再清——cleanInPlace 会把 data-ws2-clip 本身剥掉
+          cleanInPlace(clip); // 纵深防御：再按存盘白名单剥一遍编辑器标记（含哨兵）
+          if (mode === 'i' && editingEl && editingEl.tagName !== 'DETAILS') {
+            insertInlineAtCaret(clip.innerHTML);
+          } else {
+            const blocks = [...clip.children].filter((c) => c.nodeType === 1);
+            // U3/clip-1：单一列表包粘进**同类**列表编辑态 → 逐项并入当前 li 之后（保留 data-checked），
+            // 别走 insertBlocksAtCaret（它对列表目标会 splitBlock 劈出 2-3 个相邻 ul，违反 bug2「绝不建新 ul」）。
+            // 类型必须一致（tag + ws-todo 与否）：否则 ws-todo 项并进普通 ul 会留下不渲染的死 data-checked、
+            // ol 项并进 todo 丢编号语义——跨类型改走块级插入（自成一块，保住各自语义）。
+            let merged = false;
+            const bt = blocks.length === 1 ? blocks[0] : null;
+            const sameListType = bt && editingEl && editingEl.tagName === bt.tagName && editingEl.classList.contains('ws-todo') === bt.classList.contains('ws-todo');
+            if (bt && (bt.tagName === 'UL' || bt.tagName === 'OL') && editingEl && classify(editingEl) === 'list' && sameListType) {
+              const s1 = doc.getSelection();
+              const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
+              let li = n1 && n1.closest ? n1.closest('li') : null;
+              const srcLis = [...blocks[0].children].filter((c) => c.tagName === 'LI');
+              if (li && editingEl.contains(li) && srcLis.length) {
+                for (const sLi of srcLis) { li.after(sLi); li = sLi; }
+                ensurePastedStyles(editingEl);
+                const rr = doc.createRange(); rr.selectNodeContents(li); rr.collapse(false);
+                s1.removeAllRanges(); s1.addRange(rr);
+                merged = true;
+              }
+            }
+            if (merged) { /* 已逐项并入当前列表 */ }
+            else if (blocks.length) insertBlocksAtCaret(blocks);
+            else if (editingEl) insertInlineAtCaret(clip.innerHTML); // 行内哨兵但非编辑态兜底
+          }
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          return;
+        }
+      }
       const cd = e.clipboardData || (typeof window !== 'undefined' && window.clipboardData);
       const text = cd && cd.getData ? cd.getData('text/plain') : '';
       // 文本优先（已拍板①）：有可用文本 → 走下面纯文本粘贴不变；仅当无文本时才收图片（纯图剪贴板）。
@@ -1553,7 +2368,72 @@
       }
       e.preventDefault();
       const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
-      if (!editingEl || lines.length <= 1) { doc.execCommand('insertText', false, lines.join(' ')); return; } // 单行/非编辑态：普通纯文本插入
+      // U22/clip-5 扩展：单行也走 todo 识别——只有「单行且**不是** todo marker」才走字面文本早返回；
+      // 单行 `- [ ] x` / `- [x] x` 落到下面 U22 判断里转成待办（对齐打字 markdown 快捷键的直觉）。
+      if (lines.length <= 1 && !/^- \[( |x|X)\] /.test(lines[0] || '')) { doc.execCommand('insertText', false, lines[0] || ''); return; }
+      // bug2：无编辑目标（灰选 / 光标在块内但未 enterEdit）时先进编辑，别直接 lines.join(' ') 把多行拼成一行。
+      if (!editingEl) {
+        const s0 = doc.getSelection();
+        const fromSel = s0 && s0.anchorNode ? blockOf(s0.anchorNode) : null;
+        const tgt = (selectedEl && isEditableEl(selectedEl) && selectedEl) || (fromSel && isEditableEl(fromSel) && fromSel) || null;
+        if (tgt) enterEdit(tgt, { mode: 'end' });
+      }
+      // 实在无块可放（无光标）/ summary（放不下块，多行会劈出第二个 summary → 非合规）→ 只能合成单行。U13。
+      if (!editingEl || editingEl.tagName === 'SUMMARY') { doc.execCommand('insertText', false, lines.join(' ')); return; }
+      // U22/clip-5：外部纯文本多行**全部非空行**都匹配「- [ ] / - [x] 」→ 识别成 todo（只认纯文本模式、不引入外部富 HTML，
+      // 不违反 ED-A4）。任一行不匹配 → 整段回落既有纯文本粘贴（不做混合解析）。目标是**普通** bullet/numbered 列表则维持字面（本轮不扩）。
+      {
+        const TODO_LINE = /^- \[( |x|X)\] (.*)$/;
+        const nonEmpty = lines.filter((l) => l.trim() !== '');
+        if (nonEmpty.length && nonEmpty.every((l) => TODO_LINE.test(l))) {
+          const isList = classify(editingEl) === 'list';
+          const isTodo = isList && editingEl.classList.contains('ws-todo');
+          if (!isList || isTodo) {
+            const items = nonEmpty.map((l) => { const m = l.match(TODO_LINE); return { checked: /[xX]/.test(m[1]), text: m[2] }; });
+            const mkLi = (it) => { const li = doc.createElement('li'); if (it.text) li.textContent = it.text; if (it.checked) li.setAttribute('data-checked', 'true'); if (!li.firstChild) li.appendChild(doc.createElement('br')); return li; };
+            if (isTodo) { // 目标 todo 列表：逐行建 li 追加到当前 li 之后，仍单个 ul
+              const s1 = doc.getSelection();
+              const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
+              let li = n1 && n1.closest ? n1.closest('li') : null;
+              if (li && editingEl.contains(li)) {
+                // 对抗审查：目标 li 为空（刚建的 todo 就一个空项）→ 首个 item 就地填入、不留空 checkbox 行
+                // （对齐 insertBlocksAtCaret「空块整块替换、不留空行」原则）；非空则全部追加到其后（既有行为）。
+                let idx = 0;
+                if (!(li.textContent || '').trim() && !li.querySelector('img,figure,hr,input')) {
+                  while (li.firstChild) li.removeChild(li.firstChild);
+                  if (items[0].text) li.appendChild(doc.createTextNode(items[0].text));
+                  if (items[0].checked) li.setAttribute('data-checked', 'true'); else li.removeAttribute('data-checked');
+                  if (!li.firstChild) li.appendChild(doc.createElement('br'));
+                  idx = 1;
+                }
+                for (let k = idx; k < items.length; k++) { const nli = mkLi(items[k]); li.after(nli); li = nli; }
+                const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); s1.removeAllRanges(); s1.addRange(r);
+                ensureTodoStyle(); if (undoMgr) undoMgr.checkpoint(); markDirty(); return;
+              }
+            }
+            const ul = doc.createElement('ul'); ul.className = 'ws-todo'; // 非列表目标：构造 ws-todo 块插入
+            items.forEach((it) => ul.appendChild(mkLi(it)));
+            ensureTodoStyle();
+            insertBlocksAtCaret([ul]);
+            if (undoMgr) undoMgr.checkpoint(); markDirty(); return;
+          }
+        }
+      }
+      // bug2 列表：每行一个新 <li>（同一 ul 内、继承 li 类型），绝不建新 <ul>、绝不丢行。
+      // （通用 splitBlock 按 editingEl.tagName=UL 建块 → 会造出新 <ul> 且后续行灌进空 ul 丢失，multi-bullet 并成一行。）
+      if (classify(editingEl) === 'list') {
+        const s1 = doc.getSelection();
+        const n1 = s1 && s1.anchorNode ? (s1.anchorNode.nodeType === 1 ? s1.anchorNode : s1.anchorNode.parentElement) : null;
+        let li = n1 && n1.closest ? n1.closest('li') : null;
+        if (li && editingEl.contains(li)) {
+          doc.execCommand('insertText', false, lines[0]); // 第一行接当前 li（尊重光标处）
+          for (let i = 1; i < lines.length; i++) { if (!lines[i].trim()) continue; const nli = doc.createElement('li'); nli.textContent = lines[i]; li.after(nli); li = nli; } // 跳过空行/结尾换行：绝不建悬空空 <li>（无文字→点不进删不掉，回归 bug）
+          const r = doc.createRange(); r.selectNodeContents(li); r.collapse(false); // 光标落最后一个新 li 末尾
+          const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r);
+          if (undoMgr) undoMgr.checkpoint(); markDirty();
+          return;
+        }
+      }
       doc.execCommand('insertText', false, lines[0]);
       for (let i = 1; i < lines.length; i++) {
         if (splitBlock()) { if (lines[i]) doc.execCommand('insertText', false, lines[i]); } // splitBlock 劈出同类型新块（不嵌套）+ 光标移到新块首
@@ -1583,7 +2463,17 @@
         return;
       }
       if (!dragFrom) { e.preventDefault(); return; }
-      e.preventDefault(); const el = blockOf(e.target); if (el && el !== dragFrom) { const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING; if (before) el.after(dragFrom); else el.before(dragFrom); if (undoMgr) undoMgr.checkpoint(); markDirty(); } clearDrop(); dragFrom = null;
+      e.preventDefault();
+      const el = blockOf(e.target); // scoped：落在 toggle 体内块 → el 是体内块，.before/.after 落体内（进/出/内自动获得，U8/R6）
+      // 自嵌守卫：details 不能拖进自己的体（无限嵌套）。
+      if (el && el !== dragFrom && !(dragFrom.contains && dragFrom.contains(el))) {
+        const srcScope = scopeRootOf(dragFrom); // 源作用域（判拖出后 ≥1 体块铁则）
+        const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING;
+        if (before) el.after(dragFrom); else el.before(dragFrom);
+        if (srcScope !== blockRoot && srcScope !== scopeRootOf(dragFrom) && blocksInScope(srcScope).length === 0) srcScope.appendChild(doc.createElement('p')); // 拖出后源 toggle 空了 → 补空 p
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+      }
+      clearDrop(); dragFrom = null;
     }
     // U3-B6：把侧栏拖来的文件插成链接。落点=drop 处 caret；落在装饰/空白/边距 → 最近可编辑块末尾兜底
     //（静默失败 = 用户以为没做出来，L8）；跨根/无身份/自链 → 明确 toast，绝不静默。
@@ -1651,6 +2541,8 @@
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
     doc.addEventListener('paste', onPaste);
+    doc.addEventListener('copy', onCopy); // 内部富复制：⌘C 写带哨兵的干净 HTML（⌘X 走 keydown 里的 execCommand('copy') 也经此）
+    doc.addEventListener('toggle', onToggle, true); // 折叠事件不冒泡→捕获相 + 委托 doc（撑过 innerHTML 重写/嵌套/后加 toggle）
     doc.documentElement.addEventListener('mouseleave', onDocLeave);
 
     function detach() {
@@ -1669,6 +2561,8 @@
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
       doc.removeEventListener('paste', onPaste);
+      doc.removeEventListener('copy', onCopy);
+      doc.removeEventListener('toggle', onToggle, true);
       exitEdit();
       [grip, fmtbar, blockMenu, slashMenu].forEach((n) => n.remove());
     }
@@ -1681,12 +2575,33 @@
       blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标（空块占高度用，非装饰）
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
+      rangeSelEls = []; body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel')); // undo/redo 重写 body → 旧引用失效,按属性清
       grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
+    }
+
+    // U8/clip-3：undo/redo 用 body.innerHTML 整体重写、正在编辑的块被销毁、焦点回落非可编辑 BODY →
+    // 后续打字无宿主被静默吞。runUndoRedo 在重写**前** snapshotEdit 记录编辑块结构路径，reset 后 restoreEdit
+    // 按同路径在新 body 里重进编辑（mode:'end'）。光标精确位置不还原（v1 取舍）。
+    function blockPathOf(el) {
+      const path = []; let n = el;
+      while (n && n !== body) { const p = n.parentNode; if (!p) return null; path.unshift(Array.prototype.indexOf.call(p.children, n)); n = p; }
+      return n === body ? path : null;
+    }
+    function snapshotEdit() { return editingEl ? { path: blockPathOf(editingEl), id: editingEl.id || null } : null; }
+    function restoreEdit(snap) {
+      let target = null;
+      // ① 优先按 id 精确找：锚点块（有 id）跨 body.innerHTML 重写稳定，避开「pre-undo 下标套 post-undo 树 → 落无关块」（对抗审查 P2）。
+      if (snap && snap.id) { const byId = doc.getElementById(snap.id); if (byId && body.contains(byId) && isEditableEl(byId)) target = byId; }
+      // ② 退结构路径（无 id 时）：仍是 v1 取舍——编辑块上方结构变动时同一下标语义已变、可能落相邻块，见 spec 欠账。
+      if (!target && snap && snap.path) { let n = body; for (const i of snap.path) { if (!n || !n.children || i < 0 || i >= n.children.length) { n = null; break; } n = n.children[i]; } if (n && isEditableEl(n)) target = n; }
+      // ③ 兜底：首个可编辑块，保证打字有宿主（绝不落非可编辑 body/hr/figure/details → 吞字）。
+      if (!target) target = topBlocks().find((b) => isEditableEl(b)) || null;
+      if (target) enterEdit(target, { mode: 'end' });
     }
 
     // reposition：缩放/窗口尺寸变后重定位手柄+气泡。编辑态 selectedEl=null、当前块在 hoverEl，故跟 onScroll 一样
     // 用 hoverEl 兜底（否则编辑中缩放，手柄会漂在缩放前的旧坐标）。
-    return { detach, reset, deselect, reposition: () => { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); } };
+    return { detach, reset, deselect, snapshotEdit, restoreEdit, reposition: () => { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); } };
   }
 
   // ===== 注入到 iframe 的编辑器样式（ui-demo Canvas.css 移植；选择器既命中 .ws-* 也命中裸标签）=====
@@ -1695,18 +2610,29 @@
   /* §0：编辑器不套 canvas 装饰排版（max-width/居中/字号/颜色那套已删）；显示按 .html 原生，
      让块渲染正确的最小语义 CSS（margin/callout/todo）由 Schema baseline 随文件入盘（U5）。
      下面只保留「编辑器内」功能渲染（待办勾选框 + 编辑态高亮/占位/空块高度），均不入序列化。 */
-  ul.ws-todo, ul.ws-todo ul, ul.ws-todo ol { list-style:none; }
+  /* U11/create-4：class-scoped——todo 语义只按 class 生效。todo 列表（含 Tab 缩进产生的嵌套 ws-todo 子列表，D3）无圆点；
+     裸嵌套非 todo 列表（转换路径产物）显式恢复圆点/编号，否则继承父 ws-todo 的 list-style:none 成无 marker 裸文本。 */
+  ul.ws-todo { list-style:none; }
+  ul.ws-todo ul:not(.ws-todo) { list-style:disc; }
+  ul.ws-todo ol:not(.ws-todo) { list-style:decimal; }
   .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
-  .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #cfccc6;border-radius:4px;background:#fff;cursor:pointer; }
-  .ws-todo > li[data-checked="true"] { color:#9b9891;text-decoration:line-through; }
+  .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer; }
+  /* U14/check-2：勾选视觉传播反制。text-decoration:line-through 按 CSS 装饰传播规则会绘穿全部 in-flow 后代、
+     无法从后代 text-decoration:none 取消 → 含子列表的勾选项**不给自身加 line-through**（只变灰），避免划穿未勾子项；
+     叶子勾选项（无子列表）照常灰+划线。嵌套列表 color 显式重置回正文色（color 是继承属性、会下渗）。 */
+  .ws-todo > li[data-checked="true"] { color:#9b9891; }
+  .ws-todo > li[data-checked="true"]:not(:has(ul,ol)) { text-decoration:line-through; }
+  .ws-todo > li[data-checked="true"] :is(ul,ol) { color:#37352f; }
   .ws-todo > li[data-checked="true"]::before { content:'✓';border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center; }
 
   [contenteditable='true']{outline:none;}
   /* 空块/图片说明的占位文案（:empty::before content）随语言，在 attach 期用 t() 拼进 adoptedStyleSheets，不写死在这。 */
   /* 空块也占一行高度——否则非编辑态的空块（没占位符）塌成 0 高，连按 Enter 建的空白行全叠在一处、看着「换不了行」。
-     用 em 跟字号缩放（空标题行更高）。纯渲染、不进序列化。 */
+     必须用 1lh（＝该块自己的 line-height），不能用固定的 1.6em：各块行高不同（p=1.75、h1=1.3…），固定 em 对不上，
+     导致空块比有字的块矮一截（p 实测 25.6 vs 28）——于是块在「空↔有字」间翻转时下面所有行会跳 2.4px（Wendi 2026-07-22
+     报「上下插入时这行会上下抖动、纵坐标没固定住」的根因）。1lh 让空块精确等于有字时的一行高，翻转零位移。纯渲染、不进序列化。 */
   [data-ws2-root] > p:empty, [data-ws2-root] > h1:empty, [data-ws2-root] > h2:empty,
-  [data-ws2-root] > h3:empty, [data-ws2-root] > blockquote:empty, [data-ws2-root] > .ws-callout:empty{min-height:1.6em;}
+  [data-ws2-root] > h3:empty, [data-ws2-root] > blockquote:empty, [data-ws2-root] > .ws-callout:empty{min-height:1lh;}
   /* 选中/编辑高亮只用 box-shadow + background（不影响布局），绝不用 padding/margin——否则 padding 把文字推右。 */
   [data-ws2-selected]:not([data-ws2-editing]){border-radius:4px;box-shadow:0 0 0 2px rgba(0,0,0,.16),0 0 0 6px rgba(0,0,0,.05);background:rgba(0,0,0,.03);}
   /* 图片块选中框:暗色文档=对 html 施 invert 滤镜、并对 img 二次施同款把图还原真色——这层双反色会把
@@ -1717,6 +2643,14 @@
   [data-ws2-editing]{border-radius:4px;background:rgba(0,0,0,.015);}
   [data-ws2-drop='top']{box-shadow:0 -2px 0 0 #1a73e8;}
   [data-ws2-drop='bottom']{box-shadow:0 2px 0 0 #1a73e8;}
+  /* 跨块拖选的块级高亮（Wendi 2026-07-22）：整行蓝底(box-shadow 外扩到左右边距、不占布局)，罩住的块内
+     隐掉原生 ::selection→只剩整行蓝(对齐 Notion「哪几行都选中」)。绝不用 padding/margin(推文字)。 */
+  [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
+  [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
+  [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}
+  /* U23/select-4：跨 toggle 边界删除被拦成空操作时的反馈——高亮块闪一下橙红（不推布局、不用 transform 免劫持包含块）。 */
+  @keyframes ws2-nope{0%,100%{background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16)}35%,65%{background:rgba(214,90,64,.30);box-shadow:0 0 0 4px rgba(214,90,64,.30)}}
+  [data-ws2-nope]{animation:ws2-nope .4s ease;}
 
   .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
@@ -1733,8 +2667,11 @@
   .ws-fmtbar-ai:hover{background:rgba(26,115,232,.08);}
   .ws-fmtbar-holder{position:relative;display:inline-flex;}
   .ws-fmtbar-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:100000;min-width:132px;padding:4px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);}
-  .ws-fmtbar-menu-item{display:block;width:100%;height:30px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
+  .ws-fmtbar-menu-item{display:flex;align-items:center;width:100%;height:30px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
   .ws-fmtbar-menu-item:hover{background:#f0f1f3;}
+  /* 当前块类型高亮 + 右侧勾（Wendi 2026-07-22：看不出当前是几级标题） */
+  .ws-fmtbar-menu-item--on{color:#1a73e8;font-weight:600;}
+  .ws-fmtbar-menu-item--on::after{content:'\\2713';margin-left:auto;color:#1a73e8;}
   .ws-fmtbar-swatches{position:absolute;top:calc(100% + 6px);left:0;z-index:100000;gap:4px;padding:7px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);}
   .ws-fmtbar-swatch{width:20px;height:20px;border-radius:3px;border:1px solid #e4e6e9;cursor:pointer;padding:0;}
 

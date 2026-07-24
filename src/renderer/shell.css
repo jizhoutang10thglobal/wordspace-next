@@ -273,10 +273,15 @@ ul { list-style: none; }
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--c-bg-sunken);
-  border-right: 1px solid var(--c-border);
+  /* Arc 图层模型（Wendi 2026-07-21 融合反馈）：侧栏不是独立面板，是窗框 chrome 表面的一部分——
+     底色与窗框同色、无右边线，「侧栏+框」一块表面，内容纸（#main 细边+圆角）独享层级。
+     旧 sunken 底 + border-right 会切出两块表面（Wendi「边框和左侧边栏的融合…还是尴尬」）。 */
+  background: var(--c-bg-chrome);
   user-select: none;
 }
+/* 全屏例外：摘框摘缝后侧栏与内容纸直接相邻，无 1px 分界（融合前由 border-right 提供）——全屏态补回。
+   :not(.is-collapsed) 限定：width:0 的收起态 border 仍画 1px，会在全屏左缘露一条线。 */
+body.is-win-fullscreen .sb.sb-on:not(.is-collapsed) { border-right: 1px solid var(--c-border); }
 /* 侧栏宽度拖拽柄（UX5 / Wendi F1）：贴右边界、col-resize；收起态不显示。 */
 .sb-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 10; }
 .sb-resize:hover { background: var(--c-accent); opacity: 0.35; }
@@ -308,6 +313,28 @@ ul { list-style: none; }
 body.is-mac .sb-head { padding: 0 6px 0 70px; gap: 1px; }
 body.is-mac .sb-head .sb-icobtn { width: 22px; }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+/* peek 浮卡 DOM 假红绿灯(Wendi 2026-07-22「把这3个按钮放到卡片上」):只在 mac 的 peek 态显——
+   原生灯搬不进 DOM 卡(Electron 无 AppKit standardWindowButton 重挂,Arc 是原生搬的),peek 全程
+   不显原生灯,假灯作为卡的一部分随卡滑入滑出、与图标排同处 40px 头天生对齐(杀掉 1.2px 账)。
+   绝对定位吃 is-mac 让位 70px 区(原生灯在展开态的家);观感对齐 ui-demo .arc-traffic,
+   色=macOS 原色;hover 整组出符号(macOS 行为)。点击走 ws-win-ctl(关/最小化/全屏)。 */
+.sb-fakelights { display: none; }
+body.is-mac.is-sb-peek .sb-fakelights {
+  display: flex; gap: 8px; align-items: center;
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+}
+.sb-fl { flex: none; width: 12px; height: 12px; border-radius: var(--r-pill); border: none; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; cursor: default; }
+.sb-fl svg { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.sb-fakelights:hover .sb-fl svg { opacity: 1; } /* hover 任一颗,三颗全出符号(macOS 同款) */
+.sb-fl-close { background: #ff5f57; }
+.sb-fl-min { background: #febc2e; }
+.sb-fl-zoom { background: #28c840; }
+/* toggle 两形态(Colin 2026-07-21):展开态显「收起」(左箭头),收起/peek 态显「展开」(右箭头)——
+   peek 浮卡里 body.is-sb-collapsed 仍挂着,天然显展开形态,用户在浮卡里能认出恢复钮。 */
+#sb-toggle .sb-tgl-open { display: none; }
+body.is-sb-collapsed #sb-toggle .sb-tgl-close { display: none; }
+body.is-sb-collapsed #sb-toggle .sb-tgl-open { display: block; }
 /* 图标钮 = 墨圆 + hover 墨条滑入（对齐 ui-demo .arc-ico） */
 .sb-icobtn {
   flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
@@ -413,7 +440,7 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
    （top 跟 scrollTop）。实底色遮住下方滚动内容；padding 对齐 .sb-body 横向 padding 让克隆行与真行对齐。 */
 .sb-sticky {
   position: absolute; left: 0; right: 0; top: 0; z-index: 6;
-  padding: 0 8px; background: var(--c-bg-sunken);
+  padding: 0 8px; background: var(--c-bg-chrome); /* 实底遮滚动内容，必须=侧栏底（融合后=chrome） */
   pointer-events: none;
 }
 .sb-sticky:empty { display: none; }
@@ -570,7 +597,8 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
 .sb-tab:hover .sb-tab-pin, .sb-tab:hover .sb-tab-close { opacity: 1; }
 .sb-tab-pin.is-pinned { opacity: 1; color: var(--c-accent); } /* 已钉的常显（在置顶区） */
 .sb-tab-pin:hover, .sb-tab-close:hover { background: var(--c-active); color: var(--c-text); }
-/* 激活态 = 白纸 puck 落在 sunken 槽上（对齐 ui-demo arc-tab.is-active）——纯底色对比，零阴影（保守口径）。
+/* 激活态 = 白纸 puck 落在 chrome 底上（对齐 ui-demo arc-tab.is-active；融合后侧栏底=chrome，
+   对比比旧 sunken 槽弱一档=Arc 同款观感）——纯底色对比，零阴影（保守口径）。
    跟文件树的蓝底 selection（.sb-file.is-active 不动）区分开。 */
 .sb-tab.is-active { background: var(--c-surface); color: var(--c-text); }
 .sb-tab.is-active .sb-ico { color: var(--c-accent); }
@@ -677,10 +705,12 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
 .sb-modal-body { padding: 14px 18px; overflow-y: auto; }
 .sb-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 /* 卡片零阴影（保守口径）：层级 = 1px 细边 + hover 底色差 */
-.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 64px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
-.sb-card:hover { background: var(--c-bg-chrome); border-color: var(--c-border-strong); border-top-color: var(--c-border-strong); }
-.sb-card-blank { border-top-color: var(--c-accent); }
-.sb-card-blank:hover { border-top-color: var(--c-accent); }
+.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 92px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.sb-card:hover { background: var(--c-hover); }
+.sb-card-ico { display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 4px; border-radius: var(--r-sm); background: var(--c-bg-sunken); color: var(--c-text-2); }
+.sb-card-blank { border-top-color: var(--c-border-strong); }
+.sb-card-blank:hover { border-color: var(--c-accent); border-top-color: var(--c-accent); }
+.sb-card-blank .sb-card-ico { background: var(--c-accent-tint); color: var(--c-accent); }
 .sb-card-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
 .sb-card-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.45; }
 

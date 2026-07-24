@@ -37,7 +37,6 @@ module.exports = {
 
   // ---- root header / disconnected root ----
   rootHeadTitle: '{path} · Drag to reorder folders',
-  rootHeadTitleLazy: '{path} · Simplified mode (very large folder, loaded on demand)',
   newDoc: 'New document',
   moveToTop: 'Move to top',
   removeRoot: 'Remove (files stay on disk)',
@@ -56,9 +55,7 @@ module.exports = {
   hugePickAnother: 'Pick another folder',
   hugeOpenAnyway: 'Open anyway',
 
-  // ---- simplified (lazy) large root: badge + per-level loading placeholder + level-truncation note ----
-  lazyTag: 'Simplified',
-  lazyTagTitle: 'This folder is very large (over 150,000 items). Wordspace loads it level by level on demand; filtering / quick-open only cover directories you’ve already browsed',
+  // ---- simplified (lazy) large root: per-level loading placeholder + level-truncation note + point-of-use degradation hints ----
   readingLevel: 'Reading…',
   dirTruncatedNote: 'This folder has too many direct items — showing only the first portion',
   lazyFilterHint: 'Simplified mode: only searches directories you’ve already browsed',
@@ -149,10 +146,17 @@ module.exports = {
   createTabSub: 'Enter a URL to go straight to the web, or create a document below (a temporary document — you choose where to save it later)',
   createDocSub: 'In {location}',
   omniPlaceholder: 'Search, or enter a URL',
-  paradigm1: 'Paradigm 1',
-  paradigm2: 'Paradigm 2',
+  paradigmLabel: 'Paradigm',
+  paradigmNotion: 'Notion-like',
+  paradigmCurrent: 'Current',
+  paradigmNotionDesc: 'Structured block-based documents',
+  paradigmPaged: 'Paged document',
+  paradigmPagedDesc: 'Laid out in pages, like Word',
   paradigm3: 'Paradigm 3',
   comingSoon: 'Coming soon',
+  paradigmRailFoot: 'Each paradigm will have its own editing style and templates',
+  paradigmSoon: '{name} · on the way',
+  paradigmSoonDesc: 'Each paradigm is its own editing core and document structure. Once it ships, its templates will be listed here.',
 
   // ---- command palette ----
   findPlaceholder: 'Find by file name…',
@@ -183,6 +187,10 @@ module.exports = {
   diagHint: 'Scroll/switch to reproduce jank and watch “long tasks” climb live · refreshes every 1s',
   resizeHint: 'Drag to resize the sidebar',
   toggleSidebarTitle: 'Collapse sidebar ⌘\\',
+  expandSidebarTitle: 'Expand sidebar ⌘\\',
+  flClose: 'Close',
+  flMinimize: 'Minimize',
+  flFullscreen: 'Full screen',
   navBack: 'Back',
   navForward: 'Forward',
   reloadTitle: 'Reload ⌘R',
@@ -197,4 +205,7 @@ module.exports = {
   emptyOpenBtn: 'Open folder',
   aiAccessTitle: 'AI access',
   expandSidebarTitle: 'Expand sidebar ⌘\\',
+  flClose: 'Close',
+  flMinimize: 'Minimize',
+  flFullscreen: 'Full screen',
 };

@@ -73,10 +73,12 @@ async function openBigLazy(extraEnv) {
   await expect(page.locator('.sb-root-lazy')).toBeVisible({ timeout: W });
 }
 
-test('V1 简化模式：超预算根进 lazy——徽标 + 顶层可浏览（非终态过大行），app 可交互', async () => {
+test('V1 简化模式：超预算根进 lazy——照常显示路径（无 Simplified 徽标）+ 顶层可浏览，app 可交互', async () => {
   await openBigLazy();
-  // 「简化模式」徽标真渲染
-  await expect(page.locator('.sb-root-lazy .sb-root-miss-tag', { hasText: '简化模式' })).toBeVisible();
+  // Colin 2026-07-21：lazy 根照常显示路径、跟其他根一视同仁——不再挂「Simplified」徽标（徽标借「优化」名头撤路径，
+  // 但路径显示与懒加载优化无关，只让 Desktop 看着像 bug）。降级提示改在用到时就地给（Cmd+P 面板注脚 / @菜单灰字）。
+  await expect(page.locator('.sb-root-lazy .sb-root-path')).toContainText('海量文件夹'); // 路径真渲染
+  await expect(page.locator('.sb-root-lazy .sb-root-miss-tag')).toHaveCount(0); // 无徽标
   // 顶层逐个可见（子1/子2/pad 都是目录），不是 P0a 的终态「过大」行
   await expect(page.locator('.sb-dir[data-rel="子1"]')).toBeVisible({ timeout: W });
   await expect(page.locator('.sb-dir[data-rel="子2"]')).toBeVisible();

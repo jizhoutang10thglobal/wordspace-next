@@ -667,7 +667,7 @@
   // 渲染收尾（全量 render() 与增量 renderRoot() 共用，防两条路径尾部逻辑漂移——可维护性 review）：
   // 高亮当前打开文件 + 全量重算 sticky 吸顶行缓存（只读 layout 遍历，便宜）+ 强制吸顶浮层下一帧重建。
   function afterRender() {
-    highlightActive(window.__shellDocPath ? window.__shellDocPath() : null);
+    highlightActive(); // 数据源 = 激活标签（见 highlightActive 注释），不再读 docPath
     cacheStickyRows();
     if (stickyEl) stickyEl.dataset.key = STICKY_FORCE; // 哨兵值：任何真 key（含空 pins 的 ''）都 ≠ 它 → 必重建
     renderSticky();
@@ -697,7 +697,7 @@
     head.dataset.root = root.id;
     head.dataset.rel = '';
     head.dataset.depth = -1; // sticky ancestor：根标题是最外层祖先
-    head.title = window.wsT(lazy ? 'sidebar.rootHeadTitleLazy' : 'sidebar.rootHeadTitle', { path: root.path });
+    head.title = window.wsT('sidebar.rootHeadTitle', { path: root.path });
     head.draggable = true;
     const caret = document.createElement('span');
     caret.className = 'sb-caret' + (open ? ' is-open' : '');
@@ -709,20 +709,14 @@
     name.className = 'sb-name sb-root-name ws-truncate';
     name.textContent = root.name;
     head.append(caret, ico, name);
-    if (lazy) {
-      // 「简化模式」徽标：告诉用户这个大文件夹按需加载、部分功能受限（hover 解释）。复用失联根的小 tag 样式，
-      // 零新增 CSS；tag 后不再挂 path（省空间），path 进 title。
-      const tag = document.createElement('span');
-      tag.className = 'sb-root-miss-tag';
-      tag.textContent = window.wsT('sidebar.lazyTag');
-      tag.title = window.wsT('sidebar.lazyTagTitle');
-      head.appendChild(tag);
-    } else {
-      const pathEl = document.createElement('span');
-      pathEl.className = 'sb-root-path ws-truncate';
-      pathEl.textContent = root.path;
-      head.appendChild(pathEl);
-    }
+    // lazy（简化模式）根照常显示路径，跟其他根一视同仁——不再挂「Simplified」徽标（它借「优化」的名头撤了路径，
+    // 但路径显示与懒加载优化无关，只让 Desktop 跟别的根不一致、看着像 bug，Colin 2026-07-21 拍板撤）。
+    // 简化模式的功能降级（快速打开不含它 / @链接不可用）在**用到时**各自就地提示（Cmd+P 面板注脚 / @菜单灰字），
+    // 不靠这个恒显徽标。lazy 仍留在 head 的 sb-root-lazy class（隐形，无 CSS）供内部/测试识别。
+    const pathEl = document.createElement('span');
+    pathEl.className = 'sb-root-path ws-truncate';
+    pathEl.textContent = root.path;
+    head.appendChild(pathEl);
     head.onclick = () => {
       if (rootClosed.has(root.id)) rootClosed.delete(root.id);
       else rootClosed.add(root.id);
@@ -1277,9 +1271,16 @@
     return s.split('Error: ').pop().slice(0, 80);
   }
 
+  let ctxDismiss = null; // 滚动/缩放关闭菜单的监听器引用（关菜单时拆掉）
   function closeContextMenu() {
     const m = document.getElementById('sb-ctx');
     if (m) m.remove();
+    if (ctxDismiss) {
+      const sbBody = document.getElementById('sb-body');
+      if (sbBody) sbBody.removeEventListener('scroll', ctxDismiss);
+      window.removeEventListener('resize', ctxDismiss);
+      ctxDismiss = null;
+    }
   }
   function showContextMenu(x, y, items) {
     closeContextMenu();
@@ -1297,8 +1298,30 @@
       menu.appendChild(b);
     }
     document.body.appendChild(menu);
-    menu.style.left = x + 'px'; // 单 CSSOM 属性，CSP 安全
-    menu.style.top = y + 'px';
+    // 视口感知定位：默认左上角贴点击点；右侧放不下翻到点击点左边、下方放不下翻到上边（菜单底贴点击点），
+    // 再夹进视口留 6px 边距。用 offsetWidth/Height（布局尺寸，不受 pop-in transform 干扰；
+    // getBoundingClientRect 会把入场动画的 scale/translate 算进去，不能拿来定位）。全是单 CSSOM 属性，CSP 安全。
+    const M = 6;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    let left = x;
+    let top = y;
+    if (left + mw > vw - M) left = x - mw; // 右溢出 → 翻左
+    if (left < M) left = M;
+    if (left + mw > vw - M) left = Math.max(M, vw - M - mw); // 极窄视口兜底
+    if (top + mh > vh - M) top = y - mh; // 下溢出 → 翻上，菜单底边落在点击点
+    if (top < M) top = M;
+    if (top + mh > vh - M) top = Math.max(M, vh - M - mh); // 极矮视口兜底
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    // 菜单是 fixed，不会跟着 #sb-body 的内容滚动——开着菜单滚侧栏会让它「脱离」右键的那一行（Wendi 反馈）。
+    // 标准做法：滚动/窗口缩放即关菜单，而不是让它飘在原地。
+    ctxDismiss = () => closeContextMenu();
+    const sbBody = document.getElementById('sb-body');
+    if (sbBody) sbBody.addEventListener('scroll', ctxDismiss, { passive: true });
+    window.addEventListener('resize', ctxDismiss);
     setTimeout(() => {
       const off = (e) => {
         if (!e.target.closest('#sb-ctx')) closeContextMenu();
@@ -1521,11 +1544,26 @@
     }
   }
 
-  // ---- 当前打开文件高亮 ----
-  function highlightActive(absPath) {
+  // ---- 树高亮 = 激活标签的投影（always linked，Wendi/Jizhou 2026-07-20）----
+  // 判定源是「激活标签 entry」，**不再读 shell 的 docPath**：web 态 docPath 仍指被盖住的旧文档（会残留），
+  // viewer 态 docPath 是 null（重渲染就丢）。网页/临时标签 → 无高亮；文档/查看器/已收编进树的外部文件
+  // → 亮其行；行不在（根外未收编 / lazy 未加载层 / 失联根）→ 无高亮。afterRender（树重渲染）与
+  // renderZones（标签激活/增删）两处都调它，任一变化都保持同步。
+  function activeHighlightNode() {
+    const key = tabState.activeRel;
+    if (!key) return null; // 起始页
+    const entry = tabState.entries.find((e) => keyOf(e) === key);
+    if (!entry || window.WS2Tabs.isWebEntry(entry) || isTempEntry(entry)) return null;
+    return findEntryNode(entry); // rel→findNode / abs→findNodeByAbs；查不到 = 树里没这行 → 无高亮
+  }
+  function highlightActive() {
     treeEl.querySelectorAll('.sb-file.is-active').forEach((el) => el.classList.remove('is-active'));
-    if (!absPath) return;
-    const row = treeEl.querySelector('.sb-file[data-abs="' + cssAttr(absPath) + '"]');
+    const node = activeHighlightNode();
+    if (!node) return;
+    // 行定位用解析出的**树节点**自身属性（node.rootId+node.rel，每个文件节点都有）——单一来源，与判定同源。
+    // 禁止在 renderer 侧用根路径拼 abs 串：rel 用 '/'、Windows node.abs 用 '\\'，拼出的串对不上行的 data-abs，
+    // win 构建会整体静默哑掉；用 data-root+data-rel 无此坑。
+    const row = treeEl.querySelector('.sb-file[data-root="' + cssAttr(node.rootId) + '"][data-rel="' + cssAttr(node.rel) + '"]');
     if (row) row.classList.add('is-active');
   }
   // 转义属性选择器里的引号/反斜杠
@@ -1900,7 +1938,7 @@
     if (node) openTabEntry({ rootId: node.rootId, rel: node.rel, kind: node.kind || 'html', title: node.name }); // 根内：真 rel 标签
     else openTabEntry({ abs, kind: 'html', title: leaf }); // 根外：abs 身份外部标签（↗），沿用外部文件标签模型
     if (window.__shellFinalizeTemp) await window.__shellFinalizeTemp(tempId, abs, node ? node.name : leaf);
-    if (node) { expandToFile(node.rootId, node.rel); highlightActive(abs); }
+    if (node) expandToFile(node.rootId, node.rel); // 高亮由 openTabEntry 上面那次的 renderZones 按激活标签刷（单一真相源）
     const nodeRoot = node ? rootOf(node.rootId) : null;
     const place = node
       ? (nodeRoot ? nodeRoot.name : window.wsT('sidebar.workspace')) + (node.rel.indexOf('/') >= 0 ? ' / ' + node.rel.split('/').slice(0, -1).join('/') : '')
@@ -2016,6 +2054,10 @@
   function openTabRow(entry, reveal = true) {
     if (isTempEntry(entry)) { // 临时文档：内容在 shell 的 tempStore，让它重渲染（切标签不丢）
       if (window.__shellReopenTemp) window.__shellReopenTemp(keyOf(entry)); // renderTemp 内部摘 web view（canLeaveActive 取消则不摘,网页态保留,P2-1）
+      // 切成功才更新 activeRel（照 closeOrRemove 的 __shellActiveTemp 校验模式）：否则 activeRel 停在旧文档，
+      // 树高亮会把旧文档行持续刷亮（违反 always linked）。守卫取消（切换被拦）则不动，保守。
+      const now = window.__shellActiveTemp && window.__shellActiveTemp();
+      if (now && now.id === keyOf(entry)) openTabEntry(entry);
       return;
     }
     // 网页标签（浏览器 feature）：激活 = openEntry（置顶纯快捷方式顺带变开）+ 交给 browser.js 的激活漏斗。
@@ -2281,6 +2323,7 @@
     const sbEl = document.getElementById('sidebar');
     if (sbEl) sbEl.classList.toggle('sb-on', rootsState.length > 0 || tabState.entries.length > 0);
     if (window.__webChromeSync) window.__webChromeSync(); // 激活/标签变化 → 同步地址栏值/导航条 disabled/星标
+    highlightActive(); // 树高亮跟随激活标签：renderZones 是全部标签变更（激活/增删/收编）的唯一会合点
   }
 
   // ---- 筛选输入（+ 清除钮，T8 对齐 ui-demo arc-filter-clear）----
@@ -2390,6 +2433,13 @@
   // ---- 新建文档：模板选择台（空文档第一 + 内置模板，无 AI）。----
   // opts.temp：从「标签页 +」/ Cmd+T 来 → 建临时文档（不落盘，手动保存才进文件夹）；
   // 否则（文件夹 hover-+ / 右键新建）落点 dirRel、直接落盘。
+  // 新建文档弹窗内的图标（lucide 风格静态串→CSP 安全，同 omni globe 的做法）。
+  const CM_ICO_BLOCKS = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>';
+  const CM_ICO_LOCK = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+  const CM_ICO_LOCK_LG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+  const CM_ICO_FILE = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>';
+  const CM_ICO_GLOBE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+
   async function openCreateModal(rootId, dirRel, opts) {
     if (document.querySelector('.sb-modal-overlay')) return; // 修 SH-5：已有弹层（如 SaveModal）时不叠——Cmd+T 加速器穿透会走到这
     const temp = !!(opts && opts.temp);
@@ -2410,18 +2460,17 @@
       document.removeEventListener('keydown', onKey);
     }
     const modal = document.createElement('div');
-    modal.className = 'sb-modal';
-    const head = modalHead(temp ? window.wsT('sidebar.newTab') : window.wsT('sidebar.newDoc'), temp
-      ? window.wsT('sidebar.createTabSub')
-      : window.wsT('sidebar.createDocSub', { location: (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : '') }), close);
-    // ⌘T 二合一（spec §4.5.1）：顶部一条地址栏（自动聚焦）——Enter 开新网页标签并导航,关 modal。
-    let omniRow = null;
+    modal.className = 'sb-modal sb-modal-cm';
+
+    // ---- 顶部：temp 走 omni 地址栏（Arc 式，X 收进栏内）；非 temp 走标题头 ----
+    let topEl;
     if (temp) {
-      omniRow = document.createElement('div');
+      // ⌘T 二合一（spec §4.5.1）：顶部一条地址栏（自动聚焦）——Enter 开新网页标签并导航,关 modal。
+      const omniRow = document.createElement('div');
       omniRow.className = 'sb-cm-omni';
       const ico = document.createElement('span');
       ico.className = 'sb-cm-omni-ico';
-      ico.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>';
+      ico.innerHTML = CM_ICO_GLOBE;
       const omniIn = document.createElement('input');
       omniIn.className = 'sb-cm-omni-input';
       omniIn.type = 'text';
@@ -2438,22 +2487,93 @@
           if (window.__webOpenInput) window.__webOpenInput(v);
         } else if (e.key === 'Escape') { e.preventDefault(); close(); }
       };
-      omniRow.append(ico, omniIn);
+      const x = document.createElement('button');
+      x.className = 'sb-modal-x sb-cm-omni-x';
+      x.setAttribute('aria-label', window.wsT('common.close'));
+      x.innerHTML = X_SVG16;
+      x.onclick = close;
+      omniRow.append(ico, omniIn, x);
       setTimeout(() => omniIn.focus(), 0);
+      topEl = omniRow;
+    } else {
+      topEl = modalHead(window.wsT('sidebar.newDoc'),
+        window.wsT('sidebar.createDocSub', { location: (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : '') }), close);
     }
-    const grid = document.createElement('div');
-    grid.className = 'sb-modal-grid';
-    for (const t of templates) {
+
+    // ---- 范式（对齐 ui-demo）：范式 1「类 Notion」= schema-1 流式；范式 2「分页文档」= schema-2；范式 3 灰态占位。
+    // schema 字段 = 该范式对应的文档 schema，pane 按它过滤模板（见 renderPane）。
+    const paradigms = [
+      { id: 'notion', schema: 'schema-1', name: window.wsT('sidebar.paradigmNotion'), tag: window.wsT('sidebar.paradigmCurrent'), desc: window.wsT('sidebar.paradigmNotionDesc'), soon: false },
+      { id: 'paged', schema: 'schema-2', name: window.wsT('sidebar.paradigmPaged'), desc: window.wsT('sidebar.paradigmPagedDesc'), soon: false },
+      { id: 'p3', name: window.wsT('sidebar.paradigm3'), desc: window.wsT('sidebar.comingSoon'), soon: true },
+    ];
+    let activeId = 'notion';
+
+    const split = document.createElement('div');
+    split.className = 'sb-cm-split';
+
+    // 左：范式轨
+    const rail = document.createElement('div');
+    rail.className = 'sb-cm-rail';
+    const railLabel = document.createElement('div');
+    railLabel.className = 'sb-cm-rail-label';
+    railLabel.textContent = window.wsT('sidebar.paradigmLabel');
+    rail.appendChild(railLabel);
+    const paraBtns = {};
+    for (const p of paradigms) {
+      const btn = document.createElement('button');
+      btn.className = 'sb-cm-para' + (p.id === activeId ? ' is-active' : '') + (p.soon ? ' is-soon' : '');
+      const pico = document.createElement('span');
+      pico.className = 'sb-cm-para-ico';
+      pico.innerHTML = p.soon ? CM_ICO_LOCK : CM_ICO_BLOCKS;
+      const ptext = document.createElement('span');
+      ptext.className = 'sb-cm-para-text';
+      const pname = document.createElement('span');
+      pname.className = 'sb-cm-para-name';
+      pname.textContent = p.name;
+      if (p.tag) {
+        const tag = document.createElement('span');
+        tag.className = 'sb-cm-para-tag';
+        tag.textContent = p.tag;
+        pname.appendChild(tag);
+      }
+      const pdesc = document.createElement('span');
+      pdesc.className = 'sb-cm-para-desc';
+      pdesc.textContent = p.desc;
+      ptext.append(pname, pdesc);
+      btn.append(pico, ptext);
+      btn.onclick = () => {
+        if (activeId === p.id) return;
+        activeId = p.id;
+        for (const id of Object.keys(paraBtns)) paraBtns[id].classList.toggle('is-active', id === activeId);
+        renderPane();
+      };
+      paraBtns[p.id] = btn;
+      rail.appendChild(btn);
+    }
+    const railFoot = document.createElement('div');
+    railFoot.className = 'sb-cm-rail-foot';
+    railFoot.textContent = window.wsT('sidebar.paradigmRailFoot');
+    rail.appendChild(railFoot);
+
+    // 右：该范式的模板（可用范式 = 卡片网格；未上线范式 = 占位）
+    const pane = document.createElement('div');
+    pane.className = 'sb-cm-pane';
+
+    function makeCard(t) {
       const card = document.createElement('button');
       card.className = 'sb-card' + (t.id === 'blank' ? ' sb-card-blank' : '');
       if (t.id !== 'blank' && t.accent) card.style.borderTopColor = t.accent; // 单 CSSOM 属性，CSP 安全
+      const cico = document.createElement('span');
+      cico.className = 'sb-card-ico';
+      cico.innerHTML = CM_ICO_FILE;
       const name = document.createElement('div');
       name.className = 'sb-card-name';
       name.textContent = t.name;
       const desc = document.createElement('div');
       desc.className = 'sb-card-desc';
       desc.textContent = t.desc || '';
-      card.append(name, desc);
+      card.append(cico, name, desc);
       card.onclick = async () => {
         close();
         // 新建文档一律默认名「未命名」（Colin 拍板：模板给内容不给名字，保存/落盘时用户再改名）。
@@ -2468,33 +2588,43 @@
         await refreshRoot(rootId);
         if (r && r.abs) openDoc(r.abs);
       };
-      grid.appendChild(card);
+      return card;
     }
-    const body = modalBody();
-    if (omniRow) {
-      body.appendChild(omniRow);
-      // 「新建文档」小节标 + 范式选择（范式 1 可用；2/3 灰态敬请期待,spec §4.5.1）
-      const secRow = document.createElement('div');
-      secRow.className = 'sb-cm-sec';
-      const secLabel = document.createElement('span');
-      secLabel.className = 'sb-cm-sec-label';
-      secLabel.textContent = window.wsT('sidebar.newDoc');
-      const p1 = document.createElement('span');
-      p1.className = 'sb-cm-para is-on';
-      p1.textContent = window.wsT('sidebar.paradigm1');
-      const p2 = document.createElement('span');
-      p2.className = 'sb-cm-para';
-      p2.textContent = window.wsT('sidebar.paradigm2');
-      p2.title = window.wsT('sidebar.comingSoon');
-      const p3 = document.createElement('span');
-      p3.className = 'sb-cm-para';
-      p3.textContent = window.wsT('sidebar.paradigm3');
-      p3.title = window.wsT('sidebar.comingSoon');
-      secRow.append(secLabel, p1, p2, p3);
-      body.appendChild(secRow);
+
+    function renderPane() {
+      pane.textContent = '';
+      const active = paradigms.find((p) => p.id === activeId) || paradigms[0];
+      if (active.soon) {
+        const soon = document.createElement('div');
+        soon.className = 'sb-cm-soon';
+        const sico = document.createElement('div');
+        sico.className = 'sb-cm-soon-ico';
+        sico.innerHTML = CM_ICO_LOCK_LG;
+        const stitle = document.createElement('div');
+        stitle.className = 'sb-cm-soon-title';
+        stitle.textContent = window.wsT('sidebar.paradigmSoon', { name: active.name });
+        const sdesc = document.createElement('div');
+        sdesc.className = 'sb-cm-soon-desc';
+        sdesc.textContent = window.wsT('sidebar.paradigmSoonDesc');
+        soon.append(sico, stitle, sdesc);
+        pane.appendChild(soon);
+        return;
+      }
+      const grid = document.createElement('div');
+      grid.className = 'sb-modal-grid sb-cm-grid';
+      // 按当前范式的 schema 过滤模板（流式范式只显 schema-1 模板，分页范式只显 schema-2）。
+      // 模板缺 schema 字段 = 老数据 → 归到 schema-1（默认流式），不漏卡。
+      const wanted = active.schema || 'schema-1';
+      for (const t of templates) {
+        if ((t.schema || 'schema-1') !== wanted) continue;
+        grid.appendChild(makeCard(t));
+      }
+      pane.appendChild(grid);
     }
-    body.appendChild(grid);
-    modal.append(head, body);
+    renderPane();
+
+    split.append(rail, pane);
+    modal.append(topEl, split);
     overlay.appendChild(modal);
     wireOverlayClose(overlay, close);
     document.addEventListener('keydown', onKey);
@@ -2601,13 +2731,17 @@
   const edgeHot = document.getElementById('sb-edge-hot');
   // 沉浸收起（Arc 对标）：常驻浮钮 sb-reopen 已删（拍板「纯 Arc 式」零可见 UI），重开=左缘 hover peek / Cmd+\。
   // spec=docs/features/immersive-collapse.md
-  if (window.ws2 && window.ws2.platform === 'darwin') document.body.classList.add('is-mac'); // 红绿灯让位（hiddenInset）
+  if (window.ws2 && (window.ws2.platform === 'darwin' || window.ws2.fakeMac)) document.body.classList.add('is-mac'); // 红绿灯让位（hiddenInset）;fakeMac=e2e seam(linux CI 测 mac 专属分支)
 
   // 沉浸窗框非全屏恒有（Colin 2026-07-18 扩展 #271）：真全屏（macOS enter-full-screen / F11）时摘框。
   // 主进程 win.on('enter/leave-full-screen') → webContents.send('fullscreen-changed', bool) → preload
   // onFullscreenChanged → 挂/摘 body.is-win-fullscreen（CSS 全部走 body:not(.is-win-fullscreen) 组合表达）。
   // 启动初值查一次（冷启动可能已在全屏，如上次全屏中退出后系统恢复）。这条接线是「全屏无框」的唯一来源，
   // 摘掉它 → 全屏态收不到 → 框不摘（immersive.spec「全屏无框」变异自检据此翻红）。
+  // 全屏+收起的「找不到关闭钮」死胡同(Colin 2026-07-22)的解法迭代:一版是「进全屏强制恢复原生灯
+  // 可见(顶栏下拉带灯)」,但和 peek 卡上的假灯撞出重复灯——Colin 改拍:顶栏下拉**不放灯**,
+  // 全屏推顶时【侧栏 peek 跟着滑出】,灯只活在卡上(watcher 的全屏顶缘唤出带,edge-zones FS_TOP)。
+  // 故这里只管样式类;收起态灯保持隐藏,可见性仍由 setSidebarCollapsed 单点管。
   function applyWinFullscreen(isFs) { document.body.classList.toggle('is-win-fullscreen', !!isFs); }
   if (window.ws2 && window.ws2.getFullscreen) {
     window.ws2.getFullscreen().then(applyWinFullscreen).catch(() => {});
@@ -2629,7 +2763,10 @@
       if (!peekPending || peekOn() || !sidebarEl.classList.contains('is-collapsed')) return;
       peekPending = false;
       document.body.classList.add('is-sb-peek');
-      if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(true);
+      // 原生灯 peek 全程不显(Wendi 2026-07-22「灯不在卡片上」):此前灯瞬移到 (24,22),但卡要滑 320ms
+      // 才落位——滑入/滑出各有 ~1/3 秒灯悬空浮在内容上。原生灯搬不进 DOM 卡(Electron 无 AppKit 的
+      // standardWindowButton 重挂),改用卡内 DOM 假灯(#sb-fakelights,CSS 按 is-mac+is-sb-peek 显),
+      // 随卡滑入滑出、与图标排天生对齐。
     };
     if (window.__webPeekSnap) window.__webPeekSnap(true, finish);
     else finish();
@@ -2640,7 +2777,7 @@
     if (!peekOn()) return;
     const done = () => {
       document.body.classList.remove('is-sb-peek', 'is-sb-peek-out');
-      if (document.body.classList.contains('is-sb-collapsed') && window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(false);
+      // 原生灯 peek 全程未显,无需在此隐藏(假灯随 is-sb-peek 类摘除自然消失)
     };
     if (immediate) done();
     else {
@@ -2655,15 +2792,33 @@
     sidebarEl.addEventListener('mouseenter', () => { if (peekOn()) clearTimeout(peekTimer); });
     sidebarEl.addEventListener('mouseleave', () => { if (peekOn()) peekLeave(); });
   }
-  // （原「网页 view 前台时主进程指针 watcher 代打」已删：沉浸窗框让 #main 内缩 10px，
-  //   左边带永远是 DOM 地盘，#sb-edge-hot 在 web 态也能收到鼠标——触发只此一条。）
+  // 光标轮询触发(Wendi 2026-07-22「必须精确停在缝上」→ Arc 式宽容,主进程 ws-edge-watch):
+  // DOM 热区的结构性缺口=①甩出窗外收不到 ②快速划过+120ms 停留被取消 ③无左上角唤出区。
+  // 轮询首拍即开(不再要停留),trigger=唤出区(左缘带±/左上角) dwell=驻留区(∪卡区缓冲)。
+  // DOM 热区保留(e2e 走它+双保险);07-17 删过一版 watcher,当时是「冗余简化」,现在为手感恢复。
+  if (window.ws2 && window.ws2.onEdgeHover) {
+    window.ws2.onEdgeHover((trigger, dwell) => {
+      if (!sidebarEl || !sidebarEl.classList.contains('is-collapsed')) return;
+      if (trigger) { clearTimeout(peekTimer); openPeek(); }
+      else if (!dwell && peekOn()) peekLeave();
+      else if (dwell && peekOn()) clearTimeout(peekTimer); // 光标在卡上(可能从窗外进来,DOM 没收到 enter)→ 别关
+    });
+  }
+  const sbWidthNow = () => { const v = parseInt(getComputedStyle(sidebarEl).getPropertyValue('--sb-width'), 10); return v >= 180 && v <= 520 ? v : 260; };
+  // 假灯点击(peek 浮卡,mac):关/最小化/全屏——走主进程窗控(与原生灯同语义)。mousedown 拦掉防抢 peek 焦点。
+  const flBind = (cls, action) => { const b = document.querySelector('.sb-fl-' + cls); if (b) b.onclick = (e) => { e.stopPropagation(); if (window.ws2 && window.ws2.winCtl) window.ws2.winCtl(action); }; };
+  flBind('close', 'close'); flBind('min', 'minimize'); flBind('zoom', 'fullscreen');
 
   function setSidebarCollapsed(v) {
     if (!sidebarEl) return;
     closePeek(true); // 状态翻转前清 peek 残留（peek 里点 toggle 展开走这里）
     sidebarEl.classList.toggle('is-collapsed', v);
     document.body.classList.toggle('is-sb-collapsed', v);
+    // toggle 钮两形态(Colin 2026-07-21「收起后不知道哪个钮是恢复」):图标切换走 CSS
+    // (body.is-sb-collapsed 显 open 形态),tooltip 这里同步——本函数是 is-sb-collapsed 唯一写点,全路径覆盖。
+    if (toggleBtn && window.wsT) toggleBtn.title = window.wsT(v ? 'sidebar.expandSidebarTitle' : 'sidebar.toggleSidebarTitle');
     if (window.ws2 && window.ws2.setWindowButtons) window.ws2.setWindowButtons(!v);
+    if (window.ws2 && window.ws2.edgeWatch) window.ws2.edgeWatch(v, sbWidthNow()); // 光标轮询只在收起态跑
     // 侧栏宽度变 → 编辑区 iframe 横移 → 编辑器宿主浮层重定位（等下一帧布局落定再调）。
     if (window.__shellReposition) requestAnimationFrame(() => window.__shellReposition());
   }
@@ -3136,7 +3291,8 @@
         }
         expandToFile(node.rootId, node.rel, scroll);
       }
-      highlightActive(abs);
+      // 高亮不在这里预置（此刻 activeRel 还是旧值）：openTabEntry/openTabFromAbs 内的 renderZones 会在
+      // activeRel 更新后按激活标签推导刷新（单一真相源，见 highlightActive）。
       if (node) {
         openTabEntry({ rootId: node.rootId, rel: node.rel, kind: node.kind || 'other', title: node.name });
       } else if (abs) {

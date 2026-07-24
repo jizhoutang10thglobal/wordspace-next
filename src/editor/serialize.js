@@ -18,6 +18,9 @@
     'data-ws2-ce', 'data-ws2-sc', 'data-ws2-block', 'data-ws2-container',
     'data-ws2-canvas', 'data-ws2-eid', 'data-ws2-editing',
     'data-ws2-selected', 'data-ws2-drop', // 块编辑：灰选中 / 拖拽投放标记（仅交互态，存盘剥除）
+    'data-ws2-rangesel', // 块编辑：跨块拖选的块级高亮标记（仅交互态，存盘剥除）
+    'data-ws2-nope', // 块编辑：跨界删除空操作的闪烁反馈标记（仅交互态、420ms 自清；万一 autosave 撞上窗口漏进 DOM 也剥）
+    'data-ws2-clip', // 块编辑：内部复制粘贴的剪贴板哨兵（只该出现在剪贴板 payload；万一漏进 DOM 也剥）
     'data-ws2-root', // 块容器标记（给空块占行高等结构 CSS 用，存盘剥除）
   ]);
 
@@ -39,6 +42,10 @@
     for (const el of all) {
       if (el.hasAttribute('data-ws2-ce')) el.removeAttribute('contenteditable');
       if (el.hasAttribute('data-ws2-sc')) el.removeAttribute('spellcheck');
+      // 空 style="" 通用剥除：Blink 原生删除/typing-style 机制会往块元素上留空 style（app 从不写），
+      // 入盘即中 Schema 校验器 block-style 规则 → 整篇非合规、重开永久降级基础编辑（select-1）。
+      // 空 style 是语义 no-op，剥它不碰保真红线；**非空** style 照旧保留、照旧判违规（那是真越权）。
+      if (el.hasAttribute('style') && !el.getAttribute('style')) el.removeAttribute('style');
       for (const a of [...el.attributes]) {
         if (WS2_MARKERS.has(a.name)) el.removeAttribute(a.name);
       }
@@ -61,10 +68,14 @@
   // body 的「干净 innerHTML」：克隆后按同一白名单剥掉编辑器标记/contenteditable。供 undo 快照用——
   // 这样编辑器选中/编辑态属性 toggle 不会被当成内容变更（且与存盘用同一套剥除规则，不误删用户 data-ws2-*）。
   function cleanedBodyHtml(body) {
-    return cleanRoot(body.cloneNode(true)).innerHTML;
+    const clone = cleanRoot(body.cloneNode(true));
+    // U10（KD5）：撤销快照/判脏基准里剥掉 <details open> —— 折叠态不进撤销历史（内容撤销不该重折叠/展开
+    // 用户手动折叠的 toggle）。这只影响撤销层；serializeDocument（存盘）走 cleanRoot 不剥、open 照常落盘（R7）。
+    clone.querySelectorAll('details[open]').forEach((d) => d.removeAttribute('open'));
+    return clone.innerHTML;
   }
 
-  const api = { serializeDocument, cleanedBodyHtml, OVERLAY_VAL };
+  const api = { serializeDocument, cleanedBodyHtml, cleanRoot, OVERLAY_VAL };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2Serialize = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -46,9 +46,7 @@ export default function CreateModal() {
   const target = useUI((s) => s.createTarget)
 
   const createDoc = useStore((s) => s.createDoc)
-  const createFromTemplate = useStore((s) => s.createFromTemplate)
   const newBrowserTab = useStore((s) => s.newBrowserTab)
-  const templates = useStore((s) => s.templates)
   const roots = useStore((s) => s.roots)
 
   const [paradigm, setParadigm] = useState('notion')
@@ -78,7 +76,6 @@ export default function CreateModal() {
 
   if (!createOpen) return null
 
-  const companyTemplates = templates.filter((t) => t.pool === 'private')
   // 定位「建到哪」的展示——目标根名 + 子目录；没指定就落第一个打开的文件夹（保存时可再选）。
   const firstRoot = roots.find((r) => !r.missing)
   const targetRoot = target ? roots.find((r) => r.id === target.rootId) : undefined
@@ -96,27 +93,8 @@ export default function CreateModal() {
     createDoc(DRAFTS, 'doc', t('sidebar.untitledDoc'), target, omni)
     done()
   }
-  const fromTemplate = (id: string) => {
-    createFromTemplate(id, DRAFTS, target, omni)
-    done()
-  }
-  // 分类：官方模板 / 我的模板（别混在一块；每张卡只标「版式/骨架」，不再重复「文档」）。
-  const officialTpls = companyTemplates.filter((t) => t.origin === 'official')
-  const userTpls = companyTemplates.filter((t) => t.origin === 'user')
-  const tplCard = (tpl: (typeof companyTemplates)[number]) => (
-    <button
-      key={tpl.id}
-      className="cm-card cm-card-tpl"
-      style={{ borderTopColor: tpl.accent }}
-      onClick={() => fromTemplate(tpl.id)}
-    >
-      <span className="cm-card-kind">
-        <span className="cm-card-styled" style={{ background: tpl.accent }}>{tpl.css ? t('templates.kindStyled') : t('templates.kindSkeleton')}</span>
-      </span>
-      <span className="cm-card-name">{tpl.name}</span>
-      <span className="cm-card-desc">{tpl.description}</span>
-    </button>
-  )
+  // 2026-07-23（Wendi）：新建文档 modal 收敛为只留空文档——成套模板卡（官方/我的模板）先撤，
+  // 只剩 Blank 一张。弹窗外壳 + 范式 rail 保留（对齐真 app blank-only）。模板管理仍在 /templates 页。
 
   // 地址栏：开一个新网页标签页并导航过去（跟侧栏地址栏 submitOmni 同一套）
   const submitUrl = () => {
@@ -212,25 +190,15 @@ export default function CreateModal() {
                 </div>
               </div>
             ) : (
-              <>
-                <div className="cm-pane-label">{t('modals.officialTemplates')}</div>
-                <div className="cm-grid">
-                  <button className="cm-card cm-card-blank" onClick={blank}>
-                    <span className="cm-card-ico">
-                      <FileText size={18} />
-                    </span>
-                    <span className="cm-card-name">{t('modals.blankDoc')}</span>
-                    <span className="cm-card-desc">{t('modals.blankDocDesc')}</span>
-                  </button>
-                  {officialTpls.map(tplCard)}
-                </div>
-                {userTpls.length > 0 && (
-                  <>
-                    <div className="cm-pane-label cm-pane-label-2">{t('templates.myTemplates')}</div>
-                    <div className="cm-grid">{userTpls.map(tplCard)}</div>
-                  </>
-                )}
-              </>
+              <div className="cm-grid">
+                <button className="cm-card cm-card-blank" onClick={blank}>
+                  <span className="cm-card-ico">
+                    <FileText size={18} />
+                  </span>
+                  <span className="cm-card-name">{t('modals.blankDoc')}</span>
+                  <span className="cm-card-desc">{t('modals.blankDocDesc')}</span>
+                </button>
+              </div>
             )}
           </div>
         </div>

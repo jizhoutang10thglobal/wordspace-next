@@ -17,8 +17,19 @@
   <!-- 顶栏导航条（浏览器 spec §4.1）：收起侧栏 / 后退 / 前进 / 刷新 / 历史 / 查找文件。
        后退/前进/刷新按「当前标签能否导航」实时 disabled（文档标签暂无导航历史 → 恒灰；网页标签由 browser.js 驱动）。 -->
   <div class="sb-head">
+    <!-- peek 浮卡里的 DOM 假红绿灯(Wendi 2026-07-22「把这3个按钮放到卡片上」):原生灯搬不进 DOM
+         (Electron 无 AppKit 的 standardWindowButton 重挂能力,Arc 是原生搬的),peek 态藏原生灯、
+         这三颗随卡滑入滑出、与图标排天生对齐。只在 body.is-mac.is-sb-peek 显示;点击走 ws-win-ctl。 -->
+    <div id="sb-fakelights" class="sb-fakelights">
+      <button class="sb-fl sb-fl-close" tabindex="-1" title="关闭" data-i18n-title="sidebar.flClose"><svg viewBox="0 0 12 12" width="8" height="8" stroke="rgba(77,0,0,.72)" stroke-width="1.3" stroke-linecap="round"><path d="M3.2 3.2l5.6 5.6M8.8 3.2l-5.6 5.6"/></svg></button>
+      <button class="sb-fl sb-fl-min" tabindex="-1" title="最小化" data-i18n-title="sidebar.flMinimize"><svg viewBox="0 0 12 12" width="8" height="8" stroke="rgba(102,61,0,.78)" stroke-width="1.3" stroke-linecap="round"><path d="M2.6 6h6.8"/></svg></button>
+      <button class="sb-fl sb-fl-zoom" tabindex="-1" title="全屏" data-i18n-title="sidebar.flFullscreen"><svg viewBox="0 0 12 12" width="8" height="8" fill="rgba(0,61,0,.72)"><path d="M2.5 9.5V5.7l3.8 3.8H2.5zM9.5 2.5v3.8L5.7 2.5h3.8z"/></svg></button>
+    </div>
+    <!-- 两形态(Colin 2026-07-21「收起后不知道哪个钮是恢复」):展开态=面板+左箭头(点我收起),
+         收起/peek 态=面板+右箭头(点我展开)。切换走 CSS(body.is-sb-collapsed),tooltip 在 setSidebarCollapsed 同步。 -->
     <button id="sb-toggle" class="sb-icobtn" title="收起侧栏 ⌘\" data-i18n-title="sidebar.toggleSidebarTitle">
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+      <svg class="sb-tgl-close" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m16 15-3-3 3-3"/></svg>
+      <svg class="sb-tgl-open" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m14 9 3 3-3 3"/></svg>
     </button>
     <button id="nav-back" class="sb-icobtn" title="后退" data-i18n-title="sidebar.navBack" disabled>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -313,6 +324,8 @@
 <script src="../lib/schema-model.js"></script>
 <script src="../lib/schema-validate.js"></script>
 <script src="../lib/schema-page.js"></script>
+<!-- schema descriptor 必须排在 schema-registry.js 之前（registry 读 window 全局收口注册；顺序=归类优先级，见 schema-registry.js 注册收口段） -->
+<script src="../lib/schema-2-paged.js"></script>
 <script src="../lib/schema-registry.js"></script>
 <script src="../lib/image-ingest.js"></script>
 <script src="../editor/blockedit.js"></script>

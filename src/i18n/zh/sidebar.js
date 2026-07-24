@@ -37,7 +37,6 @@ module.exports = {
 
   // ---- 根标题行 / 失联根 ----
   rootHeadTitle: '{path} · 拖动可调整文件夹顺序',
-  rootHeadTitleLazy: '{path} · 简化模式（超大文件夹，按需加载）',
   newDoc: '新建文档',
   moveToTop: '移到最上面',
   removeRoot: '移除（磁盘文件不动）',
@@ -56,9 +55,7 @@ module.exports = {
   hugePickAnother: '换一个文件夹',
   hugeOpenAnyway: '仍要打开',
 
-  // ---- 简化模式（lazy）大根：徽标 + 逐层加载占位 + 单层截断提示 ----
-  lazyTag: '简化模式',
-  lazyTagTitle: '这个文件夹很大（超过 15 万个项目），Wordspace 按需逐层加载，筛选/快速打开只覆盖已浏览过的目录',
+  // ---- 简化模式（lazy）大根：逐层加载占位 + 单层截断提示 + 用到时的降级提示 ----
   readingLevel: '正在读取…',
   dirTruncatedNote: '此文件夹的直接项目过多，仅显示前一部分',
   lazyFilterHint: '简化模式：仅搜索已浏览过的目录',
@@ -149,10 +146,17 @@ module.exports = {
   createTabSub: '输入网址直接上网，或在下面新建一个文档（临时文档，保存时再选存到哪）',
   createDocSub: '在 {location}',
   omniPlaceholder: '搜索,或输入网址',
-  paradigm1: '范式 1',
-  paradigm2: '范式 2',
+  paradigmLabel: '范式',
+  paradigmNotion: '类 Notion',
+  paradigmCurrent: '当前',
+  paradigmNotionDesc: '分块编辑的结构化文档',
+  paradigmPaged: '分页文档',
+  paradigmPagedDesc: '按页排版，像 Word',
   paradigm3: '范式 3',
   comingSoon: '敬请期待',
+  paradigmRailFoot: '未来每个范式有各自的编辑方式与模板',
+  paradigmSoon: '{name} · 还在路上',
+  paradigmSoonDesc: '每个范式是一套独立的编辑内核与文档结构。这个范式上线后，会在这里列出它自己的模板。',
 
   // ---- 命令面板 ----
   findPlaceholder: '按文件名查找…',
@@ -183,6 +187,10 @@ module.exports = {
   diagHint: '打开后滚动/切换来复现卡顿，看「长任务」实时涨 · 每 1 秒刷新',
   resizeHint: '拖拽调整侧栏宽度',
   toggleSidebarTitle: '收起侧栏 ⌘\\',
+  expandSidebarTitle: '展开侧栏 ⌘\\',
+  flClose: '关闭',
+  flMinimize: '最小化',
+  flFullscreen: '全屏',
   navBack: '后退',
   navForward: '前进',
   reloadTitle: '刷新 ⌘R',
@@ -197,4 +205,7 @@ module.exports = {
   emptyOpenBtn: '打开文件夹',
   aiAccessTitle: 'AI 接入',
   expandSidebarTitle: '展开侧栏 ⌘\\',
+  flClose: '关闭',
+  flMinimize: '最小化',
+  flFullscreen: '全屏',
 };

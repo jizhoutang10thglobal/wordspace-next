@@ -132,7 +132,12 @@ contextBridge.exposeInMainWorld('ws2', {
 
   // ---- 沉浸窗框（immersive-collapse spec）----
   platform: process.platform, // renderer 判 is-mac（hiddenInset 红绿灯让位只在 darwin 生效）
-  setWindowButtons: (v) => ipcRenderer.send('ws-window-buttons', !!v),
+  fakeMac: !!process.env.WS2_FAKE_MAC, // e2e seam:linux CI 上强挂 is-mac,测 mac 专属分支(假灯显隐/点击)
+  setWindowButtons: (v, pos) => ipcRenderer.send('ws-window-buttons', !!v, pos || null), // pos 现仅兜底保留;peek 用 DOM 假灯不再挪原生灯
+  winCtl: (action) => ipcRenderer.send('ws-win-ctl', action), // peek 假灯点击:close/minimize/fullscreen
+  // 收起态 peek 触发的光标轮询(Arc 式宽容:窗外甩过头/左上角都认;spec=immersive-collapse)
+  edgeWatch: (on, cardWidth) => ipcRenderer.send('ws-edge-watch', !!on, cardWidth || 260),
+  onEdgeHover: (cb) => ipcRenderer.on('ws-edge-hover', (_e, trigger, dwell) => cb(trigger, dwell)),
   // 窗框非全屏恒有（Colin 2026-07-18）：真全屏时摘框。renderer 查启动初值 + 听 live 变化，挂/摘 body.is-win-fullscreen。
   getFullscreen: () => ipcRenderer.invoke('get-fullscreen'),
   onFullscreenChanged: (cb) => ipcRenderer.on('fullscreen-changed', (_e, isFs) => cb(isFs)),
