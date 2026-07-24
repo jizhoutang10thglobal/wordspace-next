@@ -27,6 +27,20 @@
 
 结论:`references/rubric.md` 经此门修正 R1 后零误报。
 
-## 未做(留 U5)
+## U5 · 真跑校准(浏览器下载,2026-07-24)
 
-U5 试跑(真跑一个 feature 出报告 + 据实校准)需 Colin 挑 feature、真机占用——独立进行,不在建 skill 的提交里。
+Colin 挑「浏览器下载」真跑两轮(首轮全量 audit + 补验轮)。据实校准出两条经验,已回写 skill:
+
+**① 标「未采证 / 盲区」之前,先查 e2e 覆盖。**
+首轮报告结尾我把「并发同名 / 失败重试 / 重启读回 / 右键存图」列成盲区。补验轮一 grep `e2e/web-downloads.spec.js`——**大半早有确定性回归门**(并发同名去重、重启中断、fileMissing 状态、重试、右键存图端到端全在)。它们不是盲区,是被门保住、只是首轮探索没碰到。
+- **回写**:`SKILL.md` Phase 2 加规则——标盲区前先 grep e2e;真盲区(既无门又沙盒复现不了)才进盲区列。
+- 真正的盲区只有一条:**live 网络失败态的 UI**。Chromium 把网络掉线一律当「可续传」、后台无限重试、永不进终态(试过硬拆 TCP、杀 server、下载目录 chmod 只读,都逼不出 `done('interrupted')`)。相邻的「重启中断→interrupted」有门(spec 208 行),但「下到一半断网→failed」的 UI 无门、无法沙盒复现。补验用**注入 failed 记录走同一渲染管线**验了 UI(红字 + 气泡 + 重试动作全对),真实失败路径建议加注入式渲染门 + 真机偶发验。
+
+**② 探针的兜底选择器会制造假 bug。**
+首轮探针查 `fileMissing` 行用了 `rows.find(cond) || rows[0]` 兜底,匹配不上退回一条 `completed` 行,读出「文件没了却还显示已完成 + 给打开按钮」——**假 bug**。补验轮改精确选择器 `.dl-row[data-state="fileMissing"]` + 变异自检(同行 name 颜色删前 `rgb(41,37,36)` → 删后 `rgb(168,162,158)`,两值必不同),确认真实行为正确(灰化 + 只剩「移除」)。
+- **回写**:`references/probe-playbook.md` 伪影清单加第 4 条——查特定状态用精确选择器、查不到报 null 不 fallback;关键视觉断言配变异自检。
+
+**③ 每轮产出标注截图 HTML 报告(Colin 定为常规)。**
+Markdown 报告 Colin 说「看不太懂」,要**能直接看图的可视化版**。已把模板 `references/report-template.html` 固化进 skill,`SKILL.md` Phase 5 加「每轮必出自包含 HTML + 标注截图,open 给 Colin」。
+
+结论:两步工作法 / rubric / 占机纪律经真跑无需推翻;补上「查门再标盲区」「精确选择器 + 变异自检」「可视化报告」三条。

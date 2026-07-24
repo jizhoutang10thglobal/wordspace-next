@@ -51,6 +51,8 @@ export default {
   alignJustify: 'Justify',
   typoBarAria: 'Typography toolbar',
   presetAria: 'Typography preset',
+  fontAria: 'Font',
+  bodyFont: 'Body font',
   cnFontAria: 'Chinese font',
   latinFontAria: 'Latin font',
   sizeAria: 'Font size',

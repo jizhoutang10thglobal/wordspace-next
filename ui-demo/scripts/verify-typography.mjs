@@ -128,11 +128,22 @@ await applyPreset('gb9704')
   const b = await bodyStyle()
   assert(near(b.fontSize, ptToPx(12)), `工具栏选预设生效 12pt（got ${b?.fontSize}）`)
   assert(/SimSun|Songti/i.test(b.fontFamily), `工具栏选学术论文 → 宋体（got ${b?.fontFamily}）`)
-  // 改字号 input → 脱离预设（预设 select 显示自定义）
-  await page.fill('.ws-typo-size', '18')
-  await page.waitForTimeout(600)
-  const pv = await page.$eval('.ws-typo-preset', (el) => el.value)
-  assert(pv === '__custom', `改字号后预设下拉显示「自定义」（got ${pv}）`)
+  // 选中改字体 = 应用到选区（Word 式），只包选中那几个字、不改全文（rework 核心）
+  const p = page.locator('.ws-doc-paged .ws-blk-text .ws-p').first()
+  await p.click()
+  await page.waitForTimeout(300)
+  await page.keyboard.press('Home')
+  for (let i = 0; i < 6; i++) await page.keyboard.press('Shift+ArrowRight')
+  await page.waitForTimeout(200)
+  await page.locator('.ws-typo-bar select').nth(1).selectOption('heiti') // 字体下拉 → 黑体
+  await page.waitForTimeout(500)
+  const perSel = await page.evaluate(() => {
+    const el = document.querySelector('.ws-doc-paged .ws-blk-text .ws-p')
+    const spans = [...el.querySelectorAll('span[style*="font-family"]')]
+    return { count: spans.length, fam: spans[0]?.style.fontFamily || '', wrapsPart: spans[0] ? spans[0].textContent.length < el.textContent.length : false }
+  })
+  assert(perSel.count >= 1 && /SimHei|Heiti/i.test(perSel.fam), `选中改字体→包成 span(黑体)（got ${perSel.count}, ${perSel.fam}）`)
+  assert(perSel.wrapsPart, '选中改字体只包选中部分、不是整段（per-selection 非全局）')
 }
 // AE1 负向：打开未 seed 的流式文档「一句话」→ 无工具栏
 await page.getByText('一句话', { exact: false }).first().click()

@@ -4,7 +4,9 @@
 /* 双类提权：.ws-modal 基座有 width:100%，跟 SaveModal 同款用 .ws-modal.pg-modal 收窄 */
 .ws-modal.pg-modal { width: 480px; max-width: calc(100vw - 32px); }
 
-.pg-body { padding: 6px 20px 14px; }
+/* 三分区内容可能超屏——中段可滚，头/脚固定（矮屏不再把标题各级/另存切掉）。 */
+.pg-body { padding: 6px 20px 14px; max-height: 66vh; overflow-y: auto; }
+.ws-modal.pg-modal { display: flex; flex-direction: column; max-height: calc(100vh - 40px); }
 
 /* 行（开关行） */
 .pg-row {
