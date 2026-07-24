@@ -375,6 +375,59 @@
 .ws-code:focus { outline: none; }
 .ws-code-line { min-height: 1.6em; }
 
+/* ------------------------------------------------------------------ */
+/* 折叠块（toggle · <details>）：自绘 chevron（纸方墨圆），杀 native 三角标记          */
+/* ------------------------------------------------------------------ */
+.ws-toggle { margin: 10px 0; }
+/* 双保险杀 native 揭示三角（list-style + webkit marker），换成自绘 chevron */
+.ws-toggle > summary { list-style: none; }
+.ws-toggle > summary::-webkit-details-marker { display: none; }
+.ws-toggle > summary {
+  display: flex; align-items: flex-start; gap: 6px;
+  cursor: default; /* summary 整体不是折叠指针；折叠只由 chevron 触发 */
+}
+.ws-toggle-chevron {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; margin-top: 1px;
+  padding: 0; border: none; background: none;
+  color: var(--c-text-3); cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: transform var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ws-toggle-chevron:hover { background: var(--c-hover); color: var(--c-text-2); }
+/* 展开态 chevron 转 90°（指下）；折叠指右。open 属性由 block.open 受控。 */
+.ws-toggle[open] .ws-toggle-chevron { transform: rotate(90deg); }
+.ws-toggle-summary-text {
+  flex: 1 1 auto;
+  font-size: var(--fs-lg); line-height: var(--lh-doc);
+  color: var(--c-text); font-weight: var(--fw-medium);
+  outline: none; cursor: text; min-height: 1.5em;
+}
+.ws-toggle-summary-text:empty::before {
+  content: attr(data-placeholder);
+  color: var(--c-text-3); opacity: 0.6;
+}
+/* body 缩进对齐 chevron 右缘；单一 raw-HTML 区（有意分歧：ui-demo 不做真嵌套块） */
+.ws-toggle-body {
+  margin: 2px 0 4px 28px;
+  outline: none; min-height: 1.5em; /* 空 body 也留可点高度 */
+  font-size: var(--fs-lg); line-height: var(--lh-doc); color: var(--c-text);
+}
+/* 折叠态显式藏 body：open 受 block.open 控（React 收起时删 open 属性）。不靠 UA 的
+   details 收起行为——新版 Chromium 走 ::details-content/content-visibility，直接子元素不再
+   display:none，body 会残留高度（实测 offsetHeight≠0）。显式规则跨浏览器可预测。 */
+.ws-toggle:not([open]) > .ws-toggle-body { display: none; }
+.ws-toggle-body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--c-text-3); opacity: 0.6;
+}
+.ws-toggle-body > :first-child { margin-top: 0; }
+.ws-toggle-body > :last-child { margin-bottom: 0; }
+/* ⋮⋮ 手柄对齐 summary 首行 */
+.ws-blk-toggle > .ws-block-controls { top: 12px; }
+
 .ws-doc-end {
   margin-top: 40px; padding-top: 16px;
   border-top: 1px solid var(--c-divider);
