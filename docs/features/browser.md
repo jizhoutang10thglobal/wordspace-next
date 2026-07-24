@@ -100,6 +100,11 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   + `e2e/web-downloads.spec.js`（改 popover 用例=删摘 view 断言、加锁侧栏宽断言；加「打开」e2e + 侧栏开着 toast
   e2e=view bounds 无 72px inset；变异探针④=打掉 dlOpen 的 `shell.openPath` 翻红）；ui-demo `i18n:scan` 三门 +
   vite build + 亮/暗手验（popover 不盖内容、开按钮、toast 小；暗态像素解码）。正本 §4.11/§13 落地细则 #1/#4 同 PR 更新。
+- 2026-07-24 **下载 toast 位置微调（`fix/dl-toast-anchor-button`，Colin /audit-feature 审计反馈）**：侧栏内 toast
+  原 `left=sb.left+8`（顶到侧栏最左）会**压住地址栏 URL**——改成从下载按钮**正下方弹出的小气泡**:右缘对齐
+  `#dl-anchor` 右缘、`top=a.bottom+9`、`max-width=a.right-12`（贴内容、不越左视口边）、加 `.dl-toast::after` 上尖角
+  （`--dl-caret-right` 内联对准按钮中心）指向按钮。行为契约不变（仍「锚下载图标下方、锁侧栏宽、不顶网页」，右缘
+  ≤ 侧栏右缘 e2e 仍绿）。审计报告见 `docs/qa/audits/2026-07-24-browser-downloads.md`（DL-1）。
 
 ## bug-hunt 修复批（2026-07-15，探索测试 `docs/plans/bug-hunt-2026-07-14/`）
 
