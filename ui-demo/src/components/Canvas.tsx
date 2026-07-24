@@ -2055,39 +2055,29 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       }
       // Tab / Shift-Tab：
       //   · 列表块 → 嵌套子列表缩进/反缩进（沿用本块 ul/ol + class）；
-      //   · 正文/标题等普通块 → 看光标位置分派（Colin 2026-07-24）：
-      //       - 光标在段首 → 「我要缩进这段」= 整块缩进一档（Notion 式，Tab 加/Shift-Tab 减）；
-      //       - 光标在段落中间 → 不缩整块，只在光标处插几个空格（tab 那种空格）。
+      //   · 正文/标题等普通块 → 整块缩进一档：Tab 加、Shift-Tab 减，与光标位置无关（Notion 同款，可预测）。
+      //     ⚠ 曾试过「段首缩进 / 段中插空格」按光标分派——但块非编辑态无原生光标、点击落点由坐标手动放、
+      //     miss 文字时回退段尾（editBlock collapse(false)），造成「有时不缩进 / 跳段尾」的脆性（Colin 复盘弃用）。
       if (e.key === 'Tab' && editingId && doc && !rawEdit) {
         const el = blockEls.current.get(editingId)
         const blk = doc.blocks.find((b) => b.id === editingId)
         e.preventDefault()
         if (!el || !blk) return
         if (blk.type !== 'list') {
-          const csel = window.getSelection()
-          const atStart = (!csel || csel.isCollapsed) && isCaretAtBlockStart(el)
-          if (atStart) {
-            // 段首 → 整块缩进。Notion 约束：最多比上一块深一级；第一块（上面没块可依）不能缩进。
-            const idx = doc.blocks.findIndex((b) => b.id === editingId)
-            const curIndent = blk.indent ?? 0
-            let next = curIndent
-            if (e.shiftKey) {
-              next = Math.max(0, curIndent - 1)
-            } else {
-              const prevBlk = idx > 0 ? doc.blocks[idx - 1] : null
-              const maxAllowed = prevBlk ? (prevBlk.indent ?? 0) + 1 : 0
-              next = Math.min(curIndent + 1, maxAllowed)
-            }
-            if (next !== curIndent) {
-              checkpoint()
-              setBlockIndent(doc.id, editingId, next)
-            }
-            return
+          // Notion 约束：最多比上一块深一级；第一块（上面没块可依）不能缩进。
+          const idx = doc.blocks.findIndex((b) => b.id === editingId)
+          const curIndent = blk.indent ?? 0
+          let next = curIndent
+          if (e.shiftKey) {
+            next = Math.max(0, curIndent - 1)
+          } else {
+            const prevBlk = idx > 0 ? doc.blocks[idx - 1] : null
+            const maxAllowed = prevBlk ? (prevBlk.indent ?? 0) + 1 : 0
+            next = Math.min(curIndent + 1, maxAllowed)
           }
-          // 段落中间 → 在光标处插几个空格（不缩整块）；用 nbsp 免被 HTML 折叠。Shift-Tab 中间不处理。
-          if (!e.shiftKey) {
+          if (next !== curIndent) {
             checkpoint()
-            document.execCommand('insertText', false, '    ')
+            setBlockIndent(doc.id, editingId, next)
           }
           return
         }
