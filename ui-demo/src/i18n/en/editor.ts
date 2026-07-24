@@ -169,6 +169,9 @@ export default {
   marginRight: 'Right',
   pageNumbers: 'PDF footer page numbers',
   pageNumbersNote: 'Like "2 / 5", centered in the footer',
+  pageHeader: 'Header',
+  pageFooter: 'Footer',
+  pageHfPlaceholder: 'Shown on every page (empty = hidden)',
 
   // Margin presets (page.ts)
   marginNormal: 'Normal',

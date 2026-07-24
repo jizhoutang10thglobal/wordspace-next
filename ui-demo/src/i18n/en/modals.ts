@@ -15,7 +15,8 @@ export default {
   paradigmNotion: 'Notion-like',
   paradigmCurrent: 'Current',
   paradigmNotionDesc: 'Structured block-based documents',
-  paradigm2: 'Paradigm 2',
+  paradigmPaged: 'Paged document',
+  paradigmPagedDesc: 'Laid out in pages, like Word',
   paradigm3: 'Paradigm 3',
   comingSoon: 'Coming soon',
   paradigmRailFoot: 'Each paradigm will have its own editing style and templates',
@@ -25,6 +26,8 @@ export default {
   officialTemplates: 'Official templates',
   blankDoc: 'Blank document',
   blankDocDesc: 'Start from scratch',
+  blankPagedDoc: 'Blank paged doc',
+  blankPagedDocDesc: 'Laid out in pages, like Word',
 
   // Add folder (AddFolderModal)
   addFolder: 'Add folder',

@@ -97,6 +97,18 @@
   background: var(--c-surface);
   pointer-events: none;
 }
+/* 页眉/页脚：每页纸顶/纸底边距区，居左小字灰；单行 ellipsis 不溢出窄边距、不侵内容。视觉参数待 Wendi 调。 */
+.ws-hf-overlay { z-index: 2; }
+.ws-page-hf {
+  position: absolute;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--c-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
 .ws-page-chip {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);

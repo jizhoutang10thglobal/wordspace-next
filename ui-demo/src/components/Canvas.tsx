@@ -40,7 +40,7 @@ import {
   pickImageFiles,
 } from '../lib/image'
 import { usePageConfig } from '../mock/paged'
-import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
+import { PAGE_GAP_PX, clampHF, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
 import './Canvas.css'
@@ -2629,6 +2629,43 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+          {/* 页眉/页脚：每页纸顶/纸底边距区画一行（源=pageCfg，JSX 文本插值天然转义、绝不 dangerouslySetInnerHTML；
+              覆盖层不进文档数据）。几何 = 第 pi 页纸顶 pi×(纸高+缝)，同真 app pagination.js。垂直位置系数待 Wendi 调。 */}
+          {paged && pag && (clampHF(pageCfg.header) || clampHF(pageCfg.footer)) && (
+            <div className="ws-paged-overlay ws-hf-overlay" aria-hidden>
+              {Array.from({ length: pag.pageCount }, (_, pi) => {
+                const pageTop = pi * (pageBox.paperH + PAGE_GAP_PX)
+                return (
+                  <div key={pi}>
+                    {clampHF(pageCfg.header) && (
+                      <div
+                        className="ws-page-hf ws-page-header"
+                        style={{
+                          top: pageTop + pageBox.margin.top * 0.42,
+                          left: pageBox.margin.left,
+                          right: pageBox.margin.right,
+                        }}
+                      >
+                        {clampHF(pageCfg.header)}
+                      </div>
+                    )}
+                    {clampHF(pageCfg.footer) && (
+                      <div
+                        className="ws-page-hf ws-page-footer"
+                        style={{
+                          top: pageTop + pageBox.paperH - pageBox.margin.bottom * 0.58,
+                          left: pageBox.margin.left,
+                          right: pageBox.margin.right,
+                        }}
+                      >
+                        {clampHF(pageCfg.footer)}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
           <div className="ws-canvas-tail" onClick={enterTail} />

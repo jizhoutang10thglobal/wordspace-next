@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FileText, X, Blocks, Lock, Globe, CornerDownLeft } from 'lucide-react'
+import { FileText, X, Blocks, Lock, Globe, CornerDownLeft, FileStack } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
+import { usePaged } from '../mock/paged'
+import { DEFAULT_PAGE_CONFIG } from '../lib/page'
 import { useT, type TFunc } from '../i18n'
 import type { DocKind } from '../types'
 import './CreateModal.css'
@@ -24,7 +26,7 @@ interface Paradigm {
 }
 const paradigmsWith = (t: TFunc): Paradigm[] => [
   { id: 'notion', name: t('modals.paradigmNotion'), tag: t('modals.paradigmCurrent'), desc: t('modals.paradigmNotionDesc'), soon: false },
-  { id: 'p2', name: t('modals.paradigm2'), desc: t('modals.comingSoon'), soon: true },
+  { id: 'paged', name: t('modals.paradigmPaged'), desc: t('modals.paradigmPagedDesc'), soon: false },
   { id: 'p3', name: t('modals.paradigm3'), desc: t('modals.comingSoon'), soon: true },
 ]
 
@@ -48,6 +50,7 @@ export default function CreateModal() {
   const createDoc = useStore((s) => s.createDoc)
   const newBrowserTab = useStore((s) => s.newBrowserTab)
   const roots = useStore((s) => s.roots)
+  const setPagedConfig = usePaged((s) => s.setConfig)
 
   const [paradigm, setParadigm] = useState('notion')
   const [url, setUrl] = useState('')
@@ -91,6 +94,12 @@ export default function CreateModal() {
   // omni（从「标签页 +」进）→ 临时文档，不进文件树/库，手动保存才落地。
   const blank = () => {
     createDoc(DRAFTS, 'doc', t('sidebar.untitledDoc'), target, omni)
+    done()
+  }
+  // 新建「分页文档」：建普通空文档后把它的分页配置置 on（demo 里 per-doc paged config = 真 app 的入盘 page 块）。
+  const blankPaged = () => {
+    const id = createDoc(DRAFTS, 'doc', t('sidebar.untitledDoc'), target, omni)
+    setPagedConfig(id, { ...DEFAULT_PAGE_CONFIG, on: true })
     done()
   }
   // 2026-07-23（Wendi）：新建文档 modal 收敛为只留空文档——成套模板卡（官方/我的模板）先撤，
@@ -188,6 +197,16 @@ export default function CreateModal() {
                 <div className="cm-soon-desc">
                   {t('modals.paradigmSoonDesc')}
                 </div>
+              </div>
+            ) : paradigm === 'paged' ? (
+              <div className="cm-grid">
+                <button className="cm-card cm-card-blank" onClick={blankPaged}>
+                  <span className="cm-card-ico">
+                    <FileStack size={18} />
+                  </span>
+                  <span className="cm-card-name">{t('modals.blankPagedDoc')}</span>
+                  <span className="cm-card-desc">{t('modals.blankPagedDocDesc')}</span>
+                </button>
               </div>
             ) : (
               <div className="cm-grid">

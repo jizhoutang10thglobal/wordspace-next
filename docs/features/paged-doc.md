@@ -23,10 +23,11 @@
 同步 `docSchemaId`；页面设置入口对流式/分页两种 schema 都开放 = 双向转换）。**新建入口**：新建弹窗
 范式轨的「分页文档」范式（= 原范式 2 解灰，PR-B 已做）→ 选它给「空白分页文档」模板（head 带 `@page`
 块 + `meta wordspace-schema=2`，新建即分页视图、磁盘 schema-2），见 `docs/features/new-document-modal.md`。
-页眉/页脚 + 分页专属 meta 的关分页保留语义 PR-C 已做（见下）；ui-demo 同步在 PR-D。
+页眉/页脚 + 分页专属 meta 的关分页保留语义 PR-C 已做（见下）；ui-demo 同步 PR-D 已做。
 
-> PR-A/B/C 已落。分页的**用户可感知的既有行为完全不变**（每页一张纸/页界留白/导出分页/可导 md 全保留）；
-> 新增：新建入口范式轨「分页文档」、页面设置页眉/页脚。ui-demo 同步待 PR-D。
+> PR-A/B/C/D 已落。分页的**用户可感知的既有行为完全不变**（每页一张纸/页界留白/导出分页/可导 md 全保留）；
+> 新增：新建入口范式轨「分页文档」、页面设置页眉/页脚；ui-demo 侧同步（范式轨「分页文档」+ 页眉/页脚，
+> 机制差异见「有意分歧」）。
 
 ## 行为契约
 
@@ -91,6 +92,11 @@
 
 - 配置存储：demo 存 localStorage；真 app 入盘 `@page`（HTML-native，文件自携带）——产品设计如此
   （Colin 2026-07-08）。
+- 页眉/页脚（PR-D）：demo 存 per-doc `PageConfig.header/footer`（localStorage，同上）；真 app 入盘
+  `meta[name="ws-page-header"/"ws-page-footer"]`。屏显都是「每页边距区画一行、源=配置、不进数据」；
+  demo 走 Canvas 覆盖层 JSX 文本插值、真 app 走 pagination.js 覆盖层 `textContent`——**两侧都靠文本
+  安全路径转义，绝不 innerHTML/dangerouslySetInnerHTML**（安全不算分歧，是硬要求）。demo 无 PDF 导出
+  的页眉页脚（demo 导出走 window.print，页眉页脚是真 app printToPDF headerTemplate 的能力），记为分歧。
 - 可编辑表格/代码块：demo 为测分页新建的简化块类型（2026-07-10）；真 app 的表格/代码编辑走
   Schema 1 既有块模型，能力差异不算漂移。**且 Schema 1 目前没有代码块类型**（`body>pre` 不在
   TOP_BLOCKS → 非合规 → 根本进不了分页）：真 app 引擎已按「pre 沿逻辑行（\n/`<br>`）切 +

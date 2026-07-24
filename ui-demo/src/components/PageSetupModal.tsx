@@ -5,8 +5,10 @@ import { useStore } from './../mock/store'
 import { useUI } from '../mock/ui'
 import { usePaged } from '../mock/paged'
 import {
+  HF_MAXLEN,
   MARGIN_PRESETS,
   PAPERS,
+  clampHF,
   type Orientation,
   type PageConfig,
   type PageMargin,
@@ -197,6 +199,32 @@ export default function PageSetupModal() {
                 onToggle={() => patch({ pageNumbers: !effective.pageNumbers })}
               />
             </div>
+
+            {/* 页眉 / 页脚（每页纸顶/纸底一行；空 = 不显示。JSX 文本插值天然转义，绝不 dangerouslySetInnerHTML） */}
+            <label className="pg-row pg-hf-row">
+              <span className="pg-field-label">{t('editor.pageHeader')}</span>
+              <input
+                type="text"
+                className="pg-hf-input"
+                maxLength={HF_MAXLEN}
+                disabled={off}
+                value={effective.header ?? ''}
+                placeholder={t('editor.pageHfPlaceholder')}
+                onChange={(e) => patch({ header: clampHF(e.target.value) })}
+              />
+            </label>
+            <label className="pg-row pg-hf-row">
+              <span className="pg-field-label">{t('editor.pageFooter')}</span>
+              <input
+                type="text"
+                className="pg-hf-input"
+                maxLength={HF_MAXLEN}
+                disabled={off}
+                value={effective.footer ?? ''}
+                placeholder={t('editor.pageHfPlaceholder')}
+                onChange={(e) => patch({ footer: clampHF(e.target.value) })}
+              />
+            </label>
           </div>
         </div>
 
