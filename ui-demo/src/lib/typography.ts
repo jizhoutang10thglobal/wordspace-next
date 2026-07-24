@@ -179,7 +179,7 @@ const TNR = 'times'
 /** 国标公文 GB/T 9704-2012（硬值，权威）。固定行距 29pt = 版心225mm÷22行导出（U1 冻结，AE2 断言）。 */
 const GB_OFFICIAL: Preset = {
   id: 'gb9704',
-  nameKey: 'template.presetGbOfficial',
+  nameKey: 'editor.presetGbOfficial',
   page: { size: 'A4', orientation: 'portrait', margin: { top: 37, right: 26, bottom: 35, left: 28 } },
   type: {
     body: { cnFont: 'fangsong', latinFont: TNR, sizePt: 16, lineHeight: { mode: 'fixedPt', value: 29 }, firstIndentEm: 2, align: 'justify', spaceBeforePt: 0, spaceAfterPt: 0 },
@@ -195,7 +195,7 @@ const GB_OFFICIAL: Preset = {
 /** 中文学术论文（通用默认，各校可调）。 */
 const CN_THESIS: Preset = {
   id: 'cn-thesis',
-  nameKey: 'template.presetThesis',
+  nameKey: 'editor.presetThesis',
   page: { size: 'A4', orientation: 'portrait', margin: { top: 25.4, right: 31.8, bottom: 25.4, left: 31.8 } },
   type: {
     body: { cnFont: 'songti', latinFont: TNR, sizePt: 12, lineHeight: { mode: 'multiple', value: 1.5 }, firstIndentEm: 2, align: 'justify', spaceBeforePt: 0, spaceAfterPt: 0 },
@@ -211,7 +211,7 @@ const CN_THESIS: Preset = {
 /** 中文商务（通用默认）。 */
 const CN_BUSINESS: Preset = {
   id: 'cn-business',
-  nameKey: 'template.presetBusiness',
+  nameKey: 'editor.presetBusiness',
   page: { size: 'A4', orientation: 'portrait', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 } },
   type: {
     body: { cnFont: 'yahei', latinFont: 'calibri', sizePt: 12, lineHeight: { mode: 'multiple', value: 1.5 }, firstIndentEm: 0, align: 'left', spaceBeforePt: 0, spaceAfterPt: 6 },
@@ -227,7 +227,7 @@ const CN_BUSINESS: Preset = {
 /** APA（第7版，权威）。Letter/1in 边距/Times 12pt/双倍/首行缩进 0.5in≈3em/左对齐。 */
 const APA: Preset = {
   id: 'apa',
-  nameKey: 'template.presetApa',
+  nameKey: 'editor.presetApa',
   page: { size: 'Letter', orientation: 'portrait', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 } },
   type: {
     body: { cnFont: 'songti', latinFont: TNR, sizePt: 12, lineHeight: { mode: 'multiple', value: 2.0 }, firstIndentEm: 3, align: 'left', spaceBeforePt: 0, spaceAfterPt: 0 },
@@ -243,7 +243,7 @@ const APA: Preset = {
 /** MLA（第9版，权威）。与 APA 同 Letter/Times/双倍，靠标题对齐（H1 左非居中）区分。 */
 const MLA: Preset = {
   id: 'mla',
-  nameKey: 'template.presetMla',
+  nameKey: 'editor.presetMla',
   page: { size: 'Letter', orientation: 'portrait', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 } },
   type: {
     body: { cnFont: 'songti', latinFont: TNR, sizePt: 12, lineHeight: { mode: 'multiple', value: 2.0 }, firstIndentEm: 3, align: 'left', spaceBeforePt: 0, spaceAfterPt: 0 },
