@@ -527,8 +527,10 @@ function BlockRow({
         }` +
         `${selected ? ' ws-block-selected' : ''}` +
         `${editing ? ' ws-block-editing' : ''}` +
-        `${dropEdge ? ` ws-block-drop-${dropEdge}` : ''}`
+        `${dropEdge ? ` ws-block-drop-${dropEdge}` : ''}` +
+        `${block.indent ? ' ws-block-indented' : ''}`
       }
+      style={block.indent ? { marginInlineStart: `${block.indent * 1.6}em` } : undefined}
       onClick={(e) => {
         e.stopPropagation()
         if (canEdit) onEdit(block.id, e.clientX, e.clientY)
@@ -757,6 +759,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const getDoc = useStore((s) => s.getDoc)
   const addBlock = useStore((s) => s.addBlock)
   const updateBlockHtml = useStore((s) => s.updateBlockHtml)
+  const setBlockIndent = useStore((s) => s.setBlockIndent)
   const reorderBlocks = useStore((s) => s.reorderBlocks)
   const deleteBlock = useStore((s) => s.deleteBlock)
   const setBlockType = useStore((s) => s.setBlockType)
@@ -2051,13 +2054,33 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         editBlock(addBlock(doc.id, selectedId, 'text'), { mode: 'start' })
         return
       }
-      // Tab / Shift-Tab：仅在列表内做缩进/反缩进（嵌套子列表，沿用本块的 ul/ol + 样式 class）；
-      // 其他块也吞掉 Tab，避免它把光标跳出编辑区。
+      // Tab / Shift-Tab：
+      //   · 列表块 → 嵌套子列表缩进/反缩进（沿用本块 ul/ol + class）；
+      //   · 正文/标题等普通块 → Notion 式整块缩进：Tab 加一档、Shift-Tab 减一档。
+      //     整块往右移（非插空格 / 非首行缩进）——对齐 Notion「缩进=把块移到更深层级」。
       if (e.key === 'Tab' && editingId && doc && !rawEdit) {
         const el = blockEls.current.get(editingId)
         const blk = doc.blocks.find((b) => b.id === editingId)
         e.preventDefault()
-        if (!el || !blk || blk.type !== 'list') return
+        if (!el || !blk) return
+        if (blk.type !== 'list') {
+          // Notion 约束：一个块最多比它上面那个块深一级；第一块（上面没块可依）不能缩进。
+          const idx = doc.blocks.findIndex((b) => b.id === editingId)
+          const curIndent = blk.indent ?? 0
+          let next = curIndent
+          if (e.shiftKey) {
+            next = Math.max(0, curIndent - 1)
+          } else {
+            const prevBlk = idx > 0 ? doc.blocks[idx - 1] : null
+            const maxAllowed = prevBlk ? (prevBlk.indent ?? 0) + 1 : 0
+            next = Math.min(curIndent + 1, maxAllowed)
+          }
+          if (next !== curIndent) {
+            checkpoint()
+            setBlockIndent(doc.id, editingId, next)
+          }
+          return
+        }
         const sel = window.getSelection()
         const sc = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null
         const li = (sc?.nodeType === 1 ? (sc as Element) : sc?.parentElement)?.closest('li')

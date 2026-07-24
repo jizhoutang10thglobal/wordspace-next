@@ -60,6 +60,7 @@ export interface Block {
   level?: 1 | 2 | 3
   listStyle?: ListStyle // 仅 type==='list' 有意义
   designed?: boolean
+  indent?: number // 块级缩进档位（0=不缩进）。Notion 式：Tab 加一档、Shift-Tab 减一档，最多比上一块深一级。整块往右移，非插空格。
 }
 
 export interface Doc {

@@ -160,6 +160,7 @@ interface State {
 
   // editing
   updateBlockHtml: (docId: string, blockId: string, html: string) => void
+  setBlockIndent: (docId: string, blockId: string, indent: number) => void
   reorderBlocks: (docId: string, from: number, to: number) => void
   addBlock: (
     docId: string,
@@ -950,6 +951,22 @@ export const useStore = create<State>()(
                   updatedBy: s.meId,
                   blocks: d.blocks.map((b) =>
                     b.id === blockId ? { ...b, html } : b,
+                  ),
+                },
+          ),
+        })),
+
+      setBlockIndent: (docId, blockId, indent) =>
+        set((s) => ({
+          docs: s.docs.map((d) =>
+            d.id !== docId
+              ? d
+              : {
+                  ...d,
+                  updatedAt: Date.now(),
+                  updatedBy: s.meId,
+                  blocks: d.blocks.map((b) =>
+                    b.id === blockId ? { ...b, indent: indent > 0 ? indent : undefined } : b,
                   ),
                 },
           ),
