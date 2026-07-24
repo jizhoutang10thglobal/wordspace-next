@@ -1532,15 +1532,16 @@
       dlPillEl.className = 'dl-toast';
       dlPillEl.textContent = msg;
       document.body.appendChild(dlPillEl);
-      const sbEl = document.getElementById('sidebar');
-      const sb = sbEl ? sbEl.getBoundingClientRect() : null;
+      // Colin 2026-07-24：改成从下载按钮正下方弹出的小气泡（右缘对齐按钮、向左展开、上尖角指按钮），
+      // 不再顶到侧栏最左压地址栏。宽度贴内容（长名截断），max-width 不越过左视口边。
       const a = navDl.getBoundingClientRect();
-      if (sb && sb.width > 0) {
-        dlPillEl.style.left = Math.round(sb.left + 8) + 'px';
-        dlPillEl.style.top = Math.round((a.bottom > 0 ? a.bottom : sb.top + 44) + 8) + 'px';
-        dlPillEl.style.maxWidth = Math.max(140, Math.round(sb.width - 16)) + 'px';
+      if (a.width > 0) {
+        dlPillEl.style.right = Math.max(8, Math.round(window.innerWidth - a.right)) + 'px';
+        dlPillEl.style.top = Math.round(a.bottom + 9) + 'px'; // 按钮下方 + 尖角间隙
+        dlPillEl.style.maxWidth = Math.max(160, Math.round(a.right - 12)) + 'px'; // 不越过左边
+        dlPillEl.style.setProperty('--dl-caret-right', Math.max(6, Math.round(a.width / 2 - 5)) + 'px'); // 尖角对准按钮中心
       } else {
-        dlPillEl.style.left = '12px'; dlPillEl.style.top = '52px'; dlPillEl.style.maxWidth = '240px';
+        dlPillEl.style.right = '12px'; dlPillEl.style.top = '52px'; dlPillEl.style.maxWidth = '240px';
       }
       dlPillTimer = setTimeout(() => { if (dlPillEl) { dlPillEl.remove(); dlPillEl = null; } }, 3000);
     }
