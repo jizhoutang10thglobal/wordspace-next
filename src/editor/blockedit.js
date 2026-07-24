@@ -1960,38 +1960,75 @@
           return;
         }
         const sel = doc.getSelection();
-        const savedNode = sel ? sel.anchorNode : null, savedOffset = sel ? sel.anchorOffset : 0; // U19/keys-8：记原光标位置，移动后恢复（不甩项末）
-        const node = sel && sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
-        const li = node && node.closest ? node.closest('li') : null;
-        if (!li || !editingEl.contains(li)) return;
+        if (!sel || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        // 目标 li（U1 多选）：折叠光标 = 光标所在行；跨行选区 = 与选区内容相交的所有最外层 li。
+        const allLis = [...editingEl.querySelectorAll('li')];
+        let targets;
+        if (sel.isCollapsed) {
+          const n = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+          const one = n && n.closest ? n.closest('li') : null;
+          targets = one && editingEl.contains(one) ? [one] : [];
+        } else {
+          targets = allLis.filter((li) => {
+            // 用 li「自身内容」范围（到其嵌套子列表之前），不含子列表——否则父项会因选区落在其子项上而误判相交。
+            const liR = doc.createRange();
+            liR.setStart(li, 0);
+            const subUl = [...li.children].find((c) => c.tagName === 'UL' || c.tagName === 'OL');
+            if (subUl) liR.setEndBefore(subUl); else liR.setEnd(li, li.childNodes.length);
+            return range.compareBoundaryPoints(Range.END_TO_START, liR) < 0 && range.compareBoundaryPoints(Range.START_TO_END, liR) > 0;
+          });
+          // 只留最外层——被其他选中 li 包含的嵌套子项随父项一起移动，不单独处理。
+          targets = targets.filter((li) => !targets.some((o) => o !== li && o.contains(li)));
+        }
+        if (!targets.length) return;
+        // 记录选区四端点，操作后原样恢复：缩进绝不动光标/选区。li reparent 后其内部文本节点引用仍有效。
+        const sc0 = range.startContainer, so0 = range.startOffset, ec0 = range.endContainer, eo0 = range.endOffset;
+        // 按直接父列表分组（各组内保 DOM 顺序）。
+        const groups = new Map();
+        for (const li of targets) { const p = li.parentElement; if (!groups.has(p)) groups.set(p, []); groups.get(p).push(li); }
+        let changed = false;
         if (e.shiftKey) {
-          const parentList = li.parentElement;
-          const hostLi = parentList && parentList.parentElement;
-          if (hostLi && hostLi.tagName === 'LI') {
-            absorbTrailingSiblings(li); // U13/keys-5：出列前收编后继兄弟为 li 的子项，否则它们文档顺序跑到出列项之前（错序）
-            hostLi.after(li);
-            if (parentList && !parentList.querySelector('li')) parentList.remove();
-            if (undoMgr) undoMgr.checkpoint(); markDirty();
+          // 同一 hostLi 下可能有多个子列表（合规文档允许一个 li 带多个直接子列表）；多组共享 hostLi 时
+          // 必须接续插入（记每个 host 的上次落点），不能每组都重锚 hostLi——否则后组会插到前组之前致错序（对抗审查）。
+          const lastRefByHost = new Map();
+          for (const [parentList, lis] of groups) {
+            const hostLi = parentList.parentElement;
+            if (!hostLi || hostLi.tagName !== 'LI') continue; // 已在顶层，无法再出列
+            absorbTrailingSiblings(lis[lis.length - 1]); // U13/keys-5：组末项收编后继非选中兄弟为子项，保序
+            let ref = lastRefByHost.get(hostLi) || hostLi;
+            for (const li of lis) { ref.after(li); ref = li; }
+            lastRefByHost.set(hostLi, ref);
+            if (!parentList.querySelector('li')) parentList.remove();
+            changed = true;
           }
         } else {
-          const prev = li.previousElementSibling;
-          if (prev && prev.tagName === 'LI') {
+          for (const [parentList, lis] of groups) {
+            const first = lis[0];
+            const prev = first.previousElementSibling;
+            if (!prev || prev.tagName !== 'LI') continue; // 组首无上一项可嵌 → 该组不缩进
             let sub = prev.lastElementChild;
             if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
               // D3：子列表继承 li 的直接父列表类型/class（如 todo 缩进仍是 todo），不是顶层 editingEl 的。
-              const parentList = li.parentElement;
               sub = doc.createElement(parentList.tagName.toLowerCase());
               if (parentList.className) sub.className = parentList.className;
               prev.appendChild(sub);
             }
-            sub.appendChild(li);
-            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            for (const li of lis) sub.appendChild(li);
+            changed = true;
           }
         }
-        // U19/keys-8：恢复原光标位置（anchorNode 随 li 一起移动、引用不失效）；失效才回退 li 文字末尾。
-        if (savedNode && savedNode.isConnected && li.contains(savedNode)) {
-          try { const max = savedNode.nodeType === 3 ? savedNode.length : savedNode.childNodes.length; const r = doc.createRange(); r.setStart(savedNode, Math.min(savedOffset, max)); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) { caretAtLiTextEnd(li); }
-        } else { caretAtLiTextEnd(li); }
+        if (changed) { if (undoMgr) undoMgr.checkpoint(); markDirty(); }
+        // U19：恢复原选区（端点文本节点随 li reparent 引用不变）→ 光标/多选原样保留、不跳。
+        try {
+          if (sc0.isConnected && ec0.isConnected) {
+            const clamp = (n, o) => Math.min(o, n.nodeType === 3 ? n.length : n.childNodes.length);
+            const r = doc.createRange();
+            r.setStart(sc0, clamp(sc0, so0));
+            r.setEnd(ec0, clamp(ec0, eo0));
+            const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r);
+          } else if (targets[0]) { caretAtLiTextEnd(targets[0]); }
+        } catch (x) { if (targets[0]) caretAtLiTextEnd(targets[0]); }
         return;
       }
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）
