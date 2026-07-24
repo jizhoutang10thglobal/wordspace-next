@@ -42,6 +42,7 @@ import {
 import { usePageConfig } from '../mock/paged'
 import { useDocTypography, applyPreset, useTypography } from '../mock/typography'
 import { buildTypographyCss } from '../lib/typography'
+import TypographyToolbar from './TypographyToolbar'
 import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
@@ -61,13 +62,14 @@ const SLASH_ITEMS: {
   label: string
   kw: string
   type: BlockType | 'ai' | 'doclink'
-  level?: 1 | 2 | 3
+  level?: 1 | 2 | 3 | 4
   listStyle?: ListStyle
 }[] = [
   { key: 'text', label: 'editor.text', kw: 'text zhengwen p', type: 'text' },
   { key: 'h1', label: 'editor.heading1', kw: 'h1 biaoti heading', type: 'heading', level: 1 },
   { key: 'h2', label: 'editor.heading2', kw: 'h2 biaoti heading', type: 'heading', level: 2 },
   { key: 'h3', label: 'editor.heading3', kw: 'h3 biaoti heading', type: 'heading', level: 3 },
+  { key: 'h4', label: 'editor.heading4', kw: 'h4 biaoti heading', type: 'heading', level: 4 },
   { key: 'list', label: 'editor.bulletedList', kw: 'list liebiao ul bulleted wuxu', type: 'list', listStyle: 'bulleted' },
   { key: 'numbered', label: 'editor.numberedList', kw: 'numbered ordered ol bianhao youxu 1', type: 'list', listStyle: 'numbered' },
   { key: 'todo', label: 'editor.todoList', kw: 'todo task checkbox daiban checklist', type: 'list', listStyle: 'todo' },
@@ -96,11 +98,11 @@ const filterSlash = (q: string, t: TFunc) => {
 // （用户在空行敲前缀+空格的瞬间），避免误转已有正文。
 function detectMarkdown(
   text: string,
-): { type: BlockType; level?: 1 | 2 | 3; listStyle?: ListStyle } | null {
-  const m = text.match(/^(#{1,3}|[-*]|1\.|\[\s?\]|>)[\s ]$/)
+): { type: BlockType; level?: 1 | 2 | 3 | 4; listStyle?: ListStyle } | null {
+  const m = text.match(/^(#{1,4}|[-*]|1\.|\[\s?\]|>)[\s ]$/)
   if (!m) return null
   const t = m[1]
-  if (t[0] === '#') return { type: 'heading', level: t.length as 1 | 2 | 3 }
+  if (t[0] === '#') return { type: 'heading', level: t.length as 1 | 2 | 3 | 4 }
   if (t === '-' || t === '*') return { type: 'list', listStyle: 'bulleted' }
   if (t === '1.') return { type: 'list', listStyle: 'numbered' }
   if (t[0] === '[') return { type: 'list', listStyle: 'todo' }
@@ -618,7 +620,7 @@ function BlockRow({
   } else if (block.type === 'toggle') {
     inner = <ToggleBlockView doc={doc} block={block} registerEl={registerEl} />
   } else if (block.type === 'heading') {
-    const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3'
+    const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3' | 'h4'
     inner = <L className={`ws-h ws-h${block.level ?? 2}`} {...editProps} />
   } else if (block.type === 'text') {
     inner = (
@@ -2696,6 +2698,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   return (
     <main className={'ws-canvas' + (embedded ? ' ws-canvas-embed' : '')}>
+      {/* 分页文档标准化排版工具栏（U5）：仅分页文档显示、非内嵌；钉在纸面上方、不随滚动。 */}
+      {paged && !embedded && <TypographyToolbar docId={doc.id} />}
       {/* 文档内查找条（Cmd+F）。key=doc.id：切文档时重挂、重搜、清旧高亮 */}
       {docFindOpen && (
         <DocFind key={doc.id} container={scrollRef.current} onClose={closeDocFind} />

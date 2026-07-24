@@ -173,7 +173,7 @@ interface State {
     docId: string,
     blockId: string,
     type: BlockType,
-    level?: 1 | 2 | 3,
+    level?: 1 | 2 | 3 | 4,
     listStyle?: ListStyle,
   ) => void
   duplicateBlock: (docId: string, blockId: string) => string

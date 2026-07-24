@@ -19,14 +19,14 @@ page.on('dialog', (d) => d.accept())
 let fail = 0
 const assert = (cond, msg) => { if (!cond) { fail++; console.log('FAIL', msg) } else console.log('ok  ', msg) }
 
-// 稳法：seed ws-paged-docs 让样例文档 d-pg-longflow 开局即分页态（省掉 ⋯ 菜单导航，v4 harness 已 stale）
-const DOC_ID = 'd-pg-longflow'
+// 稳法：seed ws-paged-docs 让样例文档开局即分页态（省掉 ⋯ 菜单导航，v4 harness 已 stale）
 await page.goto(URL)
 await page.waitForTimeout(600)
-await page.evaluate((id) => {
+await page.evaluate(() => {
   localStorage.clear()
-  localStorage.setItem('ws-paged-docs', JSON.stringify({ [id]: { on: true, size: 'A4', orientation: 'portrait', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 }, pageNumbers: false } }))
-}, DOC_ID)
+  const cfg = { on: true, size: 'A4', orientation: 'portrait', margin: { top: 25.4, right: 25.4, bottom: 25.4, left: 25.4 }, pageNumbers: false }
+  localStorage.setItem('ws-paged-docs', JSON.stringify({ 'd-pg-longflow': cfg, 'd-pg-headings': cfg }))
+})
 await page.reload()
 await page.waitForTimeout(1500)
 
@@ -67,6 +67,7 @@ const pageSpans = () => page.evaluate(() => {
 // ==== A) 国标公文（AE2）====
 await openDocPaged('长文流水')
 assert(await page.evaluate(() => !!window.__ws2Typo), 'test seam __ws2Typo 就位')
+assert((await page.locator('.ws-typo-bar').count()) > 0, 'AE1 分页文档显示排版工具栏')
 await applyPreset('gb9704')
 {
   const b = await bodyStyle()
@@ -100,6 +101,81 @@ await applyPreset('apa')
   assert(near(b.lineHeight, 2 * b.fontSize, 3), `APA 双倍行距（got ${b?.lineHeight} vs ${(2 * b.fontSize).toFixed(1)}）`)
   assert(b.textAlign === 'left', `APA 左对齐（got ${b?.textAlign}）`)
   assert(/Times New Roman/i.test(b.fontFamily), `APA font-family 含 Times（got ${b?.fontFamily}）`)
+}
+
+// ==== D) 标题各级 H1–H4（AE7 + 加块渲染）====
+const headingFF = (sel) => page.evaluate((s) => {
+  const el = document.querySelector('article.ws-doc-paged ' + s)
+  return el ? getComputedStyle(el).fontFamily : null
+}, sel)
+await openDocPaged('标题密集')
+await applyPreset('gb9704')
+{
+  assert((await headingFF('.ws-h4')) !== null, '第 4 级标题块渲染为 <h4 class=ws-h4>（加块成功）')
+  const h1 = await headingFF('.ws-h1'), h2 = await headingFF('.ws-h2'), h3 = await headingFF('.ws-h3'), h4 = await headingFF('.ws-h4')
+  assert(/SimSun|Songti/i.test(h1), `国标 H1 小标宋（宋替身）（got ${h1}）`)
+  assert(/SimHei|Heiti/i.test(h2), `国标 H2 黑体（got ${h2}）`)
+  assert(/KaiTi/i.test(h3), `国标 H3 楷体（got ${h3}）`)
+  assert(/FangSong/i.test(h4), `国标 H4 仿宋（got ${h4}）`)
+  assert(new Set([h1, h2, h3, h4]).size === 4, '四级标题字体两两不同（靠字体区分层级）')
+}
+
+// ==== E) 工具栏真 UI：预设下拉施加 + 流式文档不显示（AE1 负向）====
+{
+  // 当前在「标题密集」——用工具栏预设 <select> 切到学术论文（宋体 12pt）
+  await page.selectOption('.ws-typo-preset', 'cn-thesis')
+  await page.waitForTimeout(900)
+  const b = await bodyStyle()
+  assert(near(b.fontSize, ptToPx(12)), `工具栏选预设生效 12pt（got ${b?.fontSize}）`)
+  assert(/SimSun|Songti/i.test(b.fontFamily), `工具栏选学术论文 → 宋体（got ${b?.fontFamily}）`)
+  // 改字号 input → 脱离预设（预设 select 显示自定义）
+  await page.fill('.ws-typo-size', '18')
+  await page.waitForTimeout(600)
+  const pv = await page.$eval('.ws-typo-preset', (el) => el.value)
+  assert(pv === '__custom', `改字号后预设下拉显示「自定义」（got ${pv}）`)
+}
+// AE1 负向：打开未 seed 的流式文档「一句话」→ 无工具栏
+await page.getByText('一句话', { exact: false }).first().click()
+await page.waitForTimeout(1000)
+assert((await page.locator('article.ws-doc-paged').count()) === 0, '「一句话」是流式（非分页）')
+assert((await page.locator('.ws-typo-bar').count()) === 0, 'AE1 流式文档不显示排版工具栏')
+
+// ==== F) ⚙ 弹窗：mm/inch 单位(AE4) + 另存预设 + 存盘往返(AE5) ====
+await openDocPaged('长文流水')
+await applyPreset('gb9704')
+await page.click('.ws-typo-gear')
+await page.waitForTimeout(500)
+assert((await page.locator('.pg-modal').count()) > 0, '⚙ 打开页面设置弹窗')
+{
+  // AE4：边距 top=37mm，切 inch → ≈1.46，切回 mm → 37（存储恒 mm）
+  const topInput = page.locator('.pg-mm-input').first()
+  assert(near(parseFloat(await topInput.inputValue()), 37, 0.2), `mm 下 top=37（got ${await topInput.inputValue()}）`)
+  await page.locator('.pg-seg-sm button', { hasText: 'inch' }).click()
+  await page.waitForTimeout(300)
+  assert(near(parseFloat(await topInput.inputValue()), 1.46, 0.02), `切 inch → 1.46（got ${await topInput.inputValue()}）`)
+  await page.locator('.pg-seg-sm button', { hasText: 'mm' }).click()
+  await page.waitForTimeout(300)
+  assert(near(parseFloat(await topInput.inputValue()), 37, 0.2), `切回 mm → 37 无累积误差（got ${await topInput.inputValue()}）`)
+}
+{
+  // 另存为预设 → 工具栏预设下拉出现自定义项
+  await page.fill('.pg-saveas-input', '我的公文模板')
+  await page.click('.pg-saveas .ws-btn:not(.ws-btn-primary)')
+  await page.waitForTimeout(400)
+  await page.locator('.pg-modal .ws-btn-primary').click() // 完成关弹窗
+  await page.waitForTimeout(400)
+  const hasCustom = await page.$eval('.ws-typo-preset', (sel) => [...sel.options].some((o) => o.textContent.includes('我的公文模板')))
+  assert(hasCustom, '另存后工具栏预设下拉含自定义项')
+}
+{
+  // AE5：改字号 20pt → 存盘 → reload → 重开文档 → 排版持久（含 lastPresetId 复原）
+  await setSizePt(20)
+  await page.reload()
+  await page.waitForTimeout(1500)
+  await page.getByText('长文流水', { exact: false }).first().click()
+  await page.waitForTimeout(1200)
+  const b = await bodyStyle()
+  assert(near(b.fontSize, ptToPx(20)), `AE5 reload 后字号 20pt 持久（got ${b?.fontSize}）`)
 }
 
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nALL PASSED')
