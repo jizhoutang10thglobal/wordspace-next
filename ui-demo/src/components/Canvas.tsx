@@ -2564,6 +2564,22 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     }
   }
 
+  // 行内字号：execCommand('fontSize') 只吃 1-7 号、给不了精确 px——自己把选区包进 <span style="font-size">。
+  // 顶部排版工具栏的字号应用到选区走这条（Word 式：改的是选中的字，不是全文默认）。
+  const applyFontSize = (px?: string) => {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !px) return
+    const range = sel.getRangeAt(0)
+    const span = document.createElement('span')
+    span.style.fontSize = px
+    try {
+      range.surroundContents(span)
+    } catch {
+      span.appendChild(range.extractContents())
+      range.insertNode(span)
+    }
+  }
+
   // 工具栏命令统一入口：有文字选区 → 作用于选区；否则作用于被选中的整块。
   const applyCmd = (command: string, value?: string) => {
     const sel = window.getSelection()
@@ -2615,6 +2631,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
     const run = () => {
       if (command === '__code__') wrapCode()
+      else if (command === '__fontsize__') applyFontSize(value)
       else document.execCommand(command, false, value)
     }
     if (hasText) {
@@ -2699,7 +2716,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   return (
     <main className={'ws-canvas' + (embedded ? ' ws-canvas-embed' : '')}>
       {/* 分页文档标准化排版工具栏（U5）：仅分页文档显示、非内嵌；钉在纸面上方、不随滚动。 */}
-      {paged && !embedded && <TypographyToolbar docId={doc.id} />}
+      {paged && !embedded && <TypographyToolbar docId={doc.id} onCmd={applyCmd} />}
       {/* 文档内查找条（Cmd+F）。key=doc.id：切文档时重挂、重搜、清旧高亮 */}
       {docFindOpen && (
         <DocFind key={doc.id} container={scrollRef.current} onClose={closeDocFind} />

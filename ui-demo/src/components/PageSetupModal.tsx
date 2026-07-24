@@ -13,7 +13,7 @@ import {
   type PageMargin,
   type PaperSize,
 } from '../lib/page'
-import { CN_FONT_IDS, mmToInch, inchToMm, type HeadingStyle } from '../lib/typography'
+import { CN_FONT_IDS, LATIN_FONT_IDS, mmToInch, inchToMm, type HeadingStyle } from '../lib/typography'
 import './PageSetupModal.css'
 
 type HKey = 'h1' | 'h2' | 'h3' | 'h4'
@@ -179,6 +179,28 @@ export default function PageSetupModal() {
 
             {/* ===== 排版（工具栏没有的：首行缩进 / 段间距）===== */}
             <div className="pg-sec-title">{t('editor.secTypography')}</div>
+            {/* 正文默认字体（中西分设）——文档默认；选中改字体走顶部工具栏 */}
+            <div className="pg-head-row">
+              <span className="pg-head-lv">{t('editor.bodyFont')}</span>
+              <select className="pg-head-sel" disabled={off} value={body.cnFont} aria-label={t('editor.cnFontAria')} onChange={(e) => setBody({ cnFont: e.target.value })}>
+                {CN_FONT_IDS.map((id) => (<option key={id} value={id}>{t('editor.font_' + id)}</option>))}
+              </select>
+              <select className="pg-head-sel" disabled={off} value={body.latinFont} aria-label={t('editor.latinFontAria')} onChange={(e) => setBody({ latinFont: e.target.value })}>
+                {LATIN_FONT_IDS.map((id) => (<option key={id} value={id}>{t('editor.font_' + id)}</option>))}
+              </select>
+            </div>
+            {/* 正文默认字号 + 行距（文档默认；选中改走顶部工具栏） */}
+            <div className="pg-head-row">
+              <span className="pg-head-lv">{t('editor.sizeAria')}</span>
+              <input className="ws-input pg-head-size" type="number" min={5} max={72} step={0.5} disabled={off} value={body.sizePt} onChange={(e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) setBody({ sizePt: Math.min(72, Math.max(5, v)) }) }} />
+              <span className="pg-head-lv" style={{ width: 'auto' }}>{t('editor.lineHeightAria')}</span>
+              <select className="pg-head-sel" disabled={off} value={body.lineHeight.mode === 'fixedPt' ? '__fixed' : String(body.lineHeight.value)} onChange={(e) => { if (e.target.value !== '__fixed') setBody({ lineHeight: { mode: 'multiple', value: Number(e.target.value) } }) }}>
+                {body.lineHeight.mode === 'fixedPt' && <option value="__fixed">{t('editor.lineHeightFixed', { pt: body.lineHeight.value })}</option>}
+                <option value="1">{t('editor.lineHeightSingle')}</option>
+                <option value="1.5">1.5</option>
+                <option value="2">{t('editor.lineHeightDouble')}</option>
+              </select>
+            </div>
             <div className="pg-typo-grid">
               <label className="pg-num">
                 <span>{t('editor.firstIndent')}</span>
