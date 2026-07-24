@@ -196,27 +196,6 @@ function absorbTrailingSiblings(li: HTMLElement) {
   while (li.nextElementSibling) sub.appendChild(li.nextElementSibling)
 }
 
-// 光标落 li 自身文字末尾（在其嵌套子列表之前）——收编/出列后 li 追加了子列表，
-// selectNodeContents(li).collapse(false) 会落到子列表之后、打字进错位置。
-function caretAtLiTextEnd(li: HTMLElement) {
-  let anchor: ChildNode | null = null
-  for (const n of li.childNodes) {
-    if (n.nodeType === 1 && ((n as Element).tagName === 'UL' || (n as Element).tagName === 'OL')) break
-    anchor = n
-  }
-  try {
-    const r = document.createRange()
-    if (anchor) r.setStartAfter(anchor)
-    else r.setStart(li, 0)
-    r.collapse(true)
-    const s = window.getSelection()
-    s?.removeAllRanges()
-    s?.addRange(r)
-  } catch {
-    /* caret 恢复失败静默忽略 */
-  }
-}
-
 // ---------------------------------------------------------------------------
 // One block. 单击可编辑块 = 进文字编辑（光标落点击处）；单击不可编辑块 = 块级灰选中。
 // 「分块制」只留在数据层（每块离散、忠实 HTML），不再在视觉上做对象框。
@@ -2124,38 +2103,95 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           return
         }
         const sel = window.getSelection()
-        const sc = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null
-        const li = (sc?.nodeType === 1 ? (sc as Element) : sc?.parentElement)?.closest('li')
-        if (!li || !el.contains(li)) return
+        if (!sel || sel.rangeCount === 0) return
+        const range = sel.getRangeAt(0)
+        // 目标 li：折叠光标 = 所在行；跨行选区 = 与选区内容相交的所有最外层 li（多选缩进，Colin）
+        const allLis = [...el.querySelectorAll('li')] as HTMLElement[]
+        let targets: HTMLElement[]
+        if (sel.isCollapsed) {
+          const one = (
+            range.startContainer.nodeType === 1
+              ? (range.startContainer as Element)
+              : range.startContainer.parentElement
+          )?.closest('li') as HTMLElement | null
+          targets = one && el.contains(one) ? [one] : []
+        } else {
+          targets = allLis.filter((li) => {
+            // 用 li 的「自身内容」范围（到其嵌套子列表之前），不含子列表——否则父项会因选区落在
+            // 其子项上而误判相交（选区选中的是子项，不该把父项也当目标）。
+            const liR = document.createRange()
+            liR.setStart(li, 0)
+            const sub = [...li.children].find(
+              (c) => c.tagName === 'UL' || c.tagName === 'OL',
+            )
+            if (sub) liR.setEndBefore(sub)
+            else liR.setEnd(li, li.childNodes.length)
+            // 内容非零交集：选区起点 < li 自身内容末 且 选区末 > li 自身内容起点
+            return (
+              range.compareBoundaryPoints(Range.END_TO_START, liR) < 0 &&
+              range.compareBoundaryPoints(Range.START_TO_END, liR) > 0
+            )
+          })
+          // 只留最外层——被其他选中 li 包含的嵌套子项随父项一起移动，不单独处理
+          targets = targets.filter((li) => !targets.some((o) => o !== li && o.contains(li)))
+        }
+        if (!targets.length) return
+        // 记录选区端点，操作后原样恢复：缩进绝不该动光标/选区（Colin）。li 被 reparent 后其内部文本节点引用仍有效。
+        const sc0 = range.startContainer,
+          so0 = range.startOffset,
+          ec0 = range.endContainer,
+          eo0 = range.endOffset
+        checkpoint()
+        // 按直接父列表分组，逐组处理（各组内保持 DOM 顺序）
+        const groups = new Map<Element, HTMLElement[]>()
+        for (const li of targets) {
+          const p = li.parentElement as Element
+          if (!groups.has(p)) groups.set(p, [])
+          groups.get(p)!.push(li)
+        }
         if (e.shiftKey) {
-          const parentList = li.parentElement
-          const hostLi = parentList?.parentElement
-          if (hostLi && hostLi.tagName === 'LI') {
-            checkpoint()
-            // 出列前收编后继兄弟为本行子项，否则本行会跑到它们下面（Colin 报的错位）
-            absorbTrailingSiblings(li as HTMLElement)
-            hostLi.after(li)
-            if (parentList && !parentList.querySelector('li')) parentList.remove()
-            updateBlockHtml(doc.id, editingId, el.innerHTML)
+          for (const [parentList, lis] of groups) {
+            const hostLi = parentList.parentElement
+            if (!hostLi || hostLi.tagName !== 'LI') continue // 已在顶层，无法再出列
+            // 组内最后一个选中项收编其后的非选中兄弟为子项，保序（否则出列后错位）
+            absorbTrailingSiblings(lis[lis.length - 1])
+            let ref: Element = hostLi
+            for (const li of lis) {
+              ref.after(li)
+              ref = li
+            }
+            if (!parentList.querySelector('li')) parentList.remove()
           }
         } else {
-          const prev = li.previousElementSibling
-          if (prev && prev.tagName === 'LI') {
-            checkpoint()
-            let sub = prev.lastElementChild
+          for (const [parentList, lis] of groups) {
+            const first = lis[0]
+            const prev = first.previousElementSibling
+            if (!prev || prev.tagName !== 'LI') continue // 组首无上一项可嵌 → 该组不缩进
+            let sub = prev.lastElementChild as HTMLElement | null
             if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
-              // 子列表继承 li 的直接父列表 tag/class（如 todo 缩进仍是 todo），不是顶层 el 的（D3）
-              const pl = li.parentElement as HTMLElement
-              sub = document.createElement(pl.tagName.toLowerCase())
-              sub.className = pl.className
+              // 子列表继承直接父列表 tag/class（如 todo 缩进仍 todo），不是顶层 el（D3）
+              sub = document.createElement(parentList.tagName.toLowerCase())
+              sub.className = (parentList as HTMLElement).className
               prev.appendChild(sub)
             }
-            sub.appendChild(li)
-            updateBlockHtml(doc.id, editingId, el.innerHTML)
+            for (const li of lis) sub.appendChild(li)
           }
         }
-        // 光标落本行文字末（子列表之前）——收编/出列后 li 尾部可能挂了子列表
-        caretAtLiTextEnd(li as HTMLElement)
+        updateBlockHtml(doc.id, editingId, el.innerHTML)
+        // 恢复原选区（文本节点随 li reparent 引用不变）→ 光标/多选原样保留、不跳（修 Colin「光标跳行末」）
+        try {
+          if (sc0.isConnected && ec0.isConnected) {
+            const clamp = (n: Node, o: number) =>
+              Math.min(o, n.nodeType === 3 ? (n as Text).length : n.childNodes.length)
+            const r = document.createRange()
+            r.setStart(sc0, clamp(sc0, so0))
+            r.setEnd(ec0, clamp(ec0, eo0))
+            sel.removeAllRanges()
+            sel.addRange(r)
+          }
+        } catch {
+          /* 选区恢复失败静默忽略 */
+        }
         return
       }
       // Backspace 在可编辑块最前端：空块→删块、光标落上一块末；非空→并入上一块。
