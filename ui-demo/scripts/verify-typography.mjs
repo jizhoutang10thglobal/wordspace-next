@@ -140,6 +140,44 @@ await page.waitForTimeout(1000)
 assert((await page.locator('article.ws-doc-paged').count()) === 0, '「一句话」是流式（非分页）')
 assert((await page.locator('.ws-typo-bar').count()) === 0, 'AE1 流式文档不显示排版工具栏')
 
+// ==== F) ⚙ 弹窗：mm/inch 单位(AE4) + 另存预设 + 存盘往返(AE5) ====
+await openDocPaged('长文流水')
+await applyPreset('gb9704')
+await page.click('.ws-typo-gear')
+await page.waitForTimeout(500)
+assert((await page.locator('.pg-modal').count()) > 0, '⚙ 打开页面设置弹窗')
+{
+  // AE4：边距 top=37mm，切 inch → ≈1.46，切回 mm → 37（存储恒 mm）
+  const topInput = page.locator('.pg-mm-input').first()
+  assert(near(parseFloat(await topInput.inputValue()), 37, 0.2), `mm 下 top=37（got ${await topInput.inputValue()}）`)
+  await page.locator('.pg-seg-sm button', { hasText: 'inch' }).click()
+  await page.waitForTimeout(300)
+  assert(near(parseFloat(await topInput.inputValue()), 1.46, 0.02), `切 inch → 1.46（got ${await topInput.inputValue()}）`)
+  await page.locator('.pg-seg-sm button', { hasText: 'mm' }).click()
+  await page.waitForTimeout(300)
+  assert(near(parseFloat(await topInput.inputValue()), 37, 0.2), `切回 mm → 37 无累积误差（got ${await topInput.inputValue()}）`)
+}
+{
+  // 另存为预设 → 工具栏预设下拉出现自定义项
+  await page.fill('.pg-saveas-input', '我的公文模板')
+  await page.click('.pg-saveas .ws-btn:not(.ws-btn-primary)')
+  await page.waitForTimeout(400)
+  await page.locator('.pg-modal .ws-btn-primary').click() // 完成关弹窗
+  await page.waitForTimeout(400)
+  const hasCustom = await page.$eval('.ws-typo-preset', (sel) => [...sel.options].some((o) => o.textContent.includes('我的公文模板')))
+  assert(hasCustom, '另存后工具栏预设下拉含自定义项')
+}
+{
+  // AE5：改字号 20pt → 存盘 → reload → 重开文档 → 排版持久（含 lastPresetId 复原）
+  await setSizePt(20)
+  await page.reload()
+  await page.waitForTimeout(1500)
+  await page.getByText('长文流水', { exact: false }).first().click()
+  await page.waitForTimeout(1200)
+  const b = await bodyStyle()
+  assert(near(b.fontSize, ptToPx(20)), `AE5 reload 后字号 20pt 持久（got ${b?.fontSize}）`)
+}
+
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nALL PASSED')
 await browser.close()
 process.exit(fail ? 1 : 0)
