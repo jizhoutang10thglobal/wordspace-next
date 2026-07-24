@@ -168,14 +168,12 @@
   transform: none;
 }
 .ws-block-editing {
+  /* 曾有 padding-left/right:8px + margin-left/right:-8px：净效果为零（无背景/边框，内容不移），
+     却会把绝对定位的 grip 原点在进编辑态时挪 8px＝图标位移（Colin 反馈）。纯累赘，删。 */
   border-radius: var(--r-sm);
-  padding-left: 8px;
-  padding-right: 8px;
-  margin-left: -8px;
-  margin-right: -8px;
 }
 
-/* left control cluster (grip) revealed on hover */
+/* left control cluster (grip) revealed on hover —— 纯淡入、不做位移动画（滑入会读成图标抖动） */
 .ws-block-controls {
   position: absolute;
   left: -28px;
@@ -185,10 +183,9 @@
   align-items: center;
   gap: 1px;
   opacity: 0;
-  transform: translateX(-4px);
-  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: opacity var(--dur-fast) var(--ease);
 }
-.ws-block:hover > .ws-block-controls { opacity: 1; transform: none; }
+.ws-block:hover > .ws-block-controls { opacity: 1; }
 .ws-block-grip {
   display: flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: var(--r-pill);
