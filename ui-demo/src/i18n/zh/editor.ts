@@ -5,6 +5,7 @@ export default {
   heading1: '标题 1',
   heading2: '标题 2',
   heading3: '标题 3',
+  heading4: '标题 4',
   bulletedList: '无序列表',
   numberedList: '编号列表',
   todoList: '待办列表',

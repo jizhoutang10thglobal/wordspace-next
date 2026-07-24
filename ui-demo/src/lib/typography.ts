@@ -143,9 +143,9 @@ export const ptToPx = (pt: number): number => (pt * 96) / 72
 // ---- 排版 → scoped CSS 文本（U3；正文。标题 U4 追加）------------------------
 
 /**
- * 生成注入分页文档 article 的 scoped 排版 CSS（KTD6）。用 `.ws-doc-paged .ws-p` 类级特异性
- * 盖过 base（`.ws-p` 显式声明 font-size/line-height，祖先 inline 继承压不过——评审 correctness）。
- * 纯函数，可 node 单测；真渲染由 U3 的 Playwright computed-style 门验。
+ * 生成注入分页文档 article 的 scoped 排版 CSS（KTD6）。用 `.ws-doc-paged .ws-p` / `.ws-h*`
+ * 类级特异性盖过 base（低层显式声明 font-size 等，祖先 inline 继承压不过——评审 correctness）。
+ * 纯函数，可 node 单测；真渲染由 U3/U4 的 Playwright computed-style 门验。正文 U3、标题各级 U4。
  */
 export function buildTypographyCss(t: TypographyConfig): string {
   const b = t.body
@@ -154,12 +154,21 @@ export function buildTypographyCss(t: TypographyConfig): string {
   const lh = b.lineHeight.mode === 'fixedPt' ? `${ptToPx(b.lineHeight.value)}px` : `${b.lineHeight.value}`
   const mt = ptToPx(b.spaceBeforePt)
   const mb = ptToPx(b.spaceAfterPt)
-  return [
+  const rules = [
     // 正文 + 列表项：字体/字号/行距（列表项硬编 line-height:1.7 也要盖）
     `.ws-doc-paged .ws-p,.ws-doc-paged .ws-ul li,.ws-doc-paged .ws-ol li{font-family:${ff};font-size:${size}px;line-height:${lh}}`,
     // 段落：首行缩进(em 跟字号)/对齐/段前段后
     `.ws-doc-paged .ws-p{text-indent:${b.firstIndentEm}em;text-align:${b.align};margin-top:${mt}px;margin-bottom:${mb}px}`,
-  ].join('')
+  ]
+  // 标题各级 H1–H4（U4）：国标靠字体区分层级、APA 靠对齐/粗细/斜体
+  for (const lv of [1, 2, 3, 4] as const) {
+    const h = t.headings[`h${lv}` as 'h1' | 'h2' | 'h3' | 'h4']
+    const parts = [`font-family:${composeFontFamily(h.latinFont, h.cnFont)}`, `font-size:${ptToPx(h.sizePt)}px`, `font-weight:${h.bold ? 700 : 400}`]
+    if (h.italic) parts.push('font-style:italic')
+    if (h.align) parts.push(`text-align:${h.align}`)
+    rules.push(`.ws-doc-paged .ws-h${lv}{${parts.join(';')}}`)
+  }
+  return rules.join('')
 }
 
 // ---- 五个具名标准预设（值来自 origin 附录 A；权威值硬编、通用默认可调）-------
