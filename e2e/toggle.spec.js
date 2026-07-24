@@ -68,7 +68,7 @@ test.afterEach(async () => {
   app = null; page = null; frame = null;
 });
 
-// U4: slash /折叠 插入合规种子 <details open><summary></summary><p></p></details>，光标落 summary；
+// U4: slash /折叠 → 合规 toggle（U24 起空块原地变身 turnInto，summary 空占位 <br>），光标落 summary；
 // 入盘 chevron/marker-kill CSS（data-ws-schema-css="toggle"）；chevron 用 computed-style 强断言。
 test('U4: slash 插入 toggle 种子 + 光标落 summary + 入盘 chevron CSS', async () => {
   await launch();
@@ -118,7 +118,7 @@ test('U4: slash 插入 toggle 种子 + 光标落 summary + 入盘 chevron CSS', 
   const html = await serialize();
   expect(html).toMatch(/data-ws-schema-css="toggle"/);       // 语义 CSS 入盘（校验器 head 白名单认）
   expect(html).toMatch(/summary::-webkit-details-marker\{display:none\}/); // marker-kill 双配方之一入盘
-  expect(html).toMatch(/<details open[^>]*><summary><\/summary><p><\/p><\/details>/); // 种子形态入盘（open 可能序列化成 open=""）
+  expect(html).toMatch(/<details open[^>]*><summary>(<br>)?<\/summary><p><\/p><\/details>/); // 种子形态入盘（open 可能序列化成 open=""；空块原地变身路径 summary 带 <br> 占位=U17 canonical）
   expect(html).not.toMatch(/ws-grip|ws-fmtbar|ws-slashmenu|data-ws2-ce|contenteditable/); // 覆盖层/编辑态不泄漏
   expect(await conformOf(html), 'toggle 文档必须合规（走块编辑器，非基础编辑器）').toBe(true);
 });
@@ -558,4 +558,67 @@ test('U10: 折叠不消耗撤销步', async () => {
   await page.keyboard.press('Meta+z');      // 应撤「标题T」编辑，不是折叠
   await page.waitForTimeout(250);
   expect(await summaryText(), 'Cmd+Z 应撤内容编辑（标题清空），证明折叠没占撤销步').toBe('');
+});
+
+// U24（Wendi 2026-07-24 视频反馈「新建 toggle 往下跳半行」）：空块 slash 选折叠，旧行为是 insertAfter——
+// 输入 /togg 的空段落留在原地、details 插到它下面，光标突然下坠一行 + 留空段落垃圾。其他块类型空块
+// 都走 turnInto 原地变身，唯独 toggle 被例外。修后：空块原地变身（行几何不动），非空块维持 insertAfter。
+test('U24a: 空块 slash 折叠 → 原地变身：不留空段落、summary 行几何不跳', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#p1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  // 记录空块（即将变身的块）的几何
+  const beforeTop = await frame.locator('body').evaluate(() => {
+    const e = document.querySelector('[data-ws2-editing]');
+    return e ? e.getBoundingClientRect().top : null;
+  });
+  expect(beforeTop).not.toBe(null);
+  await page.keyboard.type('/');
+  await expect(frame.locator('.ws-slashmenu')).toBeVisible();
+  await page.keyboard.type('togg');
+  await page.waitForTimeout(120);
+  await frame.locator('.ws-slashmenu-item', { hasText: '折叠' }).click();
+  await page.waitForTimeout(250);
+  // ① 结构：空段落被吃掉——#p1 的下一个兄弟就是 details，中间没有残留空 P
+  const shape = await frame.locator('body').evaluate(() => {
+    const p1 = document.getElementById('p1');
+    const next = p1 && p1.nextElementSibling;
+    return { nextIsDetails: !!next && next.tagName === 'DETAILS',
+             emptyPCount: [...document.querySelectorAll('body > p')].filter((p) => p.id !== 'p1' && (p.textContent || '').trim() === '').length };
+  });
+  expect(shape.nextIsDetails, '空块该原地变身成 details（p1 下一个兄弟就是它）').toBe(true);
+  expect(shape.emptyPCount, '不该留下空段落垃圾').toBe(0);
+  // ② 几何：summary 行没往下跳（顶部与原空块一致，容差 3px）
+  const afterTop = await frame.locator('body').evaluate(() => {
+    const s = document.querySelector('details > summary');
+    return s ? s.getBoundingClientRect().top : null;
+  });
+  expect(afterTop).not.toBe(null);
+  expect(Math.abs(afterTop - beforeTop), `summary 行跳了 ${afterTop - beforeTop}px（旧 bug：往下坠一行）`).toBeLessThan(3);
+  // ③ 光标落 summary
+  expect(await editingTag()).toBe('SUMMARY');
+});
+
+test('U24b: 非空块 slash 折叠 → 维持插入下方：原块内容不吞', async () => {
+  await launch();
+  await openDoc(SIMPLE);
+  await frame.locator('#p1').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('/');
+  await expect(frame.locator('.ws-slashmenu')).toBeVisible();
+  await page.keyboard.type('togg');
+  await page.waitForTimeout(120);
+  await frame.locator('.ws-slashmenu-item', { hasText: '折叠' }).click();
+  await page.waitForTimeout(250);
+  const shape = await frame.locator('body').evaluate(() => {
+    const p1 = document.getElementById('p1');
+    return { p1Text: p1 ? p1.textContent : null,
+             nextIsDetails: !!(p1 && p1.nextElementSibling) && p1.nextElementSibling.tagName === 'DETAILS' };
+  });
+  expect(shape.p1Text, '非空块内容不该被吞（query 已删干净）').toBe('正文一段');
+  expect(shape.nextIsDetails, '非空块 → details 插在其后').toBe(true);
+  expect(await editingTag()).toBe('SUMMARY');
 });
