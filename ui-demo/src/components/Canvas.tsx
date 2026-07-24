@@ -546,9 +546,11 @@ function BlockRow({
       }
       style={
         block.indent
-          ? // 用 transform 位移而非 margin：不改块宽度 → 不触发文字重排 → 下方块不跳动（去抖动，Colin 反馈）。
-            // 位移用整数像素（24px/档）而非 1.6em(=25.6px 非整)——transform 到分数像素会亚像素渲染、文字发虚/微抖。
-            { transform: `translateX(${block.indent * 24}px)` }
+          ? // 位移用 position:relative + left（块本就 position:relative），不用 transform：
+            // ① 不改块宽度 → 不触发文字重排 → 下方块不动；
+            // ② 不建 GPU 合成层 → 避免 Retina 上合成层亚像素栅格化的「上下微挪」（Colin 反馈）；
+            // ③ 整数像素 24px/档，渲染清晰。
+            { left: `${block.indent * 24}px` }
           : undefined
       }
       onClick={(e) => {

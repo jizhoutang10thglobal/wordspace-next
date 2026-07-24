@@ -256,6 +256,9 @@
 .ws-h3 { font-size: 16px; margin: 20px 0 6px; }
 .ws-p { font-size: var(--fs-lg); line-height: var(--lh-doc); color: var(--c-text); margin: 6px 0; }
 .ws-ul { margin: 6px 0; padding-left: 22px; }
+/* 嵌套子列表 margin 归零：否则缩进(嵌套)时子列表凭空多出 6px 上下间距、把下方内容整体挤动
+   （Colin 报「第二行缩进后下面全挪」）。子项仍保留自身 li 的 3px 间距，与顶层项一致 → 缩进纯水平、下方不动。 */
+.ws-ul li > ul, .ws-ul li > ol { margin: 0; }
 .ws-ul li { font-size: var(--fs-lg); line-height: 1.7; color: var(--c-text); list-style: disc; margin: 3px 0; }
 /* 编号列表：阿拉伯数字 */
 .ws-ul.ws-ol > li { list-style: decimal; }
