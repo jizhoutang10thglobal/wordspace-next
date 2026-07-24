@@ -12,6 +12,7 @@ export default {
   callout: '提示',
   table: '表格',
   code: '代码',
+  toggle: '折叠列表',
   image: '图片',
   divider: '分隔线',
   slashDoclink: '🔗 链接到文档',
@@ -26,6 +27,10 @@ export default {
   addRow: '+ 加一行',
   deleteRow: '删除此行',
   blockGripTitle: '拖动重排 · 点击打开菜单',
+
+  // 折叠块 chevron 无障碍标签
+  toggleCollapse: '收起',
+  toggleExpand: '展开',
 
   // 分页
   pageN: '第 {n} 页',
@@ -97,6 +102,7 @@ export default {
   turnIntoText: '转为正文',
   turnIntoHeading: '转为标题',
   turnIntoQuote: '转为引用',
+  turnIntoToggle: '转为折叠列表',
   insertBelow: '在下方插入',
 
   // AI 占位弹窗
@@ -217,6 +223,8 @@ export default {
   newListItem: '列表项',
   newQuote: '引用内容',
   newCallout: '提示内容',
+  newToggleSummary: '折叠标题',
+  newToggleBody: '折叠内容',
   tableColumn: '列 {n}',
   tableCell: '单元格',
 }

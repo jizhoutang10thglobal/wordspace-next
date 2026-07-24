@@ -36,6 +36,10 @@ function blockToHtml(b: Block): string {
     case 'code':
       // block.html 是若干 <div class="ws-code-line"> 行，包回 <pre>
       return `<pre class="ws-code">${b.html}</pre>`
+    case 'toggle':
+      // 折叠块：block.html 是 <details><summary>…</summary>…</details>（不带 open）。
+      // 打印强制展开——折叠内容也要进 PDF（对齐真 app 的 clone force-expand）。
+      return b.html.replace(/<details\b[^>]*>/i, '<details open>')
     case 'embed':
       return `<div>${b.html}</div>`
     default:
@@ -74,6 +78,10 @@ const PRINT_BASE_CSS = `
     white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.8em 0;
   }
   .ws-code-line { min-height: 1.6em; }
+  details { margin: 0.6em 0; }
+  summary { list-style: none; font-weight: 600; break-after: avoid; }
+  summary::-webkit-details-marker { display: none; }
+  details > :not(summary) { margin-left: 20px; }
 `
 
 /**

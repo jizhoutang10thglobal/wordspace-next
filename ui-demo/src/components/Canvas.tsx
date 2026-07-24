@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { GripVertical, MoreHorizontal } from 'lucide-react'
+import { ChevronRight, GripVertical, MoreHorizontal } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI, anyOverlayOpen } from '../mock/ui'
 import { IS_MAC } from '../lib/platform'
@@ -50,7 +50,8 @@ const isEditable = (b: Block) => !b.designed && EDITABLE.includes(b.type)
 // 表格 / 代码是「原生编辑」块：单元格 / 代码行是 contentEditable，Enter/Backspace/方向键/Tab
 // 一律交给浏览器原生（新行、合行、行内导航），块编辑器的结构性快捷键（新建块、并块、跨块导航、
 // 斜杠、@提及）在这类块里全部让路。
-const isRawEditBlock = (b: Block | undefined) => !!b && (b.type === 'table' || b.type === 'code')
+const isRawEditBlock = (b: Block | undefined) =>
+  !!b && (b.type === 'table' || b.type === 'code' || b.type === 'toggle')
 
 // 斜杠 `/` 插入菜单的条目（插入块 / 转换块 / AI）。kw 供拼音/英文筛选。
 const SLASH_ITEMS: {
@@ -76,6 +77,7 @@ const SLASH_ITEMS: {
   { key: 'callout', label: 'editor.callout', kw: 'callout tishi', type: 'callout' },
   { key: 'table', label: 'editor.table', kw: 'table biaoge grid', type: 'table' },
   { key: 'code', label: 'editor.code', kw: 'code daima pre snippet', type: 'code' },
+  { key: 'toggle', label: 'editor.toggle', kw: 'toggle zhedie collapse details expand shouqi zhankai', type: 'toggle' },
   { key: 'image', label: 'editor.image', kw: 'image img tupian picture photo zhaopian', type: 'image' },
   { key: 'divider', label: 'editor.divider', kw: 'divider hr fengexian', type: 'divider' },
   { key: 'ai', label: 'editor.slashAi', kw: 'ai', type: 'ai' },
@@ -273,6 +275,163 @@ function ImageBlockView({
 }
 
 // ---------------------------------------------------------------------------
+// 折叠块（toggle · Schema #1 <details>）：UX 外壳。summary = 可编辑标题行；body = 单一
+// 原始 HTML contentEditable 区（有意分歧 KTD3：ui-demo 不做真嵌套块，body 是一整块 raw HTML；
+// 真嵌套只在真 app 承载）。两区各自 stopPropagation（照 figcaption），Enter/Backspace 到不了
+// 文档级快捷键。折叠靠自绘 chevron（纸方墨圆）驱动 setBlockOpen——native disclosure 被 summary
+// onClick 的 preventDefault 掐掉（open 受 block.open 控），点 summary 文字只落光标、绝不折叠。
+function parseToggleHtml(html: string): { summary: string; body: string } {
+  const tmp = document.createElement('div')
+  tmp.innerHTML = html
+  const details = tmp.querySelector('details')
+  if (!details) return { summary: '', body: html }
+  const summaryEl = details.querySelector('summary')
+  const summary = summaryEl ? summaryEl.innerHTML : ''
+  const clone = details.cloneNode(true) as HTMLElement
+  clone.querySelector('summary')?.remove()
+  return { summary, body: clone.innerHTML }
+}
+
+function ToggleBlockView({
+  doc,
+  block,
+  registerEl,
+}: {
+  doc: Doc
+  block: Block
+  registerEl: (id: string, el: HTMLElement | null) => void
+}) {
+  const t = useT()
+  const updateBlockHtml = useStore((s) => s.updateBlockHtml)
+  const setBlockOpen = useStore((s) => s.setBlockOpen)
+  const checkpoint = useStore((s) => s.checkpoint)
+  const parsed = useMemo(() => parseToggleHtml(block.html), [block.html])
+  const sumRef = useRef<HTMLElement | null>(null)
+  const bodyRef = useRef<HTMLElement | null>(null)
+  const sumFocused = useRef(false)
+  const bodyFocused = useRef(false)
+
+  const open = block.open ?? true
+
+  // 未聚焦时把 store 内容同步进各区（聚焦时不动，避免和光标打架）——照 BlockRow.setNode。
+  const setSum = useCallback(
+    (el: HTMLElement | null) => {
+      sumRef.current = el
+      if (el && !sumFocused.current && el.innerHTML !== parsed.summary)
+        el.innerHTML = parsed.summary
+    },
+    [parsed.summary],
+  )
+  const setBody = useCallback(
+    (el: HTMLElement | null) => {
+      bodyRef.current = el
+      if (el && !bodyFocused.current && el.innerHTML !== parsed.body)
+        el.innerHTML = parsed.body
+    },
+    [parsed.body],
+  )
+  useLayoutEffect(() => {
+    if (sumRef.current && !sumFocused.current && sumRef.current.innerHTML !== parsed.summary)
+      sumRef.current.innerHTML = parsed.summary
+    if (bodyRef.current && !bodyFocused.current && bodyRef.current.innerHTML !== parsed.body)
+      bodyRef.current.innerHTML = parsed.body
+  }, [parsed.summary, parsed.body])
+
+  // 任一区失焦：读两区活内容重建 block.html（summary + body），变了才 checkpoint+写回。
+  // 折叠态（open）不进 html——由 block.open 单独持有，打印时强制展开（printExport）。
+  const persist = () => {
+    const summary = sumRef.current?.innerHTML ?? parsed.summary
+    const body = bodyRef.current?.innerHTML ?? parsed.body
+    const html = `<details><summary>${summary}</summary>${body}</details>`
+    if (html !== block.html) {
+      checkpoint()
+      updateBlockHtml(doc.id, block.id, html)
+    }
+  }
+  const onSumBlur = () => {
+    sumFocused.current = false
+    persist()
+  }
+  const onBodyBlur = () => {
+    bodyFocused.current = false
+    persist()
+  }
+  const onSummaryKey = (e: React.KeyboardEvent) => {
+    e.stopPropagation() // 别让 Enter/Backspace 漏到文档级快捷键（会插块/删块）
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault() // summary 单行：Enter 不换行、不折叠，直接提交失焦
+      ;(e.target as HTMLElement).blur()
+    }
+  }
+
+  return (
+    <details
+      className="ws-toggle"
+      open={open}
+      data-block={block.id}
+      ref={(el) => registerEl(block.id, el)}
+    >
+      <summary
+        className="ws-toggle-summary"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          // 掐掉 native disclosure（open 受 block.open 控）+ 阻止块级灰选；点文字只落光标不折叠。
+          e.stopPropagation()
+          e.preventDefault()
+        }}
+      >
+        <button
+          type="button"
+          className="ws-toggle-chevron"
+          contentEditable={false}
+          aria-label={open ? t('editor.toggleCollapse') : t('editor.toggleExpand')}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+          }}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setBlockOpen(doc.id, block.id, !open)
+          }}
+        >
+          <ChevronRight size={16} strokeWidth={2.2} />
+        </button>
+        <span
+          className="ws-toggle-summary-text"
+          contentEditable
+          suppressContentEditableWarning
+          spellCheck={false}
+          data-placeholder={t('editor.newToggleSummary')}
+          ref={setSum}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={onSummaryKey}
+          onFocus={() => {
+            sumFocused.current = true
+          }}
+          onBlur={onSumBlur}
+        />
+      </summary>
+      <div
+        className="ws-toggle-body"
+        contentEditable
+        suppressContentEditableWarning
+        spellCheck={false}
+        data-placeholder={t('editor.newToggleBody')}
+        ref={setBody}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        onFocus={() => {
+          bodyFocused.current = true
+        }}
+        onBlur={onBodyBlur}
+      />
+    </details>
+  )
+}
+
+// ---------------------------------------------------------------------------
 function BlockRow({
   doc,
   block,
@@ -454,6 +613,8 @@ function BlockRow({
     inner = (
       <ImageBlockView doc={doc} block={block} selected={selected} registerEl={registerEl} />
     )
+  } else if (block.type === 'toggle') {
+    inner = <ToggleBlockView doc={doc} block={block} registerEl={registerEl} />
   } else if (block.type === 'heading') {
     const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3'
     inner = <L className={`ws-h ws-h${block.level ?? 2}`} {...editProps} />
@@ -589,10 +750,13 @@ function collectCutAtoms(host: HTMLElement): CutAtom[] {
   const base = host.getBoundingClientRect().top
   const atoms: CutAtom[] = []
   host
-    .querySelectorAll<HTMLElement>('li, p, blockquote, figure, hr, h1, h2, h3, h4, .ws-code-line')
+    .querySelectorAll<HTMLElement>('li, p, blockquote, figure, hr, h1, h2, h3, h4, details, .ws-code-line')
     .forEach((e) => {
       if (e.closest('table')) return
       if (e.closest('pre') && !e.classList.contains('ws-code-line')) return
+      // 折叠 <details> 的隐藏后代不参与切分（display:none、几何为 0）。用 parentElement.closest
+      // 而非 e.closest——后者含自身、会把折叠 details 本身也排掉；我们要保留它的 summary 高度原子。
+      if (e.parentElement && e.parentElement.closest('details:not([open])')) return
       atoms.push({ top: e.getBoundingClientRect().top - base, kind: 'el', el: e })
     })
   host.querySelectorAll<HTMLElement>('tr').forEach((e) => {
@@ -1037,17 +1201,22 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       requestAnimationFrame(() => {
         const el = blockEls.current.get(id)
         if (!el) return
-        el.focus()
+        // 折叠块：块根是 <details>（不可编辑）——把焦点/光标落进 summary 文字区（唯一标题编辑点）。
+        const target =
+          el.tagName === 'DETAILS'
+            ? ((el.querySelector('.ws-toggle-summary-text') as HTMLElement | null) ?? el)
+            : el
+        target.focus()
         const sel = window.getSelection()
         if (!sel) return
         let range: Range | null = null
         if (caret.mode === 'point' && caret.x != null && caret.y != null) {
           const pt = caretRangeAtPoint(caret.x, caret.y)
-          if (pt && el.contains(pt.startContainer)) range = pt // 落点须在块内，否则回退块末
+          if (pt && target.contains(pt.startContainer)) range = pt // 落点须在块内，否则回退块末
         }
         if (!range) {
           range = document.createRange()
-          range.selectNodeContents(el)
+          range.selectNodeContents(target)
           range.collapse(caret.mode === 'start')
         }
         sel.removeAllRanges()
@@ -1258,8 +1427,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       checkpoint()
       if (it.type === 'divider') {
         selectBlock(addBlock(doc.id, slash.blockId, it.type))
-      } else if (it.type === 'table' || it.type === 'code') {
-        // 表格/代码：插入带默认内容的新块并进编辑（单元格/代码行随即可点改）
+      } else if (it.type === 'table' || it.type === 'code' || it.type === 'toggle') {
+        // 表格/代码/折叠：插入带默认内容的新块并进编辑（单元格/代码行/summary 随即可点改）。
+        // toggle 走 raw-edit 路径：进编辑态使 isRawEditBlock 生效，focusBlockAt 把光标落进 summary。
         editBlock(addBlock(doc.id, slash.blockId, it.type))
       } else if (it.type === 'list' && empty) {
         // 空块插列表：不在聚焦块上 setBlockType（p→ul 交换会触发 blur 把空 innerHTML 回写、
