@@ -384,11 +384,14 @@ const DEFAULT_CODE_HTML =
   `<div class="ws-code-line">function hello() {</div>` +
   `<div class="ws-code-line">  return 'world'</div>` +
   `<div class="ws-code-line">}</div>`
-// 折叠块默认内容：summary 标题 + 一段正文 body（占位文案随当前语言生成，故用函数而非 const）。
+// 折叠块种子种**空**——summary/body 的占位灰字由 ToggleBlockView 的 data-placeholder（:empty::before）
+// 显示。种 i18n 文案会让占位变真文本、用户打字接在「Toggle heading」后面还得手删（真 app
+// U9/create-2 同款教训「种空产物、不种 i18n 占位文本」；Wendi 试手感首要动作就是建块打字）。
 // 展开态不写进 html 的 open 属性——open 由 block.open 单独持有（setBlockOpen 改它、不改 html），
 // 避免两处 open 漂移；打印导出（printExport）再强制展开。
-const DEFAULT_TOGGLE_HTML = (): string =>
-  `<details><summary>${t('editor.newToggleSummary')}</summary><p>${t('editor.newToggleBody')}</p></details>`
+const DEFAULT_TOGGLE_HTML = (): string => `<details><summary></summary></details>`
+// ↑ body 也真空：ToggleBlockView 的 body 区是独立 contentEditable，种 <p></p> 会让 :empty 不成立、
+//   「Toggle body」灰字占位永不显示（截图实测）；真空时 min-height:1.5em 仍可点、落笔即写。
 
 const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
   const base: Record<BlockType, Partial<Block>> = {
