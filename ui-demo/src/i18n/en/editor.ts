@@ -12,6 +12,7 @@ export default {
   callout: 'Callout',
   table: 'Table',
   code: 'Code',
+  toggle: 'Toggle list',
   image: 'Image',
   divider: 'Divider',
   slashDoclink: '🔗 Link to document',
@@ -26,6 +27,10 @@ export default {
   addRow: '+ Add row',
   deleteRow: 'Delete row',
   blockGripTitle: 'Drag to reorder · click for menu',
+
+  // Toggle block chevron accessibility labels
+  toggleCollapse: 'Collapse',
+  toggleExpand: 'Expand',
 
   // Pagination
   pageN: 'Page {n}',
@@ -97,6 +102,7 @@ export default {
   turnIntoText: 'Turn into Text',
   turnIntoHeading: 'Turn into Heading',
   turnIntoQuote: 'Turn into Quote',
+  turnIntoToggle: 'Turn into Toggle list',
   insertBelow: 'Insert below',
 
   // AI placeholder modal
@@ -216,6 +222,8 @@ export default {
   newListItem: 'List item',
   newQuote: 'Quote',
   newCallout: 'Callout',
+  newToggleSummary: 'Toggle heading',
+  newToggleBody: 'Toggle body',
   tableColumn: 'Column {n}',
   tableCell: 'Cell',
 }
