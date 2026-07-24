@@ -51,6 +51,8 @@ export default {
   alignJustify: '两端对齐',
   typoBarAria: '排版工具栏',
   presetAria: '排版预设',
+  fontAria: '字体',
+  bodyFont: '正文字体',
   cnFontAria: '中文字体',
   latinFontAria: '西文字体',
   sizeAria: '字号',

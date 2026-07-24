@@ -90,7 +90,7 @@
   justify-content: center;
   width: 30px;
   height: 28px;
-  margin-left: auto;
+  /* 不甩最右——甩最右会撞上文档右上角的悬浮「保存」钮（草稿）。放在对齐控件后面即可。 */
   border: 1px solid var(--c-border-strong);
   border-radius: 999px;
   background: var(--c-surface);
@@ -100,3 +100,14 @@
 }
 .ws-typo-gear:hover { background: var(--c-hover); color: var(--c-text); }
 .ws-typo-gear:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
+/* 加粗按钮（Word ribbon 式，应用到选区） */
+.ws-typo-bold {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 28px;
+  border: 1px solid var(--c-border-strong); border-radius: 999px;
+  background: var(--c-surface); color: var(--c-text-2); cursor: pointer;
+}
+.ws-typo-bold:hover { background: var(--c-hover); color: var(--c-text); }
+.ws-typo-bold.is-on { background: var(--c-ink); color: #fff; border-color: var(--c-ink); }
+.ws-typo-bold:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }

@@ -76,15 +76,23 @@ export const FONT_STACKS: Record<string, string[]> = {
   arial: ['Arial', 'Helvetica'],
 }
 
-/** 中文字体下拉可选 id（U5 用；标签走 i18n）。 */
+/** 中文字体下拉可选 id（⚙ 弹窗正文默认 + 标题各级用；标签走 i18n）。 */
 export const CN_FONT_IDS = ['fangsong', 'songti', 'xiaobiaosong', 'heiti', 'kaiti', 'yahei']
 /** 西文字体下拉可选 id。 */
 export const LATIN_FONT_IDS = ['times', 'calibri', 'arial']
+/** 顶部工具栏「一个字体下拉」的全部 id（中西混列，对齐 Word 的单字体框；选中应用到选区）。 */
+export const ALL_FONT_IDS = [...CN_FONT_IDS, ...LATIN_FONT_IDS]
 
-/** 中文字体 id 的泛型族——决定 composeFontFamily 末尾那个唯一泛型。 */
-const SANS_CN = new Set(['heiti', 'yahei'])
-export const genericOf = (cnFontId: string): 'serif' | 'sans-serif' =>
-  SANS_CN.has(cnFontId) ? 'sans-serif' : 'serif'
+/** 无衬线字体 id（决定泛型族）。 */
+const SANS_FONTS = new Set(['heiti', 'yahei', 'calibri', 'arial'])
+export const genericOf = (fontId: string): 'serif' | 'sans-serif' =>
+  SANS_FONTS.has(fontId) ? 'sans-serif' : 'serif'
+
+/** 单个字体 id → 完整 font-family 串（具体字体名回退栈 + 末尾泛型）。顶部工具栏应用到选区用。 */
+export function fontStack(fontId: string): string {
+  const names = (FONT_STACKS[fontId] ?? [fontId]).map(q)
+  return [...names, genericOf(fontId)].join(', ')
+}
 
 const needsQuote = (name: string): boolean => !/^[A-Za-z0-9-]+$/.test(name)
 const q = (name: string): string => (needsQuote(name) ? `"${name}"` : name)
@@ -154,19 +162,30 @@ export function buildTypographyCss(t: TypographyConfig): string {
   const lh = b.lineHeight.mode === 'fixedPt' ? `${ptToPx(b.lineHeight.value)}px` : `${b.lineHeight.value}`
   const mt = ptToPx(b.spaceBeforePt)
   const mb = ptToPx(b.spaceAfterPt)
+  // 拖拽手柄(.ws-block-controls, 高 24px)垂直对齐：默认 top 是按小字号硬编的，分页放大字号后
+  // 首行基线下移、手柄没跟上（错位 bug）。按放大后首行居中重算 top（≈ 行高/2 - 手柄半高），随预设自适应。
+  // 手柄中心对齐块内首行中心：top = 块上边距 + 首行高/2 - 手柄半高(12)。标题的 base margin 要算进去。
+  const handleTop = (marginTop: number, lineHeightPx: number) => Math.max(2, Math.round(marginTop + lineHeightPx / 2 - 12))
+  const HMARGIN: Record<number, number> = { 1: 8, 2: 26, 3: 20, 4: 16 } // .ws-h1..4 的 base margin-top（Canvas.css）
+  const bodyLhPx = b.lineHeight.mode === 'fixedPt' ? ptToPx(b.lineHeight.value) : size * b.lineHeight.value
   const rules = [
     // 正文 + 列表项：字体/字号/行距（列表项硬编 line-height:1.7 也要盖）
     `.ws-doc-paged .ws-p,.ws-doc-paged .ws-ul li,.ws-doc-paged .ws-ol li{font-family:${ff};font-size:${size}px;line-height:${lh}}`,
     // 段落：首行缩进(em 跟字号)/对齐/段前段后
     `.ws-doc-paged .ws-p{text-indent:${b.firstIndentEm}em;text-align:${b.align};margin-top:${mt}px;margin-bottom:${mb}px}`,
+    // 正文/列表块的拖拽手柄垂直对齐放大后的首行（正文 margin = 我的段前 mt）
+    `.ws-doc-paged .ws-blk-text>.ws-block-controls,.ws-doc-paged .ws-blk-list>.ws-block-controls{top:${handleTop(mt, bodyLhPx)}px}`,
   ]
   // 标题各级 H1–H4（U4）：国标靠字体区分层级、APA 靠对齐/粗细/斜体
   for (const lv of [1, 2, 3, 4] as const) {
     const h = t.headings[`h${lv}` as 'h1' | 'h2' | 'h3' | 'h4']
-    const parts = [`font-family:${composeFontFamily(h.latinFont, h.cnFont)}`, `font-size:${ptToPx(h.sizePt)}px`, `font-weight:${h.bold ? 700 : 400}`]
+    const hSize = ptToPx(h.sizePt)
+    const parts = [`font-family:${composeFontFamily(h.latinFont, h.cnFont)}`, `font-size:${hSize}px`, `font-weight:${h.bold ? 700 : 400}`]
     if (h.italic) parts.push('font-style:italic')
     if (h.align) parts.push(`text-align:${h.align}`)
     rules.push(`.ws-doc-paged .ws-h${lv}{${parts.join(';')}}`)
+    // 标题块手柄：标题 base margin-top + 标题首行高(≈字号×1.5)居中
+    rules.push(`.ws-doc-paged .ws-blk-h${lv}>.ws-block-controls{top:${handleTop(HMARGIN[lv], hSize * 1.5)}px}`)
   }
   return rules.join('')
 }
