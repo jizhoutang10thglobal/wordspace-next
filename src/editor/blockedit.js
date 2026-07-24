@@ -387,15 +387,6 @@
       if (i < 0 || j < 0 || i > j) return;
       for (let k = i; k <= j; k++) { const m = tops[k]; if (m) { m.setAttribute('data-ws2-rangesel', ''); rangeSelEls.push(m); } }
     }
-    // U23/select-4：删除被一致化守卫拦成空操作时的可感知反馈——把当前跨块高亮的块短暂标 data-ws2-nope，
-    // 触发一段闪烁动画后自清（随 data-ws2-rangesel 高亮视觉语言走，不用系统 beep——app 无音频反馈先例）。
-    function flashNope() {
-      refreshRangeSel(); // 先刷新，确保标的是当前选区跨的块
-      const els = rangeSelEls.slice();
-      if (!els.length) return;
-      els.forEach((el) => el.setAttribute && el.setAttribute('data-ws2-nope', ''));
-      setTimeout(() => els.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-nope')), 420);
-    }
 
     function selectBlock(el) {
       exitEdit();
@@ -954,19 +945,60 @@
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
       const r = sel.getRangeAt(0);
-      // P2：选区跨 summary 边界（一端在 summary、另一端不在同一 summary）→ 安全空操作（return true 拦掉调用方的
-      // 原生 execCommand('delete')，否则原生会把正文并进 summary / 删出 summary-only → 非合规）。同一 summary 内选区放行原生。
       const sumOf = (n) => { const e = n && (n.nodeType === 3 ? n.parentElement : n); return e && e.closest ? e.closest('summary') : null; };
-      if (sumOf(r.startContainer) !== sumOf(r.endContainer)) { flashNope(); return true; }
-      // U23/select-4：选区端点部分跨 details 边界（一端在 toggle 体内、另一端在外，或分属不同 toggle）→ 一致化为
-      // 空操作 + 反馈，绝不半删（旧行为：删 toggle 外那侧、体内被下面 P2 clamp 夹住不删 = 半应用，与选区高亮承诺不符）。
-      // toggle 被选区整体包含（两端都在其外、detOf 皆 null 且相等）→ 不拦，维持现状可整删（防回归）。
-      // 对抗审查：端点**锚在 details 元素本身**（selectWholeDoc 把 ⌘A 端点锚在首/末块元素上，:444-445）时，
-      // 该 details 是整体在选区一侧、不是「部分进入体内」——若 detOf 用 closest('details') 会把它自己算进去、
-      // 与另一端（段落=null）不等 → 误判成部分跨界、把「⌘A 全选删」在首/末为 toggle 的文档里整个吞成空操作（HIGH 回归）。
-      // 故：端点是 DETAILS 元素本身 → 取其**外层** details（嵌套时）或 null，绝不算它自己。
+      // 对抗审查（沿袭 U23）：端点**锚在 details 元素本身**（selectWholeDoc 把 ⌘A 端点锚在首/末块元素上）时，
+      // 该 details 是整体在选区一侧、不是「部分进入体内」——若 detOf 用 closest('details') 会把它自己算进去 →
+      // 「⌘A 全选删」在首/末为 toggle 的文档里误判。故端点是 DETAILS 本身 → 取其外层 details 或 null，绝不算它自己。
       const detOf = (n) => { let e = n && (n.nodeType === 3 ? n.parentElement : n); if (!e || !e.closest) return null; if (e.tagName === 'DETAILS') return e.parentElement && e.parentElement.closest ? e.parentElement.closest('details') : null; return e.closest('details'); };
-      if (detOf(r.startContainer) !== detOf(r.endContainer)) { flashNope(); return true; }
+      // 裁空列表 de-list（bug6，定义上移供 toggle 分支共用）：整列表无文字 → 就地换空 <p>，防非法空 <ul>/悬空勾选框。
+      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && b.parentNode && (b.textContent || '').trim() === '' && !b.querySelector('img, figure, table')) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
+      // ── U26（Colin 2026-07-24「toggle 块操作与其他块同步」）：同一 toggle 内跨 summary↔正文的删除——
+      // 旧 U23 一致化空操作是 deferred 的临时保守解（a254cb6），现收账：全覆盖=整删 toggle（「全选标题+内容
+      // 按 Delete」= 用户要整个 toggle 消失）；部分覆盖=裁剪式删除（summary 裁尾、中间正文块删、末块裁头），
+      // **绝不合并**（summary 吞正文 = 非合规红线不破），正文删空补 <p>（≥1 块铁则）。Range 恒文档序正向 ⇒
+      // 跨界时 start 必在 summary（首子）、end 在正文。
+      const sSum = sumOf(r.startContainer), eSum = sumOf(r.endContainer);
+      const sDet = detOf(r.startContainer), eDet = detOf(r.endContainer);
+      if (sSum !== eSum && sDet && sDet === eDet && sSum === summaryOf(sDet) && !eSum) {
+        const sum = sSum;
+        const bodyBlocks = blocksInScope(sDet);
+        const eBlk0 = blockOf(r.endContainer);
+        const ei = bodyBlocks.indexOf(eBlk0);
+        if (ei < 0) return false; // 防御：end 不在体内顶层块（理论不可达）→ 不碰
+        let covered = false; // 全覆盖 = summary 起点前无文字 && end 在末块且终点后无内容（文字/媒体块都算内容）
+        try {
+          const preR = doc.createRange(); preR.setStart(sum, 0); preR.setEnd(r.startContainer, r.startOffset);
+          const postR = doc.createRange(); postR.setStart(r.endContainer, r.endOffset); postR.setEnd(eBlk0, eBlk0.childNodes.length);
+          covered = preR.toString().trim() === '' && ei === bodyBlocks.length - 1
+            && postR.toString().trim() === '' && !postR.cloneContents().querySelector('img,figure,table,details,video,hr');
+        } catch (x) { covered = false; }
+        if (covered) {
+          const nb = sDet.nextElementSibling, pb = sDet.previousElementSibling;
+          sDet.remove();
+          markDirty(); if (undoMgr) undoMgr.checkpoint();
+          const anchor = (nb && !(nb.hasAttribute && nb.hasAttribute('data-ws2-ui'))) ? nb : pb;
+          if (anchor && isEditableEl(anchor)) enterEdit(anchor, { mode: 'start' });
+          else if (anchor) { selectBlock(anchor); positionGrip(anchor); }
+          else deselect();
+          return true;
+        }
+        // 部分覆盖：裁剪、不合并
+        const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sum, sum.childNodes.length); r1.deleteContents(); // summary 裁尾
+        for (let k = ei - 1; k >= 0; k--) bodyBlocks[k].remove(); // start 在 summary ⇒ end 块之前的正文块全在选区内 → 整删
+        let eb = eBlk0;
+        if (isEditableEl(eb)) {
+          const r2 = doc.createRange(); r2.setStart(eb, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); // 末块裁头
+          eb = fixEmptyList(eb);
+          if ((eb.textContent || '').trim() === '' && !eb.querySelector('img,figure,table,details')) eb.remove(); // 裁空即删（对齐普通跨块删除语义）
+        } else eb.remove(); // 结构末块（img/table/嵌套 toggle）→ 整删（对齐 ED-A2 结构端点整块删）
+        if (blocksInScope(sDet).length === 0) sDet.appendChild(doc.createElement('p')); // ≥1 正文块铁则
+        markDirty(); if (undoMgr) undoMgr.checkpoint();
+        enterEdit(sum, { mode: 'end' });
+        return true;
+      }
+      // U26：跨 details 外边界（一端在内一端在外/分属不同 toggle）不再空操作——落进下面管线端点上卷、
+      // toggle 整删。与块级高亮 refreshRangeSel 同款上卷 = 所见即所删（高亮早已把整个 toggle 标蓝，
+      // 删除兑现承诺）；对齐 table 的 ED-A2「结构端点整块删」先例。flashNope 空操作反馈随之退役。
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (!sBlk || !eBlk) return false; // 选区落在块外/覆盖层 → 不碰
       if (sBlk === eBlk) {
@@ -994,23 +1026,19 @@
       if (sEditable) { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(sB, sB.childNodes.length); r1.deleteContents(); } // 裁起块：选区起点→块末
       if (eEditable) { const r2 = doc.createRange(); r2.setStart(eB, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); }                       // 裁末块：块首→选区终点
       for (let k = j - 1; k > i; k--) { const m = tops[k]; if (m && m.parentElement === scopeRoot) m.remove(); }                            // 删中间整块（作用域内）
-      // 修 bug6：裁剪把列表端点的 <li> 删光后会剩一个非法空 <ul></ul>（无 li 无勾选框的 ghost 死块，
-      // 且后续打字会灌进 <ul> 变非合规）。把裁空的列表块就地换成空 <p>（de-list），放在合并前——
+      // 修 bug6：裁空的列表端点就地换空 <p>（de-list，定义已上移到函数顶部）。放在合并前——
       // 两端都成空 <p> 时下面的 canMerge 会把它们并成一个干净空块（对齐"选全部再删=一个空块"）。
-      // 裁空的列表端点：整列表已无文字内容（无 <li>，或只剩空 <li> —— 空 <li> 是零高，其绝对定位的勾选框
-      // ::before 会悬空盖到下一块上，Wendi 反馈的"复选框遮挡后面文字"）→ 就地换成空 <p>（de-list）。
-      // 只在整列表空时换；还有内容的项保留（部分删不动列表）。
-      const fixEmptyList = (b) => { if (b && (b.tagName === 'UL' || b.tagName === 'OL') && b.parentNode && (b.textContent || '').trim() === '' && !b.querySelector('img, figure, table')) { const np = doc.createElement('p'); b.parentNode.replaceChild(np, b); return np; } return b; };
       sB = fixEmptyList(sB); eB = fixEmptyList(eB);
       const prefixEnd = sEditable ? sB.lastChild : null; // 接合点（合并前 prefix 末尾）
       if (sEditable && eEditable && SM.canMerge(sB, eB)) { // 两端都是存活的叶子文字块才节点级拼接
         while (eB.firstChild) sB.appendChild(eB.firstChild); // 末块剩余并入起块
         eB.remove();
       }
-      // P2 clamp：结构端点只在「整块被选中」（端块本身=该顶层结构块）时整删；若选区只是**部分进入**其体内
-      //（eBlk 是它的后代、eBlk!==eB），则夹住不删——绝不销毁用户未选中的正文块（如 toggle 里选区外的 b2）。
-      if (!eEditable && eBlk === eB) eB.remove();
-      if (!sEditable && sBlk === sB) sB.remove();
+      // U26：结构端点一律整删（旧 P2 clamp「部分进入体内则夹住不删」废除）——块级高亮 refreshRangeSel
+      // 早已把部分进入的 toggle **整块**标蓝（同款上卷），删除必须兑现所见即所删；也与 table 端点行为一致
+      //（ED-A2：从段落选到表格中间删 = 整删表格）。选区外的体内块随整块消失是块级选中语义（Notion 同款）。
+      if (!eEditable) eB.remove();
+      if (!sEditable) sB.remove();
       // toggle 体 ≥1 块铁则：作用域删空 → 补一个空 <p>（summary-only 是死胡同）
       if (scopeRoot !== blockRoot && blocksInScope(scopeRoot).length === 0) scopeRoot.appendChild(doc.createElement('p'));
       markDirty(); if (undoMgr) undoMgr.checkpoint();
@@ -1534,6 +1562,27 @@
       // toggle 标题（summary）编辑：拦原生折叠激活 + 定义边界。summary 放不了块——不触发 slash、不走 generic 块键盘。
       if (editingEl && editingEl.tagName === 'SUMMARY') {
         if (e.isComposing || e.keyCode === 229) return; // IME 组字交原生
+        // U26：summary 编辑态下选区跨出 summary（拖进正文/外层）的删除/剪切/打字覆盖——绝不交原生
+        //（原生对跨 contenteditable 边界的选区会半删 summary、正文纹丝不动 = 半应用），走 deleteSelection
+        // 新契约（同 toggle 内裁剪/全覆盖整删/跨界上卷整删），与非编辑态拖选的 generic 路由行为一致。
+        {
+          const sel0 = doc.getSelection();
+          if (sel0 && sel0.rangeCount && !sel0.isCollapsed) {
+            const rr = sel0.getRangeAt(0);
+            if (!editingEl.contains(rr.startContainer) || !editingEl.contains(rr.endContainer)) {
+              if (e.key === 'Backspace' || e.key === 'Delete') { if (deleteSelection()) { e.preventDefault(); return; } }
+              else if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
+                e.preventDefault();
+                try { doc.execCommand('copy'); } catch (x) {}
+                if (!deleteSelection()) { try { doc.execCommand('delete'); } catch (x) {} }
+                markDirty(); return;
+              }
+              else if (e.key && e.key.length === 1 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+                if (deleteSelection()) { e.preventDefault(); try { doc.execCommand('insertText', false, e.key); } catch (x) {} markDirty(); return; }
+              }
+            }
+          }
+        }
         if (e.key === 'Enter') { // → 首正文块（U7 再扩：空末块退出等）
           e.preventDefault(); e.stopPropagation();
           const det = editingEl.parentElement;
@@ -2656,8 +2705,6 @@
   [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
   [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}
   /* U23/select-4：跨 toggle 边界删除被拦成空操作时的反馈——高亮块闪一下橙红（不推布局、不用 transform 免劫持包含块）。 */
-  @keyframes ws2-nope{0%,100%{background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16)}35%,65%{background:rgba(214,90,64,.30);box-shadow:0 0 0 4px rgba(214,90,64,.30)}}
-  [data-ws2-nope]{animation:ws2-nope .4s ease;}
 
   .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
