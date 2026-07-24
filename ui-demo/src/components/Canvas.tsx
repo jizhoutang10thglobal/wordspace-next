@@ -181,6 +181,42 @@ function isCaretAtBlockStart(el: HTMLElement): boolean {
   return before.toString() === ''
 }
 
+// 出列（Shift-Tab）前把 li 的后继兄弟收编成它自己的子项——否则出列后本行会跑到后继兄弟下面
+// （Colin 报的 Shift+Tab 错位）。子列表继承父列表 tag/class（todo 仍 todo）。移植自真 app blockedit.js。
+function absorbTrailingSiblings(li: HTMLElement) {
+  if (!li || !li.nextElementSibling) return
+  const parentList = li.parentElement
+  if (!parentList) return
+  let sub = li.lastElementChild as HTMLElement | null
+  if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
+    sub = document.createElement(parentList.tagName.toLowerCase())
+    if (parentList.className) sub.className = parentList.className
+    li.appendChild(sub)
+  }
+  while (li.nextElementSibling) sub.appendChild(li.nextElementSibling)
+}
+
+// 光标落 li 自身文字末尾（在其嵌套子列表之前）——收编/出列后 li 追加了子列表，
+// selectNodeContents(li).collapse(false) 会落到子列表之后、打字进错位置。
+function caretAtLiTextEnd(li: HTMLElement) {
+  let anchor: ChildNode | null = null
+  for (const n of li.childNodes) {
+    if (n.nodeType === 1 && ((n as Element).tagName === 'UL' || (n as Element).tagName === 'OL')) break
+    anchor = n
+  }
+  try {
+    const r = document.createRange()
+    if (anchor) r.setStartAfter(anchor)
+    else r.setStart(li, 0)
+    r.collapse(true)
+    const s = window.getSelection()
+    s?.removeAllRanges()
+    s?.addRange(r)
+  } catch {
+    /* caret 恢复失败静默忽略 */
+  }
+}
+
 // ---------------------------------------------------------------------------
 // One block. 单击可编辑块 = 进文字编辑（光标落点击处）；单击不可编辑块 = 块级灰选中。
 // 「分块制」只留在数据层（每块离散、忠实 HTML），不再在视觉上做对象框。
@@ -2096,6 +2132,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
           const hostLi = parentList?.parentElement
           if (hostLi && hostLi.tagName === 'LI') {
             checkpoint()
+            // 出列前收编后继兄弟为本行子项，否则本行会跑到它们下面（Colin 报的错位）
+            absorbTrailingSiblings(li as HTMLElement)
             hostLi.after(li)
             if (parentList && !parentList.querySelector('li')) parentList.remove()
             updateBlockHtml(doc.id, editingId, el.innerHTML)
@@ -2106,19 +2144,18 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
             checkpoint()
             let sub = prev.lastElementChild
             if (!sub || (sub.tagName !== 'UL' && sub.tagName !== 'OL')) {
-              sub = document.createElement(el.tagName.toLowerCase())
-              sub.className = el.className
+              // 子列表继承 li 的直接父列表 tag/class（如 todo 缩进仍是 todo），不是顶层 el 的（D3）
+              const pl = li.parentElement as HTMLElement
+              sub = document.createElement(pl.tagName.toLowerCase())
+              sub.className = pl.className
               prev.appendChild(sub)
             }
             sub.appendChild(li)
             updateBlockHtml(doc.id, editingId, el.innerHTML)
           }
         }
-        const r = document.createRange()
-        r.selectNodeContents(li)
-        r.collapse(false)
-        sel?.removeAllRanges()
-        sel?.addRange(r)
+        // 光标落本行文字末（子列表之前）——收编/出列后 li 尾部可能挂了子列表
+        caretAtLiTextEnd(li as HTMLElement)
         return
       }
       // Backspace 在可编辑块最前端：空块→删块、光标落上一块末；非空→并入上一块。
