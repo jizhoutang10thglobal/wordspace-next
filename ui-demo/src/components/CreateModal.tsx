@@ -4,6 +4,9 @@ import { FileText, X, Blocks, Lock, Globe, CornerDownLeft } from 'lucide-react'
 import { useStore } from '../mock/store'
 import { useUI } from '../mock/ui'
 import { useBrowser } from '../mock/browser'
+import { usePaged } from '../mock/paged'
+import { applyPreset } from '../mock/typography'
+import { DEFAULT_PAGE_CONFIG } from '../lib/page'
 import { useT, type TFunc } from '../i18n'
 import type { DocKind } from '../types'
 import './CreateModal.css'
@@ -13,8 +16,9 @@ const DRAFTS = 'f-drafts'
 const kindLabelWith = (t: TFunc) => (k: DocKind) =>
   k === 'page' ? t('modals.kindPage') : k === 'slides' ? t('modals.kindSlides') : t('modals.kindDoc')
 
-// 新建文档分两层：先选「范式」（编辑范式 / 内核），范式下面才是各种模板。
-// 目前只有「类 Notion」一个范式，范式 2 / 3 留 placeholder——代表将来会有多个范式，每个范式各有多套模板。
+// 新建文档分两层：先选「范式（= Schema）」，范式下面才是模板。
+// 流式文档 = Schema 1（类 Notion，不分页）；分页文档 = Schema 2（像 Word 按纸张分页 + 标准化排版）。
+// 范式 3 留 placeholder——代表将来还会有更多范式。
 interface Paradigm {
   id: string
   name: string
@@ -23,8 +27,8 @@ interface Paradigm {
   soon: boolean
 }
 const paradigmsWith = (t: TFunc): Paradigm[] => [
-  { id: 'notion', name: t('modals.paradigmNotion'), tag: t('modals.paradigmCurrent'), desc: t('modals.paradigmNotionDesc'), soon: false },
-  { id: 'p2', name: t('modals.paradigm2'), desc: t('modals.comingSoon'), soon: true },
+  { id: 'notion', name: t('modals.paradigmFlow'), tag: t('modals.paradigmCurrent'), desc: t('modals.paradigmFlowDesc'), soon: false },
+  { id: 'paged', name: t('modals.paradigmPaged'), desc: t('modals.paradigmPagedDesc'), soon: false },
   { id: 'p3', name: t('modals.paradigm3'), desc: t('modals.comingSoon'), soon: true },
 ]
 
@@ -90,7 +94,12 @@ export default function CreateModal() {
   }
   // omni（从「标签页 +」进）→ 临时文档，不进文件树/库，手动保存才落地。
   const blank = () => {
-    createDoc(DRAFTS, 'doc', t('sidebar.untitledDoc'), target, omni)
+    const id = createDoc(DRAFTS, 'doc', t('sidebar.untitledDoc'), target, omni)
+    // 分页文档 = Schema 2：建成即开分页 + 套国标公文默认预设（标准化排版层，打开就是白纸分页视图 + 排版工具栏）
+    if (paradigm === 'paged') {
+      usePaged.getState().setConfig(id, { ...DEFAULT_PAGE_CONFIG, on: true })
+      applyPreset(id, 'gb9704')
+    }
     done()
   }
   // 2026-07-23（Wendi）：新建文档 modal 收敛为只留空文档——成套模板卡（官方/我的模板）先撤，
@@ -195,8 +204,8 @@ export default function CreateModal() {
                   <span className="cm-card-ico">
                     <FileText size={18} />
                   </span>
-                  <span className="cm-card-name">{t('modals.blankDoc')}</span>
-                  <span className="cm-card-desc">{t('modals.blankDocDesc')}</span>
+                  <span className="cm-card-name">{paradigm === 'paged' ? t('modals.blankPagedDoc') : t('modals.blankDoc')}</span>
+                  <span className="cm-card-desc">{paradigm === 'paged' ? t('modals.blankPagedDocDesc') : t('modals.blankDocDesc')}</span>
                 </button>
               </div>
             )}
