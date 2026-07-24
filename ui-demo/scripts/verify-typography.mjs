@@ -67,6 +67,7 @@ const pageSpans = () => page.evaluate(() => {
 // ==== A) 国标公文（AE2）====
 await openDocPaged('长文流水')
 assert(await page.evaluate(() => !!window.__ws2Typo), 'test seam __ws2Typo 就位')
+assert((await page.locator('.ws-typo-bar').count()) > 0, 'AE1 分页文档显示排版工具栏')
 await applyPreset('gb9704')
 {
   const b = await bodyStyle()
@@ -118,6 +119,26 @@ await applyPreset('gb9704')
   assert(/FangSong/i.test(h4), `国标 H4 仿宋（got ${h4}）`)
   assert(new Set([h1, h2, h3, h4]).size === 4, '四级标题字体两两不同（靠字体区分层级）')
 }
+
+// ==== E) 工具栏真 UI：预设下拉施加 + 流式文档不显示（AE1 负向）====
+{
+  // 当前在「标题密集」——用工具栏预设 <select> 切到学术论文（宋体 12pt）
+  await page.selectOption('.ws-typo-preset', 'cn-thesis')
+  await page.waitForTimeout(900)
+  const b = await bodyStyle()
+  assert(near(b.fontSize, ptToPx(12)), `工具栏选预设生效 12pt（got ${b?.fontSize}）`)
+  assert(/SimSun|Songti/i.test(b.fontFamily), `工具栏选学术论文 → 宋体（got ${b?.fontFamily}）`)
+  // 改字号 input → 脱离预设（预设 select 显示自定义）
+  await page.fill('.ws-typo-size', '18')
+  await page.waitForTimeout(600)
+  const pv = await page.$eval('.ws-typo-preset', (el) => el.value)
+  assert(pv === '__custom', `改字号后预设下拉显示「自定义」（got ${pv}）`)
+}
+// AE1 负向：打开未 seed 的流式文档「一句话」→ 无工具栏
+await page.getByText('一句话', { exact: false }).first().click()
+await page.waitForTimeout(1000)
+assert((await page.locator('article.ws-doc-paged').count()) === 0, '「一句话」是流式（非分页）')
+assert((await page.locator('.ws-typo-bar').count()) === 0, 'AE1 流式文档不显示排版工具栏')
 
 console.log(fail ? `\n${fail} FAILURE(S)` : '\nALL PASSED')
 await browser.close()

@@ -42,6 +42,7 @@ import {
 import { usePageConfig } from '../mock/paged'
 import { useDocTypography, applyPreset, useTypography } from '../mock/typography'
 import { buildTypographyCss } from '../lib/typography'
+import TypographyToolbar from './TypographyToolbar'
 import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
@@ -2697,6 +2698,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   return (
     <main className={'ws-canvas' + (embedded ? ' ws-canvas-embed' : '')}>
+      {/* 分页文档标准化排版工具栏（U5）：仅分页文档显示、非内嵌；钉在纸面上方、不随滚动。 */}
+      {paged && !embedded && <TypographyToolbar docId={doc.id} />}
       {/* 文档内查找条（Cmd+F）。key=doc.id：切文档时重挂、重搜、清旧高亮 */}
       {docFindOpen && (
         <DocFind key={doc.id} container={scrollRef.current} onClose={closeDocFind} />
