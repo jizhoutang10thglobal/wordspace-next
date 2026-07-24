@@ -145,13 +145,9 @@
 
 /* blocks */
 .ws-blocks { display: flex; flex-direction: column; }
-.ws-block { position: relative; padding: 3px 0; transition: margin-inline-start .13s cubic-bezier(.2,.7,.3,1); }
-/* Notion 式块缩进：整块右移，档位由内联 marginInlineStart 设定（每档 1.6em）。
-   左侧一条淡导引线暗示「这是缩进块」——用 ::before 绝对定位，不占盒子、不叠加缩进量。 */
-.ws-block-indented::before {
-  content: ""; position: absolute; inset-block: 3px; inset-inline-start: -14px;
-  border-inline-start: 1.5px solid var(--ws-border, #e8e6e1);
-}
+.ws-block { position: relative; padding: 3px 0; }
+/* 块缩进：整块右移，档位由内联 marginInlineStart 设定（每档 1.6em）。瞬时生效、不做动画——
+   动画期间宽度连续变、文字重排会抖（Colin 反馈）。无导引竖线。 */
 /* 文末续写捕获区：点这里在文末新起一段（删 gutter + 后的兜底插块路径之一） */
 .ws-canvas-tail { min-height: 44px; cursor: text; }
 
