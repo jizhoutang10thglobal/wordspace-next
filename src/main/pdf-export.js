@@ -4,6 +4,7 @@ const path = require('path');
 const { pathInfo } = require('../lib/path-url');
 const i18n = require('../lib/i18n');
 const { isSelfPaged } = require('../lib/self-paged');
+const { buildHfTemplates } = require('../lib/schema-page'); // 页眉页脚模板（含 clampHF+escapeHtml，纯逻辑、node 可测）
 
 // 导出 PDF（MVP：直印源文件，文档自带 CSS，不注入编辑器样式）。
 // 连续单页：页宽 = A4（210mm），页高 = 内容实际高度 → 零分页、所见即所得（不被纸张切断）。
@@ -46,11 +47,12 @@ async function exportPdf(srcPath, outPath, exportOpts) {
       if (exportOpts.paged || selfPaged) {
         await wc.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] });
         const popts = { printBackground: true, preferCSSPageSize: true };
-        if (exportOpts.pageNumbers) {
+        // 页眉/页脚/页码模板（clampHF+escapeHtml 在 buildHfTemplates 里，防打印路径注入 P0）。
+        const hf = buildHfTemplates({ header: exportOpts.header, footer: exportOpts.footer, pageNumbers: exportOpts.pageNumbers, padMm: exportOpts.padMm });
+        if (hf.display) {
           popts.displayHeaderFooter = true;
-          popts.headerTemplate = '<span></span>'; // 必须给非空模板，否则 Chromium 印默认标题/日期
-          popts.footerTemplate = '<div style="width:100%;text-align:center;font-size:9px;color:#777;font-family:-apple-system,sans-serif;">'
-            + '<span class="pageNumber"></span> / <span class="totalPages"></span></div>';
+          popts.headerTemplate = hf.headerTemplate;
+          popts.footerTemplate = hf.footerTemplate;
         }
         const pdfPaged = await wc.printToPDF(popts);
         await fs.writeFile(outPath, pdfPaged);
