@@ -2,267 +2,276 @@
 type: feat
 title: 真 app Tab/缩进逻辑对齐 ui-demo（列表多选 + 段落整块缩进）
 date: 2026-07-24
-status: active（Track 1 可直接开工；Track 2 阻塞于 Schema/范式拍板）
-origin: docs/brainstorms/2026-07-23-todo-item-granularity-requirements.md（PR #337，Q2）
-source-of-truth: 分支 feat/ui-demo-block-indent（ui-demo 侧已定稿，Colin 2026-07-24 真机验收「Tab 逻辑没问题」）
-authoritative-code: git show origin/main:src/editor/blockedit.js（⚠ 见 §0 陷阱）
+status: active（Track 1 可直接开工；Track 2 阻塞于 Schema/范式拍板，且拍板前不写代码）
+origin: docs/brainstorms/2026-07-23-todo-item-granularity-requirements.md（Q2）
+      ⚠ 此 brainstorm 仅在分支 docs/todo-item-granularity（PR #337 open），**尚未合入 main**——从 main 读不到，
+      执行时靠本计划 §4 的转述。
+source-of-truth: 分支 feat/ui-demo-block-indent @ 72794e3（ui-demo 侧定稿，Colin 2026-07-24 真机验收「Tab 逻辑没问题」）
+authoritative-code: git show origin/main:src/editor/blockedit.js（2901 行；⚠ 见 §0）
+reviewed: 2026-07-24 ce-doc-review 六 persona（coherence/feasibility/adversarial/scope/product/design）已过一轮，findings 已吸收进本版
 ---
 
-# 真 app Tab/缩进逻辑对齐 ui-demo — 实施计划
+# 真 app Tab/缩进逻辑对齐 ui-demo — 实施计划（v2，已过 ce-doc-review）
 
-## 0. 开工前必读的两个陷阱（血泪，别踩）
+## 0. 开工前必读的陷阱
 
-1. **`src/editor/blockedit.js` 的权威版是 `origin/main`（约 3070 行），不是当前 worktree 里那份。**
+1. **`src/editor/blockedit.js` 的权威版是 `origin/main`（2901 行），不是当前 worktree 里那份。**
    本仓有些 worktree（如 `docs/doc-linking-app-plan`）checkout 的是一个**旧的精简变体（约 1353 行）**，
-   `git diff origin/main` 报 +172/−1720。旧变体里 **没有** `absorbTrailingSiblings` / `caretAtLiTextEnd` /
-   U19 光标保留 / toggle 嵌套。**执行本计划必须从 `origin/main` 切分支**，读代码用
-   `git show origin/main:src/editor/blockedit.js`，别信 worktree 里的旧文件。
-
-2. **校验器在 `src/lib/schema-validate.js`，不在 `src/editor/`。** 函数 `validate(doc)`（173–204 行）。
+   缺 `absorbTrailingSiblings` / `caretAtLiTextEnd` / U19 光标保留 / toggle 嵌套。**必须从 `origin/main` 切分支**，
+   读代码用 `git show origin/main:src/editor/blockedit.js`。
+2. **本计划一律按符号名/grep 锚点定位代码，不给绝对行号**（v1 的行号是对着 1353 行旧变体取的、全错，已删）。
+   grep 锚点：Tab 处理 `if (e.key === 'Tab' && editingEl)`；`function absorbTrailingSiblings`；
+   `function caretAtLiTextEnd`；`function refreshSemanticStyles`；`function ensureColorStyle`；
+   `function ensureSchemaBaseline`；`const COLOR_CSS`；`const TEXT_COLORS`；`const BASELINE_CSS`；
+   嵌套列表 margin 那行 `:where(li>ul,li>ol){margin`。校验器在 `src/lib/schema-validate.js`：`function validate`、
+   `block-style`、`validateHead`、`validateList`。
+3. **校验器在 `src/lib/schema-validate.js`，不在 `src/editor/`。**
 
 ## 1. 目标与范围
 
-把真 app 块编辑器（`src/editor/blockedit.js`）的 **Tab / Shift+Tab 缩进逻辑**对齐到 ui-demo
-（分支 `feat/ui-demo-block-indent`，Colin 已在 ego-browser + 真机验收）。分**两条轨**，难度与风险天差地别：
+把真 app 块编辑器（`src/editor/blockedit.js`）的 Tab / Shift+Tab 缩进逻辑对齐到 ui-demo
+（分支 `feat/ui-demo-block-indent`，Colin 2026-07-24 真机验收）。分两条轨：
 
-- **Track 1 · 列表 Tab 对齐** —— 纯 DOM/CSS，范式安全（嵌套是 §1.3 认可的缩进表达）。缺口小、可直接开工。
-- **Track 2 · 段落/标题整块缩进** —— 真 app 完全没有此概念，且**与 Schema-1 范式铁律直接冲突**，
-  是一次需要 **Wendi 拍板的范式扩展**（见 §4.1）。设计写全，但**不拍板不开工**。
+- **Track 1 · 列表 Tab 对齐** —— 交互逻辑纯 DOM、范式安全（容器嵌套是 §1.3 认可的缩进表达）。
+  但注意 **U2（嵌套 margin）不是低风险**：它改的是随每篇文档入盘的 baseline CSS = 全语料库渲染迁移（见 §4.3）。
+  所以 Track 1 = 「U1 窄半径交互修复 + U2 全语料 CSS 迁移」两个风险画像**不同**的单元，拆两个 PR（§6）。
+- **Track 2 · 段落/标题整块缩进** —— 真 app 完全没有此概念，且触及 Schema-1 范式（§1.3），
+  是一次需要 **Colin + Wendi 拍板的产品/范式决策**（§4.1）。**拍板前只出决策物料、不写 U4–U6 代码。**
 
-**范围外**：不动 toggle（`<details>`）的既有嵌套行为的语义（只在 §4.2 与 Track 2 协调优先级）；
-不重构块模型（`blockOf`/`classify`/`topBlocks` 一律不碰）；不动 ui-demo（它是真相源、已定稿）。
+**Colin 诉求的演进（要写清，否则 Track 1 看着像在做 Colin 嫌弃的事）**：origin brainstorm 记的痛点是
+「列表 Tab 是嵌套、Colin 想要整行文本缩进」。**Colin 2026-07-24 真机验收 ui-demo「Tab 逻辑没问题」，
+已覆盖那条旧抱怨**——他的「文本缩进」诉求现在只落在**段落**（Track 2），列表按嵌套走他已接受。Track 1 的
+真正驱动 = 这次验收 + ui-demo 分支，不是借 origin 的权威。
 
-## 2. 真相源：ui-demo 侧最终逻辑（分支 feat/ui-demo-block-indent）
+**范围外**：不重构块模型（`blockOf`/`classify`/`topBlocks`）；不动 ui-demo（真相源、已定稿）。
+⚠「不重构块模型」这条**恰好排除了一条 §1.3 合规的段落缩进路径**（把缩进段落表示成无样式嵌套容器）——
+这是**主动 scope out、不是不可能**，§4.1 会把它当 Wendi 的一个正式选项摆出来。
 
-以下是要对齐过来的**目标行为**，全部已在 ui-demo 实测通过（`ui-demo/src/components/Canvas.tsx`
-+ `Canvas.css` + `mock/store.ts` + `types.ts`，共 8 个 commit，+158/−34）：
+## 2. 真相源：ui-demo 侧最终逻辑（分支 feat/ui-demo-block-indent @ 72794e3）
 
-**列表块（ul/ol/todo）Tab / Shift+Tab：**
-- 折叠光标 → 作用于光标所在 li；跨行选区 → 作用于**选区覆盖的所有最外层 li**（多选整体缩进/出列）。
-- 目标 li 判定用 **li 的「自身内容」范围**（到其嵌套子列表之前），不含子列表——否则「子项被选中的父项」
-  会因 `selectNodeContents` 把子列表算进内容而误判相交、反而把真正选中的子项挤掉（ego-browser 探针实锤的坑）。
-- Tab（嵌套）：把选中 li 移入「组首上一项」的子列表；子列表**继承直接父列表的 tag/class**（todo 仍 todo）。
-- Shift+Tab（出列）：出列前 `absorbTrailingSiblings`（把后继非选中兄弟收编成本行子项，保序），
-  再把各组 li 依序移到 hostLi 之后；掏空的子列表删除。
-- **光标/选区操作后原样恢复**（记录 range 起止端点 → reparent 后文本节点引用不变 → 精确复位）。
-  缩进**绝不动光标**（Colin 铁律）。
-- 嵌套子列表 **margin 归零**（`.ws-ul li>ul/ol{margin:0}`）——否则嵌套凭空多 6px 上下间距、下方内容整体下移。
+要对齐过来的目标行为，已在 ui-demo 实测通过（`ui-demo/src/components/Canvas.tsx`/`Canvas.css`/`mock/store.ts`/`types.ts`）：
+
+**列表块 Tab / Shift+Tab：**
+- 折叠光标 → 光标所在 li；跨行选区 → 选区覆盖的所有**最外层** li（多选整体缩进/出列）。
+- 目标 li 判定用 **li「自身内容」范围**（`setStart(li,0)`；有子列表则 `setEndBefore(子ul/ol)`，否则 `setEnd(li,childNodes.length)`），
+  做内容非零交集（`compareBoundaryPoints(END_TO_START)<0 && compareBoundaryPoints(START_TO_END)>0`），
+  再滤掉「被其他命中 li 包含」的。⚠ **不能用 `selectNodeContents(li)`**（含子列表 → 子项被选中时父项误命中，ego-browser 探针实锤）。
+- Tab：移入「组首上一项」的子列表，子列表继承直接父列表 tag/class（D3）。
+- Shift+Tab：出列前 `absorbTrailingSiblings`（收编后继非选中兄弟保序），各组 li 依序移到 hostLi 之后，空子列表删除。
+- **光标/选区操作后原样恢复**（记 range 起止端点 → li reparent 后文本节点引用不变 → 精确复位）。缩进绝不动光标。
+- 嵌套子列表 margin 归零 → 无下方位移。
 
 **普通块（text/heading）Tab / Shift+Tab：**
-- Tab 整块缩进一档、Shift+Tab 减一档，**与光标位置无关**（Notion 同款、可预测）。
-- Notion 约束：**最多比上一块深一级**；第一块（上面没块可依）不能缩进。
-- ui-demo 存 `block.indent`（数字档位），渲染成 `position:relative; left: indent*24px`
-  （不用 transform：避免 GPU 合成层在 Retina 上亚像素抖；不用 margin/padding：避免挤窄重排把下方顶动）。
-  **⚠ 这是 ui-demo 的 mock 实现，真 app 不能照抄内联 style（见 §4.1）。**
+- Tab 整块缩进一档、Shift+Tab 减一档，与光标位置无关（Notion 同款）。Notion 约束：最多比上一块深一级；第一块不能缩进。
+- ui-demo 存 `block.indent`（数字），渲染成 `position:relative; left: indent*24px`。**关键**：ui-demo 选 `position:relative;left`
+  **正是因为它保留文档流**（不改块宽、不重排、下方块不动）——这满足 §1 范式核心「块留文档流、可 reflow、可发布」。
+  真正与 §1.3 有张力的**只是「固定 left」那窄一句**，不是文档流本身（§4.1 会精确区分）。**⚠ 真 app 不能照抄内联 style（§4.1）。**
 
-**（辅助）grip 图标**：纯 opacity 淡入、不做位移动画；进编辑态不再挪 grip 原点。此项属 ui-demo chrome 打磨，
-真 app grip 结构不同，**列为可选项 U9，不阻塞主线**。
+（辅助）grip 图标纯 opacity 淡入不做位移——属 chrome 打磨，**明确列为 Tab 目标之外的可选 freebie U9，不阻塞主线**。
 
 ## 3. 现状对比（真 app origin/main vs ui-demo）— 缺口账本
 
-| 能力 | 真 app 现状（`origin/main:src/editor/blockedit.js`） | ui-demo 目标 | 缺口 | 单元 |
+| 能力 | 真 app 现状（grep 锚点） | ui-demo 目标 | 缺口 | 单元 |
 |---|---|---|---|---|
-| 列表 Tab 嵌套 | ✅ 有（1977–1990）；D3 子列表继承直接父列表 tag/class | 同 | 无 | — |
-| 列表 Shift+Tab 出列 | ✅ 有（1968–1976）；`absorbTrailingSiblings`（623–633）保序 | 同 | 无 | — |
-| 出列后光标 | ✅ 原位保留（U19/keys-8，1991–1994，单锚点恢复） | 原位保留（全 range 恢复） | 需泛化到多选 | U1 |
-| **列表多选行整体缩进** | ❌ 只处理 `sel.anchorNode.closest('li')` 单个 li（1965–1967） | ✅ 选区覆盖所有 li 分组处理 | **新增** | U1 |
-| **嵌套子列表垂直 margin** | `:where(li>ul,li>ol){margin:.15em 0}`（BASELINE_CSS，blockedit.js 181）→ 嵌套下移 | margin 0 → 零位移 | **改 baseline + 版本 bump** | U2 |
-| 普通块 Tab | 嵌进前一个 `<details>` 体（1951–1962）；否则 no-op。**无整块缩进概念** | Tab 整块缩进一档 | **全新 + 范式冲突** | U3–U6 |
-| 块级缩进的入盘表达 | 无（无 `data-indent`/`ws-indent`/任何 per-block 缩进态） | class 原语 `ws-indent-*` + 入盘 CSS | **新 Schema 原语** | U4 |
+| 列表 Tab 嵌套 | ✅ 有（Tab 处理器内）；D3 继承直接父列表 tag/class | 同 | 无 | — |
+| 列表 Shift+Tab 出列 | ✅ 有；`absorbTrailingSiblings` 保序 | 同 | 无 | — |
+| 出列后光标 | ✅ 原位保留（U19，单锚点恢复） | 原位保留（全 range 恢复） | 泛化到多选 | U1 |
+| **列表多选行整体缩进** | ❌ 只处理 `sel.anchorNode.closest('li')` 单个 | ✅ 选区覆盖所有 li 分组 | **新增** | U1 |
+| **跨块选区（rangeSelEls）按 Tab** | ❓ 未定义（handler 门控 editingEl；跨块态无 editingEl） | ui-demo 单 contenteditable 无此态 | **需显式定范围** | §4.4 |
+| **嵌套子列表垂直 margin** | `:where(li>ul,li>ol){margin:.15em 0}`（BASELINE_CSS）→ 嵌套下移 | margin 0 → 零位移 | **改 baseline（全语料迁移）** | U2 |
+| 普通块 Tab | 嵌进前一个 `<details>`；否则 no-op。**无整块缩进** | Tab 整块缩进一档 | **全新 + 范式决策** | U3–U6 |
+| 块级缩进入盘表达 | 无 | 合规容器嵌套 或 `ws-indent-*` class 原语（待 Wendi 选） | **待拍板** | U3–U4 |
 
-真 app 已实现的「有限 class 视觉原语」四段式模板（`ws-color-*`，blockedit.js 195–196/398–413/443–451/794–797），
-是 U4 要照抄的样板（`ws-al-*` 只是文档里画了、代码没实现，别拿它当模板）。
+真 app 已有的「有限 class 视觉原语」四段式模板 = **`ws-color-*`**（grep：`TEXT_COLORS`/`COLOR_CSS` →
+`refreshSemanticStyles` 的 `pairs` 数组 → `ensureColorStyle`（注入带 `data-ws-schema-css`）→ 块菜单色板 click 用
+`el.classList.add` 不用 `el.style`），是 U4 若走 class 路线要照抄的样板。（`ws-al-*` 只在文档里画了、代码没实现，别当模板。）
 
 ## 4. 关键决策 & 阻塞依赖
 
-### 4.1 【阻塞 Track 2】ws-indent 是 Schema-1 范式扩展，只有 Wendi 能拍
+### 4.1 【阻塞 Track 2·核心决策】段落缩进怎么表达 —— 给 Wendi/Colin 的三个诚实选项
 
-Schema-1 §1.3（`docs/schema-1-draft-v0.md` 第 50 行）铁律：
-> 绝不写 position:absolute/固定 top/left/width/height。**缩进/层级用 DOM 嵌套表达，不用 margin/padding 数值。**
+⚠ 本节 v1 有个假二分（「段落无法嵌套→任何实现都违背 §1.3」），ce-doc-review adversarial 纠正：§1.3 的「用 DOM
+嵌套」指**容器嵌套**（list-item/wrapper），真 app 列表就是这么做、Notion 段落缩进也是这么做。所以**存在合规路径**，
+只是被「不重构块模型」scope out 了。给 Wendi 的问题必须摆成对等三选项，别手感优先偏向 yes：
 
-段落无法在干净 HTML 里嵌套（`<p>` 不能装 `<p>`），所以「段落整块缩进」**任何实现都违背这条**：
-- `padding-left`/`margin-left`（数字）→ 直接撞「不用 margin/padding 数值」，且会挤窄重排（Colin 已反感的下方抖动）。
-- `position:relative; left`（ui-demo 用的）→ 撞「不写 position/left」，虽非 absolute 但精神相违。
-- `transform`/inline `style=` → 块级 `style=` 被校验器 `block-style` 直接判非法（schema-validate.js 137）。
+- **选项 A · 合规容器嵌套**（§1.3 preferred）：把缩进段落表示成**无样式的嵌套容器**（如复用 Track-1 列表机制、
+  把段落当 style-less 嵌套项，或受限 wrapper）。**范式安全、无新词汇**。代价：要动块模型/引入受限容器
+  （本计划范围外），且要解决「无 bullet、无 `style=`、仍合规」的 HTML 表达（`list-style:none` 是 style、`<div>` 非法，
+  需专门设计）。**这条 v1 漏了，是 Wendi 真正该优先考虑的路径。**
+- **选项 B · `ws-indent-*` class 原语**（ui-demo 手感）：有限档 class + 入盘 CSS（照抄 ws-color 四段式）。
+  诚实拆两层张力：① **文档流**——若用 `position:relative;left`，块**留在文档流、可 reflow、可发布**，满足 §1.3 核心，
+  真正冲突的只是「固定 left」这窄措辞（若用 `padding-left` 则撞「数值缩进」更硬、且重排）；
+  ② **词汇表承诺**——这不是「一次性豁免」，而是**永久把位置式缩进纳入 Schema-1 词汇**：`refreshSemanticStyles`
+  自愈会让 **AI 生成 / md 导入**的文档也吐 `ws-indent-N`，三个面（编辑器 / AI-gen / md-adapter）都要长期维护一致
+  （谁 own 要定）。North Star 是「干净嵌套式 HTML 对标取代 Notion」，引入数值/位置缩进是**方向性偏离**，要与手感收益等重量权衡。
+- **选项 C · 不做段落缩进**：诚实承认。**⚠ toggle 嵌套不是替代品**——它加折叠框 + summary 行、且只在「前一个块已是
+  `<details>`」时能嵌，孤立段落根本嵌不进去。所以「顶回 → 用 toggle 表达」是错的（v1 的锅），顶回的诚实结果是
+  「段落缩进暂不提供」或转选项 A。
 
-**结论**：段落整块缩进不是「多写点代码」，是**改范式**。必须由 Wendi 拍板是否接纳一个有限
-`ws-indent-*` class 原语作为范式例外（正是 brainstorm #337 的 Q2「有限缩进原语 vs 缩进=嵌套」）。
-两个视角在 #337 已判断 Wendi 大概率倾向「缩进=嵌套、顶回段落缩进」。
+**产物 = 一次拍板结论。** 拍板前 U4–U6 不写代码。**「是否手感好」Colin 已答（好）；「范式该不该纳入位置缩进」
+是 Wendi 的开放题**——两件事分开问，别用「Colin 已验收的原型」给范式题加砝码。两个上游视角（#337）预判 Wendi
+大概率选 A/C（缩进=嵌套）。⚠ U3 这道门是**流程门、非技术门**（校验器天然容忍 `ws-indent` class，见 U6）——
+靠纪律守，别让人抢跑。
 
-**建议**：把 ui-demo 这个已定稿原型（Colin 已验收手感）当**具体物料**拿去让 Wendi 拍。
-- 若 Wendi **同意**加 `ws-indent-*` 原语 → 执行 U4–U6。
-- 若 Wendi **顶回**（只允许嵌套）→ Track 2 作废，只交付 Track 1；段落「缩进」在真 app 用 toggle 嵌套表达。
-**不拍板不写 U4–U6。** 本单元产物 = 一次拍板结论，不是代码。
+### 4.2 【Track 2 设计点】Tab 在普通块上：toggle 嵌套 vs 整块缩进 + ws-indent class 命运
 
-### 4.2 【Track 2 设计点】Tab 在普通块上：toggle 嵌套 vs 整块缩进的优先级
+真 app 普通块 Tab 现在会「嵌进前一个 `<details>`」。若加整块缩进，同一 Tab 键要协调（随 U5 定、写进 spec）：
+- 前一兄弟是 `<details>` → 保留 toggle 嵌套；否则整块缩进。Shift+Tab：在 toggle 体内先出 toggle，否则减档。
+- **块带 `ws-indent-N` 进/出 toggle 时的 class 命运**（design-lens 抓的 P1，别让两种缩进叠加成双偏移）：
+  **进 toggle 时剥掉 `ws-indent-*`**（结构嵌套取代数值缩进）；**出 toggle 时归 0 档**（或按新位置封顶）。带测试。
 
-真 app 普通块的 Tab 现在会「嵌进前一个 `<details>`」（1951–1962），ui-demo 没有 toggle、给不了指引。
-若加整块缩进，同一个 Tab 键要协调。**建议**：**前一个兄弟是 `<details>` 时保留 toggle 嵌套**（既有有用行为），
-**否则走整块缩进**。Shift+Tab 同理：在 toggle 体内先出 toggle，否则减缩进档。此点随 U5 一并定，写进 spec。
+### 4.3 【Track 1 提醒】U2 是全语料库 CSS 迁移，不是低风险
+U2 改 `BASELINE_CSS`（随每篇文档入盘的 `:where()` baseline）→ **所有已存文档**的嵌套列表间距都变。
+`ensureSchemaBaseline` 靠 `existing.textContent !== BASELINE_CSS` 内容 diff 自动覆写旧文档（**没有版本号字段可 bump**，
+v1 的「bump 版本」是幻影步骤，直接改 margin 值即触发）。但它**不 markDirty**——升级只在内存、**磁盘字节到下次保存才更新**，
+故外部浏览器/已发布渲染在 re-save 前仍是旧间距（display-vs-disk 短暂分叉）。→ 独立 PR、跑视觉回归、别动 820/48 e2e 锚点。
 
-### 4.3 【Track 1 提醒】嵌套 margin 改动是**全文档渲染**变更
-
-U2 改的是 `BASELINE_CSS`（随每篇文档入盘的 `:where()` baseline），不只影响编辑时——**所有已存文档的嵌套列表
-垂直间距都会变紧**。需 bump baseline 版本号让老文档重刷（`ensureSchemaBaseline` 已有 v1→v2 覆盖机制，
-blockedit.js 432）。这是可接受的，但要在 PR 里点明、并跑视觉回归（e2e 有 820px/48px 锚点，别动那两个值）。
+### 4.4 【交互状态矩阵】Tab 在各选中态的行为（design/adversarial 抓的缺口，写进 spec）
+| 状态 | Tab | Shift+Tab |
+|---|---|---|
+| editingEl + 折叠光标（列表） | 缩当前 li | 出当前 li（absorb 后继） |
+| editingEl + 块内选区（列表，多 li） | 缩所有覆盖 li（分组） | 出所有覆盖 li（分组） |
+| editingEl + 普通块（Track 2） | 整块缩进一档 | 减一档 |
+| **跨块选区（rangeSelEls，无 editingEl，跨多个顶层块/多个列表块）** | **本计划显式定为 no-op**（不误动、不吞焦点异常）；批量跨块缩进单独立项，不塞进 U1/U5 | 同 no-op |
+| 到封顶（列表出到顶层 / 首块 / 普通块 6 档或相对上一块+1） | **静默 no-op**（对齐 Notion，不加抖动/toast——明确定这个，别让实现各造反馈） | 同 |
+- **键盘可达性（WCAG 2.1.2）**：Tab 拦截从「仅列表」扩到「所有块」后，键盘/屏读用户退出编辑区的路径 = **Esc 退到块选中态，再 Tab 正常移焦**（写进 U5 spec + 测）。
+- **可发现性**：普通块 Tab 缩进是全新手势，复用仓库既有「快捷键教学气泡」模式（team-memory wendi-feedback-batch2）在 U8 spec 记一笔，非阻塞。
 
 ## 5. 实施单元
 
-> 纪律（全单元适用）：从 `origin/main` 切分支；PR + required checks {test, e2e-all}；动 `blockedit.js`
-> （共享核心）推 PR 前本地跑一次全量 `npm run test:e2e:dot`；新增的门要有**变异自检**（先 commit 再变异）；
-> 谁改真 app 交互谁在同一 PR 更新 feature spec（§5 的 U8）。
+> 纪律：从 `origin/main` 切分支；PR + required checks {test, e2e-all}；动 `blockedit.js`（共享核心）推 PR 前本地
+> `npm run test:e2e:dot`；新门配变异自检（先 commit 再变异）；谁改真 app 交互谁同 PR 更新 feature spec（U8）。
+> **e2e 发 Shift+Tab 用仓库现成 pattern** `keyboard.down('Shift'); keyboard.press('Tab'); keyboard.up('Shift')`
+> （`e2e/todo-nested-keys.spec.js` 已在 CI 跑绿）或 `keyboard.press('Shift+Tab')`（`e2e/toggle.spec.js`）——
+> **不需要 CDP**（那是 ego-browser 的坑，不迁移到真 app Playwright/Electron；CDP 仅留作某用例实测失败时的 fallback）。
 
 ### Track 1 —— 列表 Tab 对齐（可直接开工，无 Schema 依赖）
 
 #### U1 · 列表 Tab/Shift+Tab 支持多选行 + 光标/选区不跳
-- **Goal**：把 `blockedit.js` 列表分支从「单 li（anchor）」泛化到「选区覆盖的所有最外层 li，分组整体缩进/出列」，
-  并把 U19 单锚点光标恢复泛化为**全 range 恢复**（多选后选区原样保留）。
-- **Files**：`src/editor/blockedit.js`（Tab 处理，`origin/main` 1963–1996 区段）；
-  测试 `e2e/`（新增或扩充列表缩进 spec，见 U7）。
-- **Approach**（移植 ui-demo `Canvas.tsx` 的 targets 逻辑，用真 app 的 `doc`/`sel` API）：
-  1. 取 `range = sel.getRangeAt(0)`；折叠 → 目标=`anchor.closest('li')`（且 `editingEl.contains`）；
-     非折叠 → 遍历 `editingEl.querySelectorAll('li')`，用**li 自身内容范围**（`setStart(li,0)`；有子列表则
-     `setEndBefore(subUlOl)`，否则 `setEnd(li, childNodes.length)`）做**内容非零交集**判定
-     （`compareBoundaryPoints(Range.END_TO_START, liR)<0 && compareBoundaryPoints(Range.START_TO_END, liR)>0`），
-     再过滤掉「被其他命中 li 包含」的（只留最外层）。
-  2. 记录 `sc0/so0/ec0/eo0`（range 四端点）。
-  3. 按 `li.parentElement` 分组（`Map`，保 DOM 顺序）。
-  4. Shift+Tab：逐组，`hostLi=parentList.parentElement`，非 LI 则跳过；`absorbTrailingSiblings(组内末项)`；
-     `let ref=hostLi; for(li of 组) { ref.after(li); ref=li }`；空子列表删除。**复用现成 `absorbTrailingSiblings`**。
-  5. Tab：逐组，`prev=组首.previousElementSibling`，非 LI 则该组跳过；取/建 `prev` 的尾随子列表
-     （tag/class 继承 `parentList`，即 D3）；把组内各 li 依序 `sub.appendChild`。
-  6. `markDirty()` + `undoMgr.checkpoint()`；结尾**恢复 range**：`sc0/ec0.isConnected` 才重建 range
-     （offset 用 `Math.min` clamp），`removeAllRanges + addRange`；失败静默回退现有 `caretAtLiTextEnd`。
-- **保留既有**：`absorbTrailingSiblings`（623）、`caretAtLiTextEnd`（637）、D3 继承逻辑一律复用，别重写。
-- **Test scenarios**（e2e，真键；⚠ Playwright 的 keyboard 若发不出真 Shift+Tab 修饰，用 CDP
-  `Input.dispatchKeyEvent {key:'Tab', modifiers:8}`——ego-browser 实测 `pressKey('Shift+Tab')` 发的是假键名不带 shift）：
-  1. 嵌套两个兄弟子项 → **多选两行 Shift+Tab → 两行一起回顶层、保序**（修前只退第一行）。
-  2. 多选两行 Tab → 两行一起嵌回同一父项下。
-  3. 单行 Shift+Tab（有后继兄弟）→ 本行原地降级、后继兄弟跟随其下（回归 `absorbTrailingSiblings`）。
-  4. **光标在行中间按 Tab → 光标 offset 不变**（不跳行末）。
-  5. 顶层项 Shift+Tab / 首项 Tab → 无操作（不报错、不误动）。
-  6. todo 列表嵌套 → 子列表仍带 `ws-todo`（D3 回归）。
-- **变异自检**：把「目标判定改回 `selectNodeContents`（含子列表）」→ 用例 1 必翻红（父项误命中）；
-  把「range 恢复」删掉 → 用例 4 必翻红（光标跳末）。破坏后仍绿 = 哑门。
-- **Regression risk**：动的是共享核心 `blockedit.js` 的 Tab 分支，半径大 → 推 PR 前本地全量 `e2e:dot`。
-  尤其回归既有单 li 缩进（现存 keys-* e2e）。
-- **Deps**：无。先做。
+- **Goal**：真 app 列表分支从「单 li（anchor）」泛化到「选区覆盖的所有最外层 li，分组整体缩进/出列」；U19 单锚点恢复泛化为全 range 恢复。
+- **Files**：`src/editor/blockedit.js`（Tab 处理器列表分支）；`e2e/`（扩充列表缩进 spec）。
+- **Approach**：移植 ui-demo `Canvas.tsx` 的 targets 逻辑，用真 app 的 `doc.getSelection()`/`doc.createRange()`：
+  1. 折叠 → `anchor.closest('li')`（且 `editingEl.contains`）；非折叠 → 遍历 `editingEl.querySelectorAll('li')`，
+     用 **li 自身内容范围**（见 §2）做内容非零交集，再滤最外层。**precondition：多选只在单个列表块（editingEl）内**——
+     跨列表块选区落 §4.4 的 no-op，别半应用。
+  2. 记 range 四端点。3. 按 `li.parentElement` 分组（保 DOM 顺序）。
+  4. Shift+Tab：逐组 `hostLi=parentList.parentElement`，非 LI 跳过；`absorbTrailingSiblings(组末项)`；`ref=hostLi; for(li of 组){ref.after(li);ref=li}`；空子列表删。**复用现成 `absorbTrailingSiblings`**。
+  5. Tab：逐组 `prev=组首.previousElementSibling`，非 LI 跳过；取/建 prev 尾随子列表（tag/class 继承 `parentList`，D3）；组内各 li 依序 `sub.appendChild`。
+  6. `undoMgr.checkpoint()`+`markDirty()`；**恢复 range**（端点 `isConnected` 才重建，offset clamp）；失败回退 `caretAtLiTextEnd`。
+- **保留复用**：`absorbTrailingSiblings`、`caretAtLiTextEnd`、D3、U19 思路，别重写。
+- **Test scenarios**（e2e，keyboard 真键）：
+  1. 嵌套两兄弟子项 → 多选两行 Shift+Tab → 两行一起回顶层、保序（修前只退首行）。
+  2. 多选两行 Tab → 两行一起嵌回同一父项。
+  3. 单行 Shift+Tab（有后继兄弟）→ 本行原地降级、后继跟随（回归 absorb）。
+  4. 光标在行中间 Tab → 光标 offset 不变（不跳行末）。
+  5. 多选 Shift+Tab 后选区仍覆盖那两行（全 range 恢复，非折叠成单点）。
+  6. 顶层项 Shift+Tab / 首项 Tab → no-op（§4.4）。
+  7. 跨两个相邻列表块选区 Tab → §4.4 定义的 no-op（不半应用、不异常）。
+  8. todo 列表嵌套 → 子列表仍 `ws-todo`（D3）。
+  9. **undo**：单次 ⌘Z 复原一次缩进的结构 + 光标；连按 Tab 3 档是否合并成一步 undo —— 定并测（建议不合并，每次 checkpoint 一步）。
+- **变异自检**：判定改回 `selectNodeContents` → 用例 1 翻红；删 range 恢复 → 用例 4/5 翻红。破坏后仍绿=哑门。
+- **Regression risk**：动共享核心 Tab 分支 → 推 PR 前全量 `e2e:dot`；回归既有 keys-* / toggle e2e。
+  ⚠ 残险（adversarial）：多选 surgery 后端点可能 `isConnected` 却落进**别的 li** = 选区视觉上错但静默——用例 5 要断言选区**文本**而非只断言 collapsed，兜住这个。
+- **Deps**：无。**独立 PR**（与 U2 分开，风险画像不同）。
 
-#### U2 · 嵌套子列表垂直 margin 归零（去下方位移）
-- **Goal**：嵌套列表项时下方内容不再上下位移。
-- **Files**：`src/editor/blockedit.js` 的 `BASELINE_CSS`（`origin/main` 181 行 `:where(li>ul,li>ol){margin:.15em 0}`）；
-  `ensureSchemaBaseline` 的版本标记（432）。
-- **Approach**：把 `:where(li>ul,li>ol)` 的 `margin` 从 `.15em 0` 改为 `0`（子项仍保留 `:where(li){margin:.3em 0}`
-  的自身间距，与顶层项一致 → 嵌套不增减垂直空间）。**bump baseline 版本**，让 `ensureSchemaBaseline` 覆盖旧文档。
-- **Test scenarios**：e2e 量化——嵌套一个列表项前后，测「列表块下方某锚点（如文末/下一块）的 `getBoundingClientRect().top`
-  不变」；再嵌一层仍不变。（对照 ui-demo 实测：footY 修前 +6px、修后恒定。）
-- **变异自检**：把 margin 改回 `.15em 0` → 上述断言必翻红。
-- **Regression risk**：**全文档渲染变更**（§4.3）——所有含嵌套列表的文档间距变紧。跑视觉回归，别动 820px/48px 锚点。
-- **Deps**：无，可与 U1 同 PR 或独立。
+#### U2 · 嵌套子列表垂直 margin 归零（全语料 CSS 迁移，独立 PR）
+- **Goal**：嵌套列表项时下方内容零位移。
+- **Files**：`src/editor/blockedit.js` 的 `BASELINE_CSS`（grep `:where(li>ul,li>ol){margin`）。
+- **Approach**：把该行 margin 从 `.15em 0` 改 `0`（子项仍留 `:where(li){margin:.3em 0}`，与顶层项一致 → 嵌套不增减垂直空间）。
+  **不需要 bump 版本号**（§4.3：内容 diff 自动覆写）。
+- **Test**：e2e 量化——嵌套一列表项前后，「列表块下方锚点 `getBoundingClientRect().top` 不变」；再嵌一层仍不变。
+- **变异自检**：margin 改回 `.15em 0` → 断言翻红。
+- **Regression risk**：**全语料库渲染迁移**（§4.3），display-vs-disk 到 re-save 才一致。跑视觉回归，别动 820/48 锚点。
+- **Deps**：无。**独立 PR**（可先于/后于 U1）。
 
 ### Track 2 —— 段落/标题整块缩进（阻塞于 §4.1 拍板，拍板前不写代码）
 
-#### U3 · 【拍板门】ws-indent 范式扩展 Wendi 拍板
-- **Goal**：拿到 Wendi 对「是否加 `ws-indent-*` 有限缩进原语」的明确结论（见 §4.1）。**产物是决策，不是代码。**
-- **Approach**：把 ui-demo 原型（feat/ui-demo-block-indent，Colin 已验收）+ 本计划 §4.1 的范式冲突分析给 Wendi；
-  记结论进 brainstorm #337（Q2 resolved）。
-- **Deps**：**U4–U6 全部阻塞于此。** Wendi 顶回则 Track 2 作废。
+#### U3 · 【拍板门】段落缩进走哪条路（选项 A/B/C，Colin + Wendi）
+- **Goal**：拿到「段落缩进是否做、走 A 合规嵌套 / B ws-indent 原语 / C 不做」的明确结论（§4.1）。**产物是决策，不是代码。**
+- **Approach**：把 §4.1 三选项 + ui-demo 手感原型（Colin 已验收）当物料给 Colin + Wendi。**手感题与范式题分开问。** 结论记进 #337（Q2 resolved）。
+- **Deps**：**U4–U6 全阻塞于此。** 选 A → 另立块模型/容器计划；选 B → 下走 U4–U6；选 C → Track 2 关闭。
 
-#### U4 · `ws-indent-*` 有限 class 原语（照抄 ws-color 四段式）
-- **前置**：U3 通过。
-- **Goal**：给块级缩进一个入盘、可发布、校验器容忍的 class 表达。
-- **Files**：`src/editor/blockedit.js`（新增 `INDENT_LEVELS`/`INDENT_CSS`/`ensureIndentStyle` + 注册进
-  `refreshSemanticStyles` 的 `pairs`）。
-- **Approach**（严格对照 `ws-color-*`：195–196 定义域+生成 CSS / 398–413 self-heal 注册 / 443–451 注入）：
-  1. 有限档位常量，如 `const INDENT_LEVELS = [1,2,3,4,5,6];`（值域封顶，别开放任意数）。
-  2. 生成 CSS：`INDENT_CSS = INDENT_LEVELS.map(n => ':where(.ws-indent-'+n+'){<位移>}').join('')`。
-     **`<位移>` 的选择留给 U3 一并定**（三选一，都要 Wendi 认）：
-     - `padding-left:<n*24>px`（重排、撞「数值缩进」最狠，最不推荐）；
-     - `margin-left:<n*24>px`（同上）；
-     - `position:relative; left:<n*24>px`（不重排、对齐 ui-demo 手感，但撞「不写 left」——需 Wendi 明确豁免）。
-     推荐第三种（ui-demo 已验手感 + 无下方位移），但**必须 Wendi 点头**；否则退第一种并接受重排。
-  3. `ensureIndentStyle`：注入 `<style id="ws-indent-style" data-ws-schema-css="indent">`（`data-ws-schema-css`
-     是过 `validateHead`（schema-validate.js 165）+ 存活 serialize 的关键）。
-  4. 进 `refreshSemanticStyles` 的 `pairs`：`['indent', INDENT_CSS, 'ws-indent-style', '[class*="ws-indent-"]']`
-     —— 让含 class 但缺 CSS 的文档（md 转换 / 外部 AI 生成）自愈补 CSS。
-- **Test scenarios**（vitest 纯逻辑 + e2e 渲染）：档位 class → 对应位移生效；清零（移除 class）→ 复原；
-  含 `ws-indent-3` 但无 `<style>` 的文档打开后自愈补 CSS。
-- **变异自检**：删掉 `pairs` 里 indent 条目 → 自愈用例翻红。
-- **Regression risk**：新增独立原语，半径小；但 `refreshSemanticStyles` 是共享收尾，改后全量 e2e。
-- **Deps**：U3。
+#### U4 · （仅当选 B）`ws-indent-*` 有限 class 原语（照抄 ws-color 四段式）
+- **前置**：U3=选 B。
+- **Files**：`src/editor/blockedit.js`（新 `INDENT_LEVELS`/`INDENT_CSS`/`ensureIndentStyle` + 注册进 `refreshSemanticStyles` 的 `pairs`）。
+- **Approach**（照 grep 锚点找 ws-color 四处：`TEXT_COLORS`/`COLOR_CSS` 定义、`refreshSemanticStyles` 的 `pairs`、`ensureColorStyle`、块菜单色板 click）：
+  1. **有限档** `const INDENT_LEVELS = [1,2,3,4,5,6];`（封顶 6，别开放任意数——U5 必须夹这个上限）。
+  2. `INDENT_CSS = INDENT_LEVELS.map(n=>':where(.ws-indent-'+n+'){<位移>}').join('')`。`<位移>` **由 U3 定**：
+     选 B 且 Wendi 认「固定 left」→ `position:relative;left:<n*24>px`（保流、无位移、对齐 ui-demo）；
+     否则退 `padding-left:<n*24>px`（撞数值缩进 + 重排，最不推荐）。
+  3. `ensureIndentStyle`：注入 `<style id="ws-indent-style" data-ws-schema-css="indent">`（过 `validateHead` + 存活 serialize 的关键）。
+  4. `pairs` 加 `['indent', INDENT_CSS, 'ws-indent-style', '[class*="ws-indent-"]']`（自愈补 CSS）。⚠ 这一步意味着 AI-gen/md 文档也会带 `ws-indent`——三面一致性（§4.1 选项 B②）。
+- **Test**（vitest 纯逻辑 + e2e 渲染）：档位 class → 位移生效；清零复原；含 class 但无 `<style>` 的文档自愈补 CSS。
+- **变异自检**：删 `pairs` 里 indent 条目 → 自愈用例翻红。
+- **Deps**：U3=B。
 
-#### U5 · blockedit.js 普通块 Tab → 整块缩进（协调 toggle）
-- **前置**：U3、U4。
-- **Goal**：普通块 Tab 加档、Shift+Tab 减档（Notion 约束），与光标无关；与 toggle 嵌套协调优先级。
-- **Files**：`src/editor/blockedit.js` Tab 处理的非列表分支（`origin/main` 1951–1962）。
+#### U5 · （仅当选 B）blockedit.js 普通块 Tab → 整块缩进（协调 toggle + 封顶 + a11y）
+- **前置**：U3=B、U4。
+- **Files**：`src/editor/blockedit.js` Tab 处理器非列表分支（grep `classify(editingEl) !== 'list'`）。
 - **Approach**：
-  1. 非列表分支入口先判 toggle（§4.2）：`prev` 是 `<details>` → 走既有 toggle 嵌套；在 toggle 体内 Shift+Tab → 既有出 toggle。
-  2. 否则整块缩进：读本块当前档位（从 `ws-indent-N` class 解析，无则 0）；`next = shift ? max(0,cur-1) :
-     min(cur+1, prevBlock 档位+1)`（`prevBlock` = `topBlocks()` 里的上一块；无上块则封 0）；
-     `next!==cur` 时移除旧 `ws-indent-*` class、按 `next` 加新 class（`next>0`）、`ensureIndentStyle()`、
-     `checkpoint()`/`markDirty()`。**绝不 `el.style`**（块 style 被校验器判非法，对照 ws-color 的 796 注释）。
-  3. 光标：整块缩进不改内容结构、`enterEdit(editingEl,{mode:'keep'})` 保光标。
-- **Test scenarios**（e2e，真键；同 U1 的 CDP Shift+Tab 提醒）：
-  1. 段落 Tab → 带 `ws-indent-1`、视觉右移一档、**下方块 top 不变**（对照 ui-demo 实测）。
-  2. 连按 Tab → 封顶（不超过上一块+1）。
-  3. Shift+Tab → 减档 / 到 0 移除 class。
-  4. 首块 Tab → 无操作（无上块可依）。
-  5. **前一块是 toggle 时 Tab → 仍嵌进 toggle**（§4.2 优先级，回归既有行为）。
-  6. 光标在段落中间 Tab → 光标不跳、块整体缩进（与光标无关）。
-  7. 缩进后 serialize→reparse 跑 `schema-validate` **conform 恒真**（class 合规、无块级 style）。
-- **变异自检**：把 class 写法改成 `el.style.paddingLeft=` → 用例 7 的 conform 必翻红（block-style）；
-  去掉封顶 `min(...,prev+1)` → 用例 2 翻红。
-- **Regression risk**：动 Tab 核心分支 + 与 toggle 交互 → 全量 e2e:dot + 专门回归 toggle 的 keys e2e。
-- **Deps**：U3、U4。
+  1. 非列表分支先判 toggle（§4.2）：`prev` 是 `<details>` → 走既有 toggle 嵌套（且**剥掉本块 `ws-indent-*`**）；toggle 体内 Shift+Tab → 既有出 toggle（归 0 档）。
+  2. 否则整块缩进：读本块当前档（解析 `ws-indent-N` class，无则 0）；
+     `next = shift ? max(0,cur-1) : min(cur+1, (上一顶层块档)+1)`，**再夹绝对上限** `next = min(next, 6)`（design-lens P1：不夹会算出无 CSS 的 ws-indent-7 静默失效）；无上块封 0。
+     `next!==cur` 时移旧 `ws-indent-*`、按 next 加新 class（next>0）、`ensureIndentStyle()`、`checkpoint()`/`markDirty()`。**绝不 `el.style`**（块 style 被校验器判非法，照 ws-color 注释）。
+  3. 光标：`enterEdit(editingEl,{mode:'keep'})` 保光标。
+  4. **a11y 退出路径**（§4.4）：确认 Esc 退块选中态后 Tab 能正常移焦（既有行为，测一条兜住不回归）。
+- **Test**（e2e，keyboard 真键）：
+  1. 段落 Tab → 带 `ws-indent-1`、右移一档、**下方块 top 不变**。
+  2. 连按 Tab → 封顶不超上一块+1；**7 连块各深一级、第 8 次不越 6 档**（不产 ws-indent-7）。
+  3. Shift+Tab → 减档 / 到 0 移 class。 4. 首块 Tab → no-op。
+  5. 前一块是 toggle → Tab 仍嵌 toggle 且剥 ws-indent；带 ws-indent-2 的块 Tab 进 toggle 再 Shift-Tab 出 → 不双偏移、出来 0 档。
+  6. 光标中间 Tab → 光标不跳、整块缩进。
+  7. 缩进后 serialize→reparse 跑 `schema-validate` **conform 恒真**。
+  8. Esc → 块选中态 → Tab 能移焦出编辑区（a11y 不回归）。
+- **变异自检**：改成 `el.style.paddingLeft=` → 用例 7 conform 翻红；去 `min(next,6)` → 用例 2 翻红；去封顶 `min(...,prev+1)` → 用例 2 翻红。
+- **Deps**：U3=B、U4。
 
-#### U6 · 校验器确认（大概率零改动）
-- **前置**：U3。
-- **Goal**：确认 `ws-indent-*` 块在真 app 判 conform（走块编辑而非降级基础编辑）。
-- **Files**：`src/lib/schema-validate.js`（**大概率不改**——它无 class 白名单、只黑名单块级 `style=`；
-  `ws-indent-N` 是 class、无 style → 天然容忍，同 `ws-color`）。
-- **Approach**：加一条断言测试：带 `ws-indent-3` 的合规 `<p>` → `validate().conform === true`。
-  若团队想把 `ws-indent-*` 从「容忍」升级为「显式白名单」（更严格、防错拼 class），另议——非本单元必需。
-- **Test scenarios**：`test/schema-validate.test.js` 加 `ws-indent` conform 用例（对照现有 `ws-al-right`/`ws-table` 用例风格）。
-- **Deps**：U3。
+#### U6 · （仅当选 B）校验器确认（大概率零改动）
+- **前置**：U3=B。
+- **Approach**：`src/lib/schema-validate.js` 无 class 白名单、只黑名单块级 `style=` → `ws-indent-N` 天然容忍（同 ws-color）。
+  加断言测试（`test/schema-validate.test.js`）：带 `ws-indent-3` 的合规 `<p>` → `validate().conform===true`。
+  想升级为显式白名单（防错拼）另议、非必需。
+- **Deps**：U3=B。
 
 ### 跨轨
 
 #### U7 · e2e 全量 + 变异自检落门
-- 各单元的 e2e 汇总进 `e2e/`（列表缩进 spec + 段落缩进 spec）。真 Shift+Tab 用 CDP modifiers:8。
-- 每道新门配变异自检（先 commit 再变异，改坏必翻红、还原必翻绿）。
-- required check = {test, e2e-all}；动 blockedit.js 的 PR 推前本地 `npm run test:e2e:dot`。
+各单元 e2e 汇总进 `e2e/`。Shift+Tab 用 keyboard 真键（非 CDP）。每门配变异自检。required check {test, e2e-all}；动 blockedit.js 推前本地 `e2e:dot`。
 
-#### U8 · Feature spec + #337 收口
-- 按仓库铁律「谁改真 app 交互谁同 PR 更新 spec」：更新/新建 `docs/features/`（Tab 缩进契约——
-  列表多选、普通块整块缩进、toggle 优先级、嵌套零位移），并把 §4.1/§4.2/§4.3 的决策记进 spec。
-- brainstorm #337 的 Q2 随 U3 拍板收口（resolved）。
+#### U8 · Feature spec + 范式文档 + #337 收口
+- 更新/新建 `docs/features/`（Tab 缩进契约：§4.4 交互矩阵、列表多选、普通块整块缩进、toggle 优先级+ws-indent 剥离、嵌套零位移、a11y 退出、可发现性）。
+- **若 U3 选 B 落地**：`docs/schema-1-draft-v0.md` §1.3 的「不用数值/不写 left 铁律」需记一条正式例外（不能只改 docs/features/，否则范式正文与实现矛盾）。
+- brainstorm #337 Q2 随 U3 收口。
+
+#### U9 · （可选、Tab 目标之外）grip 淡入去位移
+真 app grip 若有同款滑入动画，顺带对齐纯 opacity 淡入。**明确非本计划 Tab 目标、不阻塞**——picked up 才做。
 
 ## 6. 排期与依赖
-
 ```
-Track 1（无依赖，先做，一个 PR）:  U1 ──┐
-                                   U2 ──┴─► e2e/变异(U7) ─► spec(U8) ─► 合并
-Track 2（阻塞于拍板）: U3[Wendi 拍板] ─► U4 ─► U5 ─► U6 ─► e2e/变异(U7) ─► spec(U8)
+Track 1（无依赖，先做）:  U1（独立 PR，窄半径）
+                         U2（独立 PR，全语料 CSS 迁移，跑视觉回归）
+                         └─ 各带 e2e/变异(U7) + spec(U8 对应段) → 分别合并
+Track 2（阻塞拍板）: U3[Colin+Wendi 选 A/B/C] ─(仅 B)─► U4 ─► U5 ─► U6 ─► e2e/变异(U7) ─► spec+范式文档(U8) ─► PR
 ```
-- **立即可做**：U1 + U2（+ U7/U8 对应部分），一个 PR 交付「列表 Tab 对齐」。这是 Colin 反复踩的列表场景，价值最高、风险最低。
-- **U9（可选、独立）**：grip 淡入去位移——真 app grip 若有同款滑入动画可顺带对齐，不阻塞。
-- **Track 2 挂起**：等 U3 拍板。拍板通过才排 U4→U5→U6。
+- **立即做**：U1（+ U2 独立）—— 列表 Tab 对齐，Colin 反复踩的场景，价值最高、交互半径最小。
+- **Track 2 挂起**：等 U3 三选一。选 B 才排 U4→U5→U6，且不合 main 直到范式拍板落地。
 
 ## 7. 风险清单
-
 | 风险 | 缓解 |
 |---|---|
-| 读错文件（worktree 旧 blockedit.js） | §0：从 origin/main 切分支、读 origin/main |
-| 动 Tab 核心引发跨文件回归 | 推 PR 前全量 `e2e:dot`；专门回归 keys/toggle e2e |
-| U2 改 baseline 影响所有文档渲染 | bump baseline 版本；视觉回归；别动 820/48 锚点 |
-| Track 2 撞范式、返工 | U3 拍板门卡死，不拍不写 |
-| e2e 发不出真 Shift+Tab | 用 CDP `Input.dispatchKeyEvent` modifiers:8（ego-browser 已实证 pressKey 假键坑） |
-| block 级 style 混入（高频非合规路径） | U5 强制走 class，变异自检拿 conform 断言兜底 |
+| 读错文件（worktree 旧 blockedit.js） | §0：从 origin/main 切、按 grep 锚点定位（不信绝对行号） |
+| 动 Tab 核心跨文件回归 | 推 PR 前全量 `e2e:dot`；回归 keys/toggle e2e |
+| U2 全语料渲染迁移 + display/disk 分叉 | 独立 PR；视觉回归；别动 820/48；知悉 re-save 前磁盘旧值 |
+| 多选 range 恢复落错 li（静默） | 用例断言选区文本、非仅 collapsed |
+| Track 2 撞范式/框架被摆歪 | §4.1 三选项诚实呈现；U3 手感题范式题分开问；不拍不写 |
+| U3 是流程门、可抢跑 | 纪律守；PR 不合直到范式拍板落 docs |
+| 普通块 6 档溢出静默失效 | U5 `min(next,6)` + 7 连块用例 |
+| block 级 style 混入 | U5 强制走 class，变异自检 conform 断言兜底 |
 
 ## 8. 相关
-- 真相源分支：`feat/ui-demo-block-indent`（ui-demo 定稿）。
-- 权威代码：`git show origin/main:src/editor/blockedit.js`（Tab 1949–1997；absorb 623；caretAtLiTextEnd 637；
-  BASELINE_CSS 169–191；ws-color 模板 195–196/398–413/443–451/794–797）。
-- 校验器：`src/lib/schema-validate.js`（validate 173–204；block-style 137；validateHead 165；validateList 65–82）。
-- Schema 范式：`docs/schema-1-draft-v0.md`（§1.3 第 50 行缩进铁律；§2.3 第 128 行 ws-al 意图；§0 决策 5 heading h4 封顶）。
-- 决策源：brainstorm #337（`docs/brainstorms/2026-07-23-todo-item-granularity-requirements.md`，Q2）。
+- 真相源：`feat/ui-demo-block-indent @ 72794e3`。
+- 权威代码：`git show origin/main:src/editor/blockedit.js`（2901 行；grep：Tab `if (e.key === 'Tab' && editingEl)`、`function absorbTrailingSiblings`、`function caretAtLiTextEnd`、`const BASELINE_CSS` / `:where(li>ul,li>ol){margin`、ws-color 四段 `TEXT_COLORS`/`COLOR_CSS`/`refreshSemanticStyles`/`ensureColorStyle`）。
+- 校验器：`src/lib/schema-validate.js`（`function validate`、`block-style`、`validateHead`、`validateList`）。
+- Schema 范式：`docs/schema-1-draft-v0.md`（§1.3 缩进铁律；§2.3 ws-al 意图；§0 决策5 heading h4 封顶）。
+- 决策源：brainstorm #337（分支 docs/todo-item-granularity，未入 main）。
+- 评审：2026-07-24 ce-doc-review 六 persona findings 已吸收（行号→grep 锚点、CDP→keyboard、去幻影版本 bump、6 档封顶、跨块 no-op、toggle+indent 剥离、§4.1 三选项诚实化、U2 拆 PR）。
