@@ -439,23 +439,25 @@ test('BF-P2: 查找自动展开不改写磁盘折叠态', async () => {
   expect(disk).toMatch(/<details[^>]*><summary>标题<\/summary>/); // details 仍在、折叠（无 open）
 });
 
-// BF-P2：跨作用域部分删（顶层→toggle 体内）夹住，不销毁选区外的正文块（原 bug：整删 details 丢 b2）。
-test('BF-P2: 跨作用域部分删不丢未选中的 toggle 正文', async () => {
+// BF-P2（U26 翻转，Colin 2026-07-24「块操作与其他块同步」）：跨作用域删（顶层→toggle 体内）——
+// toggle 整删，兑现块级高亮承诺（refreshRangeSel 早把部分进入的 toggle 整块标蓝=所见即所删）；
+// 对齐 table 的 ED-A2 结构端点整块删。旧「夹住不删」是 deferred 空操作时代的保守解，随 U26 废除。
+test('BF-P2(U26): 跨作用域删（顶层→toggle 体内）→ toggle 整删 + 外块裁剪（所见即所删）', async () => {
   await launch();
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
-    + '<p id="top">AAAA</p><details open id="dt"><summary id="sm">S</summary><p id="b1">BBBB</p><p id="b2">CCCC</p></details></body></html>');
+    + '<p id="top">AAAA</p><details open id="dt"><summary id="sm">S</summary><p id="b1">BBBB</p><p id="b2">CCCC</p></details><p id="tail">DDDD</p></body></html>');
   await frame.locator('#top').click();
-  await setCrossSel('top', 2, 'b1', 2); // 从 top 中间选进 b1 中间（跨 summary 边界进体内）
+  await setCrossSel('top', 2, 'b1', 2); // 从 top 中间选进 b1 中间——块级高亮此时把整个 dt 标蓝
   await page.keyboard.press('Backspace');
   await page.waitForTimeout(200);
   const st = await frame.locator('body').evaluate(() => ({
     hasDt: !!document.getElementById('dt'),
-    b2: (document.getElementById('b2') || {}).textContent,
-    summary: !!(document.getElementById('dt') && document.getElementById('dt').querySelector(':scope > summary')),
+    top: (document.getElementById('top') || {}).textContent,
+    tail: (document.getElementById('tail') || {}).textContent,
   }));
-  expect(st.hasDt, 'toggle 不该被整删').toBe(true);
-  expect(st.b2, '选区外的 b2 CCCC 必须存活（原 bug：随整删丢失）').toBe('CCCC');
-  expect(st.summary).toBe(true);
+  expect(st.hasDt, 'toggle 整删（高亮标了整块=所见即所删）').toBe(false);
+  expect(st.top, '外侧起块裁剪保留选区前文字').toBe('AA');
+  expect(st.tail, '选区外的后段不动').toBe('DDDD');
   expect(await conformOf(await serialize())).toBe(true);
 });
 
