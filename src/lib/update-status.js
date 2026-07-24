@@ -71,8 +71,13 @@ function shouldStartDownload(prev, next) {
 }
 
 // GitHub release body → 面板可读的纯文本行。输出只当 textContent 用（绝不 innerHTML，release body 不可信）。
-// 我们的 Release 约定（docs/releasing.md）：人话说明在最上、`---` 分隔线以下是自动 PR 列表 → 只取线上部分。
-function parseReleaseNotes(raw) {
+// 我们的 Release 约定（docs/releasing.md）：**顶部放简洁版**（1 句导语 + ≤5 条要点；app 面板显示的
+// 就是这段，Wendi 2026-07-17「更新通知尽量简洁,完整的放 changelog」）、`---` 以下是链接与自动 PR 列表
+// → 只取线上部分。opts.max 是硬保险：万一谁把全量 changelog 贴上来，截断并以 opts.moreText 收尾
+// （面板本就有「更新日志」按钮直达完整版）。
+function parseReleaseNotes(raw, opts) {
+  const max = (opts && opts.max) || 24;
+  const moreText = (opts && opts.moreText) || null;
   let text = '';
   if (Array.isArray(raw)) text = raw.map((n) => (n && (n.note || '')) || '').join('\n');
   else if (typeof raw === 'string') text = raw;
@@ -95,7 +100,13 @@ function parseReleaseNotes(raw) {
       .trim();
     if (!line) continue;
     lines.push({ t, text: line });
-    if (lines.length >= 24) break; // 面板别无限长
+    if (lines.length >= max) break; // 面板别无限长
+  }
+  // 真被截断（还有剩余非空行没进来）→ 尾行提示去看完整版
+  if (moreText && lines.length >= max) {
+    const seen = lines.length;
+    const totalNonEmpty = text.split('\n').map((l) => l.trim()).filter(Boolean).length;
+    if (totalNonEmpty > seen) lines.push({ t: 'p', text: moreText });
   }
   return lines;
 }

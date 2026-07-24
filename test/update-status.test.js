@@ -150,3 +150,19 @@ test('panelModel：各状态的标题/按钮语义', () => {
   assert.deepStrictEqual(upt.buttons.map((b) => b.id), ['changelog', 'close']); // 已最新 → 「最近更新了什么」
   assert.strictEqual(U.panelModel(U.initialStatus(), '1.0.0'), null);
 });
+
+test('parseReleaseNotes：max 硬保险截断 + moreText 尾行(更新面板简洁约定,Wendi 2026-07-17)', () => {
+  const U2 = require('../src/lib/update-status');
+  const long = Array.from({ length: 12 }, (_, i) => `- 条目${i + 1}`).join('\n');
+  const out = U2.parseReleaseNotes(long, { max: 8, moreText: '……完整说明点「更新日志」' });
+  assert.strictEqual(out.length, 9); // 8 条 + 尾行提示
+  assert.strictEqual(out[8].t, 'p');
+  assert.strictEqual(out[8].text, '……完整说明点「更新日志」');
+  // 不超限:原样、无尾行
+  assert.strictEqual(U2.parseReleaseNotes('- a\n- b', { max: 8, moreText: 'M' }).length, 2);
+  // 恰好 max 条:全进、无尾行(没截到东西就别提示)
+  const exact = Array.from({ length: 8 }, (_, i) => `- x${i}`).join('\n');
+  assert.strictEqual(U2.parseReleaseNotes(exact, { max: 8, moreText: 'M' }).length, 8);
+  // 兼容:不传 opts 行为同旧(24 上限、无尾行)
+  assert.strictEqual(U2.parseReleaseNotes(long).length, 12);
+});
