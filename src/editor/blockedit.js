@@ -1289,7 +1289,9 @@
       const empty = !el || (el.textContent || '').trim() === '';
       // 图片：异步取文件后插入。空块原地替换（已拍板②）。不在此 checkpoint——picker 可取消。
       if (it.image) { pickAndInsertImage(el, empty && isEditableEl(el)); return; }
-      if (it.tag === 'details') { const nx = insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); } // 折叠块：插入后光标落 summary（不是整块 details）
+      // 折叠块：空块原地变身（turnInto，与其他块类型一致——旧 insertAfter 会把空段落留在原地、details 落到
+      // 下一行，光标肉眼可见往下坠一行 + 留空段落垃圾，Wendi 2026-07-24 视频）；非空块维持插到下方。光标落 summary。
+      if (it.tag === 'details') { const nx = (empty && isEditableEl(el)) ? turnInto(el, it) : insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); }
       else if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
       else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
       else { const nx = insertAfter(el, it); enterEdit(nx, { mode: 'start' }); }
