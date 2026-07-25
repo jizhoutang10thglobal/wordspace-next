@@ -5,6 +5,21 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.11.7 — 2026-07-24
+
+A polish pass for toggle blocks.
+
+### Improved
+
+- **Toggle blocks**: the disclosure triangle is now a finer chevron that fits the overall style better
+- **Toggle blocks**: selecting and deleting across blocks is more intuitive — what you select is what gets deleted, and the two ends join up naturally afterward
+- **Turn into**: the "Turn into" menu now applies only to the selected line (it used to convert the whole block)
+
+### Fixed
+
+- **Toggle blocks**: creating a toggle block no longer nudges the line down half a row
+- **Toggle blocks**: you can now delete a whole toggle block (select its heading and content together, then delete)
+
 ## v0.11.6 — 2026-07-23
 
 A big polish pass for to-dos and lists, and a cleaner New Document dialog.
