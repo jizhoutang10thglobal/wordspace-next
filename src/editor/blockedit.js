@@ -324,7 +324,13 @@
     const cssEsc = (s) => String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     const placeholderCss =
       "p[data-ws2-editing]:empty::before{content:'" + cssEsc(T('editor.emptyBlockPlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
-      "figcaption[data-ws2-ce]:empty::before{content:'" + cssEsc(T('editor.figcaptionPlaceholder')) + "';color:#8a8f96;pointer-events:none;}";
+      "figcaption[data-ws2-ce]:empty::before{content:'" + cssEsc(T('editor.figcaptionPlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
+      // 空 toggle 的占位（对拍 T17：Notion 写 "Empty toggle. Click or drop blocks inside."，我们原来是
+      // 一行纯空白、看不出这里能放东西）。**编辑器 chrome、不入盘**——浏览器直开时不该出现这行提示。
+      // 判据：展开态且体内只有一个空叶子块。:has() 在 Chromium 可用；不可用时仅退化为无占位。
+      "details[open]:has(> :not(summary):only-of-type:empty) > :not(summary):empty::before{content:'" + cssEsc(T('editor.emptyTogglePlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
+      // 空 toggle 的三角淡一档（Notion 同款区分：一眼看出这个折叠块里没东西）
+      "details:has(> :not(summary):only-of-type:empty) > summary::before{border-color:#c4c8cd;}";
     let sheet = null;
     try {
       sheet = new (win.CSSStyleSheet || CSSStyleSheet)();
@@ -2244,7 +2250,9 @@
         e.preventDefault();
         const det = sumT.parentElement;
         const sr = sumT.getBoundingClientRect();
-        if ((e.clientX - sr.left) < 20) { det.open = !det.open; if (editingEl !== sumT) { try { sumT.blur(); } catch (x) {} } return; } // chevron 区 → 折叠；非编辑态 blur summary（防折叠后按空格被原生激活重开，P3）
+        // 折叠热区（对拍 T4：Notion 是块左缘 +8 起的 24×24 语义按钮；我们原来是左缘起 20px 的裸判定、
+        // 且热区自身无悬停反馈）。这里把命中口径对齐成同尺寸方形区，视觉反馈由 CSS 的 summary::before 承担。
+        if ((e.clientX - sr.left) < 24) { det.open = !det.open; if (editingEl !== sumT) { try { sumT.blur(); } catch (x) {} } return; } // chevron 区 → 折叠；非编辑态 blur summary（防折叠后按空格被原生激活重开，P3）
         if (editingEl !== sumT) enterEdit(sumT, { mode: 'point', x: e.clientX, y: e.clientY });
         return;
       }
@@ -2449,11 +2457,20 @@
             }
           }
         }
-        if (e.key === 'Enter') { // → 首正文块（U7 再扩：空末块退出等）
+        if (e.key === 'Enter') {
+          // 对拍 T14：Notion 在 toggle 内**新建一个空块**作为首个子块（你按 Enter 是要写新东西，
+          // 不是要跳到已有内容上）。我们原来跳到已存在的首个体内块 = 光标神秘位移。
+          // 已有首块本就是空叶子时不再多插一个（否则连按堆空块）。
           e.preventDefault(); e.stopPropagation();
           const det = editingEl.parentElement;
-          const bodyEl = det && [...det.children].find((c) => c.nodeType === 1 && c.tagName !== 'SUMMARY');
-          if (bodyEl) enterEdit(bodyEl, { mode: 'start' });
+          const first = det && [...det.children].find((c) => c.nodeType === 1 && c.tagName !== 'SUMMARY');
+          const firstEmpty = first && SM.isLeafTextBlock(first) && (first.textContent || '').trim() === '';
+          if (firstEmpty) { enterEdit(first, { mode: 'start' }); return; }
+          const np = doc.createElement('p'); np.appendChild(doc.createElement('br'));
+          if (first) first.before(np); else det.appendChild(np);
+          if (!det.open) det.open = true; // 折叠态下按 Enter 新建 → 展开，否则新块看不见
+          if (undoMgr) undoMgr.checkpoint(); markDirty();
+          enterEdit(np, { mode: 'start' });
           return;
         }
         if (e.key === ' ') { e.preventDefault(); doc.execCommand('insertText', false, ' '); return; } // 原生 summary 空格会折叠——拦默认、手动插空格

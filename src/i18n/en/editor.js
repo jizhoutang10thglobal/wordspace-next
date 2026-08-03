@@ -118,6 +118,7 @@ module.exports = {
 
   // In-editor placeholder text (empty block / image caption)
   emptyBlockPlaceholder: 'Type text, or press / for commands',
+  emptyTogglePlaceholder: 'Empty toggle. Click or drop blocks inside.',
   figcaptionPlaceholder: 'Image caption',
 
   // Pagination page-number chip
