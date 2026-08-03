@@ -1,5 +1,10 @@
 # 分页文档（paged doc）—— 对齐 spec
 
+> 2026-08-03 状态注解：Schema 2 拆分批次（#340/#345/#348/#352）已整体撤出 main、转入
+> `feat/schema-2-parked` 分支打磨（Colin 拍板：半成品不进 main；复活路径见 `docs/schema-2-parked.md`）。
+> 本 spec 描述的是 main 当前行为 = 下面这段 07-08 口径（分页 = Schema 1 可选版式，v0.11.x 已发版）。
+> 「分页 = 独立 Schema 2」的产品方向（2026-07-23 反转拍板）不变，只是代码暂不在 main。
+
 产品口径（Colin 2026-07-08 拍板，Wendi 确认）：分页**不是**独立 Schema，是 Schema 1 文档的可选
 版式设置。真 app 入盘 = head 的 `<style data-ws-schema-css="page">` 装标准 `@page{size;margin}`
 （本就在 Schema 1 head 白名单内），带且可解析 → 分页视图/分页导出；写坏了只是分页不生效，不降级。

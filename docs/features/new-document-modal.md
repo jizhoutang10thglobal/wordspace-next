@@ -9,8 +9,8 @@
 **布局：左范式轨 + 右模板 pane（两侧一致）。** 弹窗主体是两栏：左边一条竖排「范式」轨，右边是该范式下的内容 pane。
 
 - **顶部**：`temp`/omni 入口 = 全宽地址栏（Arc 式，聚焦时墨线从左划过，X 收在栏内右侧），输网址/搜索 Enter → 开网页标签并导航、关弹窗；非 omni（文件夹新建）= 标题头「新建文档 · 在 {位置}」+ X。
-- **范式轨**：`类 Notion`（当前，激活高亮，图标+名+「当前」标+描述）/ `范式 2` / `范式 3`（灰态、锁图标、描述「敬请期待」）+ 轨底注「未来每个范式有各自的编辑方式与模板」。**范式轨在 omni 与非 omni 两种入口都显示。**
-- **点选范式切右侧 pane**：点激活范式（类 Notion）→ pane 是模板卡网格；点未上线范式（范式 2/3）→ pane 变占位（锁圈 + 「{范式} · 还在路上」+ 说明），无卡片。
+- **范式轨**：`类 Notion`（当前，激活高亮，图标+名+「当前」标+描述）/ `分页文档`（灰态、锁图标、描述「开发中」——Schema 2 已实现但整体撤出 main 打磨中，见 `docs/schema-2-parked.md`，2026-08-03 Colin 拍板）/ `范式 3`（灰态、锁图标、描述「敬请期待」）+ 轨底注「未来每个范式有各自的编辑方式与模板」。**范式轨在 omni 与非 omni 两种入口都显示。**
+- **点选范式切右侧 pane**：点激活范式（类 Notion）→ pane 是模板卡网格；点未上线范式（分页文档/范式 3）→ pane 变占位（锁圈 + 「{范式} · 还在路上」+ 说明），无卡片。
 
 **模板台（pane 内）。** **内置模板现阶段只有「空文档」一张**（Wendi 2026-07-23：以空白文档为主，会议纪要 / 项目方案 / 周计划 等成套模板先撤）。卡片 = 图标 + 名 + 说明；点卡片按该模板 HTML 建文档，文件名一律默认「未命名」（Colin 拍板：模板给内容不给名字，保存时用户再改名）。空文档正文 = `<h1>未命名</h1><p></p>`。
 
@@ -22,7 +22,7 @@
 | 弹窗样式 | `ui-demo/src/components/CreateModal.css`（`.cm-*`） | `src/renderer/browser.css`（`.sb-cm-*`）+ `src/renderer/shell.css`（`.sb-card*` / `.sb-modal*`） |
 | 模板数据 | `ui-demo/src/mock/seed.ts`（`seedTemplates`）+ `store.ts` | `src/lib/doc-templates.js`（`TEMPLATES`） |
 | 模板名/说明 i18n | （React 内联） | `src/i18n/{zh,en}/template.js` |
-| 范式 / 弹窗文案 i18n | `ui-demo/src/i18n/*/modals.ts` | `src/i18n/{zh,en}/sidebar.js`（`paradigmLabel`/`paradigmNotion`/`paradigmCurrent`/`paradigmNotionDesc`/`paradigm2/3`/`comingSoon`/`paradigmRailFoot`/`paradigmSoon`/`paradigmSoonDesc`、`newDoc`、`omniPlaceholder`） |
+| 范式 / 弹窗文案 i18n | `ui-demo/src/i18n/*/modals.ts` | `src/i18n/{zh,en}/sidebar.js`（`paradigmLabel`/`paradigmNotion`/`paradigmCurrent`/`paradigmNotionDesc`/`paradigm2`/`paradigm2Desc`/`paradigm3`/`comingSoon`/`paradigmRailFoot`/`paradigmSoon`/`paradigmSoonDesc`、`newDoc`、`omniPlaceholder`） |
 | 门 | — | `test/doc-templates.test.js`（每个模板产出符合 Schema #1）；`e2e/sidebar.spec.js`（① 模板台只剩空文档卡 + 新建落盘默认名；② 左范式轨 3 档 + Notion 激活显卡 + 点未上线范式→占位无卡） |
 
 ## 有意分歧

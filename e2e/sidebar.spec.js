@@ -275,7 +275,7 @@ test('新建弹窗 = 左范式轨 + 右模板 pane（对齐 ui-demo）：Notion 
   await page.locator('.sb-cm-para.is-soon').first().click();
   await expect(page.locator('.sb-cm-soon')).toBeVisible();
   await expect(page.locator('.sb-card')).toHaveCount(0);
-  await expect(page.locator('.sb-cm-para.is-active')).toContainText('范式 2');
+  await expect(page.locator('.sb-cm-para.is-active')).toContainText('分页文档');
   // 切回「类 Notion」→ 卡片回来
   await page.locator('.sb-cm-para').first().click();
   await expect(page.locator('.sb-card')).toHaveCount(1);

@@ -2503,7 +2503,7 @@
     // ---- 范式（对齐 ui-demo）：范式 1「类 Notion」可用；2/3 灰态占位，点选切右侧 pane ----
     const paradigms = [
       { id: 'notion', name: window.wsT('sidebar.paradigmNotion'), tag: window.wsT('sidebar.paradigmCurrent'), desc: window.wsT('sidebar.paradigmNotionDesc'), soon: false },
-      { id: 'p2', name: window.wsT('sidebar.paradigm2'), desc: window.wsT('sidebar.comingSoon'), soon: true },
+      { id: 'p2', name: window.wsT('sidebar.paradigm2'), desc: window.wsT('sidebar.paradigm2Desc'), soon: true },
       { id: 'p3', name: window.wsT('sidebar.paradigm3'), desc: window.wsT('sidebar.comingSoon'), soon: true },
     ];
     let activeId = 'notion';
