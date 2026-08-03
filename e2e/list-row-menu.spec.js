@@ -83,6 +83,24 @@ test('转为正文：只抽出该行，前后剩余项仍是原列表', async ()
   expect(await conformOf(await serialize())).toBe(true);
 });
 
+// 对拍 N8（编号列表维度实测）：Notion 只重排**分割点之后**的号，之前的号一个不动。
+// 我们原来前段丢 start（上方的号跟着变）+ start 泄漏到产物 <p start="2">（垃圾属性）。
+test('ol[start] 中间行转为正文：前段保 start、产物不带 start、后段从 1 重启', async () => {
+  await launch();
+  await openDoc('<ol id="L" start="2"><li id="r1">甲</li><li id="r2">乙</li><li id="r3">丙</li></ol>');
+  await openRowMenu('#r2');
+  await clickItem('转为正文');
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.body.children].map((el) => ({ tag: el.tagName, start: el.getAttribute('start'), text: el.textContent.trim() }));
+  });
+  expect(st.map((k) => k.tag).join(','), '劈成 前列表/段落/后列表').toBe('OL,P,OL');
+  expect(st[0].start, '前段保留原 start（分割点之前的号不该变）').toBe('2');
+  expect(st[1].start, '产物段落不带 start 垃圾属性').toBeNull();
+  expect(st[2].start, '后段不带 start = 从 1 重启（对齐 Notion）').toBeNull();
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 test('在下方插入：插的是同列表新行（不是列表后的段落）', async () => {
   await launch();
   await openDoc('<ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li></ul>');

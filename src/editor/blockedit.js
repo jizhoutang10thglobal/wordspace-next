@@ -349,6 +349,14 @@
       ':where(body>h1:first-child,body>h2:first-child,body>h3:first-child){margin-top:.2em}' +
       ':where(p){margin:.5em 0}' +
       ':where(ul,ol){margin:.5em 0;padding-left:1.7em}' +
+      // 嵌套 marker 逐级循环（对拍：Notion 编号 1./a./i.、圆点 •/◦/▪，我们此前各级同款）。零权重
+      // :where() 保证 ws-todo 的 list-style:none 与用户自定义样式照常压过它；三级后回到首档（同 UA 惯例）。
+      ':where(ol ol){list-style-type:lower-alpha}' +
+      ':where(ol ol ol){list-style-type:lower-roman}' +
+      ':where(ol ol ol ol){list-style-type:decimal}' +
+      ':where(ul ul){list-style-type:circle}' +
+      ':where(ul ul ul){list-style-type:square}' +
+      ':where(ul ul ul ul){list-style-type:disc}' +
       ':where(li){margin:.3em 0}' +
       ':where(li>ul,li>ol){margin:.15em 0}' +
       ':where(blockquote){margin:.7em 0;padding:2px 0 2px 14px;border-left:3px solid #d9d7d2}' +
@@ -1196,6 +1204,7 @@
       if (el.tagName === 'UL' || el.tagName === 'OL') {
         const frag = SM.flattenListToPhrasing(el);
         const nx = fmt.retagElement(el, item.tag);
+        if (item.tag !== 'ol') nx.removeAttribute('start'); // 列表源这条分支同样要剥（retagElement 保全属性 → <p start="2"> 垃圾属性，对拍 N8）
         while (nx.firstChild) nx.removeChild(nx.firstChild);
         nx.appendChild(frag);
         if (item.cls) nx.className = item.cls; else if (nx.classList) { nx.classList.remove('ws-callout'); nx.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class（ws-callout/ws-todo），用户自定义 class 保留
@@ -1204,6 +1213,7 @@
         return nx;
       }
       const next = fmt.retagElement(el, item.tag); // p / h1 / h2 / h3 / blockquote / div(callout)
+      if (item.tag !== 'ol') next.removeAttribute('start'); // retagElement 保全属性 → 非 ol 产物会拖着 start="2" 这种垃圾属性（对拍 N8）
       // 修 P1：容器块 → 叶子块(p/h1-4)：内部 <p> 不能进叶子块，拍平成 <br> 分隔的 phrasing。
       // → 容器目标(引用/callout)：保留内部 <p>（两者都放行多段 <p>），不拍。
       if (containerLines && LEAF_TARGETS[item.tag]) {
@@ -1247,9 +1257,16 @@
       const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
       const firstIdx = allLis.indexOf(lis[0]), lastIdx = allLis.indexOf(lis[lis.length - 1]);
       if (firstIdx < 0 || lastIdx < 0 || (firstIdx === 0 && lastIdx === allLis.length - 1)) return turnInto(ul, item); // 判不出 / 全选 → 整块
-      const mkUl = () => { const u = doc.createElement(ul.tagName); if (ul.className) u.className = ul.className; return u; };
-      if (firstIdx > 0) { const b = mkUl(); for (let k = 0; k < firstIdx; k++) b.appendChild(allLis[k]); ul.before(b); }
-      if (lastIdx < allLis.length - 1) { const a = mkUl(); for (let k = lastIdx + 1; k < allLis.length; k++) a.appendChild(allLis[k]); ul.after(a); }
+      // 前段要继承原列表的 start（分割点**之前**的序号一个都不该变——Notion 同款，对拍 N8 实测）；
+      // 后段不带 start = 从 1 重启（这半边本来就对齐 Notion）。tail 传 false。
+      const mkUl = (keepStart) => {
+        const u = doc.createElement(ul.tagName);
+        if (ul.className) u.className = ul.className;
+        if (keepStart && ul.hasAttribute('start')) u.setAttribute('start', ul.getAttribute('start'));
+        return u;
+      };
+      if (firstIdx > 0) { const b = mkUl(true); for (let k = 0; k < firstIdx; k++) b.appendChild(allLis[k]); ul.before(b); }
+      if (lastIdx < allLis.length - 1) { const a = mkUl(false); for (let k = lastIdx + 1; k < allLis.length; k++) a.appendChild(allLis[k]); ul.after(a); }
       return turnInto(ul, item); // 此刻 ul 只剩选中 li → 产物替换 ul、留原位、前后列表夹住
     }
     function removeBlock(el) {
