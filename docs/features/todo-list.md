@@ -73,6 +73,14 @@
 | 交互态标记 / 空 style 剥除 | — | `src/editor/serialize.js`（`cleanRoot`：空 style 通用剥除、WS2_MARKERS） |
 | 门 | — | `e2e/todo-markdown-shortcut.spec.js`、`e2e/todo-select-clean.spec.js`、`e2e/todo-clipboard.spec.js`、`test/serialize.test.js`（U2 空 style 单测） |
 
+**行「转为」保住嵌套子项（对拍 F12，2026-08-04）。** 把带子项的行抽出去转成叶子类块（正文/标题/引用/callout）时，先摘下该行的嵌套子列表、产物落位后原样接回**产物之后**——此前整棵子树被 `flattenListToPhrasing` 拍进产物文字里、子项作为独立条目彻底消失（丢内容）。**刻意的降级**：段落之下无法承载嵌套（Schema 的 `li-content` 规则），故子树降为顶层列表；Notion 那边子块能继续保持缩进。内容零丢失、缩进降一级。转成列表类目标时不摘（子树本就该继续挂着）。门：`e2e/list-row-menu.spec.js`。
+
+**`<ol>` 分割的序号语义（对拍 N8，2026-08-04）。** 从 `ol[start=N]` 中间抽走一行：**前段继承原 `start`**（分割点**之前**的号一个都不该变——Notion 实测同款），**后段不带 `start` = 从 1 重启**（这半边本来就对齐），**非 `ol` 产物剥掉 `start`**（`retagElement` 保全属性会拖出 `<p start="2">` 这种垃圾属性入盘）。⚠ 两处 `retagElement` 调用点都要剥（列表源分支易漏）。
+
+**块菜单头标注作用对象（对拍 N3/F4，2026-08-04）。** 菜单顶部显示作用对象的块类型（待办列表 / 无序列表 / 编号列表 / 折叠 / 表格 / 引用 / 图片 / 正文…）：行入口按行所属列表类型、块入口按 `classify` 映射，复用既有块类型词条零新增 i18n key。对齐 Notion 的「To-do list」菜单头，同时补上 U3「行级作用域不够可见」的短板。
+
+**markdown 触发符补 `+ `（对拍 F11）。** 圆点列表的 markdown 快捷从 `- `/`* ` 扩到 `- `/`* `/`+ `（Notion 三者都认）。
+
 ## 有意分歧
 
 - **编辑器架构本质不同**（历史形成，两侧独立演进）：ui-demo 是受控 React 块模型，真 app 是每个块独立 contenteditable、直接改真实 DOM。**本 spec 的行为契约主要约束真 app 侧**；ui-demo 侧 todo 行为**尚未审计**（见欠账）。谁拍板/日期：架构分歧属既有事实，本 spec 首次记录在案（2026-07-23）。
