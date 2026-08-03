@@ -5,6 +5,22 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.11.8 — 2026-08-03
+
+Tables are now editable, and blocks can be indented.
+
+### Added
+
+- **Tables**: edit table content in place — insert with `/table`, click a cell and type; move between cells with Tab / Enter / arrow keys, and Tab on the last cell adds a row; the block menu inserts and deletes rows and columns and sets center / right alignment; tables and alignment are saved into the file and render the same when opened in any browser
+- **Indent**: indent whole paragraphs / headings / quotes — Tab to indent one step, Shift+Tab to go back, with the cursor anywhere in the block
+- **Lists**: select multiple rows and press Tab to nest them together, Shift+Tab to move them back out — your selection stays put
+
+### Improved
+
+- **Updates**: update notifications are now concise and readable at a glance (full notes remain in the changelog)
+- **Browser**: download feedback now pops up right under the download button, so it's clear where it came from
+- **New document**: previews the upcoming "Paged document" layout mode (in development)
+
 ## v0.11.7 — 2026-07-24
 
 A polish pass for toggle blocks.
