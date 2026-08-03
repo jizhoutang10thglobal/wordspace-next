@@ -14,6 +14,29 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-03 — 本地全量 e2e 门槛大幅提高：默认不跑，发版前才跑（CI 全量照旧不变）
+
+**是什么**：Colin 2026-08-03 当场叫停本地全量 e2e（「我的电脑一直在闪」）。现在这套 690+ 条、每条
+**真开一个 Electron 窗口再关掉**，一轮 17-18 分钟，全程闪屏抢焦点，人没法用电脑。**新口径：本地全量
+只在「准备发版之前」跑；日常开发（包括动共享核心）一律只跑受影响的 spec + 变异自检那一道门。**
+⚠ **CI 侧一个字没改**：每个 PR 照跑全量分片（required check 仍是 `{test, e2e-all}`，strict）——
+正因为 CI 这道全量门还在，本地跳过全量才是安全的，**别把这条读成「全量可以不跑了」**。
+这也是对 CLAUDE.md 既有纪律（2026-07-09「开发迭代只跑受影响的 spec」）的强化：其中「动到共享核心
+推 PR 前本地全跑一次兜底」的例外条款**作废**，改为交给 CI。
+
+**怎么 apply**：
+① 日常：`npx playwright test e2e/<spec>.spec.js`（十几秒）+ 变异自检；改共享核心也这样，全量交 CI，
+真有跨文件回归就多一次 CI 往返（6 分钟），比每次占用户机器 18 分钟划算得多。
+② 真要在本地跑长任务（全量 e2e、大批量脚本），**先告诉用户会发生什么**（会闪屏、要多久），
+用户正在用电脑就别跑。
+③ **进程清理是自己的责任**，且 `pkill -f <worktree 名>` **不可靠**：worktree 的 `node_modules` 常是
+软链到别的 worktree，Electron 进程命令行里写的是**被软链指向的那个路径**，按本 worktree 名 pgrep
+根本匹配不到（还会误伤正在跑的测试——本次实测把自己的测试进程杀了）。要按
+`node_modules/electron/dist/Electron.app` 这类真实路径匹配，或起进程时记 PID。起 dev 实例 / 跑测试
+后务必收尾，别留孤儿 Electron（本次 session 累计留了十几个，最早的挂了几小时）。
+
+**来源**：Colin 2026-08-03 口头拍板（UX 粒度对齐 session）；呼应 CLAUDE.md「开发时的测试纪律 — 2026-07-09」。
+
 ## 2026-08-03 — 表格块编辑开工：blockedit.js/serialize.js 热点预警
 
 **是什么**：表格块编辑 feature（Schema 1 Table v1）开工，worktree wordspace-next-table / 分支 feat/table-block-editing。接下来几天会重改 `src/editor/blockedit.js` 全线（classify/onClick/onKeyDown/deleteSelection/refreshRangeSel/execText/onPaste）+ `src/editor/serialize.js`（WS2_MARKERS 新增 cell 编辑标记）+ 新增 `e2e/table.spec.js` 与 `test/blockedit-table.test.js`。
