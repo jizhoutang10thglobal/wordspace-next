@@ -10,6 +10,8 @@ module.exports = {
   unsavedMessage: '文档有未保存的修改',
   unsavedDetail: '关闭后未保存的修改将丢失。',
   // 更新免密一次性修复对话框(main.js maybeRepairBundleOwnership，仅 mac)
+  // 更新面板 release notes 被截断时的尾行提示(main.js parseReleaseNotes.moreText)
+  updateNotesMore: '……完整说明点「更新日志」',
   repairAndInstall: '修复并继续安装',
   skipRepair: '跳过（本次仍需输密码）',
   repairTitle: '一次性修复：以后更新不再要密码',
