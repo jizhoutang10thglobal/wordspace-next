@@ -354,9 +354,13 @@
       ':where(ol ol){list-style-type:lower-alpha}' +
       ':where(ol ol ol){list-style-type:lower-roman}' +
       ':where(ol ol ol ol){list-style-type:decimal}' +
+      ':where(ol ol ol ol ol){list-style-type:lower-alpha}' +
+      ':where(ol ol ol ol ol ol){list-style-type:lower-roman}' +
       ':where(ul ul){list-style-type:circle}' +
       ':where(ul ul ul){list-style-type:square}' +
       ':where(ul ul ul ul){list-style-type:disc}' +
+      ':where(ul ul ul ul ul){list-style-type:circle}' +
+      ':where(ul ul ul ul ul ul){list-style-type:square}' +
       ':where(li){margin:.3em 0}' +
       ':where(li>ul,li>ol){margin:.15em 0}' +
       ':where(blockquote){margin:.7em 0;padding:2px 0 2px 14px;border-left:3px solid #d9d7d2}' +
@@ -1267,7 +1271,21 @@
       };
       if (firstIdx > 0) { const b = mkUl(true); for (let k = 0; k < firstIdx; k++) b.appendChild(allLis[k]); ul.before(b); }
       if (lastIdx < allLis.length - 1) { const a = mkUl(false); for (let k = lastIdx + 1; k < allLis.length; k++) a.appendChild(allLis[k]); ul.after(a); }
-      return turnInto(ul, item); // 此刻 ul 只剩选中 li → 产物替换 ul、留原位、前后列表夹住
+      // 选中行的**嵌套子列表**先摘下来（对拍 F12：不摘的话 flattenListToPhrasing 会把整棵子树拍进产物文字里，
+      // 子项作为独立条目彻底消失 = 丢内容）。转成列表类目标时不摘（子树本就该继续挂着）。
+      const LEAF_LIKE = { p: 1, h1: 1, h2: 1, h3: 1, h4: 1, blockquote: 1, div: 1 };
+      const detached = [];
+      if (LEAF_LIKE[item.tag]) {
+        for (const li of lis) {
+          for (const c of [...li.children]) if (c.tagName === 'UL' || c.tagName === 'OL') { detached.push(c); c.remove(); }
+        }
+      }
+      const nx = turnInto(ul, item); // 此刻 ul 只剩选中 li → 产物替换 ul、留原位、前后列表夹住
+      // 摘下的子树接回产物之后：段落之下无法承载嵌套，故层级降一级成顶层列表（内容零丢失，缩进降级见 spec）。
+      let ref = nx;
+      for (const sub of detached) { ref.after(sub); ref = sub; }
+      if (detached.length && undoMgr) undoMgr.checkpoint();
+      return nx;
     }
     function removeBlock(el) {
       const scope = scopeRootOf(el); // U6：作用域感知——toggle 体内删块按体内计数；≥1 块铁则（summary-only 死胡同）
@@ -3067,7 +3085,7 @@
     function tryMarkdown(e) {
       if (!editingEl || classify(editingEl) !== 'text') return; // 只在正文块（p）触发
       const _txt = editingEl.textContent || '';
-      const m = _txt.match(/^(#{1,4}|[-*]|\d+\.|\[[ xX]?\]|>)[\s ]/);
+      const m = _txt.match(/^(#{1,4}|[-*+]|\d+\.|\[[ xX]?\]|>)[\s ]/);
       if (!m) return;
       const whole = _txt.length === m[0].length; // 整块只有 marker+空格（决定清空 vs 保留后缀）
       // U18/create-7：无论整块还是前缀触发，都只在「刚敲下补全 marker 的那个空格」这一击转换——
@@ -3083,7 +3101,7 @@
       if (!(first0 && first0.nodeType === 3 && sel0 && sel0.anchorNode === first0 && sel0.anchorOffset === m[0].length)) return;
       const t = m[1];
       const key = t[0] === '#' ? ['h1', 'h2', 'h3', 'h4'][t.length - 1]
-        : (t === '-' || t === '*') ? 'list'
+        : (t === '-' || t === '*' || t === '+') ? 'list'
         : /^\d+\.$/.test(t) ? 'numbered'
         : t[0] === '[' ? 'todo'
         : t === '>' ? 'quote' : null;

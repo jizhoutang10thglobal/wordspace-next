@@ -83,6 +83,30 @@ test('转为正文：只抽出该行，前后剩余项仍是原列表', async ()
   expect(await conformOf(await serialize())).toBe(true);
 });
 
+// 对拍 F12（无序列表维度实测）：Notion 把该行转成 text 后，它的**子块原样保留**；我们原来
+// 把整棵子树拍进产物文字里 = 子项作为条目彻底消失（丢内容）。修后子树接在产物之后、降为顶层列表。
+test('带嵌套子项的行「转为正文」：子项不被吞、以列表形式留在产物之后', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="a">一级 A</li><li id="b">一级 B<ul id="S"><li id="b1">二级 B1</li><li id="b2">二级 B2</li></ul></li><li id="c">一级 C</li></ul>');
+  // ⚠ 带嵌套子树的行，几何中心落在**子列表**上 → 必须瞄准父行自己那一行文字（否则悬停解析到嵌套行）
+  await frame.locator('#b').hover({ position: { x: 20, y: 8 } });
+  await page.waitForTimeout(150);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  await clickItem('转为正文');
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.body.children].map((el) => ({ tag: el.tagName, text: el.textContent.trim() }));
+  });
+  expect(st.map((k) => k.tag).join(','), '前列表 / 段落 / 子树列表 / 后列表').toBe('UL,P,UL,UL');
+  expect(st[1].text, '产物只含该行自己的文字、不含子项').toBe('一级 B');
+  expect(st[2].text.replace(/\s+/g, ''), '子项原样保留为独立列表').toBe('二级B1二级B2');
+  expect(st[3].text, '后段列表不受影响').toBe('一级 C');
+  const gone = await page.evaluate(() => !!document.getElementById('doc-frame').contentDocument.getElementById('b1'));
+  expect(gone, '子项 li 节点仍在（不是被拍成文字）').toBe(true);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 // 对拍 N8（编号列表维度实测）：Notion 只重排**分割点之后**的号，之前的号一个不动。
 // 我们原来前段丢 start（上方的号跟着变）+ start 泄漏到产物 <p start="2">（垃圾属性）。
 test('ol[start] 中间行转为正文：前段保 start、产物不带 start、后段从 1 重启', async () => {

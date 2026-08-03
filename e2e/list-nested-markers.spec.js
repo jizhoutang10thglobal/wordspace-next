@@ -89,3 +89,24 @@ test('旧文档打开即静默升级到带层级规则的基线', async () => {
   expect(await markerOf('#L2'), '打开后二级即为 lower-alpha（基线被升级）').toBe('lower-alpha');
   expect((await serialize()).includes('lower-alpha'), '升级后的基线随保存入盘').toBe(true);
 });
+
+test('深层循环 mod-3：第 5/6 级回到 circle/square（编号同理 lower-alpha/lower-roman）', async () => {
+  await launch();
+  await openDoc('<ul id="U1"><li>1<ul id="U2"><li>2<ul id="U3"><li>3<ul id="U4"><li>4<ul id="U5"><li>5<ul id="U6"><li>6</li></ul></li></ul></li></ul></li></ul></li></ul></li></ul>');
+  expect(await markerOf('#U5'), '第五级 circle（mod-3）').toBe('circle');
+  expect(await markerOf('#U6'), '第六级 square').toBe('square');
+});
+
+test('markdown「+ 」也触发圆点列表（对拍 F11：Notion 认 - * +，我们原来只认 - *）', async () => {
+  await launch();
+  await openDoc('<p id="p1"><br></p>');
+  await frame.locator('#p1').click();
+  await page.keyboard.type('+ ');
+  await page.keyboard.type('加号触发');
+  await expect.poll(async () => (await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const ul = d.querySelector('ul');
+    return ul ? ul.textContent.trim() : null;
+  })), { message: '「+ 」转成圆点列表并保留后续文字' }).toBe('加号触发');
+  expect(await conformOf(await serialize())).toBe(true);
+});
