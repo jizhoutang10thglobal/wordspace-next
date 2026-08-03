@@ -41,10 +41,7 @@ let blockEdit = null; // 当前文档的块编辑内核（WS2BlockEdit.attach �
 let basicEdit = null; // 非合规文档的基础编辑内核（WS2BasicEdit.attach 返回，Feature 3）
 let pagination = null; // 分页文档的 V4 分页引擎（WS2Pagination.attach 返回）；与块编辑器同生命周期
 let docPageCfg = null; // 分页版式配置（routeDoc 按磁盘字节解析 / applyPageSetup 运行时更新）；null = 非分页
-let docConform = true; // openDoc 判定：文件合规→完整块编辑；不合规→基础编辑（分流 seam，KD-e）。= (docSchemaId != null)
-let docSchemaId = 'schema-1'; // 文档 Schema 身份：'schema-1'(流式) / 'schema-2'(分页) / null(非合规降级)。routeDoc 由 classify 设。
-                              // 不变式：docSchemaId==='schema-2' ⟺ docPageCfg != null（routeDoc 与 applyPageSetup 共同维持）。
-                              // PR-A 只用它承载身份；按 schemaId 路由到各自编辑器 / 转换 meta 落盘在 PR-B/C（U4/U5）。
+let docConform = true; // openDoc 判定：文件合规→完整块编辑；不合规→基础编辑（分流 seam，KD-e）
 let loadGen = 0;       // 每次载入/重载自增；旧的 frame.onload 闭包据此作废，防并发载入（如外部连改 + 重载）交叉 wireEditor
 let openSeq = 0;       // openDoc 序号：await 期间又开了别的文档 / 关了文档 → 陈旧 openDoc 落地作废（修 SH-1，仿 loadGen）
 
@@ -288,19 +285,19 @@ function setZoom(z) {
 // 判失败（理论上不会，validate 是纯函数 + DOMParser 不抛）保守当合规、走现有完整编辑，不改现状行为。
 function routeDoc(rawHtml) {
   try {
-    // 走 Schema 注册表分类（多 Schema：识别属于 schema-1 流式 / schema-2 分页 / null 非合规）。
+    // 走 Schema 注册表分类（多 Schema 就绪：classify 遍历已注册 schema、认出属于哪个）。现阶段仍只用 .conform
+    // 二值分流；将来把 docConform 升成 docSchema 后，可按 classify().schemaId 路由到各自编辑器（待 align 的 shell.js 落地后做）。
     const dom = new DOMParser().parseFromString(rawHtml, 'text/html');
     const r = WS2SchemaRegistry.classify(dom);
-    docSchemaId = r.schemaId; // 文档身份（PR-B/C 的转换/页眉页脚按它走）；null=非合规降级
-    // 分页版式（判磁盘字节口径）：仅 schema-2 命中（= 结构合规 + head 首个 page 块可解析）时解析入 docPageCfg。
-    // page 块写坏/多余块 → schema-2 不认 → 归 schema-1 流式、docPageCfg 保持 null（宽容回退，不降级）。
+    // 分页版式（判磁盘字节口径，同 conform）：合规 + head 有可解析的 page 块 → wireEditor 挂分页引擎。
+    // 解析不出（写坏）只是分页不生效，不降级（分页 = Schema 1 可选版式，不是独立 Schema）。
     docPageCfg = null;
-    if (r.schemaId === 'schema-2' && window.WS2SchemaPage) {
+    if (r.conform && window.WS2SchemaPage) {
       const st = dom.head && dom.head.querySelector('style[data-ws-schema-css="page"]');
       if (st) docPageCfg = WS2SchemaPage.parsePageCss(st.textContent);
     }
-    return r.schemaId != null; // 布尔=合规(可块编辑)；docConform 语义不变（schema-1/2 皆真），全部读点无需改
-  } catch (e) { docSchemaId = null; docPageCfg = null; return false; } // fail-closed：判不了就走基础编辑器（对任意 HTML 都安全、不套块模型），别 fail-open 把坏文档送进完整编辑器
+    return !!r.conform;
+  } catch (e) { docPageCfg = null; return false; } // fail-closed：判不了就走基础编辑器（对任意 HTML 都安全、不套块模型），别 fail-open 把坏文档送进完整编辑器
 }
 
 // 换文档 / 关文档：两个编辑内核都拆、降级条收起（统一收口，防堆叠）。
@@ -540,7 +537,7 @@ async function showViewer(node) {
   docPath = null; docContext = null;
   viewerFile = { abs: node.abs, kind: node.kind || 'other' }; // 收编引擎读「当前打开面文件」的查看器分支
   docInfo = null;
-  docPageCfg = null; docSchemaId = null; // 查看器态没有分页/schema 概念（对称 shellCloseDoc）
+  docPageCfg = null; // 查看器态没有分页概念（对称 shellCloseDoc）
   setDirty(false);
   frame.hidden = true;
   frame.removeAttribute('src');
@@ -934,7 +931,7 @@ function shellCloseDoc() {
   docPath = null; docContext = null;
   docInfo = null;
   tempDoc = null;
-  docPageCfg = null; docSchemaId = null; // 关文档清分页配置 + schema 身份（防陈旧值泄漏；openDoc 的 routeDoc 会重设）
+  docPageCfg = null; // 关文档清分页配置（防陈旧值泄漏到下一个上下文；openDoc 的 routeDoc 会重设）
   setDirty(false);
   frame.hidden = true;
   frame.removeAttribute('src');
@@ -970,9 +967,6 @@ window.__shellResumeAutosave = resumeAutoSave;
 // position:fixed、坐标=iframe 矩形+元素矩形）要重定位，否则飘。复用 resize handler 那套调用（handoff §3）。
 // handoff §3：块编辑手柄/气泡 + 基础编辑器格式条都是 position:fixed 宿主浮层，收起改 iframe 几何后都要重定位。
 window.__shellReposition = () => { if (blockEdit) blockEdit.reposition(); if (basicEdit) basicEdit.reposition(); if (pagination) pagination.refresh(); if (window.WS2Find) window.WS2Find.reposition(); if (window.WS2Mention) window.WS2Mention.reposition(); if (window.WS2LinkView) window.WS2LinkView.reposition(); };
-// 内存态 Schema 身份探针（e2e 用）：docSchemaId 在 PR-A 尚无运行时读者（PR-B/C 才按它路由），
-// 为防它成「写坏也没门抓」的哑变量，e2e 直接读它断言身份翻转 + 不变式（schemaId==='schema-2' ⟺ paged）。
-window.__ws2DocSchema = () => ({ schemaId: docSchemaId, paged: docPageCfg != null });
 
 // 「打开」按钮：选任意文件 → 按 kind 分流。html 进编辑器（openDoc 漏斗，含建标签）；图片/PDF/其它走
 // 应用内查看器 showViewer（图片·PDF 预览、其余给「默认程序打开」卡片）。工作区内的文件 onOpen 会建标签
@@ -1087,7 +1081,6 @@ function applyPageSetup(cfg, pageNumbers) {
     m.setAttribute('content', 'true');
   } else if (m) { m.remove(); }
   docPageCfg = cfg || null;
-  docSchemaId = cfg ? 'schema-2' : 'schema-1'; // 维持不变式 docSchemaId==='schema-2' ⟺ docPageCfg!=null（运行时转换）。meta 落盘/保留语义在 U4(PR-B)
   if (pagination) { pagination.detach(); pagination = null; }
   if (cfg && window.WS2Pagination) pagination = WS2Pagination.attach(doc, { win: frame.contentWindow, config: cfg });
   if (blockEdit) blockEdit.reposition(); // 纸面几何变了，手柄/气泡重定位
