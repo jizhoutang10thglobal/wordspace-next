@@ -40,6 +40,9 @@ import {
   pickImageFiles,
 } from '../lib/image'
 import { usePageConfig } from '../mock/paged'
+import { useDocTypography, applyPreset, useTypography } from '../mock/typography'
+import { buildTypographyCss } from '../lib/typography'
+import TypographyToolbar from './TypographyToolbar'
 import { PAGE_GAP_PX, computeInnerSplits, paginateBlocks, pageBoxPx } from '../lib/page'
 import { getDragFile } from './ArcSidebar'
 import type { FileEntry } from '../types'
@@ -59,13 +62,14 @@ const SLASH_ITEMS: {
   label: string
   kw: string
   type: BlockType | 'ai' | 'doclink'
-  level?: 1 | 2 | 3
+  level?: 1 | 2 | 3 | 4
   listStyle?: ListStyle
 }[] = [
   { key: 'text', label: 'editor.text', kw: 'text zhengwen p', type: 'text' },
   { key: 'h1', label: 'editor.heading1', kw: 'h1 biaoti heading', type: 'heading', level: 1 },
   { key: 'h2', label: 'editor.heading2', kw: 'h2 biaoti heading', type: 'heading', level: 2 },
   { key: 'h3', label: 'editor.heading3', kw: 'h3 biaoti heading', type: 'heading', level: 3 },
+  { key: 'h4', label: 'editor.heading4', kw: 'h4 biaoti heading', type: 'heading', level: 4 },
   { key: 'list', label: 'editor.bulletedList', kw: 'list liebiao ul bulleted wuxu', type: 'list', listStyle: 'bulleted' },
   { key: 'numbered', label: 'editor.numberedList', kw: 'numbered ordered ol bianhao youxu 1', type: 'list', listStyle: 'numbered' },
   { key: 'todo', label: 'editor.todoList', kw: 'todo task checkbox daiban checklist', type: 'list', listStyle: 'todo' },
@@ -94,11 +98,11 @@ const filterSlash = (q: string, t: TFunc) => {
 // （用户在空行敲前缀+空格的瞬间），避免误转已有正文。
 function detectMarkdown(
   text: string,
-): { type: BlockType; level?: 1 | 2 | 3; listStyle?: ListStyle } | null {
-  const m = text.match(/^(#{1,3}|[-*]|1\.|\[\s?\]|>)[\s ]$/)
+): { type: BlockType; level?: 1 | 2 | 3 | 4; listStyle?: ListStyle } | null {
+  const m = text.match(/^(#{1,4}|[-*]|1\.|\[\s?\]|>)[\s ]$/)
   if (!m) return null
   const t = m[1]
-  if (t[0] === '#') return { type: 'heading', level: t.length as 1 | 2 | 3 }
+  if (t[0] === '#') return { type: 'heading', level: t.length as 1 | 2 | 3 | 4 }
   if (t === '-' || t === '*') return { type: 'list', listStyle: 'bulleted' }
   if (t === '1.') return { type: 'list', listStyle: 'numbered' }
   if (t[0] === '[') return { type: 'list', listStyle: 'todo' }
@@ -616,7 +620,7 @@ function BlockRow({
   } else if (block.type === 'toggle') {
     inner = <ToggleBlockView doc={doc} block={block} registerEl={registerEl} />
   } else if (block.type === 'heading') {
-    const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3'
+    const L = `h${block.level ?? 2}` as 'h1' | 'h2' | 'h3' | 'h4'
     inner = <L className={`ws-h ws-h${block.level ?? 2}`} {...editProps} />
   } else if (block.type === 'text') {
     inner = (
@@ -949,6 +953,22 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
   const pageCfg = usePageConfig(doc?.id)
   const paged = !!doc && pageCfg.on
   const pageBox = useMemo(() => pageBoxPx(pageCfg), [pageCfg])
+  // 标准化排版层（U3/KTD6）：per-doc 排版配置 → scoped CSS 注入 article（.ws-doc-paged .ws-p{…}
+  // 类级特异性盖过 base 硬编字号/行距）。typographyCss 变 → 重算依赖触发重排（下方 recalc effect）。
+  const typoDoc = useDocTypography(doc?.id)
+  const typographyCss = useMemo(() => (paged ? buildTypographyCss(typoDoc.config) : ''), [paged, typoDoc])
+  // 测试 seam（绑当前文档）：U5 工具栏未建前，Playwright 门经此施加排版；与真 app 的 __ws2DocSchema 探针同路子。
+  useEffect(() => {
+    if (typeof window === 'undefined' || !doc) return
+    ;(window as unknown as { __ws2Typo?: unknown }).__ws2Typo = {
+      docId: doc.id,
+      applyPreset: (pid: string) => applyPreset(doc.id, pid),
+      setSizePt: (pt: number) => {
+        const cur = useTypography.getState().getDoc(doc.id).config
+        useTypography.getState().setConfig(doc.id, { ...cur, body: { ...cur.body, sizePt: pt } })
+      },
+    }
+  }, [doc])
   const articleRef = useRef<HTMLElement | null>(null)
   // gaps[i] = 块 i 前的块级页间隙（null = 不切页，流内 PageGap spacer 真实推挤给出上下页边距）；
   // gutters = 超高块「跨页续排」时画在内容上的页界分隔线（top 相对纸 padding 盒、实测块顶算出，
@@ -1138,7 +1158,9 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
       ro.disconnect()
       if (raf) cancelAnimationFrame(raf)
     }
-  }, [paged, doc, pageBox])
+    // typographyCss 入依赖：改字体/字号/行距 → 块高变 → 立即重排（+ RO 盯 .ws-blocks 兜底），
+    // 保证「改字号后每页仍=一张纸」（AE3，RISK-A 最高风险联动点）。
+  }, [paged, doc, pageBox, typographyCss])
 
   const [fmtRect, setFmtRect] = useState<FormatRect | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -2542,6 +2564,22 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
     }
   }
 
+  // 行内字号：execCommand('fontSize') 只吃 1-7 号、给不了精确 px——自己把选区包进 <span style="font-size">。
+  // 顶部排版工具栏的字号应用到选区走这条（Word 式：改的是选中的字，不是全文默认）。
+  const applyFontSize = (px?: string) => {
+    const sel = window.getSelection()
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed || !px) return
+    const range = sel.getRangeAt(0)
+    const span = document.createElement('span')
+    span.style.fontSize = px
+    try {
+      range.surroundContents(span)
+    } catch {
+      span.appendChild(range.extractContents())
+      range.insertNode(span)
+    }
+  }
+
   // 工具栏命令统一入口：有文字选区 → 作用于选区；否则作用于被选中的整块。
   const applyCmd = (command: string, value?: string) => {
     const sel = window.getSelection()
@@ -2593,6 +2631,7 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
     const run = () => {
       if (command === '__code__') wrapCode()
+      else if (command === '__fontsize__') applyFontSize(value)
       else document.execCommand(command, false, value)
     }
     if (hasText) {
@@ -2676,6 +2715,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
 
   return (
     <main className={'ws-canvas' + (embedded ? ' ws-canvas-embed' : '')}>
+      {/* 分页文档标准化排版工具栏（U5）：仅分页文档显示、非内嵌；钉在纸面上方、不随滚动。 */}
+      {paged && !embedded && <TypographyToolbar docId={doc.id} onCmd={applyCmd} />}
       {/* 文档内查找条（Cmd+F）。key=doc.id：切文档时重挂、重搜、清旧高亮 */}
       {docFindOpen && (
         <DocFind key={doc.id} container={scrollRef.current} onClose={closeDocFind} />
@@ -2710,6 +2751,8 @@ export default function Canvas({ docId, embedded }: { docId?: string; embedded?:
         >
           {/* 模板版式 CSS：已作用域化到 .ws-doc.ws-tpl-on，只作用文档区、不漏 app 界面。 */}
           {scopedTplCss && <style>{scopedTplCss}</style>}
+          {/* 标准化排版层 CSS（U3/KTD6）：.ws-doc-paged .ws-p{…} 类级盖过 base 硬编字号/行距。 */}
+          {typographyCss && <style>{typographyCss}</style>}
           {!embedded && <DocHeader doc={doc} />}
           <div
             className="ws-blocks"

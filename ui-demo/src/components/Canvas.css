@@ -255,6 +255,7 @@
 .ws-h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.01em; margin: 8px 0 10px; }
 .ws-h2 { font-size: 20px; margin: 26px 0 8px; }
 .ws-h3 { font-size: 16px; margin: 20px 0 6px; }
+.ws-h4 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; }
 .ws-p { font-size: var(--fs-lg); line-height: var(--lh-doc); color: var(--c-text); margin: 6px 0; }
 .ws-ul { margin: 6px 0; padding-left: 22px; }
 .ws-ul li { font-size: var(--fs-lg); line-height: 1.7; color: var(--c-text); list-style: disc; margin: 3px 0; }

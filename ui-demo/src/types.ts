@@ -58,7 +58,7 @@ export interface Block {
   id: string
   type: BlockType
   html: string
-  level?: 1 | 2 | 3
+  level?: 1 | 2 | 3 | 4 // H4 = 分页文档标准化排版层加的第 4 级（KTD8）
   listStyle?: ListStyle // 仅 type==='list' 有意义
   // 折叠块（type==='toggle'）的展开态：collapse = false。渲染 <details open={block.open}>，
   // 折叠不进撤销历史（走独立的 setBlockOpen，不 checkpoint）。缺省视作展开。
