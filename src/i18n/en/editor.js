@@ -14,6 +14,7 @@ module.exports = {
   blockCallout: 'Callout',
   blockToggle: 'Toggle',
   blockTable: 'Table',
+  cellTextOnly: 'Cells hold text only',
   blockImage: 'Image',
   blockDivider: 'Divider',
   aiGenerate: '✦ AI generate (coming soon)',

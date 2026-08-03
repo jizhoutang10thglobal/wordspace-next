@@ -14,6 +14,7 @@ module.exports = {
   blockCallout: '提示',
   blockToggle: '折叠',
   blockTable: '表格',
+  cellTextOnly: '单元格只能放文字',
   blockImage: '图片',
   blockDivider: '分隔线',
   aiGenerate: '✦ AI 生成（开发中）',

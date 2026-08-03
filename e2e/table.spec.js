@@ -433,6 +433,187 @@ test('U3: 组词中 Enter 不移格（229 guard）', async () => {
   expect(await cellId()).toBe('c11'); // 没移格
 });
 
+// ===== U4：输入闸与选区语义 =====
+
+const pasteInto = (selId, plain, html) => frame.locator('body').evaluate((body, [id, p, h]) => {
+  const dt = new DataTransfer();
+  if (p) dt.setData('text/plain', p);
+  if (h) dt.setData('text/html', h);
+  document.getElementById(id).dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+}, [selId, plain || '', html || '']);
+
+// U4-1：cell 粘贴多行 → join 成单行；内部富 clip 粘 cell → 同样压纯文本。
+test('U4: cell 粘贴闸——多行压单行、富 clip 压纯文本', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c11').click();
+  await page.keyboard.press('End');
+  await pasteInto('c11', '甲行\n乙行\n丙行');
+  await page.waitForTimeout(150);
+  expect(await frame.locator('#c11').textContent()).toBe('十一格甲行 乙行 丙行'); // 单行落格
+  await frame.locator('#c22').click();
+  await page.keyboard.press('End');
+  await pasteInto('c22', '一二三', '<div data-ws2-clip="b"><ul class="ws-todo"><li data-checked="true">一二三</li></ul></div>');
+  await page.waitForTimeout(150);
+  const cellState = await frame.locator('body').evaluate(() => ({
+    text: document.getElementById('c22').textContent,
+    blocks: document.getElementById('c22').querySelectorAll('ul,li,p,div').length,
+  }));
+  expect(cellState.text).toBe('廿二格一二三');
+  expect(cellState.blocks).toBe(0); // 零块级结构进 cell
+  const html = await serialize();
+  expect(await conformOf(html)).toBe(true);
+});
+
+// U4-2：图片粘贴拒收 + 提示小签淡入（computed opacity 强断言）+ 自动消退 + 磁盘零残留。
+test('U4: 图片粘贴拒收给可感知反馈', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c12').click();
+  await frame.locator('body').evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], 'x.png', { type: 'image/png' }));
+    document.getElementById('c12').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(300); // 200ms 淡入完成
+  const tip = await frame.locator('body').evaluate(() => {
+    const t = document.querySelector('.ws-cellnope');
+    return t ? { opacity: parseFloat(getComputedStyle(t).opacity), text: t.textContent } : null;
+  });
+  expect(tip.opacity).toBeGreaterThan(0.9); // 真淡入（不是 class 检查）
+  expect(tip.text).toBe('单元格只能放文字');
+  const noImg = await frame.locator('body').evaluate(() => ({ imgs: document.querySelectorAll('td img, th img, figure').length, c12: document.getElementById('c12').textContent }));
+  expect(noImg.imgs).toBe(0); // 拒收成功
+  expect(noImg.c12).toBe('十二');
+  await page.waitForTimeout(1900); // 1.6s 后淡出
+  const tip2 = await frame.locator('body').evaluate(() => parseFloat(getComputedStyle(document.querySelector('.ws-cellnope')).opacity));
+  expect(tip2).toBeLessThan(0.1);
+  const html = await serialize();
+  expect(html).not.toContain('ws-cellnope'); // overlay 剥净
+  expect(await conformOf(html)).toBe(true);
+});
+
+// U4-3：cell 里打 '/' → 斜杠菜单不弹（KTD5）。
+test('U4: cell 内斜杠菜单禁用', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c13').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('/');
+  await page.waitForTimeout(300);
+  expect(await frame.locator('.ws-slashmenu').isVisible()).toBe(false);
+  expect(await frame.locator('#c13').textContent()).toBe('十三格子/'); // 字符照常落格
+});
+
+// U4-4：同表跨格选区 → 清内容不动结构（KTD3 线性被罩集）。
+test('U4: 跨格选区清内容不动结构', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c11').click();
+  // 程序化设置 c11 文中 → c22 文中 的跨格选区（还原拖选终态）
+  await frame.locator('body').evaluate(() => {
+    const r = document.createRange();
+    r.setStart(document.getElementById('c11').firstChild, 1); // 「十|一格」
+    r.setEnd(document.getElementById('c22').firstChild, 2);   // 「廿二|格」
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.waitForTimeout(150);
+  const hl = await frame.locator('body').evaluate(() => ({
+    markedCells: document.querySelectorAll('td[data-ws2-rangesel]').length,
+    tableMarked: !!document.querySelector('table[data-ws2-rangesel]'),
+  }));
+  expect(hl.markedCells).toBeGreaterThan(0); // 全罩格整格蓝
+  expect(hl.tableMarked).toBe(false); // 不再整表蓝（同表内是 cell 级语义）
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(150);
+  const after = await frame.locator('body').evaluate(() => {
+    const cs = [...document.querySelectorAll('tr')].map((r) => r.children.length);
+    return {
+      rect: cs.every((n) => n === cs[0]), rows: document.querySelectorAll('tr').length,
+      c11: document.getElementById('c11').textContent, c12: document.getElementById('c12').textContent,
+      c13: document.getElementById('c13').textContent, c21: document.getElementById('c21').textContent,
+      c22: document.getElementById('c22').textContent, c23: document.getElementById('c23').textContent,
+      cellId: (document.querySelector('[data-ws2-cell]') || {}).id || null,
+    };
+  });
+  expect(after.rect).toBe(true);
+  expect(after.rows).toBe(3); // 结构一格不少
+  expect(after.c11).toBe('十'); // 端点格裁剪
+  expect(after.c12).toBe(''); // 途径格清空（线性覆盖：c12/c13/c21 全清）
+  expect(after.c13).toBe('');
+  expect(after.c21).toBe('');
+  expect(after.c22).toBe('格'); // 端点格裁剪
+  expect(after.c23).toBe('廿三'); // 选区外不动
+  expect(after.cellId).toBe('c11'); // 光标回起格
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U4-5：从 cell 拖出到段落（出向跨块）→ 整表蓝 → Backspace 整删（ED-A2 出向）。
+test('U4: 出向跨块选区整表蓝整删', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c21').click();
+  await frame.locator('body').evaluate(() => {
+    const r = document.createRange();
+    r.setStart(document.getElementById('c21').firstChild, 1);
+    r.setEnd(document.getElementById('p2').firstChild, 2);
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.waitForTimeout(150);
+  expect(await frame.locator('body').evaluate(() => !!document.querySelector('table[data-ws2-rangesel]'))).toBe(true);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(150);
+  const after = await frame.locator('body').evaluate(() => ({ tables: document.querySelectorAll('table').length, p2: document.getElementById('p2') ? document.getElementById('p2').textContent : null }));
+  expect(after.tables).toBe(0); // 端点在表内 → 整删不裁剪
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U4-6：cell 内行内格式——⌘A 选本格 → fmtbar 加粗 → 磁盘 phrasing 标记 + computed font-weight 真值。
+test('U4: cell 内 fmtbar 加粗（R1 行内格式）', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c13').click();
+  await page.keyboard.press('Meta+a'); // 第一档：选本格内容
+  await page.waitForTimeout(200);
+  await expect(frame.locator('.ws-fmtbar')).toBeVisible();
+  await frame.locator('.ws-fmtbar-btn[title="加粗"]').click();
+  await page.waitForTimeout(200);
+  const state = await frame.locator('body').evaluate(() => {
+    const c = document.getElementById('c13');
+    const b = c.querySelector('b,strong');
+    return { hasB: !!b, weight: b ? getComputedStyle(b).fontWeight : null, text: c.textContent };
+  });
+  expect(state.hasB).toBe(true);
+  expect(parseInt(state.weight, 10)).toBeGreaterThanOrEqual(600); // 视觉真值，不是查 class
+  expect(state.text).toBe('十三格子');
+  const html = await serialize();
+  expect(await conformOf(html)).toBe(true);
+  expect(html).toMatch(/<(b|strong)>十三格子<\/(b|strong)>/);
+});
+
+// U4-7：跨格复制 = 纯文本（绝不携带裸 tr/td 片段粘回产非法结构）。
+test('U4: 跨格复制粘贴为纯文本', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c11').click();
+  await frame.locator('body').evaluate(() => {
+    const r = document.createRange();
+    r.setStart(document.getElementById('c11').firstChild, 0);
+    r.setEnd(document.getElementById('c12').firstChild, 2);
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.waitForTimeout(120);
+  // 直接调 onCopy 管线（合成 copy 事件带可写 clipboardData）
+  const clip = await frame.locator('body').evaluate(() => {
+    const dt = new DataTransfer();
+    const ev = new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true });
+    document.getElementById('c11').dispatchEvent(ev);
+    return { html: dt.getData('text/html'), plain: dt.getData('text/plain') };
+  });
+  expect(clip.html).toBe(''); // 无 HTML 载荷（纯文本复制）
+  expect(clip.plain.replace(/\s+/g, '')).toBe('十一格十二');
+});
+
 // U1-4：非空锚块造表 → 插到锚块下方（锚块保留），undo 一步撤掉整个造表。
 test('U1: 非空块造表插下方 + undo 一步还原', async () => {
   await launch();
