@@ -61,6 +61,23 @@ test('tableSeed: 自定义行列数仍矩形（5 列 1 行——长度非对称 
   }
 });
 
+test('tableRowsOf: 过滤分页 spacer 行（data-ws2-ui / .ws-page-spacer 双保险，长度非对称 fixture）', () => {
+  const t = el('<table><thead><tr><th>表头甲</th></tr></thead><tbody>'
+    + '<tr class="ws-page-spacer" data-ws2-ui="__ws2-overlay__"><td colspan="99">推</td></tr>'
+    + '<tr><td>数据行内容较长一号</td></tr>'
+    + '<tr class="ws-page-spacer"><td>又一个间隔</td></tr>'
+    + '<tr><td>短</td></tr></tbody></table>');
+  const rows = require('../src/editor/blockedit.js').tableRowsOf(t);
+  assert.equal(rows.length, 3); // thead 1 + tbody 数据行 2（两个 spacer 都被滤掉）
+  assert.ok(rows.every((r) => !r.classList.contains('ws-page-spacer')));
+});
+
+test('firstCellOf: thead 优先取 R1C1；无 thead 时取 tbody 首格；空壳表返 null', () => {
+  assert.equal(be.firstCellOf(el('<table><thead><tr><th>首</th><th>次</th></tr></thead><tbody><tr><td>体</td><td>体二</td></tr></tbody></table>')).textContent, '首');
+  assert.equal(be.firstCellOf(el('<table><tbody><tr><td>无表头首格</td></tr></tbody></table>')).textContent, '无表头首格');
+  assert.equal(be.firstCellOf(el('<table></table>')), null);
+});
+
 test('tableSeed 产物 reparse 后过校验器（conform，含在完整合规文档中）', () => {
   const d = docOf('<!DOCTYPE html><html><body></body></html>');
   const t = be.tableSeed(d);

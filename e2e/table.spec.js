@@ -78,8 +78,10 @@ test('U1: slash 造表 → canonical 种子 + 空块原地替换 + 灰选整表'
       rect: cellCounts.every((n) => n === cellCounts[0]),
       cols: cellCounts[0],
       brs: [...t.querySelectorAll('td,th')].every((c) => c.querySelector('br')),
-      // 灰选态落在 TABLE 元素本身（绝不在 TD 上）
-      selectedTag: (document.querySelector('[data-ws2-selected]') || {}).tagName || null,
+      // R3：造出即编辑——首格（thead 首 th）带 cell 编辑态；contenteditable 挂 cell 不挂 table
+      cellTag: (document.querySelector('[data-ws2-cell]') || {}).tagName || null,
+      cellIsFirstTh: document.querySelector('[data-ws2-cell]') === t.querySelector('thead th'),
+      tableCe: t.getAttribute('contenteditable'),
       // 空锚块原地替换：#p1 之后不残留空段落（表格紧跟 #p1）
       afterP1: document.getElementById('p1').nextElementSibling ? document.getElementById('p1').nextElementSibling.tagName : null,
     };
@@ -93,7 +95,9 @@ test('U1: slash 造表 → canonical 种子 + 空块原地替换 + 灰选整表'
   expect(shape.rect).toBe(true);
   expect(shape.cols).toBe(3);
   expect(shape.brs).toBe(true);
-  expect(shape.selectedTag).toBe('TABLE');
+  expect(shape.cellTag).toBe('TH');
+  expect(shape.cellIsFirstTh).toBe(true);
+  expect(shape.tableCe).toBe(null);
   expect(shape.afterP1).toBe('TABLE');
 });
 
@@ -125,6 +129,139 @@ test('U1: 斜杠过滤词 biaoge 能搜到表格项', async () => {
   // 别名命中的不是别的项：过滤结果里恰含表格
   const count = await frame.locator('.ws-slashmenu-item').count();
   expect(count).toBe(1);
+});
+
+// ===== U2：cell 编辑状态机 =====
+
+// 造好表后光标已在首格（R3），供 U2 用例起步。
+const TABLE_DOC = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><p id="p1">前文段落甲</p>'
+  + '<table class="ws-table"><thead><tr><th scope="col">甲</th><th scope="col">乙</th><th scope="col">丙</th></tr></thead>'
+  + '<tbody><tr><td id="c11">十一格</td><td id="c12">十二</td><td id="c13">十三格子</td></tr>'
+  + '<tr><td id="c21">廿一</td><td id="c22">廿二格</td><td id="c23">廿三</td></tr></tbody></table>'
+  + '<p id="p2">后文段落乙</p></body></html>';
+
+// U2-1：点既有表格（AI/md 来源形态）的 cell → 进该格编辑、打字落对格；serialize 零标记残留 + conform。
+test('U2: 点 cell 打字落对格 + 磁盘零残留', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c12').click();
+  await page.waitForTimeout(150);
+  const state = await frame.locator('body').evaluate(() => ({
+    cellId: (document.querySelector('[data-ws2-cell]') || {}).id || null,
+    ce: (document.getElementById('c12').getAttribute('contenteditable')),
+  }));
+  expect(state.cellId).toBe('c12');
+  expect(state.ce).toBe('true');
+  await page.keyboard.press('End');
+  await page.keyboard.type('新增');
+  await page.waitForTimeout(120);
+  expect(await frame.locator('#c12').textContent()).toBe('十二新增');
+  const html = await serialize();
+  expect(await conformOf(html)).toBe(true);
+  expect(html).not.toMatch(/data-ws2-(cell|ce)/);
+  expect(html).not.toContain('contenteditable');
+  expect(html).toContain('十二新增');
+});
+
+// U2-2：Esc 上卷 = 灰选整表（selectedEl 永不为 TD）→ Backspace 整表删（矩形不可能缺格）。
+test('U2: Esc 上卷灰选整表 + Backspace 整删', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c11').click();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(120);
+  const sel1 = await frame.locator('body').evaluate(() => ({
+    tag: (document.querySelector('[data-ws2-selected]') || {}).tagName || null,
+    cellLeft: document.querySelectorAll('[data-ws2-cell]').length,
+  }));
+  expect(sel1.tag).toBe('TABLE');
+  expect(sel1.cellLeft).toBe(0);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(150);
+  const after = await frame.locator('body').evaluate(() => ({ tables: document.querySelectorAll('table').length }));
+  expect(after.tables).toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U2-3：cell 内拖选文字 → 打字替换（方案 B：摘墙后 mouseUp 同格恢复编辑保留选区）。
+test('U2: cell 内拖选替换（选词替换活）', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c13').click();
+  await page.waitForTimeout(120);
+  // 拖选模拟走仓内惯例（真鼠标按住拖动在本 harness 会挂死，setCrossSel 范式同因）：合成 mousedown/
+  // mousemove(buttons=1, >4px)/mouseup 驱动摘墙→恢复管线，选区在事件间程序化设置（还原原生拖选时序）。
+  await frame.locator('body').evaluate(() => {
+    const cell = document.getElementById('c13');
+    const r0 = cell.getBoundingClientRect();
+    const mk = (type, x, y, buttons) => new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, buttons: buttons, button: 0, view: window });
+    cell.dispatchEvent(mk('mousedown', r0.left + 6, r0.top + 8, 1));
+    const rng = document.createRange(); rng.selectNodeContents(cell.firstChild ? cell.firstChild : cell);
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(rng);
+    cell.dispatchEvent(mk('mousemove', r0.left + 40, r0.top + 8, 1)); // 越过 4px 阈值 → 摘墙 exitCell
+    cell.dispatchEvent(mk('mouseup', r0.left + 40, r0.top + 8, 0));   // 同格选区 → 恢复 cell 编辑保留选区
+  });
+  await page.waitForTimeout(150);
+  const midState = await frame.locator('body').evaluate(() => ({
+    cellId: (document.querySelector('[data-ws2-cell]') || {}).id || null,
+    selText: String(document.getSelection()),
+  }));
+  expect(midState.cellId).toBe('c13'); // mouseUp 恢复同格编辑
+  expect(midState.selText.length).toBeGreaterThan(0); // 选区保留
+  await page.keyboard.type('替');
+  await page.waitForTimeout(120);
+  const txt = await frame.locator('#c13').textContent();
+  expect(txt).toContain('替');
+  expect(txt).not.toContain('十三格子'); // 原文被替换
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U2-4：编辑 cell 中被跨块整删（ED-A2）→ cellEl 生存不变式兜住，继续输入不炸、不进死表。
+test('U2: 跨块选区罩表整删后按键不进死表', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c21').click();
+  await page.waitForTimeout(120);
+  // 从 #p1 文中拖到表内 cell（跨块选区端点在表内 → 整表蓝 → 整删）
+  await frame.locator('body').evaluate(() => {
+    const r = document.createRange();
+    r.setStart(document.getElementById('p1').firstChild, 2);
+    r.setEnd(document.getElementById('c11').firstChild, 1);
+    const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.waitForTimeout(150);
+  const marked = await frame.locator('body').evaluate(() => (document.querySelector('table[data-ws2-rangesel]') ? true : false));
+  expect(marked).toBe(true); // 整表蓝预示整删（ED-A2 入向不变）
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(150);
+  const after = await frame.locator('body').evaluate(() => ({
+    tables: document.querySelectorAll('table').length,
+    cellLeft: document.querySelectorAll('[data-ws2-cell]').length,
+  }));
+  expect(after.tables).toBe(0);
+  expect(after.cellLeft).toBe(0);
+  await page.keyboard.type('续写');
+  await page.waitForTimeout(120);
+  const html = await serialize();
+  expect(await conformOf(html)).toBe(true);
+  expect(html).toContain('续写'); // 键入落进幸存块，没有被死表吞
+});
+
+// U2-5：灰选整表按 Enter → 进入首格（键盘可达闭环）。
+test('U2: 灰选整表 Enter 进首格', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c11').click();
+  await page.keyboard.press('Escape'); // 灰选整表
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  const state = await frame.locator('body').evaluate(() => {
+    const c = document.querySelector('[data-ws2-cell]');
+    return { tag: c ? c.tagName : null, isFirstTh: c === document.querySelector('thead th'), selected: document.querySelectorAll('[data-ws2-selected]').length };
+  });
+  expect(state.tag).toBe('TH');
+  expect(state.isFirstTh).toBe(true);
+  expect(state.selected).toBe(0);
 });
 
 // U1-4：非空锚块造表 → 插到锚块下方（锚块保留），undo 一步撤掉整个造表。

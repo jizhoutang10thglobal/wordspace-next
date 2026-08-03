@@ -80,6 +80,13 @@
   // 空 <ul>/void 块/透明包裹块都判非叶子——对它做 appendChild 平搬会产非法嵌套 / 吞文字）。合并前必须把关。
   function isLeafTextBlock(el) { return SM.isLeafTextBlock(el); }
 
+  // 表格「数据行」集合（KTD7）：过滤分页 spacer 行（data-ws2-ui + .ws-page-spacer 双保险）——一切行列
+  // 运算/导航/被罩集只认数据行，否则加列塞错行、Enter 跳进幽灵行（只在开分页的文档偶发）。
+  // 嵌套表格不存在于合规文档（cell phrasing-only），querySelectorAll 不需要防嵌套。纯函数可单测。
+  function tableRowsOf(table) { return [...table.querySelectorAll('tr')].filter((r) => !r.hasAttribute('data-ws2-ui') && !(r.classList && r.classList.contains('ws-page-spacer'))); }
+  function rowCellsOf(tr) { return [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH'); }
+  function firstCellOf(table) { const r = tableRowsOf(table)[0]; return r ? (rowCellsOf(r)[0] || null) : null; }
+
   // 表格种子（Schema Table v1 canonical，与 ai-guide 的 AI 生成契约同形）：<table class="ws-table"> +
   // thead 一行 th[scope=col] + tbody 数据行，空格带 <br>（光标落得进；<td><br></td> 校验合规）。
   // 矩形不变式在此源头成立。纯函数、可 jsdom 单测。
@@ -256,6 +263,7 @@
     let dragStart = null;    // 拖拽选择起点 {x,y}（mousedown 记、mouseup 清）；用来分辨「点击」vs「拖选」
     let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
     let listSplitPending = false; // U6：list 回车交原生分裂后，一次性 input 里剥新 li 的克隆 id/data-checked（防栈叠）
+    let cellEl = null;       // 正在编辑的表格单元格 TD/TH（第四状态，仿 captionEl：generic 块级分支对它 inert，KTD1）
     let captionEl = null;    // 正在编辑的图片说明 figcaption（不同于 editingEl/selectedEl：块级破坏性键盘分支对它 inert）
     let captionOrig = '';    // 进说明编辑时的原文本（判是否真变、决定要不要 checkpoint）
     let captionWasNew = false; // 本次说明由「加说明」新建（空白失焦即撤销=降回裸 img，且不留空撤销步）
@@ -431,6 +439,7 @@
     }
 
     function selectBlock(el) {
+      exitCell();
       exitEdit();
       clearSelectedAttr();
       selectedEl = el;
@@ -438,6 +447,7 @@
       positionFmtbar();
     }
     function deselect() {
+      exitCell();
       exitEdit();
       clearSelectedAttr();
       selectedEl = null;
@@ -446,6 +456,7 @@
       fmtbar.style.display = 'none'; fmtShown = false;
     }
     function enterEdit(el, caret) {
+      exitCell();
       if (editingEl && editingEl !== el) exitEdit();
       clearSelectedAttr();
       selectedEl = null;
@@ -467,9 +478,44 @@
       el.removeAttribute('data-ws2-editing');
       fmtShown = false; fmtbar.style.display = 'none'; // 离开编辑 → 关气泡
     }
+    // ---- 表格 cell 编辑（第四状态，KTD1）：contenteditable 挂 TD/TH、绝不挂 table；不设 editingEl/selectedEl，
+    // generic 块级分支（Esc→selectBlock、applySlash、fmtbar「转为」、topBlocks 导航）对它天然 inert——失败模式
+    // =功能缺失，不是「漏一处 guard → 非矩形 → 整篇降级」。selectedEl 永不允许是 TD/TH（灰选 Backspace 删单格=缺格）。----
+    function cellTableOf(cell) { return cell && cell.closest ? cell.closest('table') : null; }
+    function enterCell(cell, caret) {
+      if (cellEl && cellEl !== cell) exitCell();
+      if (editingEl) exitEdit();
+      clearSelectedAttr(); selectedEl = null;
+      closeBlockMenu();
+      fmtShown = false; fmtbar.style.display = 'none';
+      cellEl = cell;
+      cell.setAttribute('contenteditable', 'true');
+      cell.setAttribute('data-ws2-ce', '');   // serialize 据此摘 contenteditable，入盘干净
+      cell.setAttribute('data-ws2-cell', ''); // cell 编辑态标记（EDITOR_CSS 高亮；已登记 WS2_MARKERS 剥除）
+      const tbl = cellTableOf(cell);
+      if (tbl) { hoverEl = tbl; positionGrip(tbl); } // 手柄仍锚整表（块菜单/拖拽以表为单位）
+      cell.focus({ preventScroll: true });
+      caret = caret || { mode: 'end' };
+      const sel = doc.getSelection();
+      if (sel && caret.mode !== 'keep') {
+        let range = null;
+        if (caret.mode === 'point' && caret.x != null) { const pt = caretRangeAtPoint(doc, caret.x, caret.y); if (pt && cell.contains(pt.startContainer)) range = pt; }
+        if (!range) { range = doc.createRange(); range.selectNodeContents(cell); range.collapse(caret.mode === 'start'); }
+        sel.removeAllRanges(); sel.addRange(range);
+      }
+      scrollCaretIntoViewIfNeeded();
+    }
+    function exitCell() {
+      if (!cellEl) return;
+      const c = cellEl; cellEl = null; // 先置空再摘属性；detached 节点的属性操作亦安全（不抛）
+      if (c.hasAttribute('data-ws2-ce')) { c.removeAttribute('contenteditable'); c.removeAttribute('data-ws2-ce'); }
+      c.removeAttribute('data-ws2-cell');
+    }
+
     // 全篇跨块选区（⌘A 第二级）：退出编辑放墙（同拖选跨块），range 罩住首尾内容块——
     // 首尾锚点用内容块而非 body（覆盖层 data-ws2-ui 挂在 body 末尾，别把 UI 圈进选区）。
     function selectWholeDoc() {
+      exitCell();
       if (editingEl) exitEdit();
       clearSelectedAttr(); selectedEl = null;
       const blocks = [...body.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui'));
@@ -1500,7 +1546,8 @@
         let nx;
         if (empty && isEditableEl(el)) { nx = newBlock(it); el.replaceWith(nx); if (undoMgr) undoMgr.checkpoint(); markDirty(); }
         else nx = insertAfter(el, it);
-        selectBlock(nx); positionGrip(nx);
+        const fc = firstCellOf(nx);
+        if (fc) enterCell(fc, { mode: 'start' }); else { selectBlock(nx); positionGrip(nx); } // R3：造出即编辑、光标落首格
       }
       else if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
       else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
@@ -1637,6 +1684,7 @@
           (Math.abs(e.clientX - dragStart.x) > 4 || Math.abs(e.clientY - dragStart.y) > 4)) {
         wallDropped = true;
         if (editingEl) exitEdit();
+        if (cellEl) exitCell(); // 起点在 cell 内的拖动同样摘墙（方案 B）——「从 cell 拖出做跨块选区」才活；mouseUp 同格再恢复
       }
       // 在手柄/菜单/气泡上移动：保持现状（手柄在块外 margin，移过去若隐藏就点不到了）
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
@@ -1654,6 +1702,20 @@
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 拖了但没选到东西
       const r = sel.getRangeAt(0);
+      // 同 cell 拖选（U2 方案 B）：摘墙时已 exitCell，松手时选区局限在原格内 → 恢复该格编辑并保留选区
+      // （镜像下面单块恢复、粒度下沉到 cell）——「cell 内选词替换」与「从 cell 拖出跨块选区」都活着。
+      const cellOfNode = (n) => { const el2 = n && (n.nodeType === 3 ? n.parentElement : n); return el2 && el2.closest ? el2.closest('td,th') : null; };
+      const sCell = cellOfNode(r.startContainer), eCell = cellOfNode(r.endContainer);
+      if (sCell && sCell === eCell && docHasTable()) {
+        const cBlk = blockOf(sCell);
+        if (cBlk && classify(cBlk) === 'table') {
+          const sc = r.startContainer, so = r.startOffset, ec = r.endContainer, eo = r.endOffset;
+          enterCell(sCell, { mode: 'keep' });
+          try { const cr = doc.createRange(); cr.setStart(sc, so); cr.setEnd(ec, eo); sel.removeAllRanges(); sel.addRange(cr); } catch (x) {}
+          positionFmtbar();
+          return;
+        }
+      }
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (sBlk && sBlk === eBlk && isEditableEl(sBlk)) {
         const sc = r.startContainer, so = r.startOffset, ec = r.endContainer, eo = r.endOffset;
@@ -1692,6 +1754,18 @@
         if (editingEl !== sumT) enterEdit(sumT, { mode: 'point', x: e.clientX, y: e.clientY });
         return;
       }
+      // 表格单元格（U2/KTD1）：点中 td/th → 进 cell 编辑。必须在 blockOf 上卷**之前**（上卷会吃成整表灰选）。
+      // 门控 docHasTable（每次现查）；blockOf+classify 确认该表是真块（不在覆盖层/块外）。点表格边框缝隙/margin
+      // 落不进 td/th → 走下面 blockOf 的整表灰选（既有行为）。
+      const cellT = e.target && e.target.closest && e.target.closest('td,th');
+      if (cellT && docHasTable()) {
+        const cellBlk = blockOf(cellT);
+        if (cellBlk && classify(cellBlk) === 'table') {
+          if (cellEl === cellT) return; // 已编辑此格的纯点击 → 交原生移光标
+          enterCell(cellT, { mode: 'point', x: e.clientX, y: e.clientY });
+          return;
+        }
+      }
       const el = blockOf(e.target);
       if (!el) {
         // 文末续写：点最后一块下方、且在文档列水平范围内的空白 → 进末块(若空可编辑)或末尾新建正文块
@@ -1720,6 +1794,19 @@
       if (captionEl) {
         if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); captionEl.blur(); }
         return;
+      }
+      // 表格 cell 编辑态（U2 骨架，U3 赋全键盘语义）：cellEl 分支整体前置——否则 generic Tab 吞噬/
+      // 方向键 topBlocks 导航/Esc→selectBlock 都会误伤。生存不变式：cellEl 可能已被跨块整删（ED-A2）/
+      // 拖拽/undo 变 detached → 静默退出走 generic，绝不操作死表。
+      if (cellEl) {
+        if (!cellEl.isConnected) { exitCell(); }
+        else {
+          if (e.isComposing || e.keyCode === 229) return; // IME 组词一律交原生（仓内铁律）
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const tbl = cellTableOf(cellEl); exitCell(); if (tbl) { selectBlock(tbl); positionGrip(tbl); } return; } // Esc 上卷=灰选整表；selectedEl 永不为 TD
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); return; } // 拦死原生 insertParagraph（<td> 里插 <div> = 非合规）；U3 赋「跳下一行」语义。Shift+Enter 放行原生 <br>（phrasing 合法）
+          if (e.key === 'Tab') { e.preventDefault(); return; } // 拦死原生 Tab（焦点逃逸出 iframe）；U3 赋「移格」语义
+          // 其余键交原生：TD contenteditable 内的文字输入/删除/行内光标
+        }
       }
       // 提及菜单开着时：导航键（↑↓Enter/Esc/Backspace/query 字符）先给它，消费了就不再走块编辑（IME 组字键它会放行）
       { const M = mentionApi(); if (M && M.isOpen() && M.handleKey(e)) return; }
@@ -1963,6 +2050,16 @@
         e.preventDefault();
         const nx = insertAfter(editingEl, itemByKey('text'));
         enterEdit(nx, { mode: 'start' });
+        return;
+      }
+      // 灰选整表 Enter/↓ → 进入首格编辑（键盘可达闭环 R2；R1C1 = thead 优先）。必须先于「灰选 Enter 插段落」
+      // 与「灰选态方向键穿行」两个 generic 分支。
+      if ((e.key === 'Enter' || e.key === 'ArrowDown') && selectedEl && !editingEl && classify(selectedEl) === 'table') {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        const fc = firstCellOf(selectedEl);
+        if (fc) { enterCell(fc, { mode: 'start' }); return; }
+        // 退化壳表（无任何格）：Enter 维持灰选、不插段落——留给删除路径处理
         return;
       }
       // 灰选中态 Enter → 在其后插正文块
@@ -2817,6 +2914,7 @@
 
     function detach() {
       live = false; // 停掉 in-flight 图片摄入的插入（见 insertImages）
+      exitCell(); // 别把 cell 编辑态属性留给下个文档
       if (captionEl) { captionEl.removeAttribute('contenteditable'); captionEl.removeAttribute('data-ws2-ce'); captionEl = null; } // 别把编辑态属性留给下个文档
       doc.documentElement.removeEventListener('mouseleave', onDocLeave);
       doc.removeEventListener('mousedown', onMouseDown, true);
@@ -2840,7 +2938,8 @@
     // 撤销/重做后 body.innerHTML 被整体重写，旧的元素引用全失效 → 清空状态、收起所有覆盖层。
     function reset() {
       slash = null; slashMenu.style.display = 'none';
-      editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false; captionEl = null; // undo/redo 重写 body → 旧 figcaption 引用失效
+      editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false; captionEl = null; cellEl = null; // undo/redo 重写 body → 旧 figcaption/cell 引用失效
+      body.querySelectorAll('[data-ws2-cell]').forEach((el) => el.removeAttribute('data-ws2-cell')); // 快照经 cleanedBodyHtml 已剥，此为兜底
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
       blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标（空块占高度用，非装饰）
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
@@ -2911,6 +3010,9 @@
   img[data-ws2-selected]:not([data-ws2-editing]),
   figure[data-ws2-selected]:not([data-ws2-editing]){box-shadow:0 0 0 2px #1a73e8,0 0 0 5px rgba(26,115,232,.28);}
   [data-ws2-editing]{border-radius:4px;background:rgba(0,0,0,.015);}
+  /* 表格 cell 编辑（U2）：悬停 cursor:text = 可编辑性的最低发现性；编辑格 inset 蓝环（不占布局、纸方墨圆克制）。 */
+  td:hover,th:hover{cursor:text;}
+  [data-ws2-cell]{outline:none;border-radius:2px;box-shadow:inset 0 0 0 2px rgba(26,115,232,.4);background:rgba(26,115,232,.04);}
   [data-ws2-drop='top']{box-shadow:0 -2px 0 0 #1a73e8;}
   [data-ws2-drop='bottom']{box-shadow:0 2px 0 0 #1a73e8;}
   /* 跨块拖选的块级高亮（Wendi 2026-07-22）：整行蓝底(box-shadow 外扩到左右边距、不占布局)，罩住的块内
@@ -2961,7 +3063,7 @@
   `;
   // i18n-exempt-end
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);
