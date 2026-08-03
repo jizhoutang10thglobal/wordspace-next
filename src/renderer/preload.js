@@ -132,7 +132,15 @@ contextBridge.exposeInMainWorld('ws2', {
 
   // ---- 沉浸窗框（immersive-collapse spec）----
   platform: process.platform, // renderer 判 is-mac（hiddenInset 红绿灯让位只在 darwin 生效）
-  setWindowButtons: (v) => ipcRenderer.send('ws-window-buttons', !!v),
+  fakeMac: !!process.env.WS2_FAKE_MAC, // e2e seam:linux CI 上强挂 is-mac,测 mac 专属分支(假灯显隐/点击)
+  setWindowButtons: (v, pos) => ipcRenderer.send('ws-window-buttons', !!v, pos || null), // pos 现仅兜底保留;peek 用 DOM 假灯不再挪原生灯
+  winCtl: (action) => ipcRenderer.send('ws-win-ctl', action), // peek 假灯点击:close/minimize/fullscreen
+  // 收起态 peek 触发的光标轮询(Arc 式宽容:窗外甩过头/左上角都认;spec=immersive-collapse)
+  edgeWatch: (on, cardWidth) => ipcRenderer.send('ws-edge-watch', !!on, cardWidth || 260),
+  onEdgeHover: (cb) => ipcRenderer.on('ws-edge-hover', (_e, trigger, dwell) => cb(trigger, dwell)),
+  // 窗框非全屏恒有（Colin 2026-07-18）：真全屏时摘框。renderer 查启动初值 + 听 live 变化，挂/摘 body.is-win-fullscreen。
+  getFullscreen: () => ipcRenderer.invoke('get-fullscreen'),
+  onFullscreenChanged: (cb) => ipcRenderer.on('fullscreen-changed', (_e, isFs) => cb(isFs)),
   // 收藏（主进程持久化 + 变更推全量,renderer 内存镜像做逐键补全）
   bmState: () => ipcRenderer.invoke('bm-state'),
   bmAdd: (b) => ipcRenderer.invoke('bm-add', b),
@@ -150,6 +158,15 @@ contextBridge.exposeInMainWorld('ws2', {
   histRemoveOne: (id) => ipcRenderer.invoke('hist-remove-one', id),
   histClear: (range) => ipcRenderer.invoke('hist-clear', range),
   onHistoryChanged: (cb) => ipcRenderer.on('history-changed', (_e, s) => cb(s)),
+  // 下载（spec §4.11；list 补拉 + 动作 + 变更推送。进度环/popover 由 onDownloadsChanged 驱动）
+  dlList: () => ipcRenderer.invoke('dl-list'),
+  dlCancel: (id) => ipcRenderer.send('dl-cancel', id),
+  dlRetry: (id) => ipcRenderer.send('dl-retry', id),
+  dlClear: () => ipcRenderer.send('dl-clear'),
+  dlRemove: (id) => ipcRenderer.send('dl-remove', id),
+  dlReveal: (id) => ipcRenderer.invoke('dl-reveal', id),
+  dlOpen: (id) => ipcRenderer.invoke('dl-open', id),
+  onDownloadsChanged: (cb) => ipcRenderer.on('downloads-changed', (_e, data) => cb(data)),
   // 浏览器设置（搜索引擎；真 app 默认 Bing,拍板）
   browserSettings: () => ipcRenderer.invoke('browser-settings'),
   browserSetEngine: (key) => ipcRenderer.invoke('browser-set-engine', key),

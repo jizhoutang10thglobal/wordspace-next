@@ -10,7 +10,7 @@
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
-const { validate } = require('../src/lib/schema-validate.js');
+const registry = require('../src/lib/schema-registry.js'); // classify：多 Schema 分类（schemaId + conform + violations）
 const mdAdapter = require('../src/main/md-adapter.js'); // 纯字符串进出、无 electron 依赖，Node 直接可用
 // schema-validate 的违规消息走 i18n t()；本 CLI 是 node 消费者(非 app)，必须自己 configureI18n，
 // 否则 msg 出成裸 key 名(schema.blockNoStyle 而非「块级不能带 style 属性」)——AI 创作回路读的就是这个 msg。
@@ -46,7 +46,8 @@ async function main(argv) {
   let r;
   try {
     const doc = new JSDOM(html).window.document;
-    r = validate(doc);
+    // 走 Schema 注册表 classify：多 Schema 就绪，输出 schemaId（'schema-1' 流式 / 'schema-2' 分页 / null 非合规）+ conform + violations。
+    r = registry.classify(doc);
   } catch (e) {
     process.stderr.write('校验失败（文档过深或畸形）：' + ((e && e.message) || e) + '\n');
     return 2;

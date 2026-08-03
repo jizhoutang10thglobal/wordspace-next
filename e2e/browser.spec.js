@@ -13,12 +13,12 @@ const os = require('os');
 const ROOT = path.join(__dirname, '..');
 const SHOT_DIR = path.join(__dirname, 'screenshots');
 
-let app, page, tmpDir, server, base;
+let app, page, tmpDir, dlDir, server, base;
 let lastUA = null; // /ua 路由记下 server 真实收到的 User-Agent 头（反 CAPTCHA 强门：查线上字节，非 API 返回值）
 let lastSecChUa = null; // 顺带记 sec-ch-ua（U3 核查用，只打印不断言）
 let rlHits = 0; // /rl 路由累计命中数（U5 ⌘R 刷新强门：reload 应让 server 真收到二次请求，查线上命中而非 renderer 状态）
 
-// 本地测试站：A 页红底带标题/链接/长文,B 页绿底,/dl 下发附件（验下载 cancel）。
+// 本地测试站：A 页红底带标题/链接/长文,B 页绿底,/dl 下发附件（真下载落 WS2_DL_DIR，验落盘 + 记录）。
 function startServer() {
   return new Promise((resolve) => {
     server = http.createServer((req, res) => {
@@ -43,8 +43,9 @@ function startServer() {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         res.end('<!DOCTYPE html><html><head><title>RL</title></head><body style="background:#7a4fb5;color:#fff"><h1>reload hit ' + rlHits + '</h1></body></html>');
       } else if (req.url.startsWith('/dl')) {
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="evil.bin"' });
-        res.end('xx');
+        const body = 'download-payload-xyz';
+        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="evil.bin"', 'Content-Length': String(Buffer.byteLength(body)) });
+        res.end(body);
       } else {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end('<!DOCTYPE html><html><head><title>Page A</title></head><body style="background:#c81e1e;color:#fff">'
@@ -58,9 +59,12 @@ function startServer() {
 
 async function launch(extraEnv = {}) {
   tmpDir = tmpDir || (await fs.mkdtemp(path.join(os.tmpdir(), 'ws2web-')));
+  // 下载真接后 /dl 会真落盘 → WS2_DL_DIR 指 tmpdir，仓内 + runner 家目录零落盘（全 test 通吃：触发下载的
+  // 用例走 tmpdir，不触发的用例无副作用）。
+  dlDir = dlDir || (await fs.mkdtemp(path.join(os.tmpdir(), 'ws2webdl-')));
   app = await electron.launch({
     args: ['--no-sandbox', ROOT],
-    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_CTXMENU_PROBE: '1', ...extraEnv },
+    env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'userdata'), WS2_NO_CLOSE_DIALOG: '1', WS2_CTXMENU_PROBE: '1', WS2_DL_DIR: dlDir, ...extraEnv },
   });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
@@ -131,6 +135,7 @@ test.afterEach(async ({}, testInfo) => {
   } catch { /* ignore */ }
   if (app) await app.close().catch(() => {});
   app = null;
+  if (dlDir) { try { await fs.rm(dlDir, { recursive: true, force: true }); } catch { /* */ } dlDir = null; }
   tmpDir = null; // 每条测试独立 userdata（会话恢复那条自己管理）
 });
 
@@ -143,15 +148,16 @@ test('⌘T 地址栏开网页：真加载(像素级红底上屏) + 标签行/omn
   // omnibox 值 = 当前 url,星标显形（网页标签才有）
   await expect(page.locator('#omni-input')).toHaveValue(base + '/');
   await expect(page.locator('#omni-star')).toBeVisible();
-  // 强断言三件套：view 真挂上窗口 / bounds 真铺满内容区（x=侧栏宽,y=0 无网页头,右下顶到窗口边）/ 真渲染红底
+  // 强断言三件套：view 真挂上窗口 / bounds 真铺满内容区窗框内（沉浸窗框非全屏恒有,Colin 2026-07-18：
+  // 展开态 view 也内缩 10px 框——x=侧栏宽+10, y=10, 右下各让 10）/ 真渲染红底
   const key = await activeWebKey();
   await expect.poll(async () => { const v = await viewInfo(key); return v && v.attached && isRed(v.pixel); }, { timeout: 8000 }).toBe(true);
   const v = await viewInfo(key);
-  const sbW = await page.evaluate(() => document.getElementById('sidebar').getBoundingClientRect().width);
-  expect(v.bounds.x).toBe(Math.round(sbW)); // 紧贴侧栏右缘
-  expect(v.bounds.y).toBe(0); // 无网页头 → 无顶部偏移（§3.2）
-  expect(v.bounds.width).toBe(v.content.w - Math.round(sbW)); // 铺满剩余宽度
-  expect(v.bounds.height).toBe(v.content.h); // 全高
+  const sbW = await page.evaluate(() => Math.round(document.getElementById('sidebar').getBoundingClientRect().width));
+  expect(v.bounds.x).toBe(sbW + 10); // 侧栏右缘 + 10px 缝
+  expect(v.bounds.y).toBe(10); // 顶部 10px 窗框（不是网页头——「无网页头」由下面 count===0 单独验，§3.2）
+  expect(v.bounds.width).toBe(v.content.w - sbW - 20); // 左缝 10 + 右框 10
+  expect(v.bounds.height).toBe(v.content.h - 20); // 上下框各 10
   // 无网页头：内容区里没有任何 Wordspace chrome 罩在网页上（§3.2 决策——连元素都不存在）
   expect(await page.locator('#web-header, .web-chrome, .web-bmbar').count()).toBe(0);
 });
@@ -194,6 +200,27 @@ test('沉浸收起：收起 → 网页 view 内缩进 10px 窗框；peek=快照�
   await expect.poll(async () => { const w = await viewInfo(key); return w.attached && w.bounds.x === 10; }, { timeout: 4000 }).toBe(true);
   await expect(page.locator('.web-peek-snap')).toHaveCount(0);
   expect(isRed((await viewInfo(key)).pixel), '挂回后页面没真回屏').toBe(true);
+});
+
+test('沉浸窗框 × 网页（展开态，Colin 2026-07-18 扩 #271）：view bounds 跟随 #main 矩形（x=侧栏宽+10, y=10）', async () => {
+  await launch();
+  await openWebViaModal(base + '/');
+  const key = await activeWebKey();
+  await expect.poll(async () => { const v = await viewInfo(key); return !!(v && v.attached && isRed(v.pixel)); }, { timeout: 8000 }).toBe(true);
+  // 展开态（未收起）：窗框非全屏恒有 → #main 四周 10px 框，网页 view 铺满 #main 矩形（KD3：bounds=renderer 量的 #main rect，margin 变化自动传导）
+  await expect(page.locator('#sidebar')).not.toHaveClass(/is-collapsed/);
+  const mainRect = await page.evaluate(() => {
+    const r = document.getElementById('main').getBoundingClientRect();
+    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+  });
+  const sbW = await page.evaluate(() => Math.round(document.getElementById('sidebar').getBoundingClientRect().width));
+  expect(mainRect.x, '#main 左=侧栏宽+10（左缝）').toBe(sbW + 10);
+  expect(mainRect.y, '#main 顶=10').toBe(10);
+  await expect.poll(async () => (await viewInfo(key)).bounds.x, { timeout: 4000 }).toBe(mainRect.x);
+  const v = await viewInfo(key);
+  expect(v.bounds.y, 'view 顶跟随 #main').toBe(mainRect.y);
+  expect(v.bounds.width, 'view 宽跟随 #main').toBe(mainRect.w);
+  expect(v.bounds.height, 'view 高跟随 #main').toBe(mainRect.h);
 });
 
 test('反 CAPTCHA：webtabs UA 无 Electron/app 标识（主进程 session 门 + 真实请求头强门）', async () => {
@@ -347,7 +374,7 @@ test('P1 错误页恢复零闪回：加载过的标签失败后恢复到慢页�
   expect(await attachedCount()).toBe(1);
 });
 
-test('P1 错误页恢复不误触发：换到中止型导航(下载被 cancel/-3)不提交时,占位撑住、绝不挂失败页残帧(探索测试 p1)', async () => {
+test('P1 错误页恢复不误触发：换到中止型导航(下载触发的 -3)不提交时,占位撑住、绝不挂失败页残帧(探索测试 p1)', async () => {
   await launch();
   const deadUrl = await reserveClosedUrl();
   // 先正常加载(红底) → 原地导航到失败网址(出错、0 attach = 真死路态)
@@ -359,8 +386,10 @@ test('P1 错误页恢复不误触发：换到中止型导航(下载被 cancel/-3
   await page.locator('#omni-input').press('Enter');
   await expect(page.locator('#web-error')).toBeVisible({ timeout: 8000 });
   await expectAttached(0);
-  // 恢复输入一个「下载被 cancel」的地址(/dl：Content-Disposition attachment → will-download → item.cancel()
-  // → ERR_ABORTED(-3) → classifyLoadFailure='ignore',不置 error 也不触发 did-navigate = loading 循环但没提交)。
+  // 恢复输入一个下载地址(/dl：Content-Disposition attachment → will-download 真接下载落盘 WS2_DL_DIR，
+  // 但主 frame 导航被转成下载 = ERR_ABORTED(-3) → classifyLoadFailure='ignore',不置 error 也不触发
+  // did-navigate = loading 循环但没提交)。navigate 还乐观写了 pendingUncommittedUrl → will-download 回滚
+  // r.url 到上一提交(A 页)——但这不影响本判定(navSeq 没变 → 不重挂)。
   // 这正是对抗审查 CONFIRMED 的 P2：若按 loading 收尾沿重挂,会把脱挂 view 里的失败页残帧盖上、还丢重试钮。
   // navSeq 提交沿修法：没提交 → navSeq 不变 → 不重挂,占位与重试钮原样撑住(绝不让这条路比修复前更糟)。
   await page.locator('#omni-input').click();
@@ -528,7 +557,8 @@ test('右键菜单(原生 probe)：六分节按上下文/危险 scheme 整节滤
     wt.openCtxMenu(key, params);
     return global.__ws2LastCtxMenu.template.filter((i) => i.type !== 'separator').map((i) => i.id);
   }, { key, params: { linkURL: base + '/b?utm_source=x&id=1', selectionText: 'hello world' } });
-  expect(tpl).toEqual(['open-link', 'open-link-bg', 'copy-link', 'copy-selection', 'search-selection', 'nav-back', 'nav-forward', 'reload', 'copy-page-url', 'export-pdf']);
+  // save-link = 下载标准档右键双胞胎（U5，spec §4.11；链接节内，走 wc.downloadURL 同管线）。
+  expect(tpl).toEqual(['open-link', 'open-link-bg', 'copy-link', 'save-link', 'copy-selection', 'search-selection', 'nav-back', 'nav-forward', 'reload', 'copy-page-url', 'export-pdf']);
   // 危险 scheme：链接节整节不出
   const bad = await mainWebTabs((wt, { key }) => {
     wt.openCtxMenu(key, { linkURL: 'javascript:alert(1)' });
@@ -548,7 +578,7 @@ test('右键菜单(原生 probe)：六分节按上下文/危险 scheme 整节滤
   expect(noThrow).toBe(true);
 });
 
-test('安全不变式：loadURL 白名单拒 file:导航守卫兜底 + 下载一律 cancel + toast', async () => {
+test('安全不变式：loadURL 白名单拒 file:导航守卫兜底 + 下载真接落盘 WS2_DL_DIR', async () => {
   await launch();
   await openWebViaModal(base + '/');
   await expect(page.locator('#sb-tabs .sb-tab.sb-tab-web .sb-name')).toHaveText('Page A', { timeout: 8000 });
@@ -564,9 +594,11 @@ test('安全不变式：loadURL 白名单拒 file:导航守卫兜底 + 下载一
   await page.waitForTimeout(600);
   const snap = await registrySnapshot();
   expect(snap.find((s) => s.key === key).url.startsWith(base)).toBe(true);
-  // 下载：will-download 一律 cancel + toast（§12 砍除）
+  // 下载：will-download 真接 DownloadItem（2026-07-17 恢复标准档，不再 cancel+toast，§4.11）→ 真落盘 WS2_DL_DIR + 记录入库。
   await mainWebTabs((wt, { key, url }) => { wt._registry.get(key).view.webContents.downloadURL(url); }, { key, url: base + '/dl' });
-  await expect(page.locator('#sb-toast-host')).toContainText('不支持下载', { timeout: 6000 });
+  await expect.poll(() => mainWebTabs((wt) => wt.downloadsList().some((e) => e.filename === 'evil.bin' && e.state === 'completed')), { timeout: 8000 }).toBe(true);
+  const bytes = await fs.readFile(path.join(dlDir, 'evil.bin'), 'utf8'); // 读真磁盘字节（强断言,非查 toast 文本）
+  expect(bytes).toBe('download-payload-xyz');
 });
 
 test('页内查找 ⌘F：胶囊条 + N/M 计数 + Esc 清除；缩放 ⌘±0 每标签 0.5–2', async () => {

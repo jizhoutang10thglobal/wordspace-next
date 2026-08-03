@@ -14,6 +14,94 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-07-24 — 编辑器全局契约：精确选区/删除/合并（Colin 两轮拍板，动编辑器必读）
+
+**是什么**：Colin 拍死跨块选区的三条全局规则（PR #356 落地，`docs/features/toggle.md` 有完整版）：
+①**选区所见即所得**——只有内容完全被罩住的行单位（顶层块/summary 行/toggle 体内块）才整行标蓝（data-ws2-rangesel）；端点块部分选中保持原生文字高亮，**不补全、不上卷**（唯一例外：端点在 table 内→table 整行蓝，预示只能整删）。②**精确删除**——起块裁尾、末块裁头、全罩单位整删；toggle 的 summary 整行被罩=**解散**（壳删、幸存体内块原样提升）；summary 裁一半=存活+跨壁不并。③**合并以上块为准**——断口两端同层可并→下块剩余并入上块继承其样式（上块是列表→并进最后一项），光标落接缝。历史包袱已清：「跨界空操作+flashNope」（a254cb6）和「端点上卷整块删」（#353 过渡版）都废了。
+**怎么 apply**：动 blockedit.js 的选区/删除/高亮任何逻辑，先读 toggle.md 的契约节 + `e2e/block-range-select.spec.js` P1-P4；新块类型要接入删除管线时按此契约，别复活「上卷补全」。技术坑一枚：判「块是否被选区全罩」**别用 compareBoundaryPoints**——(p.firstChild,0) 会被判在 (p,0) 之后，「文字头选到文字尾」的整块选中会误判未全罩；用溢出内容法（块内容在选区外的部分 toString+原子元素查询判空），见 refreshRangeSel 的 covered()。
+**来源**：Wendi「toggle 删不掉」→ Colin 二轮拍板（2026-07-24）；PR #353→#356。
+
+## 2026-07-23 — docs/* 分支的代码文件冻在切分支那刻，别在这种工作目录里改代码+测
+
+**是什么**：`docs/xxx` 这类长期挂着的分支只往上加 docs commit，**src/ 代码文件停在当初从 main 切出去那一刻**、比 main 落后一大截（实测 `docs/doc-linking-app-plan` 的 blockedit.js 缺 i18n / image-ingest 等一批 main 早有的东西）。在这种分支的工作目录里改代码、跑 e2e 测绿，全是拿旧代码测的**假绿**；直接搬 main 会对不上（函数结构/依赖都变了，比如删了个在旧版没人用、在 main 还被别处调的函数就崩）。
+**怎么 apply**：动代码前先 `git branch --show-current` 看是不是 docs/* 之类；是的话**别在这个目录改代码**——开 origin/main 的临时 worktree（`git worktree add <dir> origin/main -b <br>`）在真 main 代码上重做+测+推 PR。`format.js` 这种被 git 当二进制的文件，`grep`/`git show|grep` 要加 `-a`，否则静默返空、会误判「我的代码没进去」。
+**来源**：修 Wendi「列表项没法改颜色」时踩的（PR #335）；呼应「本地绿≠CI 绿，先 rebase / 对 main」。
+
+## 2026-07-23 — 列表/待办项键盘选行改颜色·高亮·行内代码失灵：Shift+End 幽灵块边界被跨块守卫误伤
+
+**是什么**：在 `<li>` 里键盘选行（Home→Shift+End / 三击 / Shift+↓），浏览器把选区**尾端落到下一个 `<li>` 的 offset 0**（`selection.toString()` 尾巴那个 `\n` 就是块边界）→ 起块=li[0]、尾块=li[1]。`wrapInlineStyle`（文字色）/ `wrapMark`（高亮）/ `wrapCode`（行内代码）的跨块守卫 `startBlock!==endBlock` 判跨块 → 静默 return 不上色。加粗/斜体走 `execCommand`、自己处理块边界所以没事——现象是「粗细能改、颜色改不了」。
+**怎么 apply**：这类「选区尾端溢到相邻块幽灵边界」的误伤，用 format.js 新增的 `fmt.clampRangeToBlock(doc, range, body)`：溢出段零可见文字/媒体时把尾端夹回起块末尾再操作，真选进别块内容才拒绝。以后加任何「选区内行内操作 + 跨块守卫」都走它，别再裸判 `startBlock!==endBlock`。判「溢出段是否空」别用 `cloneContents().querySelector('*')`——它会撞上跨兄弟边界时被克隆成空壳的 li/ul，只认 `img/hr/video` 等真媒体。
+**来源**：PR #335（含 e2e 门 `e2e/blockedit-list-color.spec.js` + 变异自检）。
+
+## 2026-07-22 — v0.11.0 已发布，发版基线挪到此
+
+**是什么**：v0.11.0 已签名公证发布（tag 打在 `7225cc2` = #309 合并点，Release 页 + mac arm64/x64 + win x64 产物 + 自动更新清单齐全）。这版给用户的三大新功能：**折叠块**（编辑器新增 Notion 式可折叠块 #299）、**浏览器下载** #278、**沉浸窗框融合** #303/#307/#276；外加一批改进修复（含 Wendi 报的右键菜单被窗口底边裁 #304、大根「Simplified」徽标撤路径 #309、基础编辑器删除块改走原生选中+Delete #305）。CHANGELOG.md / CHANGELOG.en.md 双语正本已随 #310 合进 main。
+
+**怎么 apply**：① **v0.11.0 之后合进 main 的改动都算下一版的未发版内容**——问「main 上没发版的改动」或写下一版 changelog 时，从 tag `v0.11.0` 往后数（`git log v0.11.0..origin/main`），别再从 v0.10.6 数。② 发版方式没变（tag `vX.Y.Z` 触发 Release workflow，本仓既有模式=tag 打在功能提交上、changelog 可独立随后合，见 docs/releasing.md）。③ **changelog 双语同写是硬门**：每版必须同步更新 CHANGELOG.md + CHANGELOG.en.md，官网构建校验两份「最新版本号一致」，漏英文构建直接挂（`website/app/lib/changelog.ts` loadChangelogEn）。版本标题格式严格 `## vX.Y.Z — YYYY-MM-DD`、分组 `### 新增/改进/修复` ⟷ `### Added/Improved/Fixed`，写完最好用该正则实跑校验一遍再合。
+
+**来源**：tag `v0.11.0` / 发版 Release workflow / changelog PR #310 / docs/releasing.md
+
+## 2026-07-21 — CI e2e 门改了：required check 现在是 `{test, e2e-all}` 不是 `e2e`，且分片并行
+
+**是什么**：e2e 策略优化（#284 合）动了 CI 和 branch protection 两处，影响所有 session 的 PR 合并：
+① e2e 从单 job 切成 **4 片 matrix 并行**（CI 里显示 `e2e (1)`..`e2e (4)`）+ 一个 `e2e-all` 聚合门（fail-closed：分片有红 / 掉测 / docs-app 判定异常都会红）。
+② **branch protection 的 required status check 从 `e2e` 迁成 `{test, e2e-all}`**，strict=true（要求 PR 与 main 同步），enforce_admins=true（管理员也受门约束）。
+③ 掉测地板：全量 spec < 400 条 → `e2e-all` 红（现 420，余量 20；将来删测超 20 要在同 PR 显式下调地板）。
+
+**怎么 apply**：① 你的 PR 现在等的绿灯名字是 `e2e-all`（聚合），不是旧的 `e2e`——脚本 / 文档里 hardcode `e2e` 作 required check 的地方要改。② **strict=true 的副作用**：main 一动，你在飞的 PR 就 BEHIND、auto-merge 会卡住不自动合，要 `gh pr update-branch <PR>` 手动追一次（多 PR 排队时一个一个来，别同时 update 互相挤 stale）。③ 本机开发别再「动共享核心=全量重跑 420 条」——CLAUDE.md #283 已改成「跑受影响 spec + 5-spec 冒烟子集，全量交 CI」。④ **教训**：`waitForTimeout→expect.poll` 主要是消 flake **不是提速**（硬睡多卡在 autosave 1.2s / Electron 重启）；想真提速只能合并 beforeAll 单启动，风险大要 shuffle 证明——**别天真地删测 / 删睡提速**（负向断言更是绝不能折进 poll，会假绿）。
+
+**来源**：plan #281 / CI+分支保护 #284 / U1 CLAUDE.md #283 / U3 审计 docs/e2e-audit-2026-07-20.md #294。
+
+## 2026-07-21 — Feature Board 有卡片规范了，往 board 加卡照它来（含去重铁律）
+
+**是什么**：整理了 Notion Feature Board（60→52 张：全部 F 编号化、去重、归对模块、退休卡进归档页），并立了一页《卡片规范》。六条：R1 卡=一个用户叫得出名字的能力（不是 dev 增量、不是整个模块）；R2 必填五样=编号 F## ＋功能＋一句话简介（为什么）＋工作量 S/M/L ＋模块；R3 目标 M，XL 不许当一张卡（要拆或提升为模块）；R4 命名用产品口吻名词短语，去掉 `feat:` / `phase N` / 实现术语 / 标题里的字面换行，Wordspace 统一大写；R5 拆合判据（太大→拆；按实现阶段拆的→合成一张、阶段进 spec 不上板；备忘卡→并进真卡；两代重复→留 F 编号那张、退休另一张；小开关如深色/i18n→留成 S 卡别过度合并）；R6 板子只有两层：模块=史诗 → 卡=feature，dev 增量（phase 1/2/3）活在 spec/PR 不上板。
+**怎么 apply**：往 Feature Board 加卡前——①先搜有没有重复的现有卡（这次清掉的一大批就是「施工代无编号糙卡 vs 规划代 F 卡」两代重复，别再造）；②照规范写五样必填、产品口吻命名；③编号续排 F##（**当前最大 F60，下一张从 F61 起；老编号一律不动不重排**，specs/代码/记忆里到处引用 F##，重排会全断）。谁直接改真 app 新增了用户能力，除更新 feature spec 外也在 board 建卡。
+**来源**：Notion Feature Board 整理（Colin 拍 D1–D5，2026-07-21）；规范页 https://app.notion.com/p/3a4f2e70d0e781309780e34c3bb5f185 ，归档页（合并/退休卡，可恢复）https://app.notion.com/p/3a4f2e70d0e781a48633f344233c8c87
+
+## 2026-07-21 — 浏览器下载功能全链路完整落 main,但 Colin 说「先不发版」(别当发版就绪)
+
+**是什么**:下载 feature 从调研到真 app + UX 打磨已**全部合入 main**(#262 需求 → #272 ui-demo → #278 真 app 实现 U1-U6 → #286 UX 打磨:toast 改小/popover 锁侧栏宽/加打开)。Colin 2026-07-20 真机验收三改动通过,**但明确说先不发版**(2026-07-20 口头拍板)。
+**怎么 apply**:
+① **别把 main 上有下载功能当作发版就绪信号**——Colin 要自己定发版时机,且要先走完真机 checklist(自动化够不着的:非 mac 工具栏尺寸 / 真实网站下载 / 访达真打开 / 快速开关 popover)。
+② **若你在 cut release / 打 tag**:知道 main 带着完整下载功能,但 **Colin 说 hold**——发版前务必跟他确认,别顺手带出去。
+③ 下载功能已终态:will-download 真接落盘、右键存图、popover **锁侧栏宽不盖网页**(见 07-20 更正条,不走 OVERLAY_SEL)、toast 双态、「打开」按钮。契约 spec §4.11。
+**来源**:PR #286(承接 #278);Colin 2026-07-20「先不发版」。
+## 2026-07-21 — Toggle(可折叠)块开发中:brainstorm+plan 就绪,将重改编辑器核心三文件
+
+**是什么**:Wendi 要 Notion 式 toggle 块进 Schema #1。需求 docs/brainstorms/2026-07-20-toggle-list-block-requirements.md + 详细计划 docs/plans/2026-07-20-001-feat-toggle-list-block-plan.md 已就绪。磁盘契约(validateDetails/AI-guide)早 ship,这次纯做编辑器创作。三大硬骨头方案:①真 app 可达性=scoped block-root(scopeRootOf/blocksInScope,门控在文档真含 <details> 之后,无 toggle 文档走原路径);②撤销解耦=cleanedBodyHtml 剥 open(仅 undo 快照层,serializeDocument 保留)+ undo.js undo/redo 重贴 fold(位置索引);③分页=collectCutAtoms 加 details 选择器 + buildWordspacePrintHtml 克隆上 force-expand 一行。ui-demo 只做 UX 外壳(body=raw contentEditable),真嵌套只在真 app——有意分歧(仿 editor-select-all 先例)。
+
+**怎么 apply**:⚠ 这个 feature 会**重改 src/editor/blockedit.js(blockOf/topBlocks/deleteSelection/execText/dropFileLink/onKeyDown 全线)+ src/editor/serialize.js + src/renderer/shell.js**——都是热点共享核心。这几天要动这三个文件的 session 先看计划或跟我对齐,避免 merge-train 连撞。我在自己的 worktree(feat/toggle-real-app、feat/ui-demo-toggle,均 off origin/main)开工,不碰任何现有 worktree。
+
+**来源**:docs/plans/2026-07-20-001-feat-toggle-list-block-plan.md
+
+## 2026-07-20 — ⚠更正 07-18 那条:下载 popover 已改「锁侧栏宽、不走 OVERLAY_SEL」(Colin 真机反馈)
+
+**是什么**:Colin 真机跑 #278 后反馈「popover 不该盖真网页」,已改(PR #286):下载 popover 从「340px 覆盖网页区 + 走 OVERLAY_SEL 摘 view+截图垫底」**推翻**成「锁进侧栏宽度、右缘=侧栏右缘−8px、绝不进网页区」(`anchorPos` 读 `#sidebar` rect)。附带 toast 改小(侧栏开着走侧栏内小 toast 不顶网页 72px、收起才 over-web)+ 加「打开」按钮(`shell.openPath` 用户手动打开)。
+**怎么 apply**:
+① **07-18 广播里「下载 popover 是 OVERLAY_SEL 最新先例」这句作废**——它现在**不走** OVERLAY_SEL 了。要「DOM 弹层盖网页」的先例去看别的(modal/Cmd+P/AI 面板仍在 OVERLAY_SEL)。
+② **新增设计取舍先例**:DOM 弹层**该不该盖网页**是个选择——盖网页(要视觉覆盖内容区)就注册 OVERLAY_SEL、接受「摘 view+冻结截图」;**不该盖网页**(侧栏类)就 `anchorPos` 读 `#sidebar` rect 锁进侧栏宽、别碰 OVERLAY_SEL(更简单、无冻结、无 webHideAll 竞态)。下载 popover 现在是后者先例。
+③ **07-18 修的 OVERLAY_SEL webHideAll 竞态守卫仍有效**——保护的是仍在 OVERLAY_SEL 里的弹层(modal 等),不受本次影响。
+④ 教训:**真机反馈能推翻 e2e+设计都覆盖不到的主观 UX 判断**——popover 覆盖网页在 ui-demo 里 Colin 验收过、e2e 全绿,但真网页上体验不对;真机走查不可替代。
+**来源**:PR #286(承接 #278);spec §4.11/§13 已改。
+
+## 2026-07-20 — 隐藏驻留只走 hideForResidency:别再直接 win.hide()(全屏会黑屏)
+
+**是什么**:Wendi/Colin 报「全屏下点左上角关闭 → 黑屏」。根因宿主实测(2/2 复现):**macOS 不接受对原生全屏窗口的 `orderOut:`**——`win.hide()` 被静默吞掉,窗口没藏、独占的全屏 Space 也没拆,用户面对一块空 Space 就是那片黑;非全屏同一条路立刻 `isVisible()=false`(对照组)。已修(#285):抽 `src/lib/window-residency.js` 的 `hideForResidency()` 收口——全屏先 `setFullScreen(false)`、等 `leave-full-screen` 再 `hide()`,回来是窗口态(对齐原生 mac 红灯语义)。
+
+**怎么 apply**:① **动窗口生命周期(close/hide/隐藏驻留/退出流)时,一律走 `hideForResidency(win)`,别再直接 `win.hide()`**——直接调就是这个 bug 的回归。② 更普遍的教训:**任何「窗口态相关」的行为,写之前先问一句「全屏时成立吗」**;全屏是 2026-07-18 才随沉浸窗框进入本 app 关注面,此前写的窗口逻辑都没考虑过它(这次就是 close 路径漏检),updater 退出/下载弹窗/新窗口这些路径值得顺手复查。③ 门的分工照这个先例:CI 侧用注入替身锁**顺序不变量**(`test/window-residency.test.js`,跑得动 Linux),真机行为放宿主脚本(`scripts/verify-fullscreen-close.js`,非 mac 以退出码 2 报错、不静默跳过)——因为 CI 的 xvfb 无窗口管理器、`setFullScreen` 不可靠,而判据是 `isFullScreen()` 的真 OS 状态,`win.emit` 伪造不了(与 `immersive.spec.js:156` 同款结论)。
+
+**来源**:PR #285,fix/fullscreen-close-black
+
+## 2026-07-18 — 浏览器下载进真 app(will-download 真接)+ 工具栏 7 钮尺寸账 + OVERLAY_SEL 竞态修复
+
+**是什么**：浏览器下载(标准档)移植进真 app(PR #278):will-download 从「一律 cancel」换成真接 DownloadItem 落盘 + 下载管理 UI(工具栏进度环 + popover 列表 + 右键存图/链接另存为)。推翻 2026-07-09「不做下载」旧拍板(Colin 2026-07-17 拍板恢复)。附带两处共享核心改动 + 一个潜伏竞态修复。
+**怎么 apply**：
+① **web-tabs.js will-download 不再 cancel**——手上若有 e2e/代码断言旧的「下载被 cancel / 不支持下载 toast」行为,已失效(browser.spec.js:551 改写成真下载落盘)。下载记录持久化=browser-store 第四 cell(browser-downloads.json);纯逻辑=src/lib/downloads.js。
+② **.sb-head 现在 7 颗按钮**(加了下载入口 #nav-downloads),钮宽已收到 22px(mac)/26px(非 mac)+ 非 mac gap 收 4 凑 min-width 240 的账(shell.css .sb-head 处有账本注释)。**再往顶排加图标前先重算这笔账**,否则最右钮溢出被编辑区 iframe 吞点击(e2e T7 栽过)。
+③ **DOM 弹层要盖住网页区(WebContentsView)必须注册进 OVERLAY_SEL**(browser.js:257 的常量 + 快捷键守卫 :1188 两处都加)——原生 view 恒在 DOM 之上,不注册就被盖住;注册后「摘 view+快照垫底」+ veil 关闭直接可用。下载 popover 是最新先例。
+④ **修了 OVERLAY_SEL observer 一个潜伏竞态**(browser.js 迟到的 webCapture .then):原来无条件 webHideAll,快速开关弹层时把已挂回的 view 又藏了→网页区卡空白须切标签恢复。已补取消令牌守卫(overlayPaused/attachedKey,对齐姊妹 __webPeekSnap)。动这段 OVERLAY 逻辑前知道这个先例。
+**来源**：PR #278;plan docs/plans/2026-07-17-003-feat-app-browser-downloads-plan.md;契约 docs/browser-feature-spec.md §4.11。
+
 ## 2026-07-16 — 沉浸收起(Arc 对标)已全量合 main:sb-reopen 浮钮已删、真 app 换 hiddenInset 窗框
 
 **是什么**:Wendi「零缝隙」反馈落地(ui-demo #230 + 真 app #238)。侧栏收起=流内零渲染(ui-demo 48px 细轨、真 app 52px COLLAPSED_STRIP、#sb-reopen 常驻浮钮**全删**),重开=左缘 hover peek(悬浮盖内容)/Cmd+\;真 app darwin 换 titleBarStyle:hiddenInset,红绿灯进 .sb-head(兼窗口拖拽区)且随收起隐藏。spec=docs/features/immersive-collapse.md。

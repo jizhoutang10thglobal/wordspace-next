@@ -6,6 +6,7 @@ const docWatcher = require('./doc-watcher');
 const webTabs = require('./web-tabs');
 const { htmlPathFromArgv } = require('../lib/path-url');
 const webPolicy = require('../lib/web-tabs-policy');
+const { hideForResidency } = require('../lib/window-residency');
 const i18n = require('../lib/i18n');
 const { ZH, EN } = require('../i18n');
 const languageStore = require('./language-store');
@@ -30,11 +31,14 @@ function createWindow() {
     minWidth: 720,   // 缩不到比这更小：正文列 + 顶栏（文件名/保存按钮）放得开，避开 Bug3 那种拥挤；720=常见 1440 屏的一半，能并排分屏
     minHeight: 520,  // 顶栏 + 一屏可编辑内容的下限
     // 沉浸窗框（Arc 对标，Wendi 2026-07-16，spec=docs/features/immersive-collapse.md）：
-    // macOS 去系统标题栏，红绿灯叠进侧栏头（.sb-head 40px 行，y=14 让 12px 灯垂直居中）；
+    // macOS 去系统标题栏，红绿灯叠进侧栏头（.sb-head 40px 行）；
     // 拖拽区改走 .sb-head 的 -webkit-app-region。Windows/Linux 保持标准窗框（记 spec 欠账）。
+    // y=12 不是拍脑袋：macOS 渲染灯组带内边，y=14 时实测灯几何中心在 21.8（像素质心量的），
+    // 比 40px 头的钮中心（20）低 ~2px（Colin 2026-07-21「没对齐」）。y=12 → 灯心 ≈19.8 ≈ 20。
+    // 改这里要联动：ipc.js ws-window-buttons 归位值 + sidebar.js peek 位（=此值 +10,+10）。
     ...(process.platform === 'darwin' ? {
       titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 14, y: 14 }
+      trafficLightPosition: { x: 14, y: 12 }
     } : {}),
     webPreferences: {
       preload: path.join(__dirname, '../renderer/preload.js'),
@@ -47,6 +51,10 @@ function createWindow() {
   webTabs.init(() => win); // 网页标签 view 管理器（浏览器 feature）：attach/事件都以这个窗口为宿主
   if (!app.isPackaged) global.__ws2WebTabs = webTabs; // e2e seam：app.evaluate 沙箱无 require,经 global 取 registry（照 WS2_CTXMENU_PROBE 惯例,打包态不暴露）
   win.on('closed', () => { docWatcher.close(); webTabs.destroyAll(); }); // 关窗即停文件监听 + 销毁全部 web view（防 webContents 泄漏）
+  // 沉浸窗框非全屏恒有（Colin 2026-07-18）：真全屏进/出 → 广播 renderer 挂/摘 body.is-win-fullscreen（摘/恢复 10px 框）。
+  // 显式传 true/false（不查 win.isFullScreen()）——语义直白，且让 e2e 能用 win.emit('enter-full-screen') 确定性驱动整条链。
+  win.on('enter-full-screen', () => broadcastFullscreen(true));
+  win.on('leave-full-screen', () => broadcastFullscreen(false));
   // 修 MP-5：did-finish-load（主框架加载完成）后置就绪并 flush 排队的 open-file。
   // ⚠ 不用 did-start-loading 重置——它对 iframe（文档 frame）导航也触发，会把每次开文档都误判成 renderer 未就绪、
   // 而 did-finish-load 只认主框架、不会再触发 → rendererReady 永久卡 false（residency 唤醒开文档就废）。
@@ -82,7 +90,10 @@ function createWindow() {
     if (darwinPersist && !quitting) {
       e.preventDefault();
       webTabs.setAllAudioMuted(true); // 隐藏驻留：后台网页别继续放声/烧 CPU（P2-11；标签静音已砍,只能整体静音）
-      win.hide();
+      // ⚠ 不能直接 win.hide()：全屏（独占 Space）下 macOS 吞掉 orderOut:，窗口藏不掉、Space 也不拆，
+      // 用户面对一块空 Space = 黑屏（Wendi/Colin 2026-07-20 报，宿主两轮复现）。收口进
+      // hideForResidency：全屏先退、等 leave-full-screen 再藏（src/lib/window-residency.js）。
+      hideForResidency(win);
       return;
     }
     if (!isDirty) return;
@@ -136,6 +147,10 @@ function effectiveTheme() {
 }
 function broadcastAppearance(pref) {
   if (win && !win.isDestroyed()) win.webContents.send('appearance-changed', { pref, effective: effectiveTheme() });
+}
+// 沉浸窗框（Colin 2026-07-18）：全屏进/出广播给 renderer，唯一真相源=win.on('enter/leave-full-screen')。
+function broadcastFullscreen(isFs) {
+  if (win && !win.isDestroyed()) win.webContents.send('fullscreen-changed', !!isFs);
 }
 function applyAppearance(pref) {
   const p = appearanceStore.setPref(pref);
@@ -452,6 +467,14 @@ ipcMain.on('set-dirty', (_e, v) => { isDirty = !!v; });
 // renderer 的 Cmd+W 空态「关窗口」入口：统一走 win.close()，由上面 close 守卫按平台分流
 // （macOS=隐藏驻留 / 其他平台=真关 → 退出），别在 renderer 里自己 hide 绕开语义收口。
 ipcMain.on('win-close', () => { if (win && !win.isDestroyed()) win.close(); });
+// peek 浮卡里的 DOM 假红绿灯(mac,Wendi 2026-07-22「把这3个按钮放到卡片上」)的窗控入口:
+// Electron 不能把原生灯搬进 DOM 卡片(AppKit 可以、Arc 就是这么干的),假灯点击走这条。
+ipcMain.on('ws-win-ctl', (_e, action) => {
+  if (!win || win.isDestroyed()) return;
+  if (action === 'close') win.close();          // 与 win-close 同语义(close 守卫按平台分流)
+  else if (action === 'minimize') win.minimize();
+  else if (action === 'fullscreen') win.setFullScreen(!win.isFullScreen()); // 绿灯=全屏切换(macOS 惯例)
+});
 
 // 单实例：第二次启动（如再双击一个文件）不另起进程，而是把 argv 里的路径交给已运行实例并聚焦窗口。
 // 这也是 Windows 文件关联能用的关键——否则双击只会无脑再开一个空窗口。
@@ -474,6 +497,8 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('set-appearance', (_e, pref) => applyAppearance(pref));
     // OS 主题变化（pref=system 时 shouldUseDarkColors 翻转）→ 重播 effective，让 renderer 实时跟随。
     nativeTheme.on('updated', () => broadcastAppearance(appearanceStore.getPref()));
+    // 沉浸窗框：renderer 启动查全屏初值（冷启动可能已在全屏）。live 变化走 enter/leave-full-screen 广播。
+    ipcMain.handle('get-fullscreen', () => (win && !win.isDestroyed() ? win.isFullScreen() : false));
     // 语言:启动读偏好 + 装字典 + 设 imperative t 当前语言(在 buildMenu/createWindow 前，让首个窗口首帧就对)。
     // 无「OS 语言变化」监听——app.getLocale 只启动读一次，跟随系统改语言要重启(平台限制,plan 决策1)。
     languageStore.init(app.getPath('userData'));

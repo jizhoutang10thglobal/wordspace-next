@@ -229,7 +229,7 @@ td        := <td [class="ws-al-center|ws-al-right"]> phrasing </td>
 |---|---|---|---|
 | **打字 / IME** | 单块 contenteditable 内原生文本插入 | contenteditable 宿主=**单块**（`:299`）；列表光标下放 `<li>`（`:318`）；Enter/paste 不交原生 | ✅ 闭合（out≡内容层不变）。空块/选区替换/行内边界均安全。⚠ 跨块选区打字=no-op 不替换（缺口，§7） |
 | **Enter 换段** | list 专路 / `splitBlock` 劈同标签兄弟 / 块末新 `<p>` | `splitBlock`（`:487`）手工建同标签兄弟、`extractContents` 劈跨界行内、剥后块 id；`isCaretAtRealEnd`（`:137`）严格分流 | ✅ text/h/quote/callout/list。❌ toggle/cell 未接 Enter 专路=fall-through 劈出残缺 `<details>`/游离 `<td>`（落地前必堵） |
-| **块首 Backspace** | 删空块 / 叶子合并 / 并入列表 / 拒绝 | `isLeafTextBlock`（`:60`）双向把关；并列表包 `<li>`（`:893`）；prev 不可编辑则 no-op | ✅ 主路径。⚠ list 内 Backspace 整个交原生（`:876`，首 li 可产 `<ul>` 裸文本，§7）；⚠ 并列表/跨块删缺 leaf 守卫（§7 B1/B2） |
+| **块首 Backspace** | 删空块 / 叶子合并 / 并入列表 / list 首 li 跨块并入上一块 / 拒绝 | `isLeafTextBlock`（`:60`）双向把关；并列表包 `<li>`；prev 不可编辑则 no-op；**list 首 li 行首**：并入上一块（上块是 list→接其末项；是叶子文字块→接其末尾；空 ul 删掉；有子列表的 li 不动） | ✅ 主路径。**list 内非首 li 退格交原生（ul 内 li→li 合并，正确）；首 li 行首改为自己跨块并入上一块**——原来整个交原生，但块间是独立 contenteditable、原生跨不过去 = 第二个 list 块行首退格「哑掉、不上移」（Wendi bug3，2026-07-21 修）。⚠ 并列表/跨块删缺 leaf 守卫（§7 B1/B2） |
 | **Tab/Shift-Tab 缩进** | list 项移入/移出子列表 | 缩进只在 `prev.tagName==='LI'` 时动（`:859`，杜绝子列表直挂 ul）；子列表幂等去重 | ✅ list。⚠ 子列表 tag/class 抄"顶层 list"非"直接父"（`:862`，混合嵌套类型错乱/丢 ws-todo，§7 D3）。❌ toggle/table 未接 |
 | **↑/↓ 跨块导航** | 纯光标移动 | **零内容写入**；`isEditableEl` 决定 enterEdit vs selectBlock | ✅ 最强闭合（out≡入逐字节）。保列位 best-effort。table/toggle 落地需扩展 |
 | **turn-into 转块** | retag + 内容模型适配 | A→A 裸 retag；A→B 包 `<li>`（`:373`） | ✅ A→A、A→B、B→B。❌ **list→A 留孤儿 `<li>`**（§7 A1 真 bug）；⚠ 非叶子源→phrasing 越界、todo→list 留 `data-checked`（§7 A3） |

@@ -99,30 +99,4 @@
   align-self: center;
 }
 
-/* ---- 焦点框 + 删除（宿主浮层，绝不注进 iframe） ---- */
-.nce-focus {
-  position: absolute;
-  z-index: 55;
-  pointer-events: none;
-  border: 2px solid var(--c-accent);
-  border-radius: 6px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent) 15%, transparent);
-}
-.nce-focus-del {
-  position: absolute;
-  top: -30px;
-  right: -2px;
-  pointer-events: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 9px;
-  background: var(--c-ink);
-  color: var(--c-text-invert);
-  border-radius: var(--r-pill);
-  font-size: 12px;
-  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.25);
-  transition: background-color var(--dur-fast) var(--ease);
-}
-.nce-focus-del:hover { background: var(--c-ink-hover); }
+/* 焦点框 + 「删除此块」chip 已整体撤除（Colin 2026-07-21）：删除全走原生选中 + Delete，编辑器零删除浮层。 */

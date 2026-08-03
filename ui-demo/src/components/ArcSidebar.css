@@ -3,8 +3,9 @@
   min-width: 240px; /* 兜底：顶排图标行 240 下刚好放得下，再窄图标会被裁掉（拖拽 JS 同夹 240） */
   position: relative; /* 给宽度拖拽柄 .arc-resize 定位 */
   flex: none;
-  background: var(--c-bg-sunken);
-  border-right: 1px solid var(--c-border);
+  /* Arc 图层模型（Wendi 2026-07-21 融合反馈，同真 app .sb）：侧栏=窗框 chrome 表面的一部分，
+     底色同框、无右边线；内容纸（.ws-main 细边+圆角）独享层级。 */
+  background: var(--c-bg-chrome);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -300,7 +301,7 @@
      top 按 depth 逐级设（内联）→ 滚到深处时祖先文件夹按层级堆叠吸顶、subtree 滚出后原生释放。
      实底色遮住下方滚动内容；行高固定 30 让每级 top=depth*30 对齐。 */
   position: sticky;
-  background: var(--c-bg-sunken);
+  background: var(--c-bg-chrome); /* 实底遮滚动内容，必须=侧栏底（融合后=chrome） */
 }
 .arc-folder-head:hover { background: var(--c-hover); color: var(--c-text); }
 /* 吸顶态：最深那条祖先加一道柔和阴影，把整叠吸顶行从下方滚动内容里托起来（VS Code sticky scroll 同款提示） */

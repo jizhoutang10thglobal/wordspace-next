@@ -89,18 +89,37 @@ test('A 富文字：选中 → 宿主格式条 → 加粗 → 保存后磁盘那
   await expect.poll(async () => /<(b|strong)[ >]/i.test((await readDisk(p)).match(/<p id="?p1"?>[\s\S]*?<\/p>/i)[0])).toBe(true);
 });
 
-test('B 删块：Esc 选块 → Delete → 保存后该块从磁盘消失、其余块保留', async () => {
+test('B 删块（原生选中 + Delete）：选中一段内容 → Delete → 保存后该段文字从磁盘消失、其余保留', async () => {
   await launch();
   const p = await openDoc('wild.html', WILD);
-  await frame.locator('#p2').click();          // 光标进 p2
-  await page.keyboard.press('Escape');          // → 块模式，焦点落 p2
-  await expect(page.locator('.nce-focus')).toBeVisible();
-  await page.keyboard.press('Delete');          // 删 p2
+  await frame.locator('#p2').click();           // 先聚焦 iframe + 光标进 p2（否则 Delete 落不到 contenteditable）
+  await frame.locator('#p2').evaluate((el) => { // 原生选中 p2 整段内容
+    const r = el.ownerDocument.createRange(); r.selectNodeContents(el);
+    const s = el.ownerDocument.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.keyboard.press('Delete');           // 原生删除选区
   await saveToDisk();
   await expect.poll(async () => (await readDisk(p)).includes('第二段要被删掉')).toBe(false);
   const disk = await readDisk(p);
-  expect(disk).toContain('第一段可编辑文字'); // 未触及块保留
+  expect(disk).toContain('第一段可编辑文字'); // 未触及内容保留
   expect(disk).toContain('第三段');
+});
+
+// Colin 2026-07-21 拍板：拿掉「删除此块」按钮 + Esc 块模式，删除全走原生「选中 + Delete」。
+// 编辑器保持「安静的纸」——点块 / 选中 / 按 Esc 都不该冒出任何删除 chrome。这条守「按钮真没了」。
+test('无删除 chrome：点块 / 选中 / 按 Esc 都不出「删除此块」按钮或焦点框', async () => {
+  await launch();
+  await openDoc('wild.html', WILD);
+  await frame.locator('#p2').click();            // 点进块
+  await page.waitForTimeout(150);
+  expect(await page.locator('.nce-focus-del').count(), '点块不应有「删除此块」按钮').toBe(0);
+  expect(await page.locator('.nce-focus').count(), '点块不应有焦点框').toBe(0);
+  await frame.locator('#p2').selectText();       // 选中内容
+  await page.waitForTimeout(150);
+  expect(await page.locator('.nce-focus-del').count(), '选中也不出删除按钮').toBe(0);
+  await page.keyboard.press('Escape');           // 按 Esc 不再进块模式
+  await page.waitForTimeout(150);
+  expect(await page.locator('.nce-focus').count(), 'Esc 不再出焦点框（块模式已撤）').toBe(0);
 });
 
 test('结构保真：编辑一段 → 未触及的绝对定位角标 style 逐字保留 + 二次保存幂等', async () => {
@@ -160,16 +179,11 @@ test('Cmd+Z 撤销（基础编辑，Colin 2026-07-02）：打字 → 菜单 undo
   await page.waitForTimeout(300);
 });
 
-test('T5 视觉对齐：焦点框 accent 蓝（非珊瑚橙）+ 格式条画布同款壳（真 computed style）', async () => {
+test('T5 视觉对齐：格式条画布同款壳（真 computed style）', async () => {
   await launch();
   await openDoc('wild.html', WILD);
   await frame.locator('#p1').click();
-  await page.keyboard.press('Escape'); // → 块模式出焦点框
-  await expect(page.locator('.nce-focus')).toBeVisible();
-  const st = await page.locator('.nce-focus').evaluate((el) => getComputedStyle(el).borderTopColor);
-  expect(st, '焦点框应是 accent 墨青蓝（ui-demo nce-focus）').toBe('rgb(29, 111, 191)'); // #1d6fbf
   // 格式条壳：选中文字出条 → surface 底、无实体边框（shadow-menu 描边）、32 高
-  await frame.locator('#p1').click();
   await frame.locator('#p1').selectText();
   await expect(page.locator('.ws-fmtbar')).toBeVisible();
   const bar = await page.locator('.ws-fmtbar').evaluate((el) => {

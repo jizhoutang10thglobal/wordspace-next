@@ -9,6 +9,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const bookmarksLib = require('../lib/bookmarks');
 const webHistory = require('../lib/web-history');
+const downloadsLib = require('../lib/downloads');
 const engines = require('../lib/search-engines');
 
 const DEBOUNCE_MS = 500;
@@ -36,6 +37,12 @@ function init(userDataDir) {
     (data) => ({ version: 1, folders: data.folders, bookmarks: data.bookmarks }));
   mkCell('history', path.join(dir, 'browser-history.json'),
     (raw) => webHistory.sanitize(raw && raw.entries),
+    (data) => ({ version: 1, entries: data }));
+  // 下载记录（spec §4.11）：load 清洗 = sanitizeDownloads（形状校验 + downloading→interrupted 翻转）
+  // 再 capDownloads（CAP 100，防手改/毒化的超大文件；load 后已全终态，挤最老终态即可）。
+  // 运行时 CAP（在途保护）由 U3 的 push 侧管——见 setDownloads 注释。
+  mkCell('downloads', path.join(dir, 'browser-downloads.json'),
+    (raw) => downloadsLib.capDownloads(downloadsLib.sanitizeDownloads(raw && raw.entries)),
     (data) => ({ version: 1, entries: data }));
   mkCell('settings', path.join(dir, 'browser-settings.json'),
     (raw) => ({ engine: engines.validKey(raw && raw.engine) }),
@@ -125,6 +132,17 @@ function setHistory(entries) {
   schedule(c);
   return c.data;
 }
+// ---- 下载 ----
+function getDownloads() { return cell('downloads').data; }
+// 换 data 引用 + schedule + notify（下载要 live 推 renderer 进度环/popover，故比 setHistory 多一步 notify）。
+// 刻意不在这里 capDownloads：运行时 CAP（含在途保护）归 U3 的 push 侧，本函数保持薄（照 setHistory）。
+function setDownloads(entries) {
+  const c = cell('downloads');
+  c.data = entries;
+  schedule(c);
+  notify('downloads');
+  return c.data;
+}
 // ---- 设置 ----
 function getSettings() { return { ...cell('settings').data }; }
 function setEngine(key) {
@@ -134,4 +152,4 @@ function setEngine(key) {
   return { ...c.data };
 }
 
-module.exports = { init, flushSync, subscribe, getBookmarks, setBookmarks, getHistory, setHistory, getSettings, setEngine };
+module.exports = { init, flushSync, subscribe, getBookmarks, setBookmarks, getHistory, setHistory, getDownloads, setDownloads, getSettings, setEngine };

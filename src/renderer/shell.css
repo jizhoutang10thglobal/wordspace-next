@@ -273,10 +273,15 @@ ul { list-style: none; }
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--c-bg-sunken);
-  border-right: 1px solid var(--c-border);
+  /* Arc 图层模型（Wendi 2026-07-21 融合反馈）：侧栏不是独立面板，是窗框 chrome 表面的一部分——
+     底色与窗框同色、无右边线，「侧栏+框」一块表面，内容纸（#main 细边+圆角）独享层级。
+     旧 sunken 底 + border-right 会切出两块表面（Wendi「边框和左侧边栏的融合…还是尴尬」）。 */
+  background: var(--c-bg-chrome);
   user-select: none;
 }
+/* 全屏例外：摘框摘缝后侧栏与内容纸直接相邻，无 1px 分界（融合前由 border-right 提供）——全屏态补回。
+   :not(.is-collapsed) 限定：width:0 的收起态 border 仍画 1px，会在全屏左缘露一条线。 */
+body.is-win-fullscreen .sb.sb-on:not(.is-collapsed) { border-right: 1px solid var(--c-border); }
 /* 侧栏宽度拖拽柄（UX5 / Wendi F1）：贴右边界、col-resize；收起态不显示。 */
 .sb-resize { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 10; }
 .sb-resize:hover { background: var(--c-accent); opacity: 0.35; }
@@ -285,20 +290,51 @@ ul { list-style: none; }
   flex: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px; /* 七钮排（+下载入口 §4.11）：非 mac 收 gap 到 4 凑 min-width 240 的账（下方注释） */
   height: var(--h-titlebar);
   padding: 0 8px 0 14px;
   /* 沉浸窗框：系统标题栏没了（darwin hiddenInset），侧栏头兼任窗口拖拽区；框架窗口下此属性被忽略，无副作用 */
   -webkit-app-region: drag;
+  /* 抬到窗框顶边 .win-frame（z 235，fixed）之上（Colin 2026-07-18）：#276 把 10px 拖拽顶边扩成非全屏恒有后，
+     它横跨全宽、盖住展开态侧栏图标钮的顶 ~4px（钮 y=6..34、顶边 y=0..10），那 4px 变回 drag、吞点击。
+     只抬 .sb-head（不抬整个 .sb，免得给侧栏造层叠上下文困住挂在 body 的右键菜单/浮层）——头里全是 flex 流式
+     子元素、无绝对定位依赖，造的层叠上下文只圈住图标钮本身。抬上去后 no-drag 钮赢回顶边，拖窗仍走 sb-head
+     的空白处（本就是 drag）。收起态钮不可见、全屏无顶边，此属性无副作用。 */
+  position: relative; z-index: 236;
 }
 .sb-head button { -webkit-app-region: no-drag; } /* 控件从拖拽区挖掉，点击不被吞 */
 /* darwin：红绿灯叠在窗口左上（trafficLightPosition x14/y14，占位到 ~66px），侧栏头让位。
-   压缩排布凑最小宽的账（照 ui-demo arc-top 同款口径）：让位 70 + 右 6 + 六钮 6×26 + gap 6×1
-   = 238 ≤ 侧栏 min-width 240（#235 定）。不压缩钮会溢出侧栏、最右的 #sb-find 被编辑区 iframe
-   盖住吞点击（e2e T7 实翻过）。往这排加图标前先重算这笔账（ui-demo .arc-top 处同有一条）。 */
+   压缩排布凑最小宽的账（照 ui-demo arc-top 同款口径）：让位 70 + 右 6 + 七钮 7×22 + gap 7×1
+   = 237 ≤ 侧栏 min-width 240（#235 定）。⚠2026-07-18 加下载入口 #nav-downloads 后从六钮变七钮，
+   钮宽 26→22、非 mac gap 8→4 + 钮宽 28→26 才塞得下（非 mac：22 + 7×26 + 7×4 = 232 ≤ 240）。
+   不压缩钮会溢出侧栏、最右的 #sb-find 被编辑区 iframe 盖住吞点击（e2e T7 实翻过）。
+   往这排加图标前先重算这笔账（ui-demo .arc-top 处同有一条）。 */
+.sb-head .sb-icobtn { width: 26px; } /* 非 mac：七钮凑 240（mac 下方再收到 22） */
 body.is-mac .sb-head { padding: 0 6px 0 70px; gap: 1px; }
-body.is-mac .sb-head .sb-icobtn { width: 26px; }
+body.is-mac .sb-head .sb-icobtn { width: 22px; }
 .sb-title { flex: 1; min-width: 0; font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2); }
+/* peek 浮卡 DOM 假红绿灯(Wendi 2026-07-22「把这3个按钮放到卡片上」):只在 mac 的 peek 态显——
+   原生灯搬不进 DOM 卡(Electron 无 AppKit standardWindowButton 重挂,Arc 是原生搬的),peek 全程
+   不显原生灯,假灯作为卡的一部分随卡滑入滑出、与图标排同处 40px 头天生对齐(杀掉 1.2px 账)。
+   绝对定位吃 is-mac 让位 70px 区(原生灯在展开态的家);观感对齐 ui-demo .arc-traffic,
+   色=macOS 原色;hover 整组出符号(macOS 行为)。点击走 ws-win-ctl(关/最小化/全屏)。 */
+.sb-fakelights { display: none; }
+body.is-mac.is-sb-peek .sb-fakelights {
+  display: flex; gap: 8px; align-items: center;
+  position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+}
+.sb-fl { flex: none; width: 12px; height: 12px; border-radius: var(--r-pill); border: none; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; cursor: default; }
+.sb-fl svg { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
+.sb-fakelights:hover .sb-fl svg { opacity: 1; } /* hover 任一颗,三颗全出符号(macOS 同款) */
+.sb-fl-close { background: #ff5f57; }
+.sb-fl-min { background: #febc2e; }
+.sb-fl-zoom { background: #28c840; }
+/* toggle 两形态(Colin 2026-07-21):展开态显「收起」(左箭头),收起/peek 态显「展开」(右箭头)——
+   peek 浮卡里 body.is-sb-collapsed 仍挂着,天然显展开形态,用户在浮卡里能认出恢复钮。 */
+#sb-toggle .sb-tgl-open { display: none; }
+body.is-sb-collapsed #sb-toggle .sb-tgl-close { display: none; }
+body.is-sb-collapsed #sb-toggle .sb-tgl-open { display: block; }
 /* 图标钮 = 墨圆 + hover 墨条滑入（对齐 ui-demo .arc-ico） */
 .sb-icobtn {
   flex: none; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center;
@@ -313,24 +349,29 @@ body.is-mac .sb-head .sb-icobtn { width: 26px; }
    重开=左缘 hover peek / Cmd+\。spec=docs/features/immersive-collapse.md */
 .sb.is-collapsed { width: 0; min-width: 0; overflow: hidden; border-right: none; }
 
-/* 沉浸窗框（Wendi 2026-07-17，Arc 对标）：收起态内容区四周留 10px chrome 色边带。
-   三重职责：①窗口拖拽手柄（hiddenInset 下收起态原本零拖拽区）②左边带=peek 触发的可见锚点
-   （原 6px 隐形热区并入，触发宽度统一 10px）③视觉上窗与桌面有了分界（Wendi「边界不清晰」）。
+/* 沉浸窗框（Wendi 2026-07-17 初稿，Colin 2026-07-18 扩成「非全屏恒有」）：内容区四周留 10px chrome
+   色边带。三重职责：①窗口拖拽手柄（hiddenInset 下原本零拖拽区）②左边带=peek 触发的可见锚点
+   （原 6px 隐形热区并入，触发宽度统一 10px，仅收起态）③视觉上窗与桌面有了分界（Wendi「边界不清晰」）。
+   ⚠ 范围（Colin 拍板「不仅收起态，不收起也要有！只要不是全屏就要有」）：#271 只在收起态（is-sb-collapsed），
+   本次改为 body:not(.is-win-fullscreen) 恒有——
+     · 展开态：侧栏贴左缘（侧栏本身=左侧 chrome，Arc 同款，不给左带），#main margin:10px 四周（左 10px=与侧栏的缝）；
+     · 收起态：侧栏宽 0，#main 从窗左 10px 起（视觉/行为与 #271 完全一致，零回归）；
+     · 真全屏（macOS enter-full-screen → sidebar.js 挂 body.is-win-fullscreen）：两态都摘框、edge-hot 变透明但保留（peek 重开路不堵）。
    左边带不设 app-region:drag——drag 区吞鼠标事件，会哑掉 hover 触发；拖窗走 top/right/bottom 三条。
-   网页 view 因 #main margin 从 x=10 起，左边带永远是 DOM 地盘 → 原「主进程指针 watcher 代打」
-   路径已删（触发只此一条）。 */
-body.is-sb-collapsed { background: var(--c-bg-chrome); }
+   网页 view 因 #main margin 从 x=侧栏宽+10 起，左边带永远是 DOM 地盘（触发只此一条）。 */
+body:not(.is-win-fullscreen) { background: var(--c-bg-chrome); }
 /* 内容=一块纸（ui-demo 同款）：细边+微圆角把内容从窗框带上抬起来（暗色下无边纯 margin 看不出框）。
    overflow 用 clip 不用 hidden——hidden 会成为滚动容器被 scrollIntoView 悄悄滚偏（ui-demo 实测坑）。
    网页标签的原生 view 恰好盖满 #main 矩形（含 1px 边）,square 角、盖住细边：spec 已知边界。 */
-body.is-sb-collapsed #main { margin: 10px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: clip; }
+body:not(.is-win-fullscreen) #main { margin: 10px; border: 1px solid var(--c-border); border-radius: var(--r-md); overflow: clip; }
 .win-frame { display: none; }
-body.is-sb-collapsed .win-frame { display: block; position: fixed; z-index: 235; -webkit-app-region: drag; }
-body.is-sb-collapsed .win-frame-top { top: 0; left: 0; right: 0; height: 10px; }
-body.is-sb-collapsed .win-frame-right { top: 0; right: 0; bottom: 0; width: 10px; }
-body.is-sb-collapsed .win-frame-bottom { bottom: 0; left: 0; right: 0; height: 10px; }
+body:not(.is-win-fullscreen) .win-frame { display: block; position: fixed; z-index: 235; -webkit-app-region: drag; }
+body:not(.is-win-fullscreen) .win-frame-top { top: 0; left: 0; right: 0; height: 10px; }
+body:not(.is-win-fullscreen) .win-frame-right { top: 0; right: 0; bottom: 0; width: 10px; }
+body:not(.is-win-fullscreen) .win-frame-bottom { bottom: 0; left: 0; right: 0; height: 10px; }
 
-/* 左缘热区（现=左边带本体，10px 可见宽）：只在收起态存在；hover 给一档轻反馈提示这里有东西。 */
+/* 左缘热区（现=左边带本体，10px 可见宽）：只在收起态存在（含全屏收起——peek 重开路不能堵）。
+   非全屏收起时 hover 给一档轻反馈提示这里有东西；全屏收起时保持透明（全屏无框视觉，但热区仍在、peek 照常触发）。 */
 .sb-edge-hot { display: none; }
 body.is-sb-collapsed .sb-edge-hot {
   display: block;
@@ -338,7 +379,7 @@ body.is-sb-collapsed .sb-edge-hot {
   z-index: 240; /* 压过内容与文档浮层(200)，低于模态(400)/toast(500) */
   transition: background-color var(--dur-fast) var(--ease);
 }
-body.is-sb-collapsed .sb-edge-hot:hover { background: var(--c-hover); }
+body:not(.is-win-fullscreen).is-sb-collapsed .sb-edge-hot:hover { background: var(--c-hover); }
 
 /* peek 悬浮层：收起态 hover 左缘，完整侧栏盖在内容上滑进滑出、不推挤布局。
    借 .sb 本体变身（单实例——快捷键/树状态全复用，不另造第二份侧栏）。
@@ -399,7 +440,7 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
    （top 跟 scrollTop）。实底色遮住下方滚动内容；padding 对齐 .sb-body 横向 padding 让克隆行与真行对齐。 */
 .sb-sticky {
   position: absolute; left: 0; right: 0; top: 0; z-index: 6;
-  padding: 0 8px; background: var(--c-bg-sunken);
+  padding: 0 8px; background: var(--c-bg-chrome); /* 实底遮滚动内容，必须=侧栏底（融合后=chrome） */
   pointer-events: none;
 }
 .sb-sticky:empty { display: none; }
@@ -556,7 +597,8 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
 .sb-tab:hover .sb-tab-pin, .sb-tab:hover .sb-tab-close { opacity: 1; }
 .sb-tab-pin.is-pinned { opacity: 1; color: var(--c-accent); } /* 已钉的常显（在置顶区） */
 .sb-tab-pin:hover, .sb-tab-close:hover { background: var(--c-active); color: var(--c-text); }
-/* 激活态 = 白纸 puck 落在 sunken 槽上（对齐 ui-demo arc-tab.is-active）——纯底色对比，零阴影（保守口径）。
+/* 激活态 = 白纸 puck 落在 chrome 底上（对齐 ui-demo arc-tab.is-active；融合后侧栏底=chrome，
+   对比比旧 sunken 槽弱一档=Arc 同款观感）——纯底色对比，零阴影（保守口径）。
    跟文件树的蓝底 selection（.sb-file.is-active 不动）区分开。 */
 .sb-tab.is-active { background: var(--c-surface); color: var(--c-text); }
 .sb-tab.is-active .sb-ico { color: var(--c-accent); }
@@ -663,10 +705,12 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
 .sb-modal-body { padding: 14px 18px; overflow-y: auto; }
 .sb-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 /* 卡片零阴影（保守口径）：层级 = 1px 细边 + hover 底色差 */
-.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 64px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
-.sb-card:hover { background: var(--c-bg-chrome); border-color: var(--c-border-strong); border-top-color: var(--c-border-strong); }
-.sb-card-blank { border-top-color: var(--c-accent); }
-.sb-card-blank:hover { border-top-color: var(--c-accent); }
+.sb-card { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 92px; padding: 12px 13px; text-align: left; border: 1px solid var(--c-border); border-top: 3px solid transparent; border-radius: var(--r-md); background: var(--c-surface); transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.sb-card:hover { background: var(--c-hover); }
+.sb-card-ico { display: grid; place-items: center; width: 30px; height: 30px; margin-bottom: 4px; border-radius: var(--r-sm); background: var(--c-bg-sunken); color: var(--c-text-2); }
+.sb-card-blank { border-top-color: var(--c-border-strong); }
+.sb-card-blank:hover { border-color: var(--c-accent); border-top-color: var(--c-accent); }
+.sb-card-blank .sb-card-ico { background: var(--c-accent-tint); color: var(--c-accent); }
 .sb-card-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
 .sb-card-desc { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.45; }
 
@@ -1096,6 +1140,7 @@ body.is-sb-peek.is-sb-peek-out .sb.is-collapsed { transform: translateX(calc(-10
 .ws-pgs-margins { flex-wrap: wrap; padding-left: 50px; font-size: var(--fs-sm); color: var(--c-text-secondary); }
 .ws-pgs-margins label { display: flex; align-items: center; gap: 4px; }
 .ws-pgs-margins input { width: 56px; height: 26px; border: 1px solid var(--c-divider); border-radius: var(--r-sm); padding: 0 6px; font-size: var(--fs-sm); background: var(--c-surface); color: var(--c-text); }
+.ws-pgs-hf { flex: 1; min-width: 0; height: 28px; border: 1px solid var(--c-divider); border-radius: var(--r-sm); padding: 0 8px; font-size: var(--fs-sm); background: var(--c-surface); color: var(--c-text); }
 .ws-pgs-toggle { cursor: pointer; user-select: none; }
 .ws-pgs-off { opacity: 0.4; pointer-events: none; }
 .ws-pgs-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }

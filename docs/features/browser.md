@@ -24,6 +24,7 @@
 | 收藏纯逻辑 + Netscape 互通 | `ui-demo/src/mock/bookmarks.ts` | `src/lib/bookmarks.js` |
 | 历史纯逻辑（60s 合并/cap500） | `ui-demo/src/mock/history.ts` | `src/lib/web-history.js` |
 | 右键菜单 builder（双胞胎） | `ui-demo/src/lib/webCtxMenu.ts` | `src/lib/web-context-menu.js` |
+| 下载（正本 §4.11，2026-07-17 恢复） | `ui-demo/src/mock/downloads.ts`（记录+假进度引擎）+ `ui-demo/src/lib/downloads.ts`（纯逻辑，移植整体搬）+ `DownloadsPopover.tsx` + `ArcSidebar.tsx` 入口 | `src/lib/downloads.js`（纯逻辑+文件名清洗）+ `src/main/web-tabs.js`（`will-download` 引擎/命名管线/未提交 url 回滚/`dl*` 动作）+ `src/main/browser-store.js`（downloads 第四 cell）+ `src/main/browser-ipc.js`（`dl-*` 通道）+ `src/renderer/browser.js`+`browser.css`+`index.html`（进度环/popover）+ `src/lib/web-context-menu.js`（右键双胞胎）；测试 `test/downloads.test.js` + `e2e/web-downloads.spec.js` |
 | omnibox 输入判定 / 引擎表 | `ui-demo/src/mock/browser.ts` / `browserSettings.ts` | `src/lib/url-input.js` + `tld-set.js` / `search-engines.js` |
 | 决策纯逻辑（权限/scheme/缩放步进） | 散在组件里 | `src/lib/web-tabs-policy.js` |
 | 标签模型的 web 身份类 | `ui-demo/src/mock/store.ts` | `src/lib/tabs.js`（`web:` 前缀 / updateEntry / 关闭栈） |
@@ -35,7 +36,8 @@
 
 见正本 §13「刻意差异表」（mock 渲染方式 / DOM vs 原生菜单 / 缩放全局 vs 每标签 /
 关标签焦点 / 历史触发点 / favicon / 默认引擎 glass vs Bing / 新标签瓦片演示位 vs 书签栏前 N /
-normalize TLD 真验证 / 权限 default-deny 白名单 / ⌘/ 面板暂缺），
+normalize TLD 真验证 / 权限 default-deny 白名单 / ⌘/ 面板暂缺 / **下载 mock vs 真下载**（假进度+
+无真落盘+访达=演示 toast，2026-07-17）），
 均为拍板差异，日期与拍板人在正本 §15 决策日志。不在该表里的行为差异都算漂移。
 另：**默认浏览器为真 app 独有**（正本 §10.6，2026-07-13）——ui-demo 不移植，不算漂移。
 
@@ -46,6 +48,9 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
 ## 对齐锚点
 
 - ui-demo 侧：PR #150 合入 main 的 commit（2026-07-10，正本定稿 + 六项拍板落地）
+- 2026-07-17 **下载（标准档）ui-demo 定稿**（分支 `feat/ui-demo-downloads`，正本 §4.11/§12/§13/§15
+  同 PR 还账）：mock 站触发点/工具栏进度环/popover/右键存储/toast 三连/持久化记录全套；
+  门 = `ui-demo/scripts/test-downloads.mjs`（含变异自检记录）。真 app 侧未动，欠账见下。
 - app 侧：`feat/browser-port` 分支（2026-07-11，按正本 §14 验收清单全量移植；合 main 后以 merge commit 为准）
 - 2026-07-13 收藏区 header 重样式（栏标化 + 对齐网格，正本 §4.3 已更新，Wendi「视觉乱」反馈）：
   ui-demo PR #170 + app PR `fix/app-sidebar-fav-align`，两侧同步落地，此项无欠账。
@@ -69,6 +74,32 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
   （`did-fail-load` 占位行 + `did-navigate` 的 `navSeq` 提交序号 + 收尾≠提交说明）；app PR
   `fix/browser-error-page-recover`（`web-tabs.js` 加 navSeq、`browser.js onWebTabUpdated` 补提交沿恢复分支）。
   真 app 独有（ui-demo iframe mock 无 WebContentsView attach/detach，不移植、不算漂移）。
+- 2026-07-18 **下载真 app 移植落地（标准档，`feat/app-browser-downloads`，U1–U6）**：正本 §4.11 契约全量
+  落地——`will-download` 真接 `DownloadItem`（`setSavePath` 锁系统「下载」文件夹 + 对真磁盘 uniquify + 文件名
+  清洗 §11.5 + 进度节流推 renderer）替掉旧 cancel+toast；工具栏进度环 + popover（注册 `.dlp-overlay` 进
+  `OVERLAY_SEL` 摘 view + veil/Esc 关，见正本 §13 实现修正）；「在访达中显示」= `shell.showItemInFolder`
+  （只定位）；原生右键双胞胎 `save-link`/`save-image`（`web-context-menu.js`，与 ui-demo `webCtxMenu.ts` 同构）；
+  未提交 url 回滚修「地址栏敲下载 URL → 重启静默重下」雷（P4）；下载记录 = browser-store 第四 cell
+  （`browser-downloads.json`，load-sanitize 翻 `interrupted`）。门：`test/downloads.test.js` +
+  `test/browser-store.test.js`（node:test）+ `e2e/web-downloads.spec.js`（8 条真下载：字节完整/uniquify/取消
+  无残留/P4 重启不重下/重启中断/popover/进度环着色/收起态 toast，含变异自检两探针=打掉 uniquify 翻红 U2、
+  打掉回滚翻红 P4）+ `e2e/browser.spec.js` 安全不变式改真下载落盘（读真磁盘字节）+ 右键 probe 补 save-link；
+  测试产物走 `WS2_DL_DIR`=tmpdir 零落盘。navSeq 提交沿契约与下载触发的 `-3 ERR_ABORTED` 已由
+  `e2e/browser.spec.js`「P1 恢复不误触发」再验证（下载中止型导航不动错误页/恢复逻辑）。真 app 独有的后端
+  （ui-demo 是 mock 假进度，见 §13 差异表）。⚠ 本条里「popover 注册 `.dlp-overlay` 进 `OVERLAY_SEL` 摘 view」
+  **已被 2026-07-20 打磨推翻**（改锁侧栏宽不摘 view），见下条。
+- 2026-07-20 **下载 UX 真机反馈打磨（标准档，`fix/downloads-ux-polish`，Colin 真机三点）**，两侧同步：
+  ① **popover 锁进侧栏宽度、不覆盖网页区**：`anchorPos` 读 `#sidebar` rect 锁宽（`left=sb.left+8`/`width=sb.width-16`），
+  `.dlp-overlay` 从 `OVERLAY_SEL` 拿掉 → 不再摘原生 view，**连带根拔「快速开关 popover→`webHideAll` 竞态」**
+  （原对抗审查 P2）；关闭三管 veil+Esc+图标 toggle；`window blur` spike 实证不 fire（不用）。ui-demo 同步锁
+  `.arc-sidebar` 宽。② **toast 改小、侧栏开着不顶网页**：主进程删 3 处 `web-toast` 发送，renderer 从
+  `downloads-changed` 状态迁移 diff 派生 toast（首帧只建基线、同迁移只发一次）；侧栏开=侧栏内紧凑 `.dl-toast`
+  （不调 `webToastInset`），收起=over-web 兜底。③ **completed 加「打开」按钮**：`web-tabs.js dlOpen`
+  （`existsSync? shell.openPath : missing`，**用户手动打开 ≠ §11.5 自动打开红线**）+ `browser-ipc dl-open` +
+  preload `dlOpen` + `buildActs` 放「在访达中显示」前 + i18n `browser.dlOpen` 双语。门：node:test 760 + i18n 三门
+  + `e2e/web-downloads.spec.js`（改 popover 用例=删摘 view 断言、加锁侧栏宽断言；加「打开」e2e + 侧栏开着 toast
+  e2e=view bounds 无 72px inset；变异探针④=打掉 dlOpen 的 `shell.openPath` 翻红）；ui-demo `i18n:scan` 三门 +
+  vite build + 亮/暗手验（popover 不盖内容、开按钮、toast 小；暗态像素解码）。正本 §4.11/§13 落地细则 #1/#4 同 PR 更新。
 
 ## bug-hunt 修复批（2026-07-15，探索测试 `docs/plans/bug-hunt-2026-07-14/`）
 
@@ -122,6 +153,12 @@ ui-demo 空态是 Library 底部纯文字 `arc-lib-empty`（无按钮）——**
 
 ## 欠账
 
+- **下载 toast 的 action/tone + 启动 interrupted 计数条**（U6 记账，非阻塞降级）：真 app 下载 toast 现由 renderer
+  从 `downloads-changed` 状态迁移 diff 派生（2026-07-20 打磨，替换原主进程 `web-toast` 单字符串通道），仍是
+  **纯文案** = 无正本 §4.11 的可点「显示」action / danger tone；启动时「N 个下载被转 interrupted」的 neutral
+  计数条未做（load-sanitize 静默翻转）。进度环 + popover 入口常显兜底，用户仍可一键点开。要补需扩 toast 通道
+  带 action/tone（正本 §13 落地细则 4/5 已记降级）。**下载主体 U1–U6 已落地，见上
+  「对齐锚点」2026-07-18 条**。
 - **打包冒烟 / Windows 未验**（正本 §13「仍开放」；dev 态 mac 全绿，签名打包后的 WebContentsView/
   持久化路径未实测）。
 - **默认浏览器仅 macOS**（正本 §10.6）：Windows/Linux 未做（Win 要安装器注册表 + `second-instance`

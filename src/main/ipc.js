@@ -18,6 +18,7 @@ const { assertInsideWorkspace, kindOf, isNoisePath, affectedDirsOf } = require('
 const { TEMPLATES } = require('../lib/doc-templates');
 const rootsLib = require('../lib/roots');
 const tabsLib = require('../lib/tabs'); // 吸收时把持久化标签同步 rebase（双导出 IIFE，主进程可 require）
+const edgeZones = require('../lib/edge-zones'); // 收起态 peek 触发区纯几何（光标轮询 watcher 用）
 const linkIndex = require('./link-index'); // U2 文档互链索引（可丢弃缓存，多根 rootId:rel 键）
 const linkRewrite = require('./link-rewrite'); // U5 改名/移动 → 字节保真重写引用
 const wsLinks = require('../lib/links'); // 路径代数（invertMoves/resolveHref/relHref）
@@ -548,9 +549,15 @@ function registerIpc() {
   // WS2_PDF_OUT 是测试 seam：设了就跳过原生对话框直接用该路径（原生对话框 e2e 点不了）。
   ipcMain.handle('export-pdf', async (e, p, mode, html, opts) => {
     assertDocPath(p);
-    // opts（分页文档）：paged=走标准 @page 分页（preferCSSPageSize）而非连续单页；pageNumbers=页脚页码。
-    // 只取白名单字段成布尔（IPC 入参不可信，不原样透传对象）。
-    const pdfOpts = { paged: !!(opts && opts.paged), pageNumbers: !!(opts && opts.pageNumbers) };
+    // opts（分页文档）：paged=走标准 @page 分页（preferCSSPageSize）而非连续单页；pageNumbers=页脚页码；
+    // header/footer=页眉页脚文字（clampHF 截断，pdf-export 侧 escapeHtml 后进模板）；padMm=居左对齐边距。
+    // 只取白名单字段（IPC 入参不可信，不原样透传对象；字符串截断到上限防超长）。
+    const clampHF = (s) => (s == null ? '' : String(s).replace(/[\r\n]+/g, ' ').slice(0, 200));
+    const pdfOpts = {
+      paged: !!(opts && opts.paged), pageNumbers: !!(opts && opts.pageNumbers),
+      header: clampHF(opts && opts.header), footer: clampHF(opts && opts.footer),
+      padMm: (opts && Number.isFinite(opts.padMm) && opts.padMm >= 0 && opts.padMm <= 80) ? opts.padMm : 25.4,
+    };
     // WS2_PDF_OUT 仅在非打包态生效（打包后忽略，一律走保存对话框）——跟 main.js 自动更新 isPackaged 闸一致，
     // 防生产进程继承到该环境变量就静默把 PDF 写到预设路径、绕过对话框。
     const seamPath = !app.isPackaged ? process.env.WS2_PDF_OUT : null;
@@ -930,13 +937,58 @@ function registerIpc() {
 
   // ---- 沉浸窗框（immersive-collapse，spec=docs/features/immersive-collapse.md）----
   // 红绿灯随侧栏收起隐藏/展开恢复（darwin 专属；hiddenInset 下灯浮在内容上，收起要跟着藏）。
-  ipcMain.on('ws-window-buttons', (e, visible) => {
+  // pos（可选）：peek 浮卡把灯挪进卡内（Wendi 2026-07-21「灯在哪个图层」——灯属于浮卡，不是钉死窗角），
+  // 不传 = 归位构造时的 trafficLightPosition (14,14)。先挪位再显隐，避免在旧位置闪现一帧。
+  ipcMain.on('ws-window-buttons', (e, visible, pos) => {
     if (process.platform !== 'darwin') return;
     const w = BrowserWindow.fromWebContents(e.sender);
-    if (w && !w.isDestroyed()) { try { w.setWindowButtonVisibility(!!visible); } catch { /* 非 hiddenInset 窗框会抛 */ } }
+    if (w && !w.isDestroyed()) {
+      try {
+        w.setWindowButtonPosition(pos && pos.x >= 0 && pos.y >= 0 ? { x: pos.x, y: pos.y } : { x: 14, y: 12 }); // 归位=构造值（y=12 对齐账见 main.js）
+        w.setWindowButtonVisibility(!!visible);
+      } catch { /* 非 hiddenInset 窗框会抛 */ }
+    }
   });
-  // （原「左缘指针 watcher」已删，Wendi 2026-07-17 沉浸窗框：#main 内缩 10px 后左边带永远是
-  //   DOM 地盘，#sb-edge-hot 在 web 态也能收到鼠标，peek 触发统一走 DOM 一条路径。）
+  // ---- 收起态 peek 触发的光标轮询 watcher（Wendi 2026-07-22「必须精确停在缝上」→ Arc 式宽容触发）----
+  // 07-17 曾删过一版指针 watcher（当时结论「左带永属 DOM,触发单一化」）。但 DOM 事件有结构性缺口：
+  // ①光标甩过头落到【窗外】= DOM 永远收不到 ②快速划过 10px 缝 + 120ms 停留会被取消 ③没有左上角唤出区。
+  // Arc 的手感正是全局光标监听。故恢复轮询——只在收起态跑（renderer 开关）、只在窗口聚焦时判定、
+  // 90ms 一拍、几何判定抽纯函数 edge-zones.js（node:test 钉住）、interval 内 try/catch（xvfb 下
+  // getCursorScreenPoint 可能抛,别崩主进程——2026-07 血账）。DOM 热区 #sb-edge-hot 保留（e2e 走它 + 双保险）。
+  // 信号语义(renderer 各取所需,防「卡区=没开时的内容区」误开):
+  //   trigger = 光标在唤出区(左缘带/左上角) → renderer 立即 openPeek(首拍即开,不再要 120ms 停留)
+  //   dwell   = 光标在驻留区(唤出区 ∪ 卡区+缓冲) → false 且 peek 开着 → renderer 宽限收起
+  // 只在 (trigger,dwell) 二元组翻转时 send,不每拍轰 renderer。
+  let edgeTimer = null;
+  let edgeLastKey = -1;
+  ipcMain.on('ws-edge-watch', (e, on, cardWidth) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (edgeTimer) { clearInterval(edgeTimer); edgeTimer = null; }
+    edgeLastKey = -1;
+    if (!on || !w || w.isDestroyed()) return;
+    const { screen } = require('electron');
+    // armed=光标动过才开始判定——触发语义是「光标【进入】唤出区」,不是「恰好静止在区里」。
+    // 这同时堵死 xvfb 的坑:CI 里全局光标常驻 (0,0)(Playwright 合成事件不动 OS 光标),正落在
+    // 左上角触发区——不 arm 的话所有收起态 e2e 会被 watcher 误开 peek。
+    let armed = false;
+    let prevPt = null;
+    edgeTimer = setInterval(() => {
+      try {
+        if (w.isDestroyed()) { clearInterval(edgeTimer); edgeTimer = null; return; }
+        if (!w.isFocused()) return; // 失焦静默(不发信号)——关卡交给 DOM mouseleave/用户操作,别在 CI 聚焦抖动时误关
+        const pt = screen.getCursorScreenPoint();
+        if (prevPt && (pt.x !== prevPt.x || pt.y !== prevPt.y)) armed = true;
+        prevPt = pt;
+        if (!armed) return; // 未 armed 完全静默——首拍发 (false,false) 会把 DOM 开出的 peek 误关(CI 实翻过)
+        const b = w.getBounds();
+        const fs = w.isFullScreen(); // 全屏加顶缘唤出带(推顶=顶栏下拉+侧栏同滑出,Colin 2026-07-22)
+        const trigger = edgeZones.inTriggerZone(b, pt, fs);
+        const dwell = edgeZones.inDwellZone(b, pt, cardWidth, fs);
+        const key = (trigger ? 2 : 0) + (dwell ? 1 : 0);
+        if (key !== edgeLastKey) { edgeLastKey = key; w.webContents.send('ws-edge-hover', trigger, dwell); }
+      } catch { /* xvfb/竞态：吞掉,下一拍再试 */ }
+    }, 90);
+  });
 
   // 浏览器 feature 的 IPC 面（webtab:*/bm:*/hist:*/browser-settings）。
   registerBrowserIpc();

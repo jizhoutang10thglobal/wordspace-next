@@ -54,6 +54,13 @@ interface UI {
   openShortcuts: () => void
   closeShortcuts: () => void
 
+  // 下载 popover（工具栏下载入口点开的 Chrome 式气泡，不做整页路由）。放这而不放组件本地态：
+  // 完成 toast 的「显示」动作也要能打开它。轻量气泡不算模态 → 刻意不进 anyOverlayOpen
+  // （veil 层保证点哪都能关，快捷键不该被它挡）。
+  downloadsOpen: boolean
+  openDownloads: () => void
+  closeDownloads: () => void
+
   // AI 接入（浮动 modal，从左下角 AI 图标打开）
   agentsOpen: boolean
   openAgents: () => void
@@ -126,6 +133,10 @@ export const useUI = create<UI>((set) => ({
   shortcutsOpen: false,
   openShortcuts: () => set({ shortcutsOpen: true }),
   closeShortcuts: () => set({ shortcutsOpen: false }),
+
+  downloadsOpen: false,
+  openDownloads: () => set({ downloadsOpen: true }),
+  closeDownloads: () => set({ downloadsOpen: false }),
 
   agentsOpen: false,
   openAgents: () => set({ agentsOpen: true }),

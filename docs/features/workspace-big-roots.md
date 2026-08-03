@@ -36,7 +36,10 @@
 
 ### P0b 简化模式（lazy 浏览，V1–V3）
 
-- **按层懒加载浏览（V1）**：超预算的根进「简化模式」——根行带**「简化模式」徽标**（hover 解释为什么）。
+- **按层懒加载浏览（V1）**：超预算的根进「简化模式」——**根行照常显示路径，跟其他根一视同仁，不挂任何可见徽标**
+  （Colin 2026-07-21 拍板撤「Simplified」徽标：原徽标借「优化」名头撤了路径显示，但路径显示与懒加载优化无关，
+  只让该根跟别的根不一致、看着像 bug——产品负责人 Wendi 就误当 bug 报了。简化模式内部仍标 `root.lazy` +
+  head 隐形 class `sb-root-lazy`（无 CSS、供测试/内部识别）。功能降级不靠恒显徽标，改在**用到时就地提示**，见 V3）。
   浏览层**展开哪层读哪层**（`ws-read-dir(rootId, dirRel)` 单层 readdir，成本 O(本层直接子项)、与整棵树规模
   无关），收起不丢已加载数据（**会话内缓存**，不做跨会话磁盘缓存）。单层直接子项超 50,000 → 截断本层 +
   提示。可正常打开文档（展开到文档 → 点击 → 进编辑器）、可移除（根行右键）。**普通根（≤15 万）走全量、
@@ -65,7 +68,7 @@
 | 启动/串行加载/resync | （未做） | `src/renderer/sidebar.js` 启动 IIFE、`resyncRoots`、`loadRootTree` |
 | 条目预算 walk（整根 lazy 阈值） | （未做） | `src/main/workspace.js` `walk`/`treeBudget`/`readTree` |
 | 按层读取（lazy 浏览，V1） | （未做） | `src/main/workspace.js` `readDir`/`dirBudget`；`src/main/ipc.js` `ws-read-dir`；`src/renderer/sidebar.js` `loadLazyTop`/`loadDirChildren`/`renderNode(lazy)` |
-| 简化模式渲染（徽标） | （未做） | `src/renderer/sidebar.js` `renderRootSection`（`root.lazy` 分支 + `简化模式` 徽标）、`mkRootState` |
+| 简化模式渲染 | （未做） | `src/renderer/sidebar.js` `renderRootSection`（`root.lazy` 分支：隐形 `sb-root-lazy` class + **照常显示路径、无可见徽标**）、`mkRootState` |
 | lazy watcher 交集（V2） | （未做） | `src/renderer/sidebar.js` `doLazyScan`/`loadedLazyDirs`/`patchLazyLevel`（`doTreeScan` 分派） |
 | 枚举降级（V3） | （未做） | 筛选/Cmd+P：`src/renderer/sidebar.js` `renderRootSection`/`openFindPalette`；链接索引：`src/main/link-index.js` `listFilesMatching`/`isDegraded`、`src/main/ipc.js` candidates `degraded`、`src/editor/mention.js` 降级提示 |
 | 全量路径加固（V4） | （未做） | `src/lib/file-tree.js` `buildFileTree`（ensureDir WeakMap 索引）；`src/main/perf-diag.js` `recordDirRead`/payload |

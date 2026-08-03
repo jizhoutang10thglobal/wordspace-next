@@ -12,6 +12,7 @@ module.exports = {
   blockTodoList: '待办列表',
   blockQuote: '引用',
   blockCallout: '提示',
+  blockToggle: '折叠',
   blockImage: '图片',
   blockDivider: '分隔线',
   aiGenerate: '✦ AI 生成（开发中）',

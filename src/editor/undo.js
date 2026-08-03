@@ -44,6 +44,12 @@
       if (typeof WS2Serialize !== 'undefined' && WS2Serialize.cleanedBodyHtml) return WS2Serialize.cleanedBodyHtml(body);
       return body.innerHTML;
     }
+    // U10（KD5）：折叠态 fold 从撤销轴解耦——快照剥了 open（全折叠），undo/redo 重写 innerHTML 后按
+    // <details> 文档序位置索引把「重写前的活 fold」重贴回去，内容撤销不扰用户当前折叠态。身份=位置索引
+    //（innerHTML 重写销毁元素引用、data-ws2 标记被剥，无稳定 id）；已知 v1 局限：结构性 toggle 增删的撤销
+    // 会让 fold 漂移（内容不丢，复活的 toggle 回到折叠态）。设 d.open 会触发原生 toggle→markDirty（已 dirty，无害）。
+    _captureFold() { return [...this.doc.body.querySelectorAll('details')].map((d) => d.open); }
+    _applyFold(fold) { const ds = this.doc.body.querySelectorAll('details'); for (let i = 0; i < ds.length; i++) ds[i].open = !!fold[i]; }
 
     // 砍掉 idx 之后的 redo 尾、push 新 op、维持 LIMIT 截断、idx 前移。
     _push(op) {
@@ -126,7 +132,7 @@
       } else { // html op：还原到它下方最近的 html 基线
         this.idx--;
         const html = this._lastHtml();
-        if (html !== null) this.doc.body.innerHTML = html;
+        if (html !== null) { const fold = this._captureFold(); this.doc.body.innerHTML = html; this._applyFold(fold); } // U10：重贴活 fold
       }
       this._applied = this._cleanHtml();
       return true;
@@ -144,7 +150,7 @@
         const el = resolvePath(next.path, this.doc.body);
         if (el) el.style.cssText = next.after || ''; // CSSOM 写回，CSP-safe（KTD2）
       } else {
-        this.doc.body.innerHTML = next.html;
+        const fold = this._captureFold(); this.doc.body.innerHTML = next.html; this._applyFold(fold); // U10：重贴活 fold
       }
       this._applied = this._cleanHtml();
       return true;

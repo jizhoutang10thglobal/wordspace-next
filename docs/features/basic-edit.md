@@ -9,13 +9,13 @@
   「该文件不符合 Wordspace Schema，仅支持基础编辑。」，不展开违规清单。
 - **文字编辑**：body contentEditable，点字就改。选中文字弹浮动格式条（B/I/U/S + 文字色/高亮/清除格式），
   样式同合规编辑器的 `.ws-fmtbar`。
-- **删块**：按 Esc 进块模式 → 实线 accent 焦点框（`.nce-focus`）+ 右上「删除此块」按钮；方向键按渲染
-  几何切块，Delete/Backspace 删当前块，Enter 进入块内编辑（只读块除外）。删几乎整篇的块（面积
-  >85% body）有二次确认。选中内容/图片直接 Delete 是 contenteditable 原生路径，同样可用。
-- **无悬停 chrome**：鼠标扫过内容**不出现任何浮层**。原「悬停块 → 蓝色虚线框（`.nce-hover`）+ 右上
-  🗑 + 只读 🔒」已整体撤除——Wendi 2026-07-14 反馈：整篇是一张大表格的文档（Word 导出常态）悬停
-  即被框成几屏高的巨型蓝框，🗑 锚在框右上角、在视口外根本看不见，用户读作渲染 bug。Colin 拍板
-  撤掉（同日）。块级删除保留上面两条路径，编辑器保持「安静的纸」。
+- **删块（原生「选中 + Delete」，唯一路径）**：删除整段/整块一律走 contenteditable 原生——选中内容（或选中
+  图片/表格等原子块）按 Delete/Backspace 即删。**无任何删除 chrome**：不出「删除此块」按钮、不设 Esc 块模式，
+  鼠标扫过 / 点块 / 选中 / 按 Esc 都不冒任何浮层。编辑器保持「安静的纸」。
+  - **历史**：曾有 Esc 块模式（accent focus 框 + 方向键按渲染几何切块 + Delete 删块 + Enter 进块内编辑）+ 右上
+    「删除此块」chip。Wendi 2026-07-18 报按钮「有时不灵、要点很多次才删」，Colin 2026-07-21 真机走查更进一步
+    「压根找不到删除」——按钮既不可靠又不可发现。**Colin 2026-07-21 拍板：整体撤除按钮 + Esc 块模式**，删除只留
+    原生路径（连带撤掉焦点框、chip、块导航、块级二次确认、`.nce-focus*` CSS、collectBlocks/nearestInDir 的内部调用）。
 - **保存**：结构级保真——只剥编辑态标记（contenteditable 等），不做 Schema 规整、不动文档结构。
 
 ## 文件映射
@@ -35,6 +35,9 @@
 ## 对齐锚点
 
 - 两侧同 PR 撤除悬停 chrome：分支 `fix/basic-edit-hover-box`（2026-07-14）。
+- 两侧同 PR 撤除「删除此块」按钮 + Esc 块模式，删除改走原生「选中 + Delete」：分支 `fix/basic-edit-delete-chip`
+  （Wendi 2026-07-18 报按钮不灵 → Colin 2026-07-21 拍板整体撤除）。真 app e2e `nonconform-basic-edit.spec.js`：
+  「B 原生选中 + Delete」+「无删除 chrome（点块/选中/Esc 都不出按钮或焦点框）」两门；旧的块模式/chip 用例全删。
 
 ## 欠账
 

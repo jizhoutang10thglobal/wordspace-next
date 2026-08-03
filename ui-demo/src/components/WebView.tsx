@@ -4,7 +4,9 @@ import { ExternalLink, Search, ChevronUp, ChevronDown, X } from 'lucide-react'
 import type { Tab } from '../types'
 import { resolve, useBrowser } from '../mock/browser'
 import { useStore } from '../mock/store'
+import { useDownloads } from '../mock/downloads'
 import { buildWebCtx, cleanShareUrl, type CtxInfo, type CtxItem } from '../lib/webCtxMenu'
+import { filenameFromUrl } from '../lib/downloads'
 import { useT } from '../i18n'
 import NewTab from './NewTab'
 import MockSite from './MockSites'
@@ -72,6 +74,10 @@ export default function WebView({ tab }: { tab: Tab }) {
       case 'copy-link': navigator.clipboard?.writeText(cleanShareUrl(link)); toast(t('browser.copiedLink'), 'success'); break
       case 'copy-image': toast(t('browser.copiedImage'), 'success'); break
       case 'copy-image-url': navigator.clipboard?.writeText(info.imgUrl || ''); toast(t('browser.copiedImageUrl'), 'success'); break
+      // 右键存储走同一条下载管线(R8);文件名从 URL path 派生,无 path 回落 host+扩展名。
+      // 尺寸/时长是 mock 定值(演示语义,真 app 移植时换成 DownloadItem 真值)。
+      case 'save-image': useDownloads.getState().startDownload({ filename: filenameFromUrl(info.imgUrl || '', '.jpg'), sourceUrl: info.imgUrl || '', sizeBytes: 1_887_437, durationMs: 4000 }); break
+      case 'save-link': useDownloads.getState().startDownload({ filename: filenameFromUrl(link, '.html'), sourceUrl: link, sizeBytes: 856_064, durationMs: 4000 }); break
       case 'copy-selection': navigator.clipboard?.writeText(sel); toast(t('browser.copied'), 'success'); break
       case 'search-selection': openWebTab(`glass://search?q=${encodeURIComponent(sel)}`, t('browser.searchTitle', { q: sel.slice(0, 20) })); navigate('/docs'); break
       case 'cut': case 'copy': case 'paste': case 'select-all': toast(t('browser.demoEditAction'), 'neutral'); break

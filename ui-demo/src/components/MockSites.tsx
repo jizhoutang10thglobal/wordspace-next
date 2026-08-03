@@ -1,14 +1,19 @@
 import { useState } from 'react'
-import { Search, ArrowRight, Check } from 'lucide-react'
+import { Search, ArrowRight, Check, Download } from 'lucide-react'
 import { useBrowser, resolve, type SiteKey } from '../mock/browser'
 import { useStore } from '../mock/store'
 import { useHistory } from '../mock/history'
+import { useDownloads, type DownloadSpec } from '../mock/downloads'
 import './MockSites.css'
 
 // Polished MOCK websites. The app chrome is plain, but these are meant to read
 // as real, distinct sites on the open web — each with its own header, branding
 // and restrained palette. Internal links call useBrowser.navigate(...), so the
 // demo can hop between mock sites and real URLs from inside a page.
+
+// mock 站的下载触发点（U3）：点按钮直接走 U1 下载管线,让 Wendi 无引导即可体验
+// 普通(~6s)/大文件(~30s)/固定失败(40% 处)/短件(~3s)全部流程。
+const dl = (spec: DownloadSpec) => useDownloads.getState().startDownload(spec)
 
 // 点链接 = 当前标签导航；⌘/Ctrl+点击 = 后台新标签打开（对齐真浏览器）。
 // 读 window.event 拿修饰键,免得改遍每个 onClick 的签名。
@@ -199,6 +204,12 @@ function CompanySite() {
           <button className="co-btn-ghost" onClick={() => nav('https://tenthglobal.com/careers')}>
             我们在招聘
           </button>
+          <button
+            className="co-btn-ghost co-btn-dl"
+            onClick={() => dl({ filename: 'Tenth-Global-产品白皮书.pdf', sourceUrl: 'https://tenthglobal.com/whitepaper.pdf', sizeBytes: 2_202_010, durationMs: 3000 })}
+          >
+            <Download size={14} /> 产品白皮书 · 2.1 MB
+          </button>
         </div>
       </section>
 
@@ -272,6 +283,27 @@ function SaasSite() {
           <span><Check size={13} /> 无需信用卡</span>
           <span><Check size={13} /> 离线可用</span>
         </div>
+        <div className="fd-dl">
+          <button
+            className="fd-dl-btn"
+            onClick={() => dl({ filename: 'FlowDesk-2.0.1.dmg', sourceUrl: 'https://flowdesk.app/download/FlowDesk-2.0.1.dmg', sizeBytes: 14_889_780, durationMs: 6000 })}
+          >
+            <Download size={13} /> 下载 macOS 版 · 14.2 MB
+          </button>
+          <button
+            className="fd-dl-btn"
+            onClick={() => dl({ filename: 'FlowDesk-Setup-2.0.1.exe', sourceUrl: 'https://flowdesk.app/download/FlowDesk-Setup-2.0.1.exe', sizeBytes: 16_567_501, durationMs: 6000, failAt: 0.4 })}
+          >
+            <Download size={13} /> 下载 Windows 版 · 15.8 MB
+          </button>
+          <button
+            className="fd-dl-btn"
+            onClick={() => dl({ filename: 'FlowDesk-离线安装包-2.0.1.zip', sourceUrl: 'https://flowdesk.app/download/FlowDesk-offline-2.0.1.zip', sizeBytes: 712_983_680, durationMs: 30_000 })}
+          >
+            <Download size={13} /> 离线安装包 · 680 MB
+          </button>
+        </div>
+        <div className="fd-dl-note">演示提示:Windows 版会固定在 40% 处失败,用来展示失败与重试的流程。</div>
       </section>
 
       <section className="fd-logos">

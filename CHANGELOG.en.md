@@ -5,6 +5,125 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.11.7 — 2026-07-24
+
+A polish pass for toggle blocks.
+
+### Improved
+
+- **Toggle blocks**: the disclosure triangle is now a finer chevron that fits the overall style better
+- **Toggle blocks**: selecting and deleting across blocks is more intuitive — what you select is what gets deleted, and the two ends join up naturally afterward
+- **Turn into**: the "Turn into" menu now applies only to the selected line (it used to convert the whole block)
+
+### Fixed
+
+- **Toggle blocks**: creating a toggle block no longer nudges the line down half a row
+- **Toggle blocks**: you can now delete a whole toggle block (select its heading and content together, then delete)
+
+## v0.11.6 — 2026-07-23
+
+A big polish pass for to-dos and lists, and a cleaner New Document dialog.
+
+### Improved
+
+- **New document**: the New Document dialog is streamlined around Blank for now (the Meeting Notes / Project Proposal / Weekly Plan template set is temporarily retired)
+- **To-dos / lists**: tiered Select All inside a list — press once for the current line, twice for the whole list, three times for the whole document
+- **To-dos**: pasting plain-text `- [ ] task` from outside now becomes a to-do item automatically
+
+### Fixed
+
+- **To-dos / lists**: a big polish pass — steadier type conversion and round-trips, smoother rendering and keyboard handling for nested lists (indent / outdent), checkbox and selection visuals, and several clipboard-paste fixes
+- **Lists**: list and to-do items can now have their text color and highlight changed (they couldn't be selected before)
+
+## v0.11.5 — 2026-07-22
+
+A batch of editor experience fixes, and a smoother sidebar feel.
+
+### Improved
+
+- **Editor**: copy & paste inside the app now keeps formatting (pasting from other apps stays plain text)
+- **Editor**: dragging a selection across blocks now highlights whole rows, so you can see exactly which lines are selected
+- **Editor**: the "Turn into" menu now includes Heading 4 and highlights the current block type
+- **Sidebar**: much easier to summon when collapsed — slide the mouse to the window's left edge, the top-left corner, or push to the top of the screen in full-screen, and the sidebar slides out; the window buttons (close / minimize / full-screen) live right on the floating sidebar card
+
+### Fixed
+
+- **Editor**: clicking a block no longer makes the document jump; empty lines match text-line height, so inserting content no longer jitters neighboring lines
+- **To-dos / lists**: deleting items empty no longer leaves an undeletable ghost block or a stray checkbox
+- **Lists**: pressing Delete at the start of a line now correctly merges it into the line above (previously nothing happened)
+- **Lists**: pasting multi-line text into a list creates one item per line — no more collapsing into one line or losing lines
+- **Editor**: the slash menu closes when you click elsewhere — no need to delete the "/" first
+- **Editor**: typing right after selecting across blocks now works immediately, instead of doing nothing
+
+## v0.11.0 — 2026-07-21
+
+A collapsible Toggle block in the editor, downloads in the browser, and the sidebar fused with the window frame.
+
+### Added
+
+- **Toggle block**: a new collapsible block in the editor — insert it with `/toggle`, edit the title row, and put anything inside (paragraphs, lists, images, tables, even nested toggles); click the chevron to fold / unfold, and the folded state is saved with the file; Find auto-expands a collapsed toggle when a match is inside; exporting to PDF expands everything so nothing is lost; plain text and toggles convert back and forth
+- **Browser downloads**: the built-in browser can download — a toolbar download button with a progress ring and a downloads list, right-click "Save image / Save link as" on web pages, and download history is kept
+- **Immersive frame**: a thin window frame now surrounds the content whenever you're not full-screen (not only when the sidebar is collapsed), and you can drag the window by it; the sidebar and frame are fused into one surface
+
+### Improved
+
+- **Basic editor**: deleting a block now uses the more intuitive "select, then Delete" — the separate "Delete this block" button is gone
+- **Folders**: very large folders (simplified loading mode) now show their path, just like every other folder
+- **File tree**: the highlight follows the currently open tab
+
+### Fixed
+
+- **Context menu**: no longer clipped near the bottom of the window — it flips upward instead
+- **Window**: closing a window while in full-screen no longer goes black
+- **Updates**: closing the panel while an update is downloading no longer pops it back open
+- **Immersive frame**: the top border no longer covers the sidebar's top icon buttons
+- **Browser downloads**: a batch of polish (downloads-list width, notifications, an "Open" action once a download finishes)
+
+## v0.10.6 — 2026-07-17
+
+The default screen (no tabs open) is now a start page.
+
+### Added
+
+- **Start page**: the new default screen when no tab is open — a search bar (find recent files, or enter a URL / search terms to open the web), recent files grouped by Today / Yesterday / This week (showing their folder, no more long paths), bookmarks and most-visited sites, plus new/open entries
+- **Immersive collapse**: with the sidebar collapsed, a narrow window frame surrounds the content — drag the window by it; the left edge doubles as the sidebar reveal strip (with hover feedback)
+
+### Fixed
+
+- **Tabs**: files opened before any folder was added (including PDFs) now automatically join their folder once you add it
+- **Immersive collapse**: revealing the sidebar over a web tab now rests on a page snapshot — no more white flash
+
+## v0.10.5 — 2026-07-17
+
+Two-stage select-all, plus a batch of tab polish.
+
+### Added
+
+- **Select all**: ⌘A works in two stages — first press selects the current block, press again to select the whole document
+- **Changelog**: new "Changelog…" menu item and update-panel buttons open wordspace.ai/changelog for full version history
+
+### Fixed
+
+- **Tabs**: after a restart, clicking an open tab no longer flashes "New Tab" before showing its real title
+- **Tabs**: when only pinned tabs remain, ⌘W is no longer a dead key — it returns to the start page first, and closes the window on the next press (pins are kept)
+- **Bookmarks**: the manage-bookmarks entry in the sidebar is now always visible, consistent with the tabs "+"
+- **Sidebar**: section counts in Pinned/Tabs now align with the section labels, with unified spacing
+
+## v0.10.4 — 2026-07-17
+
+PDFs can now open in Wordspace by default.
+
+### Added
+
+- **PDF**: set Wordspace as the default app for PDFs in "Open With" — double-click views them right inside the app (macOS)
+
+### Fixed
+
+- **Updates**: the update prompt no longer blanks the page when a web tab is open
+- **Updates**: "Restart and Install" now really restarts and installs (the previous fix was incomplete; takes effect from the update after this version)
+- **Tabs**: opening a single file and then adding its folder now files the tab under that folder instead of leaving it marked "outside the workspace" (old mislabeled tabs heal automatically after upgrading)
+- **Sidebar**: the English "Bookmarks" section label now matches the all-caps style of other sections
+
 ## v0.10.3 — 2026-07-16
 
 Huge folders are now fully usable (simplified mode), and the whole app speaks English and Chinese.

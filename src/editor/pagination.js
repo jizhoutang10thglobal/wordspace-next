@@ -45,7 +45,12 @@
       'background:#efeeeb;border-top:1px solid rgba(0,0,0,.08);border-bottom:1px solid rgba(0,0,0,.08);' +
       'display:flex;align-items:center;justify-content:center}' +
     '.ws-page-chip{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:10px;' +
-      'line-height:15px;color:#9b9891;background:#efeeeb;padding:0 7px;border-radius:8px}';
+      'line-height:15px;color:#9b9891;background:#efeeeb;padding:0 7px;border-radius:8px}' +
+    // 页眉/页脚（每页纸顶/纸底边距区，居左小字灰；单行 ellipsis 不溢出窄边距、不侵内容流；不入盘）。
+    // 视觉参数（字号/垂直位置/居左）待 Wendi 真机验收，可调。
+    '.ws-page-hf{position:absolute;font-size:10px;line-height:14px;color:#9b9891;' +
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;' +
+      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}';
 
   // 超高块的切分候选原子（V4）：干净几何下采集（调用方保证已扫荡掉一切推挤痕迹）。
   // 列表=li（含嵌套；同顶去重保留外层，整棵子树一起推）、表格=tr（跳过 spacer）、
@@ -55,9 +60,13 @@
     const base = host.getBoundingClientRect().top;
     const rel = (v) => (v - base) / zoom;
     const atoms = [];
-    host.querySelectorAll('li, p, blockquote, figure, hr, h1, h2, h3, h4').forEach((e) => {
+    host.querySelectorAll('li, p, blockquote, figure, hr, h1, h2, h3, h4, details').forEach((e) => {
       if (e.closest('table') || e.closest('pre')) return;
       if (e.hasAttribute('data-ws2-ui')) return;
+      // U11：展开的 toggle 体内块本就被深查收进来（体内块边界=切点，长 toggle 在块边界分页）；把 details 自身也纳入
+      // → 嵌套 toggle 成整块切点（summary+首块放不下时整体移下页，不孤立 summary）。折叠 toggle 的隐藏子孙不当切点
+      //（closest 含自身，故查 parentElement → 折叠 toggle 自身仍以 summary 高供整块切点）。
+      if (e.parentElement && e.parentElement.closest('details:not([open])')) return;
       atoms.push({ top: rel(e.getBoundingClientRect().top), kind: 'el', el: e });
     });
     host.querySelectorAll('tr').forEach((e) => {
@@ -291,6 +300,38 @@
         frag.appendChild(mask);
       }
       overlay.appendChild(frag);
+
+      // ---- 页眉/页脚：每页纸顶/纸底边距区画一行（居左小字，源=head meta，不入盘）----
+      // textContent 天然转义（用户输入不会当 HTML 解析）；元素在 overlay 内 → 随 overlay 整体 strip、绝不落盘。
+      // clampHF 对任意来路文档的 meta 也防御性截断（超长串 × 页数 不拖垮覆盖层）。垂直位置系数待 Wendi 调。
+      const headMeta = (n) => { const el = doc.head && doc.head.querySelector('meta[name="' + n + '"]'); return el ? WSPage.clampHF(el.getAttribute('content')) : ''; };
+      const headerTxt = headMeta('ws-page-header');
+      const footerTxt = headMeta('ws-page-footer');
+      if (headerTxt || footerTxt) {
+        const hf = doc.createDocumentFragment();
+        for (let pi = 0; pi < r.pageCount; pi++) {
+          const pageTop = pi * (box.pageH + GAP); // 第 pi 页纸顶（overlay 坐标 = 纸 padding 盒，同 mask）
+          if (headerTxt) {
+            const h = doc.createElement('div');
+            h.className = 'ws-page-hf ws-page-header';
+            h.textContent = headerTxt;
+            h.style.top = (pageTop + box.marginTop * 0.42) + 'px';
+            h.style.left = box.marginLeft + 'px';
+            h.style.right = box.marginRight + 'px';
+            hf.appendChild(h);
+          }
+          if (footerTxt) {
+            const f = doc.createElement('div');
+            f.className = 'ws-page-hf ws-page-footer';
+            f.textContent = footerTxt;
+            f.style.top = (pageTop + box.pageH - box.marginBottom * 0.58) + 'px';
+            f.style.left = box.marginLeft + 'px';
+            f.style.right = box.marginRight + 'px';
+            hf.appendChild(f);
+          }
+        }
+        overlay.appendChild(hf);
+      }
 
       // ---- 末页补白：纸总高 = 页数×(纸高+缝) − 缝（min-height 兜住，短文档/末页收在整页底）----
       lastPageCount = r.pageCount;

@@ -114,21 +114,29 @@ WCAG 亮度断言（暗态 < 0.2 且 < 亮态、文档两态恒等），不查 c
 得先 `gh pr update-branch <PR>` 把 main 合进来重跑 CI 才能合。上面 S4 说「CI 红了照样能点合并」已过期。
 
 **先分清两笔账：CI 不花 Claude token，开发时本地跑测试才花。**
-CI（`.github/workflows/ci.yml` 的 `test`+`e2e`）在 GitHub 服务器上跑，e2e 231 条真开 Electron ~6 分钟——那是
-服务器时间，跟 token 无关。**烧 token 的是开发循环里 agent 本地反复 `npm run test:e2e` 跑全套**（每轮阻塞
-~6 分钟 + 231 行结果读回上下文）。所以「CI 慢」和「开发耗 token」是两个问题：CI 慢归缓存/并行，本地耗 token
-归「该不该每次都跑全套」。这条纪律只管后者。
+CI（`.github/workflows/ci.yml` 的 `test`+`e2e`）在 GitHub 服务器上跑，e2e 现约 416 条真开 Electron（2026-07-20 实测串行
+~11 分，分片后每 PR ~5 分）——那是服务器时间，跟 token 无关。**烧 token 的是开发循环里 agent 本地反复 `npm run test:e2e`
+跑全套**（每轮阻塞十来分钟 + 几百行结果读回上下文）。所以「CI 慢」和「开发耗 token」是两个问题：CI 慢归分片/缓存，
+本地耗 token 归「该不该每次都跑全套」。这条纪律只管后者。
 
-**开发迭代只跑受影响的 spec 文件，全套 231 条 e2e 是 CI 的活。**
+**开发迭代只跑受影响的 spec 文件，全套 416 条 e2e 是 CI 的活。**
 改一个功能通常只碰 1-3 个 spec（`npx playwright test e2e/<spec>.spec.js` 或 `-g "<用例名>"`，30秒-1分钟），
-别每轮 `npm run test:e2e` 重放全套。全套交给 CI——它每个 PR 照跑 231 条、零 token。**门一点没削弱**：CI 仍是
+别每轮 `npm run test:e2e` 重放全套。全套交给 CI——它每个 PR 照跑全量、零 token。**门一点没削弱**：CI 仍是
 权威全量门，required check 挡合并。这跟「自测绿≠正确」不冲突——那条针对的是**新写的门要不要有牙（变异
-自检管这个，且变异自检本就只跑那一道门）**，不是「每次都得把 231 条重放一遍」。这两件事以前被捆一起了，拆开。
+自检管这个，且变异自检本就只跑那一道门）**，不是「每次都得把全套重放一遍」。这两件事以前被捆一起了，拆开。
 
-**唯一要本地全跑的例外：动到共享核心。**
-改 `src/renderer/shell.js` / `sidebar.js` / `src/lib/tabs.js` / `src/main/ipc.js` 这类被大量 spec 共用的核心
-（影响半径大、跨文件回归藏得深）时，推 PR 前本地跑一次 `npm run test:e2e:dot` 兜底。改孤立功能（只碰自己那
-几个文件）不需要——让 CI 抓跨文件回归，极少数中招也就一次 CI 往返（6 分钟），比每轮本地全套省得多。
+**动共享核心 = 跑受影响 spec + 一个定死的冒烟子集，别再本地全跑（2026-07-20 更新，退掉旧「全跑」例外）。**
+旧纪律里「动共享核心（`shell.js`/`sidebar.js`/`tabs.js`/`ipc.js`）推 PR 前本地 `test:e2e:dot` 全跑一次」的例外已废——
+实测 37 个 spec 有 31 个是共享核心消费者（几乎每个都开工作区、驱动侧栏/树/标签），例外≈「永远全跑」，正是「每次都在跑」
+的根因。**新规**：动共享核心时 = 受影响 spec + 这五条固定冒烟子集（约 35 秒，覆盖侧栏栏标/收起窗框/起始页/关窗恢复/冷启动
+这些跨 spec 主干）：
+```
+npx playwright test e2e/sidebar-typography.spec.js e2e/immersive.spec.js e2e/start-page.spec.js e2e/window-close-and-reveal.spec.js e2e/cold-start.spec.js --reporter=dot
+```
+全套 416 条交给 CI（分片后每 PR ~5 分、对你免费，见 `docs/plans/2026-07-20-001-refactor-e2e-strategy-plan.md`）。
+**门一点没削弱**：CI 全量 e2e 仍是权威门、required check 挡每个 PR。⚠ **诚实提醒**：共享核心是最高频、也最容易藏跨文件
+回归的改动，本地不全跑=把「确定性的推前拦截」换成「概率性的 CI 事后拦截」；冒烟子集是薄保险不是全覆盖，靠它 + 快 CI 兜。
+真踩到本地漏掉的回归，代价是一次 CI 往返（含可能的 BEHIND→update-branch→重跑），比每轮本地全套 ~11 分省得多。
 
 **读结果收窄输出：`--reporter=dot` 或 grep 成计数，别把 231 行灌进上下文。**
 `npm run test:e2e:dot`（dot reporter，每条测试一个字符 vs 一行）省输出 token；或 `... 2>&1 | grep -E

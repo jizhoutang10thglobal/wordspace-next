@@ -41,15 +41,22 @@
 
   let cardRefs = null; // 增量渲染缓存：{sig, title, bodyLines, bar, fill, detail}——同构模型只原地改值
 
+  // 用户在哪个状态下关掉了面板：同状态的后续推送不再自动弹回（点「后台下载」0.2 秒后被
+  // 下一条进度推送打脸重开——Colin 2026-07-17 实踩,#169 原始「手动路径推送必开面板」的策略洞）。
+  // 状态跃迁（如 downloading→ready）仍自动弹——「全程跟进」的本意是跟里程碑,不是跟每个进度 tick。
+  let dismissedAtState = null;
+
   function closePanel() {
     if (overlay) overlay.remove();
     overlay = null;
     cardRefs = null;
     panelOpen = false;
+    dismissedAtState = last && last.status ? last.status.state : null;
   }
 
   function openPanel() {
     panelOpen = true;
+    dismissedAtState = null;
     renderPanel();
   }
 
@@ -173,8 +180,9 @@
     last = p;
     renderPill(p && p.pill);
     const st = p && p.status;
-    // 面板开合：手动路径的推送 → 打开并全程跟进；已开着 → 任何推送都刷新内容
-    if (fromPush && st && st.manual && p.panel && !panelOpen) openPanel();
+    // 面板开合：手动路径的推送 → 打开并全程跟进；已开着 → 任何推送都刷新内容。
+    // 「跟进」只跟状态跃迁：用户关掉面板后,同状态推送不再弹回（后台下载不被进度 tick 打脸重开）。
+    if (fromPush && st && st.manual && p.panel && !panelOpen && st.state !== dismissedAtState) openPanel();
     else renderPanel();
     // 自动路径下载完成：低打扰提示一次（web 标签态临时收缩 view 底部，toast 不被原生 view 盖住）
     if (fromPush && st && st.state === 'ready' && !panelOpen && !readyToasted) {

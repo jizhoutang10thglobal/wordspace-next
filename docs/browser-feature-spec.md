@@ -27,7 +27,8 @@ Wordspace 是本地优先的 HTML/md 文档编辑器，同时**它自己也是�
 - 文档和网页**共用同一套标签系统、同一个侧栏、同一条地址栏**。不是两个 app 拼一起，是一整套。
 - 用户在同一个侧栏里既开自己的 `.html` 文档，也开真网页，标签混装、可互相置顶/拖拽。
 - 浏览器定位 = **「够用的标准浏览器」**（剪藏等融合卖点已砍，见 §12）：地址栏上网、收藏、历史、
-  查找、缩放、右键菜单、会话恢复——齐全但克制，不做下载、不做扩展、不做多 profile。
+  查找、缩放、右键菜单、会话恢复、**下载（标准档，2026-07-17 恢复，见 §4.11/§15）**——齐全但克制，
+  不做扩展、不做多 profile、不做完整下载管理器（续传/独立下载页/Safe Browsing 维持不做）。
 
 ---
 
@@ -358,8 +359,8 @@ localStorage（key `ws-fav-open`）。`openBookmark(url,title)`：先按 url 找
 
 | # | 分节 | 出现条件 | 条目（id → 文案） |
 |---|---|---|---|
-| 1 | 链接 | 光标在链接上 **且 url 是 http(s)**（`javascript:`/`data:`/`file:` 整节不出） | `open-link` 在新标签页打开链接 / `open-link-bg` 在后台标签页打开链接 / `copy-link` 拷贝链接 |
-| 2 | 图片 | 光标在图片上 | `copy-image` 拷贝图片 / `copy-image-url` 拷贝图片地址（仅 http(s)）。**无下载项**（下载已砍） |
+| 1 | 链接 | 光标在链接上 **且 url 是 http(s)**（`javascript:`/`data:`/`file:` 整节不出） | `open-link` 在新标签页打开链接 / `open-link-bg` 在后台标签页打开链接 / `copy-link` 拷贝链接 / `save-link` 链接另存为（2026-07-17 下载恢复，走 §4.11 管线） |
+| 2 | 图片 | 光标在图片上 | `copy-image` 拷贝图片 / `copy-image-url` 拷贝图片地址（仅 http(s)）/ `save-image` 存储图片（仅 http(s)；2026-07-17 下载恢复，走 §4.11 管线） |
 | 3 | 选中 | 有选中文字 | `copy-selection` 拷贝 / `search-selection` 用 <引擎> 搜索「<截断20>」 |
 | 4 | 编辑框 | 光标在 input/textarea/contenteditable | `cut` 剪切 / `copy` 拷贝 / `paste` 粘贴 / `select-all` 全选 |
 | 5 | 导航 | 总是 | `nav-back` 返回（enabled=canGoBack）/ `nav-forward` 前进（enabled=canGoForward）/ `reload` 重新加载 |
@@ -487,9 +488,43 @@ localStorage（key `ws-fav-open`）。`openBookmark(url,title)`：先按 url 找
 **真 app 后端设计**：并入 app 现有 settings 机制（键位建议 `browser.searchEngine`）。
 搜索引擎列表可扩展；**真 app 默认引擎 = Bing（拍板）**（Glass 是 demo 虚构的，仅存在于 ui-demo）。
 
----
+### 4.11 下载（标准档）★ 2026-07-17 恢复（推翻 07-09 砍除，Colin 拍板；origin 见 §15）
 
-## 5. 地址输入处理管线（normalize / resolve）
+**档位口径**：自动落盘 + 进度 UI + 下载列表 + 完成通知 + 右键存储。不做完整管理器
+（跨重启续传 / 独立下载页 / Safe Browsing / 下载位置设置维持不做，§12 臃肿本体不回来）。
+
+**交互契约**：
+
+- **触发**：网页触发下载（`Content-Disposition: attachment`、`<a download>`、不可渲染资源）→
+  自动保存到系统「下载」文件夹，不弹保存对话框；右键「存储图片 / 链接另存为」走同一条管线（§4.7）。
+- **重名 uniquify**：目标名已存在 → 扩展名前插 ` (n)`（`报告.pdf` → `报告 (1).pdf`），绝不覆盖已有文件。
+  查重口径 = 磁盘已有名 ∪ 在途下载名；**清空记录不清「磁盘已有名」账**（否则清空后同名下载会退回原名 =
+  语义上覆盖还在磁盘上的文件）。
+- **条目状态机**：`downloading → completed | canceled | failed | interrupted`（退出 app 时在途一律转
+  interrupted，不承诺续传）；`completed → fileMissing`（文件被用户删掉后可识别，置灰）。终态条目可单条移除；
+  失败/已取消/已中断给「重试」= **新条目置顶重下**（再走一遍 uniquify，可能拿到 (n) 后缀，Chrome 同款），
+  不是原条目原地复位。
+- **工具栏入口 + popover 列表**（不做 `/downloads` 整页路由）：入口图标**常显**（对齐历史图标）；有在途时
+  叠进度环（聚合百分比 = 当前批次 Σ已收/Σ总量，单条先完成环不回退）+ 活动计数徽标。点开 = popover 列表：
+  每条含文件名（中段截断，title 全名）/ 状态 / 逐状态操作（进行中=取消；完成=**打开**+在访达中显示+移除；
+  可重试态=重试+移除；fileMissing=置灰仅移除）；顶部「清空记录」只清终态、在途保留。**popover 锁进侧栏宽度、
+  不覆盖网页区**（Colin 2026-07-20 真机反馈：不该盖真网页；文件名窄一点靠中段截断 + title 全名兜底）；
+  **关闭三管**：veil（覆盖侧栏区含下载图标 → 点即关）+ Esc + 图标 toggle。**「打开」= 用户手动用系统默认 app
+  打开（≠ §11.5「绝不**自动**打开」红线，自动打开仍不做）**。
+- **通知**：开始 = 短 neutral toast；完成 = success toast + action「显示」打开
+  popover；失败 = danger；启动时有条目被转 interrupted = neutral 计数条。进行中**不用** progress-tone toast
+  （它永不自动消失，进度归工具栏入口管）。**toast 择位（Colin 2026-07-20）**：侧栏开着 = 侧栏内紧凑小 toast
+  （锚下载图标下方、锁侧栏宽、**不顶网页**）；侧栏收起 = over-web（下载图标看不见时唯一反馈，P6）。
+- **记录持久化**：只存元数据（文件名/来源/大小/状态/时间），CAP 100 从最老端挤**终态**条目（在途绝不挤）。
+
+**ui-demo 参考实现**：`mock/downloads.ts`（persist `wordspace-downloads` + 模块级假进度定时器 + rehydrate
+钩子转 interrupted）、`lib/downloads.ts`（uniquify/截断/聚合进度纯逻辑，可整体搬）、`DownloadsPopover.tsx`、
+`ArcSidebar.tsx` 工具栏入口、mock 站触发点（FlowDesk 三档 + Tenth Global 白皮书）。mock 语义差异见 §13。
+
+**真 app 后端设计**：`persist:webtabs` session 的 `will-download` 真接 `DownloadItem`（进度/取消/完成事件
+内建）：`setSavePath` 锁定系统「下载」文件夹 + uniquify；进度节流推 renderer；完成/失败 toast；
+「在访达中显示」= `shell.showItemInFolder`（只定位**不打开**）。安全口径见 §11.5（下载受控）。
+**移植欠账记 `docs/features/browser.md`**（本次仅 ui-demo 定稿）。
 
 浏览器的大脑，纯函数，真 app renderer 侧要有等价实现（`ui-demo/src/mock/browser.ts`）：
 
@@ -646,7 +681,7 @@ loading spinner）。全新标签的「新标签页」名由 sidebar 建 entry �
 | `did-fail-load`（主 frame，非 -3） | 分类为 error-page → push `error{code,desc,url}`；renderer 显 `#web-error` 占位 + 重试钮，并**摘掉空白 view**（`attachedKey=null`，别拿失败的空 view 盖内容区）。**-3(ERR_ABORTED)/子 frame 不算**（`classifyLoadFailure='ignore'`,不置 error、不换页面） |
 | `render-process-gone` | 内容区崩溃占位 + 重新加载按钮（同 `#web-error` 通道） |
 | `setWindowOpenHandler` | **deny** 弹窗；`target=_blank`/window.open 的 http(s) 链接 → 转成**前台新 web 标签**（浏览器惯例）；其余 scheme 丢弃 |
-| `session.on('will-download')` | `item.cancel()` + toast「不支持下载」（下载已砍，§12） |
+| `session.on('will-download')` | **真接下载（2026-07-17 恢复，§4.11）**：`setSavePath` 锁定系统「下载」文件夹 + uniquify 防覆盖；`updated`/`done` 事件推进度与终态给 renderer；完成/失败发通知；绝不自动打开（§11.5）。现存的 `item.cancel()` + toast「不支持下载」是待移除旧行为——**真 app 移植未做，欠账见 `docs/features/browser.md`** |
 | `setPermissionRequestHandler` | **默认全拒**（摄像头/麦克风/地理位置/通知），v1 不做授权 UI |
 | 证书错误 | 默认拒绝加载，不做「继续访问」旁路 |
 
@@ -725,7 +760,10 @@ main → renderer (push)
 3. **loadURL 白名单**：主进程只加载 `http:/https:`（+内部起始页 surface）。`file://`、`javascript:` 等
    一律拒绝（normalize 的 scheme 直通是 renderer 便利，不是加载授权）。
 4. 右键菜单：危险 scheme 链接整节不出现；动作 id 白名单收口；拷贝链接先清洗跟踪参数。
-5. 无下载（`will-download` cancel）；权限请求默认全拒；弹窗 deny（转标签）；证书错误不旁路。
+5. **下载受控**（2026-07-17 从「无下载」改写，§4.11）：落盘文件名清洗（剥路径分隔符/控制字符，防路径
+   穿越），保存路径**锁定在系统「下载」文件夹内**；**绝不自动打开/执行**下载完成的文件，「在访达中显示」
+   只定位不打开；不引入 Safe Browsing（Electron 无此设施），也**不做假安全提示**。权限请求默认全拒；
+   弹窗 deny（转标签）；证书错误不旁路。（ui-demo 为 mock 语义：无真落盘，前两条在真 app 移植时落地）
 6. 起始页安全提示文案保留（「内置浏览器没有恶意网站防护…」——产品口径，管理预期）。
 7. **User-Agent 归一**（2026-07-14，Wendi 报「网页搜索总弹人机验证」）：`persist:webtabs` session 建立时
    `setUserAgent` 剥掉 Electron 默认 UA 里的 `Electron/<ver>` 和 app 名 token（`web-tabs.js` `ensureSession`，
@@ -742,7 +780,7 @@ main → renderer (push)
 | 功能 | 砍除时间/理由 |
 |---|---|
 | **剪藏 / 存为文档**（网页→Wordspace 文档） | 2026-07-09 Colin：鸡肋（原是 AI 调研里吹的卖点，复盘砍）。战略后果已接受：浏览器暂无独特卖点 |
-| **下载** | 2026-07-09 Colin：不做，避免臃肿。右键菜单相应无「下载/存储图片」项；真 app 还要主动 cancel `will-download` |
+| ~~**下载**~~ | ~~2026-07-09 Colin：不做，避免臃肿~~ → **2026-07-17 Colin 拍板恢复（标准档，见 §4.11/§15）**。恢复的是基础体验；当初担心的臃肿本体（续传/独立下载页/Safe Browsing）**维持不做**。本行仅存历史 |
 | **阅读模式（Reader）** | 2026-07-10 Colin：我们没有「长文详情页」内容形态；该用它的野生网页反而够不着；用户看的是自己的干净文档。将来若做「正文提取/稍后读」用 Readability 重做，不捡旧的 |
 | **网页态网页头**（锁+标题+域名条） | 2026-07-10 Wendi+Colin：冗余，地址栏已有 |
 | **网页态顶部书签栏** | 2026-07-10：随收藏回侧栏一并删 |
@@ -770,6 +808,30 @@ main → renderer (push)
 | 权限请求 | 无（iframe 演示不触发） | default-deny + 极小白名单：fullscreen / pointerLock / clipboard-sanitized-write（无隐私面，视频全屏/网页复制按钮不坏）；摄麦/定位/通知/设备一律拒（§11.5 的「默认全拒」按此口径落地，2026-07-11） |
 | ⌘/ 快捷键面板 | 有 | 暂无（app 本来就没有快捷键面板，属独立小 feature——欠账记在 `docs/features/browser.md`，其余 §7 键位全表已落地） |
 | 置顶标签关闭钮 | **无 `X`**（Chrome 惯例：钉住=防误关） | **有 `X`**，点击=取消置顶并移除（`removeTabRel`）；`⌘W` 仍守置顶（P3-02，Colin 2026-07-14 方案 B：保留 v0.4.5 起既有习惯） |
+| 下载（§4.11） | **mock 下载**：假进度定时器、无真文件落盘；「下载文件夹」「在访达中显示」是演示语义（toast 告知）；「退出 app」= 刷新页面（rehydrate 转 interrupted）；触发点 = mock 站按钮/右键（真外部 iframe 里的下载拦不到——sandbox 无 `allow-downloads`，mock 下载只在 mock 站生效）；尺寸/时长为演示定值 | **真下载**：`will-download` 真接 `DownloadItem`，真落盘系统「下载」文件夹（uniquify 对真磁盘查重）、真进度/取消/失败事件、「在访达中显示」= `shell.showItemInFolder`、退出 app = 真进程退出转 interrupted |
+
+**真 app 下载落地细则（U6 补，2026-07-18；spike 实证 + 移植修正）**
+
+1. **popover 锁进侧栏宽度、不覆盖网页区**（Colin 2026-07-20 真机反馈：不该盖真网页）——**推翻 2026-07-18 那版
+   「注册 `.dlp-overlay` 进 `OVERLAY_SEL`、摘原生 view + 快照垫底」的实现，回到 plan 原 KTD 方向**。落地：`anchorPos`
+   读 `#sidebar` rect 把 card 锁进侧栏宽（`left=sb.left+8` / `width=sb.width-16`），右缘绝不越进 `#main`；文件名窄
+   一点靠 `truncateMiddle` + title 全名兜底（Colin 已接受此取舍）。**`.dlp-overlay` 从 `OVERLAY_SEL` 拿掉** →
+   popover 不再摘原生 view（侧栏区本就没有原生 view 覆盖，veil 收得到侧栏区 click）；**连带把「快速开关 popover →
+   `webHideAll` 把刚挂回的 view 又藏了」那个竞态（原对抗审查 P2）根拔了**。关闭三管：veil（覆盖侧栏区含下载图标 →
+   点即关）+ Esc + 图标 toggle。**`window blur` 实证不 fire**（spike：`view.webContents.focus()` 后宿主 renderer
+   `document.hasFocus()` 仍 `true`）→ 不 depend on blur。快捷键守卫仍保留 `.dlp-overlay`（弹层开着拦快捷键是另一回事）。
+2. **真 app `failed` = `DownloadItem` done('interrupted')**（服务端 RST / 磁盘满等运行时失败，spike 实证）；
+   mock 的「确定性 40% failed」是 demo 触发器，真 app 无等价确定触发（靠真实服务端错误）。
+3. **静默网络停滞：真 app 停在 `downloading`**（socket 销毁后 8s 内不 fire done，与 Chrome 同款）——不像 mock
+   有定时器终结；只有退出 app → load-sanitize 才翻 `interrupted`（不做「实时网络失败→failed」的 UI 预期）。
+4. **toast = renderer 从 `downloads-changed` 状态迁移 diff 派生**（Colin 2026-07-20，**替换原「主进程 `web-toast`
+   单字符串通道发」**）：首帧只建基线不炸历史条目、同条目同迁移只发一次；started/completed/failed 发，
+   canceled/interrupted 不发（对齐原主进程口径）。**择位**：侧栏开着 = 侧栏内紧凑小 toast（`.dl-toast`，锚下载
+   图标下方、锁侧栏宽、**不调 `webToastInset`、不顶网页**）；侧栏收起 = over-web 兜底（下载图标看不见时唯一反馈，
+   P6）。仍是**纯文案**——**无** §4.11 契约的可点「显示」action、**无** danger tone（进度环 + popover 入口常显兜底，
+   用户仍可一键点开；要补需扩 toast 通道带 action/tone，欠账记 `docs/features/browser.md`）。
+5. **启动时「N 个下载被转 interrupted」的计数 toast 未做**（§4.11「启动=neutral 计数条」）：load-sanitize 静默
+   翻转、不额外通知（欠账记 `docs/features/browser.md`）。
 
 **六项拍板结果（Colin 2026-07-10，全部已定，无遗留）**
 
@@ -805,8 +867,15 @@ main → renderer (push)
 - [ ] 新标签页瓦片取书签栏前 N 个收藏（空态有引导），不照搬 demo 演示站。
 - [ ] 查找 `findInPage`（键位/循环/清除高亮）+ 缩放每标签（0.5–2、±0.1、⌘0）。
 - [ ] 快捷键全表（§7）+ 弹层守卫 + 未命中放行。
-- [ ] 安全不变式（§11）逐条核过：session 隔离/零 IPC/loadURL 白名单/下载 cancel/权限全拒/弹窗转标签。
-- [ ] §12 砍除清单没有被做回来。
+- [ ] 安全不变式（§11）逐条核过：session 隔离/零 IPC/loadURL 白名单/**下载受控（§11.5：锁定下载目录/
+  文件名清洗/绝不自动打开）**/权限全拒/弹窗转标签。
+- [ ] §12 砍除清单没有被做回来（下载已于 2026-07-17 拍板恢复、移出砍除范围，见 §12 该行标注；
+  其余各条仍有效）。
+- [x] 下载（§4.11）：真接 `will-download`（删旧 cancel+toast）/uniquify 防覆盖/工具栏入口+popover/
+  重试=新条目/完成通知/「在访达中显示」只定位/**完成加「打开」（`shell.openPath` 用户手动打开，≠自动打开）**；
+  e2e 覆盖完成/取消/重名/「打开」路径（含变异自检），下载产物走 `WS2_DL_DIR`=tmpdir 零落盘（无需 `.gitignore` 条目）。
+  **真 app 落地 2026-07-18；2026-07-20 真机反馈打磨（popover 锁侧栏宽不覆盖网页 + toast 双态择位 + 加「打开」，
+  见 §13 落地细则 #1/#4）；toast action/tone + 启动计数条降级，记欠账 `docs/features/browser.md`。**
 
 ---
 
@@ -826,6 +895,7 @@ main → renderer (push)
 | 2026-07-14 | **导入重名文件夹「温和修正」（P3-10，Colin）**：保持「不合并」原则，但同名+内容完全相同（url 集合相等）→ 跳过不造副本，「导出→原样导回」零翻倍；内容有差异仍加后缀。修订 §4.9 / §13 拍板#6 |
 | 2026-07-14 | **置顶标签关闭钮=保留（P3-02，Colin 方案 B）**：真 app 置顶行保留 `X`（点击=取消置顶并移除），⌘W 仍守置顶。理由=v0.4.5 起有意加、已上线半个多月的既有习惯、鼠标 X 显式动作误触率低。与 ui-demo「置顶无 X」（Chrome 惯例）的差异进 §13 差异表（此前是未记录的漂移，现补齐）。纯 docs，代码零改动 |
 | 2026-07-17 | **收藏管理入口改常显（Wendi+Colin）**：Wendi 报「收藏图标 hover 才出现、标签页『+』一直在,两者应统一」，Colin 拍板「小图标都保留=都一直出现」——推翻 07-13「默认透明 hover 才显现」。三栏行尾口径统一为**动作入口常显、caret 常显**（置顶区无动作入口,仅 caret,不受影响）。两侧同步（browser.css `.sb-fav-manage` / ui-demo `ArcSidebar.css .arc-fav-head .arc-ico-sm`），修订 §4.3 / §14 |
+| 2026-07-17 | **下载恢复（标准档）——推翻 07-09「不做下载」砍除（Colin 拍板，Wendi 需求「wordspace 需要浏览器下载文件功能」）**：现状是主动拒绝（will-download cancel + toast），用户唯一出路是拷 URL 去外部浏览器。三档对比取中间档：自动落盘「下载」文件夹 + 工具栏进度入口 + popover 下载列表（不做整页路由）+ 完成通知 + 右键「存储图片/链接另存为」；当初担心的臃肿部分（续传/下载页/Safe Browsing/位置设置）**维持不做**。安全不变式 §11.5 从「无下载」改写为「下载受控」。相邻两定案：cookies 持久化已存在（persist:webtabs，无需开发）；密码管理不做（注入式自建违反「web 内容零 preload」铁律 + Electron 无内建）。ui-demo 先行（本次落地，§4.11/§13）；真 app 移植欠账记 `docs/features/browser.md`。origin：`docs/brainstorms/2026-07-17-browser-downloads-requirements.md` |
 
 ## 16. 源码索引（ui-demo 侧）
 
@@ -837,6 +907,9 @@ main → renderer (push)
 | `ui-demo/src/mock/history.ts` | 历史 store（recordable/60s 合并/cap/search） |
 | `ui-demo/src/mock/browserSettings.ts` | 引擎/主页设置 |
 | `ui-demo/src/lib/webCtxMenu.ts` | 右键菜单纯逻辑 builder + cleanShareUrl + trunc |
+| `ui-demo/src/mock/downloads.ts` | 下载记录 store（persist/CAP100/diskNames）+ 假进度引擎 + rehydrate 转 interrupted |
+| `ui-demo/src/lib/downloads.ts` | 下载纯逻辑：uniquify / 中段截断 / 批次聚合进度 / 状态机判定 / URL 派生文件名 |
+| `ui-demo/src/components/DownloadsPopover.tsx` | 下载 popover（veil 关闭/逐状态操作行）+ 工具栏进度环样式 |
 | `ui-demo/src/components/ArcSidebar.tsx/.css` | 侧栏全部：导航条/地址栏+补全/收藏区(.arc-fav+FavChip)/标签条/快捷键 handler |
 | `ui-demo/src/components/WebView.tsx/.css` | 网页态外壳（无头）、查找条、缩放、右键接线、iframe 回退(demo) |
 | `ui-demo/src/components/WebContextMenu.tsx/.css` | DOM 菜单（portal/翻转/关闭时机） |

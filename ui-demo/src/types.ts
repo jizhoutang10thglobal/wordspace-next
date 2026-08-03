@@ -44,6 +44,7 @@ export type BlockType =
   | 'embed'
   | 'table' // 可编辑表格：block.html 存完整 <table>（thead+tbody+tr+td），单元格 contentEditable
   | 'code' // 可编辑代码：block.html 存若干 <div class="ws-code-line"> 行（每行一个块级元素）
+  | 'toggle' // 折叠块：block.html 存完整 <details><summary>…</summary>…body…</details>，summary/body 各自 contentEditable
 
 /** 列表三态：type 仍是 'list'，listStyle 区分无序 / 编号 / 待办。缺省按 bulleted。 */
 export type ListStyle = 'bulleted' | 'numbered' | 'todo'
@@ -57,8 +58,11 @@ export interface Block {
   id: string
   type: BlockType
   html: string
-  level?: 1 | 2 | 3
+  level?: 1 | 2 | 3 | 4 // H4 = 分页文档标准化排版层加的第 4 级（KTD8）
   listStyle?: ListStyle // 仅 type==='list' 有意义
+  // 折叠块（type==='toggle'）的展开态：collapse = false。渲染 <details open={block.open}>，
+  // 折叠不进撤销历史（走独立的 setBlockOpen，不 checkpoint）。缺省视作展开。
+  open?: boolean
   designed?: boolean
 }
 

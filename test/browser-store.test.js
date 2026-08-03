@@ -47,3 +47,79 @@ test('P3-11 单次变更只推一次（leading，无多余 trailing）', async (
   await sleep(320);
   assert.strictEqual(pushes, 1, '窗口内无更多变更 → 不补推');
 });
+
+// ================= U2：下载记录第四 cell（spec §4.11 / P3）=================
+// 把原始记录直接写盘再 init，测 load-sanitize；roundtrip 用 flushSync 冲盘（跳过 500ms 防抖）。
+function writeDownloadsFile(dir, entries) {
+  fs.writeFileSync(path.join(dir, 'browser-downloads.json'), JSON.stringify({ version: 1, entries }), 'utf8');
+}
+const termEntry = (id, extra = {}) => ({
+  id, filename: id + '.pdf', sourceUrl: 'https://x/' + id + '.pdf',
+  sizeBytes: 100, receivedBytes: 100, state: 'completed', startedAt: 1, savePath: '/dl/' + id + '.pdf', ...extra,
+});
+
+test('U2 下载 cell：存→读 roundtrip 字段无损（含 savePath）', () => {
+  const dir = freshDir();
+  store.init(dir);
+  const entries = [termEntry('d1'), termEntry('d2', { state: 'canceled', receivedBytes: 40 })];
+  store.setDownloads(entries);
+  store.flushSync();   // 冲盘（否则 500ms 防抖没落地）
+  store.init(dir);     // 重开 = 重新 load
+  assert.deepStrictEqual(store.getDownloads(), entries); // 白名单 8 字段全无损
+});
+
+test('U2 下载 cell：load 时 downloading → interrupted（spec §4.11 退出中断，P3 核心）', () => {
+  const dir = freshDir();
+  writeDownloadsFile(dir, [
+    termEntry('d1', { state: 'downloading', receivedBytes: 40, sizeBytes: 1000 }),
+    termEntry('d2', { state: 'completed' }),
+  ]);
+  store.init(dir);
+  const out = store.getDownloads();
+  assert.strictEqual(out.find((e) => e.id === 'd1').state, 'interrupted'); // 在途翻中断
+  assert.strictEqual(out.find((e) => e.id === 'd1').receivedBytes, 40);     // 中断点如实保留
+  assert.strictEqual(out.find((e) => e.id === 'd2').state, 'completed');    // 终态不动
+});
+
+test('U2 下载 cell：坏形状条目 load 时静默剔除', () => {
+  const dir = freshDir();
+  writeDownloadsFile(dir, [
+    { filename: 'noid.pdf', state: 'completed' },      // 缺 id
+    termEntry('d2'),                                   // 唯一合法
+    { id: 'd3', filename: 'x', state: 'bogus' },       // state 不在枚举
+    null,                                              // 非对象
+  ]);
+  store.init(dir);
+  const out = store.getDownloads();
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].id, 'd2');
+});
+
+test('U2 下载 cell：CAP 在 load 时应用——101 条（全终态）挤到 100，挤最老端', () => {
+  // 【CAP 放哪的决策记录】放在 cell 的 load lambda（capDownloads(sanitizeDownloads(...))），不放 setDownloads。
+  //   ① load 后经 sanitize 已全终态（在途都翻了 interrupted），挤最老终态不会误伤在途 → 放 load 安全且可测。
+  //   ② 运行时 CAP（含「在途绝不挤」保护）归 U3 的 push 侧；「在途不挤」由 test/downloads.test.js 直测 capDownloads。
+  //   ③ 镜像 web-history 先例：sanitize 的 slice(0,CAP) = load 端，record 的 slice(0,CAP) = mutation 端；
+  //      setDownloads 保持薄（照 setHistory），运行时插入的裁剪交给 U3。
+  const dir = freshDir();
+  const entries = [];
+  for (let i = 0; i < 101; i++) entries.push(termEntry('e' + i, { startedAt: 101 - i })); // e0 最新在前 … e100 最老在末
+  writeDownloadsFile(dir, entries);
+  store.init(dir);
+  const out = store.getDownloads();
+  assert.strictEqual(out.length, 100);
+  assert.strictEqual(out[0].id, 'e0');            // 最新保留
+  assert.ok(!out.some((e) => e.id === 'e100'));   // 最老被挤
+});
+
+test('U2 下载 cell：setDownloads 触发 notify(downloads) leading-edge 推送', () => {
+  const dir = freshDir();
+  store.init(dir);
+  let pushes = 0;
+  let last = null;
+  store.subscribe('downloads', (data) => { pushes++; last = data; });
+  const entries = [termEntry('d1', { state: 'downloading', receivedBytes: 0 })];
+  store.setDownloads(entries);
+  assert.strictEqual(pushes, 1);       // leading 立即推（进度环/popover 要 live 更新）
+  assert.strictEqual(last, entries);   // 推的是最新 data 引用
+});
