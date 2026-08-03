@@ -14,6 +14,13 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-03 — 表格块编辑开工：blockedit.js/serialize.js 热点预警
+
+**是什么**：表格块编辑 feature（Schema 1 Table v1）开工，worktree wordspace-next-table / 分支 feat/table-block-editing。接下来几天会重改 `src/editor/blockedit.js` 全线（classify/onClick/onKeyDown/deleteSelection/refreshRangeSel/execText/onPaste）+ `src/editor/serialize.js`（WS2_MARKERS 新增 cell 编辑标记）+ 新增 `e2e/table.spec.js` 与 `test/blockedit-table.test.js`。
+**怎么 apply**：这几天要动上述文件的 session 先读 docs/plans/2026-08-03-001-feat-table-block-editing-plan.md（随 feat 分支 PR 进 main）跟本 session 对齐，避免 merge-train 连撞；P1（cell 级编辑，U1-U4）= 一个 PR 合入，合入后表格从「整块灰选」变为「cell 可编辑」，写表格相关断言的 e2e 注意行为变化。
+**来源**：分支 feat/table-block-editing / plan 2026-08-03-001
+
+
 ## 2026-07-24 — 编辑器全局契约：精确选区/删除/合并（Colin 两轮拍板，动编辑器必读）
 
 **是什么**：Colin 拍死跨块选区的三条全局规则（PR #356 落地，`docs/features/toggle.md` 有完整版）：
