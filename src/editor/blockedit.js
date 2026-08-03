@@ -522,7 +522,10 @@
       if (!el || !el.isConnected) { grip.style.display = 'none'; return; } // 防已删块的幽灵手柄
       const r = el.getBoundingClientRect();
       const { sx, sy } = vp();
-      grip.style.left = (r.left + sx - 28) + 'px';
+      // 行锚（U1）：<li> 的横向锚取其所在列表左缘——li.left-28 会正压 ws-todo 勾选框（勾选框
+      // 画在 li 左缘外侧的 gutter 里）；锚父列表则顶层行手柄落列表外侧、嵌套行仍随缩进右移。
+      const xr = (el.tagName === 'LI' && el.parentElement) ? el.parentElement.getBoundingClientRect() : r;
+      grip.style.left = (xr.left + sx - 28) + 'px';
       // 手柄对块首行的视觉中线（#86）：按首行行高把 22px 手柄垂直居中——标题行高大时手柄不再顶在块顶。
       const cs = doc.defaultView.getComputedStyle(el);
       let lh = parseFloat(cs.lineHeight);
