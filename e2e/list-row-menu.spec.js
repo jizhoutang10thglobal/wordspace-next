@@ -227,3 +227,29 @@ test('Esc 灰选入口维持块作用域：删除删掉整张列表', async () =
   expect((await bodyOrder()).join(','), '整块删除').toBe('P#pre,P#post');
   expect(await conformOf(await serialize())).toBe(true);
 });
+
+// 对拍 N3/F4：Notion 菜单头写 "To-do list"/"Numbered list"，把「这菜单管哪种块」直接告诉用户；
+// 我们此前没有 —— 补上同时解决 U3「行级作用域不够可见」的短板。
+test('菜单头标注作用对象块类型（行/块两种入口都对）', async () => {
+  await launch();
+  await openDoc('<ul class="ws-todo" id="T"><li id="t1">待办</li><li id="t2">待办二</li></ul><ol id="O"><li id="o1">编号</li><li id="o2">编号二</li></ol><ul id="B"><li id="b1">圆点</li><li id="b2">圆点二</li></ul><p id="p1">段落</p>');
+  const headOf = () => page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const h = d.querySelector('.ws-blockmenu-head');
+    return h ? h.textContent.trim() : null;
+  });
+  await openRowMenu('#t2');
+  expect(await headOf(), '待办行 → 待办列表').toBe('待办列表');
+  await page.keyboard.press('Escape');
+  await openRowMenu('#o2');
+  expect(await headOf(), '编号行 → 编号列表').toBe('编号列表');
+  await page.keyboard.press('Escape');
+  await openRowMenu('#b2');
+  expect(await headOf(), '圆点行 → 无序列表').toBe('无序列表');
+  await page.keyboard.press('Escape');
+  await openRowMenu('#p1');
+  expect(await headOf(), '段落块 → 正文').toBe('正文');
+  // 纯交互态，不入盘
+  await page.keyboard.press('Escape');
+  expect((await serialize()).includes('ws-blockmenu-head'), '菜单头不入盘').toBe(false);
+});

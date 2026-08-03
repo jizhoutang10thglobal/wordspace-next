@@ -1869,6 +1869,28 @@
         positionFmtbar();
       } else selectBlock(el);
       blockMenu.innerHTML = '';
+      // 菜单头标注作用对象的块类型（对拍：Notion 菜单头写 "To-do list"/"Numbered list"，我们此前没有，
+      // 用户看不出这菜单管的是哪种块）。复用既有块类型词条，零新增 i18n key。
+      const headKey = (() => {
+        if (rowMode) { const pl = row.parentElement; return pl.tagName === 'OL' ? 'blockNumberedList' : (pl.classList.contains('ws-todo') ? 'blockTodoList' : 'blockBulletList'); }
+        const c = classify(el);
+        if (c === 'toggle') return 'blockToggle';
+        if (c === 'table') return 'blockTable';
+        if (c === 'quote') return 'blockQuote';
+        if (c === 'image') return 'blockImage';
+        if (c === 'divider') return 'blockDivider';
+        if (c === 'heading') return 'blockH' + (el.tagName[1] || '1');
+        if (c === 'list') return el.tagName === 'OL' ? 'blockNumberedList' : (el.classList.contains('ws-todo') ? 'blockTodoList' : 'blockBulletList');
+        if (el.classList && el.classList.contains('ws-callout')) return 'blockCallout';
+        return c === 'text' ? 'blockText' : null;
+      })();
+      if (headKey) {
+        const head = doc.createElement('div');
+        head.setAttribute('data-ws2-ui', WS2_OVERLAY);
+        head.className = 'ws-blockmenu-head';
+        head.textContent = T('editor.' + headKey);
+        blockMenu.appendChild(head);
+      }
       const add = (label, on, danger, icon) => {
         const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : '');
         it.innerHTML = (icon ? menuIcon(icon) : '') + '<span></span>';
@@ -3791,6 +3813,8 @@
   /* U4「+」快捷插入：与手柄同尺寸同淡墨、cursor:pointer（可点不可拖，与 ⋮⋮ 的 grab 区分） */
   .ws-plus{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:pointer;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   .ws-plus:hover{background:#f0f1f3;color:#5a5f66;}
+  /* 块菜单头：标注作用对象的块类型（对拍 Notion 的 "To-do list" 头）。弱化成标签色，不抢菜单项。 */
+  .ws-blockmenu-head{padding:6px 10px 4px;font-size:11px;font-weight:600;letter-spacing:.04em;color:#9a9ea5;}
 
   .ws-fmtbar{align-items:center;gap:1px;height:32px;padding:0 4px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);z-index:99999;font-family:-apple-system,system-ui,"PingFang SC",sans-serif;}
   .ws-fmtbar-btn{display:flex;align-items:center;justify-content:center;min-width:26px;height:24px;padding:0 5px;border:none;background:transparent;border-radius:3px;color:#5a5f66;font-size:12px;font-weight:500;cursor:pointer;}
