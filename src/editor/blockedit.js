@@ -37,6 +37,7 @@
     { key: 'todo', labelKey: 'blockTodoList', tag: 'ul', cls: 'ws-todo' },
     { key: 'callout', labelKey: 'blockCallout', tag: 'div', cls: 'ws-callout' },
     { key: 'toggle', labelKey: 'blockToggle', tag: 'details' }, // 可折叠块（Notion toggle）：newBlock 造 <details open><summary><p>，插入后光标落 summary
+    { key: 'table', labelKey: 'blockTable', tag: 'table', kw: 'biaoge grid' }, // 表格块（Schema Table v1）：newBlock 造 canonical 种子（thead 1×3 + tbody 2×3），kw=拼音/同义词补充过滤
     { key: 'image', labelKey: 'blockImage', tag: null, image: true }, // 异步插入（走父层选图），不经 newBlock 同步造块
     { key: 'divider', labelKey: 'blockDivider', tag: 'hr' },
     { key: 'ai', labelKey: 'aiGenerate', tag: null, ai: true },
@@ -44,7 +45,7 @@
   const slashLabel = (it) => T('editor.' + it.labelKey);
   const filterSlash = (q) => {
     const s = (q || '').toLowerCase();
-    return SLASH_ITEMS.filter((it) => !s || slashLabel(it).toLowerCase().includes(s) || it.key.includes(s));
+    return SLASH_ITEMS.filter((it) => !s || slashLabel(it).toLowerCase().includes(s) || it.key.includes(s) || (it.kw && it.kw.includes(s)));
   };
   const itemByKey = (k) => SLASH_ITEMS.find((it) => it.key === k); // 按 key 取（不依赖下标——加 h4 后下标会移）
 
@@ -62,6 +63,7 @@
     // 选中/块菜单/说明编辑全接不上（doc-images）。要求含 <img> 以排除非图 figure。
     if (t === 'FIGURE' && el.querySelector && el.querySelector('img')) return 'image';
     if (t === 'DETAILS') return 'toggle'; // 可折叠块：容器本身不可文字编辑（灰选中/拖拽/删），summary + 正文块另行可编辑
+    if (t === 'TABLE') return 'table'; // 表格块：容器本身不可文字编辑（灰选/拖拽/整删原样，ED-A2），编辑能力下放 TD/TH（cell 级）
     return 'other';
   }
   // 可文字编辑的块：标题/正文/列表/引用 + 含直接文字的 div（callout/裸文本容器）。其余（图片/分隔线/
@@ -77,6 +79,21 @@
   // 叶子文字块 = 可安全做「节点级拼接」（合并）的块。单一来源 = schema-model（已对抗加固：正向白名单，
   // 空 <ul>/void 块/透明包裹块都判非叶子——对它做 appendChild 平搬会产非法嵌套 / 吞文字）。合并前必须把关。
   function isLeafTextBlock(el) { return SM.isLeafTextBlock(el); }
+
+  // 表格种子（Schema Table v1 canonical，与 ai-guide 的 AI 生成契约同形）：<table class="ws-table"> +
+  // thead 一行 th[scope=col] + tbody 数据行，空格带 <br>（光标落得进；<td><br></td> 校验合规）。
+  // 矩形不变式在此源头成立。纯函数、可 jsdom 单测。
+  function tableSeed(doc, cols, bodyRows) {
+    cols = cols || 3; bodyRows = bodyRows || 2;
+    const table = doc.createElement('table'); table.className = 'ws-table';
+    const thead = doc.createElement('thead'); const htr = doc.createElement('tr');
+    for (let c = 0; c < cols; c++) { const th = doc.createElement('th'); th.setAttribute('scope', 'col'); th.appendChild(doc.createElement('br')); htr.appendChild(th); }
+    thead.appendChild(htr); table.appendChild(thead);
+    const tbody = doc.createElement('tbody');
+    for (let r = 0; r < bodyRows; r++) { const tr = doc.createElement('tr'); for (let c = 0; c < cols; c++) { const td = doc.createElement('td'); td.appendChild(doc.createElement('br')); tr.appendChild(td); } tbody.appendChild(tr); }
+    table.appendChild(tbody);
+    return table;
+  }
 
   // 真正承载「块」的容器。多数「像样」的文档把正文包在一个居中/限宽的容器里
   // （<body> 底下只有这一个 <div class="wrap"> / <main> 之类）。若死认 <body> 为块容器，
@@ -282,6 +299,9 @@
 
     const docOf = () => doc;
     function topBlocks() { return [...blockRoot.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')); }
+    // 表格门控（KTD7）：无表格文档 100% 走旧路径（照 blockOf 的 details 门控先例）。每次调用**现查 DOM**、
+    // 禁 attach 期缓存——表格会中途出现（内部富粘贴收编 / undo 复活删掉的表）。
+    const docHasTable = () => !!blockRoot.querySelector('table');
     // ---- toggle 嵌套作用域（scoped block-root，U6）：<details> 体是自己的编辑作用域，与已发版多根 keyOf=rootId:rel 同心智 ----
     // 作用域根 = 直接子元素是「块」的容器：blockRoot 或 <details>（其子 = summary + 正文块）。
     function scopeRootOf(node) {
@@ -614,6 +634,7 @@
       else if (item.tag === 'blockquote') { el = doc.createElement('blockquote'); el.appendChild(doc.createElement('br')); }
       else if (item.tag && item.tag[0] === 'h') { el = doc.createElement(item.tag); el.appendChild(doc.createElement('br')); }
       else if (item.tag === 'details') { el = doc.createElement('details'); el.setAttribute('open', ''); el.appendChild(doc.createElement('summary')); el.appendChild(doc.createElement('p')); ensureToggleStyle(); } // 折叠块种子：<details open><summary></summary><p></p></details>（默认展开，光标由 applySlash 落 summary）
+      else if (item.tag === 'table') { el = tableSeed(doc); } // 表格种子（边框/内距样式已在 BASELINE_CSS 随 ensureSchemaBaseline 入盘，无需独立 style pair）
       else { el = doc.createElement('p'); }
       ensureBlockStyle(item.cls);
       return el;
@@ -1473,6 +1494,14 @@
       // 折叠块：空块原地变身（turnInto，与其他块类型一致——旧 insertAfter 会把空段落留在原地、details 落到
       // 下一行，光标肉眼可见往下坠一行 + 留空段落垃圾，Wendi 2026-07-24 视频）；非空块维持插到下方。光标落 summary。
       if (it.tag === 'details') { const nx = (empty && isEditableEl(el)) ? turnInto(el, it) : insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); }
+      else if (it.tag === 'table') {
+        // 表格（U1）：空锚块原地替换（对齐 details「不留空段垃圾」的心智；不走 turnInto——retag p→table 会产非法结构），
+        // 非空插下方。U1 阶段落灰选整表（cell 尚不可编辑）；U2 起改「落首格进编辑」。
+        let nx;
+        if (empty && isEditableEl(el)) { nx = newBlock(it); el.replaceWith(nx); if (undoMgr) undoMgr.checkpoint(); markDirty(); }
+        else nx = insertAfter(el, it);
+        selectBlock(nx); positionGrip(nx);
+      }
       else if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
       else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
       else { const nx = insertAfter(el, it); enterEdit(nx, { mode: 'start' }); }
@@ -2932,7 +2961,7 @@
   `;
   // i18n-exempt-end
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -13,6 +13,7 @@ module.exports = {
   blockQuote: 'Quote',
   blockCallout: 'Callout',
   blockToggle: 'Toggle',
+  blockTable: 'Table',
   blockImage: 'Image',
   blockDivider: 'Divider',
   aiGenerate: '✦ AI generate (coming soon)',
