@@ -42,15 +42,15 @@ test('U4 截图：gutter 双钮（+ 与 ⋮⋮）', async () => {
   await shot('u4-gutter.png');
 });
 
-test('U4 截图：点「+」插同列表新行', async () => {
+test('U4 截图：点「+」插普通正文块（方案 A）', async () => {
   await launch();
   await openDoc(FIX);
   await frame.locator('#r2').hover();
   await page.waitForTimeout(150);
   await frame.locator('.ws-plus').click();
   await page.waitForTimeout(200);
-  await page.keyboard.type('这是点 + 插出来的新行');
+  await page.keyboard.type('这是点 + 插出来的正文块');
   await page.waitForTimeout(200);
-  await shot('u4-inserted-row.png');
+  await shot('u4-inserted-para.png');
   console.log('U4 SHOTS DONE');
 });
