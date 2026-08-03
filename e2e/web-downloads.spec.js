@@ -344,6 +344,9 @@ test('侧栏开着 toast（U-DL polish）：下载 → 侧栏内 .dl-toast（锁
   });
   expect(rects.pr, `pill 右缘=${rects.pr} 应 ≤ 侧栏右缘=${rects.sr}`).toBeLessThanOrEqual(rects.sr + 1);
   expect(rects.pr, `pill 右缘=${rects.pr} 应不越进 #main 左缘=${rects.ml}`).toBeLessThanOrEqual(rects.ml + 1);
+  // Colin 2026-07-24：toast 是从下载按钮正下方弹出的小气泡 → 右缘对齐下载按钮右缘（不再顶到侧栏最左压地址栏）。
+  const anchorRight = await page.evaluate(() => { const a = document.querySelector('#dl-anchor,[data-dl-anchor]'); return a ? a.getBoundingClientRect().right : null; });
+  expect(Math.abs(rects.pr - anchorRight), `pill 右缘=${rects.pr} 应≈下载按钮右缘=${anchorRight}（锚按钮下方）`).toBeLessThanOrEqual(4);
   // 强断言 ②：网页 view **没被顶起 72px**（侧栏开着的小 toast 不调 webToastInset）——高度与下载前一致。
   await page.waitForTimeout(300);
   const after = await bounds(key);

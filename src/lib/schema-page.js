@@ -216,50 +216,9 @@
     return { pageOfBlock, gapBefore, pageCount, pageStartBlocks, lastFill };
   }
 
-  // ---- 页眉/页脚文字（分页文档 Word 式）：长度上限 + HTML 转义（纯逻辑，屏显与导出共用一份，同口径）----
-  // 页眉页脚是用户输入，入 printToPDF 的 headerTemplate/footerTemplate 与覆盖层前必须过这两关：
-  //   · clampHF：单行、砍到 HF_MAXLEN（防超长串 × 页数 拖垮覆盖层/导出模板；对任意来路的磁盘文档也防御性截断）；
-  //   · escapeHtml：转义 & < > " '（headerTemplate 是 HTML 字符串 sink，不转义 = 打印路径注入面，P0）。
-  //     覆盖层 sink 走 element.textContent（浏览器自动转义），不用手动 escape；escapeHtml 专给字符串模板 sink。
-  const HF_MAXLEN = 200;
-  function clampHF(s) {
-    if (s == null) return '';
-    return String(s).replace(/[\r\n]+/g, ' ').slice(0, HF_MAXLEN); // 单行：换行折成空格，再砍长度
-  }
-  function escapeHtml(s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  }
-
-  // printToPDF 页眉/页脚模板（纯逻辑，pdf-export 调用）：文字先 clampHF 再 escapeHtml 进 HTML 字符串 sink
-  // （P0 注入面：用户输入不转义 = 打印路径注入）。文字居左（对齐内容左边距 padMm）+ 页码居中共存。
-  // 返回 { display, headerTemplate, footerTemplate }：display=是否开 displayHeaderFooter；空模板给非空占位
-  // （否则 Chromium 印默认标题/日期）。放这里 = node 可单测「转义真发生」，不焊死在带 electron 的 pdf-export。
-  function buildHfTemplates(opts) {
-    opts = opts || {};
-    const hdr = clampHF(opts.header), ftr = clampHF(opts.footer), nums = !!opts.pageNumbers;
-    const pad = ((Number.isFinite(opts.padMm) ? opts.padMm : 25.4)) + 'mm';
-    // 左文字用 in-flow inline-block（保证 div 有高——纯 absolute 子元素会塌成 0 高、Chromium 可能不渲染，
-    // 是本仓「string 测试绿但导出实际不显」的经典坑）；空时用零宽空格兜高。页码用 absolute 覆盖 padding 盒全宽
-    // （left:0/right:0 相对 padding 盒 = 整页宽 → 真页面居中，不受左右边距不对称影响）。
-    const tpl = (leftHtml, centerHtml) =>
-      '<div style="width:100%;font-size:9px;color:#777;font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
-      'position:relative;box-sizing:border-box;padding:0 ' + pad + ';">' +
-      (centerHtml ? '<span style="position:absolute;left:0;right:0;text-align:center;">' + centerHtml + '</span>' : '') +
-      '<span style="display:inline-block;">' + (leftHtml || '&#8203;') + '</span>' +
-      '</div>';
-    const pageNum = nums ? '<span class="pageNumber"></span> / <span class="totalPages"></span>' : '';
-    return {
-      display: !!(nums || hdr || ftr),
-      headerTemplate: hdr ? tpl(escapeHtml(hdr), '') : '<span></span>',
-      footerTemplate: (ftr || pageNum) ? tpl(escapeHtml(ftr), pageNum) : '<span></span>',
-    };
-  }
-
   const api = {
-    PAGE_SIZES, ORIENTATIONS, DEFAULT_PAGE, MARGIN_PRESETS, PX_PER_MM, PAGE_GAP_PX, PAGED_PRINT_CSS, HF_MAXLEN,
-    pageDims, pageBoxPx, buildPageCss, parsePageCss, computeInnerSplits, paginateBlocks, clampHF, escapeHtml, buildHfTemplates,
+    PAGE_SIZES, ORIENTATIONS, DEFAULT_PAGE, MARGIN_PRESETS, PX_PER_MM, PAGE_GAP_PX, PAGED_PRINT_CSS,
+    pageDims, pageBoxPx, buildPageCss, parsePageCss, computeInnerSplits, paginateBlocks,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2SchemaPage = api;
