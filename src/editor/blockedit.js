@@ -85,7 +85,7 @@
   // 嵌套表格不存在于合规文档（cell phrasing-only），querySelectorAll 不需要防嵌套。纯函数可单测。
   function tableRowsOf(table) { return [...table.querySelectorAll('tr')].filter((r) => !r.hasAttribute('data-ws2-ui') && !(r.classList && r.classList.contains('ws-page-spacer'))); }
   function rowCellsOf(tr) { return [...tr.children].filter((c) => c.tagName === 'TD' || c.tagName === 'TH'); }
-  function firstCellOf(table) { const r = tableRowsOf(table)[0]; return r ? (rowCellsOf(r)[0] || null) : null; }
+  function firstCellOf(table) { return cellAt(table, 0, 0); }
   // cell 坐标 / 定点取格（都在过滤后的数据行集合上，KTD7）。
   function cellPosOf(table, cell) {
     const rows = tableRowsOf(table);
@@ -93,39 +93,67 @@
     return null;
   }
   function cellAt(table, row, col) { const tr = tableRowsOf(table)[row]; return tr ? (rowCellsOf(tr)[col] || null) : null; }
-  // 键盘导航目标（纯逻辑，可 jsdom 单测）。dir：next/prev（Tab 序，行内先行）、down/up（同列跨行）、
-  // enter（下一行同列，末行要建行）。返回 {cell} / {newRow:true, col}（需建行）/ {exit:'up'|'down'}（越出表界）/ null。
-  function cellNavTarget(table, cell, dir) {
-    const pos = cellPosOf(table, cell); if (!pos) return null;
+  // 线性被罩集（KTD3）：同表两格间按行主序展开的 cell 跨度（含两端，自动纠序）。高亮与删除共用这
+  // 一个来源 = 「所见即所删」不靠两处循环各自维护；也免掉逐格 intersectsNode 的 O(全表) Range 开销。
+  // 找不到任一端点（落在 tr 层等退化态）返 null。
+  function cellSpanOf(table, sC, eC) {
     const rows = tableRowsOf(table);
+    let sp = null, ep = null;
+    for (let r = 0; r < rows.length; r++) {
+      const cs = rowCellsOf(rows[r]);
+      const si = cs.indexOf(sC), ei = cs.indexOf(eC);
+      if (si >= 0) sp = { row: r, col: si };
+      if (ei >= 0) ep = { row: r, col: ei };
+    }
+    if (!sp || !ep) return null;
+    if (sp.row > ep.row || (sp.row === ep.row && sp.col > ep.col)) { const t = sp; sp = ep; ep = t; }
+    const out = [];
+    for (let r = sp.row; r <= ep.row; r++) {
+      const cs = rowCellsOf(rows[r]);
+      const from = r === sp.row ? sp.col : 0, to = r === ep.row ? ep.col : cs.length - 1;
+      for (let c = from; c <= to; c++) if (cs[c]) out.push(cs[c]);
+    }
+    return out;
+  }
+  // 键盘导航目标（纯逻辑，可 jsdom 单测；单次全表遍历——这是逐击热路径，别一击三扫）。dir：next/prev
+  //（Tab 序，行内先行）、down/up（同列跨行）、enter（下一行同列，末行要建行）。
+  // 返回 {cell} / {newRow:true, col}（需建行）/ {exit:'up'|'down'}（越出表界）/ null。
+  function cellNavTarget(table, cell, dir) {
+    const rows = tableRowsOf(table);
+    let pos = null;
+    for (let r = 0; r < rows.length; r++) { const c = rowCellsOf(rows[r]).indexOf(cell); if (c >= 0) { pos = { row: r, col: c }; break; } }
+    if (!pos) return null;
+    const at = (r, c) => { const tr = rows[r]; return tr ? (rowCellsOf(tr)[c] || null) : null; };
     const nCols = rowCellsOf(rows[pos.row]).length;
     if (dir === 'next') {
-      if (pos.col + 1 < nCols) return { cell: cellAt(table, pos.row, pos.col + 1) };
-      if (pos.row + 1 < rows.length) return { cell: cellAt(table, pos.row + 1, 0) };
+      if (pos.col + 1 < nCols) return { cell: at(pos.row, pos.col + 1) };
+      if (pos.row + 1 < rows.length) return { cell: at(pos.row + 1, 0) };
       return { newRow: true, col: 0 }; // 末格 Tab → 建行、落新行首格
     }
     if (dir === 'prev') {
-      if (pos.col - 1 >= 0) return { cell: cellAt(table, pos.row, pos.col - 1) };
+      if (pos.col - 1 >= 0) return { cell: at(pos.row, pos.col - 1) };
       if (pos.row - 1 >= 0) { const pc = rowCellsOf(rows[pos.row - 1]); return { cell: pc[pc.length - 1] || null }; }
       return { exit: 'up' }; // 首格 Shift+Tab → 跳出到上一块
     }
-    if (dir === 'down') { return (pos.row + 1 < rows.length) ? { cell: cellAt(table, pos.row + 1, pos.col) } : { exit: 'down' }; }
-    if (dir === 'up') { return (pos.row - 1 >= 0) ? { cell: cellAt(table, pos.row - 1, pos.col) } : { exit: 'up' }; }
-    if (dir === 'enter') { return (pos.row + 1 < rows.length) ? { cell: cellAt(table, pos.row + 1, pos.col) } : { newRow: true, col: pos.col }; } // 末行 Enter → 建行、落同列
+    if (dir === 'down') { return (pos.row + 1 < rows.length) ? { cell: at(pos.row + 1, pos.col) } : { exit: 'down' }; }
+    if (dir === 'up') { return (pos.row - 1 >= 0) ? { cell: at(pos.row - 1, pos.col) } : { exit: 'up' }; }
+    if (dir === 'enter') { return (pos.row + 1 < rows.length) ? { cell: at(pos.row + 1, pos.col) } : { newRow: true, col: pos.col }; } // 末行 Enter → 建行、落同列
     return null;
   }
 
   // 表格种子（Schema Table v1 canonical，与 ai-guide 的 AI 生成契约同形）：<table class="ws-table"> +
   // thead 一行 th[scope=col] + tbody 数据行，空格带 <br>（光标落得进；<td><br></td> 校验合规）。
   // 矩形不变式在此源头成立。纯函数、可 jsdom 单测。
+  // 空格的 canonical 形态 = <td/th><br></td>（<br> 让光标落得进）——种子/建行共用的契约。
+  function mkTableCell(doc, tag) { const c = doc.createElement(tag); c.appendChild(doc.createElement('br')); return c; }
   function tableSeed(doc, cols, bodyRows) {
     cols = cols || 3; bodyRows = bodyRows || 2;
     const table = doc.createElement('table'); table.className = 'ws-table';
     const thead = doc.createElement('thead'); const htr = doc.createElement('tr');
-    for (let c = 0; c < cols; c++) { const th = doc.createElement('th'); th.setAttribute('scope', 'col'); th.appendChild(doc.createElement('br')); htr.appendChild(th); }
+    for (let c = 0; c < cols; c++) { const th = mkTableCell(doc, 'th'); th.setAttribute('scope', 'col'); htr.appendChild(th); }
     thead.appendChild(htr); table.appendChild(thead);
     const tbody = doc.createElement('tbody');
-    for (let r = 0; r < bodyRows; r++) { const tr = doc.createElement('tr'); for (let c = 0; c < cols; c++) { const td = doc.createElement('td'); td.appendChild(doc.createElement('br')); tr.appendChild(td); } tbody.appendChild(tr); }
+    for (let r = 0; r < bodyRows; r++) { const tr = doc.createElement('tr'); for (let c = 0; c < cols; c++) tr.appendChild(mkTableCell(doc, 'td')); tbody.appendChild(tr); }
     table.appendChild(tbody);
     return table;
   }
@@ -292,6 +320,7 @@
     let wallDropped = false; // 本次拖选是否已摘掉编辑块的 contenteditable（放倒「跨块选区被钉死在单块里」那道墙）
     let listSplitPending = false; // U6：list 回车交原生分裂后，一次性 input 里剥新 li 的克隆 id/data-checked（防栈叠）
     let cellEl = null;       // 正在编辑的表格单元格 TD/TH（第四状态，仿 captionEl：generic 块级分支对它 inert，KTD1）
+    let cellPad = { top: 0, bottom: 0 }; // 当前编辑格的上下 padding（enterCell 时缓存，↑↓ 视觉行判定用）
     let captionEl = null;    // 正在编辑的图片说明 figcaption（不同于 editingEl/selectedEl：块级破坏性键盘分支对它 inert）
     let captionOrig = '';    // 进说明编辑时的原文本（判是否真变、决定要不要 checkpoint）
     let captionWasNew = false; // 本次说明由「加说明」新建（空白失焦即撤销=降回裸 img，且不留空撤销步）
@@ -333,7 +362,8 @@
     slashMenu.style.display = 'none';
     doc.documentElement.appendChild(slashMenu);
 
-    // cell 拒收提示小签（Colin 2026-08-03：拒收必须可感知；纸方墨圆——墨色圆角、淡入淡出、不抖不闪红）
+    // cell 拒收提示小签（Colin 2026-08-03：拒收必须可感知；纸方墨圆——墨色圆角、淡入淡出、不抖不闪红）。
+    // 有意不用 __wsToast：提示要**锚在被拒的格上**（空间归因清晰），全局 toast 看不出是哪格拒了什么。
     const cellNope = mk('div', 'ws-cellnope');
     doc.documentElement.appendChild(cellNope);
     let cellNopeTimer = null;
@@ -351,9 +381,9 @@
 
     const docOf = () => doc;
     function topBlocks() { return [...blockRoot.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')); }
-    // 表格门控（KTD7）：无表格文档 100% 走旧路径（照 blockOf 的 details 门控先例）。每次调用**现查 DOM**、
-    // 禁 attach 期缓存——表格会中途出现（内部富粘贴收编 / undo 复活删掉的表）。
-    const docHasTable = () => !!blockRoot.querySelector('table');
+    // 表格门控（KTD7）说明：无表格文档 100% 走旧路径这一保证由结构自动成立——所有 cell 入口都先要求
+    // closest('td,th') 命中（无表文档恒 null）+ blockOf/classify==='table' 复核（更强判据），不需要、也不要
+    // 加全文档 querySelector('table') 的显式门（每次点击 O(全文档) 白扫，simplify 审查已证它改不了任何结果）。
     // ---- toggle 嵌套作用域（scoped block-root，U6）：<details> 体是自己的编辑作用域，与已发版多根 keyOf=rootId:rel 同心智 ----
     // 作用域根 = 直接子元素是「块」的容器：blockRoot 或 <details>（其子 = summary + 正文块）。
     function scopeRootOf(node) {
@@ -470,7 +500,9 @@
         if (sBlk.tagName === 'TABLE') {
           const sC = cellOfNode(r.startContainer), eC = cellOfNode(r.endContainer);
           if (sC && eC && sC !== eC) {
-            for (const tr of tableRowsOf(sBlk)) for (const c of rowCellsOf(tr)) { try { if (r.intersectsNode && r.intersectsNode(c) && covered(c)) mark(c); } catch (x) {} }
+            // 线性跨度中的内部格必然全罩（Range 连续），covered() 只需判两端——selectionchange 是逐击热路径
+            const span = cellSpanOf(sBlk, sC, eC);
+            if (span) for (const c of span) { if (c === sC || c === eC ? covered(c) : true) mark(c); }
           }
         }
         return; // 其余单块内情形：原生文字高亮已够，不标块级
@@ -548,16 +580,12 @@
       cell.setAttribute('data-ws2-ce', '');   // serialize 据此摘 contenteditable，入盘干净
       cell.setAttribute('data-ws2-cell', ''); // cell 编辑态标记（EDITOR_CSS 高亮；已登记 WS2_MARKERS 剥除）
       const tbl = cellTableOf(cell);
-      if (tbl) { hoverEl = tbl; positionGrip(tbl); } // 手柄仍锚整表（块菜单/拖拽以表为单位）
+      if (tbl && hoverEl !== tbl) { hoverEl = tbl; positionGrip(tbl); } // 手柄锚整表；格间移动锚不变，别每击强制布局
+      else if (tbl) hoverEl = tbl;
+      // ↑↓ 视觉行判定要扣 cell padding——在进入时读一次缓存（padding 随 baseline 恒定），别逐击 getComputedStyle
+      try { const cs0 = doc.defaultView.getComputedStyle(cell); cellPad = { top: parseFloat(cs0.paddingTop) || 0, bottom: parseFloat(cs0.paddingBottom) || 0 }; } catch (x) { cellPad = { top: 0, bottom: 0 }; }
       cell.focus({ preventScroll: true });
-      caret = caret || { mode: 'end' };
-      const sel = doc.getSelection();
-      if (sel && caret.mode !== 'keep') {
-        let range = null;
-        if (caret.mode === 'point' && caret.x != null) { const pt = caretRangeAtPoint(doc, caret.x, caret.y); if (pt && cell.contains(pt.startContainer)) range = pt; }
-        if (!range) { range = doc.createRange(); range.selectNodeContents(cell); range.collapse(caret.mode === 'start'); }
-        sel.removeAllRanges(); sel.addRange(range);
-      }
+      placeCaret(cell, caret); // TD/TH 无列表/透明容器分支，placeCaret 语义完全一致（复用单一实现）
       scrollCaretIntoViewIfNeeded();
     }
     function exitCell() {
@@ -576,7 +604,7 @@
       if (!tbody) { tbody = doc.createElement('tbody'); table.appendChild(tbody); }
       if (undoMgr) undoMgr.checkpoint();
       const tr = doc.createElement('tr');
-      for (let i = 0; i < nCols; i++) { const td = doc.createElement('td'); td.appendChild(doc.createElement('br')); tr.appendChild(td); }
+      for (let i = 0; i < nCols; i++) tr.appendChild(mkTableCell(doc, 'td'));
       tbody.appendChild(tr);
       if (undoMgr) undoMgr.checkpoint();
       markDirty();
@@ -877,6 +905,7 @@
     // 进说明编辑：只给 figcaption 开 contenteditable + data-ws2-ce（serialize 据此移除 contenteditable→入盘干净），
     // 不设 editingEl/selectedEl——让块级破坏性键盘分支保持 inert（对齐 ui-demo「说明里 Backspace 不删整块」）。
     function enterCaptionEdit(cap, wasNew) {
+      exitCell(); // 与其他状态入口同款前奏——漏了它 = cell 键盘分支在说明编辑下仍活着（模式泄漏）
       if (captionEl && captionEl !== cap) captionEl.blur(); // 收尾上一个
       clearSelectedAttr(); selectedEl = null; closeBlockMenu();
       captionEl = cap; captionOrig = cap.textContent || ''; captionWasNew = !!wasNew;
@@ -1094,15 +1123,11 @@
         if (sCell2 && sCell2 === eCell2) {
           const blk2 = blockOf(sCell2);
           if (blk2 && classify(blk2) === 'table') {
-            const sC0 = full.startContainer, sO0 = full.startOffset, eC0 = full.endContainer, eO0 = full.endOffset;
-            const wasCE = sCell2.getAttribute('contenteditable') === 'true';
-            if (!wasCE) { sCell2.setAttribute('contenteditable', 'true'); sCell2.setAttribute('data-ws2-ce', ''); }
-            sCell2.focus();
-            try { const r2 = doc.createRange(); r2.setStart(sC0, sO0); r2.setEnd(eC0, eO0); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r2); } catch (x) {}
+            // 真实路径里选区来自 cell 编辑态（cellEl===sCell2、contenteditable 已在）；罕见的无 cell 态格内
+            // 选区先 enterCell（mode:keep 保留选区）——统一走状态机，不手搓临时 contenteditable（防 desync）。
+            if (cellEl !== sCell2) enterCell(sCell2, { mode: 'keep' });
             try { doc.execCommand('styleWithCSS', false, false); } catch (x) {}
             doc.execCommand(cmd, false, null);
-            if (!wasCE) { sCell2.removeAttribute('contenteditable'); sCell2.removeAttribute('data-ws2-ce'); }
-            if (cellEl && cellEl.isConnected) cellEl.focus();
             markDirty(); persistEditing();
             return;
           }
@@ -1223,9 +1248,8 @@
       if (sBlk === eBlk && sBlk.tagName === 'TABLE') {
         const sC = cellOfNode(r.startContainer), eC = cellOfNode(r.endContainer);
         if (sC && eC && sC !== eC) {
-          const hit = [];
-          for (const tr of tableRowsOf(sBlk)) for (const c of rowCellsOf(tr)) { try { if (r.intersectsNode && r.intersectsNode(c)) hit.push(c); } catch (x) {} }
-          if (!hit.length) return false;
+          const hit = cellSpanOf(sBlk, sC, eC); // 与高亮同一来源（所见即所删）
+          if (!hit || !hit.length) return false;
           for (const c of hit) {
             if (c === sC) { try { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(c, c.childNodes.length); r1.deleteContents(); } catch (x) {} }
             else if (c === eC) { try { const r2 = doc.createRange(); r2.setStart(c, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); } catch (x) {} }
@@ -1830,7 +1854,7 @@
       // 同 cell 拖选（U2 方案 B）：摘墙时已 exitCell，松手时选区局限在原格内 → 恢复该格编辑并保留选区
       // （镜像下面单块恢复、粒度下沉到 cell）——「cell 内选词替换」与「从 cell 拖出跨块选区」都活着。
       const sCell = cellOfNode(r.startContainer), eCell = cellOfNode(r.endContainer);
-      if (sCell && sCell === eCell && docHasTable()) {
+      if (sCell && sCell === eCell) {
         const cBlk = blockOf(sCell);
         if (cBlk && classify(cBlk) === 'table') {
           const sc = r.startContainer, so = r.startOffset, ec = r.endContainer, eo = r.endOffset;
@@ -1882,7 +1906,7 @@
       // 门控 docHasTable（每次现查）；blockOf+classify 确认该表是真块（不在覆盖层/块外）。点表格边框缝隙/margin
       // 落不进 td/th → 走下面 blockOf 的整表灰选（既有行为）。
       const cellT = e.target && e.target.closest && e.target.closest('td,th');
-      if (cellT && docHasTable()) {
+      if (cellT) {
         const cellBlk = blockOf(cellT);
         if (cellBlk && classify(cellBlk) === 'table') {
           if (cellEl === cellT) return; // 已编辑此格的纯点击 → 交原生移光标
@@ -1987,10 +2011,9 @@
               if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return;
               const er = cellEl.getBoundingClientRect();
               // 首/末视觉行判定必须扣掉 td/th 的 padding（baseline 7px 上下）——拿整个 border-box 比，
-              // 单行格的 caret 会被误判「不在末行」直接哑掉（generic 块版没这问题：p 无 padding）。
-              const cs2 = doc.defaultView.getComputedStyle(cellEl);
-              const contentTop = er.top + (parseFloat(cs2.paddingTop) || 0);
-              const contentBottom = er.bottom - (parseFloat(cs2.paddingBottom) || 0);
+              // 单行格的 caret 会被误判「不在末行」直接哑掉。padding 在 enterCell 缓存（cellPad），不逐击读。
+              const contentTop = er.top + cellPad.top;
+              const contentBottom = er.bottom - cellPad.bottom;
               const box = sel.getRangeAt(0).getBoundingClientRect();
               const degenerate = box.height === 0 && box.top === 0;
               const caret = degenerate ? { top: contentTop, bottom: contentBottom } : box;
@@ -2014,20 +2037,20 @@
             // （Colin 拍板 2026-08-03）：整行为空 + 非唯一 tbody 数据行 + 光标在该行首格 → 删该行（Tab 误建行的
             // 对称逆操作，保矩形、恰一 undo 步、光标回上一行末格）。
             if (e.key === 'Backspace') {
+              // O(1) 判据在前（首格 col0 + tbody），全表扫描只在真要删行时才做——这是逐击热路径
               const sel = doc.getSelection();
-              if (sel && sel.rangeCount && sel.isCollapsed && isCaretAtStart(doc, cellEl)) {
-                const pos = cellPosOf(cTbl, cellEl);
-                const rows = tableRowsOf(cTbl);
-                const tr = pos ? rows[pos.row] : null;
-                const inTbody = !!(tr && tr.parentElement && tr.parentElement.tagName === 'TBODY');
-                const rowEmpty = !!tr && rowCellsOf(tr).every((c) => (c.textContent || '').trim() === '' && !c.querySelector('img'));
-                const tbodyDataRows = inTbody ? [...tr.parentElement.children].filter((x) => x.tagName === 'TR' && !x.hasAttribute('data-ws2-ui') && !(x.classList && x.classList.contains('ws-page-spacer'))) : [];
-                if (pos && pos.col === 0 && inTbody && rowEmpty && tbodyDataRows.length > 1) {
+              const tr0 = cellEl.parentElement;
+              if (sel && sel.rangeCount && sel.isCollapsed && !cellEl.previousElementSibling
+                  && tr0 && tr0.parentElement && tr0.parentElement.tagName === 'TBODY'
+                  && isCaretAtStart(doc, cellEl)) {
+                const rowEmpty = rowCellsOf(tr0).every((c) => (c.textContent || '').trim() === '' && !c.querySelector('img'));
+                if (rowEmpty && tableRowsOf(tr0.parentElement).length > 1) { // KTD7 同一过滤谓词（tableRowsOf 对 tbody 同样适用）
                   e.preventDefault();
-                  const prevRow = rows[pos.row - 1] || null;
+                  const rows = tableRowsOf(cTbl);
+                  const prevRow = rows[rows.indexOf(tr0) - 1] || null;
                   if (undoMgr) undoMgr.checkpoint(); // KTD6：先结算 pending 打字债
                   exitCell();
-                  tr.remove();
+                  tr0.remove();
                   if (undoMgr) undoMgr.checkpoint();
                   markDirty();
                   if (prevRow) { const pc = rowCellsOf(prevRow); const tc = pc[pc.length - 1]; if (tc) { enterCell(tc, { mode: 'end' }); return; } }
@@ -2924,7 +2947,7 @@
         const t0 = cd0 && cd0.getData ? cd0.getData('text/plain') : '';
         const lines0 = String(t0 || '').replace(/\r\n?/g, '\n').split('\n');
         if (String(t0 || '').trim()) {
-          doc.execCommand('insertText', false, lines0.length > 1 ? lines0.join(' ') : lines0[0]);
+          doc.execCommand('insertText', false, lines0.join(' '));
           if (undoMgr) undoMgr.scheduleCheckpoint();
           markDirty();
           return;
@@ -3328,7 +3351,7 @@
   `;
   // i18n-exempt-end
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, cellPosOf, cellAt, cellNavTarget, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, cellPosOf, cellAt, cellNavTarget, cellSpanOf, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

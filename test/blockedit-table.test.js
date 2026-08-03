@@ -136,6 +136,17 @@ test('cellNavTarget: header-only 表（GFM 合法产物）——enter/next 都�
   assert.deepEqual(be.cellNavTarget(t, th2, 'next'), { newRow: true, col: 0 });
 });
 
+test('cellSpanOf: 行主序线性跨度（含两端、自动纠序、端点找不到返 null）', () => {
+  const t = el(NAV_TABLE);
+  const at = (r, c) => be.cellAt(t, r, c);
+  const span = be.cellSpanOf(t, at(1, 1), at(2, 0));
+  assert.deepEqual(span.map((c) => c.textContent), ['体一二格', '体一三', '体二一格子']); // 途径格全含
+  const rev = be.cellSpanOf(t, at(2, 0), at(1, 1)); // 反序输入自动纠序
+  assert.deepEqual(rev.map((c) => c.textContent), ['体一二格', '体一三', '体二一格子']);
+  assert.deepEqual(be.cellSpanOf(t, at(0, 0), at(0, 0)).map((c) => c.textContent), ['头一']); // 单格跨度
+  assert.equal(be.cellSpanOf(t, at(0, 0), el('<td>外来格</td>')), null); // 端点不在表内 → null
+});
+
 test('tableSeed 产物 reparse 后过校验器（conform，含在完整合规文档中）', () => {
   const d = docOf('<!DOCTYPE html><html><body></body></html>');
   const t = be.tableSeed(d);
