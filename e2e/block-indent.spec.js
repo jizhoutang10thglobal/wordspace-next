@@ -22,9 +22,9 @@ async function launch() {
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });
 }
-async function openDoc(body, headExtra = '') {
+async function openDoc(body, headExtra = '', name = 'doc') {
   const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>${headExtra}</head><body>${body}</body></html>`;
-  docPath = path.join(tmpDir, 'doc.html');
+  docPath = path.join(tmpDir, name + '.html');
   await fs.writeFile(docPath, html, 'utf8');
   await app.evaluate(({ BrowserWindow }, pp) => { BrowserWindow.getAllWindows()[0].webContents.send('open-file', pp); }, docPath);
   frame = page.frameLocator('#doc-frame');
@@ -116,6 +116,12 @@ test('5 toggle 协调：进 toggle 剥缩进无双偏移，体内 Shift+Tab 出�
   expect((await clsOf('#b')).includes('ws-indent'), '出 toggle 归 0 档').toBe(false);
   // 出 toggle 剥缩进的真牙：体内预置档位块出来必须被剥光 + 坐标与顶层基线块一致
   await clickIn('#in2');
+  // §1.3③ 体内 Tab = no-op 门（M9）：体内块（前兄弟非 details）不缩进、不违规剥档、坐标不动。
+  // 若 scope===blockRoot gate 被删：#in2 不在 topBlocks() → indexOf=-1 → maxAllowed=0 → next=0≠cur=1 → 违规剥 class。
+  const in2x = await rectX('#in2');
+  await tab();
+  expect(await clsOf('#in2'), '体内 Tab 后 ws-indent-1 原样（toggle 体内不做缩进）').toContain('ws-indent-1');
+  expect(Math.abs((await rectX('#in2')) - in2x), '体内 Tab 坐标不动').toBeLessThanOrEqual(1);
   await shiftTab();
   expect(await frame.locator('#in2').evaluate((el) => el.parentElement.tagName), 'in2 出到顶层').toBe('BODY');
   expect((await clsOf('#in2')).includes('ws-indent'), '预置 ws-indent-1 被出场 stripIndent 剥光').toBe(false);
@@ -273,4 +279,51 @@ test('13 a11y 退出路径：Esc 到灰选中态后 Tab 移焦出编辑区、不
   // 负向直接断言：灰选中态 Tab 不进缩进分支（editingEl gate），块无任何 ws-indent class
   expect((await clsOf('#b')).includes('ws-indent'), '灰选中态 Tab 不缩进').toBe(false);
   expect(await frame.locator('[data-ws2-editing]').count(), 'Tab 没有拽回编辑态（焦点正常移出编辑区）').toBe(0);
+});
+
+test('14 跨文档粘贴自愈：缩进块粘进无 indent CSS 的文档 → ensurePastedStyles 补注、24px 真生效', async () => {
+  await launch();
+  // 文档 A：合成 copy（照 rich-paste.spec.js 套路，驱动真 onCopy handler）拿带哨兵的块级载荷，class 随 cleanClone 保留
+  await openDoc('<p id="src" class="ws-indent-2">源块内容字样</p><p id="o">其他</p>', INDENT_STYLE, 'src-doc');
+  const clip = await frame.locator('body').evaluate((body) => {
+    const d = body.ownerDocument; const el = body.querySelector('#src');
+    const g = d.getSelection(); const r = d.createRange(); r.selectNodeContents(el);
+    g.removeAllRanges(); g.addRange(r);
+    const dt = new DataTransfer();
+    d.dispatchEvent(new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true }));
+    return { html: dt.getData('text/html'), text: dt.getData('text/plain') };
+  });
+  expect(clip.html, '块级哨兵').toContain('data-ws2-clip="b"');
+  expect(clip.html, '档位 class 在剪贴板载荷里').toContain('ws-indent-2');
+  // 文档 B：全新文件、head 无 indent CSS——粘贴后 CSS 只可能来自 ensurePastedStyles（attach 自愈不会再跑）
+  await openDoc('<p id="t">目标段落甲</p><p id="u">目标段落乙</p>', '', 'dst-doc');
+  await clickIn('#t');
+  await frame.locator('body').evaluate((body, clip) => {
+    const d = body.ownerDocument; const el = body.querySelector('#t');
+    const g = d.getSelection(); const r = d.createRange();
+    r.selectNodeContents(el); r.collapse(false); g.removeAllRanges(); g.addRange(r);
+    const dt = new DataTransfer(); dt.setData('text/html', clip.html); dt.setData('text/plain', clip.text);
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, clip);
+  await page.waitForTimeout(300);
+  expect(await frame.locator('p.ws-indent-2').count(), '缩进块落地、class 保留').toBe(1);
+  expect(await frame.locator('head style[data-ws-schema-css="indent"]').count(), 'ensurePastedStyles 补注 indent CSS').toBe(1);
+  expect(Math.abs((await rectX('p.ws-indent-2')) - ((await rectX('#u')) + 48)), '粘贴目标文档里 2 档 = 48px 视觉真生效').toBeLessThanOrEqual(1);
+});
+
+test('15 no-op 不脏档：0 档 Shift+Tab / 首块 Tab 封顶不触发 markDirty（面包屑脏点保持隐藏）', async () => {
+  await launch();
+  await openDoc('<p id="a">甲</p><p id="b">乙</p>');
+  const dot = page.locator('#dirty-dot');
+  await clickIn('#b');
+  await page.waitForTimeout(300);
+  await expect(dot, '基线：点入编辑态本身不脏档').toBeHidden();
+  await shiftTab(); // 0 档再按 = 静默 no-op（next===cur 守卫）
+  await page.waitForTimeout(300);
+  await expect(dot, '0 档 Shift+Tab 不打 checkpoint/markDirty').toBeHidden();
+  await clickIn('#a');
+  await tab(); // 首块 maxAllowed=0 → next=0=cur → 同守卫
+  await page.waitForTimeout(300);
+  await expect(dot, '首块封顶 Tab 同样不脏档').toBeHidden();
+  expect(await frame.locator('[class*="ws-indent-"]').count(), '全程无 class 产生').toBe(0);
 });

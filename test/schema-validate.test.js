@@ -286,4 +286,8 @@ test('Track2 方案B：ws-indent-* class + head indent style → conform（schem
   // head 缺 indent style 也照样 conform——自愈是编辑器职责（refreshSemanticStyles），校验器不管
   const noStyle = v('<p class="ws-indent-3">x</p>');
   assert.equal(noStyle.conform, true, JSON.stringify(noStyle.violations));
+  // callout + indent 双 class 共存：校验器唯一读块级 class 的规则是裸 div 检查（classList.contains('ws-callout')
+  // 按词查、不按整串比），钉住多 class 不被误伤
+  const dual = v('<div class="ws-callout ws-indent-2"><p>x</p></div>');
+  assert.equal(dual.conform, true, JSON.stringify(dual.violations));
 });
