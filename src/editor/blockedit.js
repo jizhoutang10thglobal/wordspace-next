@@ -393,6 +393,7 @@
     let selectedEl = null;   // 灰选中的不可编辑块
     let editingEl = null;    // 正在文字编辑的块
     let hoverEl = null;      // 鼠标悬停的块（驱动 ⋮⋮ 定位）
+    let hoverRow = null;     // 悬停块为列表时的悬停行 <li>（U1 行级手柄；非列表块恒 null）
     let slash = null;        // { blockEl, query, active }
     let dragFrom = null;     // 拖拽重排的源块
     let fmtShown = false;    // 格式气泡是否显示——「粘住」用：选区折叠后不立即关，直到离开该块
@@ -496,6 +497,23 @@
       if (p !== blockRoot && !(p && p.tagName === 'DETAILS')) return null; // 作用域外 / 空白
       if (el.tagName === 'SUMMARY') return p; // summary 节点 → 归属其 details（供跨块删保护 / 灰选整块）
       return el;
+    }
+
+    // 列表块内的悬停行解析（U1 行级手柄）：目标在某个 li 内 → closest 取最深（嵌套行有自己的
+    // 手柄锚，对齐 Notion）；落在 ul padding/行间隙 → 按 clientY 找最近的 li（不留手柄真空区）。
+    function rowOf(target, listEl, clientY) {
+      let t = target && target.nodeType === 3 ? target.parentElement : target;
+      if (t && t.closest) {
+        const li = t.closest('li');
+        if (li && listEl.contains(li)) return li;
+      }
+      let best = null, bestD = Infinity;
+      for (const li of listEl.querySelectorAll('li')) {
+        const r = li.getBoundingClientRect();
+        const d = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
+        if (d < bestD) { bestD = d; best = li; }
+      }
+      return best;
     }
 
     // ---- 定位 ----
@@ -622,7 +640,7 @@
       exitEdit();
       clearSelectedAttr();
       selectedEl = null;
-      hoverEl = null; grip.style.display = 'none'; // 清悬停引用，防删块后幽灵手柄
+      hoverEl = null; hoverRow = null; grip.style.display = 'none'; // 清悬停引用，防删块后幽灵手柄
       closeBlockMenu();
       fmtbar.style.display = 'none'; fmtShown = false;
     }
@@ -2017,7 +2035,11 @@
       // 在手柄/菜单/气泡上移动：保持现状（手柄在块外 margin，移过去若隐藏就点不到了）
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
       const el = blockOf(e.target);
-      if (el && el !== hoverEl) { hoverEl = el; positionGrip(el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
+      // U1 行级手柄：列表块内手柄逐行跟随（锚 hoverRow），其余块仍锚整块。
+      // ⚠ A 阶段中间态（只在 feat/ux-granularity 隔离分支）：拖拽/菜单仍以 hoverEl（整块）为
+      // 作用对象，B/C 单元逐步下沉到行——进 main 前必须整体完成。
+      const row = (el && classify(el) === 'list') ? rowOf(e.target, el, e.clientY) : null;
+      if (el && (el !== hoverEl || row !== hoverRow)) { hoverEl = el; hoverRow = row; positionGrip(row || el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
       // 移到块外空白/gutter 间隙：不立即隐藏（停在最后悬停块、保证可点）；隐藏交给进编辑/离开文档。
     }
     // 鼠标抬起：收尾一次拖选。单块内选区 → 恢复进编辑（保留选区，可打字替换/气泡走编辑态分支）；
@@ -2051,7 +2073,7 @@
       }
       positionFmtbar();
     }
-    function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; grip.style.display = 'none'; } }
+    function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; hoverRow = null; grip.style.display = 'none'; } }
     // 折叠持久化（KD4/R8）：原生 toggle 事件 → markDirty 触发自动保存；绝不 checkpoint（折叠不是撤销步 KD5）。
     function onToggle(e) {
       if (!e.target || e.target.tagName !== 'DETAILS') return;
@@ -3446,7 +3468,7 @@
     // 撤销/重做后 body.innerHTML 被整体重写，旧的元素引用全失效 → 清空状态、收起所有覆盖层。
     function reset() {
       slash = null; slashMenu.style.display = 'none';
-      editingEl = null; selectedEl = null; hoverEl = null; dragFrom = null; fmtShown = false; captionEl = null; cellEl = null; // undo/redo 重写 body → 旧 figcaption/cell 引用失效
+      editingEl = null; selectedEl = null; hoverEl = null; hoverRow = null; dragFrom = null; fmtShown = false; captionEl = null; cellEl = null; // undo/redo 重写 body → 旧 figcaption/cell 引用失效
       body.querySelectorAll('[data-ws2-cell]').forEach((el) => el.removeAttribute('data-ws2-cell')); // 快照经 cleanedBodyHtml 已剥，此为兜底
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
       blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标（空块占高度用，非装饰）

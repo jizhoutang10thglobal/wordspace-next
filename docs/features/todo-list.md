@@ -52,6 +52,8 @@
 
 **跨 toggle 边界删除**见 `editor-cross-block-selection.md`（U23/select-4：部分跨界一致化为空操作 + 反馈动画）。
 
+**行级手柄悬停跟随（粒度对齐 U1=A，分支 feat/ux-granularity，2026-08-03）。** 悬停列表块（todo / 普通 `ul`/`ol`，含 toggle 体内列表）内任一行，⋮⋮ 手柄跟随锚到**该行**左缘：嵌套行取最深 `li`、锚随缩进右移（对齐 Notion 逐行手柄）；悬停落在行间隙 / ul padding 按 Y 就近吸附到最近行，无手柄真空区。非列表块仍锚整块，跨块跟随不变。悬停本身零 DOM 变更（不脏档）。⚠ **A 阶段中间态**：行旁手柄的**拖拽与菜单作用对象仍是整个列表块**（U2 行级拖拽 / U3 菜单行级作用域随后下沉）——该中间态只允许存在于隔离分支，A+B+C 整体完成才进 main（Colin 2026-08-03 拍板，plan `docs/plans/2026-08-03-002-feat-todo-row-granularity-plan.md`）。门：`e2e/list-row-grip.spec.js`。
+
 ## 文件映射
 
 | 维度 | ui-demo | 真 app |

@@ -1,0 +1,129 @@
+// U1 行级手柄悬停跟随（粒度对齐 A，plan 2026-08-03-002）：
+// 列表块内 ⋮⋮ 手柄逐行跟随（几何强断言，anchor 判定与对拍探针同口径）；非列表块锚整块不回归；
+// A 阶段不变式：拖拽仍整列表、菜单仍可开（U2/U3 下沉后改写这两条）。
+const { test, expect, _electron: electron } = require('@playwright/test');
+const fs = require('fs/promises');
+const path = require('path');
+const os = require('os');
+
+const ROOT = path.join(__dirname, '..');
+let app, page, frame, tmpDir;
+
+async function launch() {
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2rowgrip-'));
+  app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'ud'), WS2_NO_CLOSE_DIALOG: '1' } });
+  page = await app.firstWindow();
+  await page.waitForLoadState('domcontentloaded');
+  await page.setViewportSize({ width: 1280, height: 860 });
+}
+async function openDoc(body) {
+  const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title><style id="ws-todo-style" data-ws-schema-css="todo">.ws-todo{list-style:none}.ws-todo>li{list-style:none}</style></head><body>${body}</body></html>`;
+  const p = path.join(tmpDir, 'doc.html');
+  await fs.writeFile(p, html, 'utf8');
+  await app.evaluate(({ BrowserWindow }, pp) => { BrowserWindow.getAllWindows()[0].webContents.send('open-file', pp); }, p);
+  frame = page.frameLocator('#doc-frame');
+  await expect(frame.locator('body')).toBeVisible();
+  await page.waitForTimeout(400);
+}
+const serialize = () => page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
+// 手柄几何 + 目标元素 band 判定（对拍探针同口径）
+const gripCenter = () => page.evaluate(() => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const g = d.querySelector('.ws-grip');
+  if (!g || g.style.display === 'none') return null;
+  const r = g.getBoundingClientRect();
+  return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+});
+const bandOf = (sel) => page.evaluate((s) => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const el = d.querySelector(s);
+  const r = el.getBoundingClientRect();
+  return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left) };
+}, sel);
+async function hoverAndGrip(sel) {
+  await frame.locator(sel).hover();
+  await page.waitForTimeout(150);
+  const g = await gripCenter();
+  expect(g, `悬停 ${sel} 后手柄应可见`).not.toBeNull();
+  return g;
+}
+const inBand = (g, band) => g.y >= band.top && g.y <= band.bottom;
+
+test.afterEach(async () => {
+  if (app) { await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {}); await app.close().catch(() => {}); }
+  app = null; page = null; frame = null;
+});
+
+test('todo 三行：手柄逐行跟随（几何强断言）', async () => {
+  await launch();
+  await openDoc('<p id="pre">上方段落</p><ul class="ws-todo"><li id="r1">第一行待办</li><li id="r2">第二行待办</li><li id="r3">第三行待办</li></ul><p id="post">下方段落</p>');
+  const g1 = await hoverAndGrip('#r1');
+  const g2 = await hoverAndGrip('#r2');
+  const g3 = await hoverAndGrip('#r3');
+  expect(inBand(g1, await bandOf('#r1')), '悬停 r1 手柄在 r1 行内').toBe(true);
+  expect(inBand(g2, await bandOf('#r2')), '悬停 r2 手柄在 r2 行内').toBe(true);
+  expect(inBand(g3, await bandOf('#r3')), '悬停 r3 手柄在 r3 行内').toBe(true);
+  expect(g2.y, '手柄 y 随行下移').toBeGreaterThan(g1.y);
+  expect(g3.y, '手柄 y 随行下移').toBeGreaterThan(g2.y);
+  // 悬停零 DOM 变更：入盘序列化不含探针/手柄残留
+  const html = await serialize();
+  expect(html.includes('ws-grip'), '悬停不产生入盘残留').toBe(false);
+});
+
+test('普通 ol 同样逐行跟随（列表类型通吃）', async () => {
+  await launch();
+  await openDoc('<ol><li id="o1">甲</li><li id="o2">乙</li></ol>');
+  const g2 = await hoverAndGrip('#o2');
+  expect(inBand(g2, await bandOf('#o2')), '悬停 ol 第二项手柄在该行').toBe(true);
+});
+
+test('嵌套子列表行：锚最深 li 且随缩进右移', async () => {
+  await launch();
+  await openDoc('<ul class="ws-todo"><li id="r1">父项<ul class="ws-todo"><li id="n1">嵌套子项</li></ul></li><li id="r2">第二项</li></ul>');
+  const gTop = await hoverAndGrip('#r2');
+  const gNest = await hoverAndGrip('#n1');
+  expect(inBand(gNest, await bandOf('#n1')), '悬停嵌套行手柄在嵌套行内').toBe(true);
+  expect(gNest.x, '嵌套行手柄随缩进右移').toBeGreaterThan(gTop.x);
+});
+
+test('非列表块锚整块（不回归）+ 跨块跟随', async () => {
+  await launch();
+  await openDoc('<p id="pre">上方段落</p><ul class="ws-todo"><li id="r1">待办</li></ul>');
+  const gP = await hoverAndGrip('#pre');
+  expect(inBand(gP, await bandOf('#pre')), '悬停段落手柄在段落行内').toBe(true);
+  const gL = await hoverAndGrip('#r1');
+  expect(inBand(gL, await bandOf('#r1')), '移回列表手柄跟到行').toBe(true);
+});
+
+test('A 阶段不变式：手柄拖拽仍移动整个列表（U2 改写此条）', async () => {
+  await launch();
+  await openDoc('<p id="pre">上方段落</p><ul class="ws-todo"><li id="r1">一</li><li id="r2">二</li></ul><p id="post">下方段落</p>');
+  await frame.locator('#r2').hover();
+  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const grip = d.querySelector('.ws-grip');
+    const post = d.getElementById('post');
+    const dt = new DataTransfer();
+    grip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const r = post.getBoundingClientRect();
+    post.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + 20, clientY: r.y + r.height - 2 }));
+    post.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.x + 20, clientY: r.y + r.height - 2 }));
+    grip.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
+  await page.waitForTimeout(300);
+  const order = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.body.children].map((el) => el.tagName + (el.id ? '#' + el.id : ''));
+  });
+  expect(order.join(','), '拖拽单位仍是整个列表').toBe('P#pre,P#post,UL');
+});
+
+test('A 阶段不变式：行锚手柄点击菜单仍可开（U3 改作用域）', async () => {
+  await launch();
+  await openDoc('<ul class="ws-todo"><li id="r1">一</li><li id="r2">二</li></ul>');
+  await frame.locator('#r2').hover();
+  await page.waitForTimeout(150);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+});
