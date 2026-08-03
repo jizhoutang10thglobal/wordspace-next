@@ -39,8 +39,11 @@ ln -s <某个已有 worktree>/node_modules <scratchpad>/wt-probe/node_modules   
 把每个事实取成结构化 JSON（几何 / DOM 顺序 / 计数 / computed style）**并且截图**。
 参考实现：`e2e/list-row-grip.spec.js` 的 `gripCenter()`/`bandOf()` 几何口径。
 
-**鼠标位置要标出来**：截图前往 iframe 里注入一个 `position:fixed` 的红圈标注指针位置、
-截完删掉。没有这个标注，读者看不出「鼠标在哪」，截图就说明不了悬停类的事实。
+**鼠标位置要标出来**：截图前画个红圈标注指针位置、截完删掉。没有这个标注，读者看不出「鼠标在哪」，
+截图就说明不了悬停类的事实。⚠ **红圈必须画在外层窗口文档，不能注进 iframe**——往 iframe 里注元素
+会让编辑器把 `.ws-grip`/`.ws-plus` 藏掉（截出一排空 gutter 的假证据），更阴的是注入之后「+」点击
+会变成 no-op，能让你把「功能没生效」当成结论报上去（实证踩过）。正确做法：拿 `#doc-frame` 的
+boundingBox 把 iframe 内坐标换算成窗口坐标，在**外层** document 上画。
 
 ### Notion 侧（ego-browser + 裸 CDP + Notion MCP）
 
@@ -114,11 +117,28 @@ Colin approve 后走 brainstorm → plan → 逐单元实现：
 - **悬停要有真实轨迹**：先移到别处再移入目标，直接跳到目标常常不触发 hover 态。
 - **修饰键必须裸 CDP**：`pressKey('Shift+Tab')` 是假键，要
   `Input.dispatchKeyEvent` 带 `modifiers:8`（这条在 ego-browser 上栽过两次）。
+- **`Input.dispatchKeyEvent` 用 `type:'rawKeyDown'` 时 Notion 收不到 Tab/Backspace**（静默 no-op），
+  必须用 `type:'keyDown'`。
+- **Notion 的 caret 定位别信 `Meta+ArrowLeft`**（实测停在 offset 2，Backspace 变成删字符）；用 DOM
+  Range `setStart(textNode,0)` + 手动派发 `selectionchange`。
+- **Notion 块菜单渲染在页面左侧**（x 可能落在侧栏区），按「包含 Delete 的固定定位祖先」找容器会命中
+  `body`；直接按菜单项文本命中拿坐标更稳。菜单开启本身约 1/3 失败率，要写重试。
+- **打字型探针别把步骤串起来跑**：`End`+`Enter`+`typeText` 连打时 Enter 常来不及生效、文字灌进上一个
+  块。每步之后读回状态确认再走下一步，慢但一次过。
 - Notion DOM 锚点：todo 行 `.notion-to_do-block`、拖拽手柄 `svg.dragHandle`（浮动 overlay，
   不是每行常驻节点）、gutter 按钮读 `aria-label`（`Click to add below. Option-click…` /
   `Drag to move, click to open menu`——**这是最可靠的语义证据，比截图更硬**）。
 
 **Wordspace 侧 / 通用**
+- **别用 Playwright 真鼠标驱动块拖拽**：手柄走 HTML5 原生 DnD，`mouse.down()` 后 `mouse.move()` 会进
+  drag loop 不返回、**把 Electron 卡死**（要按 PID 杀）。用合成 `DragEvent`（dragstart on `.ws-grip`
+  → dragover/drop on target，带 `clientX/clientY` + `DataTransfer`），打的是同一套 handler。
+  **但合成拖拽必须配正对照**（同类拖拽真重排 / 拖到段落旁真拆出），否则「零变更」这种读数分不清是
+  真行为还是探针没打出去 = 哑探针。
+- **`open-file` IPC 重放约 1/8 概率静默不生效**，后续所有 openDoc 全在旧文档上跑、产出错数据。每份
+  fixture 带唯一哨兵 id + `expect(...).toBeVisible()` 校验，失败重发或重启 app。
+- **悬停带嵌套子树的行**：元素几何中心落在**子列表**上，`locator.hover()` 会解析到嵌套行。要瞄父行
+  自己那一行文字：`hover({ position: { x: 20, y: 8 } })`。
 - **`pkill -f <worktree 名>` 不可靠且危险**：worktree 的 `node_modules` 常软链到别的 worktree，
   Electron 进程命令行写的是被软链指向的那个路径 → 按本 worktree 名匹配不到（却会误杀正在跑的
   测试，实测干掉过自己的 e2e）。要按 `node_modules/electron/dist/Electron.app` 真实路径匹配或记 PID。
@@ -134,6 +154,11 @@ Colin approve 后走 brainstorm → plan → 逐单元实现：
 - **新增用户可见文案必须走 i18n 字典**（zh + en 双词条），硬编码中文会被 CJK 扫描门咬。
 
 ## 已完成的样板（拿来当模板读）
+
+已跑过三个维度（都在分支 `feat/ux-granularity`）：**todo A-D**、**编号列表**（11 事实 7 同 4 修、
+无待决项）、**无序列表**（14 事实 6 同 4 修 4 待拍板，含一个「行转为吞掉嵌套子项」的丢内容 bug）。
+经验：**同类块常走同一套代码路径**（编号/无序与 todo 都是 `classify(el)==='list'`），先做的维度会自动
+惠及后面的——但**必须实测确认、不能假设**，报告里写明「继承自 X 维度、已实测」。
 
 todo 列表块粒度 A-D（2026-08-03，分支 `feat/ux-granularity`）：
 - 对拍报告（7 条事实、2 同 5 异）：artifact `8b630c70`
