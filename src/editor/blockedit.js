@@ -394,6 +394,7 @@
     let editingEl = null;    // 正在文字编辑的块
     let hoverEl = null;      // 鼠标悬停的块（驱动 ⋮⋮ 定位）
     let hoverRow = null;     // 悬停块为列表时的悬停行 <li>（U1 行级手柄；非列表块恒 null）
+    let menuRow = null;      // U3 行作用域菜单的目标行（仅行模式非空；随 closeBlockMenu 清）
     let slash = null;        // { blockEl, query, active }
     let dragFrom = null;     // 拖拽重排的源块
     let fmtShown = false;    // 格式气泡是否显示——「粘住」用：选区折叠后不立即关，直到离开该块
@@ -1764,10 +1765,34 @@
       trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
     };
     const menuIcon = (k) => '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON[k] + '</svg>';
-    function openBlockMenu(el) {
+    // U3 行级作用域菜单（plan 2026-08-03-002）：删掉一行 —— 掏空的列表按位置收敛
+    //（嵌套子列表移除、宿主行保留；顶层列表 de-list 成空段落进编辑，顺带满足 toggle 体「≥1 块」铁则）。
+    function removeRow(row) {
+      const list = row.parentElement;
+      const hostLi = list && list.parentElement && list.parentElement.tagName === 'LI' ? list.parentElement : null;
+      row.remove();
+      if (!list.querySelector('li')) {
+        if (hostLi) { list.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty(); deselect(); caretAtLiTextEnd(hostLi); return; }
+        const p = doc.createElement('p'); p.appendChild(doc.createElement('br'));
+        list.replaceWith(p);
+        if (undoMgr) undoMgr.checkpoint(); markDirty(); deselect();
+        enterEdit(p, { mode: 'start' });
+        return;
+      }
+      if (undoMgr) undoMgr.checkpoint(); markDirty(); deselect();
+    }
+    // el = 作用块；row = 行作用域目标 <li>（行锚手柄开菜单时给，Esc 灰选入口不给 = 块作用域）
+    function openBlockMenu(el, row) {
       // 表格行列操作的「当前格」快照：必须在 selectBlock（会 exitCell）之前取——菜单项点击时 cellEl 早已清空
       const menuCell = (cellEl && el.contains && el.contains(cellEl)) ? cellEl : null;
-      selectBlock(el);
+      const rowMode = !!(row && row.tagName === 'LI' && classify(el) === 'list' && el.contains(row));
+      if (rowMode) {
+        // 作用域诚实可见：高亮那一行、不圈整张列表。**不设 selectedEl**——它是「块灰选」状态，
+        // 塞个 <li> 进去会让 Delete 键 / removeBlock 的 topBlocks 计数按块语义误伤（li 不是顶层块）。
+        exitCell(); exitEdit(); clearSelectedAttr(); selectedEl = null;
+        menuRow = row; row.setAttribute('data-ws2-selected', '');
+        positionFmtbar();
+      } else selectBlock(el);
       blockMenu.innerHTML = '';
       const add = (label, on, danger, icon) => {
         const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : '');
@@ -1777,7 +1802,11 @@
         it.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); on(); });
         blockMenu.appendChild(it); return it;
       };
-      const sub = (label, item, icon) => add(label, () => { const nx = turnInto(el, item); closeBlockMenu(); selectBlock(nx); }, false, icon);
+      // 「转为」：行模式抽出该行转（复用 #346 的 turnIntoLines，前后剩余项仍是原列表）；块模式整块转。
+      const sub = (label, item, icon) => add(label, () => {
+        const nx = rowMode ? turnIntoLines(el, [row], item) : turnInto(el, item);
+        closeBlockMenu(); if (nx) selectBlock(nx);
+      }, false, icon);
       // 修 ED-B1：「转为」只对文字承载块给（table/img/hr 等结构块转正文会把表格文字黏成团 / 图片直接消失、
       // 属性搬到 h2 上）。非可编辑块只留插入/复制/删除。
       if (isEditableEl(el)) {
@@ -1829,9 +1858,22 @@
       if (classify(el) === 'image' && !(el.querySelector && el.querySelector('figcaption'))) {
         add(T('editor.addCaption'), () => { closeBlockMenu(); addCaption(el); }, false, 'text');
       }
-      add(T('editor.insertBelow'), () => { const nx = insertAfter(el, itemByKey('text')); closeBlockMenu(); enterEdit(nx, { mode: 'start' }); }, false, 'plus');
-      add(T('editor.duplicate'), () => { const c = fmt.duplicateBlock(el); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); if (c) selectBlock(c); }, false, 'copy');
-      add(T('common.delete'), () => { closeBlockMenu(); removeBlock(el); }, true, 'trash');
+      // 插入 / 复制 / 删除：行模式作用于该行（新行插同列表、复制行、删行），块模式维持既有整块语义。
+      add(T('editor.insertBelow'), () => {
+        if (rowMode) {
+          const li = doc.createElement('li'); li.appendChild(doc.createElement('br')); row.after(li);
+          if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu();
+          enterEdit(el, { mode: 'start' }); caretAtLiTextEnd(li);
+          return;
+        }
+        const nx = insertAfter(el, itemByKey('text')); closeBlockMenu(); enterEdit(nx, { mode: 'start' });
+      }, false, 'plus');
+      add(T('editor.duplicate'), () => {
+        const c = fmt.duplicateBlock(rowMode ? row : el); // 对 <li> 同样适用（克隆后剥 id，防锚点重复）
+        if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu();
+        if (c && !rowMode) selectBlock(c);
+      }, false, 'copy');
+      add(T('common.delete'), () => { closeBlockMenu(); if (rowMode) removeRow(row); else removeBlock(el); }, true, 'trash');
       // 颜色行（#85：前面补分隔线，对齐 ui-demo 删除与色板之间的 sep）。只给文字承载块——
       // 原子块（图片/分隔线）上色无意义（上色本就 gated 在 isEditableEl，露空色板是误导，对齐 ui-demo）。
       if (isEditableEl(el)) {
@@ -1840,7 +1882,7 @@
         TEXT_COLORS.forEach((c) => { const sw = doc.createElement('button'); sw.setAttribute('data-ws2-ui', WS2_OVERLAY); sw.className = 'ws-blockmenu-swatch'; sw.style.background = c;
           sw.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
           // A2/§0决策1：块级上色用 ws-color class（不写 el.style——块 style 被校验器判非法）。默认色=清 class。
-          sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); TEXT_COLORS.forEach((c2) => el.classList.remove('ws-color-' + c2.slice(1))); if (c !== TEXT_COLORS[0]) { el.classList.add('ws-color-' + c.slice(1)); ensureColorStyle(); } if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); });
+          sw.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const tgt = rowMode ? row : el; TEXT_COLORS.forEach((c2) => tgt.classList.remove('ws-color-' + c2.slice(1))); if (c !== TEXT_COLORS[0]) { tgt.classList.add('ws-color-' + c.slice(1)); ensureColorStyle(); } if (!tgt.getAttribute('class')) tgt.removeAttribute('class'); if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu(); });
           colors.appendChild(sw); });
         blockMenu.appendChild(colors);
       }
@@ -1849,7 +1891,10 @@
       blockMenu.style.top = (r.bottom + sy + 4) + 'px';
       blockMenu.style.display = 'block';
     }
-    function closeBlockMenu() { blockMenu.style.display = 'none'; }
+    function closeBlockMenu() {
+      blockMenu.style.display = 'none';
+      if (menuRow) { menuRow.removeAttribute('data-ws2-selected'); menuRow = null; } // U3：行作用域高亮随菜单退场
+    }
 
     // ---- 斜杠菜单 ----
     function openSlash(blockEl) {
@@ -2938,6 +2983,9 @@
       }
       // Esc：编辑 → 灰选中；灰选中 → 取消
       if (e.key === 'Escape') {
+        // U3 行作用域菜单开着时（无 editingEl / selectedEl，Esc 本会空转）→ 关菜单、清行高亮。
+        // 只在这一态接管，块作用域的既有阶梯（editing→灰选→deselect，deselect 自带关菜单）一字不动。
+        if (menuRow && !editingEl && !selectedEl) { closeBlockMenu(); e.preventDefault(); e.stopPropagation(); return; }
         if (editingEl) { const el = editingEl; exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return; }
         if (selectedEl) { deselect(); e.preventDefault(); e.stopPropagation(); return; }
       }
@@ -3001,7 +3049,7 @@
 
     // grip 交互
     grip.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-    grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const el = selectedEl || hoverEl; if (el) openBlockMenu(el); });
+    grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const el = selectedEl || hoverEl; if (el) openBlockMenu(el, selectedEl ? null : hoverRow); }); // U3：行锚手柄=行作用域；Esc 灰选=块作用域
     // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
     grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverRow || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
@@ -3530,7 +3578,7 @@
     // 撤销/重做后 body.innerHTML 被整体重写，旧的元素引用全失效 → 清空状态、收起所有覆盖层。
     function reset() {
       slash = null; slashMenu.style.display = 'none';
-      editingEl = null; selectedEl = null; hoverEl = null; hoverRow = null; dragFrom = null; fmtShown = false; captionEl = null; cellEl = null; // undo/redo 重写 body → 旧 figcaption/cell 引用失效
+      editingEl = null; selectedEl = null; hoverEl = null; hoverRow = null; menuRow = null; dragFrom = null; fmtShown = false; captionEl = null; cellEl = null; // undo/redo 重写 body → 旧 figcaption/cell 引用失效
       body.querySelectorAll('[data-ws2-cell]').forEach((el) => el.removeAttribute('data-ws2-cell')); // 快照经 cleanedBodyHtml 已剥，此为兜底
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
       blockRoot.setAttribute('data-ws2-root', ''); // 重算后块容器换了节点，重新打标（空块占高度用，非装饰）
