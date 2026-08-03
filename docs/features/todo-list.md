@@ -94,6 +94,8 @@
 - ui-demo 侧：commit `5970bf5`（2026-07-22，最近 ui-demo 改动；todo 行为**从未与真 app 做过一次对齐**，本锚点仅为记录当前状态）
 - app 侧：todo-list UX sweep 修复计划 PR-A~E 全量（2026-07-23）。本 PR = **PR-E**（剪贴板与视觉 P3：U21 块粘贴 id 去重 / U22 外部 todo 文本转换 / U23 跨 toggle 删除一致化 / U24 热区几何 / U25 勾选框对比度 / U26 removeAttribute / U27 深色 emoji 记录制）。
 
+**对抗审查加固（2026-08-04，合并前那道门）。** 七条 findings 全修，硬知识：①**复合操作期间绝不落 undo 快照**——`turnIntoLines` 摘下嵌套子树后调 `turnInto`，其内部 checkpoint 记的是「子项已消失」的中间态，一次 undo 精准落到它并被自动保存写盘（真丢内容）。修=子树离开 DOM 期间 `ckSuppressed`，接回后统一落一次。②**嵌套行不给「转为」组**（同「+」的结构性分歧）；`turnIntoLines` 对非直接子项返回 `null` 而不是回落「整块转」——那个兜底会把整张列表拍成一个段落。③**gutter 的锚点也要单一出口**（`gutterAnchor()`）：只收口显隐不够，`enterEdit`/`onScroll` 只认 `hoverEl` 会让手柄画在首行、而「+」/菜单/拖拽作用在 `hoverRow` 那行。④行级状态（`menuRow`）要防悬垂：`removeRow` 加 `isConnected` 守卫、`selectWholeDoc` 补 `closeBlockMenu()`。⑤克隆前先关菜单，否则 `data-ws2-selected` 被 `cloneNode` 拷进副本。⑥删嵌套唯一子行后必须 `enterEdit` 补编辑宿主，只放 Range 会让文档零 `contenteditable`、后续键入全丢。⑦**`:empty` 表达不了「编辑过的空块」**——contenteditable 必留 `<br>`，空态判据改属性驱动（`data-ws2-empty`，serialize 白名单剥除）。门：`e2e/list-row-review-fixes.spec.js`（7 条，每条先证能复现再修）。
+
 **⚠ ui-demo 侧漂移（本轮产生，2026-08-04）**：与 Notion 的粒度对齐（行级手柄 / 行级拖拽 / 菜单行级作用域 / gutter「+」/ 嵌套 marker 层级 / `ol` 序号语义 / 行「转为」保子项 / markdown `+ `）全部只做在真 app，**ui-demo 未跟进**。按仓库铁律当场进账本、不等审计；是否回流由 Colin 定。
 
 ## 欠账
