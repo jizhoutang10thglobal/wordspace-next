@@ -45,12 +45,15 @@ mac 用 zip + latest-mac.yml、win 用 exe + latest.yml 给 electron-updater 做
 
 按 [`shipping-verification-checklist.md`](shipping-verification-checklist.md) 在宿主 mac 上验证签名 / 公证 / staple，以及自动更新能真正拉到新版本。
 
-## Release notes（2026-07-12 起的约定）
+## Release notes（2026-07-12 起的约定；2026-07-17 起分「完整版/简洁版」）
 
-- 每次发版后给该版本写一段**用户可见说明**，落两处：
-  1. 仓库根 [`CHANGELOG.md`](../CHANGELOG.md)（**正本**，倒序）；
-  2. 同步到该版本 GitHub Release 页顶部（自动生成的 PR 列表保留在下方给开发者）。
-- 同一段内容还会自动流到两处，**不用手动同步**：
+- 每次发版后给该版本写**两档**用户可见说明（Wendi 2026-07-17「更新通知尽量简洁,changelog 反而可以完整」）：
+  1. **完整版** → 仓库根 [`CHANGELOG.md`](../CHANGELOG.md)（**正本**，倒序）+ `CHANGELOG.en.md`（双语同写，见下）；
+  2. **简洁版** → 该版本 GitHub Release 页顶部：**1 句导语 + ≤5 条要点（每条 ≤20 字，不用 `###` 分组头）**；
+     `---` 之下放一行「完整更新说明：https://wordspace.ai/changelog」+ 自动生成的 PR 列表。
+     ⚠ **App 内更新面板显示的就是 Release 顶部这段**——写长了用户弹窗里读不完。代码另有硬保险：
+     `parseReleaseNotes` 截 8 行 + 尾行提示点「更新日志」看完整版（`src/lib/update-status.js`，有单测）。
+- 内容会自动流到两处，**不用手动同步**：
   - App 内更新面板（electron-updater 拉 Release body，`src/lib/update-status.js` 解析 `---` 之上的部分）；
   - 官网 [wordspace.ai/changelog](https://wordspace.ai/changelog)（构建时渲染 CHANGELOG.md；
     `website/vercel.json` 的 ignoreCommand 已放行根目录 CHANGELOG.md / CHANGELOG.en.md 的变更触发重建——改这个闸前想清楚方向）。

@@ -537,6 +537,19 @@ body.ws-web-on #ws-degrade-notice { display: none !important; }
   width: 3px;
   background: var(--c-accent);
 }
+/* 上尖角：从下载按钮下方「弹出」的小气泡指向按钮（Colin 2026-07-24）。right 由 JS 内联 --dl-caret-right 对准按钮中心。 */
+.dl-toast::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  right: var(--dl-caret-right, 12px);
+  width: 11px;
+  height: 11px;
+  background: var(--c-surface);
+  border-left: 1px solid var(--c-border);
+  border-top: 1px solid var(--c-border);
+  transform: rotate(45deg);
+}
 
 /* ---- popover 本体 ---- */
 /* veil：盖整个视口收侧栏区 click（网页区在原生 view 之下、吞 click，靠 Esc/图标 toggle 关，spec §4.11）。
