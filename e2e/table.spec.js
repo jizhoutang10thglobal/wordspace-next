@@ -264,6 +264,175 @@ test('U2: 灰选整表 Enter 进首格', async () => {
   expect(state.selected).toBe(0);
 });
 
+// ===== U3：cell 键盘契约 =====
+
+const cellId = () => frame.locator('body').evaluate(() => (document.querySelector('[data-ws2-cell]') || {}).id || (document.querySelector('[data-ws2-cell]') || {}).tagName || null);
+
+// U3-1：cell 中间 Enter → 不产生 <div>，光标跳下一行同列；末行 Enter → 建新行（恒落 tbody 恒产 TD）。
+test('U3: Enter 跳下行同列 / 末行 Enter 建行', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c12').click();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(120);
+  expect(await cellId()).toBe('c22'); // 同列（col 1）下一行
+  const clean = await frame.locator('body').evaluate(() => ({
+    divs: document.querySelectorAll('td div, th div').length,
+    c12: document.getElementById('c12').textContent,
+  }));
+  expect(clean.divs).toBe(0);
+  expect(clean.c12).toBe('十二');
+  await page.keyboard.press('Enter'); // c22 是末行 → 建新行、落同列
+  await page.waitForTimeout(150);
+  const grown = await frame.locator('body').evaluate(() => {
+    const t = document.querySelector('table');
+    const rows = [...t.querySelectorAll('tbody tr')];
+    const last = rows[rows.length - 1];
+    const cells = [...last.children];
+    return { rows: rows.length, cells: cells.length, allTd: cells.every((c) => c.tagName === 'TD'), editingInLast: !!last.querySelector('[data-ws2-cell]') };
+  });
+  expect(grown.rows).toBe(3);
+  expect(grown.cells).toBe(3); // 矩形保持
+  expect(grown.allTd).toBe(true);
+  expect(grown.editingInLast).toBe(true);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U3-2：Tab/Shift+Tab 移格（行内→折行）；末格 Tab 建行；新空行行首 Backspace 删行（最小逆操作闭环）。
+test('U3: Tab 移格 / 末格 Tab 建行 / 空行 Backspace 删行', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c11').click();
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(100);
+  expect(await cellId()).toBe('c12');
+  await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); await page.keyboard.up('Shift');
+  await page.waitForTimeout(100);
+  expect(await cellId()).toBe('c11');
+  await frame.locator('#c23').click();
+  await page.keyboard.press('Tab'); // 末格 → 建行
+  await page.waitForTimeout(150);
+  const grown = await frame.locator('body').evaluate(() => ({ rows: document.querySelectorAll('tbody tr').length }));
+  expect(grown.rows).toBe(3);
+  await page.keyboard.press('Backspace'); // 新空行行首 → 删该行（Colin 拍板的对称逆操作）
+  await page.waitForTimeout(150);
+  const shrunk = await frame.locator('body').evaluate(() => ({
+    rows: document.querySelectorAll('tbody tr').length,
+    rect: (() => { const cs = [...document.querySelectorAll('tr')].map((r) => r.children.length); return cs.every((n) => n === cs[0]); })(),
+  }));
+  expect(shrunk.rows).toBe(2);
+  expect(shrunk.rect).toBe(true);
+  expect(await cellId()).toBe('c23'); // 光标回上一行末格
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// U3-3：非空行行首 Backspace = no-op（不跨格并字、不删结构）。
+test('U3: 非空行行首 Backspace no-op', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c21').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(120);
+  const state = await frame.locator('body').evaluate(() => ({
+    rows: document.querySelectorAll('tbody tr').length,
+    c21: document.getElementById('c21').textContent,
+    c13: document.getElementById('c13').textContent,
+  }));
+  expect(state.rows).toBe(2);
+  expect(state.c21).toBe('廿一'); // 没被并进上一格
+  expect(state.c13).toBe('十三格子');
+});
+
+// U3-4：⌘A 三档——①本格 ②整表灰选 ③全篇。
+test('U3: ⌘A 三档分级', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c12').click();
+  await page.keyboard.press('Meta+a');
+  await page.waitForTimeout(100);
+  const t1 = await frame.locator('body').evaluate(() => String(document.getSelection()).replace(/\s+/g, ''));
+  expect(t1).toBe('十二'); // ① 本格
+  await page.keyboard.press('Meta+a');
+  await page.waitForTimeout(100);
+  const t2 = await frame.locator('body').evaluate(() => ({
+    sel: (document.querySelector('[data-ws2-selected]') || {}).tagName || null,
+    cells: document.querySelectorAll('[data-ws2-cell]').length,
+  }));
+  expect(t2.sel).toBe('TABLE'); // ② 整表灰选
+  expect(t2.cells).toBe(0);
+  await page.keyboard.press('Meta+a');
+  await page.waitForTimeout(150);
+  const t3 = await frame.locator('body').evaluate(() => { const s = String(document.getSelection()).replace(/\s+/g, ''); return { hasP1: s.includes('前文段落甲'), hasP2: s.includes('后文段落乙'), hasCell: s.includes('廿二格') }; });
+  expect(t3.hasP1 && t3.hasP2 && t3.hasCell).toBe(true); // ③ 全篇
+});
+
+// U3-5：方向键——↓ 同列跨行、表末行 ↓ 跳出到下一块；↑ 进 thead、再 ↑ 跳出到上一块；空格 ←→ 跨格。
+test('U3: 方向键跨格与表界跳出', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c12').click();
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(100);
+  expect(await cellId()).toBe('c22');
+  await page.keyboard.press('ArrowDown'); // 末行 ↓ → 跳出到 #p2
+  await page.waitForTimeout(120);
+  const out = await frame.locator('body').evaluate(() => ({
+    editing: (document.querySelector('[data-ws2-editing]') || {}).id || null,
+    cells: document.querySelectorAll('[data-ws2-cell]').length,
+  }));
+  expect(out.editing).toBe('p2');
+  expect(out.cells).toBe(0);
+  // ↑ 从 c12 进 thead 同列，再 ↑ 跳出到 #p1
+  await frame.locator('#c12').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(100);
+  const inHead = await frame.locator('body').evaluate(() => { const c = document.querySelector('[data-ws2-cell]'); return c ? { tag: c.tagName, text: c.textContent } : null; });
+  expect(inHead.tag).toBe('TH');
+  expect(inHead.text).toBe('乙'); // 同列（col 1）
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(120);
+  const out2 = await frame.locator('body').evaluate(() => ({ editing: (document.querySelector('[data-ws2-editing]') || {}).id || null }));
+  expect(out2.editing).toBe('p1');
+});
+
+// U3-6：KTD6 探针——打字（500ms 防抖窗口内）紧接末格 Tab 建行，undo 只回滚行、不吞字。
+test('U3: 建行前置 checkpoint——undo 只回滚行不吞打字', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c23').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('尾字');
+  await page.keyboard.press('Tab'); // 立刻建行（打字债还在防抖窗口内）
+  await page.waitForTimeout(150);
+  expect(await frame.locator('body').evaluate(() => document.querySelectorAll('tbody tr').length)).toBe(3);
+  await menu('undo');
+  await page.waitForTimeout(250);
+  const after = await frame.locator('body').evaluate(() => ({
+    rows: document.querySelectorAll('tbody tr').length,
+    c23: document.getElementById('c23').textContent,
+  }));
+  expect(after.rows).toBe(2); // 行被回滚
+  expect(after.c23).toBe('廿三尾字'); // 字保住（前置 checkpoint 结算了打字债）
+});
+
+// U3-7：IME 组词 guard——keyCode 229 的 Enter 不移格（合成事件直测 guard 分支）。
+test('U3: 组词中 Enter 不移格（229 guard）', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c11').click();
+  await page.waitForTimeout(100);
+  await frame.locator('body').evaluate(() => {
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'keyCode', { get: () => 229 });
+    document.getElementById('c11').dispatchEvent(ev);
+  });
+  await page.waitForTimeout(100);
+  expect(await cellId()).toBe('c11'); // 没移格
+});
+
 // U1-4：非空锚块造表 → 插到锚块下方（锚块保留），undo 一步撤掉整个造表。
 test('U1: 非空块造表插下方 + undo 一步还原', async () => {
   await launch();

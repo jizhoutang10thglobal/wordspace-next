@@ -78,6 +78,64 @@ test('firstCellOf: thead 优先取 R1C1；无 thead 时取 tbody 首格；空壳
   assert.equal(be.firstCellOf(el('<table></table>')), null);
 });
 
+// ===== U3：键盘导航纯逻辑 =====
+const NAV_TABLE = '<table><thead><tr><th>头一</th><th>头二栏</th><th>头三</th></tr></thead>'
+  + '<tbody><tr><td>体一一</td><td>体一二格</td><td>体一三</td></tr>'
+  + '<tr><td>体二一格子</td><td>体二二</td><td>体二三</td></tr></tbody></table>';
+
+test('cellPosOf/cellAt: 行列坐标（thead 是第 0 行；spacer 行不计）', () => {
+  const t = el(NAV_TABLE);
+  const rows = be.tableRowsOf(t);
+  const c11 = be.rowCellsOf(rows[1])[0];
+  assert.deepEqual(be.cellPosOf(t, c11), { row: 1, col: 0 });
+  assert.equal(be.cellAt(t, 0, 1).textContent, '头二栏');
+  assert.equal(be.cellAt(t, 2, 2).textContent, '体二三');
+  assert.equal(be.cellAt(t, 3, 0), null);
+});
+
+test('cellNavTarget: next 行内先行、行末折行、末格要求建行（落首列）', () => {
+  const t = el(NAV_TABLE);
+  const at = (r, c) => be.cellAt(t, r, c);
+  assert.equal(be.cellNavTarget(t, at(0, 0), 'next').cell, at(0, 1));
+  assert.equal(be.cellNavTarget(t, at(0, 2), 'next').cell, at(1, 0)); // 行末折到下一行首
+  assert.deepEqual(be.cellNavTarget(t, at(2, 2), 'next'), { newRow: true, col: 0 }); // 末格 Tab → 建行
+});
+
+test('cellNavTarget: prev 行内退行、行首退上一行末、首格要求跳出', () => {
+  const t = el(NAV_TABLE);
+  const at = (r, c) => be.cellAt(t, r, c);
+  assert.equal(be.cellNavTarget(t, at(1, 1), 'prev').cell, at(1, 0));
+  assert.equal(be.cellNavTarget(t, at(1, 0), 'prev').cell, at(0, 2)); // 行首退到上一行末格
+  assert.deepEqual(be.cellNavTarget(t, at(0, 0), 'prev'), { exit: 'up' });
+});
+
+test('cellNavTarget: up/down 同列跨行、表界跳出；enter 末行要求建行（落同列）', () => {
+  const t = el(NAV_TABLE);
+  const at = (r, c) => be.cellAt(t, r, c);
+  assert.equal(be.cellNavTarget(t, at(0, 1), 'down').cell, at(1, 1));
+  assert.deepEqual(be.cellNavTarget(t, at(2, 1), 'down'), { exit: 'down' });
+  assert.deepEqual(be.cellNavTarget(t, at(0, 1), 'up'), { exit: 'up' });
+  assert.equal(be.cellNavTarget(t, at(1, 2), 'enter').cell, at(2, 2));
+  assert.deepEqual(be.cellNavTarget(t, at(2, 1), 'enter'), { newRow: true, col: 1 }); // 末行 Enter → 建行落同列
+});
+
+test('cellNavTarget: 含 spacer 行的分页表——导航目标不落 spacer（长度非对称 fixture）', () => {
+  const t = el('<table><tbody><tr><td>甲行内容</td></tr>'
+    + '<tr class="ws-page-spacer" data-ws2-ui="__ws2-overlay__"><td>推挤占位行长长长</td></tr>'
+    + '<tr><td>乙</td></tr></tbody></table>');
+  const rows = be.tableRowsOf(t);
+  assert.equal(rows.length, 2);
+  const down = be.cellNavTarget(t, be.rowCellsOf(rows[0])[0], 'down');
+  assert.equal(down.cell.textContent, '乙'); // 跳过 spacer 直达下一数据行
+});
+
+test('cellNavTarget: header-only 表（GFM 合法产物）——enter/next 都要求建行', () => {
+  const t = el('<table><thead><tr><th>仅表头一</th><th>仅表头二</th></tr></thead></table>');
+  const th2 = be.cellAt(t, 0, 1);
+  assert.deepEqual(be.cellNavTarget(t, th2, 'enter'), { newRow: true, col: 1 });
+  assert.deepEqual(be.cellNavTarget(t, th2, 'next'), { newRow: true, col: 0 });
+});
+
 test('tableSeed 产物 reparse 后过校验器（conform，含在完整合规文档中）', () => {
   const d = docOf('<!DOCTYPE html><html><body></body></html>');
   const t = be.tableSeed(d);
