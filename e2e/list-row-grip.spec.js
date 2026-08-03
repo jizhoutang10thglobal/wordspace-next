@@ -127,14 +127,23 @@ test('嵌套行勾选框 gutter 悬停：手柄不跳回父项（Colin 试玩实
   await frame.locator('#n1').hover();
   await page.waitForTimeout(150);
   const frameBox = await page.locator('#doc-frame').boundingBox();
-  const li = await page.evaluate(() => {
+  // 坏区=「elementFromPoint 命中嵌套 <ul> 容器本身」的像素带（勾选框归 li、命中不了它）。
+  // 在嵌套行中线上从 ul 左缘往右扫，找到第一个确凿命中 ul 的点——不猜像素，扫不到就是 fixture 变了直接 fail。
+  const pt = await page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
-    const r = d.getElementById('n1').getBoundingClientRect();
-    return { left: Math.round(r.left), cy: Math.round(r.top + r.height / 2) };
+    const n1 = d.getElementById('n1');
+    const nul = n1.parentElement;
+    const r = n1.getBoundingClientRect();
+    const ur = nul.getBoundingClientRect();
+    const cy = Math.round(r.top + r.height / 2);
+    for (let x = Math.round(ur.left) + 1; x < Math.round(r.left); x += 2) {
+      if (d.elementFromPoint(x, cy) === nul) return { x, cy };
+    }
+    return null;
   });
-  // 分两步逼近，模拟真实「往手柄挪」的轨迹：文字左缘 → 勾选框区（li 左缘外 12px）
-  await page.mouse.move(frameBox.x + li.left + 2, frameBox.y + li.cy);
-  await page.mouse.move(frameBox.x + li.left - 12, frameBox.y + li.cy);
+  expect(pt, '必须存在命中嵌套 ul 容器的 gutter 像素带（fixture 前提）').not.toBeNull();
+  await page.mouse.move(frameBox.x + pt.x + 30, frameBox.y + pt.cy);
+  await page.mouse.move(frameBox.x + pt.x, frameBox.y + pt.cy);
   await page.waitForTimeout(150);
   const g = await gripCenter();
   expect(g, 'gutter 悬停手柄仍可见').not.toBeNull();
