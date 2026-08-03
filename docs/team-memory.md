@@ -14,6 +14,18 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-03 — 表格块编辑开工：blockedit.js/serialize.js 热点预警
+
+**是什么**：表格块编辑 feature（Schema 1 Table v1）开工，worktree wordspace-next-table / 分支 feat/table-block-editing。接下来几天会重改 `src/editor/blockedit.js` 全线（classify/onClick/onKeyDown/deleteSelection/refreshRangeSel/execText/onPaste）+ `src/editor/serialize.js`（WS2_MARKERS 新增 cell 编辑标记）+ 新增 `e2e/table.spec.js` 与 `test/blockedit-table.test.js`。
+**怎么 apply**：这几天要动上述文件的 session 先读 docs/plans/2026-08-03-001-feat-table-block-editing-plan.md（随 feat 分支 PR 进 main）跟本 session 对齐，避免 merge-train 连撞；P1（cell 级编辑，U1-U4）= 一个 PR 合入，合入后表格从「整块灰选」变为「cell 可编辑」，写表格相关断言的 e2e 注意行为变化。
+**来源**：分支 feat/table-block-editing / plan 2026-08-03-001
+
+## 2026-08-03 — Schema 2 拆分批次已整体撤出 main（parked 打磨，勿基于 main 的 Schema 2 代码开工）
+
+**是什么**：Colin 拍板（Wendi 原则「半成品不进 main/生产端」）：Schema 2 拆分四 PR（PR-A #340 / PR-B #345 页眉页脚前置 / PR-C #348 / PR-E #352）已在 PR #377 整体 revert 撤出 main。main 回到「分页 = Schema 1 可选版式」的 v0.11.x 已发版口径；新建弹窗灰态占位改名「分页文档 · 开发中」（i18n key `paradigm2Desc`）。完整代码钉在分支 `feat/schema-2-parked`（main 526549d + 说明文档），PR-D #350 已关闭（复活时重做）。**产品方向「分页 = 独立 Schema 2」不变，只是代码暂离 main。**ui-demo 排版层 U1–U7 + 范式入口留在 main（原型场 = 移植真相源）。
+**怎么 apply**：①别再基于 main 上的 Schema 2 代码开工（schema-2-paged.js / __ws2DocSchema 探针 / paged.spec 的 Schema-2 断言都已不在 main）；②要动分页线，先读 `feat/schema-2-parked` 分支的 `docs/schema-2-parked.md`（复活路径 = revert-the-revert，四个原始 merge SHA 在档）；③排版层进真 app 是复活前置欠账，尚无 plan；④每次发版不用再从 release 分支剥分页了——main 恒常可发。
+**来源**：PR #377（revert）/ 分支 feat/schema-2-parked / Colin 2026-08-03 口头拍板（本 session）
+
 ## 2026-07-24 — 编辑器全局契约：精确选区/删除/合并（Colin 两轮拍板，动编辑器必读）
 
 **是什么**：Colin 拍死跨块选区的三条全局规则（PR #356 落地，`docs/features/toggle.md` 有完整版）：

@@ -1,56 +1,23 @@
 # 分页文档（paged doc）—— 对齐 spec
 
-**产品口径（Colin 2026-07-23 拍板，覆盖 2026-07-08 旧口径）：分页文档 = 独立 Schema 2「分页文档」**
-（Word 向，后续承载页眉/页脚/纸张等强分页功能）；Schema 1 =「流式文档」（类 Notion，不分页）。
-这**反转**了 2026-07-08 的「分页 = Schema 1 可选版式」定案（回到最初的 Schema 2 构想）。拆分计划见
-`docs/plans/2026-07-23-001-refactor-schema-2-paged-split-plan.md`，分 PR-A..E 落地；**V4 分页引擎与页面
-设置实现全部保留，只动身份/路由层**。
+> 2026-08-03 状态注解：Schema 2 拆分批次（#340/#345/#348/#352）已整体撤出 main、转入
+> `feat/schema-2-parked` 分支打磨（Colin 拍板：半成品不进 main；复活路径见 `docs/schema-2-parked.md`）。
+> 本 spec 描述的是 main 当前行为 = 下面这段 07-08 口径（分页 = Schema 1 可选版式，v0.11.x 已发版）。
+> 「分页 = 独立 Schema 2」的产品方向（2026-07-23 反转拍板）不变，只是代码暂不在 main。
 
-真 app 入盘不变 = head 的 `<style data-ws-schema-css="page">` 装标准 `@page{size;margin}`（在 Schema head
-白名单内）。**归类只认内容**（不看 `<meta wordspace-schema>` 自称，校验器三铁律①）：
+产品口径（Colin 2026-07-08 拍板，Wendi 确认）：分页**不是**独立 Schema，是 Schema 1 文档的可选
+版式设置。真 app 入盘 = head 的 `<style data-ws-schema-css="page">` 装标准 `@page{size;margin}`
+（本就在 Schema 1 head 白名单内），带且可解析 → 分页视图/分页导出；写坏了只是分页不生效，不降级。
 
-| 磁盘文档 | 归类 | 行为 |
-|---|---|---|
-| 结构合规 + head 首个 page 块可解析 | **schema-2** | 完整块编辑 + V4 分页引擎 |
-| 结构合规 + 无 page 块 | schema-1 | 完整块编辑，流式 |
-| 结构合规 + page 块写坏/多余块 | schema-1（宽容回退） | 流式打开，分页不生效，**不降级不惩罚** |
-| 结构不合规 | null | 基础编辑降级 |
-
-身份收口在 `src/lib/schema-registry.js`（descriptor 注册表，schema-2 注册在 schema-1 兜底之前 = 归类
-优先级）+ 被动 descriptor `src/lib/schema-2-paged.js`（detect: head 有 page 块；validate: 结构合规 +
-首个 page 块 parsePageCss 非 null）。`shell.js` 的 `routeDoc` 走 `classify()` 得 `docSchemaId`。
-**转换 = 内容变更**：页面设置开关写入/移除 page 块即在 schema-1 ↔ schema-2 间转换（PR-A 已让开关
-同步 `docSchemaId`；页面设置入口对流式/分页两种 schema 都开放 = 双向转换）。**新建入口**：新建弹窗
-范式轨的「分页文档」范式（= 原范式 2 解灰，PR-B 已做）→ 选它给「空白分页文档」模板（head 带 `@page`
-块 + `meta wordspace-schema=2`，新建即分页视图、磁盘 schema-2），见 `docs/features/new-document-modal.md`。
-页眉/页脚 + 分页专属 meta 的关分页保留语义 PR-C 已做（见下）；ui-demo 同步已分两路落地：
-范式轨「分页文档」卡片（#371）+ 页眉/页脚镜像（2026-08-03，重做自撞车关闭的 #350）。
-
-> PR-A/B/C 已落。分页的**用户可感知的既有行为完全不变**（每页一张纸/页界留白/导出分页/可导 md 全保留）；
-> 新增：新建入口范式轨「分页文档」、页面设置页眉/页脚。ui-demo 侧两者已同步（机制差异见「有意分歧」）。
+ui-demo 侧同步不随 parked、留 main 作移植真相源：新建范式轨「分页文档」卡片（#371）+ 页面设置
+页眉/页脚镜像（2026-08-03，重做自撞车关闭的 #350）。真 app 侧页眉/页脚的行为规格 = PR-C（#348），
+已随 Schema 2 批次撤入 `feat/schema-2-parked`——复活时两侧按「有意分歧」条目对齐。
 
 ## 行为契约
 
 **页面设置**（文档 ⋯ 菜单 → 页面设置…）：分页开关 / 纸张 A4·A3·Letter·Legal / 纵横向 /
-边距三预设（普通 25.4 · 窄 12.7 · 宽=左右 50.8mm）+ 自定义 mm 四值 / 「导出 PDF 页脚页码」开关 /
-**页眉文字 / 页脚文字**（各一行文本框，maxlength 200，空=不显示）。弹窗开着改动即时生效。仅合规文档
-可用（真 app：非合规/md 禁用入口）。开关本质 = 流式 ↔ 分页文档转换（写入/移除 page 块 + 同步 docSchemaId）。
-
-**分页专属 meta 的关分页保留**：`ws-page-numbers` / `ws-page-header` / `ws-page-footer` 三个 meta，**转回
-流式（关分页）时一律保留**（Word 直觉：再开分页设置全回来）；分页开着时按输入写/删（空=删该 meta）。
-三兄弟保留行为一致（这是对旧「关分页删 ws-page-numbers」的有意小改）。
-
-**页眉/页脚**（PR-C，首个 Word 强分页功能）：纯文本，入盘 = head `meta[name="ws-page-header"]` /
-`ws-page-footer`（head 白名单放行 meta[name]，两 schema conform 不受影响）。
-- **屏显**：分页覆盖层在**每页**纸顶/纸底边距区画一行（居左小字灰，单行 ellipsis，不侵内容、不入盘
-  ——在 `data-ws2-ui` 覆盖层内随 strip 整删）。源=meta，`textContent` 天然转义。
-- **导出**：printToPDF `displayHeaderFooter` + headerTemplate（页眉居左）/ footerTemplate（页脚文字居左
-  + 页码居中共存）。屏显与导出同口径（同 `clampHF` 截断）。
-- **安全（P0）**：页眉/页脚是用户输入，进 headerTemplate/footerTemplate 前必 `escapeHtml`（`buildHfTemplates`
-  纯逻辑里做，node 单测证转义真发生）；覆盖层走 `textContent`；输入框 maxlength 200 + 读取侧 `clampHF`
-  防御性截断。
-- **视觉参数待 Wendi 真机验收**：字号 / 垂直位置系数（现 marginTop×0.42 / marginBottom×0.58）/ 居左 vs
-  居中 / 与页码共存排布，都可调。
+边距三预设（普通 25.4 · 窄 12.7 · 宽=左右 50.8mm）+ 自定义 mm 四值 / 「导出 PDF 页脚页码」开关。
+弹窗开着改动即时生效。仅合规文档可用（真 app：非合规/md 禁用入口）。
 
 **分页视图**：页外灰底、每页一张独立白纸（方角+1px 细边+一层淡阴影，纸方墨圆、禁叠纸）；
 页与页之间 24px 灰缝含「第 N 页」mono chip。**每页物理高严格 = 一张纸**（A4 竖 = 1122.5px @96dpi）。
@@ -114,7 +81,7 @@
 - 配置存储：demo 存 localStorage；真 app 入盘 `@page`（HTML-native，文件自携带）——产品设计如此
   （Colin 2026-07-08）。
 - 页眉/页脚（2026-08-03 同步）：demo 存 per-doc `PageConfig.header/footer`（localStorage，同上）；真 app
-  入盘 `meta[name="ws-page-header"/"ws-page-footer"]`。屏显都是「每页边距区画一行、源=配置、不进数据」；
+  （PR-C #348，现随 Schema 2 parked）入盘 `meta[name="ws-page-header"/"ws-page-footer"]`。屏显都是「每页边距区画一行、源=配置、不进数据」；
   demo 走 Canvas 覆盖层 JSX 文本插值、真 app 走 pagination.js 覆盖层 `textContent`——**两侧都靠文本
   安全路径转义，绝不 innerHTML/dangerouslySetInnerHTML**（安全不算分歧，是硬要求）。关分页保留语义
   demo 天然一致（只翻 `on`，header/footer 留在配置里，再开全回来）。demo 无 PDF 导出的页眉页脚
@@ -153,7 +120,8 @@
   要动 `page.ts` + Canvas 每页覆盖层渲染 + 转义（类似真 app PR-C 独立一块），本期 defer。~~
   ✅ 已同步（2026-08-03，重做自撞车关闭的 #350）：`page.ts` PageConfig.header/footer + clampHF/HF_MAXLEN、
   PageSetupModal「页面」分区两个文本框（maxLength 200）、Canvas 每页 HF 覆盖层（JSX 文本插值）。
-  **视觉参数（字号/垂直位置系数 0.42/0.58/对齐）待 Wendi 真机验收，两侧一起调。**
+  **视觉参数（字号/垂直位置系数 0.42/0.58/对齐）待 Wendi 真机验收；真 app 侧（PR-C）现随
+  Schema 2 parked，「两侧一起调」发生在复活时。**
 - **ui-demo paged Playwright 门 harness stale**：`verify-paged-v4.mjs` / `smoke-paged.mjs` 的 `openDocPaged`
   用 ⋯-菜单导航，当前 main 上失效（`verify-typography.mjs` 已改用 seed localStorage 绕过、稳）；这两门
   跑前需修 harness（本期已 npm-script 化，未修导航）。
