@@ -3,6 +3,4 @@
 module.exports = {
   blankName: 'Blank',
   blankDesc: 'Start from a blank page',
-  blankPagedName: 'Blank paged doc',
-  blankPagedDesc: 'Laid out in pages, like Word',
 };

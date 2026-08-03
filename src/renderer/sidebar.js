@@ -2500,11 +2500,10 @@
         window.wsT('sidebar.createDocSub', { location: (targetRoot ? targetRoot.name : '') + (dirRel ? ' / ' + dirRel : '') }), close);
     }
 
-    // ---- 范式（对齐 ui-demo）：范式 1「类 Notion」= schema-1 流式；范式 2「分页文档」= schema-2；范式 3 灰态占位。
-    // schema 字段 = 该范式对应的文档 schema，pane 按它过滤模板（见 renderPane）。
+    // ---- 范式（对齐 ui-demo）：范式 1「类 Notion」可用；2/3 灰态占位，点选切右侧 pane ----
     const paradigms = [
-      { id: 'notion', schema: 'schema-1', name: window.wsT('sidebar.paradigmNotion'), tag: window.wsT('sidebar.paradigmCurrent'), desc: window.wsT('sidebar.paradigmNotionDesc'), soon: false },
-      { id: 'paged', schema: 'schema-2', name: window.wsT('sidebar.paradigmPaged'), desc: window.wsT('sidebar.paradigmPagedDesc'), soon: false },
+      { id: 'notion', name: window.wsT('sidebar.paradigmNotion'), tag: window.wsT('sidebar.paradigmCurrent'), desc: window.wsT('sidebar.paradigmNotionDesc'), soon: false },
+      { id: 'p2', name: window.wsT('sidebar.paradigm2'), desc: window.wsT('sidebar.comingSoon'), soon: true },
       { id: 'p3', name: window.wsT('sidebar.paradigm3'), desc: window.wsT('sidebar.comingSoon'), soon: true },
     ];
     let activeId = 'notion';
@@ -2612,13 +2611,7 @@
       }
       const grid = document.createElement('div');
       grid.className = 'sb-modal-grid sb-cm-grid';
-      // 按当前范式的 schema 过滤模板（流式范式只显 schema-1 模板，分页范式只显 schema-2）。
-      // 模板缺 schema 字段 = 老数据 → 归到 schema-1（默认流式），不漏卡。
-      const wanted = active.schema || 'schema-1';
-      for (const t of templates) {
-        if ((t.schema || 'schema-1') !== wanted) continue;
-        grid.appendChild(makeCard(t));
-      }
+      for (const t of templates) grid.appendChild(makeCard(t));
       pane.appendChild(grid);
     }
     renderPane();

@@ -258,67 +258,28 @@ test('文件夹 + → 模板台只剩「空文档」一张卡（会议纪要/项
   await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('未命名');
 });
 
-test('新建弹窗 = 左范式轨 + 右模板 pane：类 Notion(流式)/分页文档 可选、范式 3 灰态；按范式过滤模板', async () => {
+test('新建弹窗 = 左范式轨 + 右模板 pane（对齐 ui-demo）：Notion 范式激活显空文档卡；点未上线范式 → 占位、无卡', async () => {
   await openWorkspace();
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
   await expect(page.locator('.sb-modal')).toBeVisible();
-  // 左：范式轨 3 档，第一档「类 Notion」激活
+  // 左：范式轨 3 档，第一档「类 Notion」激活（对齐 ui-demo，不再是横排 pill）
   await expect(page.locator('.sb-cm-rail')).toBeVisible();
   await expect(page.locator('.sb-cm-para')).toHaveCount(3);
   await expect(page.locator('.sb-cm-para.is-active')).toHaveCount(1);
   await expect(page.locator('.sb-cm-para.is-active')).toContainText('类 Notion');
-  // 范式 2「分页文档」已解灰（可用，非 is-soon）；只剩范式 3 一档灰态
-  await expect(page.locator('.sb-cm-para', { hasText: '分页文档' })).toHaveCount(1);
-  await expect(page.locator('.sb-cm-para.is-soon')).toHaveCount(1);
-  // 右：Notion 范式下 = 唯一空文档卡（schema-1 过滤）
+  // 右：Notion 范式下 = 模板网格 + 唯一空文档卡（blank-only）
   await expect(page.locator('.sb-cm-pane .sb-modal-grid')).toBeVisible();
   await expect(page.locator('.sb-card')).toHaveCount(1);
-  await expect(page.locator('.sb-card', { hasText: '空文档' })).toHaveCount(1);
-  // 点「分页文档」（可用）→ 右侧换成分页模板卡，不是占位
-  await page.locator('.sb-cm-para', { hasText: '分页文档' }).click();
   await expect(page.locator('.sb-cm-soon')).toHaveCount(0);
-  await expect(page.locator('.sb-card')).toHaveCount(1);
-  await expect(page.locator('.sb-card', { hasText: '空白分页文档' })).toHaveCount(1);
-  await expect(page.locator('.sb-cm-para.is-active')).toContainText('分页文档');
-  // 点「范式 3」（仍灰态未上线）→ 右侧换成占位、卡片消失
-  await page.locator('.sb-cm-para.is-soon').click();
+  // 点「范式 2」（灰态未上线）→ 右侧换成占位、卡片消失
+  await page.locator('.sb-cm-para.is-soon').first().click();
   await expect(page.locator('.sb-cm-soon')).toBeVisible();
   await expect(page.locator('.sb-card')).toHaveCount(0);
-  // 切回「类 Notion」→ 空文档卡回来
+  await expect(page.locator('.sb-cm-para.is-active')).toContainText('范式 2');
+  // 切回「类 Notion」→ 卡片回来
   await page.locator('.sb-cm-para').first().click();
   await expect(page.locator('.sb-card')).toHaveCount(1);
-  await expect(page.locator('.sb-card', { hasText: '空文档' })).toHaveCount(1);
-});
-
-test('新建分页文档：选「分页文档」范式 → 建 → 磁盘归类 schema-2、以分页视图打开', async () => {
-  await openWorkspace();
-  const folder = page.locator('.sb-dir[data-rel="数据"]');
-  await folder.hover();
-  await folder.locator('.sb-add').click();
-  await expect(page.locator('.sb-modal')).toBeVisible();
-  await page.locator('.sb-cm-para', { hasText: '分页文档' }).click();
-  await page.locator('.sb-card', { hasText: '空白分页文档' }).click();
-  const f = path.join(wsDir, '数据', '未命名.html');
-  await expect.poll(() => exists(f)).toBe(true);
-  const raw = await fs.readFile(f, 'utf8');
-  expect(raw.includes('data-ws-schema-css="page"')).toBe(true); // page 块落盘 = 分页文档
-  // 分页视图挂上（覆盖层出现）
-  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('未命名');
-  await expect.poll(async () => page.frameLocator('#doc-frame').locator('.ws-pgn-overlay').count()).toBeGreaterThan(0);
-});
-
-test('新建分页文档（⌘T 临时）：选分页文档范式 → 建临时文档 → 内存 schema-2 + 分页引擎挂上', async () => {
-  // ⌘T 临时文档不落盘 → 磁盘查不到，验内存态身份（PR-A 探针 __ws2DocSchema）+ 分页覆盖层。
-  // 补 doc review 抓到的缺口：临时新建路径（makeCard temp 分支 → __shellNewTemp → routeDoc）没门盯着。
-  await openWorkspace();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'new-tab'));
-  await expect(page.locator('.sb-modal')).toBeVisible();
-  await page.locator('.sb-cm-para', { hasText: '分页文档' }).click();
-  await page.locator('.sb-card', { hasText: '空白分页文档' }).click();
-  await expect(page.locator('.sb-modal')).toHaveCount(0);
-  await expect(page.frameLocator('#doc-frame').locator('h1')).toHaveText('未命名');
-  await expect.poll(() => page.evaluate(() => window.__ws2DocSchema().schemaId)).toBe('schema-2'); // 内存身份 = 分页
-  await expect.poll(async () => page.frameLocator('#doc-frame').locator('.ws-pgn-overlay').count()).toBeGreaterThan(0);
+  await expect(page.locator('.sb-cm-soon')).toHaveCount(0);
 });
 
 test('同名新建去重：连建两次空文档 → 「未命名.html」+「未命名 2.html」', async () => {
