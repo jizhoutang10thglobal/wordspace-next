@@ -309,7 +309,9 @@
     deps = deps || {};
     const win = deps.win || doc.defaultView;
     const undoMgr = deps.undoMgr || null;
-    const markDirty = deps.markDirty || (() => {});
+    const markDirtyRaw = deps.markDirty || (() => {});
+    // 每次标脏顺带同步 toggle 空态标记（结构变更：增删块 / 拖拽 / 转换 / 粘贴都会经过这里，P3-7）
+    const markDirty = (...a) => { try { refreshToggleEmpty(); } catch (x) {} return markDirtyRaw(...a); };
     const onAiSoon = deps.onAiSoon || (() => {});
     const pickImages = deps.pickImages || null; // 图片插入：() => Promise<[{name,mime,base64}]>（父层原生选择器，U3）
     const body = doc.body;
@@ -328,9 +330,9 @@
       // 空 toggle 的占位（对拍 T17：Notion 写 "Empty toggle. Click or drop blocks inside."，我们原来是
       // 一行纯空白、看不出这里能放东西）。**编辑器 chrome、不入盘**——浏览器直开时不该出现这行提示。
       // 判据：展开态且体内只有一个空叶子块。:has() 在 Chromium 可用；不可用时仅退化为无占位。
-      "details[open]:has(> :not(summary):only-of-type:empty) > :not(summary):empty::before{content:'" + cssEsc(T('editor.emptyTogglePlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
+      "details[open][data-ws2-empty] > :not(summary)::before{content:'" + cssEsc(T('editor.emptyTogglePlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
       // 空 toggle 的三角淡一档（Notion 同款区分：一眼看出这个折叠块里没东西）
-      "details:has(> :not(summary):only-of-type:empty) > summary::before{border-color:#c4c8cd;}";
+      "details[data-ws2-empty] > summary::before{border-color:#c4c8cd;}";
     let sheet = null;
     try {
       sheet = new (win.CSSStyleSheet || CSSStyleSheet)();
@@ -547,6 +549,12 @@
 
     // ---- 定位 ----
     function vp() { return { sx: (win.scrollX || 0), sy: (win.scrollY || 0) }; }
+    // gutter 的**锚点**也要像显隐那样收成单一出口（P2-3）：此前 enterEdit/onScroll 只认 hoverEl，
+    // 手柄跳回列表首行、而「+」/菜单/拖拽仍作用于 hoverRow 指的那一行 = 画的和做的不是同一行。
+    function gutterAnchor() {
+      if (hoverRow && hoverRow.isConnected) return hoverRow;
+      return selectedEl || hoverEl;
+    }
     function positionGrip(el) {
       if (!el || !el.isConnected) { setGutterVisible(false); return; } // 防已删块的幽灵手柄
       const r = el.getBoundingClientRect();
@@ -685,7 +693,7 @@
       selectedEl = null;
       editingEl = el;
       fmtShown = false; // 进新编辑上下文：气泡先不粘（等用户选文字才弹）
-      hoverEl = el; positionGrip(el); // 编辑态保留手柄、指向当前块（可开块菜单/拖拽，对齐 ui-demo 常驻手柄）
+      hoverEl = el; positionGrip(gutterAnchor()); // 编辑态保留手柄（P2-3：锚点走单一出口，行悬停态优先，别跳回块首）
       el.setAttribute('contenteditable', 'true');
       el.setAttribute('data-ws2-ce', '');
       el.setAttribute('data-ws2-editing', '');
@@ -769,6 +777,7 @@
       exitCell();
       if (editingEl) exitEdit();
       clearSelectedAttr(); selectedEl = null;
+      closeBlockMenu(); // P2-4：这条路径不走 deselect，行菜单会留在屏上、menuRow 指向随后被删掉的行
       const blocks = [...body.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui'));
       if (!blocks.length) return;
       const r = doc.createRange();
@@ -1125,6 +1134,10 @@
       }
     }
 
+    // 「摘子树 → 转块 → 接回」这类复合操作期间**绝不能落快照**——快照记的是当时的 DOM，子树在 DOM 外时
+    // 落一次，undo 就会精准回到「子项已消失」的中间态并被自动保存写进磁盘（对抗审查 P1-1，实测丢内容）。
+    let ckSuppressed = false;
+    const ckpt = () => { if (!ckSuppressed && undoMgr) undoMgr.checkpoint(); };
     function turnInto(el, item) {
       if (!el) return el;
       if (el.tagName === 'SUMMARY') el = el.parentElement || el; // P0：编辑 summary 时「转为」→ 作用于整个 toggle（否则 retag 掉 summary → 零 summary 非合规字节）
@@ -1139,7 +1152,7 @@
         el.replaceWith(target);
         let ref = target;
         for (const b of bodyBlocks) { ref.after(b); ref = b; } // 正文块按序提到 target 之后
-        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        ckpt(); markDirty();
         return target;
       }
       // 修 P1：源是「多段容器块」(callout/quote 含 <p> 子) 时，先把内部块拍平成「行」——否则块级 <p> 被
@@ -1176,12 +1189,12 @@
             const li = doc.createElement('li'); (nonEmpty[0] || []).forEach((n) => li.appendChild(n)); padLi(li); next.appendChild(li);
           }
         }
-        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        ckpt(); markDirty();
         return next;
       }
       if (item.tag === 'hr') {
         const next = fmt.retagElement(el, 'hr');
-        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        ckpt(); markDirty();
         return next;
       }
       if (item.tag === 'details') {
@@ -1206,7 +1219,7 @@
         if (el.tagName === 'UL' || el.tagName === 'OL') { for (const a of [...el.attributes]) { if (a.name.indexOf('data-ws2') !== 0 && a.name !== 'class') det.setAttribute(a.name, a.value); } } // U17/create-6：仅**列表源**复制 id 等用户属性（锚点不断）；段落→toggle 维持既有「不迁移 id」行为（toggle.spec.js U9），ws2 哨兵/class 不带
         el.replaceWith(det);
         ensureToggleStyle();
-        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        ckpt(); markDirty();
         return det;
       }
       // 修 A1：源是列表、目标非列表（正文/标题/引用/callout）→ 先把 li 拍平成 phrasing，
@@ -1219,7 +1232,7 @@
         nx.appendChild(frag);
         if (item.cls) nx.className = item.cls; else if (nx.classList) { nx.classList.remove('ws-callout'); nx.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class（ws-callout/ws-todo），用户自定义 class 保留
         ensureBlockStyle(item.cls);
-        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        ckpt(); markDirty();
         return nx;
       }
       const next = fmt.retagElement(el, item.tag); // p / h1 / h2 / h3 / blockquote / div(callout)
@@ -1232,7 +1245,7 @@
       }
       if (item.cls) next.className = item.cls; else if (next.classList) { next.classList.remove('ws-callout'); next.classList.remove('ws-todo'); } // U16/create-5：只摘语义 class，用户自定义 class 保留
       ensureBlockStyle(item.cls);
-      if (undoMgr) undoMgr.checkpoint(); markDirty();
+      ckpt(); markDirty();
       return next;
     }
     // Step 2（Colin 2026-07-23，方案 B 第 2 步）：从当前选区解析出「整块 <ul>/<ol> 里被选中的直接子 li 连续跨度」。
@@ -1266,7 +1279,8 @@
       if (item.tag === ul.tagName.toLowerCase() && ((item.cls === 'ws-todo') === ul.classList.contains('ws-todo'))) return ul;
       const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
       const firstIdx = allLis.indexOf(lis[0]), lastIdx = allLis.indexOf(lis[lis.length - 1]);
-      if (firstIdx < 0 || lastIdx < 0 || (firstIdx === 0 && lastIdx === allLis.length - 1)) return turnInto(ul, item); // 判不出 / 全选 → 整块
+      if (firstIdx < 0 || lastIdx < 0) return null; // 传进来的行不是本列表的直接子项（如嵌套行）→ 拒绝，绝不悄悄整块转（P1-2）
+      if (firstIdx === 0 && lastIdx === allLis.length - 1) return turnInto(ul, item); // 全选 → 整块
       // 前段要继承原列表的 start（分割点**之前**的序号一个都不该变——Notion 同款，对拍 N8 实测）；
       // 后段不带 start = 从 1 重启（这半边本来就对齐 Notion）。tail 传 false。
       const mkUl = (keepStart) => {
@@ -1286,11 +1300,15 @@
           for (const c of [...li.children]) if (c.tagName === 'UL' || c.tagName === 'OL') { detached.push(c); c.remove(); }
         }
       }
-      const nx = turnInto(ul, item); // 此刻 ul 只剩选中 li → 产物替换 ul、留原位、前后列表夹住
+      // 子树在 DOM 外期间抑制 checkpoint（P1-1）：否则 turnInto 内部那次快照记下「子项已消失」的中间态，
+      // 一次 undo 就落到它、并被自动保存写进磁盘。接回子树后再统一落一次。
+      ckSuppressed = detached.length > 0;
+      let nx;
+      try { nx = turnInto(ul, item); } finally { ckSuppressed = false; } // ul 只剩选中 li → 产物替换 ul、留原位
       // 摘下的子树接回产物之后：段落之下无法承载嵌套，故层级降一级成顶层列表（内容零丢失，缩进降级见 spec）。
       let ref = nx;
       for (const sub of detached) { ref.after(sub); ref = sub; }
-      if (detached.length && undoMgr) undoMgr.checkpoint();
+      if (detached.length) { if (undoMgr) undoMgr.checkpoint(); markDirty(); }
       return nx;
     }
     function removeBlock(el) {
@@ -1849,11 +1867,18 @@
     // U3 行级作用域菜单（plan 2026-08-03-002）：删掉一行 —— 掏空的列表按位置收敛
     //（嵌套子列表移除、宿主行保留；顶层列表 de-list 成空段落进编辑，顺带满足 toggle 体「≥1 块」铁则）。
     function removeRow(row) {
+      if (!row || !row.isConnected || !row.parentElement) { deselect(); return; } // P2-4：行已被别的路径删掉（如 ⌘A 全删）→ 收摊，别抛
       const list = row.parentElement;
       const hostLi = list && list.parentElement && list.parentElement.tagName === 'LI' ? list.parentElement : null;
       row.remove();
       if (!list.querySelector('li')) {
-        if (hostLi) { list.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty(); deselect(); caretAtLiTextEnd(hostLi); return; }
+        if (hostLi) {
+          const top = blockOf(hostLi) || hostLi.closest('ul,ol');
+          list.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty(); deselect();
+          if (top) enterEdit(top, { mode: 'start' }); // P3-6：只放 Range 不进编辑 → 文档零 contenteditable、后续键入全丢
+          caretAtLiTextEnd(hostLi);
+          return;
+        }
         const p = doc.createElement('p'); p.appendChild(doc.createElement('br'));
         list.replaceWith(p);
         if (undoMgr) undoMgr.checkpoint(); markDirty(); deselect();
@@ -1908,11 +1933,14 @@
       // 「转为」：行模式抽出该行转（复用 #346 的 turnIntoLines，前后剩余项仍是原列表）；块模式整块转。
       const sub = (label, item, icon) => add(label, () => {
         const nx = rowMode ? turnIntoLines(el, [row], item) : turnInto(el, item);
-        closeBlockMenu(); if (nx) selectBlock(nx);
+        closeBlockMenu(); if (nx) selectBlock(nx); // turnIntoLines 对非直接子项返回 null（P1-2），此时零变更
       }, false, icon);
       // 修 ED-B1：「转为」只对文字承载块给（table/img/hr 等结构块转正文会把表格文字黏成团 / 图片直接消失、
       // 属性搬到 h2 上）。非可编辑块只留插入/复制/删除。
-      if (isEditableEl(el)) {
+      // 嵌套行不给「转为」组（P1-2）：嵌套 li 不是顶层列表的直接子项，抽不出去；产物也无法存在于嵌套层
+      // （Schema 的 li 只装行内内容或子列表，同「+」那条结构性分歧）。删除/插入/复制/上色对嵌套行都是对的，照给。
+      const rowNested = rowMode && row.parentElement !== el;
+      if (isEditableEl(el) && !rowNested) {
         sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading'); sub(T('editor.turnToQuote'), itemByKey('quote'), 'quote');
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       } else if (classify(el) === 'toggle') {
@@ -1972,8 +2000,9 @@
         const nx = insertAfter(el, itemByKey('text')); closeBlockMenu(); enterEdit(nx, { mode: 'start' });
       }, false, 'plus');
       add(T('editor.duplicate'), () => {
+        closeBlockMenu(); // P3-5：先关菜单清掉行高亮，否则 cloneNode 把 data-ws2-selected 一起拷进副本
         const c = fmt.duplicateBlock(rowMode ? row : el); // 对 <li> 同样适用（克隆后剥 id，防锚点重复）
-        if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu();
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
         if (c && !rowMode) selectBlock(c);
       }, false, 'copy');
       add(T('common.delete'), () => { closeBlockMenu(); if (rowMode) removeRow(row); else removeBlock(el); }, true, 'trash');
@@ -3107,7 +3136,18 @@
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
     }
 
+    // toggle 空态标记（P3-7）：判据 = 展开体内只有一个叶子块且无可见内容。CSS 的 :empty 表达不了
+    // 「只有一个 <br>」这种编辑过的空块，故用属性驱动；data-ws2-empty 进 serialize 白名单、绝不入盘。
+    function refreshToggleEmpty() {
+      const dets = blockRoot.querySelectorAll('details');
+      for (const det of dets) {
+        const kids = [...det.children].filter((c) => c.tagName !== 'SUMMARY' && !c.hasAttribute('data-ws2-ui'));
+        const empty = kids.length === 1 && (kids[0].textContent || '').trim() === '' && !kids[0].querySelector('img,hr,table,figure,ul,ol,details');
+        if (empty) det.setAttribute('data-ws2-empty', ''); else det.removeAttribute('data-ws2-empty');
+      }
+    }
     function onInput(e) {
+      refreshToggleEmpty();
       markDirty(); tryMarkdown(e);
       const M = mentionApi();
       if (M && M.isOpen()) { M.syncFromDom(); return; } // 菜单开着：从 DOM 真相重算 query（捕获任何输入法），别再触发新菜单
@@ -3159,7 +3199,7 @@
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
     function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮
     function onCompStart() { if (slash) { slash = null; slashMenu.style.display = 'none'; } } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
-    function onScroll() { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); if (blockMenu.style.display !== 'none') closeBlockMenu(); }
+    function onScroll() { const a = gutterAnchor(); if (a) positionGrip(a); positionFmtbar(); if (blockMenu.style.display !== 'none') closeBlockMenu(); }
 
     // grip 交互
     grip.addEventListener('mousedown', (e) => { e.stopPropagation(); });
@@ -3679,6 +3719,7 @@
 
     buildFmtbar();
     doc.addEventListener('mousedown', onMouseDown, true);
+    try { refreshToggleEmpty(); } catch (x) {} // attach 期先算一次（打开就带空 toggle 的文档，P3-7）
     doc.addEventListener('mousemove', onMouseMove);
     doc.addEventListener('mouseup', onMouseUp);
     doc.addEventListener('click', onClick);
