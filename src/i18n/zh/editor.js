@@ -27,6 +27,7 @@ module.exports = {
 
   // 拖拽手柄 / 提示
   gripTip: '拖动重排 · 点击打开菜单',
+  plusTip: '点击在下方插入 · Option 点击插到上方',
   dragHandleTip: '拖动调整顺序，点击打开菜单',
   blockNotEditable: '此块暂不支持编辑',
 

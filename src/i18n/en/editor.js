@@ -27,6 +27,7 @@ module.exports = {
 
   // Drag handle / hints
   gripTip: 'Drag to reorder · click to open menu',
+  plusTip: 'Click to add below · Option-click to add above',
   dragHandleTip: 'Drag to reorder, click to open menu',
   blockNotEditable: 'This block can’t be edited yet',
 

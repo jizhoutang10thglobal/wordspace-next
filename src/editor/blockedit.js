@@ -419,6 +419,16 @@
     grip.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>';
     doc.documentElement.appendChild(grip);
 
+    // U4「+」快捷插入钮（gutter 里紧挨手柄左侧，同显同隐；作用对象与手柄一致 = 行或块）
+    const plus = mk('div', 'ws-plus');
+    plus.style.position = 'absolute';
+    plus.style.display = 'none';
+    plus.title = T('editor.plusTip');
+    plus.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+    doc.documentElement.appendChild(plus);
+    // 手柄与「+」永远同显同隐（分开控制必漏一处 → 幽灵按钮），显隐一律走这个口子。
+    function setGutterVisible(show) { const v = show ? 'flex' : 'none'; grip.style.display = v; plus.style.display = v; }
+
     // 格式气泡
     const fmtbar = mk('div', 'ws-fmtbar');
     fmtbar.style.display = 'none';
@@ -520,19 +530,21 @@
     // ---- 定位 ----
     function vp() { return { sx: (win.scrollX || 0), sy: (win.scrollY || 0) }; }
     function positionGrip(el) {
-      if (!el || !el.isConnected) { grip.style.display = 'none'; return; } // 防已删块的幽灵手柄
+      if (!el || !el.isConnected) { setGutterVisible(false); return; } // 防已删块的幽灵手柄
       const r = el.getBoundingClientRect();
       const { sx, sy } = vp();
       // 行锚（U1）：<li> 的横向锚取其所在列表左缘——li.left-28 会正压 ws-todo 勾选框（勾选框
       // 画在 li 左缘外侧的 gutter 里）；锚父列表则顶层行手柄落列表外侧、嵌套行仍随缩进右移。
       const xr = (el.tagName === 'LI' && el.parentElement) ? el.parentElement.getBoundingClientRect() : r;
       grip.style.left = (xr.left + sx - 28) + 'px';
+      plus.style.left = (xr.left + sx - 50) + 'px'; // U4：「+」在手柄左侧一格（22px 宽 + 间距）
       // 手柄对块首行的视觉中线（#86）：按首行行高把 22px 手柄垂直居中——标题行高大时手柄不再顶在块顶。
       const cs = doc.defaultView.getComputedStyle(el);
       let lh = parseFloat(cs.lineHeight);
       if (!lh || Number.isNaN(lh)) lh = (parseFloat(cs.fontSize) || 15) * 1.5;
-      grip.style.top = (r.top + sy + Math.max(0, (Math.min(lh, r.height) - 22) / 2)) + 'px';
-      grip.style.display = 'flex';
+      const top = (r.top + sy + Math.max(0, (Math.min(lh, r.height) - 22) / 2)) + 'px';
+      grip.style.top = top; plus.style.top = top;
+      setGutterVisible(true);
     }
     function showFmtAt(left, top) {
       const { sx, sy } = vp();
@@ -644,7 +656,7 @@
       exitEdit();
       clearSelectedAttr();
       selectedEl = null;
-      hoverEl = null; hoverRow = null; grip.style.display = 'none'; // 清悬停引用，防删块后幽灵手柄
+      hoverEl = null; hoverRow = null; setGutterVisible(false); // 清悬停引用，防删块后幽灵手柄
       closeBlockMenu();
       fmtbar.style.display = 'none'; fmtShown = false;
     }
@@ -952,6 +964,14 @@
     function insertAfter(refEl, item) {
       const el = newBlock(item);
       if (refEl && refEl.after) refEl.after(el); else blockRoot.appendChild(el);
+      if (undoMgr) undoMgr.checkpoint();
+      markDirty();
+      return el;
+    }
+    // U4「+」的 ⌥ 点击用：插到参照块**上方**（无参照 → 落作用域最前，别悄悄掉到文末）
+    function insertBeforeBlock(refEl, item) {
+      const el = newBlock(item);
+      if (refEl && refEl.before) refEl.before(el); else blockRoot.insertBefore(el, blockRoot.firstChild);
       if (undoMgr) undoMgr.checkpoint();
       markDirty();
       return el;
@@ -2121,7 +2141,7 @@
       }
       positionFmtbar();
     }
-    function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; hoverRow = null; grip.style.display = 'none'; } }
+    function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; hoverRow = null; setGutterVisible(false); } }
     // 折叠持久化（KD4/R8）：原生 toggle 事件 → markDirty 触发自动保存；绝不 checkpoint（折叠不是撤销步 KD5）。
     function onToggle(e) {
       if (!e.target || e.target.tagName !== 'DETAILS') return;
@@ -3050,6 +3070,26 @@
     // grip 交互
     grip.addEventListener('mousedown', (e) => { e.stopPropagation(); });
     grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const el = selectedEl || hoverEl; if (el) openBlockMenu(el, selectedEl ? null : hoverRow); }); // U3：行锚手柄=行作用域；Esc 灰选=块作用域
+    // U4「+」：作用对象跟手柄同口径（行锚=插同列表新行；块=插空正文块）。⌥ 点击插到上方（对齐 Notion）。
+    plus.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); }); // 别把焦点/选区从当前块夺走
+    plus.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      closeBlockMenu();
+      const el = selectedEl || hoverEl; if (!el) return;
+      const row = selectedEl ? null : hoverRow;
+      const above = !!e.altKey;
+      if (row && row.tagName === 'LI' && classify(el) === 'list' && el.contains(row)) {
+        const li = doc.createElement('li'); li.appendChild(doc.createElement('br'));
+        if (above) row.before(li); else row.after(li);
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        enterEdit(el, { mode: 'start' }); caretAtLiTextEnd(li);
+        hoverRow = li; positionGrip(li);
+        return;
+      }
+      const nx = above ? insertBeforeBlock(el, itemByKey('text')) : insertAfter(el, itemByKey('text'));
+      enterEdit(nx, { mode: 'start' });
+      hoverEl = nx; hoverRow = null; positionGrip(nx);
+    });
     // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
     grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverRow || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
@@ -3585,7 +3625,7 @@
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       rangeSelEls = []; body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel')); // undo/redo 重写 body → 旧引用失效,按属性清
-      grip.style.display = 'none'; fmtbar.style.display = 'none'; closeBlockMenu();
+      setGutterVisible(false); fmtbar.style.display = 'none'; closeBlockMenu();
     }
 
     // U8/clip-3：undo/redo 用 body.innerHTML 整体重写、正在编辑的块被销毁、焦点回落非可编辑 BODY →
@@ -3683,6 +3723,9 @@
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
   .ws-grip:hover{background:#f0f1f3;color:#5a5f66;}
   .ws-grip:active{cursor:grabbing;}
+  /* U4「+」快捷插入：与手柄同尺寸同淡墨、cursor:pointer（可点不可拖，与 ⋮⋮ 的 grab 区分） */
+  .ws-plus{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:pointer;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
+  .ws-plus:hover{background:#f0f1f3;color:#5a5f66;}
 
   .ws-fmtbar{align-items:center;gap:1px;height:32px;padding:0 4px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);z-index:99999;font-family:-apple-system,system-ui,"PingFang SC",sans-serif;}
   .ws-fmtbar-btn{display:flex;align-items:center;justify-content:center;min-width:26px;height:24px;padding:0 5px;border:none;background:transparent;border-radius:3px;color:#5a5f66;font-size:12px;font-weight:500;cursor:pointer;}
