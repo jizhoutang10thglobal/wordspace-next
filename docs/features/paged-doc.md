@@ -23,10 +23,11 @@
 同步 `docSchemaId`；页面设置入口对流式/分页两种 schema 都开放 = 双向转换）。**新建入口**：新建弹窗
 范式轨的「分页文档」范式（= 原范式 2 解灰，PR-B 已做）→ 选它给「空白分页文档」模板（head 带 `@page`
 块 + `meta wordspace-schema=2`，新建即分页视图、磁盘 schema-2），见 `docs/features/new-document-modal.md`。
-页眉/页脚 + 分页专属 meta 的关分页保留语义 PR-C 已做（见下）；ui-demo 同步在 PR-D。
+页眉/页脚 + 分页专属 meta 的关分页保留语义 PR-C 已做（见下）；ui-demo 同步已分两路落地：
+范式轨「分页文档」卡片（#371）+ 页眉/页脚镜像（2026-08-03，重做自撞车关闭的 #350）。
 
 > PR-A/B/C 已落。分页的**用户可感知的既有行为完全不变**（每页一张纸/页界留白/导出分页/可导 md 全保留）；
-> 新增：新建入口范式轨「分页文档」、页面设置页眉/页脚。ui-demo 同步待 PR-D。
+> 新增：新建入口范式轨「分页文档」、页面设置页眉/页脚。ui-demo 侧两者已同步（机制差异见「有意分歧」）。
 
 ## 行为契约
 
@@ -112,6 +113,12 @@
 
 - 配置存储：demo 存 localStorage；真 app 入盘 `@page`（HTML-native，文件自携带）——产品设计如此
   （Colin 2026-07-08）。
+- 页眉/页脚（2026-08-03 同步）：demo 存 per-doc `PageConfig.header/footer`（localStorage，同上）；真 app
+  入盘 `meta[name="ws-page-header"/"ws-page-footer"]`。屏显都是「每页边距区画一行、源=配置、不进数据」；
+  demo 走 Canvas 覆盖层 JSX 文本插值、真 app 走 pagination.js 覆盖层 `textContent`——**两侧都靠文本
+  安全路径转义，绝不 innerHTML/dangerouslySetInnerHTML**（安全不算分歧，是硬要求）。关分页保留语义
+  demo 天然一致（只翻 `on`，header/footer 留在配置里，再开全回来）。demo 无 PDF 导出的页眉页脚
+  （demo 导出走 window.print，页眉页脚是真 app printToPDF headerTemplate 的能力），记为分歧。
 - 可编辑表格/代码块：demo 为测分页新建的简化块类型（2026-07-10）；真 app 的表格/代码编辑走
   Schema 1 既有块模型，能力差异不算漂移。**且 Schema 1 目前没有代码块类型**（`body>pre` 不在
   TOP_BLOCKS → 非合规 → 根本进不了分页）：真 app 引擎已按「pre 沿逻辑行（\n/`<br>`）切 +
@@ -142,8 +149,11 @@
   H4 块 + mm/inch + 另存预设都在 ui-demo；真 app align 时排版入盘 = 第二个 `data-ws-schema-css="type"` 块 +
   Schema 校验白名单扩展（origin RISK-2），真 app Schema 本就封顶 h4、H4 天然对得上。字体是系统替身
   （无仿宋_GB2312 等，视觉≈非逐字节国标；真合规可能得内嵌字体，RISK-B）。
-- **ui-demo 页眉/页脚未做**：真 app PR-C 已有页眉页脚，但 ui-demo `PageConfig` 无 header/footer 字段——加它
-  要动 `page.ts` + Canvas 每页覆盖层渲染 + 转义（类似真 app PR-C 独立一块），本期 defer。
+- ~~**ui-demo 页眉/页脚未做**：真 app PR-C 已有页眉页脚，但 ui-demo `PageConfig` 无 header/footer 字段——加它
+  要动 `page.ts` + Canvas 每页覆盖层渲染 + 转义（类似真 app PR-C 独立一块），本期 defer。~~
+  ✅ 已同步（2026-08-03，重做自撞车关闭的 #350）：`page.ts` PageConfig.header/footer + clampHF/HF_MAXLEN、
+  PageSetupModal「页面」分区两个文本框（maxLength 200）、Canvas 每页 HF 覆盖层（JSX 文本插值）。
+  **视觉参数（字号/垂直位置系数 0.42/0.58/对齐）待 Wendi 真机验收，两侧一起调。**
 - **ui-demo paged Playwright 门 harness stale**：`verify-paged-v4.mjs` / `smoke-paged.mjs` 的 `openDocPaged`
   用 ⋯-菜单导航，当前 main 上失效（`verify-typography.mjs` 已改用 seed localStorage 绕过、稳）；这两门
   跑前需修 harness（本期已 npm-script 化，未修导航）。
