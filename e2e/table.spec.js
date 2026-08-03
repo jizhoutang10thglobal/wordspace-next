@@ -614,6 +614,104 @@ test('U4: 跨格复制粘贴为纯文本', async () => {
   expect(clip.plain.replace(/\s+/g, '')).toBe('十一格十二');
 });
 
+// ===== CR：对抗审查回归（2026-08-03 Tier2 审查抓出的 bug，修后钉死）=====
+
+// CR-1：header-only 表（GFM md 产物，无 tbody）末格 Tab 建行 → tbody 补建 + 恰一行 TD；
+// 单次 undo → 整个 tbody 消失（不留幽灵空 tbody——checkpoint 必须在补建 tbody 之前）。
+test('CR: header-only 表建行 + 单 undo 无幽灵 tbody', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><p id="p1">前文</p>'
+    + '<table class="ws-table"><thead><tr><th scope="col" id="h1">仅表头甲</th><th scope="col" id="h2">仅表头乙</th></tr></thead></table></body></html>');
+  await frame.locator('#h2').click();
+  await page.keyboard.press('Tab'); // 末格 → 建行（必须新建 tbody，绝不给 thead 塞第二行）
+  await page.waitForTimeout(150);
+  const grown = await frame.locator('body').evaluate(() => ({
+    tbodies: document.querySelectorAll('tbody').length,
+    tbodyRows: document.querySelectorAll('tbody tr').length,
+    theadRows: document.querySelectorAll('thead tr').length,
+    tds: document.querySelectorAll('tbody td').length,
+  }));
+  expect(grown.tbodies).toBe(1);
+  expect(grown.tbodyRows).toBe(1);
+  expect(grown.theadRows).toBe(1);
+  expect(grown.tds).toBe(2);
+  expect(await conformOf(await serialize())).toBe(true);
+  await menu('undo'); // 单次 undo：行和补建的 tbody 一起回滚
+  await page.waitForTimeout(250);
+  const back = await frame.locator('body').evaluate(() => ({
+    tbodies: document.querySelectorAll('tbody').length,
+    theadRows: document.querySelectorAll('thead tr').length,
+  }));
+  expect(back.tbodies).toBe(0); // 无幽灵空 tbody
+  expect(back.theadRows).toBe(1);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// CR-2：其余格为空的表里「格内全选」复制 → 行内载荷，绝不升级整表克隆。
+test('CR: 格内全选复制不升级整表', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><p id="p1">前文</p>'
+    + '<table class="ws-table"><tbody><tr><td id="only">唯一有字的格</td><td><br></td></tr><tr><td><br></td><td><br></td></tr></tbody></table></body></html>');
+  await frame.locator('#only').click();
+  await page.keyboard.press('Meta+a'); // 第一档：选本格全部文字（norm 后 == 全表文字，旧代码会误判 wholeBlock）
+  await page.waitForTimeout(120);
+  const clip = await frame.locator('body').evaluate(() => {
+    const dt = new DataTransfer();
+    document.getElementById('only').dispatchEvent(new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true }));
+    return { html: dt.getData('text/html'), plain: dt.getData('text/plain') };
+  });
+  expect(clip.html).not.toContain('<table'); // 行内哨兵载荷，不是整表块级克隆
+  expect(clip.plain.replace(/\s+/g, '')).toBe('唯一有字的格');
+});
+
+// CR-3：图片说明编辑中直接点表格 cell → cell 真进入编辑（caption blur 不反噬新状态）。
+test('CR: 说明编辑切 cell 不被 blur 反噬', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<figure><img src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" alt="图"><figcaption id="cap">旧说明文字</figcaption></figure>'
+    + '<table class="ws-table"><tbody><tr><td id="c1">目标格子</td></tr></tbody></table></body></html>');
+  await frame.locator('#cap').click(); // 进说明编辑
+  await page.waitForTimeout(120);
+  await frame.locator('#c1').click(); // 直接切到表格 cell
+  await page.waitForTimeout(150);
+  const state = await frame.locator('body').evaluate(() => ({
+    cellId: (document.querySelector('[data-ws2-cell]') || {}).id || null,
+    cellCe: document.getElementById('c1').getAttribute('contenteditable'),
+    capCe: document.getElementById('cap') ? document.getElementById('cap').getAttribute('contenteditable') : null,
+  }));
+  expect(state.cellId).toBe('c1'); // cell 状态活着（未被 persistCaption 的 selectBlock/exitCell 清掉）
+  expect(state.cellCe).toBe('true');
+  expect(state.capCe).toBe(null); // 说明编辑已干净收尾
+  await page.keyboard.type('续');
+  await page.waitForTimeout(120);
+  expect(await frame.locator('#c1').textContent()).toContain('续'); // 打字真落格
+});
+
+// CR-4：表-only 文档 ⌘A 三档到全篇 → Backspace 整删 + 补空段可继续输入（原为 silent no-op）。
+test('CR: 表-only 文档全选删除不哑', async () => {
+  await launch();
+  await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
+    + '<table class="ws-table"><tbody><tr><td id="c1">甲格文字</td><td>乙</td></tr></tbody></table></body></html>');
+  await frame.locator('#c1').click();
+  await page.keyboard.press('Meta+a'); // ① 本格
+  await page.keyboard.press('Meta+a'); // ② 整表灰选
+  await page.keyboard.press('Meta+a'); // ③ 全篇（表-only：端点锚在 table 元素层）
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(200);
+  const after = await frame.locator('body').evaluate(() => ({
+    tables: document.querySelectorAll('table').length,
+    editing: !!document.querySelector('[data-ws2-editing]'),
+  }));
+  expect(after.tables).toBe(0); // 整删（不再 silent no-op）
+  expect(after.editing).toBe(true); // 补的空段落已进编辑
+  await page.keyboard.type('重新开始');
+  await page.waitForTimeout(150);
+  const html = await serialize();
+  expect(html).toContain('重新开始');
+  expect(await conformOf(html)).toBe(true);
+});
+
 // U1-4：非空锚块造表 → 插到锚块下方（锚块保留），undo 一步撤掉整个造表。
 test('U1: 非空块造表插下方 + undo 一步还原', async () => {
   await launch();

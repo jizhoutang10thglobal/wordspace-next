@@ -570,6 +570,7 @@
     function cellTableOf(cell) { return cell && cell.closest ? cell.closest('table') : null; }
     function cellOfNode(n) { const el2 = n && (n.nodeType === 3 ? n.parentElement : n); return el2 && el2.closest ? el2.closest('td,th') : null; }
     function enterCell(cell, caret) {
+      if (captionEl) { try { captionEl.blur(); } catch (x) {} } // 先收尾说明编辑：blur→persistCaption 会 selectBlock(figure)+exitCell，留到 cell.focus() 才触发会反噬清掉刚设的 cell 状态（对抗审查 conf100）
       if (cellEl && cellEl !== cell) exitCell();
       if (editingEl) exitEdit();
       clearSelectedAttr(); selectedEl = null;
@@ -600,9 +601,11 @@
     function appendTableRow(table) {
       const rows = tableRowsOf(table);
       const nCols = rows.length ? rowCellsOf(rows[rows.length - 1]).length : 3;
-      let tbody = [...table.children].find((c) => c.tagName === 'TBODY');
+      if (undoMgr) undoMgr.checkpoint(); // 前置检查点必须在一切 DOM 变更（含补建 tbody）之前——否则 header-only 表建行被劈成两个 undo 步、单次 undo 留幽灵空 tbody（对抗审查 conf100）
+      const lastRow = rows[rows.length - 1] || null;
+      let tbody = (lastRow && lastRow.parentElement && lastRow.parentElement.tagName === 'TBODY') ? lastRow.parentElement
+        : ([...table.children].filter((c) => c.tagName === 'TBODY').pop() || null); // 多 tbody 合规表：接到末数据行所在段/末段，别落第一个 tbody 表中间
       if (!tbody) { tbody = doc.createElement('tbody'); table.appendChild(tbody); }
-      if (undoMgr) undoMgr.checkpoint();
       const tr = doc.createElement('tr');
       for (let i = 0; i < nCols; i++) tr.appendChild(mkTableCell(doc, 'td'));
       tbody.appendChild(tr);
@@ -1125,7 +1128,11 @@
           if (blk2 && classify(blk2) === 'table') {
             // 真实路径里选区来自 cell 编辑态（cellEl===sCell2、contenteditable 已在）；罕见的无 cell 态格内
             // 选区先 enterCell（mode:keep 保留选区）——统一走状态机，不手搓临时 contenteditable（防 desync）。
-            if (cellEl !== sCell2) enterCell(sCell2, { mode: 'keep' });
+            if (cellEl !== sCell2) { // focus 可能折叠选区——照 onMouseUp 恢复范式，先存端点再重设
+              const sc0 = full.startContainer, so0 = full.startOffset, ec0 = full.endContainer, eo0 = full.endOffset;
+              enterCell(sCell2, { mode: 'keep' });
+              try { const rr = doc.createRange(); rr.setStart(sc0, so0); rr.setEnd(ec0, eo0); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(rr); } catch (x) {}
+            }
             try { doc.execCommand('styleWithCSS', false, false); } catch (x) {}
             doc.execCommand(cmd, false, null);
             markDirty(); persistEditing();
@@ -1250,6 +1257,7 @@
         if (sC && eC && sC !== eC) {
           const hit = cellSpanOf(sBlk, sC, eC); // 与高亮同一来源（所见即所删）
           if (!hit || !hit.length) return false;
+          if (undoMgr) undoMgr.checkpoint(); // KTD6：先结算 500ms 防抖窗口内的打字债，否则一次 undo 连字带清格一起吞
           for (const c of hit) {
             if (c === sC) { try { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(c, c.childNodes.length); r1.deleteContents(); } catch (x) {} }
             else if (c === eC) { try { const r2 = doc.createRange(); r2.setStart(c, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); } catch (x) {} }
@@ -1260,7 +1268,32 @@
           enterCell(sC, { mode: 'end' });
           return true;
         }
-        return false; // 同格内选区 → 原生（cell contenteditable 删得动）；端点定位不到格 → 不碰
+        // 端点在表元素层（表-only 文档 ⌘A 全篇锚 (table,0)-(table,len)）且选区罩住整表 → ED-A2 整删——
+        // 否则「全选后删除/打字覆盖」silent no-op（correctness+adversarial 同报）。删成空文档则补空 <p> 进编辑。
+        if (!sC || !eC) {
+          try {
+            const whole = doc.createRange(); whole.selectNodeContents(sBlk);
+            if (r.compareBoundaryPoints(Range.START_TO_START, whole) <= 0 && r.compareBoundaryPoints(Range.END_TO_END, whole) >= 0) {
+              const nb = sBlk.nextElementSibling, pb = sBlk.previousElementSibling;
+              exitCell();
+              sBlk.remove();
+              if (blocksInScope(blockRoot).length === 0) {
+                const p = doc.createElement('p'); p.appendChild(doc.createElement('br')); blockRoot.appendChild(p);
+                markDirty(); if (undoMgr) undoMgr.checkpoint();
+                enterEdit(p, { mode: 'start' });
+                return true;
+              }
+              markDirty(); if (undoMgr) undoMgr.checkpoint();
+              const anchor2 = (nb && !(nb.hasAttribute && nb.hasAttribute('data-ws2-ui'))) ? nb : pb;
+              if (anchor2 && isEditableEl(anchor2)) enterEdit(anchor2, { mode: 'start' });
+              else if (anchor2) { selectBlock(anchor2); positionGrip(anchor2); }
+              else deselect();
+              return true;
+            }
+          } catch (x) {}
+          return false;
+        }
+        return false; // 同格内选区 → 原生（cell contenteditable 删得动）
       }
       if (sBlk === eBlk) {
         if (editingEl === sBlk) return false;  // 编辑态单块内选区 → 原生删得了
@@ -1903,7 +1936,7 @@
         return;
       }
       // 表格单元格（U2/KTD1）：点中 td/th → 进 cell 编辑。必须在 blockOf 上卷**之前**（上卷会吃成整表灰选）。
-      // 门控 docHasTable（每次现查）；blockOf+classify 确认该表是真块（不在覆盖层/块外）。点表格边框缝隙/margin
+      // 门控由结构成立：无表文档 closest('td,th') 恒 null；blockOf+classify 复核该表是真块（不在覆盖层/块外）。点表格边框缝隙/margin
       // 落不进 td/th → 走下面 blockOf 的整表灰选（既有行为）。
       const cellT = e.target && e.target.closest && e.target.closest('td,th');
       if (cellT) {
@@ -2763,7 +2796,7 @@
     // grip 交互
     grip.addEventListener('mousedown', (e) => { e.stopPropagation(); });
     grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const el = selectedEl || hoverEl; if (el) openBlockMenu(el); });
-    grip.addEventListener('dragstart', (e) => { dragFrom = selectedEl || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} } });
+    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
     function clearDrop() { const p = body.querySelector('[data-ws2-drop]'); if (p) p.removeAttribute('data-ws2-drop'); }
     // 修 ED-A5：外部拖放（dragFrom 为空=不是内部块拖拽）一律吞掉，别让浏览器默认 insertFromDrop 把带任意
@@ -2804,7 +2837,8 @@
         if (!sC3 || sC3 !== eC3) { cd.setData('text/plain', r.toString() || sel.toString()); e.preventDefault(); return; }
       }
       // 整块判定（选中覆盖了整个块的文字，如选完一整行待办）→ 当块级复制、保留块类型（正是 Wendi 的场景）。
-      const wholeBlock = sameBlock && norm(sel.toString()).length > 0 && norm(sel.toString()) === norm(sBlk.textContent);
+      // TABLE 永不做 wholeBlock 升级：其余格为空时「格内全选」会误判成整表复制，粘贴克隆整表/⌘X 只删字却剪走整表（对抗审查 conf100）
+      const wholeBlock = sameBlock && sBlk.tagName !== 'TABLE' && norm(sel.toString()).length > 0 && norm(sel.toString()) === norm(sBlk.textContent);
       // U3/clip-1：同一列表块内跨 li 选区 → 走块级打包（保留待办项类型 + 勾选态），别落行内分支携带裸 <li>。
       // blockOf 把整个 <ul> 当一个块 → 选部分项时 sameBlock && !wholeBlock 会误入行内分支、cloneContents 出裸 li，
       // 粘进段落成 <p>…<li> 非法嵌套、整篇降级、勾选语义丢失。单 li 内选区（sLi===eLi）不进此分支、维持行内。
@@ -2952,10 +2986,17 @@
           markDirty();
           return;
         }
+        // html-only 剪贴板（有些来源只给 text/html 不给 text/plain）→ 取纯文本兜底压单行；真没有文字才算拒收
+        const h0 = cd0 && cd0.getData ? cd0.getData('text/html') : '';
+        if (String(h0 || '').trim()) {
+          const tpl0 = doc.createElement('template'); tpl0.innerHTML = h0;
+          const flat0 = (tpl0.content.textContent || '').replace(/\s+/g, ' ').trim();
+          if (flat0) { doc.execCommand('insertText', false, flat0); if (undoMgr) undoMgr.scheduleCheckpoint(); markDirty(); return; }
+        }
         let hasFile = false;
         if (cd0 && cd0.items) { for (const it of cd0.items) { if (it.kind === 'file') { hasFile = true; break; } } }
         if (!hasFile && cd0 && II) hasFile = II.pickImageFiles(cd0).length > 0;
-        if (hasFile) showCellNope(cellEl); // 图片/文件拒收——给可感知反馈，绝不静默
+        if (hasFile || String(h0 || '').trim()) showCellNope(cellEl); // 有货但放不进（图片/纯标记 HTML）——可感知拒收，绝不静默
         return;
       }
       // 内部富粘贴优先：剪贴板 HTML 带本编辑器哨兵 → 保留格式（外部无哨兵的 HTML 一律不走这、落纯文本兜底）。
