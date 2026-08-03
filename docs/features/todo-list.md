@@ -52,7 +52,9 @@
 
 **跨 toggle 边界删除**见 `editor-cross-block-selection.md`（U23/select-4：部分跨界一致化为空操作 + 反馈动画）。
 
-**行级手柄悬停跟随（粒度对齐 U1=A，分支 feat/ux-granularity，2026-08-03）。** 悬停列表块（todo / 普通 `ul`/`ol`，含 toggle 体内列表）内任一行，⋮⋮ 手柄跟随锚到**该行**左缘：嵌套行取最深 `li`、锚随缩进右移（对齐 Notion 逐行手柄）；悬停落在行间隙 / ul padding 按 Y 就近吸附到最近行，无手柄真空区。非列表块仍锚整块，跨块跟随不变。悬停本身零 DOM 变更（不脏档）。⚠ **A 阶段中间态**：行旁手柄的**拖拽与菜单作用对象仍是整个列表块**（U2 行级拖拽 / U3 菜单行级作用域随后下沉）——该中间态只允许存在于隔离分支，A+B+C 整体完成才进 main（Colin 2026-08-03 拍板，plan `docs/plans/2026-08-03-002-feat-todo-row-granularity-plan.md`）。门：`e2e/list-row-grip.spec.js`。
+**行级手柄悬停跟随（粒度对齐 U1=A，分支 feat/ux-granularity，2026-08-03）。** 悬停列表块（todo / 普通 `ul`/`ol`，含 toggle 体内列表）内任一行，⋮⋮ 手柄跟随锚到**该行**左缘：嵌套行取最深 `li`、锚随缩进右移（对齐 Notion 逐行手柄）；悬停落在行间隙 / ul padding 按 Y 就近吸附到最近行，无手柄真空区。非列表块仍锚整块，跨块跟随不变。悬停本身零 DOM 变更（不脏档）。⚠ **中间态**：行旁手柄的**菜单作用对象仍是整个列表块**（U3 菜单行级作用域随后下沉）——该中间态只允许存在于隔离分支，A+B+C 整体完成才进 main（Colin 2026-08-03 拍板，plan `docs/plans/2026-08-03-002-feat-todo-row-granularity-plan.md`）。门：`e2e/list-row-grip.spec.js`。
+
+**行级拖拽重排（粒度对齐 U2=B，分支 feat/ux-granularity，2026-08-03）。** 行悬停起拖 = 拖**单行**（幽灵图=整行）；指示线亮在目标行上/下**半区**（指针半区语义，对齐 Notion 落点直觉）。落点语义：①同类列表（标签一致 + ws-todo 语义一致）内/间 = li 移动；②非列表块旁 = 拆出成**继承源类型**的独立单行列表块；③跨类型（todo↔普通 ul/ol）**v1 拒收**——不亮指示线、drop 零变更（比静默变形安全）；④拖进自己子树拒收。源列表被掏空 → 移除（嵌套 ul 移除保宿主 li；toggle 体内列表清空 → 补空 p 保「体 ≥1 块」铁则）。每次成功 drop 记一个 checkpoint（undo 一步整体还原）；取消/无效落点零变更零 checkpoint。勾选态（`data-checked`）与 `id` 随行迁移保真。**整块拖拽仍可用**：Esc 灰选列表后拖 = 整列表（`selectedEl` 优先于 `hoverRow`）。**嵌套语义除外**：拖拽落点水平位移=嵌套进上一行（Notion 行为）绑定 #337「嵌套 vs 缩进」决策，等拍板另做。门：`e2e/list-row-drag.spec.js`（9 条）。
 
 ## 文件映射
 

@@ -3002,7 +3002,8 @@
     // grip 交互
     grip.addEventListener('mousedown', (e) => { e.stopPropagation(); });
     grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const el = selectedEl || hoverEl; if (el) openBlockMenu(el); });
-    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态
+    // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
+    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverRow || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
     function clearDrop() { const p = body.querySelector('[data-ws2-drop]'); if (p) p.removeAttribute('data-ws2-drop'); }
     // 修 ED-A5：外部拖放（dragFrom 为空=不是内部块拖拽）一律吞掉，别让浏览器默认 insertFromDrop 把带任意
@@ -3341,6 +3342,61 @@
       if (undoMgr) undoMgr.checkpoint();
       markDirty();
     }
+    // ---- U2 行级拖拽（plan 2026-08-03-002）----
+    const isRowDrag = () => !!(dragFrom && dragFrom.tagName === 'LI');
+    // 同类列表判定：标签一致 + todo 语义一致。跨类型（todo↔普通 ul/ol）v1 拒收（plan 拍板），
+    // 指示线不亮、drop 零变更——比静默变形安全。
+    const sameListType = (a, b) => !!a && !!b && a.tagName === b.tagName && a.classList.contains('ws-todo') === b.classList.contains('ws-todo');
+    // 行拖拽 dragover：目标是同类列表 → 指示线亮在目标行的上/下半区（指针半区语义，对齐 Notion 落点直觉）；
+    // 目标是非列表块 → 指示线亮块上/下（drop = 拆出成独立单行列表）；自子树/跨类型 → 不亮=不可放。
+    function rowDragOver(e) {
+      clearDrop();
+      const el = blockOf(e.target);
+      if (!el || el === dragFrom || (dragFrom.contains && dragFrom.contains(el))) return;
+      if (classify(el) === 'list') {
+        const tr = rowOf(e.target, el, e.clientY);
+        if (!tr || tr === dragFrom || dragFrom.contains(tr)) return;
+        if (!sameListType(dragFrom.parentElement, tr.parentElement)) return;
+        const r = tr.getBoundingClientRect();
+        tr.setAttribute('data-ws2-drop', e.clientY < r.top + r.height / 2 ? 'top' : 'bottom');
+      } else {
+        const r = el.getBoundingClientRect();
+        el.setAttribute('data-ws2-drop', e.clientY < r.top + r.height / 2 ? 'top' : 'bottom');
+      }
+    }
+    // 行拖拽 drop：①同类列表内/间 → li 移到目标行上/下；②非列表块旁 → 拆出成同类型单行列表块；
+    // 无效目标（自子树/跨类型/落回自己）→ 零变更零 checkpoint。挪走后源列表掏空 → 移除
+    //（嵌套 ul 移除保宿主 li；toggle 体内列表移除后体空 → 补空 p 保 ≥1 体块铁则）。
+    function rowDrop(e) {
+      const el = blockOf(e.target);
+      if (!el || el === dragFrom || (dragFrom.contains && dragFrom.contains(el))) return;
+      const srcList = dragFrom.parentElement;
+      const srcScope = scopeRootOf(srcList);
+      let moved = false;
+      if (classify(el) === 'list') {
+        const tr = rowOf(e.target, el, e.clientY);
+        if (tr && tr !== dragFrom && !dragFrom.contains(tr) && sameListType(srcList, tr.parentElement)) {
+          const r = tr.getBoundingClientRect();
+          if (e.clientY < r.top + r.height / 2) tr.before(dragFrom); else tr.after(dragFrom);
+          moved = true;
+        }
+      } else {
+        const nl = doc.createElement(srcList.tagName);
+        if (srcList.className) nl.className = srcList.className;
+        nl.appendChild(dragFrom);
+        const r = el.getBoundingClientRect();
+        if (e.clientY < r.top + r.height / 2) el.before(nl); else el.after(nl);
+        moved = true;
+      }
+      if (!moved) return;
+      if (srcList !== dragFrom.parentElement && !srcList.querySelector('li')) {
+        srcList.remove();
+        if (srcScope !== blockRoot && blocksInScope(srcScope).length === 0) srcScope.appendChild(doc.createElement('p'));
+      }
+      hoverEl = blockOf(dragFrom); hoverRow = dragFrom; positionGrip(dragFrom);
+      if (undoMgr) undoMgr.checkpoint();
+      markDirty();
+    }
     function draggingFile() { return (typeof global !== 'undefined' && global.__wsDragFile) || null; }
     const dtHasFiles = (dt) => !!dt && !!dt.types && Array.prototype.indexOf.call(dt.types, 'Files') !== -1;
     function onDragOver(e) {
@@ -3348,7 +3404,9 @@
       // OS 图片文件拖入（doc-images）：dragover 阶段读不到 MIME、只看得到 'Files'，先放行；drop 时按白名单过滤。
       if (!dragFrom && dtHasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; return; }
       if (!dragFrom) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
-      e.preventDefault(); const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop(); el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top');
+      e.preventDefault();
+      if (isRowDrag()) { rowDragOver(e); return; } // U2：行拖拽走行级指示线
+      const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop(); el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top');
     }
     function onDrop(e) {
       const f = draggingFile();
@@ -3363,6 +3421,7 @@
       }
       if (!dragFrom) { e.preventDefault(); return; }
       e.preventDefault();
+      if (isRowDrag()) { rowDrop(e); clearDrop(); dragFrom = null; return; } // U2：行拖拽
       const el = blockOf(e.target); // scoped：落在 toggle 体内块 → el 是体内块，.before/.after 落体内（进/出/内自动获得，U8/R6）
       // 自嵌守卫：details 不能拖进自己的体（无限嵌套）。
       if (el && el !== dragFrom && !(dragFrom.contains && dragFrom.contains(el))) {

@@ -95,10 +95,12 @@ test('非列表块锚整块（不回归）+ 跨块跟随', async () => {
   expect(inBand(gL, await bandOf('#r1')), '移回列表手柄跟到行').toBe(true);
 });
 
-test('A 阶段不变式：手柄拖拽仍移动整个列表（U2 改写此条）', async () => {
+test('U2 后整块拖拽仍可用：Esc 灰选列表后拖拽 = 整列表移动', async () => {
   await launch();
   await openDoc('<p id="pre">上方段落</p><ul class="ws-todo"><li id="r1">一</li><li id="r2">二</li></ul><p id="post">下方段落</p>');
-  await frame.locator('#r2').hover();
+  // 块灰选路径：点进行 → Esc 退出编辑进块选中 → selectedEl=整列表 → 拖拽单位=整块
+  await frame.locator('#r2').click();
+  await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
   await page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
@@ -116,7 +118,7 @@ test('A 阶段不变式：手柄拖拽仍移动整个列表（U2 改写此条）
     const d = document.getElementById('doc-frame').contentDocument;
     return [...d.body.children].map((el) => el.tagName + (el.id ? '#' + el.id : ''));
   });
-  expect(order.join(','), '拖拽单位仍是整个列表').toBe('P#pre,P#post,UL');
+  expect(order.join(','), '灰选整块拖拽=整列表移动').toBe('P#pre,P#post,UL');
 });
 
 test('嵌套行勾选框 gutter 悬停：手柄不跳回父项（Colin 试玩实抓回归）', async () => {
