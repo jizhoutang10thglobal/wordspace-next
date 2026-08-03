@@ -157,6 +157,7 @@ Schema #1 = 一套**受限的 HTML**（reduced HTML）：块的集合 ≈ Notion
 12. **`<figure>` 只含一个 `<img>` + 可选 `<figcaption>`**（`figure-content`）——别在 figure 里塞段落/列表。
 13. **`<figcaption>` 里只放文字 + 行内**（`figcaption-content`）。
 14. **块级元素不带 `style`**（`block-style`）——颜色写到块**里**的 `<span>` 上，别写到块上。
+    - 段落/标题/引用/callout 的整块缩进用固定 class：`<p class="ws-indent-2">`（1–6 档、每档 24px、每块最多一个、最多比上一块深一级；不要用 style/margin/嵌套 div 做缩进；缩进 CSS 由编辑器打开时自动入盘，你无需自带 `<style>`）。
 15. **顶层只用允许的块**（`block-tag`）——**没有 h5/h6**（标题封顶 h4）、**没有 `<section>`**、**没有裸 `<div>`**（提示框必须是 `<div class="ws-callout">`）。别的任意标签当块都不合规。
 16. **`<head>` 里不写 `meta http-equiv`**（`head-meta-http-equiv`）——`refresh` 跳转会劫持导航。
 17. **`<head>` 里的 `<style>` 必须带 `data-ws-schema-css`**（`head-style`）——那是编辑器托管的语义 CSS；**你自己的装饰 `<style>` 不允许**。
