@@ -103,7 +103,9 @@ test('4 首块 Tab 缩不了（上面没块，maxAllowed=0）', async () => {
 
 test('5 toggle 协调：进 toggle 剥缩进无双偏移，体内 Shift+Tab 出来归 0 档', async () => {
   await launch();
-  await openDoc('<p id="z">零</p><details open><summary>标</summary><p id="in">体</p></details><p id="b" class="ws-indent-2">乙</p>', INDENT_STYLE);
+  // #in2 预置 ws-indent-1（模拟外部/AI 文档 toggle 体内自带档位）：出 toggle 的 stripIndent 必须真剥它——
+  // 不然「出来归 0 档」断言对刚被进场剥光的 #b 是平凡真、没牙。
+  await openDoc('<p id="z">零</p><details open><summary>标</summary><p id="in">体</p><p id="in2" class="ws-indent-1">体2</p></details><p id="b" class="ws-indent-2">乙</p>', INDENT_STYLE);
   await clickIn('#b');
   await tab(); // 前兄弟是 <details> → 走既有嵌入，ws-indent 剥光
   expect(await frame.locator('#b').evaluate((el) => el.parentElement.tagName), 'b 进 toggle 体').toBe('DETAILS');
@@ -112,6 +114,12 @@ test('5 toggle 协调：进 toggle 剥缩进无双偏移，体内 Shift+Tab 出�
   await shiftTab(); // 体内 Shift+Tab → 出 toggle，0 档
   expect(await frame.locator('#b').evaluate((el) => el.parentElement.tagName), 'b 回顶层').toBe('BODY');
   expect((await clsOf('#b')).includes('ws-indent'), '出 toggle 归 0 档').toBe(false);
+  // 出 toggle 剥缩进的真牙：体内预置档位块出来必须被剥光 + 坐标与顶层基线块一致
+  await clickIn('#in2');
+  await shiftTab();
+  expect(await frame.locator('#in2').evaluate((el) => el.parentElement.tagName), 'in2 出到顶层').toBe('BODY');
+  expect((await clsOf('#in2')).includes('ws-indent'), '预置 ws-indent-1 被出场 stripIndent 剥光').toBe(false);
+  expect(Math.abs((await rectX('#in2')) - (await rectX('#z'))), '坐标回到顶层基线（CSS 层面也归 0）').toBeLessThanOrEqual(1);
 });
 
 test('5b toggle 嵌入后 undo：块回顶层且 ws-indent-2 恢复（strip 必须在 checkpoint 之前，M7 门）', async () => {
