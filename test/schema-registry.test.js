@@ -26,6 +26,18 @@ test('schemas(): 至少注册了 schema-1', () => {
   assert.ok(reg.schemas().some((s) => s.id === 'schema-1'));
 });
 
+test('schemas(): 前两位 = [schema-2, schema-1]（注册顺序 = 归类优先级，收口在 registry 一处）', () => {
+  const ids = reg.schemas().map((s) => s.id);
+  assert.equal(ids[0], 'schema-2');
+  assert.equal(ids[1], 'schema-1');
+});
+
+test('register: 幂等——重复注册同 id 不入表（浏览器重复加载兜底）', () => {
+  const before = reg.schemas().length;
+  reg.register({ id: 'schema-1', detect: () => true, validate: () => ({ conform: true, violations: [] }) });
+  assert.equal(reg.schemas().length, before, '重复 schema-1 不应再入表');
+});
+
 test('register + classify：detect 命中但 validate 不过 → 继续试下一个 schema（多 schema 分派）', () => {
   // 注册一个只在有 <marker-x> 时 detect 命中、且恒 conform 的测试 schema。
   // schema-1 detect 恒真但对 <marker-x> validate 不过（block-tag）→ 遍历继续 → test-only 命中。

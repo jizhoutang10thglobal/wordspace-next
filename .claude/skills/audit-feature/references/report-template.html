@@ -1,0 +1,195 @@
+<!doctype html>
+<!--
+  audit-feature 可视化报告模板(Colin 2026-07-24 定为每轮必出)。
+  用法:
+    1. 复制此文件,填 header / summary chips / 各 finding 卡片。
+    2. 截图内嵌成 data URI(自包含,CSP 不引外部资源):
+         node -e 'const fs=require("fs");let h=fs.readFileSync("x.html","utf8");
+           h=h.replace("__IMG_1__","data:image/png;base64,"+fs.readFileSync("shot.png").toString("base64"));
+           fs.writeFileSync("out.html",h)'
+    3. open out.html 给 Colin 看。写 scratchpad,不进仓。
+  标注框(.mark)+ 标签(.tag)用**百分比**定位(截图缩放无关):
+    颜色语义 —— 默认(红)=真 bug;.good(绿)=行为正确;.warn(琥珀)=待核/中性;.acc(蓝)=对照基线。
+    .mark 是框,.tag 是文字标签,配对使用;.tag 可放到框外空白区(白底处)保证可读。
+  卡片类型 —— .card(默认,装 finding)/ .card.pass(绿,通过项)/ .card.note(灰,附注/待核)。
+  badge —— .p2(红,P2)/ .p3(琥珀,P3)/ .pass(绿)/ .check(蓝,调查过/符合)。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wordspace 审计报告 · __DATE__</title>
+<style>
+  :root{
+    --paper:#FAFAF9; --sunken:#F5F5F4; --surface:#FFFFFF;
+    --ink:#1C1917; --ink-2:#57534E; --ink-3:#A8A29E;
+    --line:#E7E5E4; --line-strong:#D6D3D1;
+    --accent:#1D6FBF; --accent-tint:#E8F1FA;
+    --danger:#B91C1C; --danger-tint:#FBEBEB;
+    --warn:#B45309; --warn-tint:#FBF1E6;
+    --good:#15803D; --good-tint:#E9F5EE;
+    --r-sm:6px; --r-md:10px; --r-lg:16px;
+    --shadow:0 1px 2px rgba(28,25,23,.06), 0 8px 24px rgba(28,25,23,.08);
+    --font:-apple-system,"SF Pro Text",system-ui,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --paper:#211D1A; --sunken:#1B1714; --surface:#2B2724;
+      --ink:#EDE9E6; --ink-2:#B3ACA6; --ink-3:#78716C;
+      --line:#3A3531; --line-strong:#4A4440;
+      --accent:#5C9FDF; --accent-tint:#1C2C3A;
+      --danger:#E5645F; --danger-tint:#3A2422;
+      --warn:#D98A3A; --warn-tint:#33261A;
+      --good:#46B366; --good-tint:#1E2E22;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45); }
+  }
+  :root[data-theme="dark"]{ --paper:#211D1A; --sunken:#1B1714; --surface:#2B2724; --ink:#EDE9E6; --ink-2:#B3ACA6; --ink-3:#78716C; --line:#3A3531; --line-strong:#4A4440; --accent:#5C9FDF; --accent-tint:#1C2C3A; --danger:#E5645F; --danger-tint:#3A2422; --warn:#D98A3A; --warn-tint:#33261A; --good:#46B366; --good-tint:#1E2E22; --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.45); }
+  :root[data-theme="light"]{ --paper:#FAFAF9; --sunken:#F5F5F4; --surface:#FFFFFF; --ink:#1C1917; --ink-2:#57534E; --ink-3:#A8A29E; --line:#E7E5E4; --line-strong:#D6D3D1; --accent:#1D6FBF; --accent-tint:#E8F1FA; --danger:#B91C1C; --danger-tint:#FBEBEB; --warn:#B45309; --warn-tint:#FBF1E6; --good:#15803D; --good-tint:#E9F5EE; --shadow:0 1px 2px rgba(28,25,23,.06), 0 8px 24px rgba(28,25,23,.08); }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);line-height:1.6;
+    -webkit-font-smoothing:antialiased;font-size:15px}
+  .wrap{max-width:880px;margin:0 auto;padding:48px 24px 96px}
+  header.top{margin-bottom:8px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:10px}
+  h1{font-size:30px;font-weight:750;letter-spacing:-.02em;margin:0 0 6px;text-wrap:balance}
+  .sub{color:var(--ink-2);font-size:15px;margin:0}
+  .rule{height:1px;background:var(--line);margin:22px 0 30px}
+  .summary{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:34px}
+  .chip{display:flex;align-items:baseline;gap:8px;background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--r-md);padding:12px 15px;flex:1;min-width:150px}
+  .chip b{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .chip span{font-size:13px;color:var(--ink-2)}
+  .chip.good b{color:var(--good)} .chip.warn b{color:var(--warn)} .chip.dan b{color:var(--danger)}
+  h2.section{font-size:21px;font-weight:700;margin:44px 0 4px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  h2.section .n{font-family:var(--mono);font-size:14px;color:var(--ink-3);font-weight:500}
+  .section-sub{color:var(--ink-2);margin:0 0 20px;font-size:14px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
+    box-shadow:var(--shadow);padding:22px 22px 24px;margin-bottom:22px;overflow:hidden}
+  .card.pass{box-shadow:none;background:var(--good-tint);border-color:transparent}
+  .card.note{box-shadow:none;background:var(--sunken);border-color:var(--line)}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;font-family:var(--mono);
+    padding:3px 9px;border-radius:999px;letter-spacing:.02em}
+  .badge.p2{background:var(--danger-tint);color:var(--danger)}
+  .badge.p3{background:var(--warn-tint);color:var(--warn)}
+  .badge.pass{background:var(--good-tint);color:var(--good)}
+  .badge.check{background:var(--accent-tint);color:var(--accent)}
+  .card h3{font-size:18px;font-weight:700;margin:12px 0 2px;letter-spacing:-.01em}
+  .plain{color:var(--ink);margin:10px 0 4px;font-size:15px}
+  .plain .hl{background:var(--good-tint);padding:1px 4px;border-radius:4px;font-weight:600}
+  .plain .hl.bad{background:var(--warn-tint)}
+  .plain code,.root code,li code,.kv{font-family:var(--mono)}
+  .plain code,.root code,li code{font-size:.9em;background:var(--sunken);padding:1px 5px;border-radius:4px}
+  .shot{position:relative;margin:16px 0 6px;border:1px solid var(--line-strong);border-radius:var(--r-md);
+    overflow:hidden;background:var(--sunken);line-height:0}
+  .shot img{width:100%;display:block;height:auto}
+  .mark{position:absolute;border:2.5px solid var(--danger);border-radius:6px;
+    box-shadow:0 0 0 3px rgba(185,28,28,.18);pointer-events:none}
+  .mark.warn{border-color:var(--warn);box-shadow:0 0 0 3px rgba(180,83,9,.18)}
+  .mark.good{border-color:var(--good);box-shadow:0 0 0 3px rgba(21,128,61,.18)}
+  .mark.acc{border-color:var(--accent);box-shadow:0 0 0 3px rgba(29,111,191,.18)}
+  .tag{position:absolute;background:var(--danger);color:#fff;font-size:11px;font-weight:700;
+    font-family:var(--mono);padding:3px 8px;border-radius:5px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+  .tag.warn{background:var(--warn)} .tag.good{background:var(--good)} .tag.acc{background:var(--accent)}
+  .cap{font-size:12.5px;color:var(--ink-3);margin:8px 2px 0;font-family:var(--mono)}
+  .verify{background:var(--accent-tint);border-radius:var(--r-md);padding:14px 16px;margin-top:16px}
+  .verify .vh{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:6px;
+    font-family:var(--mono);letter-spacing:.02em}
+  .verify ol{margin:0;padding-left:20px} .verify li{margin:3px 0;font-size:14px}
+  .verify.mut{background:var(--good-tint)} .verify.mut .vh{color:var(--good)}
+  .root{font-size:13.5px;color:var(--ink-2);margin-top:12px;padding-top:12px;border-top:1px dashed var(--line-strong)}
+  .root b{color:var(--ink)}
+  ul.checks{list-style:none;padding:0;margin:6px 0 0}
+  ul.checks li{padding:5px 0 5px 26px;position:relative;font-size:14.5px}
+  ul.checks li::before{content:"✓";position:absolute;left:0;color:var(--good);font-weight:800}
+  ul.dots{margin:6px 0 0;padding-left:20px} ul.dots li{margin:4px 0;font-size:14px;color:var(--ink-2)}
+  .kv{font-size:13px;background:var(--sunken);border-radius:var(--r-sm);padding:10px 13px;margin:12px 0 0;overflow-x:auto}
+  .kv .g{color:var(--good);font-weight:700} .kv .d{color:var(--danger);font-weight:700} .kv .m{color:var(--ink-3)}
+  footer{margin-top:48px;padding-top:22px;border-top:1px solid var(--line);color:var(--ink-3);font-size:13px}
+  footer code{font-family:var(--mono);background:var(--sunken);padding:1px 5px;border-radius:4px;color:var(--ink-2)}
+  .themebtn{position:fixed;top:14px;right:14px;background:var(--surface);border:1px solid var(--line);
+    color:var(--ink-2);border-radius:999px;padding:7px 13px;font-size:12px;cursor:pointer;font-family:var(--mono);box-shadow:var(--shadow)}
+  @media(max-width:640px){ .wrap{padding:32px 16px 64px} h1{font-size:24px} .chip{min-width:120px} }
+</style>
+</head>
+<body>
+<button class="themebtn" onclick="var r=document.documentElement,d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark')">◐ 切换亮暗</button>
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow">Wordspace · AI 审计</div>
+    <h1>__标题__</h1>
+    <p class="sub">__DATE__ · <code>/audit-feature</code> · __feature 名__</p>
+  </header>
+  <div class="rule"></div>
+
+  <!-- 概览计数(2~4 个)。chip.good 绿 / chip.warn 琥珀 / chip.dan 红 -->
+  <div class="summary">
+    <div class="chip dan"><b>__N__</b><span>P2 视觉毛病</span></div>
+    <div class="chip warn"><b>__N__</b><span>P3 小毛病</span></div>
+    <div class="chip good"><b>__N__</b><span>安全红线全守住</span></div>
+    <div class="chip good"><b>0</b><span>硬误报</span></div>
+  </div>
+
+  <!-- ===== finding 卡(真 bug):红 badge + 红标注框 ===== -->
+  <div class="card">
+    <span class="badge p2">● P2 · 视觉</span>
+    <h3>__一句话现象__</h3>
+    <p class="plain">__人话讲清:什么场景、看到什么、本该怎样。__ 用 <span class="hl bad">琥珀高亮</span>标关键词、<code>代码/值</code>用等宽。</p>
+    <div class="shot">
+      <img src="__IMG_1__" alt="__截图描述__">
+      <!-- 框:left/top/width/height 全用 % ;红框=真 bug -->
+      <div class="mark" style="left:0.4%;top:3.8%;width:29%;height:5.8%"></div>
+      <div class="tag" style="left:0.4%;top:10.4%">↑ __指出问题__</div>
+    </div>
+    <p class="cap">__文件名.png · 真 app 实测__</p>
+    <p class="root"><b>根因:</b>__为什么会这样__。<b>严重度:</b>__P几、影响谁__。<b>建议:</b>__怎么修__。</p>
+    <div class="verify">
+      <div class="vh">你怎么自己验(N 分钟)</div>
+      <ol><li>__步骤 1__</li><li>__步骤 2__</li></ol>
+    </div>
+  </div>
+
+  <!-- ===== 通过卡:绿 badge + 绿标注框 ===== -->
+  <div class="card pass">
+    <span class="badge pass">✓ 通过 · __什么通过了__</span>
+    <h3>__一句话:做对了__</h3>
+    <p class="plain">__实测正确的行为。__</p>
+    <div class="shot">
+      <img src="__IMG_2__" alt="__描述__">
+      <div class="mark good" style="left:0.6%;top:10.2%;width:19%;height:5.6%"></div>
+      <div class="tag good" style="left:20.6%;top:11%">__指出正确处__</div>
+    </div>
+    <p class="cap">__文件名.png__</p>
+    <!-- 关键视觉断言配变异自检:同元素改前/改后两个值必须不同 -->
+    <div class="verify mut">
+      <div class="vh">变异自检(证明不是看走眼)</div>
+      <div class="kv">__指标__:改前 <span class="d">__旧值__</span> <span class="m">→</span> 改后 <span class="g">__新值__</span>(两值不同 = 真变了)</div>
+    </div>
+  </div>
+
+  <!-- ===== 安全清单(全守住)===== -->
+  <div class="card pass">
+    <span class="badge pass">✓ 安全 · 全守住</span>
+    <h3>__最该担心的安全,防住了__</h3>
+    <ul class="checks">
+      <li><b>__风险名__</b>:__怎么防住的__。</li>
+    </ul>
+  </div>
+
+  <!-- ===== 附注/待核卡:灰 ===== -->
+  <div class="card note">
+    <span class="badge p3">待核 · 你不用现在管</span>
+    <h3>__几个拿不准的小点__</h3>
+    <ul class="dots">
+      <li>__小点__</li>
+      <li><b>值得你拍的一个:</b>__需产品拍板的点__</li>
+    </ul>
+  </div>
+
+  <footer>
+    <p><b>这是什么:</b><code>/audit-feature</code> 是手动触发的 AI 审计——派 AI 模拟挑剔用户测某功能的行为/后端/交互/样式,重点抓 e2e 硬门测不出的观感毛病。<b>探索器不是回归门</b>——再跑发现会不同,确定性回归仍靠 e2e。</p>
+    <p style="margin-top:8px">完整文字报告(给开发存档)在 <code>docs/qa/audits/</code> 的 PR。本页是给你 review 的可视化版。</p>
+  </footer>
+</div>
+</body>
+</html>

@@ -549,9 +549,15 @@ function registerIpc() {
   // WS2_PDF_OUT 是测试 seam：设了就跳过原生对话框直接用该路径（原生对话框 e2e 点不了）。
   ipcMain.handle('export-pdf', async (e, p, mode, html, opts) => {
     assertDocPath(p);
-    // opts（分页文档）：paged=走标准 @page 分页（preferCSSPageSize）而非连续单页；pageNumbers=页脚页码。
-    // 只取白名单字段成布尔（IPC 入参不可信，不原样透传对象）。
-    const pdfOpts = { paged: !!(opts && opts.paged), pageNumbers: !!(opts && opts.pageNumbers) };
+    // opts（分页文档）：paged=走标准 @page 分页（preferCSSPageSize）而非连续单页；pageNumbers=页脚页码；
+    // header/footer=页眉页脚文字（clampHF 截断，pdf-export 侧 escapeHtml 后进模板）；padMm=居左对齐边距。
+    // 只取白名单字段（IPC 入参不可信，不原样透传对象；字符串截断到上限防超长）。
+    const clampHF = (s) => (s == null ? '' : String(s).replace(/[\r\n]+/g, ' ').slice(0, 200));
+    const pdfOpts = {
+      paged: !!(opts && opts.paged), pageNumbers: !!(opts && opts.pageNumbers),
+      header: clampHF(opts && opts.header), footer: clampHF(opts && opts.footer),
+      padMm: (opts && Number.isFinite(opts.padMm) && opts.padMm >= 0 && opts.padMm <= 80) ? opts.padMm : 25.4,
+    };
     // WS2_PDF_OUT 仅在非打包态生效（打包后忽略，一律走保存对话框）——跟 main.js 自动更新 isPackaged 闸一致，
     // 防生产进程继承到该环境变量就静默把 PDF 写到预设路径、绕过对话框。
     const seamPath = !app.isPackaged ? process.env.WS2_PDF_OUT : null;

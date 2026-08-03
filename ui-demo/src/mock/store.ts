@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { usePaged } from './paged'
+import { useTypography } from './typography'
 import type {
   AgentEvent,
   Block,
@@ -173,10 +175,13 @@ interface State {
     docId: string,
     blockId: string,
     type: BlockType,
-    level?: 1 | 2 | 3,
+    level?: 1 | 2 | 3 | 4,
     listStyle?: ListStyle,
   ) => void
   duplicateBlock: (docId: string, blockId: string) => string
+  // 折叠块展开/收起：只改 block.open + 触脏（updatedAt），刻意不 checkpoint——
+  // 折叠是「阅读态」不是内容编辑，绝不占撤销步（对齐真 app KTD5）。
+  setBlockOpen: (docId: string, blockId: string, open: boolean) => void
 
   // 撤销/重做（编辑器历史）。checkpoint 由 Canvas 在每次用户手势前调一次，决定撤销粒度；
   // _past/_future 不在 persist 的 partialize 里（不持久化到 localStorage）。
@@ -343,6 +348,24 @@ const fromListHtml = (html: string): string => {
     : html.replace(/<\/?li[^>]*>/gi, '')
 }
 
+// 段落 ↔ 折叠 的形态转换（转块保内容，对称 to/from-List）：
+// 转折叠 = 现内容塞进 summary + 一个空 body <p>；离开折叠 = summary 文本在前、body 各块摊平，
+// 块边界转 <br>、保留行内标记（<strong>/<a> 等）。open 由 setBlockType 单独置（不进 html）。
+const toToggleHtml = (html: string): string =>
+  `<details><summary>${html.trim()}</summary></details>` // 空 body → ToggleBlockView 显示占位符
+const fromToggleHtml = (html: string): string => {
+  const summary = (html.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i)?.[1] ?? '').trim()
+  const body = html
+    .replace(/^[\s\S]*?<\/summary>/i, '') // 丢掉 <details…><summary…>…</summary>
+    .replace(/<\/details>\s*$/i, '')
+    .replace(/<(p|div|h[1-6]|blockquote|li)\b[^>]*>/gi, '') // 去块级开标签
+    .replace(/<\/(p|div|h[1-6]|blockquote|li)>/gi, '<br>') // 块级闭标签 → 换行
+    .replace(/<\/?(ul|ol|details)\b[^>]*>/gi, '') // 列表/details 容器标签直接去
+    .replace(/(\s*<br>\s*)+$/i, '') // 收尾多余 <br>
+    .trim()
+  return [summary, body].filter(Boolean).join('<br>')
+}
+
 // 撤销历史用的 docs 深拷贝（只拷到 blocks 这层，够本 mock 用）。
 const cloneDocs = (docs: Doc[]): Doc[] =>
   docs.map((d) => ({ ...d, blocks: d.blocks.map((b) => ({ ...b })) }))
@@ -363,6 +386,14 @@ const DEFAULT_CODE_HTML =
   `<div class="ws-code-line">function hello() {</div>` +
   `<div class="ws-code-line">  return 'world'</div>` +
   `<div class="ws-code-line">}</div>`
+// 折叠块种子种**空**——summary/body 的占位灰字由 ToggleBlockView 的 data-placeholder（:empty::before）
+// 显示。种 i18n 文案会让占位变真文本、用户打字接在「Toggle heading」后面还得手删（真 app
+// U9/create-2 同款教训「种空产物、不种 i18n 占位文本」；Wendi 试手感首要动作就是建块打字）。
+// 展开态不写进 html 的 open 属性——open 由 block.open 单独持有（setBlockOpen 改它、不改 html），
+// 避免两处 open 漂移；打印导出（printExport）再强制展开。
+const DEFAULT_TOGGLE_HTML = (): string => `<details><summary></summary></details>`
+// ↑ body 也真空：ToggleBlockView 的 body 区是独立 contentEditable，种 <p></p> 会让 :empty 不成立、
+//   「Toggle body」灰字占位永不显示（截图实测）；真空时 min-height:1.5em 仍可点、落笔即写。
 
 const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
   const base: Record<BlockType, Partial<Block>> = {
@@ -376,6 +407,7 @@ const newBlock = (type: BlockType, listStyle?: ListStyle): Block => {
     embed: { html: '' },
     table: { html: defaultTableHtml() },
     code: { html: DEFAULT_CODE_HTML },
+    toggle: { html: DEFAULT_TOGGLE_HTML(), open: true },
   }
   const block = { id: uid('b'), type, ...base[type] } as Block
   if (type === 'list') block.listStyle = listStyle ?? 'bulleted'
@@ -1007,10 +1039,16 @@ export const useStore = create<State>()(
                     if (b.id !== blockId) return b
                     const wasList = b.type === 'list'
                     const willList = type === 'list'
-                    // 跨列表边界时同步转换内容形态（幂等：内容已就位则不动）
-                    let html = b.html
-                    if (willList && !wasList) html = toListHtml(b.html)
-                    else if (!willList && wasList) html = fromListHtml(b.html)
+                    const wasToggle = b.type === 'toggle'
+                    const willToggle = type === 'toggle'
+                    // 先把源内容摊平成行内 html（离开列表拆 <li>、离开折叠取 summary+body），
+                    // 再按目标形态包装（进列表包 <li>、进折叠包 <summary>+空 body）。
+                    let content = b.html
+                    if (wasList && !willList) content = fromListHtml(b.html)
+                    else if (wasToggle && !willToggle) content = fromToggleHtml(b.html)
+                    let html = content
+                    if (willToggle && !wasToggle) html = toToggleHtml(content)
+                    else if (willList && !wasList) html = toListHtml(content)
                     return {
                       ...b,
                       type,
@@ -1020,8 +1058,27 @@ export const useStore = create<State>()(
                       listStyle: willList
                         ? listStyle ?? b.listStyle ?? 'bulleted'
                         : undefined,
+                      // 进折叠给默认展开；离开折叠清掉 open（否则残留脏字段）
+                      open: willToggle ? b.open ?? true : undefined,
                     }
                   }),
+                },
+          ),
+        })),
+
+      // 折叠块展开/收起：只翻 block.open + 触脏，不 checkpoint（折叠不进撤销史）。
+      setBlockOpen: (docId, blockId, open) =>
+        set((s) => ({
+          docs: s.docs.map((d) =>
+            d.id !== docId
+              ? d
+              : {
+                  ...d,
+                  updatedAt: Date.now(),
+                  updatedBy: s.meId,
+                  blocks: d.blocks.map((b) =>
+                    b.id === blockId ? { ...b, open } : b,
+                  ),
                 },
           ),
         })),
@@ -1272,14 +1329,18 @@ export const useStore = create<State>()(
           tabs: s.tabs.map((t) => (t.docId === docId ? { ...t, title } : t)),
         })),
 
-      deleteDoc: (docId) =>
+      deleteDoc: (docId) => {
+        // 清分层 config store 的孤儿条目（分页几何 + 排版），避免 localStorage 无限累积（U7）
+        usePaged.getState().prune(docId)
+        useTypography.getState().prune(docId)
         set((s) => ({
           docs: s.docs.filter((d) => d.id !== docId),
           tabs: s.tabs.filter((t) => t.docId !== docId),
           // also drop its connected-folder file entry, so the tree doesn't keep a
           // dangling row pointing at a deleted doc
           files: s.files.filter((f) => f.docId !== docId),
-        })),
+        }))
+      },
 
       generateDoc: async (prompt, folderId, target) => {
         set({ aiBusy: true })

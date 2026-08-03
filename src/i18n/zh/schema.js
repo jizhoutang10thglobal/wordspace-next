@@ -42,4 +42,5 @@ module.exports = {
   unsafeSrcset: '危险 srcset',
   dangerStyleValue: '禁危险 style 值（position:fixed/url()/expression 等）',
   topText: '顶层不允许裸文本，须包在块里',
+  pageCssUnparseable: '分页版式（@page）无法解析，按流式文档打开',
 };

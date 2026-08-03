@@ -40,4 +40,5 @@ module.exports = {
   unsafeSrcset: 'Unsafe srcset',
   dangerStyleValue: 'Unsafe style value not allowed (position:fixed/url()/expression, etc.)',
   topText: 'Bare text isn’t allowed at the top level; wrap it in a block',
+  pageCssUnparseable: 'Page layout (@page) couldn’t be parsed; opening as a flowing document',
 };

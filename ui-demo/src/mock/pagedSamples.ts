@@ -37,7 +37,7 @@ function docShell(id: string, title: string, emoji: string, blocks: Block[], age
 }
 
 const para = (id: string, html: string): Block => ({ id, type: 'text', html })
-const h = (id: string, level: 1 | 2 | 3, html: string): Block => ({ id, type: 'heading', level, html })
+const h = (id: string, level: 1 | 2 | 3 | 4, html: string): Block => ({ id, type: 'heading', level, html })
 
 // 1)「长文流水」——50+ 段普通段落,撑 4-5 页:基础块级分页(整段推页、页底留白、页码 chip)
 const longFlow: Block[] = [h('lf-h', 1, '长文流水')]
@@ -57,6 +57,7 @@ for (let s = 1; s <= 14; s++) {
   denseHeadings.push(h(`dh-s${s}a`, 3, `${s}.1 三级标题`))
   denseHeadings.push(para(`dh-p${s}a`, `标题后面只跟一小段正文。测的是：标题恰好落在页尾时会不会孤零零挂在页底（屏显允许，但导出 PDF 有 break-after: avoid 兜着），以及标题被推到新页页首时上边距是否自然。`))
   denseHeadings.push(h(`dh-s${s}b`, 3, `${s}.2 又一个三级标题`))
+  denseHeadings.push(h(`dh-s${s}c`, 4, `${s}.2.1 四级标题（国标靠字体区分层级）`))
   denseHeadings.push(para(`dh-p${s}b`, `短段。`))
 }
 

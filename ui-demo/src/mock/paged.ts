@@ -21,6 +21,8 @@ interface PagedState {
   configs: Record<string, PageConfig>
   getConfig: (docId: string) => PageConfig
   setConfig: (docId: string, cfg: PageConfig) => void
+  /** 删文档时清本文档的分页配置条目（避免孤儿累积；U7 的 deleteDoc 接它）。 */
+  prune: (docId: string) => void
 }
 
 export const usePaged = create<PagedState>()((set, get) => ({
@@ -33,6 +35,17 @@ export const usePaged = create<PagedState>()((set, get) => ({
       localStorage.setItem(LS_KEY, JSON.stringify(configs))
     } catch {
       // localStorage 满/禁用：demo 里静默，配置退化为会话内有效
+    }
+  },
+  prune: (docId) => {
+    if (!(docId in get().configs)) return
+    const configs = { ...get().configs }
+    delete configs[docId]
+    set({ configs })
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(configs))
+    } catch {
+      // 同上
     }
   },
 }))
