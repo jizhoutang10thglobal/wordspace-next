@@ -147,6 +147,108 @@ test('cellSpanOf: 行主序线性跨度（含两端、自动纠序、端点找�
   assert.equal(be.cellSpanOf(t, at(0, 0), el('<td>外来格</td>')), null); // 端点不在表内 → null
 });
 
+// ===== U5：行/列 DOM 手术（tableEditOp）=====
+function opTable() {
+  return el('<table class="ws-table"><thead><tr><th scope="col">头甲</th><th scope="col" class="ws-al-center">头乙中</th><th scope="col">头丙</th></tr></thead>'
+    + '<tbody><tr><td>一甲</td><td class="ws-al-center">一乙居中</td><td>一丙</td></tr>'
+    + '<tr><td>二甲格</td><td class="ws-al-center">二乙</td><td>二丙末</td></tr></tbody></table>');
+}
+function docFor(t) { return t.ownerDocument; }
+function rectOk(t) { const cs = [...t.querySelectorAll('tr')].map((r) => r.children.length); return cs.every((n) => n === cs[0]); }
+
+test('tableEditOp row-below/above：矩形保持、新格继承同列 ws-al-*、落点格同列', () => {
+  const t = opTable(); const d = docFor(t);
+  const target = be.tableEditOp(d, t, be.cellAt(t, 1, 1), 'row-below');
+  assert.equal(t.querySelectorAll('tbody tr').length, 3);
+  assert.ok(rectOk(t));
+  assert.ok(target.classList.contains('ws-al-center')); // 继承同列对齐
+  assert.equal(be.cellPosOf(t, target).col, 1); // 落点同列
+  const t2 = opTable();
+  const up = be.tableEditOp(docFor(t2), t2, be.cellAt(t2, 2, 0), 'row-above');
+  assert.equal(t2.querySelectorAll('tbody tr').length, 3);
+  assert.equal(be.cellPosOf(t2, up).row, 2); // 插在原第二数据行之上
+  assert.ok(rectOk(t2));
+});
+
+test('tableEditOp thead 特判：表头行上/下插行都落 tbody 首位、绝不给 thead 塞第二行', () => {
+  for (const op of ['row-above', 'row-below']) {
+    const t = opTable();
+    const target = be.tableEditOp(docFor(t), t, be.cellAt(t, 0, 2), op);
+    assert.equal(t.querySelectorAll('thead tr').length, 1); // thead 仍恰一行
+    assert.equal(t.querySelectorAll('tbody tr').length, 3);
+    assert.equal(be.cellPosOf(t, target).row, 1); // tbody 首位 = 全表第 1 行
+    assert.ok([...target.parentElement.children].every((c) => c.tagName === 'TD')); // 恒产 TD
+    assert.ok(rectOk(t));
+  }
+});
+
+test('tableEditOp col-left/right：全列插入、表头产 th[scope=col]、继承参照列对齐', () => {
+  const t = opTable();
+  const target = be.tableEditOp(docFor(t), t, be.cellAt(t, 1, 1), 'col-right');
+  assert.ok(rectOk(t));
+  assert.equal(be.rowCellsOf(be.tableRowsOf(t)[0]).length, 4);
+  const headNew = be.cellAt(t, 0, 2);
+  assert.equal(headNew.tagName, 'TH');
+  assert.equal(headNew.getAttribute('scope'), 'col');
+  assert.ok(target.classList.contains('ws-al-center')); // 继承参照列（乙列）对齐
+  assert.equal(be.cellPosOf(t, target).col, 2);
+});
+
+test('tableEditOp row-del：光标行删除、落点收敛同列；删最后数据行且有表头 → 自动补空行', () => {
+  const t = opTable();
+  const target = be.tableEditOp(docFor(t), t, be.cellAt(t, 1, 2), 'row-del');
+  assert.equal(t.querySelectorAll('tbody tr').length, 1);
+  assert.equal(be.cellPosOf(t, target).col, 2);
+  assert.ok(rectOk(t));
+  // 再删最后一个数据行 → 表头在 → 自动补一空行（tbody ≥1 文法）
+  const target2 = be.tableEditOp(docFor(t), t, be.cellAt(t, 1, 0), 'row-del');
+  assert.equal(t.querySelectorAll('tbody tr').length, 1);
+  assert.equal((target2.textContent || '').trim(), '');
+  assert.ok(target2.querySelector('br')); // 空格占位 canonical
+  assert.ok(rectOk(t));
+});
+
+test('tableEditOp 退化态：无表头表删光行 / 删最后一列 → {deletedTable}（绝不留 ghost 壳）', () => {
+  const t = el('<table><tbody><tr><td>唯一行文字</td></tr></tbody></table>');
+  assert.deepEqual(be.tableEditOp(docFor(t), t, be.cellAt(t, 0, 0), 'row-del'), { deletedTable: true });
+  const t2 = el('<table><thead><tr><th>单列头</th></tr></thead><tbody><tr><td>单列体</td></tr></tbody></table>');
+  assert.deepEqual(be.tableEditOp(docFor(t2), t2, be.cellAt(t2, 1, 0), 'col-del'), { deletedTable: true });
+});
+
+test('tableEditOp col-del：全列删除、含表头行、落点收敛', () => {
+  const t = opTable();
+  const target = be.tableEditOp(docFor(t), t, be.cellAt(t, 1, 1), 'col-del');
+  assert.ok(rectOk(t));
+  assert.equal(be.rowCellsOf(be.tableRowsOf(t)[0]).length, 2);
+  assert.equal(t.querySelectorAll('.ws-al-center').length, 0); // 对齐列被整列删掉
+  assert.equal(be.cellPosOf(t, target).col, 1); // 收敛到原位（丙列顶上来）
+});
+
+test('tableEditOp 含 spacer 行：手术只动数据行、spacer 不计数不被删', () => {
+  const t = el('<table><tbody><tr><td>数据甲行</td></tr>'
+    + '<tr class="ws-page-spacer" data-ws2-ui="__ws2-overlay__"><td>推挤占位长长长</td></tr>'
+    + '<tr><td>数据乙</td></tr></tbody></table>');
+  be.tableEditOp(docFor(t), t, be.cellAt(t, 0, 0), 'col-right');
+  const spacer = t.querySelector('.ws-page-spacer');
+  assert.equal(spacer.children.length, 1); // spacer 行没被塞格
+  assert.equal(be.rowCellsOf(be.tableRowsOf(t)[0]).length, 2); // 数据行加了列
+  const target = be.tableEditOp(docFor(t), t, be.cellAt(t, 0, 0), 'row-del');
+  assert.ok(t.querySelector('.ws-page-spacer')); // spacer 仍在（serialize 会剥，手术不碰）
+  assert.equal(target.textContent, '数据乙');
+});
+
+test('tableEditOp 产物 reparse conform（连续手术后整文档过校验器）', () => {
+  const t = opTable(); const d = docFor(t);
+  be.tableEditOp(d, t, be.cellAt(t, 1, 0), 'row-below');
+  be.tableEditOp(d, t, be.cellAt(t, 0, 1), 'col-right');
+  be.tableEditOp(d, t, be.cellAt(t, 2, 0), 'row-del');
+  be.tableEditOp(d, t, be.cellAt(t, 1, 3), 'col-del');
+  const full = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title>'
+    + '<style data-ws-schema-css="align">.ws-al-center{text-align:center}.ws-al-right{text-align:right}</style></head><body><p>前段</p>' + t.outerHTML + '</body></html>';
+  const res = sv.validate(docOf(full));
+  assert.equal(res.conform, true, JSON.stringify(res.violations));
+});
+
 test('tableSeed 产物 reparse 后过校验器（conform，含在完整合规文档中）', () => {
   const d = docOf('<!DOCTYPE html><html><body></body></html>');
   const t = be.tableSeed(d);

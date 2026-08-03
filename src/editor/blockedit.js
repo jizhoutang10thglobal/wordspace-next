@@ -144,6 +144,78 @@
   // 表格种子（Schema Table v1 canonical，与 ai-guide 的 AI 生成契约同形）：<table class="ws-table"> +
   // thead 一行 th[scope=col] + tbody 数据行，空格带 <br>（光标落得进；<td><br></td> 校验合规）。
   // 矩形不变式在此源头成立。纯函数、可 jsdom 单测。
+  // 行/列 DOM 手术（U5，纯函数可 jsdom 单测）。op：row-above/row-below/row-del/col-left/col-right/col-del。
+  // 全部走过滤后的数据行集合（KTD7，spacer 行不参与也不被数）；每步保矩形；thead 特判：新行恒落 tbody
+  //（表头行上/下插行都落 tbody 首位——thead ≤1 行是硬约束）、插列在表头行产 th[scope=col]；新格继承同列的
+  // ws-al-* 对齐 class（列样板）。返回「落点格」（调用方 enterCell），{deletedTable:true}=退化态需删整表，null=拒绝。
+  function tableEditOp(doc, table, cell, op) {
+    const rows = tableRowsOf(table);
+    const pos = cellPosOf(table, cell);
+    if (!pos) return null;
+    const row = pos.row, col = pos.col;
+    const curRow = rows[row];
+    const inThead = !!(curRow.parentElement && curRow.parentElement.tagName === 'THEAD');
+    const anyTbody = () => { let tb = [...table.children].find((c) => c.tagName === 'TBODY'); if (!tb) { tb = doc.createElement('tbody'); table.appendChild(tb); } return tb; };
+    const alClasses = (el) => el ? [...(el.classList || [])].filter((c) => c.indexOf('ws-al-') === 0) : [];
+    const buildRow = (nCols, templateRow) => {
+      const tr = doc.createElement('tr');
+      for (let c = 0; c < nCols; c++) {
+        const td = mkTableCell(doc, 'td');
+        alClasses(templateRow ? rowCellsOf(templateRow)[c] : null).forEach((cl) => td.classList.add(cl));
+        tr.appendChild(td);
+      }
+      return tr;
+    };
+    if (op === 'row-above' || op === 'row-below') {
+      const nCols = rowCellsOf(curRow).length;
+      const template = inThead ? (rows.find((r) => r.parentElement && r.parentElement.tagName !== 'THEAD') || null) : curRow;
+      const tr = buildRow(nCols, template);
+      if (inThead) { const tb = anyTbody(); tb.insertBefore(tr, tb.firstChild); }
+      else if (op === 'row-above') curRow.parentElement.insertBefore(tr, curRow);
+      else curRow.parentElement.insertBefore(tr, curRow.nextSibling);
+      return rowCellsOf(tr)[Math.min(col, nCols - 1)] || null;
+    }
+    if (op === 'row-del') {
+      const parent = curRow.parentElement;
+      curRow.remove();
+      if (parent && !parent.querySelector('tr')) parent.remove(); // 空壳（thead/tbody）整删，不留 <thead></thead>
+      const rest = tableRowsOf(table);
+      if (!rest.length) return { deletedTable: true }; // 删光 → 升级删整表（绝不留 <table></table> ghost）
+      if (!inThead && !rest.some((r) => r.parentElement && r.parentElement.tagName === 'TBODY')) {
+        // 删掉最后一个数据行、表头尚存 → 自动补一空行（tbody ≥1 文法；Colin 拍板的退化收敛）
+        const nCols = rowCellsOf(rest[0]).length;
+        const tb = anyTbody(); const tr = buildRow(nCols, null); tb.appendChild(tr);
+        return rowCellsOf(tr)[Math.min(col, nCols - 1)] || null;
+      }
+      const t = rest[Math.min(row, rest.length - 1)];
+      const cs = rowCellsOf(t);
+      return cs[Math.min(col, cs.length - 1)] || null;
+    }
+    if (op === 'col-left' || op === 'col-right') {
+      const at = op === 'col-left' ? col : col + 1;
+      for (const r of rows) {
+        const cs = rowCellsOf(r);
+        const isHead = !!(r.parentElement && r.parentElement.tagName === 'THEAD');
+        const nc = mkTableCell(doc, isHead ? 'th' : 'td');
+        if (isHead) nc.setAttribute('scope', 'col');
+        alClasses(cs[col]).forEach((cl) => nc.classList.add(cl)); // 新列继承参照列对齐
+        const ref = cs[at] || null;
+        if (ref) r.insertBefore(nc, ref); else r.appendChild(nc);
+      }
+      const nr = tableRowsOf(table)[row];
+      return nr ? (rowCellsOf(nr)[at] || null) : null;
+    }
+    if (op === 'col-del') {
+      if (rowCellsOf(curRow).length <= 1) return { deletedTable: true }; // 删最后一列 → 升级删整表
+      for (const r of rows) { const c = rowCellsOf(r)[col]; if (c) c.remove(); }
+      const nr = tableRowsOf(table)[row];
+      if (!nr) return { deletedTable: true };
+      const cs = rowCellsOf(nr);
+      return cs[Math.min(col, cs.length - 1)] || null;
+    }
+    return null;
+  }
+
   // 空格的 canonical 形态 = <td/th><br></td>（<br> 让光标落得进）——种子/建行共用的契约。
   function mkTableCell(doc, tag) { const c = doc.createElement(tag); c.appendChild(doc.createElement('br')); return c; }
   function tableSeed(doc, cols, bodyRows) {
@@ -305,6 +377,8 @@
     // §0 决策1 固定色板（块级上色 class；也是入盘 color CSS 的单一来源）。
     const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
     const COLOR_CSS = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
+    // 表格 cell 对齐入盘 CSS（U6/KTD8：唯一新增的语义 pair——边框/内距已在 BASELINE_CSS）。文法：ws-al-* 是 cell 级 class。
+    const ALIGN_CSS = '.ws-al-center{text-align:center}.ws-al-right{text-align:right}';
     blockRoot.setAttribute('data-ws2-root', '');
     ensureSchemaBaseline(); // baseline 排版底线入盘（v2：字体/行高/标题节奏/块间距；旧文件静默升级；不 markDirty）
     refreshSemanticStyles(); // 旧文件的 todo/callout v1 语义 CSS → 同步升级到当前版（同上不 markDirty）
@@ -735,6 +809,7 @@
         ['callout', CALLOUT_CSS, 'ws-callout-style', '.ws-callout'],
         ['toggle', TOGGLE_CSS, 'ws-toggle-style', 'details'],
         ['color', COLOR_CSS, 'ws-color-style', '[class*="ws-color-"]'],
+        ['align', ALIGN_CSS, 'ws-align-style', '[class*="ws-al-"]'], // U6：存量 ws-al 表（AI 生成/手写）缺 style 时 attach 补注
       ];
       for (const [kind, css, id, presentSel] of pairs) {
         let st = host.querySelector('style[data-ws-schema-css="' + kind + '"]');
@@ -782,6 +857,16 @@
       st.id = 'ws-color-style';
       st.setAttribute('data-ws-schema-css', 'color');
       st.textContent = COLOR_CSS;
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
+    // U6：cell 对齐 text-align CSS 入盘（照 ensureColorStyle 范式，属性查重 S9）。app 外浏览器直开同样生效。
+    function ensureAlignStyle() {
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="align"]')) return;
+      const st = doc.createElement('style');
+      st.id = 'ws-align-style';
+      st.setAttribute('data-ws-schema-css', 'align');
+      st.textContent = ALIGN_CSS;
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
     }
@@ -1637,6 +1722,8 @@
     };
     const menuIcon = (k) => '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON[k] + '</svg>';
     function openBlockMenu(el) {
+      // 表格行列操作的「当前格」快照：必须在 selectBlock（会 exitCell）之前取——菜单项点击时 cellEl 早已清空
+      const menuCell = (cellEl && el.contains && el.contains(cellEl)) ? cellEl : null;
       selectBlock(el);
       blockMenu.innerHTML = '';
       const add = (label, on, danger, icon) => {
@@ -1657,6 +1744,43 @@
         // 选中的 toggle → 转文本/标题（U9：toggle→text，summary 内容成段、正文块提到其后，零丢失）
         sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading');
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
+      } else if (classify(el) === 'table' && menuCell) {
+        // 表格（U5/U6）：行/列增删 + cell 对齐。「当前行/列」= 打开菜单那一刻正在编辑的格（menuCell 快照）。
+        const tOp = (labelKey, op, danger) => add(T('editor.' + labelKey), () => {
+          closeBlockMenu();
+          if (undoMgr) undoMgr.checkpoint(); // KTD6 前置：先结算 500ms 防抖窗口内的打字债
+          const res = tableEditOp(doc, el, menuCell, op);
+          if (res && res.deletedTable) { removeBlock(el); return; } // 退化态升级删整表（removeBlock 自带尾检查点+锚点收敛）
+          if (!res) return;
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          enterCell(res, { mode: 'start' }); // 焦点显式还给落点格（悬空焦点 = macOS IME 唤不起）
+        }, !!danger, danger ? 'trash' : 'plus');
+        tOp('tableRowAbove', 'row-above'); tOp('tableRowBelow', 'row-below');
+        tOp('tableColLeft', 'col-left'); tOp('tableColRight', 'col-right');
+        tOp('tableDelRow', 'row-del', true); tOp('tableDelCol', 'col-del', true);
+        const sepT = doc.createElement('div'); sepT.setAttribute('data-ws2-ui', WS2_OVERLAY); sepT.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sepT);
+        // 对齐三态（U6）：per-cell ws-al-*（文法即 cell 级）；左 = 清 class（默认态零字节）
+        const aligns = doc.createElement('div'); aligns.setAttribute('data-ws2-ui', WS2_OVERLAY); aligns.className = 'ws-blockmenu-aligns';
+        [['alignLeft', null], ['alignCenter', 'ws-al-center'], ['alignRight', 'ws-al-right']].forEach(([k, cls]) => {
+          const b = doc.createElement('button'); b.setAttribute('data-ws2-ui', WS2_OVERLAY); b.className = 'ws-blockmenu-alignbtn';
+          b.textContent = T('editor.' + k);
+          if ((cls && menuCell.classList.contains(cls)) || (!cls && !menuCell.classList.contains('ws-al-center') && !menuCell.classList.contains('ws-al-right'))) b.classList.add('ws-blockmenu-alignbtn--on');
+          b.addEventListener('mousedown', (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+          b.addEventListener('click', (ev) => {
+            ev.preventDefault(); ev.stopPropagation(); closeBlockMenu();
+            if (undoMgr) undoMgr.checkpoint(); // KTD6 前置
+            menuCell.classList.remove('ws-al-center'); menuCell.classList.remove('ws-al-right');
+            if (cls) { menuCell.classList.add(cls); ensureAlignStyle(); }
+            if (!menuCell.getAttribute('class')) menuCell.removeAttribute('class'); // 空 class 剥掉，存盘干净
+            if (undoMgr) undoMgr.checkpoint();
+            markDirty();
+            enterCell(menuCell, { mode: 'end' });
+          });
+          aligns.appendChild(b);
+        });
+        blockMenu.appendChild(aligns);
+        const sepT2 = doc.createElement('div'); sepT2.setAttribute('data-ws2-ui', WS2_OVERLAY); sepT2.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sepT2);
       }
       // 图片块（无说明）：加说明 → figure/figcaption + 进说明编辑（doc-images U5）
       if (classify(el) === 'image' && !(el.querySelector && el.querySelector('figcaption'))) {
@@ -3282,8 +3406,22 @@
       while (n && n !== body) { const p = n.parentNode; if (!p) return null; path.unshift(Array.prototype.indexOf.call(p.children, n)); n = p; }
       return n === body ? path : null;
     }
-    function snapshotEdit() { return editingEl ? { path: blockPathOf(editingEl), id: editingEl.id || null } : null; }
+    function snapshotEdit() {
+      if (cellEl) return { path: blockPathOf(cellEl), id: cellEl.id || null, kind: 'cell' }; // U7：cell 编辑态也入快照——undo 重写后按路径回原格
+      return editingEl ? { path: blockPathOf(editingEl), id: editingEl.id || null } : null;
+    }
     function restoreEdit(snap) {
+      // U7：cell 编辑态恢复（对抗审查 correctness+julik 交叉印证）——undo/redo 重写 body 后按 id/结构路径重新
+      // 定位原格 enterCell（光标落格末；精确位置不还原沿用全局 v1 取舍）。格已被撤没 → 走下面通用兜底。
+      if (snap && snap.kind === 'cell') {
+        let n = null;
+        if (snap.id) { const byId = doc.getElementById(snap.id); if (byId && body.contains(byId)) n = byId; }
+        if (!n && snap.path) { let m = body; for (const i of snap.path) { if (!m || !m.children || i < 0 || i >= m.children.length) { m = null; break; } m = m.children[i]; } n = m; }
+        if (n && (n.tagName === 'TD' || n.tagName === 'TH')) {
+          const b = blockOf(n);
+          if (b && classify(b) === 'table') { enterCell(n, { mode: 'end' }); return; }
+        }
+      }
       let target = null;
       // ① 优先按 id 精确找：锚点块（有 id）跨 body.innerHTML 重写稳定，避开「pre-undo 下标套 post-undo 树 → 落无关块」（对抗审查 P2）。
       if (snap && snap.id) { const byId = doc.getElementById(snap.id); if (byId && body.contains(byId) && isEditableEl(byId)) target = byId; }
@@ -3384,6 +3522,11 @@
   .ws-blockmenu-sep{height:1px;background:#eceef0;margin:4px 6px;}
   .ws-blockmenu-colors{display:flex;gap:5px;padding:5px 8px 3px;}
   .ws-blockmenu-swatch{width:18px;height:18px;border-radius:3px;border:1px solid #e4e6e9;cursor:pointer;padding:0;}
+  /* 表格 cell 对齐三态（U6）：一行三钮，当前态描蓝（纸方墨圆——小、方、克制）。 */
+  .ws-blockmenu-aligns{display:flex;gap:4px;padding:5px 8px;}
+  .ws-blockmenu-alignbtn{flex:1;height:26px;border:1px solid #e4e6e9;background:transparent;border-radius:5px;font-size:12px;color:#5a5f66;cursor:pointer;padding:0 4px;}
+  .ws-blockmenu-alignbtn:hover{background:#f0f1f3;color:#1c1d1f;}
+  .ws-blockmenu-alignbtn--on{color:#1a73e8;border-color:#1a73e8;font-weight:600;}
 
   .ws-slashmenu{min-width:184px;max-height:290px;overflow-y:auto;padding:4px;background:#fff;border-radius:7px;box-shadow:0 4px 14px rgba(0,0,0,.12),0 0 0 1px rgba(0,0,0,.06);z-index:100000;}
   .ws-slashmenu-item{display:block;width:100%;height:32px;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:13px;color:#1c1d1f;text-align:left;cursor:pointer;}
@@ -3392,7 +3535,7 @@
   `;
   // i18n-exempt-end
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, cellPosOf, cellAt, cellNavTarget, cellSpanOf, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, cellPosOf, cellAt, cellNavTarget, cellSpanOf, tableEditOp, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);
