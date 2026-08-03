@@ -499,19 +499,19 @@
       return el;
     }
 
-    // 列表块内的悬停行解析（U1 行级手柄）：目标在某个 li 内 → closest 取最深（嵌套行有自己的
-    // 手柄锚，对齐 Notion）；落在 ul padding/行间隙 → 按 clientY 找最近的 li（不留手柄真空区）。
+    // 列表块内的悬停行解析（U1 行级手柄）：纯按 clientY 找行——同 Y 命中多个嵌套层级取**最深**
+    // （父项的盒子包含嵌套行，浅层命中永远成立，取深层才是指针真正所在的行）。
+    // ⚠ 不能用 closest('li')：鼠标在嵌套行的勾选框 gutter 上时命中的是嵌套 <ul> 容器（勾选框画在
+    // 它 padding 里），closest 往上爬到父项 → 手柄跳走「躲鼠标」（Colin 试玩实抓）。Y 语义也与
+    // Notion 一致：手柄跟指针所在行，与 X 无关。
     function rowOf(target, listEl, clientY) {
-      let t = target && target.nodeType === 3 ? target.parentElement : target;
-      if (t && t.closest) {
-        const li = t.closest('li');
-        if (li && listEl.contains(li)) return li;
-      }
-      let best = null, bestD = Infinity;
+      let best = null, bestD = Infinity, bestDepth = -1;
       for (const li of listEl.querySelectorAll('li')) {
         const r = li.getBoundingClientRect();
         const d = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
-        if (d < bestD) { bestD = d; best = li; }
+        let depth = 0;
+        for (let p = li.parentElement; p && p !== listEl; p = p.parentElement) depth++;
+        if (d < bestD || (d === bestD && depth > bestDepth)) { bestD = d; bestDepth = depth; best = li; }
       }
       return best;
     }

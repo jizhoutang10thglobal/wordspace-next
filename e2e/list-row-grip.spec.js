@@ -119,6 +119,28 @@ test('A 阶段不变式：手柄拖拽仍移动整个列表（U2 改写此条）
   expect(order.join(','), '拖拽单位仍是整个列表').toBe('P#pre,P#post,UL');
 });
 
+test('嵌套行勾选框 gutter 悬停：手柄不跳回父项（Colin 试玩实抓回归）', async () => {
+  await launch();
+  await openDoc('<ul class="ws-todo"><li id="r1">父项带嵌套<ul class="ws-todo"><li id="n1">嵌套子项甲</li><li id="n2">嵌套子项乙</li></ul></li><li id="r2">第二项</li></ul>');
+  // 先悬停嵌套行文字（手柄到嵌套行），再真实鼠标向左移进勾选框 gutter（嵌套 ul padding 区，
+  // 目标元素是 <ul> 容器——closest('li') 的老实现会在这里跳回父项）
+  await frame.locator('#n1').hover();
+  await page.waitForTimeout(150);
+  const frameBox = await page.locator('#doc-frame').boundingBox();
+  const li = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const r = d.getElementById('n1').getBoundingClientRect();
+    return { left: Math.round(r.left), cy: Math.round(r.top + r.height / 2) };
+  });
+  // 分两步逼近，模拟真实「往手柄挪」的轨迹：文字左缘 → 勾选框区（li 左缘外 12px）
+  await page.mouse.move(frameBox.x + li.left + 2, frameBox.y + li.cy);
+  await page.mouse.move(frameBox.x + li.left - 12, frameBox.y + li.cy);
+  await page.waitForTimeout(150);
+  const g = await gripCenter();
+  expect(g, 'gutter 悬停手柄仍可见').not.toBeNull();
+  expect(inBand(g, await bandOf('#n1')), '手柄留在嵌套行、不跳回父项').toBe(true);
+});
+
 test('A 阶段不变式：行锚手柄点击菜单仍可开（U3 改作用域）', async () => {
   await launch();
   await openDoc('<ul class="ws-todo"><li id="r1">一</li><li id="r2">二</li></ul>');
