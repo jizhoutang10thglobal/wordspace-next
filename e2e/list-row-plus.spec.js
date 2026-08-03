@@ -88,32 +88,53 @@ test('⌥ 点「+」：插到上方', async () => {
   await expect.poll(async () => (await page.evaluate(() => document.getElementById('doc-frame').contentDocument.body.children[1].textContent.trim()))).toBe('插上方');
 });
 
-test('列表行上点「+」：插同列表新行（不是列表后段落）', async () => {
+// U4/A（Colin 2026-08-04 拍板严格对齐 Notion）：顶层行的「+」插**普通正文块**，
+// 中间行则把列表劈成 [前段][段落][后段]；首/末退化为插到整个列表前/后、不产空列表。
+test('列表中间行点「+」：劈开列表、中间插正文块（严格对齐 Notion）', async () => {
   await launch();
-  await openDoc('<ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li></ul>');
-  await hoverAndPlus('#r1');
-  expect((await bodyOrder()).join(','), '不新增块').toBe('UL#L');
-  const t = await rowTexts('#L');
-  expect(t.length, '多一行').toBe(3);
-  expect(t[1], '新行在第一行之下且为空').toBe('');
-  await page.keyboard.type('插进来的行');
-  await expect.poll(async () => (await rowTexts('#L'))[1], { message: '光标落新行' }).toBe('插进来的行');
+  await openDoc('<ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li><li id="r3">三</li></ul>');
+  await hoverAndPlus('#r2');
+  const order = (await bodyOrder()).map((s) => s.split('#')[0]);
+  expect(order.join(','), '劈成 前列表/段落/后列表').toBe('UL,P,UL');
+  expect((await rowTexts('body > ul:first-child')).join('|'), '前段留一、二').toBe('一|二');
+  expect((await rowTexts('body > ul:last-child')).join('|'), '后段留三').toBe('三');
+  await page.keyboard.type('插进来的段落');
+  await expect.poll(async () => (await page.evaluate(() => document.getElementById('doc-frame').contentDocument.body.children[1].textContent.trim())), { message: '光标落新段落' }).toBe('插进来的段落');
   expect(await conformOf(await serialize())).toBe(true);
 });
 
-test('列表行 ⌥ 点「+」：插到该行上方', async () => {
+test('列表末行点「+」：段落落在整个列表之后、不产空列表', async () => {
   await launch();
-  await openDoc('<ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li></ul>');
+  await openDoc('<ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li></ul><p id="post">后</p>');
+  await hoverAndPlus('#r2');
+  expect((await bodyOrder()).join(','), '段落插在列表与后段之间').toBe('UL#L,P,P#post');
+  expect((await rowTexts('#L')).join('|'), '列表原样两行').toBe('一|二');
+  const emptyLists = await page.evaluate(() => [...document.getElementById('doc-frame').contentDocument.querySelectorAll('ul,ol')].filter((u) => !u.querySelector('li')).length);
+  expect(emptyLists, '不产空列表').toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('列表首行 ⌥ 点「+」：段落落在整个列表之前', async () => {
+  await launch();
+  await openDoc('<p id="pre">前</p><ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li></ul>');
+  await hoverAndPlus('#r1', true);
+  expect((await bodyOrder()).join(','), '段落插在前段与列表之间').toBe('P#pre,P,UL#L');
+  expect((await rowTexts('#L')).join('|'), '列表原样两行').toBe('一|二');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('列表中间行 ⌥ 点「+」：段落插在该行之上、列表劈开', async () => {
+  await launch();
+  await openDoc('<ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li><li id="r3">三</li></ul>');
   await hoverAndPlus('#r2', true);
-  const t = await rowTexts('#L');
-  expect(t.length).toBe(3);
-  expect(t[1], '新空行在第二行之上').toBe('');
-  await page.keyboard.type('夹进来');
-  await expect.poll(async () => (await rowTexts('#L')).join('|')).toBe('一|夹进来|二');
+  const order = (await bodyOrder()).map((s) => s.split('#')[0]);
+  expect(order.join(','), '劈成 前列表/段落/后列表').toBe('UL,P,UL');
+  expect((await rowTexts('body > ul:first-child')).join('|'), '前段只留一').toBe('一');
+  expect((await rowTexts('body > ul:last-child')).join('|'), '后段留二、三').toBe('二|三');
   expect(await conformOf(await serialize())).toBe(true);
 });
 
-test('嵌套行上点「+」：插进同一层嵌套子列表', async () => {
+test('嵌套行上点「+」：插同层新行（结构性分歧——Schema 不许段落进 li）', async () => {
   await launch();
   await openDoc('<ul class="ws-todo" id="L"><li id="r1">父项<ul class="ws-todo" id="S"><li id="n1">嵌套甲</li></ul></li><li id="r2">二</li></ul>');
   await hoverAndPlus('#n1');
@@ -141,11 +162,12 @@ test('Esc 灰选整列表后点「+」：块作用域插列表后的段落', asy
   expect(await conformOf(await serialize())).toBe(true);
 });
 
-test('插入 undo 一步还原（行与块两路）', async () => {
+test('插入 undo 一步还原（含劈开列表这一路）', async () => {
   await launch();
-  await openDoc('<ul class="ws-todo" id="L"><li id="r1">一</li></ul>');
-  await hoverAndPlus('#r1');
-  await expect.poll(async () => (await rowTexts('#L')).length).toBe(2);
+  await openDoc('<ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li><li id="r3">三</li></ul>');
+  await hoverAndPlus('#r2');
+  await expect.poll(async () => (await bodyOrder()).length, { message: '劈成三块' }).toBe(3);
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'undo'));
-  await expect.poll(async () => (await rowTexts('#L')).length, { message: 'undo 一步撤掉新行' }).toBe(1);
+  await expect.poll(async () => (await bodyOrder()).join(','), { message: 'undo 一步把列表合回来' }).toBe('UL#L');
+  expect((await rowTexts('#L')).join('|'), '三行原样').toBe('一|二|三');
 });

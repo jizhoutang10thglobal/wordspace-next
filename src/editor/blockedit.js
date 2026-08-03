@@ -968,6 +968,26 @@
       markDirty();
       return el;
     }
+    // U4/A（Colin 2026-08-04 拍板严格对齐 Notion）：在列表的某一行处插入空正文块。
+    // Notion 实测：「+」永远插一个普通文本块（与当前块是不是列表行无关），所以在列表中间插就得
+    // 把列表劈成 [前段列表][新段落][后段列表]；切点在首/末则退化成插到整个列表前/后、不产空列表。
+    function insertParaAtRow(list, row, above) {
+      const lis = [...list.children].filter((x) => x.tagName === 'LI');
+      const cut = lis.indexOf(row) + (above ? 0 : 1);
+      const p = doc.createElement('p'); p.appendChild(doc.createElement('br'));
+      const tail = lis.slice(cut);
+      if (cut === 0) list.before(p);
+      else if (!tail.length) list.after(p);
+      else {
+        const nl = doc.createElement(list.tagName);
+        if (list.className) nl.className = list.className;
+        tail.forEach((li) => nl.appendChild(li));
+        list.after(p); p.after(nl);
+      }
+      if (undoMgr) undoMgr.checkpoint();
+      markDirty();
+      return p;
+    }
     // U4「+」的 ⌥ 点击用：插到参照块**上方**（无参照 → 落作用域最前，别悄悄掉到文末）
     function insertBeforeBlock(refEl, item) {
       const el = newBlock(item);
@@ -3079,6 +3099,16 @@
       const row = selectedEl ? null : hoverRow;
       const above = !!e.altKey;
       if (row && row.tagName === 'LI' && classify(el) === 'list' && el.contains(row)) {
+        const list = row.parentElement;
+        if (list === el) {
+          // 顶层行：严格对齐 Notion —— 插普通正文块（中间行则把列表劈开）
+          const p = insertParaAtRow(list, row, above);
+          enterEdit(p, { mode: 'start' });
+          hoverEl = p; hoverRow = null; positionGrip(p);
+          return;
+        }
+        // 嵌套行：**结构性分歧**（非产品选择）——Schema 的 <li> 只许装行内内容或嵌套列表，
+        // 段落无法存在于嵌套层；退而插同层新行（最接近的可用行为）。见 todo-list.md 有意分歧。
         const li = doc.createElement('li'); li.appendChild(doc.createElement('br'));
         if (above) row.before(li); else row.after(li);
         if (undoMgr) undoMgr.checkpoint(); markDirty();
