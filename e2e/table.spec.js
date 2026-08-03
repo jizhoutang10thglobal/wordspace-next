@@ -712,6 +712,158 @@ test('CR: 表-only 文档全选删除不哑', async () => {
   expect(await conformOf(html)).toBe(true);
 });
 
+// ===== P2（U5/U6/U7）：行列增删 / cell 对齐 / undo 恢复 =====
+
+// 打开表格块菜单（cell 编辑态下 grip 锚整表；menuCell 快照在 openBlockMenu 入口取）
+async function openTableMenu(cellSel) {
+  await frame.locator(cellSel).click();
+  await page.waitForTimeout(120);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+}
+
+// P2-1（U5）：菜单下方插行 → 矩形+落点同列；打字债不被行操作的 undo 吞（KTD6 菜单路径探针）。
+test('P2: 菜单插行 + undo 不吞打字', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c22').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('债'); // 500ms 防抖窗口内的打字债
+  await openTableMenu('#c22');
+  await frame.locator('.ws-blockmenu-item', { hasText: '下方插行' }).click();
+  await page.waitForTimeout(150);
+  const grown = await frame.locator('body').evaluate(() => ({
+    rows: document.querySelectorAll('tbody tr').length,
+    rect: (() => { const cs = [...document.querySelectorAll('tr')].map((r) => r.children.length); return cs.every((n) => n === cs[0]); })(),
+    focusCol: (() => { const c = document.querySelector('[data-ws2-cell]'); if (!c) return -1; return [...c.parentElement.children].indexOf(c); })(),
+  }));
+  expect(grown.rows).toBe(3);
+  expect(grown.rect).toBe(true);
+  expect(grown.focusCol).toBe(1); // 落点同列（c22 = col 1）
+  await menu('undo');
+  await page.waitForTimeout(250);
+  const after = await frame.locator('body').evaluate(() => ({
+    rows: document.querySelectorAll('tbody tr').length,
+    c22: document.getElementById('c22').textContent,
+  }));
+  expect(after.rows).toBe(2); // 行被回滚
+  expect(after.c22).toBe('廿二格债'); // 打字保住（前置 checkpoint 结算了债）
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// P2-2（U5）：删除本列（含表头行整列）→ 矩形收敛 + conform。
+test('P2: 菜单删列全列生效', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await openTableMenu('#c12');
+  await frame.locator('.ws-blockmenu-item', { hasText: '删除本列' }).click();
+  await page.waitForTimeout(150);
+  const after = await frame.locator('body').evaluate(() => ({
+    headCells: document.querySelectorAll('thead th').length,
+    bodyCells: document.querySelectorAll('tbody tr:first-child td').length,
+    rect: (() => { const cs = [...document.querySelectorAll('tr')].map((r) => r.children.length); return cs.every((n) => n === cs[0]); })(),
+    gone: !document.getElementById('c12') && !document.getElementById('c22'),
+  }));
+  expect(after.headCells).toBe(2);
+  expect(after.bodyCells).toBe(2);
+  expect(after.rect).toBe(true);
+  expect(after.gone).toBe(true); // 乙列整列消失
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// P2-3（U5 thead 特判）：表头格上开菜单插行 → 新行落 tbody 首位、thead 恒一行、恒产 TD。
+test('P2: 表头行插行落 tbody 首位', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('thead th').nth(1).click();
+  await page.waitForTimeout(120);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  await frame.locator('.ws-blockmenu-item', { hasText: '上方插行' }).click();
+  await page.waitForTimeout(150);
+  const after = await frame.locator('body').evaluate(() => {
+    const firstBodyRow = document.querySelector('tbody tr');
+    return {
+      theadRows: document.querySelectorAll('thead tr').length,
+      bodyRows: document.querySelectorAll('tbody tr').length,
+      firstRowAllTd: [...firstBodyRow.children].every((c) => c.tagName === 'TD'),
+      firstRowEmpty: (firstBodyRow.textContent || '').trim() === '',
+    };
+  });
+  expect(after.theadRows).toBe(1);
+  expect(after.bodyRows).toBe(3);
+  expect(after.firstRowAllTd).toBe(true);
+  expect(after.firstRowEmpty).toBe(true);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// P2-4（U6）：对齐居中 → computed textAlign 真值 + 入盘 style；undo 一步还原。
+test('P2: cell 对齐居中入盘 + undo 还原', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await openTableMenu('#c13');
+  await frame.locator('.ws-blockmenu-alignbtn', { hasText: '居中' }).click();
+  await page.waitForTimeout(150);
+  const mid = await frame.locator('body').evaluate(() => ({
+    ta: getComputedStyle(document.getElementById('c13')).textAlign,
+    cellBack: (document.querySelector('[data-ws2-cell]') || {}).id || null,
+  }));
+  expect(mid.ta).toBe('center'); // 视觉真值（强断言纪律）
+  expect(mid.cellBack).toBe('c13'); // 焦点回归目标格
+  const html = await serialize();
+  expect(html).toContain('data-ws-schema-css="align"'); // CSS 随文件入盘
+  expect(html).toMatch(/id="c13"[^>]*class="ws-al-center"|class="ws-al-center"[^>]*id="c13"/);
+  expect(await conformOf(html)).toBe(true);
+  await menu('undo');
+  await page.waitForTimeout(250);
+  expect(await frame.locator('body').evaluate(() => getComputedStyle(document.getElementById('c13')).textAlign)).toBe('left');
+});
+
+// P2-5（U7）：undo 后 cell 编辑态按路径恢复（不再瞬移到首块）。
+test('P2: undo 后回到原格编辑', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  await frame.locator('#c21').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('甲乙');
+  await page.waitForTimeout(700); // 防抖窗口结算，打字成独立快照
+  await menu('undo');
+  await page.waitForTimeout(250);
+  const after = await frame.locator('body').evaluate(() => ({
+    cellId: (document.querySelector('[data-ws2-cell]') || {}).id || null,
+    c21: document.getElementById('c21').textContent,
+  }));
+  expect(after.c21).toBe('廿一'); // 打字被撤
+  expect(after.cellId).toBe('c21'); // 编辑态回原格（restoreEdit cell 分支）
+  await page.keyboard.type('续'); // 恢复的编辑态真能打字
+  await page.waitForTimeout(120);
+  expect(await frame.locator('#c21').textContent()).toContain('续');
+});
+
+// P2-6（U5 退化态）：连删三列 → 最后一列升级删整表，文档不留 ghost 壳。
+test('P2: 删到最后一列升级删整表', async () => {
+  await launch();
+  await openDoc(TABLE_DOC);
+  for (let i = 0; i < 3; i++) {
+    const hasTable = await frame.locator('body').evaluate(() => !!document.querySelector('table'));
+    if (!hasTable) break;
+    const firstCellId = await frame.locator('body').evaluate(() => { const c = document.querySelector('tbody td'); return c ? (c.id || null) : null; });
+    await frame.locator(firstCellId ? '#' + firstCellId : 'tbody td').first().click();
+    await page.waitForTimeout(120);
+    await frame.locator('.ws-grip').click();
+    await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+    await frame.locator('.ws-blockmenu-item', { hasText: '删除本列' }).click();
+    await page.waitForTimeout(150);
+  }
+  const after = await frame.locator('body').evaluate(() => ({
+    tables: document.querySelectorAll('table').length,
+    ghosts: document.querySelectorAll('table:empty, tbody:empty, thead:empty').length,
+  }));
+  expect(after.tables).toBe(0);
+  expect(after.ghosts).toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
 // U1-4：非空锚块造表 → 插到锚块下方（锚块保留），undo 一步撤掉整个造表。
 test('U1: 非空块造表插下方 + undo 一步还原', async () => {
   await launch();
