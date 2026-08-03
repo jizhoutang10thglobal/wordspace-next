@@ -377,6 +377,12 @@
     // §0 决策1 固定色板（块级上色 class；也是入盘 color CSS 的单一来源）。
     const TEXT_COLORS = ['#1c1d1f', '#d93025', '#b06000', '#1e8e3e', '#1a73e8', '#8430ce'];
     const COLOR_CSS = TEXT_COLORS.map((c) => '.ws-color-' + c.slice(1) + '{color:' + c + '}').join('');
+    // Track2 方案B（2026-07-24 拍板，§1.3 例外）：段落整块缩进 = 有限 class 原语（照 ws-color 四段式）。
+    // position:relative+left 保文档流不重排；不用 transform（Retina 合成层亚像素抖）、不用 margin/padding（挤动下方块）。
+    const INDENT_MAX = 6;
+    const INDENT_STEP = 24; // px/档，整数像素
+    const INDENT_CSS = Array.from({ length: INDENT_MAX }, (_, i) =>
+      '.ws-indent-' + (i + 1) + '{position:relative;left:' + ((i + 1) * INDENT_STEP) + 'px}').join('');
     // 表格 cell 对齐入盘 CSS（U6/KTD8：唯一新增的语义 pair——边框/内距已在 BASELINE_CSS）。文法：ws-al-* 是 cell 级 class。
     const ALIGN_CSS = '.ws-al-center{text-align:center}.ws-al-right{text-align:right}';
     blockRoot.setAttribute('data-ws2-root', '');
@@ -455,6 +461,11 @@
 
     const docOf = () => doc;
     function topBlocks() { return [...blockRoot.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui')); }
+    // Track2 方案B：ws-indent 三 helper（互斥语义靠 stripIndent 先清全量，照 ws-color 的 forEach-remove 套路）。
+    // ⚠ 必须留在 attach() 内——INDENT_MAX/ensureIndentStyle 都是 attach 局部量，放模块层一按 Tab 就 ReferenceError。
+    function indentLevelOf(el) { for (let n = INDENT_MAX; n >= 1; n--) if (el.classList.contains('ws-indent-' + n)) return n; return 0; }
+    function stripIndent(el) { for (let n = 1; n <= INDENT_MAX; n++) el.classList.remove('ws-indent-' + n); }
+    function setIndentLevel(el, n) { stripIndent(el); if (n > 0) { el.classList.add('ws-indent-' + n); ensureIndentStyle(); } }
     // 表格门控（KTD7）说明：无表格文档 100% 走旧路径这一保证由结构自动成立——所有 cell 入口都先要求
     // closest('td,th') 命中（无表文档恒 null）+ blockOf/classify==='table' 复核（更强判据），不需要、也不要
     // 加全文档 querySelector('table') 的显式门（每次点击 O(全文档) 白扫，simplify 审查已证它改不了任何结果）。
@@ -809,6 +820,7 @@
         ['callout', CALLOUT_CSS, 'ws-callout-style', '.ws-callout'],
         ['toggle', TOGGLE_CSS, 'ws-toggle-style', 'details'],
         ['color', COLOR_CSS, 'ws-color-style', '[class*="ws-color-"]'],
+        ['indent', INDENT_CSS, 'ws-indent-style', '[class*="ws-indent-"]'],
         ['align', ALIGN_CSS, 'ws-align-style', '[class*="ws-al-"]'], // U6：存量 ws-al 表（AI 生成/手写）缺 style 时 attach 补注
       ];
       for (const [kind, css, id, presentSel] of pairs) {
@@ -857,6 +869,16 @@
       st.id = 'ws-color-style';
       st.setAttribute('data-ws-schema-css', 'color');
       st.textContent = COLOR_CSS;
+      (doc.head || doc.documentElement).appendChild(st);
+      markDirty();
+    }
+    // Track2 方案B：ws-indent-* 缩进 CSS 入盘（照 ensureColorStyle 逐字，color→indent）。
+    function ensureIndentStyle() {
+      if (!doc || (doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="indent"]')) return; // 属性查重（S9）
+      const st = doc.createElement('style');
+      st.id = 'ws-indent-style';
+      st.setAttribute('data-ws-schema-css', 'indent');
+      st.textContent = INDENT_CSS;
       (doc.head || doc.documentElement).appendChild(st);
       markDirty();
     }
@@ -2489,12 +2511,47 @@
         e.preventDefault();
         if (classify(editingEl) !== 'list') {
           // toggle 嵌套（U7）：Tab 把块嵌进前一个 <details> 体；Shift-Tab 把体内块移出到 details 后。
+          // Track2 方案B（§1.3 优先级）：toggle 协调先行；顶层 indentable 块走 ws-indent 整块缩进。
           const scope = scopeRootOf(editingEl);
+          const k = classify(editingEl);
+          const indentable = k === 'text' || k === 'heading' || k === 'quote' || editingEl.classList.contains('ws-callout');
           if (e.shiftKey) {
-            if (scope !== blockRoot) { const det = scope; det.after(editingEl); if (blocksInScope(det).length === 0) det.appendChild(doc.createElement('p')); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(editingEl, { mode: 'keep' }); } // ≥1 体块铁则
-          } else {
-            const prev = editingEl.previousElementSibling;
-            if (prev && prev.tagName === 'DETAILS') { prev.setAttribute('open', ''); prev.appendChild(editingEl); if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(editingEl, { mode: 'keep' }); } // 展开被嵌入的 toggle 免内容隐身
+            if (scope !== blockRoot) {
+              // 【既有 toggle 退出逻辑，逐字保留】
+              const det = scope;
+              det.after(editingEl);
+              if (blocksInScope(det).length === 0) det.appendChild(doc.createElement('p')); // ≥1 体块铁则
+              stripIndent(editingEl); // 出 toggle 归 0 档（§1.3；DOM 变更之后、checkpoint 之前，防 undo 双偏移）
+              if (undoMgr) undoMgr.checkpoint();
+              markDirty();
+              enterEdit(editingEl, { mode: 'keep' });
+              return;
+            }
+            if (indentable) {
+              const cur = indentLevelOf(editingEl);
+              const next = Math.max(0, cur - 1);
+              if (next !== cur) { setIndentLevel(editingEl, next); if (undoMgr) undoMgr.checkpoint(); markDirty(); } // 0 档再按 = 静默 no-op，不留空 undo 步
+            }
+            return;
+          }
+          const prev = editingEl.previousElementSibling;
+          if (prev && prev.tagName === 'DETAILS') {
+            // 【既有 toggle 嵌入逻辑，逐字保留】
+            prev.setAttribute('open', ''); // 展开被嵌入的 toggle 免内容隐身
+            prev.appendChild(editingEl);
+            stripIndent(editingEl); // 进 toggle 剥缩进（结构嵌套取代数值缩进；DOM 变更之后、checkpoint 之前）
+            if (undoMgr) undoMgr.checkpoint();
+            markDirty();
+            enterEdit(editingEl, { mode: 'keep' });
+            return;
+          }
+          if (scope === blockRoot && indentable) { // 整块缩进（toggle 体内不缩，§1.3 优先级）
+            const bs = topBlocks();
+            const i = bs.indexOf(editingEl);
+            const cur = indentLevelOf(editingEl);
+            const maxAllowed = i > 0 ? indentLevelOf(bs[i - 1]) + 1 : 0; // 首块缩不了；上一块无 class 按 0 算
+            const next = Math.min(cur + 1, maxAllowed, INDENT_MAX); // 允许 next<cur：向下归一化（§1.2 有意行为，别加守卫）
+            if (next !== cur) { setIndentLevel(editingEl, next); if (undoMgr) undoMgr.checkpoint(); markDirty(); }
           }
           return;
         }
@@ -3028,6 +3085,7 @@
       if (hit('ul.ws-todo')) ensureTodoStyle();
       if (hit('.ws-callout')) ensureCalloutStyle();
       if (el.tagName === 'DETAILS' || hit('details')) ensureToggleStyle();
+      if (hit('[class*="ws-indent-"]')) ensureIndentStyle();
     }
 
     // 行内富粘贴：把行内 HTML 手动插到光标处（execCommand('insertHTML') 在本 contenteditable 里是哑的 no-op，

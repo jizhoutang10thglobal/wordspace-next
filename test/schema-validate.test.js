@@ -277,3 +277,17 @@ test('KV-7 span style position:absolute（配 display:block 变覆盖层）被�
   // 正常排版 style 不误伤
   assert.equal(v('<p><span style="color:#c00;font-weight:bold">x</span></p>').conform, true);
 });
+
+test('Track2 方案B：ws-indent-* class + head indent style → conform（schema §1.3 例外，校验器零改动）', () => {
+  const withStyle = validate(docOf('<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<style data-ws-schema-css="indent">.ws-indent-3{position:relative;left:72px}</style>' +
+    '</head><body><p class="ws-indent-3">x</p></body></html>'));
+  assert.equal(withStyle.conform, true, JSON.stringify(withStyle.violations));
+  // head 缺 indent style 也照样 conform——自愈是编辑器职责（refreshSemanticStyles），校验器不管
+  const noStyle = v('<p class="ws-indent-3">x</p>');
+  assert.equal(noStyle.conform, true, JSON.stringify(noStyle.violations));
+  // callout + indent 双 class 共存：校验器唯一读块级 class 的规则是裸 div 检查（classList.contains('ws-callout')
+  // 按词查、不按整串比），钉住多 class 不被误伤
+  const dual = v('<div class="ws-callout ws-indent-2"><p>x</p></div>');
+  assert.equal(dual.conform, true, JSON.stringify(dual.violations));
+});

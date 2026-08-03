@@ -47,7 +47,7 @@ Wordspace = Electron HTML-native 本地编辑器。Schema #1 = 一套**受限 HT
 
 1. **schema-first / 闭合**：编辑动作是 `合法 → 合法` 的全函数。守卫不靠"小心写"，靠"把非法输入挡在动作外或 coerce 到最近合法形态"。
 2. **不跑文档 JS**：渲染 = Chromium 直载 `file://`，iframe `sandbox="allow-same-origin"`（`index.html:94`，无 `allow-scripts`/`allow-modals`/`allow-downloads`/`allow-popups`）。**任何块的视觉/状态都不能依赖文档运行时 JS**，只能靠 (a) 静态 HTML 结构、(b) 浏览器原生非脚本交互（`<details>`、`<video controls>`）、(c) 入盘静态 CSS + 属性选择器。
-3. **文档流，绝不绝对定位**：所有块留在文档流、能 reflow、可发布。绝不写 `position:absolute`/固定 `top/left/width/height`。缩进/层级用 DOM 嵌套表达，不用 margin/padding 数值。
+3. **文档流，绝不绝对定位**：所有块留在文档流、能 reflow、可发布。绝不写 `position:absolute`/固定 `top/left/width/height`。缩进/层级用 DOM 嵌套表达，不用 margin/padding 数值。**唯一例外（2026-07-24 Colin 拍板，Track 2 方案 B）**：段落/标题/引用/callout 的整块缩进用有限 class 原语 `ws-indent-1..6`（入盘 CSS `.ws-indent-N{position:relative;left:N*24px}`，随文件走）。`position:relative` 的块仍在文档流、能 reflow、可发布，不触本条「绝不绝对定位」的内核；列表/toggle 的层级仍只用 DOM 嵌套；块上仍绝不写 `style` 属性。词汇有限（6 档）、互斥（一块一个）、编辑器打开时自愈补 CSS。
 4. **保真存盘**：编辑器注入物用 `data-ws2-*` 标记，存盘按**精确白名单**剥除（`serialize.js:12` `WS2_MARKERS`）。**红线：绝不用 `startsWith('data-ws2')` 前缀剥**（误删用户自带属性）——但精确名碰撞 + 整节点删同样会误伤，见 §7 F1。
 5. **无云存储**：纯本地单文件 `.html`。资源要么 `data:` 内联（真单文件、体积膨胀）、要么相对路径（体积小、破坏单文件）。没有第三条路。
 6. **"内容性样式"入盘范式**：承载**意义/状态**的 CSS 必须入盘（`ensureTodoStyle`，`:340`：往 `<head>` 注 `<style id="ws-todo-style">`，随 serialize 存盘、零 JS）；承载**美观**的 CSS（820 窄栏 Notion 排版字体）留编辑器 `adoptedStyleSheets`（`:164`），不入盘。toggle/callout/table/受限色板的视觉态都该照搬入盘范式。
