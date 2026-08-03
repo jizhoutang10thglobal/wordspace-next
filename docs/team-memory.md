@@ -14,6 +14,12 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-03 — Schema 2 拆分批次已整体撤出 main（parked 打磨，勿基于 main 的 Schema 2 代码开工）
+
+**是什么**：Colin 拍板（Wendi 原则「半成品不进 main/生产端」）：Schema 2 拆分四 PR（PR-A #340 / PR-B #345 页眉页脚前置 / PR-C #348 / PR-E #352）已在 PR #377 整体 revert 撤出 main。main 回到「分页 = Schema 1 可选版式」的 v0.11.x 已发版口径；新建弹窗灰态占位改名「分页文档 · 开发中」（i18n key `paradigm2Desc`）。完整代码钉在分支 `feat/schema-2-parked`（main 526549d + 说明文档），PR-D #350 已关闭（复活时重做）。**产品方向「分页 = 独立 Schema 2」不变，只是代码暂离 main。**ui-demo 排版层 U1–U7 + 范式入口留在 main（原型场 = 移植真相源）。
+**怎么 apply**：①别再基于 main 上的 Schema 2 代码开工（schema-2-paged.js / __ws2DocSchema 探针 / paged.spec 的 Schema-2 断言都已不在 main）；②要动分页线，先读 `feat/schema-2-parked` 分支的 `docs/schema-2-parked.md`（复活路径 = revert-the-revert，四个原始 merge SHA 在档）；③排版层进真 app 是复活前置欠账，尚无 plan；④每次发版不用再从 release 分支剥分页了——main 恒常可发。
+**来源**：PR #377（revert）/ 分支 feat/schema-2-parked / Colin 2026-08-03 口头拍板（本 session）
+
 ## 2026-07-24 — 编辑器全局契约：精确选区/删除/合并（Colin 两轮拍板，动编辑器必读）
 
 **是什么**：Colin 拍死跨块选区的三条全局规则（PR #356 落地，`docs/features/toggle.md` 有完整版）：
