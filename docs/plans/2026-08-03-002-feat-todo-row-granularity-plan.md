@@ -66,7 +66,10 @@
 - [x] U2 = B 行级拖拽重排（平级）（2026-08-03 完成：行拖三分支+源清理+undo 单步；门 list-row-drag 9 条 + grip spec 整块拖拽改走灰选路径）
 - [x] U3 = C 菜单行级作用域（2026-08-03 完成：两入口两作用域 + 转为/插入/复制/删除/颜色行级化 + Esc 关菜单；门 list-row-menu 9 条）
   - 观察（非本单元引入、记账不阻塞）：抽行「转为」的产物继承原 `<ul>` 的 `id`（#346 `turnIntoLines`→`retagElement` 保属性的既有行为）。真要改属独立议题。
-- [x] U4 = D gutter「+」（2026-08-03 完成：与手柄同显同隐/同口径作用对象/⌥ 插上方/i18n 双词条；门 list-row-plus 8 条）
+- [x] U4 = D gutter「+」（2026-08-03 完成；**2026-08-04 按 Colin 拍板改方案 A 严格对齐 Notion**：
+  「+」插普通正文块、中间行劈开列表；嵌套行插同层新行=Schema 结构性分歧（li 不许装段落）。门 list-row-plus 10 条）
+  - 教训（已写进 `/align-notion` 铁律②）：plan 原写「按 Notion 对拍结果定」，首版却凭直觉写成「插同类型新行」，
+    补做对照才发现做错。**写「按对拍结果定」的地方必须真去对拍。**
 - [ ] 整体打磨 + 对抗审查 → 合 main
   - ⚠ 已知既有红（非本 track 引入，基线 commit 上同样红）：深色模式主机跑全量 e2e 时 `align.spec` T1/T2、
     `nonconform-basic-edit.spec` T5 三条恒红——这些 spec 把浅色 computed style 写死却不钉外观偏好，
