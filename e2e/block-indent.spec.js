@@ -317,13 +317,15 @@ test('15 no-op 不脏档：0 档 Shift+Tab / 首块 Tab 封顶不触发 markDirt
   const dot = page.locator('#dirty-dot');
   await clickIn('#b');
   await page.waitForTimeout(300);
-  await expect(dot, '基线：点入编辑态本身不脏档').toBeHidden();
+  // ⚠ 负向断言直接同步断（isHidden 快照），绝不用 toBeHidden()——那是 web-first 轮询断言，
+  // 变异后脏点会在 1.2s 自动保存归位时重新隐藏，轮询等得到 hidden = 假绿（M11 实测抓过）。
+  expect(await dot.isHidden(), '基线：点入编辑态本身不脏档').toBe(true);
   await shiftTab(); // 0 档再按 = 静默 no-op（next===cur 守卫）
   await page.waitForTimeout(300);
-  await expect(dot, '0 档 Shift+Tab 不打 checkpoint/markDirty').toBeHidden();
+  expect(await dot.isHidden(), '0 档 Shift+Tab 不打 checkpoint/markDirty').toBe(true);
   await clickIn('#a');
   await tab(); // 首块 maxAllowed=0 → next=0=cur → 同守卫
   await page.waitForTimeout(300);
-  await expect(dot, '首块封顶 Tab 同样不脏档').toBeHidden();
+  expect(await dot.isHidden(), '首块封顶 Tab 同样不脏档').toBe(true);
   expect(await frame.locator('[class*="ws-indent-"]').count(), '全程无 class 产生').toBe(0);
 });
