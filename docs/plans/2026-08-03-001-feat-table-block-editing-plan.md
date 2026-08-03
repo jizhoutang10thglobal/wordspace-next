@@ -1,7 +1,7 @@
 ---
 title: "feat: Schema 1 表格块编辑（真 app）"
 type: feat
-status: active
+status: completed
 date: 2026-08-03
 ---
 
