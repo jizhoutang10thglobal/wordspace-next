@@ -94,6 +94,8 @@
 - ui-demo 侧：commit `5970bf5`（2026-07-22，最近 ui-demo 改动；todo 行为**从未与真 app 做过一次对齐**，本锚点仅为记录当前状态）
 - app 侧：todo-list UX sweep 修复计划 PR-A~E 全量（2026-07-23）。本 PR = **PR-E**（剪贴板与视觉 P3：U21 块粘贴 id 去重 / U22 外部 todo 文本转换 / U23 跨 toggle 删除一致化 / U24 热区几何 / U25 勾选框对比度 / U26 removeAttribute / U27 深色 emoji 记录制）。
 
+**⚠ ui-demo 侧漂移（本轮产生，2026-08-04）**：与 Notion 的粒度对齐（行级手柄 / 行级拖拽 / 菜单行级作用域 / gutter「+」/ 嵌套 marker 层级 / `ol` 序号语义 / 行「转为」保子项 / markdown `+ `）全部只做在真 app，**ui-demo 未跟进**。按仓库铁律当场进账本、不等审计；是否回流由 Colin 定。
+
 ## 欠账
 
 - **ui-demo 侧 todo 行为未审计**——本 spec 行为契约先按真 app 定稿，ui-demo 是否一致待专门对齐（记账不阻塞）。

@@ -44,6 +44,10 @@ Notion 式可折叠块。磁盘 = 原生 `<details><summary>…</summary>…正�
 ## 对齐锚点
 - ui-demo 侧：commit `<待 port>`（2026-07-20）
 - app 侧：commit `<建设中>`（2026-07-20）
+- **粒度对齐（本 track）**：app 侧 `feat/ux-granularity`（2026-08-04，T14/T17/T4）；ui-demo 侧未跟进（见下）
+
+**⚠ ui-demo 侧漂移（本轮产生，2026-08-04）**：与 Notion 的粒度对齐全部只做在真 app（`src/editor/blockedit.js`），ui-demo 未跟进。按仓库铁律当场进账本、不等审计。要不要回流 ui-demo 由 Colin 定——ui-demo 是「给人讨论 UX 的参考原型」，这批改动的真相源已经是真 app + 本 spec。
+
 
 ## 已知局限（v1，对抗审查记录在案，未修）
 
