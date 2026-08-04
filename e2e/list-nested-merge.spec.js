@@ -98,6 +98,11 @@ test('G3 嵌套行、前兄弟是空行：并入后不留空壳宿主行、不�
   expect(out.ghosts, '不得留下「自己没内容、只裹嵌套列表」的空壳行').toBe(0);
   expect((out.kid || '').trim(), '内容并进空的前兄弟').toBe('21341');
   expect(await serialize()).not.toMatch(/<ul[^>]*>\s*<\/ul>/);
+  // ⚠ 这条断言必须放在**这个**前置结构上：变异自检实测，只有「前兄弟是空行」这一种才会让
+  //   Chromium 吐出打字样式 span。放在 G2 那种「前兄弟非空」的用例上是哑的（把接管改回原生，G2 照绿）。
+  const disk = await diskBody();
+  expect(disk, '正文绝不出现 Chromium 的打字样式 <span style="font-family…">').not.toMatch(/font-family/);
+  expect(disk, '正文不该冒出 <span> 包裹').not.toMatch(/<span/);
   expect(await conform()).toBe(true);
 });
 
