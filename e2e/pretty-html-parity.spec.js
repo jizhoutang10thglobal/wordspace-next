@@ -122,3 +122,41 @@ test('P-5 提示框首行退格：两种写法产出一致', async () => {
   expect(r.compact.text).toBe('上一块框甲框乙');
   expect(r.pretty.body).toBe(r.compact.body);
 });
+
+// ── P-6/P-7（2026-08-05，对抗审查 disk-X1）：接缝空白 ────────────────────────────────
+// ⚠ 上面那套 parity 抓不到这条：readState 的 norm 会把 `\s*\n\s*` 归一化掉，而排版版多带的正是
+// 「换行 + 缩进」。所以这两条读**未归一化**的原始 innerHTML，并且用「接着打字」把后果显性化。
+const readRaw = () => page.evaluate(() => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  return (d.body.innerHTML || '').replace(/ ?data-ws2-[a-z]+(="[^"]*")?/g, '').replace(/ ?contenteditable="[^"]*"/g, '');
+});
+
+test('P-6 排版版行首退格：不许把源码缩进当成用户打的空格搬进上一块', async () => {
+  test.setTimeout(120000);
+  const body = '<p id="a">上一段</p><p id="b">甲乙丙</p>';
+  await closeApp(); await launch();
+  await openDoc(body);
+  await caretStart('#b'); await key('Backspace');
+  const compact = await readRaw();
+  expect(compact, '前置：紧凑版本来就该拼成一段、无空格').toContain('上一段甲乙丙');
+
+  await closeApp(); await launch();
+  await openDoc(prettify(body));
+  await caretStart('#b'); await key('Backspace');
+  const pretty = await readRaw();
+  // 修前：`<p id="a">上一段\n  甲乙丙\n</p>` —— 渲染成「上一段 甲乙丙」，那个空格用户从没打过，
+  // 而且 1.2s 后原样落盘。
+  expect(pretty, '接缝处不许出现用户没打的空白').toMatch(/上一段甲乙丙/);
+});
+
+test('P-7 排版版退格后接着打字：新字必须紧贴接缝（光标不许停在幽灵空格左边）', async () => {
+  test.setTimeout(120000);
+  await closeApp(); await launch();
+  await openDoc(prettify('<p id="a">上一段</p><p id="b">甲乙丙</p>'));
+  await caretStart('#b'); await key('Backspace');
+  await page.keyboard.type('X');
+  await page.waitForTimeout(250);
+  const raw = await readRaw();
+  // 修前：光标停在那段缩进空白**左边** → 得到「上一段X 甲乙丙」，用户会以为自己多敲了空格。
+  expect(raw).toContain('上一段X甲乙丙');
+});

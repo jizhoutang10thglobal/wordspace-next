@@ -317,6 +317,25 @@
   function isMultiParaContainer(el) {
     return !!el && el.nodeType === 1 && (el.tagName === 'BLOCKQUOTE' || (el.classList && el.classList.contains('ws-callout')));
   }
+  // 合并接缝的空白修剪（对抗审查 disk-X1）：排版过的 HTML 里，块的第一个子节点通常是**源码缩进**
+  // 产生的空白 —— `<p>\n  甲乙丙\n</p>` 的首子是文本节点 "\n  甲乙丙\n"。行首退格把它整块搬进上一块时，
+  // 那段前导空白跟着走，渲染成一个用户从没打过的空格，1.2s 后原样落盘；更糟的是光标恰好停在这个空格
+  // **左边**，接着打字得到「上一段X 甲乙丙」。用编辑器自己敲出来的块复现不出来（无缩进），
+  // 只有磁盘上排过版的文件会中——而磁盘上的 HTML 几乎必然排过版。
+  // ⚠ 只削 [\t\n\r ]，**不碰 &nbsp;**（\u00a0 是用户真打的不间断空格，削了就是改内容）。
+  // 返回修剪后该当「接缝锚点」的那个节点（首节点整个是空白时顺延到下一个），调用方拿它设光标。
+  function trimSeamHead(node) {
+    let n = node;
+    while (n && n.nodeType === 3) {
+      const t = n.nodeValue;
+      const cut = t.replace(/^[\t\n\r ]+/, '');
+      if (cut === t) return n;
+      if (cut === '') { const nx = n.nextSibling; n.remove(); n = nx; continue; }
+      n.nodeValue = cut;
+      return n;
+    }
+    return n;
+  }
   function stripPlaceholderBr(el) {
     const br = placeholderBrOf(el);
     if (!br) return false;
@@ -1092,7 +1111,7 @@
       const own = [];
       for (const n of target.childNodes) { if (n === nested) break; own.push(n); }
       if (own.length === 1 && own[0].nodeName === 'BR') own[0].remove();
-      const joinAt = src.firstChild;
+      const joinAt = trimSeamHead(src.firstChild); // 同上：排版过的文件里首子是缩进空白，别搬进目标行
       while (src.firstChild) { if (nested) target.insertBefore(src.firstChild, nested); else target.appendChild(src.firstChild); }
       src.remove();
       return joinAt;
@@ -3245,7 +3264,7 @@
           if (!(donor || (head && head !== stopAt))) return;
           stripPlaceholderBr(prev); // 空目标块的占位 <br>（排版过的文件里它周围还有空白节点，见 placeholderBrOf）
           let joinAt = null;
-          if (donor) { joinAt = donor.firstChild; while (donor.firstChild) prev.appendChild(donor.firstChild); donor.remove(); }
+          if (donor) { joinAt = trimSeamHead(donor.firstChild); while (donor.firstChild) prev.appendChild(donor.firstChild); donor.remove(); }
           else { let n = head; joinAt = head; while (n && n !== stopAt) { const nx = n.nextSibling; prev.appendChild(n); n = nx; } }
           if (!cur.firstElementChild && isBlankRun(cur.textContent || '')) cur.remove(); // 掏空的框不留（对齐单段那半的终态）
           if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -3262,7 +3281,7 @@
           // 列表分支里，不补的话「空段落 + 待办」两步退完会留一行空行（Finding C 原地复发）。
           stripPlaceholderBr(prev);
           // 两个叶子文字块：搬移子节点拼接（合法），光标落接合点（原 prev 末尾）
-          const joinAt = cur.firstChild;
+          const joinAt = trimSeamHead(cur.firstChild); // 削掉源码缩进产生的前导空白，别把它搬进上一块
           while (cur.firstChild) prev.appendChild(cur.firstChild);
           cur.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
           enterEdit(prev, { mode: 'end' });
