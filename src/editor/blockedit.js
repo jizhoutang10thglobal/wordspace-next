@@ -3233,7 +3233,13 @@
     // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
     grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverRow || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
-    function clearDrop() { const p = body.querySelector('[data-ws2-drop]'); if (p) p.removeAttribute('data-ws2-drop'); }
+    // 落点态是三个属性（线 / 缩进量 / 父行高亮），必须一起清——只清一个会留下幽灵高亮或错位的线
+    function clearDrop() {
+      const p = body.querySelector('[data-ws2-drop]');
+      if (p) { p.removeAttribute('data-ws2-drop'); p.removeAttribute('data-ws2-dropindent'); }
+      const q = body.querySelector('[data-ws2-dropparent]');
+      if (q) q.removeAttribute('data-ws2-dropparent');
+    }
     // 修 ED-A5：外部拖放（dragFrom 为空=不是内部块拖拽）一律吞掉，别让浏览器默认 insertFromDrop 把带任意
     // 标签的富 HTML（div/h1/span style/a…）插进 contenteditable → 落盘非合规。粘贴那道「只取纯文本」的闸在
     // drop 路径不存在，这里补上（拖放直接拒绝，用户仍可 Cmd+V 走纯文本粘贴）。
@@ -3572,28 +3578,113 @@
     }
     // ---- U2 行级拖拽（plan 2026-08-03-002）----
     const isRowDrag = () => !!(dragFrom && dragFrom.tagName === 'LI');
-    // 同类列表判定：标签一致 + todo 语义一致。跨类型（todo↔普通 ul/ol）v1 拒收（plan 拍板），
-    // 指示线不亮、drop 零变更——比静默变形安全。
+    // 同类列表判定：标签一致 + todo 语义一致。
     const sameListType = (a, b) => !!a && !!b && a.tagName === b.tagName && a.classList.contains('ws-todo') === b.classList.contains('ws-todo');
-    // 行拖拽 dragover：目标是同类列表 → 指示线亮在目标行的上/下半区（指针半区语义，对齐 Notion 落点直觉）；
-    // 目标是非列表块 → 指示线亮块上/下（drop = 拆出成独立单行列表）；自子树/跨类型 → 不亮=不可放。
+
+    // ---- E3/E4：跨类型落点 + 落点横向偏移决定嵌套层级（对拍实证 2026-08-04）----
+    // Notion 实测三条（每条都真拖过、看过落点指示线）：
+    //  ① **跨类型允许且被拖的行类型不变**——圆点行拖进待办列表仍是圆点行（Notion 每块自带类型、没有列表容器）。
+    //     我们是 <ul> 容器模型 → 要保住类型只能**在落点把目标列表劈开**，插一张源类型的列表。视觉终态与 Notion 一致。
+    //  ② **缩进层级由落点的 x 决定，参照系是【页面内容列左缘】**（= 顶层段落文字左缘），不是列表行文字左缘。
+    //     实测：落在内容列左缘 → 兄弟（depth 0）；右移 28px → 成为上一行的子项。约 26px 一级。
+    //  ③ **层级被「上一行深度 + 1」钳死**——落点右移 220px（理论 8 级）实测仍只嵌一级。
+    const WS2_INDENT_UNIT = 26; // 与 Notion 同步长；改这个值等于改手感，要连门一起改
+    // 内容列左缘：顶层块（段落）的文字起点。取 blockRoot 的内容盒左缘，与段落渲染同源。
+    function contentLeft() {
+      const r = blockRoot.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(blockRoot).paddingLeft) || 0;
+      return r.left + pad;
+    }
+    // 行深度：从该 li 往上数到它所属的**顶层**列表为止（顶层行=0）
+    function rowDepth(li) {
+      let d = 0;
+      for (let p = li.parentElement; p && p !== blockRoot; p = p.parentElement) {
+        if (p.tagName === 'LI') d++;
+      }
+      return d;
+    }
+    // 落点解析：给定指针位置，算出「线画在哪一行的上/下」「锚行（线上方那一行）」「目标深度」。
+    // 锚行为 null（落在整个列表最前面）时深度恒 0。
+    function resolveDrop(e, listEl) {
+      const tr = rowOf(e.target, listEl, e.clientY);
+      if (!tr || tr === dragFrom || (dragFrom.contains && dragFrom.contains(tr))) return null;
+      const r = tr.getBoundingClientRect();
+      const before = e.clientY < r.top + r.height / 2;
+      // 线上方那一行：落在 tr 下半区 → 就是 tr；落在上半区 → 视觉顺序上 tr 的前一行
+      let anchor = tr;
+      if (before) {
+        const rows = [...listEl.querySelectorAll('li')].filter((x) => x !== dragFrom && !(dragFrom.contains && dragFrom.contains(x)));
+        const i = rows.indexOf(tr);
+        anchor = i > 0 ? rows[i - 1] : null;
+      }
+      const maxDepth = anchor ? rowDepth(anchor) + 1 : 0;
+      const want = Math.round((e.clientX - contentLeft()) / WS2_INDENT_UNIT);
+      const depth = Math.max(0, Math.min(want, maxDepth));
+      return { tr, before, anchor, depth };
+    }
+    // 把 row 放进 destList 的指定位置；destList 与 row 源类型不同 → **在落点劈开 destList**，
+    // 插一张源类型的单行列表（Notion「类型不变」在容器模型下的等价实现）。
+    function placeRow(destList, refLi, after, row, srcList) {
+      if (sameListType(destList, srcList)) {
+        if (!refLi) destList.insertBefore(row, destList.firstChild);
+        else if (after) refLi.after(row); else refLi.before(row);
+        return;
+      }
+      const kids = [...destList.children].filter((c) => c.tagName === 'LI');
+      const cut = refLi ? kids.indexOf(refLi) + (after ? 1 : 0) : 0;
+      const tail = kids.slice(cut);
+      const nl = doc.createElement(srcList.tagName);
+      if (srcList.className) nl.className = srcList.className;
+      nl.appendChild(row);
+      if (cut === 0) destList.before(nl);
+      else if (!tail.length) destList.after(nl);
+      else {
+        const rest = doc.createElement(destList.tagName);
+        if (destList.className) rest.className = destList.className;
+        tail.forEach((li) => rest.appendChild(li));
+        destList.after(nl); nl.after(rest);
+      }
+    }
+    // 按解析出的深度落位。depth > 锚行深度 → 成为锚行的首个子项（没有子列表就建一张源类型的）；
+    // depth === 锚行深度 → 锚行的下一个兄弟；depth < 锚行深度 → 上溯到该深度的祖先行、插在它之后。
+    function dropAtDepth(d, row, srcList) {
+      if (!d.anchor) { placeRow(d.tr.parentElement, d.tr, false, row, srcList); return; }
+      const ad = rowDepth(d.anchor);
+      if (d.depth > ad) {
+        let sub = d.anchor.querySelector(':scope > ul, :scope > ol');
+        if (sub && sameListType(sub, srcList)) { sub.insertBefore(row, sub.firstChild); return; }
+        const nl = doc.createElement(srcList.tagName);
+        if (srcList.className) nl.className = srcList.className;
+        nl.appendChild(row);
+        if (sub) sub.before(nl); else d.anchor.appendChild(nl); // 已有异类子列表 → 并排放一张（li 允许多个子列表）
+        return;
+      }
+      let ref = d.anchor;
+      for (let k = ad; k > d.depth; k--) { const host = ref.parentElement && ref.parentElement.parentElement; if (host && host.tagName === 'LI') ref = host; else break; }
+      placeRow(ref.parentElement, ref, true, row, srcList);
+    }
+    // 行拖拽 dragover：指示线亮在目标行上/下半区，并把**目标缩进量**写进 --ws2-drop-indent（对齐 Notion：
+    // 线的左端随缩进右移、末端带一个圆点标层级）。目标是非列表块 → 指示线亮块上/下（drop = 拆出成单行列表）。
     function rowDragOver(e) {
       clearDrop();
       const el = blockOf(e.target);
       if (!el || el === dragFrom || (dragFrom.contains && dragFrom.contains(el))) return;
       if (classify(el) === 'list') {
-        const tr = rowOf(e.target, el, e.clientY);
-        if (!tr || tr === dragFrom || dragFrom.contains(tr)) return;
-        if (!sameListType(dragFrom.parentElement, tr.parentElement)) return;
-        const r = tr.getBoundingClientRect();
-        tr.setAttribute('data-ws2-drop', e.clientY < r.top + r.height / 2 ? 'top' : 'bottom');
+        const d = resolveDrop(e, el);
+        if (!d) return;
+        d.tr.setAttribute('data-ws2-drop', d.before ? 'top' : 'bottom');
+        // 线画在 tr 的边上，但缩进要表达的是【目标深度】——所以偏移量是「目标深度 − tr 自身深度」，
+        // 单位跟落点解析同一个常量（改一处必改另一处，否则画的和落的对不上）。
+        const rel = d.depth - rowDepth(d.tr);
+        if (rel) d.tr.setAttribute('data-ws2-dropindent', String(Math.max(-5, Math.min(5, rel))));
+        if (d.anchor && d.depth > rowDepth(d.anchor)) d.anchor.setAttribute('data-ws2-dropparent', '');
       } else {
         const r = el.getBoundingClientRect();
         el.setAttribute('data-ws2-drop', e.clientY < r.top + r.height / 2 ? 'top' : 'bottom');
       }
     }
-    // 行拖拽 drop：①同类列表内/间 → li 移到目标行上/下；②非列表块旁 → 拆出成同类型单行列表块；
-    // 无效目标（自子树/跨类型/落回自己）→ 零变更零 checkpoint。挪走后源列表掏空 → 移除
+    // 行拖拽 drop：①落进列表 → 按解析出的深度落位（含跨类型劈开、含嵌套）；②非列表块旁 → 拆出成同类型单行列表块；
+    // 无效目标（自子树/落回自己）→ 零变更零 checkpoint。挪走后源列表掏空 → 移除
     //（嵌套 ul 移除保宿主 li；toggle 体内列表移除后体空 → 补空 p 保 ≥1 体块铁则）。
     function rowDrop(e) {
       const el = blockOf(e.target);
@@ -3602,12 +3693,8 @@
       const srcScope = scopeRootOf(srcList);
       let moved = false;
       if (classify(el) === 'list') {
-        const tr = rowOf(e.target, el, e.clientY);
-        if (tr && tr !== dragFrom && !dragFrom.contains(tr) && sameListType(srcList, tr.parentElement)) {
-          const r = tr.getBoundingClientRect();
-          if (e.clientY < r.top + r.height / 2) tr.before(dragFrom); else tr.after(dragFrom);
-          moved = true;
-        }
+        const d = resolveDrop(e, el);
+        if (d) { dropAtDepth(d, dragFrom, srcList); moved = true; }
       } else {
         const nl = doc.createElement(srcList.tagName);
         if (srcList.className) nl.className = srcList.className;
@@ -3851,8 +3938,28 @@
   /* cell 拒收提示小签（U4）：墨色圆角、200ms 淡入淡出、不占布局不推文字（纸方墨圆：克制的反馈）。 */
   .ws-cellnope{position:absolute;padding:5px 10px;background:#37352f;color:#fff;font-size:12px;line-height:1.4;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,.18);opacity:0;transform:translateY(2px);transition:opacity .2s ease,transform .2s ease;pointer-events:none;z-index:100000;font-family:-apple-system,system-ui,"PingFang SC",sans-serif;white-space:nowrap;}
   .ws-cellnope--on{opacity:1;transform:translateY(0);}
-  [data-ws2-drop='top']{box-shadow:0 -2px 0 0 #1a73e8;}
-  [data-ws2-drop='bottom']{box-shadow:0 2px 0 0 #1a73e8;}
+  /* 落点指示线（E4 对齐 Notion）：蓝线 + 左端一个圆点标缩进层级；线的左端随目标层级右移一个缩进单位。
+     ⚠ 只能用 ::after —— .ws-todo > li::before 是勾选框，用 ::before 会把待办行的勾选框顶掉。
+     ⚠ 缩进量走 data-ws2-dropindent **属性**、绝不写 inline style：块级 style 即非合规，
+     自动保存万一撞上拖拽窗口就会把整篇判成降级（CLAUDE.md 高频路径）。 */
+  [data-ws2-drop]{position:relative;}
+  [data-ws2-drop]::after{content:'';position:absolute;left:0;right:0;height:7px;pointer-events:none;z-index:5;
+    background:linear-gradient(#1a73e8,#1a73e8) center/100% 2px no-repeat,
+               radial-gradient(circle at 3.5px 3.5px, #1a73e8 0 3.5px, transparent 3.5px) left center/7px 7px no-repeat;}
+  [data-ws2-drop='top']::after{top:-4px;}
+  [data-ws2-drop='bottom']::after{bottom:-4px;}
+  [data-ws2-dropindent='1']::after{left:26px;}
+  [data-ws2-dropindent='2']::after{left:52px;}
+  [data-ws2-dropindent='3']::after{left:78px;}
+  [data-ws2-dropindent='4']::after{left:104px;}
+  [data-ws2-dropindent='5']::after{left:130px;}
+  [data-ws2-dropindent='-1']::after{left:-26px;}
+  [data-ws2-dropindent='-2']::after{left:-52px;}
+  [data-ws2-dropindent='-3']::after{left:-78px;}
+  [data-ws2-dropindent='-4']::after{left:-104px;}
+  [data-ws2-dropindent='-5']::after{left:-130px;}
+  /* 将成为子项时，父行整行淡蓝底（Notion 同款，告诉用户「进的是这一行下面」） */
+  [data-ws2-dropparent]{border-radius:3px;background:rgba(26,115,232,.10);box-shadow:0 0 0 3px rgba(26,115,232,.10);}
   /* 跨块拖选的块级高亮（Wendi 2026-07-22）：整行蓝底(box-shadow 外扩到左右边距、不占布局)，罩住的块内
      隐掉原生 ::selection→只剩整行蓝(对齐 Notion「哪几行都选中」)。绝不用 padding/margin(推文字)。 */
   [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}

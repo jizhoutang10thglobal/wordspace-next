@@ -18,6 +18,7 @@
     'data-ws2-ce', 'data-ws2-sc', 'data-ws2-block', 'data-ws2-container',
     'data-ws2-canvas', 'data-ws2-eid', 'data-ws2-editing',
     'data-ws2-selected', 'data-ws2-drop', // 块编辑：灰选中 / 拖拽投放标记（仅交互态，存盘剥除）
+    'data-ws2-dropindent', 'data-ws2-dropparent', // E4：落点缩进层级 / 将成为父行的高亮（仅拖拽中，存盘剥除）
     'data-ws2-rangesel', // 块编辑：跨块拖选的块级高亮标记（仅交互态，存盘剥除）
     'data-ws2-nope', // 块编辑：跨界删除空操作的闪烁反馈标记（仅交互态、420ms 自清；万一 autosave 撞上窗口漏进 DOM 也剥）
     'data-ws2-clip', // 块编辑：内部复制粘贴的剪贴板哨兵（只该出现在剪贴板 payload；万一漏进 DOM 也剥）
