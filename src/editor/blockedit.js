@@ -2504,14 +2504,20 @@
         }
         if (e.key === ' ') { e.preventDefault(); doc.execCommand('insertText', false, ' '); return; } // 原生 summary 空格会折叠——拦默认、手动插空格
         if (e.key === 'Backspace' && isCaretAtStart(doc, editingEl)) {
+          // ===== E2：折叠块标题行首退格 = 降级成文本块（对拍实证 2026-08-04，探针 E2-a/E2-b）=====
+          // 旧行为：只有「标题空 + 体也空」才解包，其余一律零反馈 —— 用户找不到退出这个折叠块的办法（死胡同）。
+          // Notion：① 剥掉 toggle 格式变文本块（体内块仍挂在它下面）；② 再退一次才并入上一块、体内块升顶层。
+          // 我们的 <p> 不能有子块（文法所限）→ ① 一步到位：标题成段落、体内块提升为其后的兄弟。
+          // 这正是既有 turnInto(details → text)（U9/R2）的语义，直接复用，与菜单「转为正文」路径同款。
+          // 第二次退格：此时已是普通段落，落进下面 generic 合并分支，自动得到 Notion ② 的终态。
           e.preventDefault();
           const det = editingEl.parentElement;
-          const bodyEmpty = blocksInScope(det).every((b) => (b.textContent || '').trim() === '');
-          if ((editingEl.textContent || '').trim() === '' && bodyEmpty) {
-            const p = doc.createElement('p'); det.replaceWith(p); // 空 toggle：解包成空正文（逃生，键盘可删）
-            if (undoMgr) undoMgr.checkpoint(); markDirty(); enterEdit(p, { mode: 'start' });
+          const nx = turnInto(det, itemByKey('text'));
+          if (nx) {
+            if (!nx.firstChild) nx.appendChild(doc.createElement('br')); // 空产物必带 <br>，否则光标落不进去（selection 变 null，实测）
+            enterEdit(nx, { mode: 'start' });
           }
-          return; // 非空：拦住不让 generic 合并 details
+          return;
         }
         return; // 其它键（含字符/方向/'/'）交原生编辑 summary
       }
@@ -2844,20 +2850,30 @@
       if (e.key === 'Backspace' && editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
         if (classify(editingEl) === 'list') {
-          // 空列表项起始退格：原生 contentEditable 会把整张 <ul>/<ol> 塌成空 <ul></ul>（残留 ghost 块——
-          // 无 li 无勾选框、拖柄还在、再退格删不掉、往里打字灌进 <ul> 变非合规。Wendi bug4 待办删空即中）。
-          // 自己接管空 li 退格（非空/删字仍交原生）：有上一项→合并上去（光标落上一项末，列表保留）；
-          // 是唯一项→整块退成正文（de-list）；是首项但后面还有项→删首项、光标落新首项起始。
           const lsel = doc.getSelection();
           const lnode = lsel && lsel.anchorNode ? (lsel.anchorNode.nodeType === 1 ? lsel.anchorNode : lsel.anchorNode.parentElement) : null;
           const cli = lnode && lnode.closest ? lnode.closest('li') : null;
-          if (cli && editingEl.contains(cli) && (cli.textContent || '').trim() === '') {
-            // 空列表项退格——原生会把整张 <ul> 塌成空 <ul></ul>（ghost 死块）。自己接管：
-            //   有上一项 → 合并上去（删空项、光标落上一项末，仍留列表内）；
-            //   嵌套首空项（U12/keys-3）→ 删空项 + 掏空的嵌套 ul 移除、光标落宿主 li 内容末尾（锚真实父列表，不是顶层 editingEl）；
-            //   顶层首/唯一项 → de-list：在原列表前插一个空正文段落，列表空了就删掉。
+          // ===== E1：顶层列表行行首退格 = Notion「逐层剥离」的第①步（对拍实证 2026-08-04）=====
+          // Notion 第一次按键**不合并**——只把这一行剥掉列表格式、原地变成文本块，列表在此处劈开；
+          // 第二次才并入上一块。**终态与旧行为一致，只是推后一次按键**，所以 Wendi bug3（#319「行首退格
+          // 什么都不发生」）的诉求没被推翻：第一次按键就有明确可见的反馈（marker 消失、行变文本）。
+          // 空行 / 唯一行 / 已勾选待办 走同一条规则（探针 P-A/P-D/P-E 实证；勾选态随格式一并丢弃，Notion 同款）。
+          // **嵌套行不走这里**：Notion 的①是「嵌套的文本块」，我们的文法表达不了（<li> 只装行内内容或子列表），
+          // 只能压成 Notion 的② —— 而②（有前兄弟→并入前兄弟；无前兄弟→并入宿主行文字、后续兄弟仍留在父下）
+          // 恰好就是下面既有分支 + 原生的现有行为（探针 P-C 两侧实测一致），故嵌套行一行不动。
+          if (cli && cli.parentElement === editingEl && isCaretAtStart(doc, cli)) {
             e.preventDefault();
-            const plist = cli.parentElement; // 真实父列表（可能是嵌套子列表）
+            const nx = turnIntoLines(editingEl, [cli], itemByKey('text'));
+            if (nx) enterEdit(nx, { mode: 'start' });
+            return; // nx 为空理论不可达（cli 已证是直接子项）；真出现也零变更，绝不落到原生把 <ul> 塌成 ghost
+          }
+          // 空【嵌套】项起始退格（顶层空行已被上面接管）：原生 contentEditable 会把整张 <ul>/<ol> 塌成
+          // 空 <ul></ul>（残留 ghost 块——无 li 无勾选框、拖柄还在、再退格删不掉、往里打字灌进 <ul> 变非合规，
+          // Wendi bug4 待办删空即中）。自己接管：有上一项→合并上去（光标落上一项末，列表保留）；
+          // 嵌套首空项（U12/keys-3）→ 删空项 + 掏空的嵌套 ul 移除、光标落宿主 li 内容末尾。
+          if (cli && editingEl.contains(cli) && cli.parentElement !== editingEl && (cli.textContent || '').trim() === '') {
+            e.preventDefault();
+            const plist = cli.parentElement; // 真实父列表（恒是嵌套子列表：顶层已分流）
             const prevLi = cli.previousElementSibling;
             cli.remove();
             if (undoMgr) undoMgr.checkpoint();
@@ -2866,7 +2882,7 @@
               if (!prevLi.firstChild) prevLi.appendChild(doc.createElement('br')); // 上一项也空 → 补 <br>，否则光标落进去 selection 会变 null（实测）
               enterEdit(editingEl, { mode: 'end' });
               try { const r = doc.createRange(); r.selectNodeContents(prevLi); r.collapse(false); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
-            } else if (plist !== editingEl) {
+            } else {
               // U12：嵌套首空项——无同级 prevLi → 掏空的嵌套 ul 移除，光标落宿主 li 内容末尾（在其嵌套子列表之前）
               const hostLi = plist.parentElement;
               if (!plist.querySelector('li')) plist.remove();
@@ -2877,53 +2893,10 @@
                 for (const n of hostLi.childNodes) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) break; anchor = n; }
                 try { const r = doc.createRange(); if (anchor) r.setStartAfter(anchor); else r.setStart(hostLi, 0); r.collapse(true); const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r); } catch (x) {}
               }
-            } else {
-              const p = doc.createElement('p');
-              p.appendChild(doc.createElement('br')); // 空段落必带 <br>，光标才落得进
-              plist.parentNode.insertBefore(p, plist); // de-list 的正文放原列表之前
-              if (!plist.querySelector('li')) plist.remove(); // 唯一项 → 删掉空列表
-              enterEdit(p, { mode: 'start' });
             }
             return;
           }
-          // 非空列表项 + 光标在【首 li】行首(= 整个列表块起点):原生跨不到上一个块(每个块是独立
-          // contenteditable),会哑掉——列表块紧跟列表块/段落时,第二块行首按 Backspace「没反应、不上移」
-          // (Wendi 2026-07-21：应跳到上面那个 block,却留在了当前 block)。自己把首 li 内容并入上一块,
-          // 对齐「同一个 ul 内 li→li」的原生合并语义(case A 一直是对的,这里补齐跨块那半)。
-          // cli 必须是 editingEl 的【直接子 li】：closest('li') 会取到最深的嵌套项,「嵌套子列表打头
-          // 的块」里内层项会被误当整块首 li 撕进上一块、留幽灵空子列表(对抗审查 Finding A)。
-          // 且 cli 自身不能带子列表(搬块级子节点进段落=非法嵌套)——这两类罕见,交原生 no-op 可接受。
-          if (cli && cli.parentElement === editingEl && !cli.previousElementSibling && isCaretAtStart(doc, editingEl)
-              && !cli.querySelector(':scope > ul, :scope > ol')) {
-            const scope = scopeRootOf(editingEl);
-            const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
-            const idx = blocks.indexOf(editingEl);
-            const prev = idx > 0 ? blocks[idx - 1] : null;
-            // 上一块是列表 → 并入其末项(与 case A 内合并同效,两项拼成一个 item);叶子文字块(段落/
-            // 标题/引用) → 并入其末尾(列表项并入段落)。上一块不可编辑/无 → 不吞,落到下面交原生 no-op。
-            let target = null;
-            if (prev && classify(prev) === 'list') target = [...prev.children].reverse().find((c) => c.tagName === 'LI') || null;
-            else if (prev && isEditableEl(prev) && isLeafTextBlock(prev)) target = prev;
-            if (target) {
-              e.preventDefault();
-              const ul = editingEl;
-              // 空目标块的占位 <br>(空段/空 li 的 `<p><br></p>`)→ 剥掉,免并入后留前导空行(Finding C)。
-              if (target.childNodes.length === 1 && target.firstChild.nodeName === 'BR') target.firstChild.remove();
-              // target 末项自带子列表时,文字插在子列表【前】(接到该项文字末尾),否则会吊到子项下面(Finding B)。
-              const nestedInTarget = target.querySelector(':scope > ul, :scope > ol');
-              const joinAt = cli.firstChild; // 接合点(合并后光标停它前面 = target 原末尾);cli 必非空(空项已在上面分流)
-              while (cli.firstChild) { if (nestedInTarget) target.insertBefore(cli.firstChild, nestedInTarget); else target.appendChild(cli.firstChild); }
-              cli.remove();
-              if (!ul.querySelector('li')) ul.remove(); // cur 列表空了 → 删掉空 <ul>
-              if (undoMgr) undoMgr.checkpoint();
-              markDirty();
-              enterEdit(prev, { mode: 'end' });
-              // joinAt 恒非空且已移进 target → setStartBefore 恒有效(不补 <br>：cli 非空,总有真内容,补 br 会留空行 Finding C)
-              try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
-              return;
-            }
-          }
-          return; // 非首 li / 删字 / 上一块不可并 → 交原生（native 在 ul 内合并 li，正确）
+          return; // 嵌套非空项行首 / 行中删字 → 交原生（原生在 ul 内合并 li = Notion 的②，探针 P-C 实证一致）
         }
         if (!isCaretAtStart(doc, editingEl)) return;
         const scope = scopeRootOf(editingEl); // U6：作用域感知合并/退格
@@ -2940,24 +2913,47 @@
         if (curEmpty) {
           // 空块：直接删，光标落上一块（可编辑→末尾；否则灰选）
           cur.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
-          if (isEditableEl(prev)) enterEdit(prev, { mode: 'end' }); else { selectBlock(prev); positionGrip(prev); }
+          if (isEditableEl(prev)) {
+            enterEdit(prev, { mode: 'end' });
+            // 上一块是列表时，'end' 会把光标停在 <ul> 层（末项之后）而不是末项【内】——closest('li') 取不到项，
+            // 于是下一次退格既进不了行级剥离、也进不了原生 li 合并 = 死键（E1 之后这条路径成了热路径：
+            // 剥出来的空段落被删掉后就落在这里，实测连按三次退格第三次纹丝不动）。显式把光标放进末项。
+            if (classify(prev) === 'list') {
+              const lastLi = [...prev.children].reverse().find((c) => c.tagName === 'LI');
+              if (lastLi) {
+                if (!lastLi.firstChild) lastLi.appendChild(doc.createElement('br')); // 全空的 <li> 装不住 selection（会变 null，实测；空 li 退格分支早有同款补 <br>）
+                caretAtLiTextEnd(lastLi);
+              }
+            }
+          } else { selectBlock(prev); positionGrip(prev); }
           return;
         }
         if (classify(prev) === 'list') {
           if (!isLeafTextBlock(cur)) return; // B2 守卫对称（补）：cur 是容器块(callout/quote)时不能把块级 <p> 塞进 <li>（产 <li><p> 非法）
-          // 上一块是列表：当前块内容作为新 <li> 追加（不能把裸文本塞进 <ul>）
-          const li = doc.createElement('li');
-          while (cur.firstChild) li.appendChild(cur.firstChild);
-          prev.appendChild(li);
+          // 上一块是列表 → **并入其末项的文字**（不是追加成新 <li>）。E1 对拍实证 2026-08-04：Notion 里
+          // 「列表后接段落，段落行首退格」得到「末项文字+段落文字」拼成一项（父后行 + 分隔二 → 父后行分隔二），
+          // 而不是多出一个列表项。这条也是「顶层行剥离后再退一次」落到的终态，两条路径必须同款。
+          const target = [...prev.children].reverse().find((c) => c.tagName === 'LI');
+          if (!target) return; // 空列表（无 li）→ 不吞，光标留原处
+          // 空目标项的占位 <br> → 剥掉，免并入后留前导空行（对抗审查 Finding C）
+          if (target.childNodes.length === 1 && target.firstChild.nodeName === 'BR') target.firstChild.remove();
+          // 末项自带子列表时，文字插在子列表【前】（接到该项文字末尾），否则会吊到子项下面（Finding B）
+          const nestedInTarget = target.querySelector(':scope > ul, :scope > ol');
+          const joinAt = cur.firstChild; // 接合点（合并后光标停它前面 = 末项原末尾）；cur 必非空（空块已在上面分流）
+          while (cur.firstChild) { if (nestedInTarget) target.insertBefore(cur.firstChild, nestedInTarget); else target.appendChild(cur.firstChild); }
           cur.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
           enterEdit(prev, { mode: 'end' });
-          try { const r = doc.createRange(); r.selectNodeContents(li); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
+          if (joinAt && joinAt.parentNode === target) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
           return;
         }
         if (isEditableEl(prev)) {
           // 两块都得是「叶子文字块」才做节点级拼接——否则 prev/cur 是透明包裹块（div.lead>p）时，把块级 <p>
           // 搬进 <p> 会成 <p><p>、把裸文本灌进 div 会成「容器直挂文本」，存盘即坏（A 组）。非叶子则不吞、光标留原处。
           if (!isLeafTextBlock(prev) || !isLeafTextBlock(cur)) return;
+          // 空目标块的占位 <br>（`<p><br></p>`）→ 剥掉，免并入后留前导空行（对抗审查 Finding C）。
+          // E1 之后这条路径变成热路径：列表行剥离成段落后再退一格，就落在这里；原来这个剥 <br> 只做在
+          // 列表分支里，不补的话「空段落 + 待办」两步退完会留一行空行（Finding C 原地复发）。
+          if (prev.childNodes.length === 1 && prev.firstChild.nodeName === 'BR') prev.firstChild.remove();
           // 两个叶子文字块：搬移子节点拼接（合法），光标落接合点（原 prev 末尾）
           const joinAt = cur.firstChild;
           while (cur.firstChild) prev.appendChild(cur.firstChild);

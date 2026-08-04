@@ -116,12 +116,27 @@ test('空项 Delete 吞已勾下一项：采纳其勾选态（对抗审查 P3—
   expect(await conformOf(await serialize())).toBe(true);
 });
 
-test('回归：首项行首 Backspace 并入上一段落（#319 未回归）', async () => {
+// E1（2026-08-04）预期迁移：语义从「一次退格即合并」改成 Notion 的两步剥离。
+// **为什么新预期才是对的**：Notion 对拍实证（探针 E1-a/E1-c/E1-d）第一次按键只剥格式、原地变文本、
+// 不合并，第二次才并入上一块。Colin 拍板「Notion 怎么做我们怎么做」。
+// **#319 守住了什么**：Wendi 报的是「行首退格**什么都不发生**」——本用例守的是「有反应且最终能上移」。
+// 所以这里**没有把断言删弱**：终态断言 `#p0 === '上甲'` 原样保留，只是在它前面**补上**第一步的中间态
+// 断言（行必须已变成非列表的文本块、且此时**尚未**合并）。少了任一条都不算过。
+test('回归：首项行首 Backspace —— ① 剥成文本块不合并 ② 再退才并入上一段落（#319 守住「有反应」）', async () => {
   await launch();
   await openDoc('<p id="p0">上</p><ul id="lst" class="ws-todo"><li id="f">甲</li></ul>');
   await frame.locator('#f').click();
   await page.keyboard.press('Home');
   await page.keyboard.press('Backspace');
-  await expect.poll(() => frame.locator('#p0').textContent(), { message: '#319：首项行首 Backspace 并入上块' }).toBe('上甲');
+  // ① 中间态：整张单项列表退成段落（marker/勾选框消失），内容原位，**没有**并进上一块
+  // 注意查 `ul#lst` 不是 `#lst`：retagElement 保留 id，剥离后是 <p id="lst">，只查 #lst 会误判成「列表还在」
+  await expect.poll(() => frame.locator('ul#lst').count(), { message: '① 列表已被剥掉（唯一项 → 整块 de-list）' }).toBe(0);
+  expect(await frame.locator('#p0').textContent(), '① 此时绝不能已经合并（Notion 第一次不合并）').toBe('上');
+  const mid = await frame.locator('body').evaluate((b) => [...b.children].map((c) => c.tagName + ':' + c.textContent.trim()).join('|'));
+  expect(mid, '① 剥离产物是紧跟其后的独立文本块').toBe('P:上|P:甲');
+  expect(await conformOf(await serialize()), '① 中间态也必须是合规字节（会被自动保存写盘）').toBe(true);
+  // ② 再退一次 → 回到 #319 当初要的终态
+  await page.keyboard.press('Backspace');
+  await expect.poll(() => frame.locator('#p0').textContent(), { message: '② #319 终态：并入上一块' }).toBe('上甲');
   expect(await conformOf(await serialize())).toBe(true);
 });
