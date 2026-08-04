@@ -59,15 +59,38 @@ test('T14 边界：首块本来就是空的 → 不再多插一个空块', async
   await expect.poll(async () => (await bodyKidsOf('#D')).join('|'), { message: '仍只有一个体内块' }).toBe('P:直接写');
 });
 
-test('T14 折叠态按 Enter：自动展开，新块可见', async () => {
+// 【断言迁移，逐条论证 —— 2026-08-05，对拍 T18】
+// 这条原来断的是「折叠态按 Enter → 自动展开（否则新块看不见）」。那是**旧行为**，已按 Notion 改掉：
+// 折叠态标题末 Enter 不再往体内插块，而是新建一个平级空 toggle、原 toggle 保持收着。
+// 旧断言（open === true）与新契约正面冲突，只能迁移，没有两全的写法。
+//
+// 但它守的**底层不变式没变、也不该丢**：按完 Enter，光标落脚的地方必须是**看得见**的
+//（当初「自动展开」正是为了这个）。所以终态断言从「open 变 true」换成同义、且更贴近用户的一条：
+// 光标所在元素真的可见（有非零布局盒 + 没有祖先 details 把它收起来）。
+// 新契约的正向/负向覆盖在 toggle.spec.js 的 T18-1/2/3，这里只留这条不变式。
+test('T14 折叠态按 Enter：光标落脚处必须看得见（原「自动展开」守的底层不变式）', async () => {
   await launch();
   await openDoc('<details id="D"><summary>折叠着的标题</summary><p id="b1">里面的内容</p></details>');
   await frame.locator('#D summary').click({ position: { x: 60, y: 8 } });
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.waitForTimeout(250);
-  const open = await page.evaluate(() => document.getElementById('doc-frame').contentDocument.getElementById('D').open);
-  expect(open, '新建时自动展开，否则新块看不见').toBe(true);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const e = d.querySelector('[data-ws2-editing]');
+    if (!e) return null;
+    const r = e.getBoundingClientRect();
+    // 祖先里若有收起的 <details>，这元素就是被藏着的（details 收起时体内不渲染；summary 例外，它总在）
+    let hidden = false;
+    for (let p = e.parentElement; p; p = p.parentElement) {
+      if (p.tagName === 'DETAILS' && !p.open && e.tagName !== 'SUMMARY') hidden = true;
+    }
+    return { boxed: r.width > 0 && r.height > 0, hidden, srcStillClosed: !d.getElementById('D').open };
+  });
+  expect(st, '按完 Enter 应该有个正在编辑的元素').not.toBeNull();
+  expect(st.boxed, '光标落脚处必须有真实布局盒（看得见）').toBe(true);
+  expect(st.hidden, '光标不许落在被收起的 details 内部').toBe(false);
+  expect(st.srcStillClosed, '新契约附带：原 toggle 不该被替用户展开（旧行为会把它掰开）').toBe(true);
 });
 
 test('T17 空 toggle：编辑器内显示占位提示、且不入盘', async () => {
