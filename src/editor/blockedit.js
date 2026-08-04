@@ -296,6 +296,36 @@
     before.setEnd(caret.startContainer, caret.startOffset);
     return isBlankRun(before.toString());
   }
+  // 空块的占位 <br>：contenteditable 里空块必须挂一个 <br> 才撑得起行高，往它里面并内容前要先摘掉，
+  // 否则并进来的文字前面留一行空行。
+  // ⚠ 判据不能写成 `childNodes.length === 1 && firstChild 是 BR` —— 排版过的文件里它长这样：
+  //   <p>\n  <br>\n</p>  ← 3 个子节点，判据落空。而磁盘上的 HTML 几乎必然排过版
+  //   （2026-08-05「紧凑版 vs 排版版」对照实测：15 组操作里唯一不一致的就是这条，排版版产出多一个 <br>）。
+  // 顺带摘掉周围的纯空白文本节点，让两个版本的产出**逐字节相同**，而不只是渲染上看不出差别。
+  function placeholderBrOf(el) {
+    if (!el) return null;
+    let br = null;
+    for (const n of el.childNodes) {
+      if (n.nodeType === 3) { if (!isBlankRun(n.nodeValue)) return null; continue; } // 有可见文字 → 不是空块
+      if (n.nodeType === 1 && n.tagName === 'BR' && !br) { br = n; continue; }
+      return null; // 第二个 <br> / 任何别的元素 → 不是「单纯的占位」
+    }
+    return br;
+  }
+  // 「多段文字容器」：Schema 决策4 里走 childrenAreMultiPara 的那两种块——引用与提示框。
+  // 只允许 phrasing 或 <p> 子元素，不许装列表/表格/别的块。两者文法一致，交互语义也该一致。
+  function isMultiParaContainer(el) {
+    return !!el && el.nodeType === 1 && (el.tagName === 'BLOCKQUOTE' || (el.classList && el.classList.contains('ws-callout')));
+  }
+  function stripPlaceholderBr(el) {
+    const br = placeholderBrOf(el);
+    if (!br) return false;
+    const blanks = [];
+    for (const n of el.childNodes) if (n.nodeType === 3) blanks.push(n);
+    blanks.forEach((n) => n.remove());
+    br.remove();
+    return true;
+  }
   // 严格块末判定：光标右侧确无任何可见字符/元素（最多容一个末尾填充 <br>——浏览器给空块/末行补的占位）。
   // 区别于 isCaretAtEnd 的 trim()——后者把尾随空格/块内 <br> 也当块末，会让「段内按 →/Delete」误触发
   // 跨块跳转/前向合并（对抗验证 B 组）。破坏性操作（跨块右移、前向合并、Enter 劈块分流）必须用这个严格版。
@@ -3172,8 +3202,12 @@
         // 键按下去零变更、连顶栏「未保存」都不亮 = 静默死键，用户既拿不到反馈也无从知道怎么退出这一步。
         // Notion 的解：**只有第一个子块脱框并进上一块，框带着剩下的继续存在**（实测双子块 callout）。
         // 单段 callout（<div class="ws-callout">文字</div>）是叶子块、走下面既有路径，两侧行为本就一致——别动它。
-        // 只接管 callout：blockquote/toggle 等其它容器块未对拍，保持原样（欠账记在 docs/features/callout.md）。
-        if (cur.classList && cur.classList.contains('ws-callout') && !isLeafTextBlock(cur) && isEditableEl(prev) && isLeafTextBlock(prev)) {
+        // 作用范围 = 「多段文字容器」：Schema 里走 childrenAreMultiPara 的那两种块（引用 / 提示框，
+        // 见 schema-validate.js 决策4）。两者文法完全一样，退格语义没有理由不同。
+        // 引用块此前犯同一个病（2026-08-05 死键扫描实测：HTML 一字未变、dirty 都不亮）；这里是把提示框
+        // 那条**已按 Notion 对拍定下的行为**原样推广过去，不是新设计。折叠块体（details）另有既定语义
+        // （光标回 summary 末、绝不删 summary），不在此列。
+        if (isMultiParaContainer(cur) && !isLeafTextBlock(cur) && isEditableEl(prev) && isLeafTextBlock(prev)) {
           // 「第一行」的起点：跳过源码缩进产生的空白文本节点——它们屏幕上不占位，
           // 把它们当第一行搬走 = 用户按了键、看不出任何变化（对抗审查 C8-1 同款陷阱）。
           let head = cur.firstChild;
@@ -3191,7 +3225,7 @@
           // 光标还被静默弹到上一块 —— 用户看没反应再按一次，删掉的是上一块的最后一个字（对抗审查 C8-3 实测）。
           //（donor 为空段落时算真变更：那一行会消失。）
           if (!(donor || (head && head !== stopAt))) return;
-          if (prev.childNodes.length === 1 && prev.firstChild.nodeName === 'BR') prev.firstChild.remove(); // 空目标块的占位 <br>，同下
+          stripPlaceholderBr(prev); // 空目标块的占位 <br>（排版过的文件里它周围还有空白节点，见 placeholderBrOf）
           let joinAt = null;
           if (donor) { joinAt = donor.firstChild; while (donor.firstChild) prev.appendChild(donor.firstChild); donor.remove(); }
           else { let n = head; joinAt = head; while (n && n !== stopAt) { const nx = n.nextSibling; prev.appendChild(n); n = nx; } }
@@ -3208,7 +3242,7 @@
           // 空目标块的占位 <br>（`<p><br></p>`）→ 剥掉，免并入后留前导空行（对抗审查 Finding C）。
           // E1 之后这条路径变成热路径：列表行剥离成段落后再退一格，就落在这里；原来这个剥 <br> 只做在
           // 列表分支里，不补的话「空段落 + 待办」两步退完会留一行空行（Finding C 原地复发）。
-          if (prev.childNodes.length === 1 && prev.firstChild.nodeName === 'BR') prev.firstChild.remove();
+          stripPlaceholderBr(prev);
           // 两个叶子文字块：搬移子节点拼接（合法），光标落接合点（原 prev 末尾）
           const joinAt = cur.firstChild;
           while (cur.firstChild) prev.appendChild(cur.firstChild);
@@ -3236,7 +3270,7 @@
           // c) 空 li Delete → 前向并入下一 li（镜像 Backspace 空 li）
           if ((curLi.textContent || '').trim() === '' && nextLi && nextLi.tagName === 'LI') {
             e.preventDefault();
-            if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空项占位 br
+            stripPlaceholderBr(curLi); // 剥空项占位 br
             // 空项被下一项内容填充 → 采纳下一项的勾选态/锚点（内容搬上来了、状态跟内容走；否则删空行会把下一任务的勾清掉，对抗审查 P3）
             if (nextLi.getAttribute('data-checked') === 'true') curLi.setAttribute('data-checked', 'true'); else curLi.removeAttribute('data-checked');
             if (!curLi.id && nextLi.id) curLi.id = nextLi.id;
@@ -3254,7 +3288,7 @@
             const nb = bs[bs.indexOf(editingEl) + 1];
             if (nb && isEditableEl(nb) && isLeafTextBlock(nb)) {
               e.preventDefault();
-              if (curLi.childNodes.length === 1 && curLi.firstChild && curLi.firstChild.nodeName === 'BR') curLi.firstChild.remove(); // 剥空目标末项占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
+              stripPlaceholderBr(curLi); // 剥空目标末项占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
               const joinAt = nb.firstChild;
               while (nb.firstChild) curLi.appendChild(nb.firstChild);
               nb.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -3278,8 +3312,8 @@
           const firstLi = next.querySelector(':scope > li');
           if (firstLi && !firstLi.querySelector(':scope > ul, :scope > ol') && isLeafTextBlock(cur)) {
             e.preventDefault();
-            if (cur.childNodes.length === 1 && cur.firstChild && cur.firstChild.nodeName === 'BR') cur.firstChild.remove(); // 剥空目标段落占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
-            if (firstLi.childNodes.length === 1 && firstLi.firstChild && firstLi.firstChild.nodeName === 'BR') firstLi.firstChild.remove();
+            stripPlaceholderBr(cur); // 剥空目标段落占位 br（否则合并后留前导空行，对抗审查 P2；镜像 Backspace :1668）
+            stripPlaceholderBr(firstLi);
             const joinAt = firstLi.firstChild;
             while (firstLi.firstChild) cur.appendChild(firstLi.firstChild);
             firstLi.remove();

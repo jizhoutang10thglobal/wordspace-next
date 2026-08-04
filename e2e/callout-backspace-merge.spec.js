@@ -175,3 +175,30 @@ test('C8-6 上一块不可合并（图片）时保持原样，不吞内容', asy
   await backspaceAtCalloutStart('#c1');
   expect(await shape()).toEqual(before); // 图片不是叶子文字块 → 不并、零变更（既有约定）
 });
+
+// —— 引用块：与提示框同一条文法（Schema 决策4 的 childrenAreMultiPara），退格语义原样推广。
+// 2026-08-05 死键扫描实测：此前引用块首行退格 HTML 一字未变、dirty 都不亮，与提示框修前一模一样。
+test('C8-11 多段引用块首行退格：第一段脱出并进上一块，引用框带着剩下的继续在', async () => {
+  await launch();
+  await openDoc('<p id="up">上块文字</p><blockquote id="Q"><p id="q1">引甲</p><p id="q2">引乙</p></blockquote>');
+  await backspaceAtCalloutStart('#q1');
+  const s = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const q = d.querySelector('blockquote');
+    return { up: d.querySelector('#up').textContent, qCount: d.querySelectorAll('blockquote').length,
+      qInnerP: q ? q.querySelectorAll(':scope > p').length : null, qText: q ? (q.textContent || '').replace(/\s+/g, '') : null };
+  });
+  expect(s.up).toBe('上块文字引甲');
+  expect(s.qCount).toBe(1);
+  expect(s.qInnerP).toBe(1);
+  expect(s.qText).toBe('引乙');
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('C8-12 引用块带缩进（真实磁盘形态）同样生效', async () => {
+  await launch();
+  await openDoc('<p id="up">上</p>\n<blockquote id="Q">\n  <p id="q1">引甲</p>\n  <p id="q2">引乙</p>\n</blockquote>');
+  await backspaceAtCalloutStart('#q1');
+  const up = await page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelector('#up').textContent);
+  expect(up).toBe('上引甲');
+});
