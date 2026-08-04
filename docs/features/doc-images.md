@@ -15,12 +15,12 @@ Schema 层早已就位、本 spec 零改动消费：`IMG` 是顶层块、`figure
 1. **粘贴截图/图片**（主路径）：剪贴板含 `image/*` 且**无可用文本**（文本优先，已拍板①）→
    降采样管线 → 插入图片块；光标所在块为空段落则原地替换，否则插在其后（已拍板②）。
 2. **拖放图片文件**：外部拖放现状一律拒（ED-A5 防注入，正确、保留）；仅对 `image/*` 文件放行。
-   落点算法 = 指针 Y 最近的顶层块 + 越过该块**垂直中线**才翻到它之后。
-   ⚠ **拖动过程中没有任何落点预告**（不画插入线）——`onDragOver` 对 Files 只设 `dropEffect='copy'`
-   就 return、从不设 `data-ws2-drop`（2026-08-04 对拍 I10 实测坐实）。此前本行写「落点 = 块间插入线
-   （复用内部块拖拽的插入线视觉）」是**描述了一个不存在的行为**，现按实况回写。
-   **欠账**：补插入线要动 `onDragOver` 的 Files 分支，该区域正被 `feat/ux-granularity` 重写
-   （行级拖拽分派插在同一位置），待其落地后再做。
+   落点算法 = 指针 Y 最近的顶层块 + 越过该块**垂直中线**才翻到它之后（`dropAnchor` 返回「插在它之后」的块）。
+   拖动过程中画**块间插入线**（复用内部块拖拽的 `data-ws2-drop='bottom'` 视觉）；线由 `dropAnchor`
+   本人算、不另写一份坐标逻辑——两份必然漂移成「画的≠做的」（I4 的教训）。外部拖放没有 `dragend`，
+   拖出窗口（`dragleave` 且 `relatedTarget` 为空）时自行收线；drop / 非图片被拒时同样收。
+   ⚠ 沿革：2026-08-04 对拍 I10 实测出「全程零落点反馈」，与本行原文不符——原文描述的是一个从未实现的
+   行为。现已补上实现（`onDragOver` 的 Files 分支，门 `e2e/image-drop-indicator.spec.js`），本行回到描述实况。
 3. **斜杠菜单「图片」**：打开文件选择器（accept 常见位图格式），选中后走同一管线。
 
 ### 图片块行为（原子叶子块，§5 拍板）
@@ -101,9 +101,10 @@ Schema 层早已就位、本 spec 零改动消费：`IMG` 是顶层块、`figure
 
 ## 欠账
 
-- **OS 文件拖放入口**：已实现（落点 = Y 最近块），但**靠宿主手测**——Electron 里 OS drop 的
-  `dataTransfer.files` 难在 e2e 合成（recon 亦标为「移植里行为最易断的一环」）。若真机上 iframe
-  的 drop 事件拿不到 files，回退方案 = 把 OS 图片 drop 处理器挂到父层 frame 元素。
+- **OS 文件拖放入口**：已实现（落点 = Y 最近块 + 插入线）。~~靠宿主手测~~ —— 2026-08-04 更正：
+  `dataTransfer.files` **能在 e2e 合成**（canvas → `File` → `dt.items.add`，`dt.types` 就含 `'Files'`），
+  `e2e/image-drop-indicator.spec.js` 已按此把 dragover/drop 全链路纳入门。原判断「难在 e2e 合成」不成立。
+  仍存的真风险：真机上 iframe 的 drop 事件若拿不到 files，回退方案 = 把 OS 图片 drop 处理器挂到父层 frame 元素。
 - **EXIF 方向**：沿用 ui-demo 验证过的 `createImageBitmap(file)` 默认行为（未显式传
   `imageOrientation`）。若在更老 Chromium 上遇到方向不归正，显式传 `{ imageOrientation: 'from-image' }`。
 - **体积放大预案（未做压力用例）**：undo 是 `body.innerHTML` 全量快照、自动保存全量重写文件——

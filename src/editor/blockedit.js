@@ -3979,7 +3979,16 @@
     function onDragOver(e) {
       if (!dragFrom && draggingFile()) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'link'; return; } // U3-B6：侧栏文件拖进来 → 接受、dropEffect link
       // OS 图片文件拖入（doc-images）：dragover 阶段读不到 MIME、只看得到 'Files'，先放行；drop 时按白名单过滤。
-      if (!dragFrom && dtHasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; return; }
+      // 落点插入线（对拍 I10）：此前这里只设 dropEffect 就 return，全程零反馈 —— 用户松手前不知道图会落在哪，
+      // 而 spec 早写了「落点 = 块间插入线」。**指示线必须由 dropAnchor 本人算**（drop 时插的就是它），
+      // 复制一份坐标逻辑就是又一个「画的≠做的」。dropAnchor 返回的是「插在它之后」的块 → 线画在其下缘。
+      if (!dragFrom && dtHasFiles(e.dataTransfer)) {
+        e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+        clearDrop();
+        const a = dropAnchor(e.clientY);
+        if (a) a.setAttribute('data-ws2-drop', 'bottom');
+        return;
+      }
       if (!dragFrom) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
       e.preventDefault();
       if (isRowDrag()) { rowDragOver(e); return; } // U2：行拖拽走行级指示线
@@ -3991,9 +4000,11 @@
       // OS 文件拖入（doc-images）：图片 → 摄入插块；非图片文件维持拒绝但要说出来（别静默）。
       if (!dragFrom && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
         e.preventDefault();
+        const anchor = dropAnchor(e.clientY); // 先取锚点再清线：clearDrop 只动属性、不动布局，但顺序写死更省心
+        clearDrop();
         const imgs = II ? II.pickImageFiles(e.dataTransfer) : [];
         if (!imgs.length) { if (global.__wsToast) global.__wsToast(T('editor.dropImagesOnly')); return; }
-        insertImages(imgs, dropAnchor(e.clientY), false);
+        insertImages(imgs, anchor, false);
         return;
       }
       if (!dragFrom) { e.preventDefault(); return; }
@@ -4076,6 +4087,9 @@
     doc.addEventListener('scroll', onScroll, true);
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
+    // 外部拖放没有 dragend（源不在本文档）：拖出窗口又不松手时，插入线得自己收，否则留一条幽灵线。
+    // 只认「离开窗口」（relatedTarget 为空）——块间移动时的 dragleave 每次都触发，清了线就会闪。
+    doc.addEventListener('dragleave', (e) => { if (!dragFrom && !e.relatedTarget) clearDrop(); });
     doc.addEventListener('paste', onPaste);
     doc.addEventListener('copy', onCopy); // 内部富复制：⌘C 写带哨兵的干净 HTML（⌘X 走 keydown 里的 execCommand('copy') 也经此）
     doc.addEventListener('toggle', onToggle, true); // 折叠事件不冒泡→捕获相 + 委托 doc（撑过 innerHTML 重写/嵌套/后加 toggle）
