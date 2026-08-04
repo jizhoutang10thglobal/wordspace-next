@@ -162,9 +162,21 @@ test('I10-5 非图片文件被拒时不留线', async () => {
 
 // ── 以下为 2026-08-05 对抗审查 + gate 审计的处置（P2 两条、P3 两条）──────────────────
 
-// 1×1 之上的真实尺寸 png：图片必须真解码出高度，「线画在它下缘」的像素断言才有意义
-const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAAAyCAYAAAC4wJK5AAAAHElEQVRoge3BAQ0AAADCoPdPbQ43oAAAAAAAAHgaHkAAAcHf9WEAAAAASUVORK5CYII=';
-const IMGDOC = `<p id="p1">前段</p><img id="pic" src="${PNG}" alt="图"><p id="p3">后段</p>`;
+// ⚠ 这里**不能**用仓里那串写死的 PNG data URL（grip-scope-consistency.spec.js 等在用的那个）——
+// 实测它在文档里 naturalWidth === 0，**根本解不了码**。而 broken img 不是替换元素、照常生成 ::after，
+// 于是整条门会走到「和普通块一样」的那条路上，压根碰不到它声称要守的替换元素场景（假门）。
+// 改成运行时用 canvas 现生成并 await onload，再断言 naturalWidth > 0 当前提 —— 哪天它又不加载了，
+// 这道门会当场喊出来，而不是悄悄退化。
+const IMGDOC = '<p id="p1">前段</p><img id="pic" alt="图"><p id="p3">后段</p>';
+// 装一张确定能解码的图，等 onload 落定；返回自然尺寸供前提断言
+const loadRealImage = () => page.evaluate(async () => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const c = d.createElement('canvas'); c.width = 160; c.height = 80;
+  const g = c.getContext('2d'); g.fillStyle = '#3a7'; g.fillRect(0, 0, 160, 80);
+  const img = d.querySelector('#pic');
+  await new Promise((res) => { img.onload = res; img.onerror = res; img.setAttribute('src', c.toDataURL('image/png')); setTimeout(res, 2000); });
+  return { w: img.naturalWidth, h: img.naturalHeight };
+});
 
 // 替换元素上的线走 box-shadow（<img> 不生成 ::after），所以判据也换一套
 const imgLineOf = (sel) => page.evaluate((s) => {
@@ -183,6 +195,9 @@ test('I10-7 落点锚是图片块时线**真被画出来**（像素对照，不�
   // 病灶：Blink 不给成功加载的 <img> 生成 ::after，而顶层裸 <img> 是本仓 canonical 的图片块 ——
   // 「往已有图片旁边再拖一张」是这功能最高频的场景，靠伪元素画线在这里 100% 是零像素：
   // 属性设上了、线没有，正是 I10 立论要消灭的「做对了画是空的」。旧 fixture 三块全是 <p>，碰不到。
+  const nat = await loadRealImage();
+  expect(nat.w, '前提：图必须真解码——broken img 不是替换元素，会照常生成 ::after，这条门就白测了').toBeGreaterThan(0);
+  await page.waitForTimeout(250);
   const box = await frame.locator('#pic').boundingBox();
   const lineBefore = await strip(box.x, box.y + box.height - 1, box.width, 5); // 图片下缘那条带
   const ctrlBefore = await strip(box.x, box.y + box.height / 2 - 2, box.width, 5); // 图片正中的对照带
