@@ -14,6 +14,26 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-04 — 发版收尾两条：Release body 顶部要手补 + 并行 worktree 禁用 `git add -A`
+
+**是什么**：
+① **tag 触发的 Release，body 只有自动生成的 PR 列表，没有用户可见说明**。而 App 内「有新版本」
+面板显示的就是 Release body `---` 之上那段（`src/lib/update-status.js` 的 `parseReleaseNotes`）。
+v0.12.0 发出来时这段是空的 → 用户在更新面板里看到的是一串带 PR 号的 commit 标题（含 docs/skills 这类
+开发侧改动）。已按 `docs/releasing.md`「Release notes 约定」手动补上：1 句导语 + ≤5 条要点 + `---` +
+官网 changelog 链接 + 原 PR 列表。
+② **并行 worktree 里用 `git add -A` / `commit -a` 会把别的 session 的临时文件扫进仓库**。本轮我用它
+把另一个 agent 的探针脚本一起提交了，对抗审查才抓到。
+
+**怎么 apply**：
+① 发完版**别以为完事了**——`gh release view vX.Y.Z --json body` 看一眼，没有顶部简洁版说明就
+`gh release edit vX.Y.Z --notes-file <file>` 补。补之前可以用
+`node -e "require('./src/lib/update-status.js').parseReleaseNotes(body)"` 预览面板里长什么样（截 8 行）。
+② 一律 `git add <具体路径>`。共享 worktree 目录里别人的临时文件不受你控制，`-A` 的作用域比你以为的大。
+
+**来源**：v0.12.0 发版收尾（PR #387 / tag v0.12.0），对抗审查 ADV-8。
+
+
 ## 2026-08-04（当日更正）— 上一条关于「Notion 发键」的根因写错了；⚠ `pressKey` 的修饰键组合是假键
 
 **更正对象**：同日下面那条「对拍探针两条硬教训」里 §① 转述的
