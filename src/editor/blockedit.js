@@ -428,6 +428,12 @@
     let editingEl = null;    // 正在文字编辑的块
     let hoverEl = null;      // 鼠标悬停的块（驱动 ⋮⋮ 定位）
     let hoverRow = null;     // 悬停块为列表时的悬停行 <li>（U1 行级手柄；非列表块恒 null）
+    // 手柄的**作用对象**单一真相源（对拍 I4）：手柄画在谁旁边，点它/拖它/点「+」就作用于谁。
+    // 此前「画」看 hoverRow||hoverEl（onMouseMove 无条件跟手）、「做」看 selectedEl||hoverEl（选中优先），
+    // 两套口径不同源 —— 选中图片后悬停别的块，手柄画到新块旁却仍删/拖那张图（P1，见 docs/features/doc-images.md）。
+    // 由 positionGrip 唯一写入、setGutterVisible(false) 唯一清除，别在别处赋值。
+    let gripEl = null;       // 手柄当前锚定的**块**
+    let gripRow = null;      // 锚点是 <li> 时的行作用域目标（非行锚恒 null）
     let menuRow = null;      // U3 行作用域菜单的目标行（仅行模式非空；随 closeBlockMenu 清）
     let slash = null;        // { blockEl, query, active }
     let dragFrom = null;     // 拖拽重排的源块
@@ -461,7 +467,8 @@
     plus.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
     doc.documentElement.appendChild(plus);
     // 手柄与「+」永远同显同隐（分开控制必漏一处 → 幽灵按钮），显隐一律走这个口子。
-    function setGutterVisible(show) { const v = show ? 'flex' : 'none'; grip.style.display = v; plus.style.display = v; }
+    // 手柄不可见 = 没有作用对象：一起清 gripEl/gripRow，否则隐藏后残留的旧目标会在下次显示前被用上。
+    function setGutterVisible(show) { const v = show ? 'flex' : 'none'; grip.style.display = v; plus.style.display = v; if (!show) { gripEl = null; gripRow = null; } }
 
     // 格式气泡
     const fmtbar = mk('div', 'ws-fmtbar');
@@ -584,6 +591,8 @@
       if (!lh || Number.isNaN(lh)) lh = (parseFloat(cs.fontSize) || 15) * 1.5;
       const top = (r.top + sy + Math.max(0, (Math.min(lh, r.height) - 22) / 2)) + 'px';
       grip.style.top = top; plus.style.top = top;
+      gripRow = (el.tagName === 'LI') ? el : null;
+      gripEl = gripRow ? (blockOf(el) || el) : el;
       setGutterVisible(true);
     }
     function showFmtAt(left, top) {
@@ -689,6 +698,10 @@
       clearSelectedAttr();
       selectedEl = el;
       if (el) el.setAttribute('data-ws2-selected', '');
+      // 灰选必然把手柄挪到该块（20+ 个调用点本来就手写 selectBlock(x)+positionGrip(x) 这一对；收进来
+      // 才能让「手柄旁 = 作用对象」成为恒真式）。少数没配对的旧点（插 hr / 菜单转为 / 折叠恢复）
+      // 此前会留下手柄指向别的块，现在一并对齐。
+      if (el) positionGrip(el);
       positionFmtbar();
     }
     function deselect() {
@@ -3412,14 +3425,16 @@
 
     // grip 交互
     grip.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-    grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const el = selectedEl || hoverEl; if (el) openBlockMenu(el, selectedEl ? null : hoverRow); }); // U3：行锚手柄=行作用域；Esc 灰选=块作用域
+    // 作用对象一律取 gripEl/gripRow（= 手柄画在谁旁边）。行锚手柄=行作用域；块锚（Esc 灰选/悬停非列表块）=块作用域。
+    // openBlockMenu 内部会 selectBlock(gripEl)，于是灰选当场转移到手柄所指的块 —— 对齐 Notion「点手柄 halo 跟着走」。
+    grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (gripEl) openBlockMenu(gripEl, gripRow); });
     // U4「+」：作用对象跟手柄同口径（行锚=插同列表新行；块=插空正文块）。⌥ 点击插到上方（对齐 Notion）。
     plus.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); }); // 别把焦点/选区从当前块夺走
     plus.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
       closeBlockMenu();
-      const el = selectedEl || hoverEl; if (!el) return;
-      const row = selectedEl ? null : hoverRow;
+      const el = gripEl; if (!el) return;
+      const row = gripRow;
       const above = !!e.altKey;
       if (row && row.tagName === 'LI' && classify(el) === 'list' && el.contains(row)) {
         const list = row.parentElement;
@@ -3446,7 +3461,7 @@
       openSlash(nx, false); // E5：同上——「+」是全局 gutter 行为，所有块类型旁边点都该弹
     });
     // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
-    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverRow || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
+    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = gripRow || gripEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
     // 落点态是三个属性（线 / 缩进量 / 父行高亮），必须一起清——只清一个会留下幽灵高亮或错位的线
     function clearDrop() {
