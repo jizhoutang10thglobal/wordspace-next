@@ -312,6 +312,11 @@
     }
     return br;
   }
+  // 「多段文字容器」：Schema 决策4 里走 childrenAreMultiPara 的那两种块——引用与提示框。
+  // 只允许 phrasing 或 <p> 子元素，不许装列表/表格/别的块。两者文法一致，交互语义也该一致。
+  function isMultiParaContainer(el) {
+    return !!el && el.nodeType === 1 && (el.tagName === 'BLOCKQUOTE' || (el.classList && el.classList.contains('ws-callout')));
+  }
   function stripPlaceholderBr(el) {
     const br = placeholderBrOf(el);
     if (!br) return false;
@@ -3188,8 +3193,12 @@
         // 键按下去零变更、连顶栏「未保存」都不亮 = 静默死键，用户既拿不到反馈也无从知道怎么退出这一步。
         // Notion 的解：**只有第一个子块脱框并进上一块，框带着剩下的继续存在**（实测双子块 callout）。
         // 单段 callout（<div class="ws-callout">文字</div>）是叶子块、走下面既有路径，两侧行为本就一致——别动它。
-        // 只接管 callout：blockquote/toggle 等其它容器块未对拍，保持原样（欠账记在 docs/features/callout.md）。
-        if (cur.classList && cur.classList.contains('ws-callout') && !isLeafTextBlock(cur) && isEditableEl(prev) && isLeafTextBlock(prev)) {
+        // 作用范围 = 「多段文字容器」：Schema 里走 childrenAreMultiPara 的那两种块（引用 / 提示框，
+        // 见 schema-validate.js 决策4）。两者文法完全一样，退格语义没有理由不同。
+        // 引用块此前犯同一个病（2026-08-05 死键扫描实测：HTML 一字未变、dirty 都不亮）；这里是把提示框
+        // 那条**已按 Notion 对拍定下的行为**原样推广过去，不是新设计。折叠块体（details）另有既定语义
+        // （光标回 summary 末、绝不删 summary），不在此列。
+        if (isMultiParaContainer(cur) && !isLeafTextBlock(cur) && isEditableEl(prev) && isLeafTextBlock(prev)) {
           // 「第一行」的起点：跳过源码缩进产生的空白文本节点——它们屏幕上不占位，
           // 把它们当第一行搬走 = 用户按了键、看不出任何变化（对抗审查 C8-1 同款陷阱）。
           let head = cur.firstChild;
