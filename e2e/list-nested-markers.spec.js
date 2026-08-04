@@ -38,14 +38,20 @@ test.afterEach(async () => {
   app = null; page = null; frame = null;
 });
 
-test('编号列表四级：decimal → lower-alpha → lower-roman → decimal（回到首档）', async () => {
+// 2026-08-04 复跑对拍**更正**：上一批按「1./a./i.」给 ol 加过层级循环，那是没量就改的产物
+// （a./i. 是 Word/Google Docs 惯例）。Notion 实测**每一层都是十进制**——二级项的 marker 字面值就是
+// `--pseudoBefore--content: "1."/"2."/"3."`。规则已删除，`ol` 回到浏览器默认（逐层十进制）。
+// ⚠ 这条门的旧版本是**反着断言**的：它把漂移钉成了「正确」。迁移预期时必须回到 Notion 实测，
+//   不是回到「上一版门怎么写的」。
+test('编号列表四级：每一层都是 decimal（Notion 实测，无 a./i. 循环）', async () => {
   await launch();
   await openDoc('<ol id="L1"><li>一级<ol id="L2"><li>二级<ol id="L3"><li>三级<ol id="L4"><li>四级</li></ol></li></ol></li></ol></li></ol>');
-  expect(await markerOf('#L1'), '第一级 decimal').toBe('decimal');
-  expect(await markerOf('#L2'), '第二级 lower-alpha').toBe('lower-alpha');
-  expect(await markerOf('#L3'), '第三级 lower-roman').toBe('lower-roman');
-  expect(await markerOf('#L4'), '第四级回到 decimal').toBe('decimal');
-  expect(await conformOf(await serialize()), '磁盘合规').toBe(true);
+  for (const [sel, lv] of [['#L1', '第一级'], ['#L2', '第二级'], ['#L3', '第三级'], ['#L4', '第四级']]) {
+    expect(await markerOf(sel), lv + ' 必须是 decimal').toBe('decimal');
+  }
+  const html = await serialize();
+  expect(html, '入盘 CSS 里绝不能再有字母/罗马循环规则').not.toMatch(/lower-alpha|lower-roman/);
+  expect(await conformOf(html), '磁盘合规').toBe(true);
 });
 
 test('圆点列表四级：disc → circle → square → disc', async () => {
@@ -62,8 +68,9 @@ test('层级样式随语义 CSS 入盘（浏览器直开同样对）', async () 
   await launch();
   await openDoc('<ol id="L1"><li>一级<ol id="L2"><li>二级</li></ol></li></ol>');
   const html = await serialize();
-  expect(html.includes('ol ol'), '入盘 CSS 含嵌套层级规则').toBe(true);
-  expect(html.includes('lower-alpha'), '入盘 CSS 含二级样式').toBe(true);
+  expect(html.includes('ul ul'), '入盘 CSS 含圆点的嵌套层级规则').toBe(true);
+  expect(html.includes('circle'), '入盘 CSS 含二级圆点样式').toBe(true);
+  expect(html, '编号侧不该有任何层级规则（Notion 是逐层十进制 = 浏览器默认）').not.toMatch(/lower-alpha|lower-roman/);
   // 用磁盘字节在纯 DOMParser 里复算（不靠编辑器，模拟浏览器直开）
   const stillThere = await page.evaluate((h) => {
     const d = new DOMParser().parseFromString(h, 'text/html');
@@ -85,12 +92,20 @@ test('旧文档打开即静默升级到带层级规则的基线', async () => {
   await launch();
   // 造一个带**旧版**基线 CSS 的文档（只有 ul,ol 的 margin 规则、无层级规则）
   const oldBaseline = '<style id="ws-schema-baseline" data-ws-schema-css="baseline">:where(ul,ol){margin:.5em 0;padding-left:1.7em}</style>';
-  await openDoc('<ol id="L1"><li>一级<ol id="L2"><li>二级</li></ol></li></ol>', oldBaseline);
-  expect(await markerOf('#L2'), '打开后二级即为 lower-alpha（基线被升级）').toBe('lower-alpha');
-  expect((await serialize()).includes('lower-alpha'), '升级后的基线随保存入盘').toBe(true);
+  await openDoc('<ul id="U1"><li>一级<ul id="U2"><li>二级</li></ul></li></ul>', oldBaseline);
+  expect(await markerOf('#U2'), '打开后二级即为 circle（基线被升级）').toBe('circle');
+  expect((await serialize()).includes('circle'), '升级后的基线随保存入盘').toBe(true);
 });
 
-test('深层循环 mod-3：第 5/6 级回到 circle/square（编号同理 lower-alpha/lower-roman）', async () => {
+test('回归：**带旧 a./i. 规则的文档**打开后被升级掉（上一批已入盘的漂移要能自愈）', async () => {
+  await launch();
+  const driftedBaseline = '<style id="ws-schema-baseline" data-ws-schema-css="baseline">:where(ul,ol){margin:.5em 0;padding-left:1.7em}:where(ol ol){list-style-type:lower-alpha}</style>';
+  await openDoc('<ol id="L1"><li>一级<ol id="L2"><li>二级</li></ol></li></ol>', driftedBaseline);
+  expect(await markerOf('#L2'), '二级回到 decimal（旧的 lower-alpha 规则被基线升级冲掉）').toBe('decimal');
+  expect(await serialize(), '磁盘里不再残留字母循环规则').not.toMatch(/lower-alpha/);
+});
+
+test('深层循环 mod-3：第 5/6 级回到 circle/square（**仅圆点**；编号无循环）', async () => {
   await launch();
   await openDoc('<ul id="U1"><li>1<ul id="U2"><li>2<ul id="U3"><li>3<ul id="U4"><li>4<ul id="U5"><li>5<ul id="U6"><li>6</li></ul></li></ul></li></ul></li></ul></li></ul></li></ul>');
   expect(await markerOf('#U5'), '第五级 circle（mod-3）').toBe('circle');

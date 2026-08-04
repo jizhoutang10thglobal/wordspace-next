@@ -361,13 +361,13 @@
       ':where(body>h1:first-child,body>h2:first-child,body>h3:first-child){margin-top:.2em}' +
       ':where(p){margin:.5em 0}' +
       ':where(ul,ol){margin:.5em 0;padding-left:1.7em}' +
-      // 嵌套 marker 逐级循环（对拍：Notion 编号 1./a./i.、圆点 •/◦/▪，我们此前各级同款）。零权重
-      // :where() 保证 ws-todo 的 list-style:none 与用户自定义样式照常压过它；三级后回到首档（同 UA 惯例）。
-      ':where(ol ol){list-style-type:lower-alpha}' +
-      ':where(ol ol ol){list-style-type:lower-roman}' +
-      ':where(ol ol ol ol){list-style-type:decimal}' +
-      ':where(ol ol ol ol ol){list-style-type:lower-alpha}' +
-      ':where(ol ol ol ol ol ol){list-style-type:lower-roman}' +
+      // 嵌套 marker（2026-08-04 复跑对拍**更正**）：Notion 实测——
+      //   编号列表 **每一层都是十进制**（1. 2. 3.，逐层重新从 1 起），**没有** a./i. 那套字母/罗马循环；
+      //   圆点列表才逐级循环 •/◦/▪（disc/circle/square）。
+      // ⚠ 上一批曾按「1./a./i.」加过 ol 的循环规则，那是**没量就改**的产物（a./i. 是 Word/Google Docs 的
+      //   惯例，不是 Notion 的）。已删除——`ol` 不写 list-style-type，浏览器默认就是逐层十进制，正好对。
+      //   实证：Notion 二级项 marker 字面值 `--pseudoBefore--content: "1." / "2." / "3."`。
+      // 零权重 :where() 保证 ws-todo 的 list-style:none 与用户自定义样式照常压过它。
       ':where(ul ul){list-style-type:circle}' +
       ':where(ul ul ul){list-style-type:square}' +
       ':where(ul ul ul ul){list-style-type:disc}' +
