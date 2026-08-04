@@ -26,9 +26,9 @@ Notion 式可折叠块。磁盘 = 原生 `<details><summary>…</summary>…正�
 
 门：`e2e/toggle-align.spec.js`（6 条）。
 
-**待拍板（对拍 T15）：标题行首 Backspace 目前是零反馈死胡同。** 现状：标题非空或体非空时**什么都不发生**（只有完全空的 toggle 会解包成空段落）。Notion：整块降级成普通文本块、子块保持缩进留下。我们 Schema 没有「缩进子块」概念，现成的 `turnInto(details→text)`（U9）语义是「summary 成段、体内块提到其后」，不完全等价。**建议**照 U9 语义降级（至少消灭死胡同），但语义选择待 Colin/Wendi 拍板。
+**标题行首 Backspace = 降级成文本块（对拍 T15 / E2，Colin 2026-08-04 拍板「按 Notion 做」，已落地）。** 旧行为是零反馈死胡同——标题非空或体非空时**什么都不发生**，用户找不到退出这个折叠块的办法。Notion 实证：① 剥掉 toggle 格式变文本块（体内块仍挂在它下面）；② 再退一次才并入上一块、体内块升到顶层。我们的 `<p>` 不能有子块（文法所限）→ **① 一步到位**：标题成段落、体内块按序提升为其后的兄弟，正是现成的 `turnInto(details→text)`（U9/R2）语义，与菜单「转为正文」路径同款；**第二次退格**落进通用合并分支，自动得到 Notion ② 的终态。折叠态下按也降级（内容不会因为收着就丢）。**空 toggle 的逃生路径不变**（解包成空段落，且空产物必带 `<br>` 才装得住光标）。门：`e2e/list-backspace-peel.spec.js` E2-1/E2-2/E2-3。
 
-**有意分歧（不改）**：体内块缩进步长 22px（Notion 32px）；菜单项集差异（我们无 Copy link / Move to / Comment / Ask AI，Notion 无「在下方插入」）；toggle 块暂不给色板（`isEditableEl(details)===false` gate，要放开需先验 `ws-color-*` 挂 `<details>` 的合规性）；「+」点下去我们直接生成空块进编辑、Notion 会立刻弹块类型选择器——**后者是全局 gutter 行为、不是 toggle 专属，若要做应单独立项**。
+**有意分歧（不改）**：体内块缩进步长 22px（Notion 32px）；菜单项集差异（我们无 Copy link / Move to / Comment / Ask AI，Notion 无「在下方插入」）；toggle 块暂不给色板（`isEditableEl(details)===false` gate，要放开需先验 `ws-color-*` 挂 `<details>` 的合规性）；「+」点下去我们直接生成空块进编辑、Notion 会立刻弹块类型选择器——**Colin 2026-08-04 拍板按 Notion 做，排在 E5**（全局 gutter 行为、不是 toggle 专属，故单列一个单元、门要覆盖所有块类型）。
 
 ## 文件映射
 

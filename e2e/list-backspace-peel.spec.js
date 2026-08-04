@@ -58,7 +58,27 @@ test('E1-1 顶层圆点【中间】行：① 原地剥成文本、列表劈成�
   expect(await shape(), '① 劈成「前段 / 甲 / 段落乙 / 丙」，乙原地不动').toBe('P[前段] UL[甲] P[乙] UL[丙]');
   expect(await conform(), '① 中间态合规（会被自动保存写盘）').toBe(true);
   await BS();
-  expect(await shape(), '② 并入上一块的【末项文字】，不是多出一个列表项').toBe('P[前段] UL[甲乙] UL[丙]');
+  // ⚠ 只断言 shape() 是【哑门】：块级 textContent 里，「一项『甲乙』」和「两项『甲』『乙』」长得一模一样
+  //   （变异自检实测：把并入改回「追加成新 li」，只看 shape 的断言照样全绿）。必须逐项查 li。
+  const lis = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.body.querySelectorAll(':scope > ul')].map((u) => [...u.children].filter((c) => c.tagName === 'LI').map((l) => l.textContent.trim()));
+  });
+  expect(lis, '② 并入上一块的【末项文字】拼成一项，不是多出一个列表项（Notion 实测同款）').toEqual([['甲乙'], ['丙']]);
+  expect(await shape()).toBe('P[前段] UL[甲乙] UL[丙]');
+  expect(await conform()).toBe(true);
+});
+
+test('E1-1b 段落行首退格并入上一列表：并进末项文字，不追加成新项（与剥离后再退一次同款）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="a">甲</li><li id="b">乙</li></ul><p id="p1">段落</p>');
+  await caretAtRowStart('#p1');
+  await BS();
+  const lis = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.querySelectorAll('#L > li')].map((l) => l.textContent.trim());
+  });
+  expect(lis, 'Notion 实测：父后行 + 分隔二 → 一项「父后行分隔二」，不是两项').toEqual(['甲', '乙段落']);
   expect(await conform()).toBe(true);
 });
 
