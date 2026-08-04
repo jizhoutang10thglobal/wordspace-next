@@ -203,18 +203,20 @@ test('I10-7 落点锚是图片块时线**真被画出来**（像素对照，不�
   const ctrlBefore = await strip(box.x, box.y + box.height / 2 - 2, box.width, 5); // 图片正中的对照带
   const r = await fileDragOver('#pic', 'lower');
   expect([r.markedId, r.place]).toEqual(['pic', 'bottom']);
-  const st = await imgLineOf('#pic');
-  // ⚠ 别在这里断 getComputedStyle(img,'::after').content === 'none' —— 实测它返回的是 '""'：
-  // **伪元素的 computed style 照样算得出来，哪怕 Blink 根本不给替换元素生成这个盒子**。
-  // 这恰恰是 gate 审计说「读 ::after 的 computed style 判有没有线」是哑门的直接证据，
-  // 所以这条门只信两样东西：box-shadow 这个真的会渲染的属性，和下面的像素对照。
-  expect(st.shadow).toContain('rgb(26, 115, 232)');
   const lineAfter = await strip(box.x, box.y + box.height - 1, box.width, 5);
   const ctrlAfter = await strip(box.x, box.y + box.height / 2 - 2, box.width, 5);
-  // 正向：下缘像素必须变（线画出来了）
+  // 像素断言放在**最前面**：撤掉 box-shadow 兜底时先红的必须是它，这样变异画像才证明
+  // 「这条门靠的是真渲染」，而不是靠下面那条结构断言短路。
+  // 正向：下缘像素必须变（线真画出来了）
   expect(Buffer.compare(lineBefore, lineAfter), '图片下缘应出现落点线（像素必须变化）').not.toBe(0);
   // 负向：图片正中必须**不变**。少了这半条，「线跑到视口底部/画在别处」的变异照样能让正向那条绿。
   expect(Buffer.compare(ctrlBefore, ctrlAfter), '对照带不该变——变了说明线没画在该画的地方').toBe(0);
+  const st = await imgLineOf('#pic');
+  // ⚠ 别在这里断 getComputedStyle(img,'::after').content === 'none' —— 实测它返回的是 '""'：
+  // **伪元素的 computed style 照样算得出来，哪怕 Blink 根本不给替换元素生成这个盒子**。
+  // 这正是 gate 审计说「读 ::after 的 computed style 判有没有线」是哑门的直接证据。
+  // 所以这条门只信两样：上面的像素对照，和 box-shadow 这个真会渲染的属性。
+  expect(st.shadow).toContain('rgb(26, 115, 232)');
 });
 
 test('I10-8 首块上半区：线画在首块上缘，图片真能落到全文开头', async () => {
