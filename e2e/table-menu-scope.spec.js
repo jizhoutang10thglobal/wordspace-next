@@ -88,6 +88,11 @@ test('菜单开着时目标行与目标列在视觉上可辨（读 computed 真�
   expect(tgtCol).not.toBe(otherCol);
   // 表头行也属于目标列（插列/删列会动它）——列标记必须贯穿到表头，否则标了半截更误导
   expect(await bg('#h2')).not.toBe(await bg('#h3'));
+  // 交点格（对齐三态的真实作用对象）必须与「只在行上」「只在列上」的格都不同——
+  // 否则菜单里的左/中/右按钮就成了反向的「画的≠做的」（对抗审查抓出：两条同色规则不会叠深）
+  const pivot = await bg('#c22');
+  expect(pivot).not.toBe(tgtRow);
+  expect(pivot).not.toBe(tgtCol);
 });
 
 test('换一个格开菜单，标记跟着换（不是钉死在首格）', async () => {
@@ -146,10 +151,15 @@ test('入盘门②：菜单开着时导出 PDF，标记不进打印 HTML', async
     return {
       row: d.querySelectorAll('[data-ws2-menurow]').length,
       col: d.querySelectorAll('[data-ws2-menucol]').length,
-      cell: d.querySelectorAll('[data-ws2-cell]').length, // 既有漏项，本次收口一并堵上
+      // ⚠ 别在这里断言 data-ws2-cell === 0：openBlockMenu 第一件事就是 selectBlock → exitCell，
+      // 菜单开着时本来就没有 cell 标记，那条断言恒真、是假覆盖（对抗审查抓出）。
+      // 真正该守的是**结构标记必须留下**——剥过头会让打印里的空块塌成 0 高。
+      root: d.querySelectorAll('[data-ws2-root]').length,
     };
   }, printHtml);
-  expect(leaked).toEqual({ row: 0, col: 0, cell: 0 });
+  expect(leaked.row).toBe(0);
+  expect(leaked.col).toBe(0);
+  expect(leaked.root).toBeGreaterThan(0); // 结构标记保留：EDITOR_CSS 的空块 min-height 靠它定位
 });
 
 // 标记集合必须与真正执行删除的集合同源（都走 tableRowsOf/rowCellsOf 的数据行口径）。

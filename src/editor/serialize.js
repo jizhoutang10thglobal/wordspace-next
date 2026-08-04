@@ -23,7 +23,7 @@
     'data-ws2-clip', // 块编辑：内部复制粘贴的剪贴板哨兵（只该出现在剪贴板 payload；万一漏进 DOM 也剥）
     'data-ws2-root', // 块容器标记（给空块占行高等结构 CSS 用，存盘剥除）
     'data-ws2-cell', // 块编辑：表格单元格编辑态标记（仅交互态，存盘剥除）
-    'data-ws2-menurow', 'data-ws2-menucol', // 块编辑：块菜单开启时的作用行/列标记（仅交互态；菜单开着时自动保存撞上也剥）
+    'data-ws2-menurow', 'data-ws2-menucol', 'data-ws2-menucell', // 块编辑：块菜单开启时的作用行/列/交点格标记（仅交互态；菜单开着时自动保存撞上也剥）
   ]);
 
   function cleanRoot(root) {
