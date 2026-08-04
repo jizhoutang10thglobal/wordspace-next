@@ -1,6 +1,6 @@
 # 修复 Notion 粒度对拍第二批的明确缺陷（表格 / 图片 / callout）
 
-- **状态**：draft（待 doc-review）
+- **状态**：**已执行**（四人格 doc-review 已过，findings 已吸收；执行记录见文末 §七）
 - **锚点**：`origin/main` @ `523759b`；工作分支 `feat/notion-align-b2`（worktree `wordspace-next-align2`）
 - **来源**：对拍报告 artifact `ef0a387e-096f-4863-8464-8edd1d25f3a9`（42 条事实双侧真机实测）
 - **证据**：`scratchpad/diff/{table,image,callout}.json`（逐条读数）、`scratchpad/b2shots/`、`scratchpad/notionshots/`
@@ -16,21 +16,39 @@
 | 缺陷 | 级别 | 修改点（main 行号） | 落在他们的 hunk 里？ | 本轮 |
 |---|---|---|---|---|
 | T12 ⌘A 第 2 档残留原生蓝底 | P3 | 2141-2150 | 否（夹在 2077-2083 与 2282-2304 之间） | **做** |
-| T6 菜单开着时目标行/列无标记 | P2 | 1769-1806 | 否（夹在 1756-1765 与 1808-1816 之间） | **做** |
+| T6 菜单开着时目标行/列无标记 | P2 | 1769-1806 主体 + **1831 `closeBlockMenu` + serialize 白名单** | **部分是**（见下方更正） | **做** |
 | C13 空 callout 被斜杠项整框替换 | P3 | 1867-1881 | 否（夹在 1828-1834 与 2017-2023 之间） | **做** |
 | I8 多张顶层图片 inline 并排 | P2 | 363（BASELINE_CSS） | 否（他们的 349-354 在其上方） | **做** |
 | I10 拖放图片无落点线（spec 漂移） | P3 | 3324 | **是**（3323-3329） | 只回写 spec |
 | C8 多段 callout 首行退格死胡同 | P2 | 2747 | **是**（2727-2750，整段重写） | **押后** |
 | I4 图片手柄 scope 错位 | **P1** | 2979-2980 | **是** | **押后** |
 
+> ⚠ **更正（doc-review 抓出，两位评审独立指出）**：初稿在 §五 写「四个单元全部避开他们的 hunk」，
+> 这句**对 U2 不成立**。U2 要改的 `closeBlockMenu()`（main:1831）正落在他们的 hunk `@@ -1828,7 @@` 里
+> （他们把这个单行函数改成多行、加了 `menuRow` 的清除）；U2 要往 `serialize.js` 的 `WS2_MARKERS` 尾部
+> 追加，也撞上他们在同一插入位加 `data-ws2-empty`。按初稿「落在他们 hunk 里就押后」的判据，U2 本该
+> 与 C8/I4 同列——**我对自己的单元没执行自己定的规则**。
+> **裁决口径改为**：不看「文本上是否撞 hunk」，看「语义是否独立、冲突能否机械解」。U2 这两处都是
+> 语义兼容的（都是「关菜单时清一个标记」「往同一个 Set 追加」），合并时两边语句并存即可，分钟级；
+> 而 I4/C8 是同一段逻辑的两个版本，属语义冲突，必须押后。
+> 另需记下：他们已经用 `openBlockMenu(el,row)` + `menuRow` + 复用 `data-ws2-selected` 建了一套
+> **列表行**的菜单作用域标记，U2 是同一概念在**表格行/列**上的第二套实现。**合并时应统一成一套**，
+> 不要 take-ours 丢掉任何一边。
+
 **押后的三条不是不修，是不该由我在这条分支上并行修。** 理由是硬证据不是保守：
 `feat/ux-granularity` 的 merge-base 正是 `9095a4a`（今天合的 #380），它的 `blockedit.js` 基线与
 `origin/main` **逐字节相同**——所以那不是「他们没见过这些代码」，而是**同一批函数两个人各改一版**。
 其中 `openBlockMenu(el)` 的**签名已被他们改成 `openBlockMenu(el, row)`**。
 
-**C8 尤其要交给他们**：他们在 2734 新加了 `if (!isLeafTextBlock(cur)) return;`（注释写「cur 是容器块
-(callout/quote) 时不能把块级 <p> 塞进 <li>」）——这与 C8 是**同一类容器块拦截**，很可能在他们分支上
-已经改变了 C8 的行为，甚至在相邻路径引入同类死胡同。我在旧基线上修 C8 = 保证语义冲突。
+**C8 尤其要交给他们**：他们把整个 `classify(prev)==='list'` 合并体（2735-2742）按 2026-08-04 的 E1
+对拍结论推翻重写了——从「当前块内容追加成新 `<li>`」改成「并入末项文字」，并在其后补了剥占位 `<br>`
+的逻辑。C8 的终态取决于那一版语义，我在旧基线上修 = 保证语义冲突。
+
+> ⚠ **本节初稿的一处归因错误（doc-review 两位评审独立证伪，已更正）**：初稿写「他们在 2734 *新加*了
+> `if (!isLeafTextBlock(cur)) return;`」。实测 `git blame` 显示该行由 commit 6667aa83（2026-07-02）引入，
+> 比本轮开发早一个月，在他们的 diff 里是**未改动的上下文行**。押后 C8 的结论不受影响（真正的修改点
+> 2747 确实落在他们整段重写的区域内），但**转给他们的 finding 文本必须去掉这个错误归因**——
+> 否则等于让对方去排查一个不是自己引入的回归。
 **建议把 C8 作为一条 finding 转给他们那条分支**（见 §六）。
 
 **I10 本轮只回写 spec**：`docs/features/doc-images.md:18` 写「落点 = 块间插入线（复用内部块拖拽的
@@ -128,9 +146,11 @@ Notion 对照：行菜单开着时目标行有横跨整行的蓝框、列菜单�
 **⚠ 关键约束（已核实，别按直觉写）**：`IMG` 在 `schema-model.js:11` 的 `PHRASING_TAGS` 里 ——
 **图片既是合法顶层块、也是合法行内内容**。所以 `:where(img){display:block}` 一刀切会破坏行内图片。
 
-**改动点**：`blockedit.js:363` 的 BASELINE_CSS，改成一对规则：
+**改动点**：`blockedit.js:363` 的 BASELINE_CSS。**在现有 `:where(img){max-width:100%;height:auto}`
+后面追加 `;display:block`**（⚠ 不是整条替换——照下面片段的字面写法会把 max-width/height:auto 一起
+丢掉，全语料大图溢出正文宽度，而本单元四道门没有一道测宽度溢出。doc-review 抓出），再新增一条豁免规则：
 ```
-':where(img){display:block}' +
+':where(img){max-width:100%;height:auto;display:block}' +
 ':where(:is(p,h1,h2,h3,h4,li,td,th,blockquote,figcaption,summary,.ws-callout) img){display:inline}'
 ```
 （`:where(figure>img){display:block}` 已存在于 365，保持不动；`:is()` 里覆盖全部允许 phrasing 的
@@ -239,3 +259,36 @@ U1 先做是因为它同时充当「本分支 e2e 基建是否跑得通」的探
 - **不顺手重构**「callout 判据散在三处」这个已知债——本轮沿用既有 `classList.contains('ws-callout')`
   写法并把债记进 spec，不在缺陷修复里夹带重构。
 - **不清理那 746 行死代码 + 37 条假信心单测**——独立议题，单独开。
+
+
+---
+
+## 七、执行记录（2026-08-04）
+
+四人格 doc-review（可行性 / 对抗 / 范围 / 一致性）verdict 全部为「改后可执行」，**10 条带行号的
+事实断言全部核验为真**，但抓出四条会让人白做或做错的问题，全部已吸收：
+
+| 评审发现 | 处置 |
+|---|---|
+| **U4 的改法是错的**：`applySlash` 有**四个**替换站点、三种机制（图片 `remove` / details `turnInto` / table `replaceWith` / generic `turnInto`），初稿只会改到两处；且门里选的「分隔线」是**空门**（hr 无条件 `insertAfter`，修前修后恒等，永不翻红） | 抽出共享判据 `canReplace` 统一四处；门改成覆盖列表/表格/折叠/图片四种机制，分隔线剔除 |
+| **U2 的「标记不入盘」只收口了一半**：仓里有**第二份**剥除清单——`shell.js` 的 PDF 导出路径硬编码 5 个属性名、不读 `WS2_MARKERS`（现存已漏 cell/rangesel/nope）。可复现：格内开着菜单点「导出 PDF」→ 交互高亮印进 PDF | 把 `WS2_MARKERS` 从 serialize 导出，shell.js 改读单一真相源（顺带堵掉既有漏项）；新增「PDF 打印入盘门」 |
+| **U2 的「reparse 判合规」是空断言**：schema-validate 无任何 `data-*` 白名单，`tr/td` 上带 `data-ws2-menurow` 也 100% 合规 → 不论漏没漏都恒绿 | 该断言从入盘门里去掉，只留字符串断言（唯一有牙的那半）；并在门里写明理由 |
+| **U2 的 CSS 若打在 `<tr>` 上则读不出逐格 computed 差异**，且 `border-collapse` 下 tr 背景绘制不可靠 | CSS 落在 `tr[data-ws2-menurow]>td/th` 与 `td[data-ws2-menucol]` 上；另加「被标记的格集合 === 删除本行后真正消失的格集合」一条——它把画的对象与做的对象直接钉死，比查描边强 |
+
+**实施期自己踩到、值得回写的坑：**
+- U1 的焦点交接（plan 初稿没写）：清 selection 前必须 `focusCatcher.focus()` 接盘，顺序照
+  `selectWholeDoc`——否则 `exitCell` 摘掉 contenteditable 后焦点被甩出 iframe，第三档 ⌘A
+  与后续 Backspace/⌘X 全部进不了 `doc` 的 keydown。
+- U3 的入盘门第一版是**弱断言**：用 `toContain('display:block')` 判，而 `:where(figure>img){display:block}`
+  本来就在 baseline 里 → 我的规则被整条撤掉时它照样绿。变异自检当场抓到，改成断言两条新规则的完整文本。
+- U2 的 PDF 门第一版**假红**：打印 HTML 里内联了整份 `EDITOR_CSS`，属性名**作为选择器文本**就在里面，
+  子串匹配把 CSS 选择器误判成残留属性。改成 `DOMParser` 解析后查真属性。
+- U4 的图片门不能在 renderer 里改 `window.ws2.pickImages`：`ws2` 是 contextBridge 暴露的**冻结对象**，
+  赋值静默失效 → 会真的弹出原生选图框把测试挂死。改从主进程替换 `ws-pick-images` 的 IPC handler，
+  走的还是完整真实路径。
+- U2 的探针③（完全不打标记）导致**六条全红**：因为「菜单真开了、标记真打上了」这条前置断言放在
+  共享 helper 里。这是有意设计（让探针失败大声报出来而不是伪装成颜色断言失败），但也让这一发探针
+  的诊断分辨率变低——好在探针①②各自给出了精准画像。**如实记下，不粉饰成「画像精准」。**
+
+**交付**：U1 `f9d6d84` / U3 `98ff53e`+`c3c5ba7` / U2 `2f62fa0` / U4 `9774157` / U5 spec 见本次提交。
+每单元均：受影响 spec 全绿 → 先 commit → 变异自检（画像已核）→ 还原验绿。
