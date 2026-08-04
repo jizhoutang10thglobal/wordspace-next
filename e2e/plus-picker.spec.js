@@ -3,8 +3,11 @@
 //                ② 该空块的占位在选择器开着时变成「Type to filter…」；
 //                ③ 按 Escape → 只关选择器，**那个空块留下**（不回滚插入）；
 //                ④ aria-label 写着 "Click to add below. Option-click to add a block above" —— ⌥ 插上方，与我们既有一致。
-// 真坑不在唤起，而在**确认**：既有 applySlash 假定用户打过字面「/」，会往回删 query.length+1 个字符；
-// 从「+」进来没有那个字符，删了就会啃掉上一块的内容。
+// 真坑不在唤起，而在**确认**：既有 applySlash 假定用户打过字面「/」，会往回删 query.length+1 个字符。
+// 从「+」进来没有那个字符 → 改成 query.length + (typed ? 1 : 0)。
+// ⚠ 诚实标注：这条**当前没有门能咬住**——变异自检把 typed 判断去掉，七条全绿，因为每个块是独立
+//   contenteditable、selection.modify 跨不出块边界，多删那一下打在空气上。留着是为了块模型万一收敛成
+//   单一 contenteditable 时不变成丢数据 bug。能被门咬住的是反方向（不删 query → E5-3 翻红）。
 const { test, expect, _electron: electron } = require('@playwright/test');
 const fs = require('fs/promises');
 const path = require('path');
@@ -67,13 +70,13 @@ test('E5-1 段落旁点「+」：插空块 + 立刻弹选择器，且空块占�
   expect(ph.content, '占位文案切成筛选提示（Notion 同款 Type to filter…）').toContain('筛选');
 });
 
-test('E5-2 从「+」选一个类型：**绝不啃掉上一块的内容**（applySlash 往回删字符的老逻辑）', async () => {
+test('E5-2 从「+」选一个类型：产物类型对、上一块完整（当前架构下多删一下打在空气上，见文件头注）', async () => {
   await launch();
   await openDoc('<p id="p1">上一段ABC</p>');
   await hoverAndPlus('#p1');
   await frame.locator('.ws-slashmenu-item', { hasText: '待办' }).first().click();
   await page.waitForTimeout(350);
-  expect(await frame.locator('#p1').textContent(), '上一块一个字都不能少（老逻辑会往回删一个字符）').toBe('上一段ABC');
+  expect(await frame.locator('#p1').textContent(), '上一块一个字都不能少').toBe('上一段ABC');
   const s = await shape();
   expect(s.startsWith('P[上一段ABC] UL['), '产物是待办列表，接在下方：' + s).toBe(true);
   expect(await conform()).toBe(true);

@@ -2094,9 +2094,13 @@
       if (!it) return;
       // 删掉已输入的「/query」
       const sel = doc.getSelection();
-      // 删掉筛选时打进块里的字。**从「+」唤起时只删 query、不删那多出来的一个字符**——
-      // 块里根本没有字面「/」，多删一个就会啃掉上一块的内容（E5 的真坑）。
-      // 反过来，`+ 0` 也不能写成「不删」：从「+」进来时打的筛选字同样落在块里，不删就残留成正文（E5-3 实测）。
+      // 删掉筛选时打进块里的字。从「+」唤起时**只删 query**、不删那多出来的一个字符——块里根本没有
+      // 字面「/」，删它就是删自己没插入的东西。
+      // ⚠ 老实说一句：**这条今天是防御性的、没有门能咬住它**。变异自检实测把 `typed` 判断去掉（恒 +1）
+      //   七条门全绿——因为我们每个块是独立 contenteditable，`selection.modify` 跨不出块边界，
+      //   多删的那一下打在空气上。真正的价值在于：哪天块模型改成单一 contenteditable，这个 +1 就是
+      //   一条会啃掉上一块内容的丢数据 bug。别因为「测不出来」就把它删掉。
+      // 反过来 `+ 0` 也不对：从「+」进来时打的筛选字同样落在块里，不删就残留成正文（E5-3 实测，能翻红）。
       const back = cur.query.length + (cur.typed ? 1 : 0);
       if (back && sel && sel.rangeCount) { for (let i = 0; i < back; i++) sel.modify('extend', 'backward', 'character'); doc.execCommand('delete'); }
       if (it.ai) { onAiSoon(); return; }
