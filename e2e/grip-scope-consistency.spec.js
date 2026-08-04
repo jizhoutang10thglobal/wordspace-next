@@ -172,5 +172,73 @@ test('I4-5 反向不回归：Esc 灰选（无悬停行）仍是块作用域，�
   // 块作用域：删除作用于整张列表
   await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
   await page.waitForTimeout(250);
-  expect(await bodyOrder()).not.toContain('UL#L');
+  expect(await bodyOrder()).toEqual([]); // 收严：not.toContain 在「整篇被删光」时也过（gate 审计）
+});
+
+// ── 2026-08-05 对抗审查：I4 只把**三个手柄作用点**收口到 gripEl/gripRow，键盘那几个（Delete /
+// Enter / ⌘C / ⌘X）仍读 selectedEl。于是「灰底罩着谁」和「手柄指着谁」可以分家，同一可见状态
+// 出现两个作用对象。E1-E5 的行级 gutter 把这个差距从「块 vs 块」放大成「一行 vs 整张列表」。
+// 立的不变式：**灰选在场时 gutter 不许下沉到它内部的行**（悬停别的块照常下沉 → I4-1~I4-4 不受影响）。
+
+test('I4-8 灰选整列表后「与鼠标无关」的重锚：reposition 不许把作用对象换成行', async () => {
+  await launch();
+  await openDoc(LIST);
+  await frame.locator('#r2').click();   // 这一次点击就把 hoverRow 锁成了 r2
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['UL#L']);
+  // ⌘\ 收侧栏 / 缩放 / 拖窗口边 / 改页面设置都汇到这一个出口，全程**不需要鼠标动**。
+  // 修前：gutterAnchor 把 hoverRow 排在 selectedEl 之前 → 手柄悄悄变成行作用域，灰底还罩着整块。
+  await page.evaluate(() => { if (window.__shellReposition) window.__shellReposition(); });
+  await page.waitForTimeout(150);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  expect(await selectedIds()).toEqual(['UL#L']); // 修前：['LI#r2']
+  await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
+  await page.waitForTimeout(250);
+  expect(await bodyOrder()).toEqual([]); // 键盘与手柄同一个作用对象：删的是整张列表
+});
+
+test('I4-9 灰选整列表后鼠标**真的**停在某一行上：作用对象仍是整块', async () => {
+  await launch();
+  await openDoc(LIST);
+  await frame.locator('#r2').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['UL#L']);
+  // 与 I4-8 的区别：这次是**活体** hover，hoverRow 会被真实 mousemove 重新武装 ——
+  // 光靠「selectBlock 里清 hoverRow」治不了，必须在 positionGrip 这个唯一写入口拦下来。
+  await frame.locator('#r1').hover();
+  await page.waitForTimeout(200);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  expect(await selectedIds()).toEqual(['UL#L']); // 修前：['LI#r1']，菜单成了行作用域
+  await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
+  await page.waitForTimeout(250);
+  expect(await bodyOrder()).toEqual([]); // 修前：只删掉「一」，列表还剩三行
+});
+
+test('I4-10 灰选整列表后拖手柄：搬走整张列表，绝不把列表劈成两张（会入盘的那条）', async () => {
+  await launch();
+  await openDoc('<p id="top">上段</p>' + LIST + '<p id="bot">下段</p>');
+  await frame.locator('#r2').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['UL#L']);
+  await frame.locator('#r1').hover(); // 真实用户去够手柄，路上必然经过某一行
+  await page.waitForTimeout(200);
+  const g = await frame.locator('.ws-grip').boundingBox();
+  const b = await frame.locator('#bot').boundingBox();
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 4, g.y + g.height / 2 + 8); // 小步越过拖拽阈值
+  await page.mouse.move(b.x + 40, b.y + b.height * 0.75, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(400);
+  // 修前：dragFrom = gripRow = 第一行 → 只搬一行，原列表还剩 li 不被清除 → 一分为二，1.2s 落盘。
+  expect(await bodyOrder()).toEqual(['P#top', 'P#bot', 'UL#L']);
+  expect(await liTexts()).toEqual(['一', '二', '三', '四']); // 四行整体搬走，一行不落
 });
