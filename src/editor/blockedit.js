@@ -332,7 +332,11 @@
       // 判据：展开态且体内只有一个空叶子块。:has() 在 Chromium 可用；不可用时仅退化为无占位。
       "details[open][data-ws2-empty] > :not(summary)::before{content:'" + cssEsc(T('editor.emptyTogglePlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
       // 空 toggle 的三角淡一档（Notion 同款区分：一眼看出这个折叠块里没东西）
-      "details[data-ws2-empty] > summary::before{border-color:#c4c8cd;}";
+      "details[data-ws2-empty] > summary::before{border-color:#c4c8cd;}" +
+      // E5：从「+」唤起块类型选择器时，该空块的占位改成「输入以筛选…」（Notion 实测同款：
+      // 它那会儿显示 "Type to filter…" 而不是平时的 "Press ‘space’ for AI or ‘/’ for commands"）。
+      // 优先级要压过上面那条通用空块占位 —— 靠属性选择器多一个条件自然更高。
+      "[data-ws2-picking] [data-ws2-editing]:empty::before{content:'" + cssEsc(T('editor.pickerFilterPlaceholder')) + "' !important;color:#8a8f96;pointer-events:none;}";
     let sheet = null;
     try {
       sheet = new (win.CSSStyleSheet || CSSStyleSheet)();
@@ -2049,9 +2053,22 @@
     }
 
     // ---- 斜杠菜单 ----
-    function openSlash(blockEl) {
-      slash = { blockEl, query: '', active: 0 };
+    // typed=true：用户真打了字面「/」（确认时要把「/query」删掉）。
+    // typed=false：从 gutter「+」唤起（E5）——块里**没有**那个「/」，删了就会啃掉上一块的内容。
+    function openSlash(blockEl, typed) {
+      slash = { blockEl, query: '', active: 0, typed: typed !== false };
+      // 占位改成「输入以筛选…」（Notion 同款）。⚠ 标记挂在**文档根**上、绝不挂到块上——
+      // 挂块上等于在正文里做了一次 DOM 变更，undo 管理器会把它记成独立一步，
+      // 于是「插入 + 弹选择器」要按两次撤销才回得去（既有门 list-row-plus「undo 一步还原」当场翻红）。
+      if (!slash.typed) doc.documentElement.setAttribute('data-ws2-picking', '');
       renderSlash();
+    }
+    function closeSlash() {
+      // 属性没设就别写 DOM——`/` 那条路根本不设它，白写一次徒增变更（且这里曾因批量替换把函数体
+      // 换成了对自身的递归调用，所有斜杠路径静默全挂：菜单能弹、选完毫无反应）
+      if (doc.documentElement.hasAttribute('data-ws2-picking')) doc.documentElement.removeAttribute('data-ws2-picking');
+      slash = null;
+      slashMenu.style.display = 'none';
     }
     function renderSlash() {
       if (!slash) { slashMenu.style.display = 'none'; return; }
@@ -2071,13 +2088,17 @@
       slashMenu.style.display = 'block';
     }
     function applySlash(key) {
-      const cur = slash; slash = null; slashMenu.style.display = 'none';
+      const cur = slash; closeSlash();
       if (!cur) return;
       const it = SLASH_ITEMS.find((x) => x.key === key);
       if (!it) return;
       // 删掉已输入的「/query」
       const sel = doc.getSelection();
-      if (sel && sel.rangeCount) { for (let i = 0; i < cur.query.length + 1; i++) sel.modify('extend', 'backward', 'character'); doc.execCommand('delete'); }
+      // 删掉筛选时打进块里的字。**从「+」唤起时只删 query、不删那多出来的一个字符**——
+      // 块里根本没有字面「/」，多删一个就会啃掉上一块的内容（E5 的真坑）。
+      // 反过来，`+ 0` 也不能写成「不删」：从「+」进来时打的筛选字同样落在块里，不删就残留成正文（E5-3 实测）。
+      const back = cur.query.length + (cur.typed ? 1 : 0);
+      if (back && sel && sel.rangeCount) { for (let i = 0; i < back; i++) sel.modify('extend', 'backward', 'character'); doc.execCommand('delete'); }
       if (it.ai) { onAiSoon(); return; }
       const el = cur.blockEl;
       const empty = !el || (el.textContent || '').trim() === '';
@@ -2206,7 +2227,7 @@
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
       // 点菜单外任何地方 → 关斜杠菜单（Wendi 2026-07-22：以前点别处不关、只能删掉「/」才关，反直觉）。
       // 上面已对 data-ws2-ui 覆盖层（含斜杠菜单及其项）early-return，故点菜单项走不到这、不会误关。
-      if (slash) { slash = null; slashMenu.style.display = 'none'; }
+      if (slash) closeSlash();
       if (e.target && e.target.closest && e.target.closest('figcaption')) return; // 说明编辑：交原生放光标/选词，不启块拖选
       // 待办勾选：点 gutter（勾选框）→ 切 data-checked、不放光标（判定见 todoGutterHit，与 onClick 共用，U5）。
       const gLi = todoGutterHit(e);
@@ -2472,14 +2493,14 @@
       // 斜杠菜单开启时：导航
       if (slash) {
         if (e.isComposing || e.keyCode === 229) return; // IME 组词中：交原生（compositionstart 已关菜单兜底），别把组词键当 query
-        if (e.key === 'Escape') { e.preventDefault(); slash = null; slashMenu.style.display = 'none'; return; }
-        if (e.key === 'Enter') { e.preventDefault(); const items = filterSlash(slash.query); const it = items[slash.active]; if (it) applySlash(it.key); else { slash = null; slashMenu.style.display = 'none'; } return; }
+        if (e.key === 'Escape') { e.preventDefault(); closeSlash(); return; }
+        if (e.key === 'Enter') { e.preventDefault(); const items = filterSlash(slash.query); const it = items[slash.active]; if (it) applySlash(it.key); else { closeSlash(); } return; }
         if (e.key === 'ArrowDown') { e.preventDefault(); const n = filterSlash(slash.query).length; slash.active = Math.min(slash.active + 1, n - 1); renderSlash(); return; }
         if (e.key === 'ArrowUp') { e.preventDefault(); slash.active = Math.max(0, slash.active - 1); renderSlash(); return; }
-        if (e.key === 'Backspace') { if (slash.query.length === 0) { slash = null; slashMenu.style.display = 'none'; } else { slash.query = slash.query.slice(0, -1); slash.active = 0; renderSlash(); } return; }
+        if (e.key === 'Backspace') { if (slash.query.length === 0) { closeSlash(); } else { slash.query = slash.query.slice(0, -1); slash.active = 0; renderSlash(); } return; }
         if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) { slash.query += e.key; slash.active = 0; renderSlash(); return; }
         // 光标移动键（←→/Home/End/PageUp-Down）或其它键 → 关菜单、交原生：caret 移走后再 applySlash 会从错位删字
-        slash = null; slashMenu.style.display = 'none';
+        closeSlash();
         return;
       }
       // toggle 标题（summary）编辑：拦原生折叠激活 + 定义边界。summary 放不了块——不触发 slash、不走 generic 块键盘。
@@ -3244,7 +3265,7 @@
     }
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
     function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮
-    function onCompStart() { if (slash) { slash = null; slashMenu.style.display = 'none'; } } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
+    function onCompStart() { if (slash) closeSlash(); } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
     function onScroll() { const a = gutterAnchor(); if (a) positionGrip(a); positionFmtbar(); if (blockMenu.style.display !== 'none') closeBlockMenu(); }
 
     // grip 交互
@@ -3265,6 +3286,7 @@
           const p = insertParaAtRow(list, row, above);
           enterEdit(p, { mode: 'start' });
           hoverEl = p; hoverRow = null; positionGrip(p);
+          openSlash(p, false); // E5：插完立刻弹块类型选择器（Notion 实测同款；typed=false = 块里没有字面「/」）
           return;
         }
         // 嵌套行：**结构性分歧**（非产品选择）——Schema 的 <li> 只许装行内内容或嵌套列表，
@@ -3279,6 +3301,7 @@
       const nx = above ? insertBeforeBlock(el, itemByKey('text')) : insertAfter(el, itemByKey('text'));
       enterEdit(nx, { mode: 'start' });
       hoverEl = nx; hoverRow = null; positionGrip(nx);
+      openSlash(nx, false); // E5：同上——「+」是全局 gutter 行为，所有块类型旁边点都该弹
     });
     // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
     grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverRow || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
@@ -3895,7 +3918,7 @@
 
     // 撤销/重做后 body.innerHTML 被整体重写，旧的元素引用全失效 → 清空状态、收起所有覆盖层。
     function reset() {
-      slash = null; slashMenu.style.display = 'none';
+      closeSlash();
       editingEl = null; selectedEl = null; hoverEl = null; hoverRow = null; menuRow = null; dragFrom = null; fmtShown = false; captionEl = null; cellEl = null; // undo/redo 重写 body → 旧 figcaption/cell 引用失效
       body.querySelectorAll('[data-ws2-cell]').forEach((el) => el.removeAttribute('data-ws2-cell')); // 快照经 cleanedBodyHtml 已剥，此为兜底
       blockRoot = pickBlockRoot(body); // undo/redo 重写了 body.innerHTML、重建了包裹节点 → 旧引用失效，重算
