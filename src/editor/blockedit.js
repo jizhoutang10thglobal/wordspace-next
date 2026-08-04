@@ -3140,6 +3140,28 @@
           caretBefore(joinAt);
           return;
         }
+        // 多段 callout 首行退格（对拍 C8，P2）：cur 是容器块（有块级子节点）→ 下面的叶子-叶子拼接一律 return，
+        // 键按下去零变更、连顶栏「未保存」都不亮 = 静默死键，用户既拿不到反馈也无从知道怎么退出这一步。
+        // Notion 的解：**只有第一个子块脱框并进上一块，框带着剩下的继续存在**（实测双子块 callout）。
+        // 单段 callout（<div class="ws-callout">文字</div>）是叶子块、走下面既有路径，两侧行为本就一致——别动它。
+        // 只接管 callout：blockquote/toggle 等其它容器块未对拍，保持原样（欠账记在 docs/features/callout.md）。
+        if (cur.classList && cur.classList.contains('ws-callout') && !isLeafTextBlock(cur) && isEditableEl(prev) && isLeafTextBlock(prev)) {
+          const firstEl = cur.firstElementChild;
+          // 「第一行」两种形态：callout 以 <p> 开头 → 供出那个 <p> 的内容；以行内内容开头（混排，外部文件才有）
+          //  → 供出到第一个块级元素为止的那段行内。两种都不改 callout 的剩余子块。
+          const donor = (cur.firstChild === firstEl && firstEl && isLeafTextBlock(firstEl)) ? firstEl : null;
+          const src = donor || cur;
+          const stopAt = donor ? null : firstEl;
+          if (prev.childNodes.length === 1 && prev.firstChild.nodeName === 'BR') prev.firstChild.remove(); // 空目标块的占位 <br>，同下
+          const joinAt = src.firstChild !== stopAt ? src.firstChild : null;
+          while (src.firstChild && src.firstChild !== stopAt) prev.appendChild(src.firstChild);
+          if (donor) donor.remove();
+          if (!cur.firstElementChild && (cur.textContent || '').trim() === '') cur.remove(); // 掏空的框不留（对齐单段那半的终态）
+          if (undoMgr) undoMgr.checkpoint(); markDirty();
+          enterEdit(prev, { mode: 'end' });
+          if (joinAt && joinAt.parentNode === prev) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+          return;
+        }
         if (isEditableEl(prev)) {
           // 两块都得是「叶子文字块」才做节点级拼接——否则 prev/cur 是透明包裹块（div.lead>p）时，把块级 <p>
           // 搬进 <p> 会成 <p><p>、把裸文本灌进 div 会成「容器直挂文本」，存盘即坏（A 组）。非叶子则不吞、光标留原处。
