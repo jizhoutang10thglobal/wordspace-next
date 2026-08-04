@@ -2698,6 +2698,24 @@
           // 已有首块本就是空叶子时不再多插一个（否则连按堆空块）。
           e.preventDefault(); e.stopPropagation();
           const det = editingEl.parentElement;
+          // ===== 折叠态标题末 Enter = 新建平级空 toggle（对齐 Notion；此前是本 track 唯一记录在案、
+          // 未处置的分歧，见 /align-notion SKILL.md 复跑日志）=====
+          // 旧行为：自动展开这个 toggle + 把新空块插进体内首位。用户按 Enter 是想写**下一个**条目，
+          // 结果本来收着的内容全弹出来、新行还插在了里面 —— 两件他都没要求的事。
+          //（当初自动展开是有道理的：不展开的话新块藏在收起的内容里、看不见光标。正解是根本别往里插。）
+          // Notion：新建一个平级空 toggle，原 toggle 保持收着不动。
+          // ⚠ 只在**光标真在标题末**时走这条：标题中间按 Enter 属于「分裂 summary」语义，
+          // 而 summary 恒 phrasing-only、绝不分裂（键盘边界契约），维持既有行为不动它。
+          // 新 toggle 刻意**不带 open**（与斜杠插入的种子不同）：既然用户是在收起状态下操作的，
+          // 就别替他展开任何东西；空 toggle 的 ≥1 正文块铁则由 newBlock 的种子保证。
+          if (det && det.tagName === 'DETAILS' && !det.open && isCaretAtRealEnd(doc, editingEl)) {
+            const nd = newBlock(itemByKey('toggle'));
+            nd.removeAttribute('open');
+            det.after(nd);
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            enterEdit(nd.querySelector('summary'), { mode: 'start' });
+            return;
+          }
           const first = det && [...det.children].find((c) => c.nodeType === 1 && c.tagName !== 'SUMMARY');
           const firstEmpty = first && SM.isLeafTextBlock(first) && (first.textContent || '').trim() === '';
           if (firstEmpty) { enterEdit(first, { mode: 'start' }); return; }
