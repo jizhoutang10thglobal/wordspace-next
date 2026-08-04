@@ -14,6 +14,58 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-04（当日更正）— 上一条关于「Notion 发键」的根因写错了；⚠ `pressKey` 的修饰键组合是假键
+
+**更正对象**：同日下面那条「对拍探针两条硬教训」里 §① 转述的
+「Notion 只认它自己那套键盘层，`cdp('Input.dispatchKeyEvent')` 发的原生键完全无视」。
+**这条不成立**，我按它去补采时用严格正对照两种方式各验了一遍，结论要反过来写。
+
+### 实测（同一会话、同一 fixture、两种方式各带正对照与还原）
+
+| 发键方式 | 普通键（Enter） | 修饰键组合（Meta+z） |
+|---|---|---|
+| ego-browser `pressKey` | **有效**（块计数 5→6，Backspace 回 5） | ❌ **假键**——删列后按它，表格 rect 恒 `[2,2,2,2]` 无任何变化 |
+| 裸 CDP `Input.dispatchKeyEvent` | **有效**（块计数 5→6） | ✅ **有效**——`modifiers:4` 的 Meta+z 本轮 **9 次全部真 undo**（rect `[2,2,2,2]`→`[3,3,3,3]`、文字全回来） |
+
+前提：`Page.bringToFront` + `Emulation.setFocusEmulationEnabled{enabled:true}`，且光标是靠**真 click** 落进 contenteditable 的。
+
+**所以正确的说法是**：不是「Notion 无视裸 CDP」，而是 **`pressKey` 的修饰键组合是假的**（这与 skill 坑清单里
+早就写过的「修饰键必须裸 CDP、`pressKey('Shift+Tab')` 是假键」一致，只是上一条把它误推广成了整个键盘层）。
+
+### ⚠ 对 `feat/ux-granularity` 那条 track 的直接风险
+
+如果你们的探针在**用 `pressKey('Meta+z')` 之类的组合键做 fixture 还原**，那些还原**很可能根本没发生**，
+而后续读数会建立在一个已经被改脏的 fixture 上（我这边正是靠裸 CDP 的 Meta+z 才把删掉的行列复原回去的）。
+**建议复查**：还原后有没有做 DOM 回读确认；没有的话，那批读数要重验。
+
+### 真正制造假读数的根因是另一个（这条才是该记进 skill 的）
+
+**用 JS 设 DOM Range / `ce.focus()` 不能移动 Notion 自己的光标。** 回读 `getSelection()` 显示 caret
+在目标格、offset 也对——看起来完全正确——但 Notion 按键走它内部的光标，键会落到**上一个真正 click 过的块**上。
+我因此读出过「表格格内按 Enter 什么都没发生」，实际是页面末尾偷偷多了一个空块（nBlocks 5→6）、表格纹丝不动。
+**这条已导致我方一条对拍结论出错并被公开发布过，现已更正为「两边一致」。**
+**唯一可靠的落点方式是真 `click([x,y])`，且按键前必须回读 caret 的 {row,col} 与目标核对。**
+
+### 其余高频坑（同轮实测，建议一并进 skill）
+
+- **窗口被停在屏外时 click/hover 静默失效但返回成功**；`bringToFront`/`setWindowBounds` 都救不回来
+  （`setWindowBounds` 反而把 viewport 从 2560×1080 改成 2544×977，**点击坐标整体错位一行**）。
+  有效救法两条：`completeTaskSpace` 关掉换新 task space，或整页 `gotoAndWait` reload。
+  判据别看 `visibilityState`，要做**判别式正对照**：连点四行、每次回读 caret 的 row，全同 = 点击没做命中测试。
+- **hover 会用着用着就死**（selector opacity 恒 0，但 `elementFromPoint` 正常）；先 `click` 进任意格再 hover 即恢复。
+  hover 探针要写成「click 重置 → hover → 校验 opacity != 0 → 才继续」。
+- **Notion 的 selector 元素悬停过就常驻 DOM 不删**，按存在性计数会读到一堆陈旧残留；**判定必须用 computed opacity != 0**。
+- **手柄菜单约 1/3 概率开成空壳**（只有 `Search actions…` + 页脚，等多久都不出动作列表）；
+  Escape 关掉重开，最多 6 次；判定写成 `items.length > 3` 而不是「菜单存在」。
+- **找菜单容器别按「宽 200-400 且含 Delete 的 div」**——会命中左侧栏页面列表。
+  稳的写法：定位 `input[placeholder^='Search actions']`，向上找第一个 height>90 的祖先，取 innerText 按行 split。
+- **拖拽期间有个 `notion-selectable-drag-handle` 覆盖层带着与真表格同一个 `data-block-id`**，
+  按 id 去重会让你读出「表块跑到第一位」的假结论；过滤要加 `width > 100 && !className.includes('drag-handle')`。
+- **Notion 的选中/描边不是给 td 加底色，是独立描边 DIV**（border 2px `rgb(39,131,222)`、背景透明）。
+  逐格读 `getComputedStyle(td).backgroundColor` 恒为透明 → 会误判「没有任何视觉标记」。
+  正确读法：在表格区域内扫 div、筛 borderColor 含 `39,131,222`，报它的 rect（几何本身就是作用域的可证伪读数）。
+
+
 ## 2026-08-04 — 对拍探针两条硬教训：Notion 键盘层送不送得到，必须用正对照证；probe-* 别进 CI
 
 **来源**：Notion 粒度对拍第二批（表格/图片/callout，分支 `feat/notion-align-b2` / PR #388）与
