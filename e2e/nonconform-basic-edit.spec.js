@@ -19,6 +19,13 @@ async function launch() {
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });
   await page.evaluate(() => { window.confirm = () => true; window.alert = () => {}; });
+  // 外观默认 'system'：T5 断的是写死的浅色 computed style（格式条 surface 白底），在**深色主题的
+  // 开发机**上恒红——不是回归，是环境。假红有真实代价：每次本地跑完都要人工判一次「这条是老红」，
+  // 这种判断迟早出错、把真回归当噪音放过去。钉环境而不是改弱断言：走真实入口 setAppearance('light')，
+  // 那个真实颜色值继续被原样钉住。CI runner 本就浅色，这一步在 CI 上是 no-op，门强度不变。
+  await page.evaluate(() => window.ws2 && window.ws2.setAppearance && window.ws2.setAppearance('light'));
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') !== 'dark', null, { timeout: 4000 });
+  await page.waitForTimeout(120);
 }
 test.afterEach(async () => { if (app) await app.close().catch(() => {}); if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {}); });
 
