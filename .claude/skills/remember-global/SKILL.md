@@ -54,7 +54,28 @@ description: 把当前 session 发现的全局教训/规则变更/拍板决策�
 
 4. **善后与冲突**：无论成败，临时 worktree 都要清掉。如果 PR 因落后 main 变 BEHIND 而没自动合
    （另一条公告先合了），`gh pr update-branch <PR>` 一次即可（同文件同标记行处的并发插入极少冲突；
-   真冲突了 rebase 手解后重推）。可选：隔段时间回头 `gh pr view` 确认已合。
+   真冲突了 rebase 手解后重推）。
+
+## 步骤 0（必做，写在这里是因为它必须发生在写条目**之前**）：先扫一遍旧公告
+
+```bash
+GH_TOKEN=$(gh auth token --user jizhoutang10thglobal) \
+  gh pr list --repo jizhoutang10thglobal/wordspace-next --state open \
+  --search "docs(team-memory) in:title" --json number,title,mergeStateStatus
+```
+
+**有 open 的就地处置完，再发你自己这条**：BEHIND → `gh pr update-branch <PR>`；DIRTY →
+去临时 worktree rebase 手解后重推；内容已经被现实超车（说的事已经发生/已被推翻）→ `gh pr close`
+并在评论里写清为什么。
+
+**为什么这一步必须有**：2026-08-05 实测，#270 / #266 / #251 / #343 四条七月的公告**全是 DIRTY、
+内容至今没进 main** —— 也就是说那四次广播**根本没送达任何 session**，而发的人以为发出去了。
+病根是并发插入同一个标记行会撞车变 DIRTY，而 `--auto` 在 DIRTY 下不会合，原来这里只写了一句
+「可选：隔段时间回头确认」，于是没有任何人回头。更糟的是 #343 那条（分页拆 Schema 2）的口径
+**在 08-03 已被反转**，原样合进去反而是害人的。
+
+把「回头看一眼」从可选提醒改成每次发布的前置步骤，这个机制才能自愈：**下一个发公告的人顺手把
+上一个卡住的救活**，不依赖任何人记得。
 
 ## 铁律
 
