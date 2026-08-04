@@ -111,6 +111,63 @@ test('C8-5 产出仍然合规入盘（脱出的内容不带 <p> 进 <p>）', asy
   expect(html).toContain('上甲');
 });
 
+// —— 下面四条补的是「fixture 形态盲区」：上面六条的 fixture 全是零空白单行字符串，
+// 而多段 callout 的唯一来源是外部 HTML 文件，几乎必然带缩进换行。对抗审查实测：修复在真实形态上完全不生效
+// （isCaretAtStart 严格相等，"\n  " 让守卫直接 return）。这是 CLAUDE.md 那条「fixture 的字符串本身
+// 也是测试变量、同形态巧合会让门变哑门」的同款。
+
+test('C8-7 真实磁盘形态（带缩进换行）：首行退格照样生效', async () => {
+  await launch();
+  await openDoc('<p id="up">上块文字</p>\n<div class="ws-callout" id="C">\n  <p id="c1">甲</p>\n  <p id="c2">乙</p>\n</div>');
+  await backspaceAtCalloutStart('#c1');
+  const s = await shape();
+  expect(s.up).toBe('上块文字甲');
+  expect(s.calloutInnerP).toEqual([1]);
+  expect(s.calloutTexts).toEqual(['乙']);
+});
+
+test('C8-8 带缩进时连按两次仍各脱一段（第二次不能变死键）', async () => {
+  await launch();
+  await openDoc('<p id="up">上</p>\n<div class="ws-callout" id="C">\n  <p id="c1">甲</p>\n  <p id="c2">乙</p>\n  <p id="c3">丙</p>\n</div>');
+  await backspaceAtCalloutStart('#c1');
+  expect((await shape()).up).toBe('上甲');
+  await backspaceAtCalloutStart('#c2');
+  const s = await shape();
+  expect(s.up).toBe('上甲乙');
+  expect(s.calloutTexts).toEqual(['丙']);
+});
+
+test('C8-9 混排（行内内容开头）：整行脱框，不从中间劈开', async () => {
+  await launch();
+  await openDoc('<p id="up">上</p><div class="ws-callout" id="C">提示<strong>要点</strong>正文<p id="c2">第二段</p></div>');
+  await backspaceAtCalloutStart('#C strong');
+  const s = await shape();
+  expect(s.up).toBe('上提示要点正文'); // 修前边界取 firstElementChild(=<strong>) → 只搬走「提示」
+  expect(s.calloutTexts).toEqual(['第二段']);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// 收手时必须是**真的**收手：不 checkpoint、不 markDirty、不把光标弹到上一块。
+// 修前（对抗审查 C8-3 实测）零搬运路径照样亮「未保存」并把光标搬到上一块末尾 —— 用户看没反应再按一次，
+// 删掉的是上一块的最后一个字。这条用「上一块是图片」这个合规且可达的收手场景钉住这个性质。
+const dirtyHidden = () => page.evaluate(() => { const d = document.querySelector('#dirty-dot'); return d ? d.hidden : 'no-such-element'; });
+test('C8-10 收手时零副作用：不亮「未保存」、光标不被弹到上一块', async () => {
+  await launch();
+  await openDoc('<img id="pic" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="x"><div class="ws-callout" id="C"><p id="c1">甲</p><p id="c2">乙</p></div>');
+  expect(await dirtyHidden()).toBe(true); // 前置：这个断言若拿不到元素会当场炸，不会静默跳过
+  await backspaceAtCalloutStart('#c1');
+  expect(await dirtyHidden()).toBe(true);
+  const caretIn = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const s = d.getSelection(); if (!s || !s.anchorNode) return null;
+    const n = s.anchorNode.nodeType === 3 ? s.anchorNode.parentElement : s.anchorNode;
+    return n.closest('.ws-callout') ? 'in-callout' : (n.id || n.tagName);
+  });
+  expect(caretIn).toBe('in-callout'); // 光标留在框内，没被弹走
+  const s = await shape();
+  expect(s.calloutInnerP).toEqual([2]);
+});
+
 test('C8-6 上一块不可合并（图片）时保持原样，不吞内容', async () => {
   await launch();
   await openDoc('<img id="pic" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="x"><div class="ws-callout" id="C"><p id="c1">甲</p><p id="c2">乙</p></div>');

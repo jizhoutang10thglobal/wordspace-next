@@ -109,6 +109,19 @@ test('I10-4 拖出窗口不松手：幽灵线自己收', async () => {
   expect(await dropMarks()).toEqual([]);
 });
 
+test('I10-6 块间移动的 dragleave 不收线（负向：只认离开窗口那一半判据）', async () => {
+  await launch();
+  await openDoc(DOC);
+  expect((await fileDragOver('#p2', 'lower')).markedId).toBe('p2');
+  // 合成事件的 relatedTarget 默认恒为 null，所以 I10-4 那条正向用例其实测不到判据本身
+  //（对抗审查 I10 testing gap）。这条显式给 relatedTarget 一个块元素 = 「还在窗口里」，线必须留着。
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    d.body.dispatchEvent(new DragEvent('dragleave', { bubbles: true, cancelable: true, relatedTarget: d.querySelector('#p3') }));
+  });
+  expect(await dropMarks()).toEqual(['p2:bottom']);
+});
+
 test('I10-5 非图片文件被拒时不留线', async () => {
   await launch();
   await openDoc(DOC);

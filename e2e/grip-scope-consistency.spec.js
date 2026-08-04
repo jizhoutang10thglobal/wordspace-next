@@ -121,6 +121,44 @@ test('I4-4 「+」同口径：插在手柄所指的块下方，不是插在图�
   expect(order.length).toBe(4);
 });
 
+// —— 不变式的另一半：行锚方向。上面五条全在块锚方向，把 positionGrip 里的 gripRow 变异成恒 null
+// （= 废掉全部行作用域）它们照样全绿（对抗审查 ADV-GRIP-T1）。下面两条专治这一半。
+const LIST = '<ul id="L"><li id="r1">一</li><li id="r2">二</li><li id="r3">三</li><li id="r4">四</li></ul>';
+const liTexts = () => page.evaluate(() => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const l = d.querySelector('#L');
+  return l ? [...l.children].map((li) => (li.textContent || '').trim()) : null;
+});
+
+test('I4-6 行锚：悬停第 3 行点手柄，灰选只罩那一行、删除只删那一行', async () => {
+  await launch();
+  await openDoc(LIST);
+  await frame.locator('#r3').hover();
+  await page.waitForTimeout(200);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  expect(await selectedIds()).toEqual(['LI#r3']); // 罩一行，不是整张 UL
+  await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
+  await page.waitForTimeout(250);
+  expect(await liTexts()).toEqual(['一', '二', '四']);
+});
+
+test('I4-7 状态搅动后不变式仍成立：悬停第 3 行 → 缩放/收侧栏触发 reposition → 仍是行作用域', async () => {
+  await launch();
+  await openDoc(LIST);
+  await frame.locator('#r3').hover();
+  await page.waitForTimeout(200);
+  // ⌘\ 收侧栏 / 缩放 / 改窗口大小 / 改页面设置都汇到这一个出口
+  await page.evaluate(() => { if (window.__shellReposition) window.__shellReposition(); });
+  await page.waitForTimeout(150);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  expect(await selectedIds()).toEqual(['LI#r3']); // 修前：reposition 把 gripRow 清成 null → ['UL#L']
+  await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
+  await page.waitForTimeout(250);
+  expect(await liTexts()).toEqual(['一', '二', '四']); // 修前：整张列表被删光
+});
+
 test('I4-5 反向不回归：Esc 灰选（无悬停行）仍是块作用域，手柄仍在该块', async () => {
   await launch();
   await openDoc('<ul id="L"><li id="r1">一</li><li id="r2">二</li></ul>');
