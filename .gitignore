@@ -21,3 +21,9 @@ ws-state-*.png
 
 # 打包冒烟产物(整个 .app,几百 MB——绝不进库;git add -A 扫进过一次,血的教训)
 release-smoke/
+
+# agent 探针脚本（并行 worktree 常态：多个 agent 共用目录，别让它们被 git add -A 卷进来）
+.adv-tmp/
+__probe-*.js
+__picking-*.js
+e2e/zz-*.spec.js

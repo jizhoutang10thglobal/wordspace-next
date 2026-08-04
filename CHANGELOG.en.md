@@ -5,6 +5,29 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.12.0 — 2026-08-04
+
+Row-level list and to-do interactions, matched to Notion.
+
+### Added
+
+- **Lists / To-do**: while dragging a row, move left or right to choose sibling vs. child — the drop line follows the indent
+- **Lists / To-do**: drag a to-do row into a plain list (or the other way round) and it keeps its own type
+- **Plus button**: clicking the gutter "+" now opens the block-type picker right away; type to filter (⌥-click inserts above)
+
+### Improved
+
+- **Lists / To-do**: Backspace at the start of a row is now two steps — first it drops the bullet or checkbox in place, a second press merges it into the line above
+- **Toggle**: Backspace at the start of a toggle title now unwraps the toggle (previously nothing happened)
+- **Lists**: nested bullets are distinguished by level (•, ◦, ▪)
+
+### Fixed
+
+- **To-do**: fixed rows showing two checkboxes; existing documents repair themselves on open
+- **Lists**: turning a row with sub-items into text no longer loses the sub-items
+- **Numbered lists**: removing a row from the middle no longer renumbers the part above it
+- **Lists**: repeated Backspace at the start of a row no longer gets stuck
+
 ## v0.11.8 — 2026-08-03
 
 Tables are now editable, and blocks can be indented.
