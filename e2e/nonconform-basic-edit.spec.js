@@ -199,7 +199,18 @@ test('T5 视觉对齐：格式条画布同款壳（真 computed style）', async
   });
   expect(Math.round(bar.h), '格式条高度应 32（画布同款）').toBe(32);
   expect(bar.border, '格式条不应再有实体边框').toBe('0px');
-  expect(bar.bg).toBe('rgb(255, 255, 255)');
+  // ⚠ 同 align.spec T2：不写死浅色值。格式条的契约是「画布同款壳」= 等于 --c-surface，
+  // 写死 rgb(255,255,255) 在深色主机上恒红，且换主题就测不到真契约。
+  const surface = await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = 'var(--c-surface)'; // CSSOM 赋值（CSP 拦 setAttribute('style')）
+    document.body.appendChild(probe);
+    const v = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return v;
+  });
+  expect(surface, '前置：surface 必须解析得出且非透明，否则「相等」会是两个空值相等').not.toBe('rgba(0, 0, 0, 0)');
+  expect(bar.bg, '格式条底色应等于画布 surface').toBe(surface);
 });
 
 // Colin 2026-07-03 报的 bug：关掉最后一个非合规标签后，降级条留在空白页上（陈旧 frame.onload
