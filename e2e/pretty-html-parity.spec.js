@@ -122,3 +122,45 @@ test('P-5 提示框首行退格：两种写法产出一致', async () => {
   expect(r.compact.text).toBe('上一块框甲框乙');
   expect(r.pretty.body).toBe(r.compact.body);
 });
+
+// ── P-6/P-7（2026-08-05，对抗审查 disk-X1）：接缝空白 ────────────────────────────────
+// ⚠ 两个坑，都实测踩过，别再踩：
+// ① 上面那套 parity 抓不到这条 —— readState 的 norm 会把 `\s*\n\s*` 归一化掉，而这个 bug 多带的
+//    正是「换行 + 缩进」。所以这两条读**未归一化**的原始 innerHTML。
+// ② **不能用 prettify() 造 fixture** —— 它只在标签**之间**插换行、从不往块**内部**插缩进，
+//    于是 `<p id="b">` 的首子仍是纯文字，这个 bug 压根不复现（第一版门就是这么写的，在没修的
+//    main 上照样绿 = 哑门）。必须手写块内缩进，就像真实排版工具/AI 生成的文件那样。
+const readRaw = () => page.evaluate(() => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  return (d.body.innerHTML || '').replace(/ ?data-ws2-[a-z]+(="[^"]*")?/g, '').replace(/ ?contenteditable="[^"]*"/g, '');
+});
+// 块**内部**带缩进：`<p id="b">` 的首子是文本节点 "\n  甲乙丙\n"（实测这就是磁盘上排版过的形态）
+const INDENTED = '<p id="a">上一段</p>\n<p id="b">\n  甲乙丙\n</p>';
+
+test('P-6 块内带缩进的行首退格：不许把源码缩进当成用户打的空格搬进上一块', async () => {
+  test.setTimeout(120000);
+  await closeApp(); await launch();
+  await openDoc(INDENTED);
+  const pre = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return JSON.stringify(d.querySelector('#b').firstChild.nodeValue);
+  });
+  expect(pre, '前置：这份 fixture 的块内首子必须真的是缩进空白，否则这门测不到东西').toContain('\\n  ');
+  await caretStart('#b'); await key('Backspace');
+  const raw = await readRaw();
+  // 修前实测：`<p id="a">上一段\n  甲乙丙\n</p>` —— 渲染成「上一段 甲乙丙」，那个空格用户从没打过，
+  // 而且 1.2s 后原样落盘。
+  expect(raw, '接缝处不许出现用户没打的空白').toMatch(/上一段甲乙丙/);
+});
+
+test('P-7 缩进块退格后接着打字：新字必须紧贴接缝（光标不许停在幽灵空格左边）', async () => {
+  test.setTimeout(120000);
+  await closeApp(); await launch();
+  await openDoc(INDENTED);
+  await caretStart('#b'); await key('Backspace');
+  await page.keyboard.type('X');
+  await page.waitForTimeout(250);
+  const raw = await readRaw();
+  // 修前：光标停在那段缩进空白**左边** → 得到「上一段X 甲乙丙」，用户会以为自己多敲了空格。
+  expect(raw).toContain('上一段X甲乙丙');
+});
