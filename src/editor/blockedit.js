@@ -2146,6 +2146,12 @@
               const allInCell = sel && cellText.length > 0 && norm(sel.toString()) === cellText;
               if (cellText.length > 0 && !allInCell && sel) { const r = doc.createRange(); r.selectNodeContents(cellEl); sel.removeAllRanges(); sel.addRange(r); return; }
               exitCell(); selectBlock(cTbl); positionGrip(cTbl); // 空格/已全选 → 第二档整表；再按一次 = generic 全篇
+              // 第二档已声明「格级选中退出」（cellEl=null、selectedEl=整表），格内那段原生蓝底必须一并清掉：
+              // 留着它=屏幕标着「这个格的文字被选中」、实际作用对象却是整张表，画的和做的不是同一个（对拍 T12）。
+              // 顺序照 selectWholeDoc：**先把焦点停进 focusCatcher 再清 range**——exitCell 摘掉 contenteditable 后
+              // 若不接盘，焦点会被甩出 iframe，第三档 ⌘A 和后续 Backspace/⌘X 都进不了 doc 的 keydown。
+              try { focusCatcher.focus({ preventScroll: true }); } catch { /* 老内核无 options */ }
+              if (sel) sel.removeAllRanges();
               return;
             }
             // Enter：跳下一行同列；末行建新行（恒落 tbody 恒产 TD，KTD4）。绝不交原生（td 里 insertParagraph 塞 <div> = 非合规）。
