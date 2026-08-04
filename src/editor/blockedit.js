@@ -311,7 +311,7 @@
     const undoMgr = deps.undoMgr || null;
     const markDirtyRaw = deps.markDirty || (() => {});
     // 每次标脏顺带同步 toggle 空态标记（结构变更：增删块 / 拖拽 / 转换 / 粘贴都会经过这里，P3-7）
-    const markDirty = (...a) => { try { refreshToggleEmpty(); } catch (x) {} return markDirtyRaw(...a); };
+    const markDirty = (...a) => { try { refreshToggleEmpty(); } catch (x) {} try { normalizeHostLi(); } catch (x) {} return markDirtyRaw(...a); };
     const onAiSoon = deps.onAiSoon || (() => {});
     const pickImages = deps.pickImages || null; // 图片插入：() => Promise<[{name,mime,base64}]>（父层原生选择器，U3）
     const body = doc.body;
@@ -408,6 +408,8 @@
     blockRoot.setAttribute('data-ws2-root', '');
     ensureSchemaBaseline(); // baseline 排版底线入盘（v2：字体/行高/标题节奏/块间距；旧文件静默升级；不 markDirty）
     refreshSemanticStyles(); // 旧文件的 todo/callout v1 语义 CSS → 同步升级到当前版（同上不 markDirty）
+    try { normalizeHostLi(); } catch (x) {} // 「空壳宿主行」在 **attach 时**就修（照上面两条静默升级的先例，不 markDirty）
+    // ⚠ 只挂在 markDirty 上不够：已经被写坏的老文档要等用户敲一下才自愈，打开时照样是「一行两个勾选框」。
 
     // ---- 状态 ----
     let selectedEl = null;   // 灰选中的不可编辑块
@@ -987,6 +989,24 @@
       let anchor = null;
       for (const n of li.childNodes) { if (n.nodeType === 1 && (n.tagName === 'UL' || n.tagName === 'OL')) break; anchor = n; }
       try { const r = doc.createRange(); if (anchor) r.setStartAfter(anchor); else r.setStart(li, 0); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
+    }
+    // 把 src 的内容并进 target 末尾，返回接合点节点（光标该停它前面）。**不设光标、不 checkpoint**——
+    // 调用方通常要先 enterEdit（它会重置选区），顺序反了光标会被冲掉。
+    // 三条加固都收在这儿，别再各写一份（此前散在三处，改一处漏两处）：
+    //  ① 目标只有一个占位 <br> → 先剥掉，免得并入后留前导空行（对抗审查 Finding C）
+    //  ② 目标自带嵌套子列表 → 内容插在子列表【前】，否则文字会吊到子项下面（Finding B）
+    //  ③ 返回 joinAt 供调用方定位光标（src 非空时恒非 null）
+    function mergeLiInto(target, src) {
+      if (target.childNodes.length === 1 && target.firstChild && target.firstChild.nodeName === 'BR') target.firstChild.remove();
+      const nested = target.querySelector(':scope > ul, :scope > ol');
+      const joinAt = src.firstChild;
+      while (src.firstChild) { if (nested) target.insertBefore(src.firstChild, nested); else target.appendChild(src.firstChild); }
+      src.remove();
+      return joinAt;
+    }
+    function caretBefore(node) {
+      if (!node || !node.parentNode) return;
+      try { const r = doc.createRange(); r.setStartBefore(node); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {}
     }
     function insertAfter(refEl, item) {
       const el = newBlock(item);
@@ -2896,7 +2916,28 @@
             }
             return;
           }
-          return; // 嵌套非空项行首 / 行中删字 → 交原生（原生在 ul 内合并 li = Notion 的②，探针 P-C 实证一致）
+          // 嵌套非空行行首退格：**自己接管**（语义仍是 Notion 的②：并入前兄弟；无前兄弟则并入宿主行文字）。
+          // 原来这里交原生——语义确实对，但 Colin 2026-08-04 实机抓到原生会往盘里写
+          // `<span style="font-family: -apple-system, …">` 这种垃圾（Chromium 合并时保留「打字样式」），
+          // 而且在「前兄弟是空行」时还会把结构搅成空壳宿主行。自己做就都没有。
+          if (cli && editingEl.contains(cli) && cli.parentElement !== editingEl && isCaretAtStart(doc, cli)) {
+            const plist = cli.parentElement;
+            const hostLi = plist.parentElement;
+            const prevLi = cli.previousElementSibling;
+            const target = prevLi || (hostLi && hostLi.tagName === 'LI' ? hostLi : null);
+            // cli 自己还带子列表 → 搬过去会让目标行挂两张子列表，罕见，按 no-op 处理（但要 preventDefault，
+            // 绝不落回原生——落回去就是上面那两样垃圾）
+            if (!target || cli.querySelector(':scope > ul, :scope > ol')) { e.preventDefault(); return; }
+            e.preventDefault();
+            const joinAt = mergeLiInto(target, cli);
+            if (!plist.querySelector('li')) plist.remove(); // 子列表被掏空 → 移除，绝不留幽灵空 ul
+            if (undoMgr) undoMgr.checkpoint();
+            markDirty();
+            enterEdit(editingEl, { mode: 'end' }); // 必须在设光标【之前】——enterEdit 会重置选区
+            caretBefore(joinAt);
+            return;
+          }
+          return; // 行中删字等 → 交原生
         }
         if (!isCaretAtStart(doc, editingEl)) return;
         const scope = scopeRootOf(editingEl); // U6：作用域感知合并/退格
@@ -2935,15 +2976,10 @@
           // 而不是多出一个列表项。这条也是「顶层行剥离后再退一次」落到的终态，两条路径必须同款。
           const target = [...prev.children].reverse().find((c) => c.tagName === 'LI');
           if (!target) return; // 空列表（无 li）→ 不吞，光标留原处
-          // 空目标项的占位 <br> → 剥掉，免并入后留前导空行（对抗审查 Finding C）
-          if (target.childNodes.length === 1 && target.firstChild.nodeName === 'BR') target.firstChild.remove();
-          // 末项自带子列表时，文字插在子列表【前】（接到该项文字末尾），否则会吊到子项下面（Finding B）
-          const nestedInTarget = target.querySelector(':scope > ul, :scope > ol');
-          const joinAt = cur.firstChild; // 接合点（合并后光标停它前面 = 末项原末尾）；cur 必非空（空块已在上面分流）
-          while (cur.firstChild) { if (nestedInTarget) target.insertBefore(cur.firstChild, nestedInTarget); else target.appendChild(cur.firstChild); }
-          cur.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
+          const joinAt = mergeLiInto(target, cur); // 剥占位 <br> / 插在子列表前 两条加固都在 helper 里
+          if (undoMgr) undoMgr.checkpoint(); markDirty();
           enterEdit(prev, { mode: 'end' });
-          if (joinAt && joinAt.parentNode === target) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+          caretBefore(joinAt);
           return;
         }
         if (isEditableEl(prev)) {
@@ -3140,6 +3176,20 @@
         const kids = [...det.children].filter((c) => c.tagName !== 'SUMMARY' && !c.hasAttribute('data-ws2-ui'));
         const empty = kids.length === 1 && (kids[0].textContent || '').trim() === '' && !kids[0].querySelector('img,hr,table,figure,ul,ol,details');
         if (empty) det.setAttribute('data-ws2-empty', ''); else det.removeAttribute('data-ws2-empty');
+      }
+    }
+    // 「空壳宿主行」归一（Colin 2026-08-04 实机抓到）：一个 <li> 自己没有任何内容、只裹着一个嵌套列表时，
+    // 它自己的勾选框/marker 与嵌套首项的勾选框会**挤在同一行**——因为空 li 的高度几乎为 0，两个
+    // ::before 绝对定位落到同一个 y 上，视觉上就是「一行里两个勾选框」。补一个占位 <br> 让宿主行占住自己
+    // 那一行（Notion 里父块本来就是独立一行）。这类结构由 Tab 缩进到空行之上、或原生合并产生，
+    // 所以归一放在 markDirty 这个总出口上，而不是在每个产生点各修一遍（漏一处就复发）。
+    function normalizeHostLi() {
+      for (const li of blockRoot.querySelectorAll('li')) {
+        const sub = li.querySelector(':scope > ul, :scope > ol');
+        if (!sub) continue;
+        let own = '';
+        for (const n of li.childNodes) { if (n === sub) break; own += (n.textContent || ''); if (n.nodeType === 1 && n.tagName === 'BR') own += '​'; }
+        if (own === '') li.insertBefore(doc.createElement('br'), li.firstChild);
       }
     }
     function onInput(e) {
