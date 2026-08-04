@@ -1001,12 +1001,32 @@
     //  ② 目标自带嵌套子列表 → 内容插在子列表【前】，否则文字会吊到子项下面（Finding B）
     //  ③ 返回 joinAt 供调用方定位光标（src 非空时恒非 null）
     function mergeLiInto(target, src) {
-      if (target.childNodes.length === 1 && target.firstChild && target.firstChild.nodeName === 'BR') target.firstChild.remove();
       const nested = target.querySelector(':scope > ul, :scope > ol');
+      // 剥目标的占位 <br>：判据必须和 normalizeHostLi 同源——**只看子列表之前那一段**。
+      // 旧判据是 `childNodes.length === 1`，而被 normalizeHostLi 补过占位的空壳宿主行是 [<br>, <ul>]，
+      // 长度 2、判据不成立 → 并进来的文字被压到第二行、上面留一个空行，勾选框贴着那个空行——
+      // 正是这次要修的「勾选框和文字对不上」同一类症状。（发版把关 W-1，两个修复互相踩。）
+      const own = [];
+      for (const n of target.childNodes) { if (n === nested) break; own.push(n); }
+      if (own.length === 1 && own[0].nodeName === 'BR') own[0].remove();
       const joinAt = src.firstChild;
       while (src.firstChild) { if (nested) target.insertBefore(src.firstChild, nested); else target.appendChild(src.firstChild); }
       src.remove();
       return joinAt;
+    }
+    // 列表里**视觉上的最后一行** = 沿末项的子列表一路下钻到最深（对抗审查 ADV-4）。
+    // 「最后一个直接子 li」不等于「上一行」：它带子项时，屏幕上它下面还压着一堆子行。
+    // Notion 实测（fixture 对拍fixture-ADV4）：`- A / 　- A1 / 　- A2 / 段落文字`，段落行首退格
+    // 得到 `A2段落文字` —— 并进最深的那一行，不是并进 A。并进 A 会让文字**跳到子项上方**，
+    // 子项越多跳得越远（十个子项就跳十行），用户会读成「我的文字被搬走了」。
+    function lastVisibleLi(list) {
+      let li = [...list.children].reverse().find((c) => c.tagName === 'LI') || null;
+      for (;;) {
+        const sub = li && li.querySelector(':scope > ul, :scope > ol');
+        const deeper = sub ? [...sub.children].reverse().find((c) => c.tagName === 'LI') : null;
+        if (!deeper) return li;
+        li = deeper;
+      }
     }
     function caretBefore(node) {
       if (!node || !node.parentNode) return;
@@ -1025,7 +1045,9 @@
     function insertParaAtRow(list, row, above) {
       const lis = [...list.children].filter((x) => x.tagName === 'LI');
       const cut = lis.indexOf(row) + (above ? 0 : 1);
-      const p = doc.createElement('p'); p.appendChild(doc.createElement('br'));
+      // 不塞 <br>：与 newBlock('text') 的 `<p></p>` 对齐，否则 :empty 不成立 → 占位文案（含 E5 的
+      // 「输入以筛选…」）在列表行这条路上一个都不显示（发版把关 W-4）。
+      const p = doc.createElement('p');
       const tail = lis.slice(cut);
       if (cut === 0) list.before(p);
       else if (!tail.length) list.after(p);
@@ -1304,7 +1326,21 @@
       const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
       const firstIdx = allLis.indexOf(lis[0]), lastIdx = allLis.indexOf(lis[lis.length - 1]);
       if (firstIdx < 0 || lastIdx < 0) return null; // 传进来的行不是本列表的直接子项（如嵌套行）→ 拒绝，绝不悄悄整块转（P1-2）
-      if (firstIdx === 0 && lastIdx === allLis.length - 1) return turnInto(ul, item); // 全选 → 整块
+      // 选中行的**嵌套子列表**先摘下来（对拍 F12：不摘的话 flattenListToPhrasing 会把整棵子树拍进产物文字里，
+      // 子项作为独立条目彻底消失 = 丢内容）。转成列表类目标时不摘（子树本就该继续挂着）。
+      // ⚠ 这一段必须在下面的「整块捷径」**之前**（对抗审查 ADV-1，实机复现：子项数直接归 0）。
+      //   原来它在捷径之后 → 当选中行**恰好是这张列表唯一的顶层行**时 `firstIdx===0 && lastIdx===len-1`
+      //   成立、直接 `return turnInto(ul, item)`，整棵子树被拍成 `<p>父<br>子一<br>孙</p>`，待办勾选态一起没，
+      //   1.2 秒后自动保存写盘。而且 **E1 自己会制造这个条件**：剥掉中间一行后，剩下那半张就是单行列表，
+      //   下一次行首退格就炸。turnIntoLines 是**行级**入口，整块转换有 turnInto 这个独立入口（调用点已分流），
+      //   所以行级路径无论列表里有几行，都必须保子树。
+      const LEAF_LIKE = { p: 1, h1: 1, h2: 1, h3: 1, h4: 1, blockquote: 1, div: 1 };
+      const detached = [];
+      if (LEAF_LIKE[item.tag]) {
+        for (const li of lis) {
+          for (const c of [...li.children]) if (c.tagName === 'UL' || c.tagName === 'OL') { detached.push(c); c.remove(); }
+        }
+      }
       // 前段要继承原列表的 start（分割点**之前**的序号一个都不该变——Notion 同款，对拍 N8 实测）；
       // 后段不带 start = 从 1 重启（这半边本来就对齐 Notion）。tail 传 false。
       const mkUl = (keepStart) => {
@@ -1315,15 +1351,6 @@
       };
       if (firstIdx > 0) { const b = mkUl(true); for (let k = 0; k < firstIdx; k++) b.appendChild(allLis[k]); ul.before(b); }
       if (lastIdx < allLis.length - 1) { const a = mkUl(false); for (let k = lastIdx + 1; k < allLis.length; k++) a.appendChild(allLis[k]); ul.after(a); }
-      // 选中行的**嵌套子列表**先摘下来（对拍 F12：不摘的话 flattenListToPhrasing 会把整棵子树拍进产物文字里，
-      // 子项作为独立条目彻底消失 = 丢内容）。转成列表类目标时不摘（子树本就该继续挂着）。
-      const LEAF_LIKE = { p: 1, h1: 1, h2: 1, h3: 1, h4: 1, blockquote: 1, div: 1 };
-      const detached = [];
-      if (LEAF_LIKE[item.tag]) {
-        for (const li of lis) {
-          for (const c of [...li.children]) if (c.tagName === 'UL' || c.tagName === 'OL') { detached.push(c); c.remove(); }
-        }
-      }
       // 子树在 DOM 外期间抑制 checkpoint（P1-1）：否则 turnInto 内部那次快照记下「子项已消失」的中间态，
       // 一次 undo 就落到它、并被自动保存写进磁盘。接回子树后再统一落一次。
       ckSuppressed = detached.length > 0;
@@ -1332,6 +1359,12 @@
       // 摘下的子树接回产物之后：段落之下无法承载嵌套，故层级降一级成顶层列表（内容零丢失，缩进降级见 spec）。
       let ref = nx;
       for (const sub of detached) { ref.after(sub); ref = sub; }
+      // 行上的 id 迁到产物上（对抗审查 ADV-7）：`collectLiLines` 只克隆 li 的 childNodes、从不带 li 自身属性，
+      // 而 retagElement 保的是 <ul> 的属性——于是一次行首退格就把该行的 id 锚点静默销毁，跨文档
+      // #anchor 链接断链且没有任何提示。E1 之前这条路只在菜单「转为」时走，现在是日常按键，必须保。
+      // 只在产物自己没有 id 时迁（产物已有 id = 继承自 <ul> 的块锚点，那个更不能覆盖）。
+      if (lis.length === 1 && lis[0].id && nx && nx.nodeType === 1 && !nx.id) nx.id = lis[0].id;
+      if (nx && nx.nodeType === 1 && !nx.firstChild) nx.appendChild(doc.createElement('br')); // 空产物必带 <br>，否则光标落不进去（E2 分支早有同款保险，这里补齐）
       if (detached.length) { if (undoMgr) undoMgr.checkpoint(); markDirty(); }
       return nx;
     }
@@ -2557,6 +2590,16 @@
           // 第二次退格：此时已是普通段落，落进下面 generic 合并分支，自动得到 Notion ② 的终态。
           e.preventDefault();
           const det = editingEl.parentElement;
+          // 空 toggle 的逃生路径**保持不变**（契约 toggle.md）：整块只解包成**一个**空段落。
+          // 走通用 turnInto 会得到「summary 产物 + 体内那个空块」两个空段落，凭空多一空行（发版把关 W-3）。
+          const bodyBlocks = blocksInScope(det);
+          if ((editingEl.textContent || '').trim() === '' && bodyBlocks.every((b) => (b.textContent || '').trim() === '' && !b.querySelector('img,hr,table,figure,ul,ol,details'))) {
+            const p = doc.createElement('p'); p.appendChild(doc.createElement('br'));
+            det.replaceWith(p);
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            enterEdit(p, { mode: 'start' });
+            return;
+          }
           const nx = turnInto(det, itemByKey('text'));
           if (nx) {
             if (!nx.firstChild) nx.appendChild(doc.createElement('br')); // 空产物必带 <br>，否则光标落不进去（selection 变 null，实测）
@@ -2950,9 +2993,11 @@
             const hostLi = plist.parentElement;
             const prevLi = cli.previousElementSibling;
             const target = prevLi || (hostLi && hostLi.tagName === 'LI' ? hostLi : null);
-            // cli 自己还带子列表 → 搬过去会让目标行挂两张子列表，罕见，按 no-op 处理（但要 preventDefault，
-            // 绝不落回原生——落回去就是上面那两样垃圾）
-            if (!target || cli.querySelector(':scope > ul, :scope > ol')) { e.preventDefault(); return; }
+            // cli 自己还带子列表时**也要并**（对抗审查 ADV-6）：原来这里 preventDefault 直接 return =
+            // 零变更零反馈的**静默死键**，而 E2 这一批的立论恰恰就是「不留死胡同」，自相矛盾。
+            // 三层列表里任何一个有孙项的中间行都会命中，不算罕见。并过去后孙项成为目标行的子项
+            //（`<li>` 允许挂多张子列表，schema 已实证放行；门里带 conform 断言兜着）。
+            if (!target) { e.preventDefault(); return; }
             e.preventDefault();
             const joinAt = mergeLiInto(target, cli);
             if (!plist.querySelector('li')) plist.remove(); // 子列表被掏空 → 移除，绝不留幽灵空 ul
@@ -2985,7 +3030,7 @@
             // 于是下一次退格既进不了行级剥离、也进不了原生 li 合并 = 死键（E1 之后这条路径成了热路径：
             // 剥出来的空段落被删掉后就落在这里，实测连按三次退格第三次纹丝不动）。显式把光标放进末项。
             if (classify(prev) === 'list') {
-              const lastLi = [...prev.children].reverse().find((c) => c.tagName === 'LI');
+              const lastLi = lastVisibleLi(prev); // ADV-4：光标也要落到视觉上的上一行（最深末行）
               if (lastLi) {
                 if (!lastLi.firstChild) lastLi.appendChild(doc.createElement('br')); // 全空的 <li> 装不住 selection（会变 null，实测；空 li 退格分支早有同款补 <br>）
                 caretAtLiTextEnd(lastLi);
@@ -2999,7 +3044,7 @@
           // 上一块是列表 → **并入其末项的文字**（不是追加成新 <li>）。E1 对拍实证 2026-08-04：Notion 里
           // 「列表后接段落，段落行首退格」得到「末项文字+段落文字」拼成一项（父后行 + 分隔二 → 父后行分隔二），
           // 而不是多出一个列表项。这条也是「顶层行剥离后再退一次」落到的终态，两条路径必须同款。
-          const target = [...prev.children].reverse().find((c) => c.tagName === 'LI');
+          const target = lastVisibleLi(prev); // ADV-4：视觉上的上一行 = 最深末行，不是最后一个直接子项
           if (!target) return; // 空列表（无 li）→ 不吞，光标留原处
           const joinAt = mergeLiInto(target, cur); // 剥占位 <br> / 插在子列表前 两条加固都在 helper 里
           if (undoMgr) undoMgr.checkpoint(); markDirty();
@@ -3212,9 +3257,27 @@
       for (const li of blockRoot.querySelectorAll('li')) {
         const sub = li.querySelector(':scope > ul, :scope > ol');
         if (!sub) continue;
-        let own = '';
-        for (const n of li.childNodes) { if (n === sub) break; own += (n.textContent || ''); if (n.nodeType === 1 && n.tagName === 'BR') own += '​'; }
-        if (own === '') li.insertBefore(doc.createElement('br'), li.firstChild);
+        const own = [];
+        for (const n of li.childNodes) { if (n === sub) break; own.push(n); }
+        // 「有内容」的判据（对抗审查 ADV-3 修正了两处）：
+        //  · 纯空白文本节点**算空**——外部工具/美化过的 HTML 常写成 `<li>\n  <ul>`，旧判据把 '\n  ' 当非空，
+        //    于是 attach 时的自愈对这类文件静默失效，「一行两个勾选框」照样复现。
+        //  · `<img>` 等元素**算有内容**——旧判据只看 textContent，图片行会被当空、上方凭空多一空行。
+        const meaningful = own.some((n) => (n.nodeType === 3 && (n.textContent || '').trim() !== '')
+          || (n.nodeType === 1 && n.tagName !== 'BR'));
+        const brs = own.filter((n) => n.nodeType === 1 && n.tagName === 'BR');
+        if (!meaningful) {
+          // 空壳宿主行 → 补占位，让它占住自己那一行（否则它的 marker 与嵌套首项的挤在同一个 y）
+          if (!own.some((n) => n.nodeType === 1 && n.tagName === 'BR')) li.insertBefore(doc.createElement('br'), li.firstChild);
+        } else if (brs.length === 1) {
+          // **反向路径**（ADV-3）：宿主行后来有了文字，占位必须撤掉，否则用户给空父行起个名字就
+          // 永久多出一个空行、还随自动保存入盘。
+          // 光标落点决定占位最后在文字前还是文字后（实测两种都会出现：caretAtLiTextEnd 落在它之后 →
+          // `<li><br>文字<ul>`；点击把光标放到 (li,0) → `<li>文字<br><ul>`），所以两种形状都要认。
+          // 保守条件：**own 区里只有这一个 <br>**，且它贴着首尾之一——用户自己敲的多行换行不会被误删。
+          const b = brs[0];
+          if (b === own[0] || b === own[own.length - 1]) b.remove();
+        }
       }
     }
     function onInput(e) {
@@ -3665,7 +3728,10 @@
     //  ② **缩进层级由落点的 x 决定，参照系是【页面内容列左缘】**（= 顶层段落文字左缘），不是列表行文字左缘。
     //     实测：落在内容列左缘 → 兄弟（depth 0）；右移 28px → 成为上一行的子项。约 26px 一级。
     //  ③ **层级被「上一行深度 + 1」钳死**——落点右移 220px（理论 8 级）实测仍只嵌一级。
-    const WS2_INDENT_UNIT = 26; // 与 Notion 同步长；改这个值等于改手感，要连门一起改
+    // 缩进步长 = **我们自己**每级的实际缩进（`:where(ul,ol){padding-left:1.7em}` = 27.2px）。
+    // ⚠ 别直接抄 Notion 的 26：那是 Notion 自己版式下的数，拿来当我们的步长会让指示线逐级偏移
+    //（5 级时差 6px，发版把关 W-5 实测）。语义仍是「右移一格 = 深一层」，与 Notion 一致。
+    const WS2_INDENT_UNIT = 27.2;
     // 内容列左缘：顶层块（段落）的文字起点。取 blockRoot 的内容盒左缘，与段落渲染同源。
     function contentLeft() {
       const r = blockRoot.getBoundingClientRect();
@@ -3695,8 +3761,15 @@
         anchor = i > 0 ? rows[i - 1] : null;
       }
       const maxDepth = anchor ? rowDepth(anchor) + 1 : 0;
-      const want = Math.round((e.clientX - contentLeft()) / WS2_INDENT_UNIT);
-      const depth = Math.max(0, Math.min(want, maxDepth));
+      // **下钳**（对抗审查 ADV-5）：只上钳不够——指针再往左 depth 都能取到 0，哪怕线正画在一堆嵌套
+      // 子行中间。那样「画的和做的」在退级方向就不一致了：线画在 C1 与 C2 之间，行却落到整棵子树之后。
+      // 合法区间是 [线下方那一行的深度, 锚行深度+1]（与 Notion 一致）——比下方那行还浅，会把它孤儿化。
+      const want0 = (ev) => Math.round((ev.clientX - contentLeft()) / WS2_INDENT_UNIT);
+      const rows = [...listEl.querySelectorAll('li')].filter((x) => x !== dragFrom && !(dragFrom.contains && dragFrom.contains(x)));
+      const idx = rows.indexOf(tr);
+      const below = before ? tr : (idx >= 0 && idx + 1 < rows.length ? rows[idx + 1] : null);
+      const minDepth = Math.min(below ? rowDepth(below) : 0, maxDepth); // 防御：min 不得超过 max
+      const depth = Math.max(minDepth, Math.min(want0(e), maxDepth));
       return { tr, before, anchor, depth };
     }
     // 把 row 放进 destList 的指定位置；destList 与 row 源类型不同 → **在落点劈开 destList**，
@@ -3753,7 +3826,7 @@
         // 线画在 tr 的边上，但缩进要表达的是【目标深度】——所以偏移量是「目标深度 − tr 自身深度」，
         // 单位跟落点解析同一个常量（改一处必改另一处，否则画的和落的对不上）。
         const rel = d.depth - rowDepth(d.tr);
-        if (rel) d.tr.setAttribute('data-ws2-dropindent', String(Math.max(-5, Math.min(5, rel))));
+        if (rel) d.tr.setAttribute('data-ws2-dropindent', String(Math.max(-8, Math.min(8, rel)))); // 表扩到 ±8（原 ±5：≥6 层嵌套时线画得比实际落位浅，发版把关 W-6）
         if (d.anchor && d.depth > rowDepth(d.anchor)) d.anchor.setAttribute('data-ws2-dropparent', '');
       } else {
         const r = el.getBoundingClientRect();
@@ -3917,6 +3990,7 @@
       doc.removeEventListener('toggle', onToggle, true);
       exitEdit();
       if (cellNopeTimer) { global.clearTimeout(cellNopeTimer); cellNopeTimer = null; }
+      try { closeSlash(); } catch (x) {} // 卸载前清掉选择器态：只 remove 覆盖层不清 data-ws2-picking，切文档时若还要存一次盘就漏（ADV-2）
       [grip, fmtbar, blockMenu, slashMenu, cellNope].forEach((n) => n.remove());
     }
 
@@ -4025,16 +4099,22 @@
                radial-gradient(circle at 3.5px 3.5px, #1a73e8 0 3.5px, transparent 3.5px) left center/7px 7px no-repeat;}
   [data-ws2-drop='top']::after{top:-4px;}
   [data-ws2-drop='bottom']::after{bottom:-4px;}
-  [data-ws2-dropindent='1']::after{left:26px;}
-  [data-ws2-dropindent='2']::after{left:52px;}
-  [data-ws2-dropindent='3']::after{left:78px;}
-  [data-ws2-dropindent='4']::after{left:104px;}
-  [data-ws2-dropindent='5']::after{left:130px;}
-  [data-ws2-dropindent='-1']::after{left:-26px;}
-  [data-ws2-dropindent='-2']::after{left:-52px;}
-  [data-ws2-dropindent='-3']::after{left:-78px;}
-  [data-ws2-dropindent='-4']::after{left:-104px;}
-  [data-ws2-dropindent='-5']::after{left:-130px;}
+  [data-ws2-dropindent='1']::after{left:27.2px;}
+  [data-ws2-dropindent='2']::after{left:54.4px;}
+  [data-ws2-dropindent='3']::after{left:81.6px;}
+  [data-ws2-dropindent='4']::after{left:108.8px;}
+  [data-ws2-dropindent='5']::after{left:136.0px;}
+  [data-ws2-dropindent='6']::after{left:163.2px;}
+  [data-ws2-dropindent='7']::after{left:190.4px;}
+  [data-ws2-dropindent='8']::after{left:217.6px;}
+  [data-ws2-dropindent='-1']::after{left:-27.2px;}
+  [data-ws2-dropindent='-2']::after{left:-54.4px;}
+  [data-ws2-dropindent='-3']::after{left:-81.6px;}
+  [data-ws2-dropindent='-4']::after{left:-108.8px;}
+  [data-ws2-dropindent='-5']::after{left:-136.0px;}
+  [data-ws2-dropindent='-6']::after{left:-163.2px;}
+  [data-ws2-dropindent='-7']::after{left:-190.4px;}
+  [data-ws2-dropindent='-8']::after{left:-217.6px;}
   /* 将成为子项时，父行整行淡蓝底（Notion 同款，告诉用户「进的是这一行下面」） */
   [data-ws2-dropparent]{border-radius:3px;background:rgba(26,115,232,.10);box-shadow:0 0 0 3px rgba(26,115,232,.10);}
   /* 跨块拖选的块级高亮（Wendi 2026-07-22）：整行蓝底(box-shadow 外扩到左右边距、不占布局)，罩住的块内

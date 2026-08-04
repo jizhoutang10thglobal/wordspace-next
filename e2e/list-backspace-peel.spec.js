@@ -38,11 +38,14 @@ const shape = () => page.evaluate(() => {
   return [...d.body.children].map((el) => el.tagName + '[' + (el.textContent || '').trim().replace(/\s+/g, '') + ']').join(' ');
 });
 // 光标落到某行行首：点进该行再 Home（走真实导航路径，不用程序化 range——那会绕过 enterEdit）
-async function caretAtRowStart(sel) {
-  await frame.locator(sel).click();
+// ⚠ 带嵌套子树的行：元素几何中心落在【子列表】上，默认 click() 会把光标丢进子项（本文件 E1-7 踩过）。
+//   对这类行必须传 pos 瞄父行自己那条文字行。
+async function caretAtRowStart(sel, pos) {
+  await frame.locator(sel).click(pos ? { position: pos } : undefined);
   await page.keyboard.press('Home');
   await page.waitForTimeout(140);
 }
+const TXTROW = { x: 20, y: 8 };
 const BS = async () => { await page.keyboard.press('Backspace'); await page.waitForTimeout(260); };
 
 test.afterEach(async () => {
@@ -253,7 +256,118 @@ test('E2-3 空折叠块标题退格：解包成空段落、光标落得进去（
   expect(await serialize(), '不再有 details').not.toMatch(/<details/);
   const ed = await page.evaluate(() => { const d = document.getElementById('doc-frame').contentDocument; const e = d.querySelector('[contenteditable="true"]'); return e ? e.tagName : null; });
   expect(ed, '光标落进解包出来的段落（空产物必须带 <br> 才装得住 selection）').toBe('P');
+  expect(await shape(), 'W-3：空 toggle 只解包成【一个】空段落，不能凭空多一行').toBe('P[]');
   await page.keyboard.type('还能打字');
   await expect.poll(async () => await shape()).toContain('还能打字');
+  expect(await conform()).toBe(true);
+});
+
+// ===== 对抗审查 findings 的回归门（2026-08-04，每条先复现再修）=====
+
+test('ADV-1 唯一顶层行 + 带子树：剥离绝不能把整棵子树拍成一个段落（丢内容）', async () => {
+  await launch();
+  await openDoc('<p id="p0">前段</p><ul id="L"><li id="a">父<ul><li>子一</li><li>子二<ul><li>孙</li></ul></li></ul></li></ul>');
+  await caretAtRowStart('#a', TXTROW);
+  await BS();
+  // 反哑门：必须查真 <li> 节点数，不能只看文字——被拍平后文字仍在，只是全成了一个段落里的 <br>
+  const struct = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return {
+      shape: [...d.body.children].map((el) => el.tagName).join(' '),
+      liCount: d.body.querySelectorAll('li').length,
+      liTexts: [...d.body.querySelectorAll('li')].map((li) => (li.firstChild ? li.firstChild.textContent.trim() : '')),
+    };
+  });
+  expect(struct.liCount, '子一/子二/孙 必须仍是三个真列表项（被拍平时这里会变 0）').toBe(3);
+  expect(struct.liTexts).toEqual(['子一', '子二', '孙']);
+  expect(await shape(), '产物段落 + 子树降级成顶层列表').toBe('P[前段] P[父] UL[子一子二孙]');
+  expect(await conform()).toBe(true);
+});
+
+test('ADV-1b 待办版：唯一顶层行剥离不得抹掉子项的勾选态', async () => {
+  await launch();
+  await openDoc('<ul id="L" class="ws-todo"><li id="a">父<ul class="ws-todo"><li data-checked="true">已勾子</li><li>未勾子</li></ul></li></ul>');
+  await caretAtRowStart('#a', TXTROW);
+  await BS();
+  const checked = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.body.querySelectorAll('li')].map((li) => li.getAttribute('data-checked'));
+  });
+  expect(checked, '两个子项都还在，勾选态保真').toEqual(['true', null]);
+  expect(await conform()).toBe(true);
+});
+
+test('ADV-1c 级联：剥完中间行后，剩下的单行列表再退一次也不能炸', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="a">甲</li><li id="b">乙<ul><li>乙1</li><li>乙2</li></ul></li></ul>');
+  await caretAtRowStart('#a');
+  await BS(); // 剥「甲」→「乙」成了它那张 ul 的唯一顶层行
+  await caretAtRowStart('#b', TXTROW);
+  await BS(); // 再剥「乙」
+  const liCount = await page.evaluate(() => document.getElementById('doc-frame').contentDocument.body.querySelectorAll('li').length);
+  expect(liCount, '乙1/乙2 必须仍是列表项（E1 自己制造的触发条件）').toBe(2);
+  expect(await conform()).toBe(true);
+});
+
+test('ADV-7 剥离要保住行上的 id（跨文档锚点链接不能被一次退格打断）', async () => {
+  await launch();
+  // ul 不带 id：产物若已从 <ul> 继承到块锚点 id 就不该被行 id 覆盖，那是既有语义；这里测的是行 id 不该凭空消失
+  await openDoc('<p id="p0">前段</p><ul><li id="anchor-a">锚点行</li><li>其它</li></ul>');
+  await caretAtRowStart('#anchor-a');
+  await BS();
+  const found = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const el = d.getElementById('anchor-a');
+    return el ? { tag: el.tagName, txt: el.textContent.trim() } : null;
+  });
+  expect(found, 'id 必须迁到产物块上，锚点仍解析得到同一段内容').toEqual({ tag: 'P', txt: '锚点行' });
+  expect(await conform()).toBe(true);
+});
+
+test('ADV-残余 剥离产物是空块时必须带 <br>（否则光标落不进去 = 死键）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li>甲</li><li id="b"></li></ul>');
+  await frame.locator('#L').click({ position: { x: 12, y: 8 } });
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const li = d.getElementById('b');
+    const r = d.createRange(); r.setStart(li, 0); r.collapse(true);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.waitForTimeout(120);
+  await BS();
+  await page.keyboard.type('还能打字');
+  await expect.poll(async () => await shape(), { message: '剥离出的空块必须能落光标继续打字' }).toContain('还能打字');
+  expect(await conform()).toBe(true);
+});
+
+test('ADV-4 并入上一列表时，目标是【视觉上的上一行】而不是最后一个直接子项', async () => {
+  await launch();
+  // Notion 实测（fixture 对拍fixture-ADV4）：`- A / 　- A1 / 　- A2 / 段落文字` → 段落并进 A2
+  await openDoc('<ul id="L"><li id="a">A<ul><li>A1</li><li id="a2">A2</li></ul></li></ul><p id="p1">段落文字</p>');
+  await caretAtRowStart('#p1');
+  await BS();
+  const out = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const a = d.getElementById('a');
+    const sub = a.querySelector(':scope > ul');
+    let own = ''; for (const n of a.childNodes) { if (n === sub) break; own += (n.textContent || ''); }
+    return { parentOwn: own.trim(), kids: [...sub.children].map((li) => li.textContent.trim()) };
+  });
+  expect(out.parentOwn, '绝不能并进父行 A（那样文字会跳到 A1/A2 上方）').toBe('A');
+  expect(out.kids, '并进最深的那一行 A2').toEqual(['A1', 'A2段落文字']);
+  expect(await conform()).toBe(true);
+});
+
+test('ADV-4b 删掉空块后，光标也要落到视觉上的上一行（不是父行）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="a">A<ul><li id="a1">A1</li></ul></li></ul><p id="p1"><br></p>');
+  await frame.locator('#p1').click();
+  await page.waitForTimeout(140);
+  await BS();
+  await page.keyboard.type('X');
+  await page.waitForTimeout(300);
+  const kid = await page.evaluate(() => document.getElementById('doc-frame').contentDocument.getElementById('a1').textContent.trim());
+  expect(kid, '接着打的字要落在 A1（视觉上的上一行），不是跑到 A 那一行').toBe('A1X');
   expect(await conform()).toBe(true);
 });

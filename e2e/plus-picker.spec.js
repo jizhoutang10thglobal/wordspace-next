@@ -145,3 +145,64 @@ test('E5-7 打「/」这条老路不受影响：字面 / 仍要被删掉', async
   expect(s, '字面「/」必须被删掉，不能留在文档里：' + s).not.toContain('/');
   expect(await conform()).toBe(true);
 });
+
+// ===== 对抗审查 ADV-2 的回归门 =====
+// 通用门：**任何时刻**序列化出来的字节都不许带编辑器交互态标记。写一次就永久覆盖将来新增的标记，
+// 比「记得往 WS2_MARKERS 里加」可靠——ADV-2 正是漏加了 data-ws2-picking。
+// 时序不是竞态而是必然：点「+」→ markDirty 排 1200ms 自动保存 → 同步打开选择器；
+// 人读完一屏块类型远超 1.2 秒，所以第一次自动保存**几乎必然**发生在选择器开着的时候。
+const WS2_ATTR_RE = /data-ws2-[a-z]+/;
+
+test('ADV-2 选择器开着时序列化：字节里不得出现任何 data-ws2-* 交互态标记', async () => {
+  await launch();
+  await openDoc('<p id="p1">上一段</p><p id="p2">下一段</p>');
+  await hoverAndPlus('#p1');
+  expect(await menuOpen(), '前置：选择器确实开着（否则这条门测了个寂寞）').toBe(true);
+  const disk = await serialize();
+  const hit = disk.match(WS2_ATTR_RE);
+  expect(hit ? hit[0] : undefined, '选择器开着时序列化，泄漏了交互态标记').toBeUndefined();
+  expect(await conform()).toBe(true);
+});
+
+test('ADV-2b 拖拽指示线亮着时序列化：同样不得泄漏', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="a">甲</li><li id="b">乙</li></ul>');
+  await frame.locator('#b').hover();
+  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const grip = d.querySelector('.ws-grip');
+    const tgt = d.getElementById('a');
+    const root = d.querySelector('[data-ws2-root]') || d.body;
+    const rr = root.getBoundingClientRect();
+    const x = Math.round(rr.left + (parseFloat(getComputedStyle(root).paddingLeft) || 0) + 26);
+    const dt = new DataTransfer();
+    grip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const r = tgt.getBoundingClientRect();
+    tgt.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt, clientX: x, clientY: r.bottom - 3 }));
+  });
+  await page.waitForTimeout(200);
+  const marked = await page.evaluate(() => !!document.getElementById('doc-frame').contentDocument.querySelector('[data-ws2-drop]'));
+  expect(marked, '前置：指示线确实亮着').toBe(true);
+  const disk = await serialize();
+  const hit = disk.match(WS2_ATTR_RE);
+  expect(hit ? hit[0] : undefined, '拖拽指示线亮着时泄漏了标记').toBeUndefined();
+});
+
+test('W-4 列表行的「+」：产物也要显示占位（此前塞了 <br> 导致 :empty 不成立，一个占位都没有）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="r1">一</li><li id="r2">二</li></ul>');
+  await hoverAndPlus('#r1');
+  const ph = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const el = d.querySelector('[data-ws2-editing]');
+    return { html: el.innerHTML, content: getComputedStyle(el, '::before').content };
+  });
+  expect(ph.html, '产物是真空块（不塞 <br>，与段落那条路一致）').toBe('');
+  expect(ph.content, '占位切成筛选提示').toContain('筛选');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  await page.keyboard.type('还能打字');
+  await expect.poll(async () => await shape()).toContain('还能打字');
+  expect(await conform()).toBe(true);
+});

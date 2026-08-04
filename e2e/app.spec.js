@@ -538,9 +538,15 @@ test('Wendi bug3 边界：嵌套打头不被撕 / 子列表前插入 / 空目标
     for (const n of li.childNodes) { if (n === sub) break; directText += n.textContent; }
     return { topUls: 1, directText: directText.replace(/\s/g, ''), hasSub: !!sub, subText: sub ? sub.textContent.replace(/\s/g, '') : '' };
   });
+  // ADV-4（2026-08-04）预期迁移：合并目标从「上一块的最后一个直接子项」改成「视觉上的上一行」
+  // （= 沿末项子列表下钻到最深）。**为什么新预期才对**：Notion 实测 `- A / 　- A1 / 　- A2 / 段落文字`
+  // 段落行首退格得到 `A2段落文字`——并进最深那一行。并进父行 A 会让文字**跳到 A1 上方**，
+  // 子项越多跳得越远，用户读成「文字被搬走了」。
+  // Finding B 原来守的是「文字别吊到子列表下面」；新语义下文字进的就是子列表里的最后一行，
+  // 那条护栏的场景不再成立，改为断言：父行自有文字不被污染 + 子项仍在 + 文字并进最深行。
   expect(bOrder.topUls, 'B: 两列表没合并成一个').toBe(1);
-  expect(bOrder.directText, 'B: 文字没接到「A」末尾（吊到子列表下面了？）').toBe('AB');
-  expect(bOrder.hasSub && bOrder.subText === 'A1', 'B: 子列表 A1 该保留在原位').toBe(true);
+  expect(bOrder.directText, 'B: 父行 A 自己的文字不被污染').toBe('A');
+  expect(bOrder.hasSub && bOrder.subText === 'A1B', 'B: 文字并进视觉上的上一行 A1（子列表仍在原位）').toBe(true);
 
   // Finding C：并入空目标块（空段 <p><br></p>）不留前导空行 <br>。
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'

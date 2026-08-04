@@ -140,3 +140,63 @@ test('G5 归一化不乱动正常宿主行（有文字的父行不该被塞占�
   expect(own, '有文字的宿主行不得被插入占位 <br>').not.toContain('<br>');
   expect(await conform()).toBe(true);
 });
+
+// ===== 对抗审查 ADV-3 的回归门：归一化必须双向，且判据要认对「有内容」 =====
+
+test('ADV-3a 空壳宿主行获得文字后，占位 <br> 必须撤掉（否则永久多一空行且入盘）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="host"><ul><li>子一</li></ul></li></ul>');
+  // attach 时已补占位；现在模拟用户给这个空父行起名字
+  const hadBr = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return d.getElementById('host').firstChild.nodeName;
+  });
+  expect(hadBr, '前置：attach 时确实补了占位').toBe('BR');
+  await frame.locator('#host').click({ position: { x: 12, y: 8 } });
+  await page.keyboard.type('父行名字');
+  await page.waitForTimeout(400);
+  const own = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const host = d.getElementById('host');
+    const sub = host.querySelector(':scope > ul');
+    let s = ''; for (const n of host.childNodes) { if (n === sub) break; s += (n.nodeType === 1 && n.tagName === 'BR') ? '<br>' : (n.textContent || ''); }
+    return s;
+  });
+  expect(own, '有文字后行首不得残留占位 <br>').toBe('父行名字');
+  expect(await serialize(), '磁盘里也不能有 <li><br>父行名字').not.toMatch(/<li><br>父行名字/);
+  expect(await conform()).toBe(true);
+});
+
+test('ADV-3b 宿主行内容是图片时不算空（不该在图片上方插空行）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="host"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="x"><ul><li>子一</li></ul></li></ul>');
+  const first = await page.evaluate(() => document.getElementById('doc-frame').contentDocument.getElementById('host').firstChild.nodeName);
+  expect(first, '首节点应是 IMG 而不是被插进来的 BR').toBe('IMG');
+});
+
+test('ADV-3c 外部 HTML 的纯空白宿主行也要被归一（旧判据把「\\n  」当成非空而漏掉）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="host">\n  <ul><li id="kid">子一</li></ul></li></ul>');
+  const geo = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { hostTop: Math.round(d.getElementById('host').getBoundingClientRect().top),
+             kidTop: Math.round(d.getElementById('kid').getBoundingClientRect().top) };
+  });
+  expect(geo.kidTop - geo.hostTop, '宿主行与嵌套首项必须错开一个行高（这类文件此前静默漏网）').toBeGreaterThanOrEqual(16);
+});
+
+test('W-1 并入【空壳】宿主行：文字必须落在宿主行自己那一行，不能被占位顶到第二行', async () => {
+  await launch();
+  await openDoc('<ul class="ws-todo" id="L"><li id="host"><ul class="ws-todo"><li id="a">子甲</li><li id="b">子乙</li></ul></li></ul>');
+  await caretAtRowStart('#a');
+  await BS();
+  const own = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const host = d.getElementById('host');
+    const sub = host.querySelector(':scope > ul');
+    let s = ''; for (const n of host.childNodes) { if (n === sub) break; s += (n.nodeType === 1 && n.tagName === 'BR') ? '<br>' : (n.textContent || ''); }
+    return s;
+  });
+  expect(own, '宿主行文字段里不得残留占位 <br>（两个修复互相踩：normalizeHostLi 补的 br 让旧判据失效）').toBe('子甲');
+  expect(await conform()).toBe(true);
+});
