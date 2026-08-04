@@ -202,3 +202,47 @@ test('C8-12 引用块带缩进（真实磁盘形态）同样生效', async () =>
   const up = await page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelector('#up').textContent);
   expect(up).toBe('上引甲');
 });
+
+// ── C8-13/14（2026-08-05，对抗审查 X4）：上一块是**列表**时的同款语义 ─────────────────
+// 实测的病灶（带对照组）：上一块是列表 → changed=false / dirtyDot=false，**静默死键**；
+// 同一个提示框只要把上一块换成段落就正常并入。同一个键两种表现，用户没法理解。
+// 病根是列表分支先截胡（`if (!isLeafTextBlock(cur)) return`），C8 那半根本够不着。
+
+test('C8-13 上一块是列表：第一段并进列表末项，框带着剩下的继续在（此前是静默死键）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="r1">项一</li><li id="r2">项二</li></ul>'
+    + '<div class="ws-callout" id="C"><p id="c1">甲</p><p id="c2">乙</p></div>');
+  await backspaceAtCalloutStart('#c1');
+  const s = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const c = d.querySelector('.ws-callout');
+    return {
+      liTexts: [...d.querySelectorAll('#L > li')].map((li) => (li.textContent || '').replace(/\s+/g, '')),
+      cCount: d.querySelectorAll('.ws-callout').length,
+      cInnerP: c ? c.querySelectorAll(':scope > p').length : null,
+      cText: c ? (c.textContent || '').replace(/\s+/g, '') : null,
+    };
+  });
+  expect(s.liTexts, '并进的是**视觉上的上一行**=列表末项，不是新增一项').toEqual(['项一', '项二甲']);
+  expect(s.cCount).toBe(1);
+  expect(s.cInnerP).toBe(1);
+  expect(s.cText).toBe('乙');
+  expect(await conformOf(await serialize()), '产物必须仍然合规（<li> 里不许出现块级 <p>）').toBe(true);
+});
+
+test('C8-14 上一块是列表 + 框里只剩一段：掏空的框不留（与上一块是段落时终态一致）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="r1">项一</li></ul>'
+    + '<div class="ws-callout" id="C"><p id="c1">甲</p></div>');
+  await backspaceAtCalloutStart('#c1');
+  const s = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return {
+      liTexts: [...d.querySelectorAll('#L > li')].map((li) => (li.textContent || '').replace(/\s+/g, '')),
+      cCount: d.querySelectorAll('.ws-callout').length,
+    };
+  });
+  expect(s.liTexts).toEqual(['项一甲']);
+  expect(s.cCount, '掏空的框不该留在文档里').toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
+});

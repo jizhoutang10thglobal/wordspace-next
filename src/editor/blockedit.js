@@ -3223,6 +3223,30 @@
           return;
         }
         if (classify(prev) === 'list') {
+          // 容器块（多段提示框 / 引用块）+ 上一块是列表：不能把块级 <p> 整个塞进 <li>（产 <li><p> 非法），
+          // 但也不该零反馈 —— 实测这条路径此前是**静默死键**：HTML 一字未变、连顶栏「未保存」都不亮；
+          // 而同一个提示框只要把上一块换成段落就正常并入。同一个键两种表现，用户没法理解（对抗审查 X4）。
+          // 修法与 C8 那半**同款语义**：供出第一个子块的行内内容并进列表末项，框留着装剩下的、掏空才移除。
+          if (isMultiParaContainer(cur) && !isLeafTextBlock(cur)) {
+            // 判据逐字复用 C8：跳过源码缩进空白找「第一行」；用 PHRASING_TAGS 找第一个**块级**子元素
+            //（不能用 firstElementChild——混排时它可能是行内 <strong>，会把一行文字劈成两截）。
+            let cHead = cur.firstChild;
+            while (cHead && cHead.nodeType === 3 && isBlankRun(cHead.nodeValue)) cHead = cHead.nextSibling;
+            let cFirstBlock = null;
+            for (const n of cur.children) { if (!SM.PHRASING_TAGS.has(n.tagName)) { cFirstBlock = n; break; } }
+            const cDonor = (cHead && cHead === cFirstBlock && isLeafTextBlock(cHead)) ? cHead : null;
+            // 混排形态（框以行内内容开头，只可能来自外部文件）暂不处理：往 <li> 里搬行内序列的边界判定
+            // 与 C8 往 <p> 里搬不同，没对拍过就不猜。保持原样返回 = 维持现状，不制造新的半吊子行为。
+            if (!cDonor) return;
+            const cTarget = lastVisibleLi(prev); // ADV-4：视觉上的上一行 = 最深末行
+            if (!cTarget) return;
+            const cJoin = mergeLiInto(cTarget, cDonor); // 会把 donor 的子节点搬进 li 并移除 donor
+            if (!cur.firstElementChild && isBlankRun(cur.textContent || '')) cur.remove(); // 掏空的框不留（同 C8 终态）
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            enterEdit(prev, { mode: 'end' });
+            caretBefore(cJoin);
+            return;
+          }
           if (!isLeafTextBlock(cur)) return; // B2 守卫对称（补）：cur 是容器块(callout/quote)时不能把块级 <p> 塞进 <li>（产 <li><p> 非法）
           // 上一块是列表 → **并入其末项的文字**（不是追加成新 <li>）。E1 对拍实证 2026-08-04：Notion 里
           // 「列表后接段落，段落行首退格」得到「末项文字+段落文字」拼成一项（父后行 + 分隔二 → 父后行分隔二），
