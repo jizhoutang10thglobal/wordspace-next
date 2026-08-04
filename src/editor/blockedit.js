@@ -1172,7 +1172,12 @@
       img.setAttribute('alt', alt || '');      // DOM setAttribute 序列化时自动转义 → 入盘即 canonical
       return img;
     }
-    // OS 拖放落点：Y 最近块；clientY 在其上半且非首块 → 插到前一块之后；否则最近块之后；空文档 → null(append)。
+    // OS 拖放落点：Y 最近块 → 返回**位置** `{el, before}`（空文档 → null = append）。
+    // ⚠ 返回位置而不是「插在它之后的那个块」是修复，不是重构（对抗审查 disk-X6）：旧写法
+    // `(best.i > 0 && clientY < best.mid) ? blocks[best.i-1] : blocks[best.i]` 里的 `best.i > 0` 短路，
+    // 让「首块之前」这一位置对**任意** clientY 都无解（穷举已证）——用户没办法用一次拖放把图片放到
+    // 全文开头（h1 标题之上放封面图是真实场景），指示线也只会画在首块下缘，与 spec 写的
+    // 「落点 = 块间插入线」对不上。上半区 → before，下半区 → after，首块不再是例外。
     function dropAnchor(clientY) {
       const blocks = topBlocks();
       if (!blocks.length) return null;
@@ -1182,11 +1187,13 @@
         const dist = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
         if (!best || dist < best.dist) best = { i: i, dist: dist, mid: (r.top + r.bottom) / 2 };
       }
-      return (best.i > 0 && clientY < best.mid) ? blocks[best.i - 1] : blocks[best.i];
+      return { el: blocks[best.i], before: clientY < best.mid };
     }
     // 逐张摄入→插图片块。整批共用一个 checkpoint（= 一步 undo），replaceEmpty 时先插后删空锚块也归这一步；
     // 全批失败不 checkpoint（不留空撤销步）。checkpoint 在 DOM 变更后打（本仓 undo 约定，见 insertAfter/undo.js）。
-    async function insertImages(files, anchorEl, replaceEmpty) {
+    // insertBefore：只作用于**第一张**——之后每张都接在上一张之后，批次内顺序才不会被倒过来
+    //（[图1,图2] 落在锚点之前应得 图1,图2,锚点，不是 图2,图1,锚点）。
+    async function insertImages(files, anchorEl, replaceEmpty, insertBefore) {
       if (!files || !files.length || !II) return;
       let after = anchorEl, inserted = 0;
       for (const f of files) {
@@ -1195,7 +1202,9 @@
         if (!live) return; // 摄入期间文档被换掉 → 别插进已 detach 的旧文档（shell loadGen 竞态）
         if (!r || !r.ok) { if (global.__wsToast) global.__wsToast(ingestErrorMsg(r && r.reason)); continue; }
         const el = buildImageEl(r.src, altOf(f.name));
-        if (after && after.after) after.after(el); else blockRoot.appendChild(el);
+        if (!after || !after.after) blockRoot.appendChild(el);
+        else if (insertBefore && inserted === 0) after.before(el);
+        else after.after(el);
         selectBlock(el); positionGrip(el);
         after = el; inserted++;
       }
@@ -4068,7 +4077,7 @@
         e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
         clearDrop();
         const a = dropAnchor(e.clientY);
-        if (a) a.setAttribute('data-ws2-drop', 'bottom');
+        if (a) a.el.setAttribute('data-ws2-drop', a.before ? 'top' : 'bottom');
         return;
       }
       if (!dragFrom) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
@@ -4090,10 +4099,13 @@
         clearDrop();
         const imgs = II ? II.pickImageFiles(e.dataTransfer) : [];
         if (!imgs.length) { if (global.__wsToast) global.__wsToast(T('editor.dropImagesOnly')); return; }
-        insertImages(imgs, anchor, false);
+        insertImages(imgs, anchor && anchor.el, false, !!(anchor && anchor.before));
         return;
       }
-      if (!dragFrom) { e.preventDefault(); return; }
+      // ⚠ 这条早退也要收线（对抗审查 disk-X5）：dragover 画线的门是 `dt.types 含 'Files'`、drop 收线的门是
+      // `dataTransfer.files.length` —— 两者不同源。有些拖放源在 dragover 阶段声明了 Files、drop 时却给不出
+      // 文件（拖网页里的图、跨 app 的伪文件项），于是走到这里、上面那两个分支都没进 → 线留在页面上不走。
+      if (!dragFrom) { e.preventDefault(); clearDrop(); return; }
       e.preventDefault();
       if (isRowDrag()) { rowDrop(e); clearDrop(); dragFrom = null; return; } // U2：行拖拽
       const el = blockOf(e.target); // scoped：落在 toggle 体内块 → el 是体内块，.before/.after 落体内（进/出/内自动获得，U8/R6）
@@ -4314,6 +4326,15 @@
                radial-gradient(circle at 3.5px 3.5px, #1a73e8 0 3.5px, transparent 3.5px) left center/7px 7px no-repeat;}
   [data-ws2-drop='top']::after{top:-4px;}
   [data-ws2-drop='bottom']::after{bottom:-4px;}
+  /* 替换元素兜底（对抗审查 X2 / disk-X2）：Blink **不给成功加载的 <img> 生成 ::after**，而顶层裸
+     <img> 正是本仓 canonical 的图片块——「往已有图片旁边再拖一张」恰恰是拖图落点线最高频的场景，
+     靠伪元素在这里 100% 画不出线：属性设上了、零像素，「做」是对的「画」是空的，正是 I10 要消灭的状态。
+     用 box-shadow 兜底：img[data-ws2-selected] 已实证 box-shadow 在暗色文档的双反色下仍是蓝、看得见。
+     ⚠ 那个 :not([data-ws2-editing]) 不是抄来的装饰——上面那条选中环的特异度是 (0,2,1)，
+     不带它的 img[data-ws2-drop='x'] 只有 (0,1,1) 会被压过 → 拖到「当前选中的那张图」旁边又没线。
+     不补层级圆点：图片块不是列表行，dropindent 对它无意义。 */
+  img[data-ws2-drop='top']:not([data-ws2-editing]){box-shadow:0 -3px 0 -1px #1a73e8;}
+  img[data-ws2-drop='bottom']:not([data-ws2-editing]){box-shadow:0 3px 0 -1px #1a73e8;}
   [data-ws2-dropindent='1']::after{left:27.2px;}
   [data-ws2-dropindent='2']::after{left:54.4px;}
   [data-ws2-dropindent='3']::after{left:81.6px;}
