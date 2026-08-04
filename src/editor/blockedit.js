@@ -1895,22 +1895,32 @@
       if (it.ai) { onAiSoon(); return; }
       const el = cur.blockEl;
       const empty = !el || (el.textContent || '').trim() === '';
+      // 容器块（callout）即使为空也不许被「空块原地替换」吞掉（对拍 C13）：用户在框内敲 / 选一个**插入**项，
+      // 产物却是承载它的容器被换掉——画的（框内插入）和做的（整框替换）不是同一个对象；且没有任何反向
+      // 入口能把产物变回 callout，只能靠 undo。改成插到框后：Schema 明令禁止 callout 里放列表/表格
+      // （childrenAreMultiPara 只允许 phrasing 或 <p>），所以「插进框内」这个 Notion 式终态我们做不了，
+      // 「插到框后」是约束下的非破坏解。
+      // ⚠ 不能用 isLeafTextBlock 当守卫：LEAF_TEXT_TAGS 含 DIV、空 callout 无块级后代 → 判 true，拦不住。
+      // ⚠ 必须共用一个判据：下面有**四个**替换站点、三种机制（图片 remove / details turnInto /
+      //   table replaceWith / generic turnInto），各写各的必漏一处；其中图片那条最狠——insertImages 会把
+      //   锚块整个 remove 掉，callout 连壳都不剩。（hr 那条是无条件 insertAfter，本就不吃这个判据。）
+      const canReplace = empty && isEditableEl(el) && !(el && el.classList && el.classList.contains('ws-callout'));
       // 图片：异步取文件后插入。空块原地替换（已拍板②）。不在此 checkpoint——picker 可取消。
-      if (it.image) { pickAndInsertImage(el, empty && isEditableEl(el)); return; }
+      if (it.image) { pickAndInsertImage(el, canReplace); return; }
       // 折叠块：空块原地变身（turnInto，与其他块类型一致——旧 insertAfter 会把空段落留在原地、details 落到
       // 下一行，光标肉眼可见往下坠一行 + 留空段落垃圾，Wendi 2026-07-24 视频）；非空块维持插到下方。光标落 summary。
-      if (it.tag === 'details') { const nx = (empty && isEditableEl(el)) ? turnInto(el, it) : insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); }
+      if (it.tag === 'details') { const nx = canReplace ? turnInto(el, it) : insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); }
       else if (it.tag === 'table') {
         // 表格（U1）：空锚块原地替换（对齐 details「不留空段垃圾」的心智；不走 turnInto——retag p→table 会产非法结构），
         // 非空插下方。U1 阶段落灰选整表（cell 尚不可编辑）；U2 起改「落首格进编辑」。
         let nx;
-        if (empty && isEditableEl(el)) { nx = newBlock(it); el.replaceWith(nx); if (undoMgr) undoMgr.checkpoint(); markDirty(); }
+        if (canReplace) { nx = newBlock(it); el.replaceWith(nx); if (undoMgr) undoMgr.checkpoint(); markDirty(); }
         else nx = insertAfter(el, it);
         const fc = firstCellOf(nx);
         if (fc) enterCell(fc, { mode: 'start' }); else { selectBlock(nx); positionGrip(nx); } // R3：造出即编辑、光标落首格
       }
       else if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
-      else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
+      else if (canReplace) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
       else { const nx = insertAfter(el, it); enterEdit(nx, { mode: 'start' }); }
     }
 
