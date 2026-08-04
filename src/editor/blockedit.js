@@ -1751,10 +1751,34 @@
       trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
     };
     const menuIcon = (k) => '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON[k] + '</svg>';
+    // 菜单作用对象标记（对拍 T6）：「删除本行/本列」实际作用于 menuCell 所在的行/列，而开菜单时
+    // selectBlock 把灰选打在**整张表**上、目标行列零标记 —— 画的对象和做的对象不是同一个，误删风险。
+    // 这两个属性是纯交互态：serialize 的剥除白名单已收编（同一份白名单也被 undo 快照复用，
+    // 见 undo.js「与存盘同一白名单」——所以 undo/redo 也不会把它们复活）。
+    function clearMenuScope() {
+      if (!doc) return;
+      doc.querySelectorAll('[data-ws2-menurow],[data-ws2-menucol]').forEach((n) => {
+        n.removeAttribute('data-ws2-menurow'); n.removeAttribute('data-ws2-menucol');
+      });
+    }
+    function markMenuScope(table, cell) {
+      clearMenuScope();
+      if (!table || !cell) return;
+      const tr = cell.parentElement;
+      if (tr && tr.tagName === 'TR') tr.setAttribute('data-ws2-menurow', '');
+      const pos = cellPosOf(table, cell);
+      if (!pos) return;
+      // 列 = 各数据行的同列索引格（行列增删走的也是这个口径，两处必须同源，否则标错格比不标更坏）
+      tableRowsOf(table).forEach((r) => {
+        const c = rowCellsOf(r)[pos.col];
+        if (c) c.setAttribute('data-ws2-menucol', '');
+      });
+    }
     function openBlockMenu(el) {
       // 表格行列操作的「当前格」快照：必须在 selectBlock（会 exitCell）之前取——菜单项点击时 cellEl 早已清空
       const menuCell = (cellEl && el.contains && el.contains(cellEl)) ? cellEl : null;
       selectBlock(el);
+      if (menuCell && classify(el) === 'table') markMenuScope(el, menuCell); else clearMenuScope();
       blockMenu.innerHTML = '';
       const add = (label, on, danger, icon) => {
         const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-danger' : '');
@@ -1836,7 +1860,7 @@
       blockMenu.style.top = (r.bottom + sy + 4) + 'px';
       blockMenu.style.display = 'block';
     }
-    function closeBlockMenu() { blockMenu.style.display = 'none'; }
+    function closeBlockMenu() { blockMenu.style.display = 'none'; clearMenuScope(); } // 单一关闭出口——15 个调用点全走它，作用对象标记在这里统一清
 
     // ---- 斜杠菜单 ----
     function openSlash(blockEl) {
@@ -3556,6 +3580,11 @@
   [data-ws2-drop='bottom']{box-shadow:0 2px 0 0 #1a73e8;}
   /* 跨块拖选的块级高亮（Wendi 2026-07-22）：整行蓝底(box-shadow 外扩到左右边距、不占布局)，罩住的块内
      隐掉原生 ::selection→只剩整行蓝(对齐 Notion「哪几行都选中」)。绝不用 padding/margin(推文字)。 */
+  /* 菜单作用对象（对拍 T6）：菜单开着时标出「删除本行/本列」到底会动哪一行、哪一列。
+     用底色而非 outline——outline 在 border-collapse 的表格上会被相邻格边框切断、看不出整行整列。
+     两者叠加处（目标格本身）自然更深，正好指出行列交点。纯交互态、存盘剥除。 */
+  tr[data-ws2-menurow]>td,tr[data-ws2-menurow]>th{background:rgba(29,111,191,.10);}
+  td[data-ws2-menucol],th[data-ws2-menucol]{background:rgba(29,111,191,.10);}
   [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
   [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
   [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}

@@ -1404,8 +1404,13 @@ function buildWordspacePrintHtml() {
   const root = cd.documentElement.cloneNode(true);
   root.querySelectorAll('[data-ws2-ui]').forEach((n) => n.remove());
   root.querySelectorAll('[contenteditable]').forEach((n) => n.removeAttribute('contenteditable'));
-  ['data-ws2-editing', 'data-ws2-selected', 'data-ws2-ce', 'data-ws2-drop', 'data-ws2-eid'].forEach((a) =>
-    root.querySelectorAll('[' + a + ']').forEach((n) => n.removeAttribute(a)));
+  // 交互态标记一律剥掉。**读 serialize 的 WS2_MARKERS 单一真相源**，别在这里再养一份数组：
+  // 原来是硬编码 5 个名字、与 serialize 的白名单各写各的，已经漏掉 cell/rangesel/nope 等
+  // ——表格格内开着块菜单点「导出 PDF」，交互高亮就会被印进 PDF。取不到时退回原数组保底。
+  const PRINT_STRIP = (typeof WS2Serialize !== 'undefined' && WS2Serialize.WS2_MARKERS)
+    ? [...WS2Serialize.WS2_MARKERS]
+    : ['data-ws2-editing', 'data-ws2-selected', 'data-ws2-ce', 'data-ws2-drop', 'data-ws2-eid'];
+  PRINT_STRIP.forEach((a) => root.querySelectorAll('[' + a + ']').forEach((n) => n.removeAttribute(a)));
   root.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach((n) => n.remove());
   // 分页推挤是运行时视觉产物，绝不烤进打印 HTML：spacer 节点已随 data-ws2-ui 整删（上面那行），
   // 这里再剥内容元素上的推挤样式（li 的 paddingTop / 块级 marginTop）+ 兜底删 spacer。

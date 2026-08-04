@@ -23,6 +23,7 @@
     'data-ws2-clip', // 块编辑：内部复制粘贴的剪贴板哨兵（只该出现在剪贴板 payload；万一漏进 DOM 也剥）
     'data-ws2-root', // 块容器标记（给空块占行高等结构 CSS 用，存盘剥除）
     'data-ws2-cell', // 块编辑：表格单元格编辑态标记（仅交互态，存盘剥除）
+    'data-ws2-menurow', 'data-ws2-menucol', // 块编辑：块菜单开启时的作用行/列标记（仅交互态；菜单开着时自动保存撞上也剥）
   ]);
 
   function cleanRoot(root) {
@@ -76,7 +77,10 @@
     return clone.innerHTML;
   }
 
-  const api = { serializeDocument, cleanedBodyHtml, cleanRoot, OVERLAY_VAL };
+  // WS2_MARKERS 对外暴露：PDF 导出走的是 shell.js 自己的一份剥除清单（不经 cleanRoot），
+  // 那份原来是硬编码数组、与本表各写各的 → 每加一个交互标记都得记得同步两处，漏了就印进 PDF。
+  // 暴露出去让它读同一份，把「两份清单必然漂移」这类 bug 从源头掐掉。
+  const api = { serializeDocument, cleanedBodyHtml, cleanRoot, OVERLAY_VAL, WS2_MARKERS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2Serialize = api;
 })(typeof window !== 'undefined' ? window : globalThis);
