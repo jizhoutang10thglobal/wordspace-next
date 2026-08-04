@@ -284,6 +284,24 @@ Document linking rounds out, and Wordspace can be your default browser on macOS.
 
 - **Sidebar**: bookmarks section restyled to match the other sections
 
+## v0.8.2 — 2026-07-13
+
+Updating the app is no longer a bare system dialog.
+
+### Added
+
+- **Updates**: "Check for Updates" is now an in-app panel — see what changed, watch real download progress (percentage / speed / amount downloaded), and restart to install in one click; failures explain themselves and can be retried
+
+### Improved
+
+- **Updates**: the automatic check at launch is quieter — a small progress bar in the sidebar corner, and a single notice once the download finishes
+- **Updates**: from this version on, macOS downloads only the changed parts of an update instead of the whole package each time (takes effect from the next update after installing this one; Windows already worked this way)
+- **Updates**: the whole update process is logged, so "the update didn't install" is now traceable
+
+## v0.8.1 — 2026-07-13
+
+Fixes large blank gaps in PDF export: documents that carry their own page layout (an A4-formatted HTML from Word or an AI, say) now break where the document itself says to, without stretches of empty space between pages.
+
 ## v0.8.0 — 2026-07-12
 
 ### Added
