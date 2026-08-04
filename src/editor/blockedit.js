@@ -278,6 +278,14 @@
     after.setEnd(el, el.childNodes.length);
     return after.toString().trim() === '';
   }
+  // 块首判定：光标左侧没有**可见**字符。
+  // ⚠ 只忽略「源码格式空白」（\t \n \r 和普通空格）——它们被 HTML 折叠掉、屏幕上根本不占位；
+  // 用户真打出来的行首空格在 contenteditable 里是 &nbsp;( )，那是可见内容，绝不能忽略
+  //（所以这里用显式字符类，不用 String.trim()——trim 会把   也吃掉）。
+  // 修的 bug（2026-08-04 实测）：外部 HTML 带缩进换行时，`<div class="ws-callout">\n  <p>甲</p>` 的
+  // 首子是文本节点 "\n  "，`<p>\n  甲乙\n</p>` 同理 —— 严格相等判定让**任何带缩进的块**行首退格
+  // 变成静默死键（不止 callout：普通段落同中）。而磁盘上的 HTML 几乎必然带缩进。
+  const isBlankRun = (s) => /^[\t\n\r ]*$/.test(s);
   function isCaretAtStart(doc, el) {
     const sel = doc.getSelection();
     if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
@@ -286,7 +294,7 @@
     const before = doc.createRange();
     before.setStart(el, 0);
     before.setEnd(caret.startContainer, caret.startOffset);
-    return before.toString() === '';
+    return isBlankRun(before.toString());
   }
   // 严格块末判定：光标右侧确无任何可见字符/元素（最多容一个末尾填充 <br>——浏览器给空块/末行补的占位）。
   // 区别于 isCaretAtEnd 的 trim()——后者把尾随空格/块内 <br> 也当块末，会让「段内按 →/Delete」误触发
@@ -428,6 +436,12 @@
     let editingEl = null;    // 正在文字编辑的块
     let hoverEl = null;      // 鼠标悬停的块（驱动 ⋮⋮ 定位）
     let hoverRow = null;     // 悬停块为列表时的悬停行 <li>（U1 行级手柄；非列表块恒 null）
+    // 手柄的**作用对象**单一真相源（对拍 I4）：手柄画在谁旁边，点它/拖它/点「+」就作用于谁。
+    // 此前「画」看 hoverRow||hoverEl（onMouseMove 无条件跟手）、「做」看 selectedEl||hoverEl（选中优先），
+    // 两套口径不同源 —— 选中图片后悬停别的块，手柄画到新块旁却仍删/拖那张图（P1，见 docs/features/doc-images.md）。
+    // 由 positionGrip 唯一写入、setGutterVisible(false) 唯一清除，别在别处赋值。
+    let gripEl = null;       // 手柄当前锚定的**块**
+    let gripRow = null;      // 锚点是 <li> 时的行作用域目标（非行锚恒 null）
     let menuRow = null;      // U3 行作用域菜单的目标行（仅行模式非空；随 closeBlockMenu 清）
     let slash = null;        // { blockEl, query, active }
     let dragFrom = null;     // 拖拽重排的源块
@@ -461,7 +475,8 @@
     plus.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
     doc.documentElement.appendChild(plus);
     // 手柄与「+」永远同显同隐（分开控制必漏一处 → 幽灵按钮），显隐一律走这个口子。
-    function setGutterVisible(show) { const v = show ? 'flex' : 'none'; grip.style.display = v; plus.style.display = v; }
+    // 手柄不可见 = 没有作用对象：一起清 gripEl/gripRow，否则隐藏后残留的旧目标会在下次显示前被用上。
+    function setGutterVisible(show) { const v = show ? 'flex' : 'none'; grip.style.display = v; plus.style.display = v; if (!show) { gripEl = null; gripRow = null; } }
 
     // 格式气泡
     const fmtbar = mk('div', 'ws-fmtbar');
@@ -584,6 +599,8 @@
       if (!lh || Number.isNaN(lh)) lh = (parseFloat(cs.fontSize) || 15) * 1.5;
       const top = (r.top + sy + Math.max(0, (Math.min(lh, r.height) - 22) / 2)) + 'px';
       grip.style.top = top; plus.style.top = top;
+      gripRow = (el.tagName === 'LI') ? el : null;
+      gripEl = gripRow ? (blockOf(el) || el) : el;
       setGutterVisible(true);
     }
     function showFmtAt(left, top) {
@@ -689,6 +706,10 @@
       clearSelectedAttr();
       selectedEl = el;
       if (el) el.setAttribute('data-ws2-selected', '');
+      // 灰选必然把手柄挪到该块（20+ 个调用点本来就手写 selectBlock(x)+positionGrip(x) 这一对；收进来
+      // 才能让「手柄旁 = 作用对象」成为恒真式）。少数没配对的旧点（插 hr / 菜单转为 / 折叠恢复）
+      // 此前会留下手柄指向别的块，现在一并对齐。
+      if (el) positionGrip(el);
       positionFmtbar();
     }
     function deselect() {
@@ -3127,6 +3148,39 @@
           caretBefore(joinAt);
           return;
         }
+        // 多段 callout 首行退格（对拍 C8，P2）：cur 是容器块（有块级子节点）→ 下面的叶子-叶子拼接一律 return，
+        // 键按下去零变更、连顶栏「未保存」都不亮 = 静默死键，用户既拿不到反馈也无从知道怎么退出这一步。
+        // Notion 的解：**只有第一个子块脱框并进上一块，框带着剩下的继续存在**（实测双子块 callout）。
+        // 单段 callout（<div class="ws-callout">文字</div>）是叶子块、走下面既有路径，两侧行为本就一致——别动它。
+        // 只接管 callout：blockquote/toggle 等其它容器块未对拍，保持原样（欠账记在 docs/features/callout.md）。
+        if (cur.classList && cur.classList.contains('ws-callout') && !isLeafTextBlock(cur) && isEditableEl(prev) && isLeafTextBlock(prev)) {
+          // 「第一行」的起点：跳过源码缩进产生的空白文本节点——它们屏幕上不占位，
+          // 把它们当第一行搬走 = 用户按了键、看不出任何变化（对抗审查 C8-1 同款陷阱）。
+          let head = cur.firstChild;
+          while (head && head.nodeType === 3 && isBlankRun(head.nodeValue)) head = head.nextSibling;
+          // 第一个**块级**子元素。⚠ 不能用 firstElementChild —— 混排时它可能是行内的 <strong>，
+          // 拿它当边界会把同一行文字从中间劈成两截跨两个块（对抗审查 C8-4 实测）。判据复用 schema-model 的
+          // PHRASING_TAGS 单一真相源。
+          let firstBlockEl = null;
+          for (const n of cur.children) { if (!SM.PHRASING_TAGS.has(n.tagName)) { firstBlockEl = n; break; } }
+          // 两种形态：以 <p> 开头 → 供出那个 <p> 的内容；以行内内容开头（混排，只可能来自外部文件）
+          //  → 供出到第一个块级元素为止的整段行内。两种都不动 callout 的其余子块。
+          const donor = (head && head === firstBlockEl && isLeafTextBlock(head)) ? head : null;
+          const stopAt = donor ? null : firstBlockEl;
+          // 零搬运就地收手：不 checkpoint、不 markDirty、不 enterEdit。否则「未保存」会亮起骗用户做了什么，
+          // 光标还被静默弹到上一块 —— 用户看没反应再按一次，删掉的是上一块的最后一个字（对抗审查 C8-3 实测）。
+          //（donor 为空段落时算真变更：那一行会消失。）
+          if (!(donor || (head && head !== stopAt))) return;
+          if (prev.childNodes.length === 1 && prev.firstChild.nodeName === 'BR') prev.firstChild.remove(); // 空目标块的占位 <br>，同下
+          let joinAt = null;
+          if (donor) { joinAt = donor.firstChild; while (donor.firstChild) prev.appendChild(donor.firstChild); donor.remove(); }
+          else { let n = head; joinAt = head; while (n && n !== stopAt) { const nx = n.nextSibling; prev.appendChild(n); n = nx; } }
+          if (!cur.firstElementChild && isBlankRun(cur.textContent || '')) cur.remove(); // 掏空的框不留（对齐单段那半的终态）
+          if (undoMgr) undoMgr.checkpoint(); markDirty();
+          enterEdit(prev, { mode: 'end' });
+          if (joinAt && joinAt.parentNode === prev) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+          return;
+        }
         if (isEditableEl(prev)) {
           // 两块都得是「叶子文字块」才做节点级拼接——否则 prev/cur 是透明包裹块（div.lead>p）时，把块级 <p>
           // 搬进 <p> 会成 <p><p>、把裸文本灌进 div 会成「容器直挂文本」，存盘即坏（A 组）。非叶子则不吞、光标留原处。
@@ -3412,14 +3466,16 @@
 
     // grip 交互
     grip.addEventListener('mousedown', (e) => { e.stopPropagation(); });
-    grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); const el = selectedEl || hoverEl; if (el) openBlockMenu(el, selectedEl ? null : hoverRow); }); // U3：行锚手柄=行作用域；Esc 灰选=块作用域
+    // 作用对象一律取 gripEl/gripRow（= 手柄画在谁旁边）。行锚手柄=行作用域；块锚（Esc 灰选/悬停非列表块）=块作用域。
+    // openBlockMenu 内部会 selectBlock(gripEl)，于是灰选当场转移到手柄所指的块 —— 对齐 Notion「点手柄 halo 跟着走」。
+    grip.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); if (gripEl) openBlockMenu(gripEl, gripRow); });
     // U4「+」：作用对象跟手柄同口径（行锚=插同列表新行；块=插空正文块）。⌥ 点击插到上方（对齐 Notion）。
     plus.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); }); // 别把焦点/选区从当前块夺走
     plus.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
       closeBlockMenu();
-      const el = selectedEl || hoverEl; if (!el) return;
-      const row = selectedEl ? null : hoverRow;
+      const el = gripEl; if (!el) return;
+      const row = gripRow;
       const above = !!e.altKey;
       if (row && row.tagName === 'LI' && classify(el) === 'list' && el.contains(row)) {
         const list = row.parentElement;
@@ -3446,7 +3502,7 @@
       openSlash(nx, false); // E5：同上——「+」是全局 gutter 行为，所有块类型旁边点都该弹
     });
     // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
-    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = selectedEl || hoverRow || hoverEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
+    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = gripRow || gripEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
     // 落点态是三个属性（线 / 缩进量 / 父行高亮），必须一起清——只清一个会留下幽灵高亮或错位的线
     function clearDrop() {
@@ -3942,21 +3998,36 @@
     function onDragOver(e) {
       if (!dragFrom && draggingFile()) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'link'; return; } // U3-B6：侧栏文件拖进来 → 接受、dropEffect link
       // OS 图片文件拖入（doc-images）：dragover 阶段读不到 MIME、只看得到 'Files'，先放行；drop 时按白名单过滤。
-      if (!dragFrom && dtHasFiles(e.dataTransfer)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; return; }
+      // 落点插入线（对拍 I10）：此前这里只设 dropEffect 就 return，全程零反馈 —— 用户松手前不知道图会落在哪，
+      // 而 spec 早写了「落点 = 块间插入线」。**指示线必须由 dropAnchor 本人算**（drop 时插的就是它），
+      // 复制一份坐标逻辑就是又一个「画的≠做的」。dropAnchor 返回的是「插在它之后」的块 → 线画在其下缘。
+      if (!dragFrom && dtHasFiles(e.dataTransfer)) {
+        e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+        clearDrop();
+        const a = dropAnchor(e.clientY);
+        if (a) a.setAttribute('data-ws2-drop', 'bottom');
+        return;
+      }
       if (!dragFrom) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
       e.preventDefault();
       if (isRowDrag()) { rowDragOver(e); return; } // U2：行拖拽走行级指示线
       const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop(); el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top');
     }
+    // 外部拖放没有 dragend（源不在本文档）：拖出窗口又不松手时，插入线得自己收，否则留一条幽灵线。
+    // 只认「离开窗口」（relatedTarget 为空）——块间移动时的 dragleave 每次都触发，清了线就会闪。
+    // 具名（不是内联箭头）才能在 detach 里解绑——本文件所有 doc 级监听的既有约定。
+    function onDragLeave(e) { if (!dragFrom && !e.relatedTarget) clearDrop(); }
     function onDrop(e) {
       const f = draggingFile();
       if (!dragFrom && f) { e.preventDefault(); dropFileLink(e, f); if (typeof global !== 'undefined') global.__wsDragFile = null; return; } // U3-B6：插链接，用完清全局
       // OS 文件拖入（doc-images）：图片 → 摄入插块；非图片文件维持拒绝但要说出来（别静默）。
       if (!dragFrom && e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
         e.preventDefault();
+        const anchor = dropAnchor(e.clientY); // 先取锚点再清线：clearDrop 只动属性、不动布局，但顺序写死更省心
+        clearDrop();
         const imgs = II ? II.pickImageFiles(e.dataTransfer) : [];
         if (!imgs.length) { if (global.__wsToast) global.__wsToast(T('editor.dropImagesOnly')); return; }
-        insertImages(imgs, dropAnchor(e.clientY), false);
+        insertImages(imgs, anchor, false);
         return;
       }
       if (!dragFrom) { e.preventDefault(); return; }
@@ -4039,6 +4110,7 @@
     doc.addEventListener('scroll', onScroll, true);
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
+    doc.addEventListener('dragleave', onDragLeave);
     doc.addEventListener('paste', onPaste);
     doc.addEventListener('copy', onCopy); // 内部富复制：⌘C 写带哨兵的干净 HTML（⌘X 走 keydown 里的 execCommand('copy') 也经此）
     doc.addEventListener('toggle', onToggle, true); // 折叠事件不冒泡→捕获相 + 委托 doc（撑过 innerHTML 重写/嵌套/后加 toggle）
@@ -4060,6 +4132,7 @@
       doc.removeEventListener('scroll', onScroll, true);
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
+      doc.removeEventListener('dragleave', onDragLeave);
       doc.removeEventListener('paste', onPaste);
       doc.removeEventListener('copy', onCopy);
       doc.removeEventListener('toggle', onToggle, true);
@@ -4116,9 +4189,13 @@
       if (target) enterEdit(target, { mode: 'end' });
     }
 
-    // reposition：缩放/窗口尺寸变后重定位手柄+气泡。编辑态 selectedEl=null、当前块在 hoverEl，故跟 onScroll 一样
-    // 用 hoverEl 兜底（否则编辑中缩放，手柄会漂在缩放前的旧坐标）。
-    return { detach, reset, deselect, snapshotEdit, restoreEdit, reposition: () => { if (selectedEl) positionGrip(selectedEl); else if (hoverEl) positionGrip(hoverEl); positionFmtbar(); } };
+    // reposition：缩放/窗口尺寸变后重定位手柄+气泡。锚点必须走 gutterAnchor（与 onScroll 同源）——
+    // 这里原本手写 `selectedEl || hoverEl`，是 P2-3 立 gutterAnchor 时漏迁的最后一处。
+    // ⚠ 漏迁的代价在 gripEl 收口之后变了性质：以前它只让手柄画错位置（作用点仍读 hoverRow，行作用域还是对的），
+    // 现在 positionGrip 是作用对象的唯一写入口 —— 传 hoverEl（整张列表）进来会把 gripRow 清成 null，
+    // 于是「悬停第 3 行 → 按 ⌘\ 收侧栏 → 点手柄删除」从删一行变成删整张列表，且 onMouseMove 的去重
+    // 让它无法自愈（对抗审查 ADV-GRIP-1）。
+    return { detach, reset, deselect, snapshotEdit, restoreEdit, reposition: () => { const a = gutterAnchor(); if (a) positionGrip(a); positionFmtbar(); } };
   }
 
   // ===== 注入到 iframe 的编辑器样式（ui-demo Canvas.css 移植；选择器既命中 .ws-* 也命中裸标签）=====
