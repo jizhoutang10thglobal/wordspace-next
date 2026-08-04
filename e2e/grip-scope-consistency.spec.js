@@ -172,7 +172,8 @@ test('I4-5 反向不回归：Esc 灰选（无悬停行）仍是块作用域，�
   // 块作用域：删除作用于整张列表
   await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
   await page.waitForTimeout(250);
-  expect(await bodyOrder()).toEqual([]); // 收严：not.toContain 在「整篇被删光」时也过（gate 审计）
+  expect(await bodyOrder()).toEqual(['P#L']); // 收严（gate 审计）：not.toContain 在「整篇被删光」时也过。
+  // 删掉唯一的块后编辑器留一个空段落（文档不许空），且**继承原 id** —— 这两件事本身也被这条钉住了。
 });
 
 // ── 2026-08-05 对抗审查：I4 只把**三个手柄作用点**收口到 gripEl/gripRow，键盘那几个（Delete /
@@ -197,7 +198,7 @@ test('I4-8 灰选整列表后「与鼠标无关」的重锚：reposition 不许�
   expect(await selectedIds()).toEqual(['UL#L']); // 修前：['LI#r2']
   await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
   await page.waitForTimeout(250);
-  expect(await bodyOrder()).toEqual([]); // 键盘与手柄同一个作用对象：删的是整张列表
+  expect(await bodyOrder()).toEqual(['P#L']); // 键盘与手柄同一个作用对象：删的是整张列表（留空段落继承 id）
 });
 
 test('I4-9 灰选整列表后鼠标**真的**停在某一行上：作用对象仍是整块', async () => {
@@ -217,7 +218,7 @@ test('I4-9 灰选整列表后鼠标**真的**停在某一行上：作用对象�
   expect(await selectedIds()).toEqual(['UL#L']); // 修前：['LI#r1']，菜单成了行作用域
   await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
   await page.waitForTimeout(250);
-  expect(await bodyOrder()).toEqual([]); // 修前：只删掉「一」，列表还剩三行
+  expect(await bodyOrder()).toEqual(['P#L']); // 修前：只删掉「一」，列表还剩三行
 });
 
 test('I4-10 灰选整列表后拖手柄：搬走整张列表，绝不把列表劈成两张（会入盘的那条）', async () => {
@@ -230,15 +231,49 @@ test('I4-10 灰选整列表后拖手柄：搬走整张列表，绝不把列表�
   expect(await selectedIds()).toEqual(['UL#L']);
   await frame.locator('#r1').hover(); // 真实用户去够手柄，路上必然经过某一行
   await page.waitForTimeout(200);
-  const g = await frame.locator('.ws-grip').boundingBox();
-  const b = await frame.locator('#bot').boundingBox();
-  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(g.x + g.width / 2 + 4, g.y + g.height / 2 + 8); // 小步越过拖拽阈值
-  await page.mouse.move(b.x + 40, b.y + b.height * 0.75, { steps: 8 });
-  await page.mouse.up();
+  // 用本仓既有的合成 DragEvent 序列（同 list-row-drag.spec.js 的 dragRowTo）——page.mouse 那套
+  // 在 iframe 里驱动 HTML5 拖放不可靠，实测直接把页面拖崩、报 "Target page has been closed"。
+  // 关键在于**起点的 hover 是真实的**（上面那句 #r1.hover 已经把 hoverRow 武装成第一行），
+  // 这正是 gate 审计点名的那个测试盲区：合成 dragstart 本身不产生 mousemove。
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const grip = d.querySelector('.ws-grip');
+    const tgt = d.querySelector('#bot');
+    const dt = new DataTransfer();
+    grip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const r = tgt.getBoundingClientRect();
+    const ev = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: Math.round(r.left + 40), clientY: Math.round(r.bottom - 3) };
+    tgt.dispatchEvent(new DragEvent('dragover', ev));
+    tgt.dispatchEvent(new DragEvent('drop', ev));
+    grip.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
   await page.waitForTimeout(400);
   // 修前：dragFrom = gripRow = 第一行 → 只搬一行，原列表还剩 li 不被清除 → 一分为二，1.2s 落盘。
   expect(await bodyOrder()).toEqual(['P#top', 'P#bot', 'UL#L']);
   expect(await liTexts()).toEqual(['一', '二', '三', '四']); // 四行整体搬走，一行不落
+});
+
+test('I4-11 灰选之后，鼠标已经不在那儿的陈旧悬停行不许把手柄拽走', async () => {
+  await launch();
+  await openDoc('<p id="top">上段</p>' + LIST);
+  // 造出「selectedEl 与陈旧 hoverRow 分属不同块」的状态：先进段落编辑 → 鼠标滑过列表第 3 行
+  //（此时 hoverRow=r3 是**真**的）→ 鼠标移出文档区（编辑态下 onDocLeave 不清悬停）→ Esc 灰选段落。
+  // 此刻鼠标既不在 r3 上、灰底也在段落，hoverRow 却还指着 r3。
+  await frame.locator('#top').click();
+  await page.waitForTimeout(150);
+  await frame.locator('#r3').hover();
+  await page.waitForTimeout(200);
+  await page.mouse.move(20, 400); // 移出 iframe，落到侧栏
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['P#top']);
+  await page.evaluate(() => { if (window.__shellReposition) window.__shellReposition(); });
+  await page.waitForTimeout(200);
+  // 修前：gutterAnchor 把陈旧 hoverRow 排在 selectedEl 之前 → 手柄漂到第 3 行旁边，
+  // 而灰底在段落上 —— 手柄指着的和键盘要动的又不是同一个东西，且鼠标不动就永不自愈。
+  const a = await gripAnchorOf('#top');
+  expect(a.visible).toBe(true);
+  expect(a.gripCy).toBeGreaterThanOrEqual(a.top - 1);
+  expect(a.gripCy).toBeLessThanOrEqual(a.bottom + 1);
 });

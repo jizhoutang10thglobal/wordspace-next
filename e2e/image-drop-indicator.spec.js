@@ -189,7 +189,10 @@ test('I10-7 落点锚是图片块时线**真被画出来**（像素对照，不�
   const r = await fileDragOver('#pic', 'lower');
   expect([r.markedId, r.place]).toEqual(['pic', 'bottom']);
   const st = await imgLineOf('#pic');
-  expect(st.pseudo, '前提确认：img 上确实没有 ::after 可用，所以必须走 box-shadow').toBe('none');
+  // ⚠ 别在这里断 getComputedStyle(img,'::after').content === 'none' —— 实测它返回的是 '""'：
+  // **伪元素的 computed style 照样算得出来，哪怕 Blink 根本不给替换元素生成这个盒子**。
+  // 这恰恰是 gate 审计说「读 ::after 的 computed style 判有没有线」是哑门的直接证据，
+  // 所以这条门只信两样东西：box-shadow 这个真的会渲染的属性，和下面的像素对照。
   expect(st.shadow).toContain('rgb(26, 115, 232)');
   const lineAfter = await strip(box.x, box.y + box.height - 1, box.width, 5);
   const ctrlAfter = await strip(box.x, box.y + box.height / 2 - 2, box.width, 5);
