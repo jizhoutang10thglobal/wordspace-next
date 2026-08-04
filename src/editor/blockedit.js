@@ -384,7 +384,15 @@
       ':where(pre code){background:none;padding:0;font-size:.875em}' +
       ':where(hr){border:none;border-top:1px solid #e3e2de;margin:2em 0}' +
       ':where(a){color:#1a73e8;text-decoration-color:rgba(26,115,232,.35);text-underline-offset:2px}' +
-      ':where(img){max-width:100%;height:auto}' +
+      // 顶层图片各占一行（对拍 I8）：img 默认 inline，多张顶层图会并排挤成一行，与「图片是顶层块」
+      // 的编辑器模型自相矛盾（选中/拖拽/方向键都按 1 个块处理）。直接后果实测过：第二张图的 ⋮⋮ 手柄
+      // 被画在第一张图的图面上，用户无法凭视觉分清手柄属于哪块。
+      ':where(img){max-width:100%;height:auto;display:block}' +
+      // ⚠ 豁免行内图片：IMG 同时是合法 phrasing（schema-model.js 的 PHRASING_TAGS 含 IMG），
+      // <p>文字 <img> 文字</p> 是合规内容。不豁免的话它会被打断成三行 = 静默的保真损伤
+      // （比并排挤成一行更糟，因为坏了没人看得见）。用后代组合子以覆盖 <p><a><img></a></p> 这类包一层的。
+      // 零权重 :where() + 源序在后 → 同权重下后者胜，行内态压过上面的 block。
+      ':where(:is(p,h1,h2,h3,h4,li,td,th,blockquote,figcaption,summary,.ws-callout) img){display:inline}' +
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
@@ -745,6 +753,19 @@
       const c = cellEl; cellEl = null; // 先置空再摘属性；detached 节点的属性操作亦安全（不抛）
       if (c.hasAttribute('data-ws2-ce')) { c.removeAttribute('contenteditable'); c.removeAttribute('data-ws2-ce'); }
       c.removeAttribute('data-ws2-cell');
+    }
+    // 从 cell 编辑态上卷到「整表灰选」的**统一出口**——三条路径都到这个终态：⌘A 第二档 / Esc / 点 ⋮⋮ 开块菜单。
+    // 必须一并清掉格内那段原生蓝底：留着它，屏幕上标的是「某个格的文字被选中」、实际作用对象却是整张表；
+    // 更实的后果是 onCopy 会因为选区非折叠而绕开「灰选整块」分支走行内分支 —— 同一个肉眼一模一样的状态，
+    // ⌘C 拿到的东西随进入路径而不同（对抗审查实测三个入口各得一种结果）。
+    // 清 range 前先把焦点停进 focusCatcher：照 selectWholeDoc 的既有顺序（那里注释写明「焦点变化会把
+    // contenteditable 的旧选区折叠，顺序反了选区会被 focus 冲掉」）。
+    function clearStaleCellSelection() {
+      try { focusCatcher.focus({ preventScroll: true }); } catch (e) { /* 老内核无 options */ }
+      const s = doc.getSelection(); if (s) s.removeAllRanges();
+    }
+    function selectTableFromCell(tbl) {
+      exitCell(); selectBlock(tbl); positionGrip(tbl); clearStaleCellSelection();
     }
     // 建新数据行（KTD4）：恒落 tbody（无则建，header-only md 产物在此收敛）、恒产 TD、列数取末数据行、每格 <br>。
     // undo 序 = checkpoint→mutate→checkpoint（KTD6，todo 勾选 U20/check-3 同款先例：先冲掉 500ms 防抖窗口内的
@@ -1921,6 +1942,34 @@
       trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
     };
     const menuIcon = (k) => '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON[k] + '</svg>';
+    // 菜单作用对象标记（对拍 T6）：「删除本行/本列」实际作用于 menuCell 所在的行/列，而开菜单时
+    // selectBlock 把灰选打在**整张表**上、目标行列零标记 —— 画的对象和做的对象不是同一个，误删风险。
+    // 这两个属性是纯交互态：serialize 的剥除白名单已收编（同一份白名单也被 undo 快照复用，
+    // 见 undo.js「与存盘同一白名单」——所以 undo/redo 也不会把它们复活）。
+    function clearMenuScope() {
+      if (!doc) return;
+      doc.querySelectorAll('[data-ws2-menurow],[data-ws2-menucol],[data-ws2-menucell]').forEach((n) => {
+        n.removeAttribute('data-ws2-menurow'); n.removeAttribute('data-ws2-menucol'); n.removeAttribute('data-ws2-menucell');
+      });
+    }
+    function markMenuScope(table, cell) {
+      clearMenuScope();
+      if (!table || !cell) return;
+      const tr = cell.parentElement;
+      if (tr && tr.tagName === 'TR') tr.setAttribute('data-ws2-menurow', '');
+      // 交点格（= menuCell）单独标：菜单里的**对齐三态只作用于这一个格**，而行/列底色铺满整行整列——
+      // 不标出交点，对齐按钮就成了反向的「画的≠做的」（对抗审查抓出）。
+      // ⚠ 同时更正一处错注释：行与列两条规则给的是同一个 background 属性、同一色值，同元素上**不会叠深**，
+      // 「交点自然更深」是想当然，必须显式给它一条自己的规则。
+      cell.setAttribute('data-ws2-menucell', '');
+      const pos = cellPosOf(table, cell);
+      if (!pos) return;
+      // 列 = 各数据行的同列索引格（行列增删走的也是这个口径，两处必须同源，否则标错格比不标更坏）
+      tableRowsOf(table).forEach((r) => {
+        const c = rowCellsOf(r)[pos.col];
+        if (c) c.setAttribute('data-ws2-menucol', '');
+      });
+    }
     // U3 行级作用域菜单（plan 2026-08-03-002）：删掉一行 —— 掏空的列表按位置收敛
     //（嵌套子列表移除、宿主行保留；顶层列表 de-list 成空段落进编辑，顺带满足 toggle 体「≥1 块」铁则）。
     function removeRow(row) {
@@ -1956,6 +2005,11 @@
         menuRow = row; row.setAttribute('data-ws2-selected', '');
         positionFmtbar();
       } else selectBlock(el);
+      // 作用行/列标记（对拍 T6）：rowMode 只在 list 上成立、menuCell 只在 table 上成立，两者互斥。
+      if (menuCell && classify(el) === 'table') markMenuScope(el, menuCell); else clearMenuScope();
+      // 第三条通向「整表灰选」的路径（另两条是 ⌘A 二档与 Esc）：从格内点 ⋮⋮ 开菜单，selectBlock 已
+      // exitCell，格内那段原生蓝底同样要清——否则同一个可见状态下 ⌘C 的产出随进入路径而不同（对抗审查实测）。
+      if (menuCell) clearStaleCellSelection();
       blockMenu.innerHTML = '';
       // 菜单头标注作用对象的块类型（对拍：Notion 菜单头写 "To-do list"/"Numbered list"，我们此前没有，
       // 用户看不出这菜单管的是哪种块）。复用既有块类型词条，零新增 i18n key。
@@ -2080,8 +2134,10 @@
       blockMenu.style.top = (r.bottom + sy + 4) + 'px';
       blockMenu.style.display = 'block';
     }
+    // 单一关闭出口——所有调用点全走它，两种作用域标记都在这里统一清
     function closeBlockMenu() {
       blockMenu.style.display = 'none';
+      clearMenuScope(); // T6：表格作用行/列/交点格标记
       if (menuRow) { menuRow.removeAttribute('data-ws2-selected'); menuRow = null; } // U3：行作用域高亮随菜单退场
     }
 
@@ -2139,22 +2195,32 @@
       if (it.ai) { onAiSoon(); return; }
       const el = cur.blockEl;
       const empty = !el || (el.textContent || '').trim() === '';
+      // 容器块（callout）即使为空也不许被「空块原地替换」吞掉（对拍 C13）：用户在框内敲 / 选一个**插入**项，
+      // 产物却是承载它的容器被换掉——画的（框内插入）和做的（整框替换）不是同一个对象；且没有任何反向
+      // 入口能把产物变回 callout，只能靠 undo。改成插到框后：Schema 明令禁止 callout 里放列表/表格
+      // （childrenAreMultiPara 只允许 phrasing 或 <p>），所以「插进框内」这个 Notion 式终态我们做不了，
+      // 「插到框后」是约束下的非破坏解。
+      // ⚠ 不能用 isLeafTextBlock 当守卫：LEAF_TEXT_TAGS 含 DIV、空 callout 无块级后代 → 判 true，拦不住。
+      // ⚠ 必须共用一个判据：下面有**四个**替换站点、三种机制（图片 remove / details turnInto /
+      //   table replaceWith / generic turnInto），各写各的必漏一处；其中图片那条最狠——insertImages 会把
+      //   锚块整个 remove 掉，callout 连壳都不剩。（hr 那条是无条件 insertAfter，本就不吃这个判据。）
+      const canReplace = empty && isEditableEl(el) && !(el && el.classList && el.classList.contains('ws-callout'));
       // 图片：异步取文件后插入。空块原地替换（已拍板②）。不在此 checkpoint——picker 可取消。
-      if (it.image) { pickAndInsertImage(el, empty && isEditableEl(el)); return; }
+      if (it.image) { pickAndInsertImage(el, canReplace); return; }
       // 折叠块：空块原地变身（turnInto，与其他块类型一致——旧 insertAfter 会把空段落留在原地、details 落到
       // 下一行，光标肉眼可见往下坠一行 + 留空段落垃圾，Wendi 2026-07-24 视频）；非空块维持插到下方。光标落 summary。
-      if (it.tag === 'details') { const nx = (empty && isEditableEl(el)) ? turnInto(el, it) : insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); }
+      if (it.tag === 'details') { const nx = canReplace ? turnInto(el, it) : insertAfter(el, it); const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'start' }); }
       else if (it.tag === 'table') {
         // 表格（U1）：空锚块原地替换（对齐 details「不留空段垃圾」的心智；不走 turnInto——retag p→table 会产非法结构），
         // 非空插下方。U1 阶段落灰选整表（cell 尚不可编辑）；U2 起改「落首格进编辑」。
         let nx;
-        if (empty && isEditableEl(el)) { nx = newBlock(it); el.replaceWith(nx); if (undoMgr) undoMgr.checkpoint(); markDirty(); }
+        if (canReplace) { nx = newBlock(it); el.replaceWith(nx); if (undoMgr) undoMgr.checkpoint(); markDirty(); }
         else nx = insertAfter(el, it);
         const fc = firstCellOf(nx);
         if (fc) enterCell(fc, { mode: 'start' }); else { selectBlock(nx); positionGrip(nx); } // R3：造出即编辑、光标落首格
       }
       else if (it.tag === 'hr') { const nx = insertAfter(el, it); selectBlock(nx); }
-      else if (empty && isEditableEl(el)) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
+      else if (canReplace) { const nx = turnInto(el, it); enterEdit(nx, { mode: 'start' }); }
       else { const nx = insertAfter(el, it); enterEdit(nx, { mode: 'start' }); }
     }
 
@@ -2418,7 +2484,7 @@
           const crossOut = !!(cTbl && selX && selX.rangeCount && !selX.isCollapsed && (() => { const rr = selX.getRangeAt(0); return !cellEl.contains(rr.startContainer) || !cellEl.contains(rr.endContainer); })());
           if (!cTbl || crossOut) { exitCell(); }
           else {
-            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); exitCell(); selectBlock(cTbl); positionGrip(cTbl); return; } // Esc 上卷=灰选整表；selectedEl 永不为 TD
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); selectTableFromCell(cTbl); return; } // Esc 上卷=灰选整表；selectedEl 永不为 TD
             // ⌘A 三档（列表三档先例）：① 选本格内容 → ② 灰选整表（删除语义=整删，矩形安全）→ ③ 全篇（走非编辑态 generic）
             if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
               e.preventDefault();
@@ -2427,7 +2493,7 @@
               const cellText = norm(cellEl.textContent);
               const allInCell = sel && cellText.length > 0 && norm(sel.toString()) === cellText;
               if (cellText.length > 0 && !allInCell && sel) { const r = doc.createRange(); r.selectNodeContents(cellEl); sel.removeAllRanges(); sel.addRange(r); return; }
-              exitCell(); selectBlock(cTbl); positionGrip(cTbl); // 空格/已全选 → 第二档整表；再按一次 = generic 全篇
+              selectTableFromCell(cTbl); // 空格/已全选 → 第二档整表（统一出口，含清残留选中）；再按一次 = generic 全篇
               return;
             }
             // Enter：跳下一行同列；末行建新行（恒落 tbody 恒产 TD，KTD4）。绝不交原生（td 里 insertParagraph 塞 <div> = 非合规）。
@@ -2688,6 +2754,15 @@
           try { doc.execCommand('copy'); } catch (x) {} // 复制选区到剪贴板（剪切=复制+删）
           if (!deleteSelection()) doc.execCommand('delete'); // 跨块/无主自己删；编辑态单块内 → 原生删
           markDirty();
+          return;
+        }
+        // 灰选整块态（无选区）：⌘C 有整块分支（onCopy ①）、Backspace 有整块删，唯独 ⌘X 没有对位实现 →
+        // 屏幕上「这块被选中」，⌘C 兑现、Backspace 兑现、⌘X 静默不兑现，而且剪贴板还留着**上一次的旧内容**，
+        // 用户以为剪走了、到别处粘出来的却是无关东西（对抗审查实测）。补齐：复制整块 + 删整块。
+        if (selectedEl && !editingEl) {
+          e.preventDefault();
+          try { doc.execCommand('copy'); } catch (x) {} // 触发 onCopy 的「灰选整块」分支，产出与 ⌘C 一致
+          removeBlock(selectedEl);
           return;
         }
       }
@@ -4119,6 +4194,16 @@
   [data-ws2-dropparent]{border-radius:3px;background:rgba(26,115,232,.10);box-shadow:0 0 0 3px rgba(26,115,232,.10);}
   /* 跨块拖选的块级高亮（Wendi 2026-07-22）：整行蓝底(box-shadow 外扩到左右边距、不占布局)，罩住的块内
      隐掉原生 ::selection→只剩整行蓝(对齐 Notion「哪几行都选中」)。绝不用 padding/margin(推文字)。 */
+  /* 菜单作用对象（对拍 T6）：菜单开着时标出「删除本行/本列」到底会动哪一行、哪一列。
+     用底色而非 outline——outline 在 border-collapse 的表格上会被相邻格边框切断、看不出整行整列。
+     交点格另有一条更强的规则（见下）——同色同属性在同一元素上**不会**叠深，别指望那个。纯交互态、存盘剥除。 */
+  tr[data-ws2-menurow]>td,tr[data-ws2-menurow]>th{background:rgba(29,111,191,.10);}
+  td[data-ws2-menucol],th[data-ws2-menucol]{background:rgba(29,111,191,.10);}
+  /* 交点格 = 对齐三态的真实作用对象。必须比行/列更强，且不能指望「两条同色规则叠深」——那不会发生。
+     ⚠ 选择器必须显式带上 tr[data-ws2-menurow]> 前缀：光写 td[data-ws2-menucell] 是 (0,1,1)，
+     会被上面的 tr[data-ws2-menurow]>td (0,1,2) 压过去，交点格拿到的还是行的色（实测翻过车）。 */
+  tr[data-ws2-menurow]>td[data-ws2-menucell],tr[data-ws2-menurow]>th[data-ws2-menucell],
+  td[data-ws2-menucell],th[data-ws2-menucell]{background:rgba(29,111,191,.24);box-shadow:inset 0 0 0 2px rgba(29,111,191,.55);}
   [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
   [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
   [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}

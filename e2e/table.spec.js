@@ -358,9 +358,14 @@ test('U3: ⌘A 三档分级', async () => {
   const t2 = await frame.locator('body').evaluate(() => ({
     sel: (document.querySelector('[data-ws2-selected]') || {}).tagName || null,
     cells: document.querySelectorAll('[data-ws2-cell]').length,
+    selText: String(document.getSelection()).replace(/\s+/g, ''),
   }));
   expect(t2.sel).toBe('TABLE'); // ② 整表灰选
   expect(t2.cells).toBe(0);
+  // 第二档不许留格内文字选中（对拍 T12）：内部已声明格级退出（cells=0、selected 上卷到 TABLE），
+  // 屏上却还标着某个格的文字被选中 = 画的和做的不是同一个对象。下面第三档的断言同时兜住
+  // 「清选区没把焦点甩出 iframe、分档链没断」——两条必须一起绿才算修对。
+  expect(t2.selText).toBe('');
   await page.keyboard.press('Meta+a');
   await page.waitForTimeout(150);
   const t3 = await frame.locator('body').evaluate(() => { const s = String(document.getSelection()).replace(/\s+/g, ''); return { hasP1: s.includes('前文段落甲'), hasP2: s.includes('后文段落乙'), hasCell: s.includes('廿二格') }; });

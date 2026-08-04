@@ -1404,8 +1404,16 @@ function buildWordspacePrintHtml() {
   const root = cd.documentElement.cloneNode(true);
   root.querySelectorAll('[data-ws2-ui]').forEach((n) => n.remove());
   root.querySelectorAll('[contenteditable]').forEach((n) => n.removeAttribute('contenteditable'));
-  ['data-ws2-editing', 'data-ws2-selected', 'data-ws2-ce', 'data-ws2-drop', 'data-ws2-eid'].forEach((a) =>
-    root.querySelectorAll('[' + a + ']').forEach((n) => n.removeAttribute(a)));
+  // 交互态标记一律剥掉，但**结构标记必须留**——`WS2_MARKERS` 是「不该入盘」清单，
+  // 打印路径要的是「不该进打印的交互态」，两者语义不同，照搬全量会剥掉 data-ws2-root，
+  // 而本函数往打印 HTML 内联的 EDITOR_CSS 里 `[data-ws2-root] > p:empty{min-height:1lh}`
+  // 正是靠它给空块撑行高 → 导出的 PDF 里所有空行塌成 0 高、与编辑器所见不一致（对抗审查实测抓出，
+  // 且本函数头注释早就写明「保留 data-ws2-canvas/root」）。
+  // 以 WS2_MARKERS 为源、减去结构保留项：这样新增交互标记自动被剥（不必再记得同步两处），
+  // 结构标记也不会误伤。
+  const PRINT_KEEP = new Set(['data-ws2-root', 'data-ws2-canvas']);
+  [...WS2Serialize.WS2_MARKERS].filter((a) => !PRINT_KEEP.has(a))
+    .forEach((a) => root.querySelectorAll('[' + a + ']').forEach((n) => n.removeAttribute(a)));
   root.querySelectorAll('meta[http-equiv="Content-Security-Policy" i]').forEach((n) => n.remove());
   // 分页推挤是运行时视觉产物，绝不烤进打印 HTML：spacer 节点已随 data-ws2-ui 整删（上面那行），
   // 这里再剥内容元素上的推挤样式（li 的 paddingTop / 块级 marginTop）+ 兜底删 spacer。
