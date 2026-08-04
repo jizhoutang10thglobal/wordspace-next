@@ -14,6 +14,74 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-04 — 对拍探针两条硬教训：Notion 键盘层送不送得到，必须用正对照证；probe-* 别进 CI
+
+**来源**：Notion 粒度对拍第二批（表格/图片/callout，分支 `feat/notion-align-b2` / PR #388）与
+`feat/ux-granularity` 那条 track 的发现互相印证/互相证伪，两边都值得收进 `/align-notion` 的坑清单。
+
+### ① 「无事发生」类读数必须配正对照，否则与哑探针不可区分
+
+`feat/ux-granularity` 2026-08-04 实测：**Notion 只认它自己那套键盘层，`cdp('Input.dispatchKeyEvent')`
+发的原生键事件它完全无视**（Backspace/Delete 连按无反应），要用 ego-browser 的 `pressKey`；
+但 `Input.insertText` 有效——所以**「能插字」不能证明「能发键」**，别拿插字做连通性探针。
+
+这跟 `/align-notion` skill 现有 recipe 里写的「裸 CDP + `type:'keyDown'`」直接冲突。**我按这条回查了
+自己那批读数，结论是「两边都对，但都不完整」**：
+- 表格**格内**：Tab 有正对照（同批次中间格按 Tab，编辑框确实从 行1-A 移到 行1-B）、⌘A 的分档也有可见
+  变化 → **CDP 键在表格格内确实送达**，所以「完全无视」至少不是全局成立（可能只对块级操作成立）。
+- 但我一条 **Enter 的读数没有正对照**（「按下去什么都没发生」），与「键根本没送到」在证据上无法区分
+  → 已把该条从「差异」**降级为「无法判定」**并更新报告。
+
+**怎么 apply**：① 任何一侧的读数是「什么都没发生」时，**同一次会话里必须附一个应该成功的正对照**
+（比如先在表外段落按一次 Enter 证明这个键送得到），没有正对照就不许写成结论；
+② 别再假设某一种发键方式全局有效——**按场景各自证一次**；
+③ 相关的还有：窗口在后台时 `click([x,y])` 静默失败但**返回成功**，光标不动，于是后续按键全落在上一个
+目标上、读出一串看似合理实则错位的结论 → 凡靠点击定位的探针，**按键前必须回读「光标此刻在哪个块」并与目标核对**。
+
+### ② `probe-*.spec.js` 不该进 CI（已在 main 侧配好开关）
+
+两条 track 各自攒了 6-7 个 `probe-*.spec.js`（截图/取证工具，几乎不含断言）。它们落在 `e2e/` 且
+`playwright.config.js` 是 `testDir:'./e2e'` 无排除 → **每个 PR 的 CI 都在跑它们**：既拖时间，又在全绿里
+混进一批「跑了代码但不判定行为」的假覆盖。
+
+**已处置**（在 PR #388 里）：`playwright.config.js` 加
+`testIgnore: process.env.WS2_PROBES ? [] : /probe-.*\.spec\.js$/`。收集数 722 → 674，仍远高于
+ci.yml 的地板 400。⚠ **实测 `testIgnore` 会连显式点名的路径一起挡**（直接点名得 0 tests），
+所以必须留 `WS2_PROBES` 开关：要跑就 `WS2_PROBES=1 npx playwright test e2e/probe-xxx.spec.js`。
+两条分支合并后自动生效，不用各自再做一遍。
+
+### ③ 附带提醒：探针里画鼠标标注不能用 `setAttribute('style', ...)`
+
+app 的 CSP 是 `style-src 'self' file:`（无 `unsafe-inline`），整条 style 属性会被拦掉——元素在 DOM 里
+但**零样式**（实测几何变成 `x:1280,w:0,h:900` 的裸 flex 子项），截图上什么都看不见**还毫无报错**。
+必须走 CSSOM `el.style.setProperty()` 逐条设，并加「红圈几何不是 18×18 就抛错」的自检。
+`e2e/probe-dim-shots.spec.js` 等文件用的正是被拦的那句，**那些悬停截图大概率没有鼠标标注**——
+而 skill 铁律说「没有标注，截图就说明不了悬停类事实」，建议复查后重拍。
+
+
+## 2026-08-03 — 本地全量 e2e 门槛大幅提高：默认不跑，发版前才跑（CI 全量照旧不变）
+
+**是什么**：Colin 2026-08-03 当场叫停本地全量 e2e（「我的电脑一直在闪」）。现在这套 690+ 条、每条
+**真开一个 Electron 窗口再关掉**，一轮 17-18 分钟，全程闪屏抢焦点，人没法用电脑。**新口径：本地全量
+只在「准备发版之前」跑；日常开发（包括动共享核心）一律只跑受影响的 spec + 变异自检那一道门。**
+⚠ **CI 侧一个字没改**：每个 PR 照跑全量分片（required check 仍是 `{test, e2e-all}`，strict）——
+正因为 CI 这道全量门还在，本地跳过全量才是安全的，**别把这条读成「全量可以不跑了」**。
+这也是对 CLAUDE.md 既有纪律（2026-07-09「开发迭代只跑受影响的 spec」）的强化：其中「动到共享核心
+推 PR 前本地全跑一次兜底」的例外条款**作废**，改为交给 CI。
+
+**怎么 apply**：
+① 日常：`npx playwright test e2e/<spec>.spec.js`（十几秒）+ 变异自检；改共享核心也这样，全量交 CI，
+真有跨文件回归就多一次 CI 往返（6 分钟），比每次占用户机器 18 分钟划算得多。
+② 真要在本地跑长任务（全量 e2e、大批量脚本），**先告诉用户会发生什么**（会闪屏、要多久），
+用户正在用电脑就别跑。
+③ **进程清理是自己的责任**，且 `pkill -f <worktree 名>` **不可靠**：worktree 的 `node_modules` 常是
+软链到别的 worktree，Electron 进程命令行里写的是**被软链指向的那个路径**，按本 worktree 名 pgrep
+根本匹配不到（还会误伤正在跑的测试——本次实测把自己的测试进程杀了）。要按
+`node_modules/electron/dist/Electron.app` 这类真实路径匹配，或起进程时记 PID。起 dev 实例 / 跑测试
+后务必收尾，别留孤儿 Electron（本次 session 累计留了十几个，最早的挂了几小时）。
+
+**来源**：Colin 2026-08-03 口头拍板（UX 粒度对齐 session）；呼应 CLAUDE.md「开发时的测试纪律 — 2026-07-09」。
+
 ## 2026-08-03 — 表格块编辑开工：blockedit.js/serialize.js 热点预警
 
 **是什么**：表格块编辑 feature（Schema 1 Table v1）开工，worktree wordspace-next-table / 分支 feat/table-block-editing。接下来几天会重改 `src/editor/blockedit.js` 全线（classify/onClick/onKeyDown/deleteSelection/refreshRangeSel/execText/onPaste）+ `src/editor/serialize.js`（WS2_MARKERS 新增 cell 编辑标记）+ 新增 `e2e/table.spec.js` 与 `test/blockedit-table.test.js`。
