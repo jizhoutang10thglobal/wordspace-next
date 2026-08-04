@@ -118,7 +118,10 @@ test('新 baseline 入盘后磁盘仍合规', async () => {
   await page.keyboard.type('改');
   await page.waitForTimeout(1800); // 过自动保存窗口（1.2s）
   const html = await page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
-  expect(html).toContain('display:block');
+  // ⚠ 别用 toContain('display:block') 判——`:where(figure>img){display:block}` 本来就在 baseline 里，
+  // 那样写在「我这条规则被整条撤掉」时照样绿 = 弱断言（变异自检当场抓到过）。断言两条新规则的完整文本。
+  expect(html).toContain(':where(img){max-width:100%;height:auto;display:block}');
+  expect(html).toContain('summary,.ws-callout) img){display:inline}');
   const dom = new JSDOM(html);
   expect(registry.classify(dom.window.document).conform).toBe(true);
 });
