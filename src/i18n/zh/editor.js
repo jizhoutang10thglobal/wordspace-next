@@ -27,6 +27,7 @@ module.exports = {
 
   // 拖拽手柄 / 提示
   gripTip: '拖动重排 · 点击打开菜单',
+  plusTip: '点击在下方插入 · Option 点击插到上方',
   dragHandleTip: '拖动调整顺序，点击打开菜单',
   blockNotEditable: '此块暂不支持编辑',
 
@@ -117,6 +118,8 @@ module.exports = {
 
   // 编辑器内占位文案（空块 / 图片说明）
   emptyBlockPlaceholder: '输入正文,或按 / 插入',
+  emptyTogglePlaceholder: '空折叠块——点这里或把块拖进来',
+  pickerFilterPlaceholder: '输入以筛选…', // E5：从 gutter「+」唤起块类型选择器时，该空块的占位（Notion 同款）
   figcaptionPlaceholder: '图片说明',
 
   // 分页页码 chip

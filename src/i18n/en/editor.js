@@ -27,6 +27,7 @@ module.exports = {
 
   // Drag handle / hints
   gripTip: 'Drag to reorder · click to open menu',
+  plusTip: 'Click to add below · Option-click to add above',
   dragHandleTip: 'Drag to reorder, click to open menu',
   blockNotEditable: 'This block can’t be edited yet',
 
@@ -117,6 +118,8 @@ module.exports = {
 
   // In-editor placeholder text (empty block / image caption)
   emptyBlockPlaceholder: 'Type text, or press / for commands',
+  emptyTogglePlaceholder: 'Empty toggle. Click or drop blocks inside.',
+  pickerFilterPlaceholder: 'Type to filter…', // E5: placeholder while the block-type picker is open from the gutter “+”
   figcaptionPlaceholder: 'Image caption',
 
   // Pagination page-number chip
