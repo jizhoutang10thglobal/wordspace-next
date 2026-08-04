@@ -360,7 +360,15 @@
       ':where(pre code){background:none;padding:0;font-size:.875em}' +
       ':where(hr){border:none;border-top:1px solid #e3e2de;margin:2em 0}' +
       ':where(a){color:#1a73e8;text-decoration-color:rgba(26,115,232,.35);text-underline-offset:2px}' +
-      ':where(img){max-width:100%;height:auto}' +
+      // 顶层图片各占一行（对拍 I8）：img 默认 inline，多张顶层图会并排挤成一行，与「图片是顶层块」
+      // 的编辑器模型自相矛盾（选中/拖拽/方向键都按 1 个块处理）。直接后果实测过：第二张图的 ⋮⋮ 手柄
+      // 被画在第一张图的图面上，用户无法凭视觉分清手柄属于哪块。
+      ':where(img){max-width:100%;height:auto;display:block}' +
+      // ⚠ 豁免行内图片：IMG 同时是合法 phrasing（schema-model.js 的 PHRASING_TAGS 含 IMG），
+      // <p>文字 <img> 文字</p> 是合规内容。不豁免的话它会被打断成三行 = 静默的保真损伤
+      // （比并排挤成一行更糟，因为坏了没人看得见）。用后代组合子以覆盖 <p><a><img></a></p> 这类包一层的。
+      // 零权重 :where() + 源序在后 → 同权重下后者胜，行内态压过上面的 block。
+      ':where(:is(p,h1,h2,h3,h4,li,td,th,blockquote,figcaption,summary,.ws-callout) img){display:inline}' +
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
