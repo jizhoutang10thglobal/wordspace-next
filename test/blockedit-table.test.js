@@ -93,12 +93,12 @@ test('cellPosOf/cellAt: 行列坐标（thead 是第 0 行；spacer 行不计）'
   assert.equal(be.cellAt(t, 3, 0), null);
 });
 
-test('cellNavTarget: next 行内先行、行末折行、末格要求建行（落首列）', () => {
+test('cellNavTarget: next 行内先行、行末折行、末格停留（T11）', () => {
   const t = el(NAV_TABLE);
   const at = (r, c) => be.cellAt(t, r, c);
   assert.equal(be.cellNavTarget(t, at(0, 0), 'next').cell, at(0, 1));
   assert.equal(be.cellNavTarget(t, at(0, 2), 'next').cell, at(1, 0)); // 行末折到下一行首
-  assert.deepEqual(be.cellNavTarget(t, at(2, 2), 'next'), { newRow: true, col: 0 }); // 末格 Tab → 建行
+  assert.deepEqual(be.cellNavTarget(t, at(2, 2), 'next'), { stay: true }); // 【断言迁移·T11 Notion 实测】末格 Tab 不建行、停留
 });
 
 test('cellNavTarget: prev 行内退行、行首退上一行末、首格要求跳出', () => {
@@ -129,11 +129,11 @@ test('cellNavTarget: 含 spacer 行的分页表——导航目标不落 spacer�
   assert.equal(down.cell.textContent, '乙'); // 跳过 spacer 直达下一数据行
 });
 
-test('cellNavTarget: header-only 表（GFM 合法产物）——enter/next 都要求建行', () => {
+test('cellNavTarget: header-only 表（GFM 合法产物）——enter 建行、next 停留（T11）', () => {
   const t = el('<table><thead><tr><th>仅表头一</th><th>仅表头二</th></tr></thead></table>');
   const th2 = be.cellAt(t, 0, 1);
-  assert.deepEqual(be.cellNavTarget(t, th2, 'enter'), { newRow: true, col: 1 });
-  assert.deepEqual(be.cellNavTarget(t, th2, 'next'), { newRow: true, col: 0 });
+  assert.deepEqual(be.cellNavTarget(t, th2, 'enter'), { newRow: true, col: 1 }); // Enter 建行未对拍、语义保留
+  assert.deepEqual(be.cellNavTarget(t, th2, 'next'), { stay: true }); // 【断言迁移·T11】Tab 不建行
 });
 
 test('cellSpanOf: 行主序线性跨度（含两端、自动纠序、端点找不到返 null）', () => {
@@ -200,11 +200,12 @@ test('tableEditOp row-del：光标行删除、落点收敛同列；删最后数�
   assert.equal(t.querySelectorAll('tbody tr').length, 1);
   assert.equal(be.cellPosOf(t, target).col, 2);
   assert.ok(rectOk(t));
-  // 再删最后一个数据行 → 表头在 → 自动补一空行（tbody ≥1 文法）
+  // 【断言迁移·T9 Notion 实测】再删最后一个数据行 → **不补空行**，表带着表头继续立着
+  //（旧「自动补一空行」收敛已废除；「表恒 ≥1 行 ≥1 列」由菜单端守卫保证、此处只验不补）
   const target2 = be.tableEditOp(docFor(t), t, be.cellAt(t, 1, 0), 'row-del');
-  assert.equal(t.querySelectorAll('tbody tr').length, 1);
-  assert.equal((target2.textContent || '').trim(), '');
-  assert.ok(target2.querySelector('br')); // 空格占位 canonical
+  assert.equal(t.querySelectorAll('tbody tr').length, 0); // 数据行删光
+  assert.equal(t.querySelectorAll('thead tr').length, 1); // 表头保留
+  assert.ok(target2, '落点仍返回（收敛到表头行格）');
   assert.ok(rectOk(t));
 });
 
@@ -267,3 +268,27 @@ test('变异探针（种子矩形有牙）：削掉一格的表格必被校验�
   assert.equal(res.conform, false);
   assert.ok(res.violations.some((v) => v.rule === 'table-ragged'));
 });
+// ===== ADV-5（对抗审查）：deletedTable 升级路径的防线单测——T9 后 UI 不可达（菜单端不给删除项），
+// 但它是守卫失效时的唯一兜底：未来任何新调用点带 row-del/col-del 进来都不许产出退化表，只许整表删除信号。
+test('tableEditOp 防线：删到最后一行 row-del 返回 deletedTable 信号（不产退化壳）', () => {
+  const t = el('<table class="ws-table"><tbody><tr><td>唯一行甲</td><td>唯一行乙</td></tr></tbody></table>');
+  const res = be.tableEditOp(docFor(t), t, be.cellAt(t, 0, 0), 'row-del');
+  assert.ok(res && res.deletedTable, '最后一行 row-del 必须返回 deletedTable 升级信号');
+});
+test('tableEditOp 防线：最后一列 col-del 返回 deletedTable 信号', () => {
+  const t = el('<table class="ws-table"><tbody><tr><td>一</td></tr><tr><td>二</td></tr></tbody></table>');
+  const res = be.tableEditOp(docFor(t), t, be.cellAt(t, 0, 0), 'col-del');
+  assert.ok(res && res.deletedTable, '最后一列 col-del 必须返回 deletedTable 升级信号');
+});
+test('tableEditOp row-dup/col-dup：克隆剥编辑态标记与 contenteditable（ADV-2 幽灵蓝框）', () => {
+  const t = opTable(); const d = docFor(t);
+  const c = be.cellAt(t, 1, 1);
+  c.setAttribute('contenteditable', 'true'); c.setAttribute('data-ws2-cell', ''); c.setAttribute('data-ws2-ce', '');
+  be.tableEditOp(d, t, be.cellAt(t, 1, 0), 'row-dup');
+  assert.equal(t.querySelectorAll('[data-ws2-cell]').length, 1, '副本不带 data-ws2-cell（只剩原格自己）');
+  assert.equal(t.querySelectorAll('[contenteditable]').length, 1, '副本不带 contenteditable');
+  be.tableEditOp(d, t, be.cellAt(t, 1, 1), 'col-dup');
+  assert.equal(t.querySelectorAll('[data-ws2-cell]').length, 1, 'col-dup 同款清洗');
+  assert.ok(rectOk(t), '两次 dup 后仍矩形');
+});
+

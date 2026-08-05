@@ -13,6 +13,8 @@
   // 内容模型适配纯函数（schema-model）：闭合的单一来源——叶子判定 / 可否合并 / 列表拍平。
   const SM = (typeof WS2SchemaModel !== 'undefined') ? WS2SchemaModel
     : (typeof require !== 'undefined' ? require('../lib/schema-model.js') : null);
+  const SER = (typeof WS2Serialize !== 'undefined') ? WS2Serialize
+    : (typeof require !== 'undefined' ? require('./serialize.js') : null);
   // 覆盖层（⋮⋮手柄/块菜单/斜杠菜单/格式气泡）的 data-ws2-ui 值用这个 sentinel——serialize.cleanRoot
   // 按它精确删，用户自带 data-ws2-ui="任意值" 不受影响（F1）。单一来源 = serialize.OVERLAY_VAL。
   const WS2_OVERLAY = (((typeof WS2Serialize !== 'undefined') ? WS2Serialize
@@ -201,9 +203,21 @@
       const nr = tableRowsOf(table)[row];
       return nr ? (rowCellsOf(nr)[at] || null) : null;
     }
+    // dup 克隆清洗（对抗审查 ADV-2 实测）：cloneNode(true) 会把编辑态属性（contenteditable /
+    // data-ws2-cell / data-ws2-ce…）原样拷进副本——正在编辑的格被复制后屏幕上出现**两个**蓝色编辑框，
+    // 其中一个不在任何跟踪状态里（幽灵，要等 undo/reset 才被清）。剥除清单复用 serialize 的
+    // WS2_MARKERS 单一真相源（两份清单必然漂移的教训）。
+    const scrubClone = (root) => {
+      root.removeAttribute('id'); root.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id')); // 防重复锚点
+      const all = [root, ...root.querySelectorAll('*')];
+      for (const n of all) {
+        n.removeAttribute('contenteditable');
+        if (SER && SER.WS2_MARKERS) { for (const a of [...n.attributes]) if (SER.WS2_MARKERS.has(a.name)) n.removeAttribute(a.name); }
+      }
+      return root;
+    };
     if (op === 'row-dup') {
-      const clone = curRow.cloneNode(true);
-      clone.removeAttribute('id'); clone.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id')); // 防重复锚点
+      const clone = scrubClone(curRow.cloneNode(true));
       if (inThead) {
         // 表头行复制落 tbody 首（thead ≤1 硬约束），th → td（保内容与对齐 class）
         [...clone.children].forEach((c) => {
@@ -224,8 +238,7 @@
     if (op === 'col-dup') {
       for (const r of rows) {
         const src = rowCellsOf(r)[col]; if (!src) continue;
-        const clone = src.cloneNode(true);
-        clone.removeAttribute('id'); clone.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+        const clone = scrubClone(src.cloneNode(true)); // ADV-2 同款清洗
         src.after(clone);
       }
       const nr = tableRowsOf(table)[row];
@@ -2419,8 +2432,14 @@
     function openAxisMenu(axis) {
       if (!hoverTable || (axis === 'row' && !hoverTr) || (axis === 'col' && hoverColIdx < 0)) return;
       const tbl = hoverTable, tr = hoverTr, ci = hoverColIdx;
+      // ADV-3（对抗审查实测）：rect 必须在 closeBlockMenu **之前**快照——切轴/双击手柄时关旧菜单会
+      // hideAxisHandles，display:none 的手柄 rect 全零，菜单会跳到文档左上角。
+      const anchorRect = (axis === 'row' ? rowHandle : colHandle).getBoundingClientRect();
       closeBlockMenu();
-      exitEdit(); // 菜单操作以结构为准；cell 编辑态先收（防僵尸编辑态）
+      // ADV-1（对抗审查实测）：cell 编辑态**不设 editingEl**（设计如此），exitEdit() 对它是空转——
+      // 此前菜单开着时格还挂着 contenteditable，Esc 先被 cell 分支截走（selectTableFromCell 不关菜单），
+      // 僵尸菜单下再按 Backspace 会把整表删掉、菜单指着 detached 表。exitCell 才是真正的收口。
+      exitEdit(); exitCell();
       blockMenu.innerHTML = '';
       menuAxis = axis === 'row' ? { axis, tr } : { axis, colIdx: ci };
       // 作用范围可见（T6 通道）：行 → 整行标；列 → 各行同列格标
@@ -2461,7 +2480,7 @@
         const nCols = rowCellsOf(tableRowsOf(tbl)[0] || tr).length;
         if (nCols > 1) item('tableDelCol', 'col-del', true); // T9：最后一列不给删
       }
-      const hr = (axis === 'row' ? rowHandle : colHandle).getBoundingClientRect();
+      const hr = anchorRect;
       const { sx, sy } = vp();
       blockMenu.style.left = (hr.left + sx) + 'px';
       blockMenu.style.top = (hr.bottom + sy + 4) + 'px';
@@ -2706,8 +2725,10 @@
       // 作用对象，B/C 单元逐步下沉到行——进 main 前必须整体完成。
       const row = (el && classify(el) === 'list') ? rowOf(e.target, el, e.clientY)
         : (el && isMultiParaContainer(el) && !isLeafTextBlock(el)) ? paraOf(el, e.clientY) : null; // C1：容器段手柄（首段=容器手柄域→null）
-      // T1：悬停表格 → 行/列手柄跟随（菜单开着时冻结）；离开表格收起
-      if (!menuAxis) { if (el && classify(el) === 'table') positionAxisHandles(el, e.clientX, e.clientY); else hideAxisHandles(); }
+      // T1：悬停表格 → 行/列手柄跟随（菜单开着时冻结）。收起的判据照块手柄的既有裁决（ADV-4，
+      // 「手柄躲鼠标」的同款教训）：el=null（表缘与手柄之间的 8px 间隙 / 块外空白）**不收**——
+      // 否则慢速滑向手柄的鼠标途经间隙时手柄先一步消失；只在悬停到**另一个非表格块**上才收。
+      if (!menuAxis) { if (el && classify(el) === 'table') positionAxisHandles(el, e.clientX, e.clientY); else if (el) hideAxisHandles(); }
       if (el && (el !== hoverEl || row !== hoverRow)) { hoverEl = el; hoverRow = row; positionGrip(row || el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
       // 移到块外空白/gutter 间隙：不立即隐藏（停在最后悬停块、保证可点）；隐藏交给进编辑/离开文档。
     }
@@ -2829,7 +2850,7 @@
           const crossOut = !!(cTbl && selX && selX.rangeCount && !selX.isCollapsed && (() => { const rr = selX.getRangeAt(0); return !cellEl.contains(rr.startContainer) || !cellEl.contains(rr.endContainer); })());
           if (!cTbl || crossOut) { exitCell(); }
           else {
-            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); selectTableFromCell(cTbl); return; } // Esc 上卷=灰选整表；selectedEl 永不为 TD
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (menuAxis) closeBlockMenu(); selectTableFromCell(cTbl); return; } // Esc 上卷=灰选整表（轴菜单开着先关——纵深，ADV-1）；selectedEl 永不为 TD
             // ⌘A 三档（列表三档先例）：① 选本格内容 → ② 灰选整表（删除语义=整删，矩形安全）→ ③ 全篇（走非编辑态 generic）
             if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
               e.preventDefault();
