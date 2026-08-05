@@ -17,6 +17,7 @@ Select several rows and the next thing you do now lands on every one of them.
 
 - **Colour / Highlight**: changing text colour or highlight across several rows or paragraphs now applies to all of them (previously nothing happened)
 - **Turn into**: turning several rows into text or a heading now gives one block per row instead of merging them into one
+- **Turn into**: a selection spanning several paragraphs can be converted in one go, and turning it into a list yields a single list (clicking used to do nothing)
 - **Lists**: Esc inside a list now selects the current row first; press it again for the whole list (it used to grab the whole list at once)
 
 ## v0.12.1 — 2026-08-05
