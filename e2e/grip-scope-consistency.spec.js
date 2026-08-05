@@ -357,7 +357,7 @@ test('E-2 三档阶梯：① 当前行 → ② 整张列表 → ③ 取消', asy
   expect(await selectedIds(), '③ 取消').toEqual([]);
 });
 
-test('E-3 行灰选后 Delete：只删这一行，且产物仍合规', async () => {
+test('E-3 行灰选后 Delete：只删这一行（周边还有别的块）', async () => {
   await launch();
   await openDoc('<p id="pre">前</p><ul id="L"><li id="r1">一</li><li id="r2">二</li></ul><p id="post">后</p>');
   await frame.locator('#r2').click();
@@ -369,9 +369,50 @@ test('E-3 行灰选后 Delete：只删这一行，且产物仍合规', async () 
   await page.waitForTimeout(350);
   expect(await liTexts(), '只少这一行').toEqual(['一']);
   expect(await bodyOrder()).toEqual(['P#pre', 'UL#L', 'P#post']);
-  // ⚠ 这条不是凑数：removeBlock 只认顶层块，拿它删 <li> 会在「文档只剩这一个块」时把 li 原地
-  // retag 成 <p>，产出 <ul><p></p></ul> —— 非合规、重开整篇降级。所以行灰选必须走 removeRow。
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// ⚠ E-3a / E-3b 是被变异自检逼出来的：E-3 那个 fixture 有三个顶层块，removeBlock 在这种情况下
+// 恰好也只删掉那个 <li>，两条路径产出一样 —— 把行删除改回 removeBlock，E-3 照样绿（哑门）。
+// removeBlock 的危险只在下面这两种形态暴露，缺一条这个修复就没有门。
+test('E-3a 文档只剩这一个列表时删行：不许把 <li> 原地改造成 <p>（会产 <ul><p></p></ul>）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="r1">一</li><li id="r2">二</li></ul>');
+  await frame.locator('#r2').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['LI#r2']);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(350);
+  const shape = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const ul = d.querySelector('#L');
+    return { 列表还在: !!ul, 列表直接子: ul ? [...ul.children].map((e) => e.tagName) : null };
+  });
+  expect(shape.列表直接子, '<ul> 底下只许有 <li>').toEqual(['LI']);
+  // removeBlock 走「作用域只剩一块」分支会 retag 成 <p> 塞在 <ul> 里 —— 非合规、重开整篇降级
   expect(await conformOf(await serialize()), '产物必须合规').toBe(true);
+});
+
+test('E-3b 删掉最后一行：空列表换成空段落，不留一个空 <ul>', async () => {
+  await launch();
+  await openDoc('<p id="pre">前</p><ul id="L"><li id="r1">唯一一行</li></ul><p id="post">后</p>');
+  await frame.locator('#r1').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['LI#r1']);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(400);
+  const shape = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { 块: [...d.body.children].filter((e) => !e.hasAttribute('data-ws2-ui')).map((e) => e.tagName),
+             空列表残留: d.querySelectorAll('ul:not(:has(li))').length };
+  });
+  expect(shape.块, '掏空的列表该换成空段落').toEqual(['P', 'P', 'P']);
+  expect(shape.空列表残留, '不许留空 <ul>').toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
 });
 
 test('E-4 负向：非列表块不受影响，Esc 仍是两档', async () => {
