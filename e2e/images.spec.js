@@ -156,7 +156,7 @@ test('加说明：figure/figcaption canonical + 磁盘 conform；说明里退格
   await frame.locator('img').click();
   await expect(frame.locator('img[data-ws2-selected]')).toBeVisible(); // U3-B1：等选中标记,替死等 120ms
   await frame.locator('.ws-grip').click().catch(() => {});
-  await frame.locator('.ws-blockmenu-item', { hasText: '加说明' }).click();
+  await frame.locator('.ws-blockmenu-item', { hasText: '说明' }).click(); // 【断言迁移·I7】「加说明」改常驻开关「说明」（词条随 Notion 语义换）
   await expect(frame.locator('figcaption')).toBeVisible(); // U3-B1：等 figcaption 出现,替死等 150ms
   // 说明里输入 + 退格：绝不能删掉整张图（ui-demo 踩过）
   await page.keyboard.type('海报配图xx');
