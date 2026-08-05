@@ -5,6 +5,22 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.12.1 — 2026-08-05
+
+A handful of "nothing happened" and "that's not what I was pointing at" moments in the editor.
+
+### Improved
+
+- **Toggles**: pressing Enter at the end of a collapsed toggle's title now creates a sibling toggle below it and leaves the original collapsed (it used to expand the toggle and insert the new line inside it)
+- **Images**: dragging an image in now shows the drop line next to existing images too
+- **Images**: an image can be dropped at the very top of a document, above the title — previously that position was unreachable
+
+### Fixed
+
+- **Lists**: with a whole list selected, delete and drag now act on the whole list — no more "the highlight covers everything but only one row moves", and no more splitting a list in two
+- **Callouts**: pressing Backspace on the first line of a callout that follows a list no longer does nothing at all
+- **Editing**: merging across paragraphs no longer inserts a space you never typed (most visible when opening HTML written by another tool or an AI)
+
 ## v0.12.0 — 2026-08-04
 
 Row-level list and to-do interactions, matched to Notion.
