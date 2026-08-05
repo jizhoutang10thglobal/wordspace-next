@@ -276,11 +276,19 @@ export async function assertImagesOnDisk(
       let ok = abs.startsWith(root + path.sep);
       if (ok) {
         try {
-          const st = await stat(abs);
-          if (!st.isFile()) ok = false;
-          else size = intrinsicSize(await readFile(abs));
+          ok = (await stat(abs)).isFile();
         } catch {
           ok = false;
+        }
+      }
+      // 尺寸单独一趟、失败不影响判定：它只是优化项，没资格挂构建。也别图省事跟上面的
+      // stat 合并——合并后「目录」这条会靠 readFile 的 EISDIR 顺带兜住，isFile 就成了
+      // 没人盯着的死代码，哪天顺序一动这个洞就悄悄回来（变异自检当场抓到过）。
+      if (ok) {
+        try {
+          size = intrinsicSize(await readFile(abs));
+        } catch {
+          size = null;
         }
       }
       dims.set(img.src, size);
