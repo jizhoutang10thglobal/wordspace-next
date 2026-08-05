@@ -102,6 +102,7 @@ module.exports = {
   turnToQuote: '转为引用',
   turnToCallout: '转为提示',
   addCaption: '加说明',
+  caption: '说明',
   insertBelow: '在下方插入',
   noMatch: '无匹配',
 
