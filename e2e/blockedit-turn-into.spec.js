@@ -265,3 +265,95 @@ test('Step2 对抗审查 LOW：选中行「转为」它已是的类型（todo→
   expect(await frame.locator('ul.ws-todo > li').count(), '三项都还在').toBe(3);
   expect(await conformOf10(await serialize10())).toBe(true);
 });
+
+// ── 多行「转为」（Wendi 2026-08-05 那批调研扫到的）────────────────────────────────────
+// 病灶：选中多行点「转为正文」，四行被**糊成一个段落**（实测「第1条第2条第3条第4条」），行边界
+// 彻底丢失。根因：turnIntoLines 把选中段整体交给 turnInto，flattenListToPhrasing 一把拍平。
+// Notion 是 4 行变 4 段。修法 = 每行套一个单行临时列表再走既有的单行转换（最大化复用、语义同源）。
+const selAcross = (a, b) => page.evaluate((q) => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const A = d.querySelector(q.a), B = d.querySelector(q.b);
+  const r = d.createRange(); r.setStart(A.firstChild || A, 0);
+  const last = B.lastChild || B;
+  r.setEnd(last, last.nodeType === 3 ? last.nodeValue.length : last.childNodes.length);
+  const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  d.dispatchEvent(new Event('selectionchange'));
+}, { a, b });
+// 气泡「转为」菜单项常在视口外 → 用事件派发驱动（点击会被可见性挡）
+const turnTo = (label) => page.evaluate((lb) => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const fb = d.querySelector('.ws-fmtbar'); if (!fb) return 'no-fmtbar';
+  const t = [...fb.querySelectorAll('button')].find((x) => /转为/.test(x.textContent || ''));
+  if (!t) return 'no-turn';
+  t.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const menu = fb.querySelector('.ws-fmtbar-menu'); if (!menu) return 'no-menu';
+  menu.style.display = 'block';
+  const it = [...menu.querySelectorAll('.ws-fmtbar-menu-item')].find((x) => (x.textContent || '').trim() === lb);
+  if (!it) return 'no-item';
+  it.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  return 'ok';
+}, label);
+const blocksOf = () => page.evaluate(() => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  return [...d.body.children].filter((e) => !e.hasAttribute('data-ws2-ui'))
+    .map((e) => e.tagName + (e.id ? '#' + e.id : '') + '「' + (e.textContent || '').replace(/\s+/g, '') + '」');
+});
+const conformNow = () => page.evaluate(() => WS2SchemaRegistry.classify(
+  new DOMParser().parseFromString(WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument), 'text/html')).conform);
+const FIVE = '<p id="pre">前段</p><ul id="L" class="ws-todo">'
+  + [1, 2, 3, 4, 5].map((i) => `<li id="r${i}">第${i}条</li>`).join('') + '</ul><p id="post">后段</p>';
+
+test('MT-1 选 4 行转正文 → 4 个段落，各自保住自己的 id（修前：糊成一段）', async () => {
+  await launch();
+  await openDoc(FIVE);
+  await frame.locator('#r1').click(); await page.waitForTimeout(200);
+  await selAcross('#r1', '#r4'); await page.waitForTimeout(300);
+  expect(await turnTo('正文')).toBe('ok');
+  await page.waitForTimeout(600);
+  expect(await blocksOf()).toEqual([
+    'P#pre「前段」', 'P#r1「第1条」', 'P#r2「第2条」', 'P#r3「第3条」', 'P#r4「第4条」',
+    'UL「第5条」', 'P#post「后段」',
+  ]);
+  expect(await conformNow()).toBe(true);
+});
+
+test('MT-2 选 3 行转标题 → 3 个 H2（不止正文）', async () => {
+  await launch();
+  await openDoc(FIVE);
+  await frame.locator('#r2').click(); await page.waitForTimeout(200);
+  await selAcross('#r2', '#r4'); await page.waitForTimeout(300);
+  expect(await turnTo('标题 2')).toBe('ok');
+  await page.waitForTimeout(600);
+  expect(await blocksOf()).toEqual([
+    'P#pre「前段」', 'UL「第1条」', 'H2#r2「第2条」', 'H2#r3「第3条」', 'H2#r4「第4条」',
+    'UL「第5条」', 'P#post「后段」',
+  ]);
+  expect(await conformNow()).toBe(true);
+});
+
+test('MT-3 多行带子列表：子树跟着**各自那一行**走，不全堆到最后一个', async () => {
+  await launch();
+  await openDoc('<p id="pre">前</p><ul id="L"><li id="r1">一<ul><li>子甲</li></ul></li><li id="r2">二<ul><li>子乙</li></ul></li><li id="r3">三</li></ul><p id="post">后</p>');
+  await frame.locator('#r1').click(); await page.waitForTimeout(200);
+  await selAcross('#r1', '#r2'); await page.waitForTimeout(300);
+  expect(await turnTo('正文')).toBe('ok');
+  await page.waitForTimeout(600);
+  // 修前会把两棵子树都接到唯一那个产物之后 → 子甲/子乙 挤在一起、跟不上各自的行
+  expect(await blocksOf()).toEqual([
+    'P#pre「前」', 'P#r1「一」', 'UL「子甲」', 'P#r2「二」', 'UL「子乙」', 'UL「三」', 'P#post「后」',
+  ]);
+  expect(await conformNow()).toBe(true);
+});
+
+test('MT-4 负向：单行路径一字未变（E1/E2 那批门压在上面）', async () => {
+  await launch();
+  await openDoc(FIVE);
+  await frame.locator('#r2').click(); await page.waitForTimeout(200);
+  await selAcross('#r2', '#r2'); await page.waitForTimeout(300);
+  expect(await turnTo('正文')).toBe('ok');
+  await page.waitForTimeout(600);
+  expect(await blocksOf()).toEqual([
+    'P#pre「前段」', 'UL「第1条」', 'P#L「第2条」', 'UL「第3条第4条第5条」', 'P#post「后段」',
+  ]);
+  expect(await conformNow()).toBe(true);
+});
