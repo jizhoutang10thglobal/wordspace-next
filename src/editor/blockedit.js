@@ -2372,9 +2372,14 @@
         blockMenu.appendChild(aligns);
         const sepT2 = doc.createElement('div'); sepT2.setAttribute('data-ws2-ui', WS2_OVERLAY); sepT2.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sepT2);
       }
-      // 图片块（无说明）：加说明 → figure/figcaption + 进说明编辑（doc-images U5）
-      if (classify(el) === 'image' && !(el.querySelector && el.querySelector('figcaption'))) {
-        add(T('editor.addCaption'), () => { closeBlockMenu(); addCaption(el); }, false, 'text');
+      // I7（Notion 实测）：「说明」是**常驻开关**、不随块状态消失——有说明的图点它聚焦既有说明行，
+      // 无说明的图点它创建并聚焦。此前「加说明」只给无说明的图（菜单项是块状态的函数，Notion 不是）。
+      if (classify(el) === 'image') {
+        add(T('editor.caption'), () => {
+          closeBlockMenu();
+          const cap0 = el.querySelector && el.querySelector('figcaption');
+          if (cap0) enterCaptionEdit(cap0, false); else addCaption(el);
+        }, false, 'text');
       }
       // 插入 / 复制 / 删除：行模式作用于该行（新行插同列表、复制行、删行），块模式维持既有整块语义。
       add(T('editor.insertBelow'), () => {
@@ -2813,6 +2818,17 @@
       // Enter 新建块 / Backspace 删块分支（ui-demo 踩过：说明里退格删了整张图）。
       if (captionEl) {
         if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); captionEl.blur(); }
+        // I6（Notion 实测）：说明**已经空了**再按一次 Backspace → 当场回收说明行（blur → persistCaption
+        // 降回裸 img），光标弹到上一个可编辑位置。图片本体仍然绝不会被删（inert 不变——非空说明交原生删字）。
+        else if (e.key === 'Backspace' && (captionEl.textContent || '').trim() === '') {
+          e.preventDefault(); e.stopPropagation();
+          const fig = captionEl.parentElement;
+          const scope0 = fig ? scopeRootOf(fig) : null;
+          const bs0 = scope0 ? ((scope0 === blockRoot) ? topBlocks() : blocksInScope(scope0)) : [];
+          const prev0 = bs0[bs0.indexOf(fig) - 1] || null;
+          captionEl.blur(); // persistCaption：空说明 → figure 降回裸 <img> + 选中图
+          if (prev0 && isEditableEl(prev0)) enterEdit(prev0, { mode: 'end' });
+        }
         return;
       }
       // 表格 cell 编辑态（U2 骨架，U3 赋全键盘语义）：cellEl 分支整体前置——否则 generic Tab 吞噬/
@@ -3793,6 +3809,14 @@
           if (!next && aScope !== blockRoot) next = aScope.nextElementSibling; // toggle 体末 → 外层块
           if (!next || next.hasAttribute('data-ws2-ui')) return;
           e.preventDefault();
+          // I13（Notion 实测）：图片不是键盘停靠位——裸图/无说明 figure 被 ↑↓ 直接跳过；带说明的
+          // figure 停靠在**说明文字**里（无块级灰选）。图片的选中入口只剩鼠标点选（Notion 同款）。
+          while (next && classify(next) === 'image') {
+            const cap0 = next.querySelector && next.querySelector('figcaption');
+            if (cap0) { enterCaptionEdit(cap0, false); return; }
+            next = blocks[blocks.indexOf(next) + 1];
+          }
+          if (!next || next.hasAttribute('data-ws2-ui')) return; // 图后无块 → 光标留原位（Notion：再按停在末块）
           if (isEditableEl(next)) { const nr = next.getBoundingClientRect(); enterEdit(next, { mode: 'point', x: caret.left, y: nr.top + lh * 0.5 }); }
           else { selectBlock(next); positionGrip(next); }
         } else {
@@ -3801,6 +3825,12 @@
           if (!prev && aScope !== blockRoot) prev = summaryOf(aScope); // toggle 体首 → summary
           if (!prev) return;
           e.preventDefault();
+          while (prev && classify(prev) === 'image') { // I13 对称：↑ 遇带说明图停进说明、裸图跳过
+            const cap0 = prev.querySelector && prev.querySelector('figcaption');
+            if (cap0) { enterCaptionEdit(cap0, false); return; }
+            prev = blocks[blocks.indexOf(prev) - 1];
+          }
+          if (!prev) return;
           if (prev.tagName === 'SUMMARY') enterEdit(prev, { mode: 'end' });
           else if (isEditableEl(prev)) { const pr = prev.getBoundingClientRect(); enterEdit(prev, { mode: 'point', x: caret.left, y: pr.bottom - lh * 0.5 }); }
           else { selectBlock(prev); positionGrip(prev); }
@@ -4534,12 +4564,25 @@
           return;
         }
       }
-      el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top');
+      // I12（Notion 实测）：线画上边还是下边由**指针在目标块的上半/下半区**决定——此前用源块与目标块的
+      // 文档序（向下拖恒画下缘、向上拖恒画上缘），指针位置根本不参与，「拖到上半区想插上面」做不到。
+      // OS 文件拖放（dropAnchor）早已是半区语义，两条通道判据就此合流。
+      { const hr0 = el.getBoundingClientRect(); el.setAttribute('data-ws2-drop', e.clientY < hr0.top + hr0.height / 2 ? 'top' : 'bottom'); }
     }
     // 外部拖放没有 dragend（源不在本文档）：拖出窗口又不松手时，插入线得自己收，否则留一条幽灵线。
     // 只认「离开窗口」（relatedTarget 为空）——块间移动时的 dragleave 每次都触发，清了线就会闪。
     // 具名（不是内联箭头）才能在 detach 里解绑——本文件所有 doc 级监听的既有约定。
     function onDragLeave(e) { if (!dragFrom && !e.relatedTarget) clearDrop(); }
+    function onImageDragStart(e) {
+      if (dragFrom) return; // grip 起拖优先（它先于原生 dragstart 设了 dragFrom）
+      const t = e.target;
+      if (!t || t.nodeType !== 1) return;
+      const b = blockOf(t);
+      if (!b || classify(b) !== 'image') return;
+      dragFrom = b;
+      if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} }
+    }
+    function onImageDragEnd() { dragFrom = null; clearDrop(); }
     function onDrop(e) {
       const f = draggingFile();
       if (!dragFrom && f) { e.preventDefault(); dropFileLink(e, f); if (typeof global !== 'undefined') global.__wsDragFile = null; return; } // U3-B6：插链接，用完清全局
@@ -4577,8 +4620,9 @@
           }
         }
         if (!dropped) {
-          const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING;
-          if (before) el.after(dragFrom); else el.before(dragFrom);
+          // I12：与指示线同一判据（半区）——画在哪就落在哪
+          const hr0 = el.getBoundingClientRect();
+          if (e.clientY < hr0.top + hr0.height / 2) el.before(dragFrom); else el.after(dragFrom);
         }
         if (srcScope !== blockRoot && srcScope !== scopeRootOf(dragFrom) && blocksInScope(srcScope).length === 0) srcScope.appendChild(doc.createElement('p')); // 拖出后源 toggle 空了 → 补空 p
         // 段拖出后源容器掏空 → 移除（C8 终态同款：空壳框不留）
@@ -4654,6 +4698,10 @@
     doc.addEventListener('dragover', onDragOver);
     doc.addEventListener('drop', onDrop);
     doc.addEventListener('dragleave', onDragLeave);
+    // I11（Notion 实测）：图片**本体**按住直接拖也能重排（起拖区不再只有 22px 的 ⋮⋮）。只放行 image 类
+    // （文字块的按住拖动是原生选区拖，不抢）；dragFrom 非空 = 内部拖拽，ED-A5 的外部拒收判据不受影响。
+    doc.addEventListener('dragstart', onImageDragStart);
+    doc.addEventListener('dragend', onImageDragEnd);
     doc.addEventListener('paste', onPaste);
     doc.addEventListener('copy', onCopy); // 内部富复制：⌘C 写带哨兵的干净 HTML（⌘X 走 keydown 里的 execCommand('copy') 也经此）
     doc.addEventListener('toggle', onToggle, true); // 折叠事件不冒泡→捕获相 + 委托 doc（撑过 innerHTML 重写/嵌套/后加 toggle）
@@ -4676,6 +4724,8 @@
       doc.removeEventListener('dragover', onDragOver);
       doc.removeEventListener('drop', onDrop);
       doc.removeEventListener('dragleave', onDragLeave);
+      doc.removeEventListener('dragstart', onImageDragStart);
+      doc.removeEventListener('dragend', onImageDragEnd);
       doc.removeEventListener('paste', onPaste);
       doc.removeEventListener('copy', onCopy);
       doc.removeEventListener('toggle', onToggle, true);
@@ -4835,6 +4885,8 @@
   tr[data-ws2-menurow]>td[data-ws2-menucell],tr[data-ws2-menurow]>th[data-ws2-menucell],
   td[data-ws2-menucell],th[data-ws2-menucell]{background:rgba(29,111,191,.24);box-shadow:inset 0 0 0 2px rgba(29,111,191,.55);}
   [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
+  /* I14：替换元素的像素会盖住背景蓝——降透明度让蓝底透上来，整张图呈被蓝罩态（Notion 同观感） */
+  img[data-ws2-rangesel],figure[data-ws2-rangesel] img{opacity:.72;}
   [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
   [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}
   /* U23/select-4：跨 toggle 边界删除被拦成空操作时的反馈——高亮块闪一下橙红（不推布局、不用 transform 免劫持包含块）。 */
