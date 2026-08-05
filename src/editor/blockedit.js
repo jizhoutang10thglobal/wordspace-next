@@ -1924,9 +1924,62 @@
       enterEdit(nx, { mode: 'start' });
       return true;
     }
+    // ---- 多选上色/高亮（Wendi 2026-08-05：「大批量选中 to do list，无法统一修改颜色」）----
+    // 病灶：wrapInlineStyle / wrapMark 自己按 LI/P 粒度判「跨块」并**拒绝**（clampRangeToBlock）。
+    // 那个拒绝是**保真红线、不能拆**——一个 <span> 吞掉块级元素 = 非法嵌套 + 重复 id，写回磁盘
+    // 就是损坏用户文档。所以修在调用方，照 execText 已验证过的骨架：**按块切成子段、逐块各调一次**，
+    // 每一段都落在单个块内，红线一寸没退。实测对照：同一个气泡里的加粗早就能跨多行（execText 走的
+    // 就是这套，选 4 行产 4 个 <b>），只有颜色/高亮没接上——是能力缺口，不是设计取舍。
+    // ⚠ 粒度必须是 wrapInlineStyle 自己认的那一层（LI / P / TD…），**不是** execText 用的顶层块：
+    // 同一张列表里的多行在顶层块看来只是「一个 UL」，那样切不开、照样被拒（实测颜色零变化）。
+    const NESTED_BLOCK = new Set(['UL', 'OL', 'TABLE', 'DETAILS', 'FIGURE', 'BLOCKQUOTE', 'DIV', 'P',
+      'PRE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IMG']);
+    function selectedLeafBlocks(range) {
+      const out = [], seen = new Set();
+      const w = doc.createTreeWalker(body, 4 /* SHOW_TEXT */);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (!(n.nodeValue || '').trim()) continue; // 纯空白（排版缩进）不算一段内容
+        let hit = false;
+        try { hit = range.intersectsNode(n); } catch (e) { hit = false; }
+        if (!hit) continue;
+        const b = fmt.nearestBlock(n, body);
+        if (b && !seen.has(b)) { seen.add(b); out.push(b); }
+      }
+      return out;
+    }
+    // 对选区覆盖到的每个叶子块各跑一次 fn（调用前已把选区设成「该块内的那一段」）。
+    // 返回 true = 至少作用了一段。单块时原样交回既有实现（它自带「幽灵边界夹回起块」那套）。
+    function eachLeafBlockRange(fn) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+      const full = sel.getRangeAt(0);
+      // 作用域感知（同 execText）：跨 summary/正文/外层的选区一律不碰，防跨界 span。
+      if (scopeRootOf(full.startContainer) !== scopeRootOf(full.endContainer)) return false;
+      const blocks = selectedLeafBlocks(full);
+      if (blocks.length <= 1) return fn();
+      const sC = full.startContainer, sO = full.startOffset, eC = full.endContainer, eO = full.endOffset;
+      let any = false;
+      for (const b of blocks) {
+        if (!b.isConnected) continue;
+        const r = doc.createRange();
+        try {
+          if (b.contains(sC)) r.setStart(sC, sO); else r.setStart(b, 0);
+          if (b.contains(eC)) { r.setEnd(eC, eO); } else {
+            // ⚠ 不能直接 setEnd(b, childNodes.length)：带嵌套子列表的行会把那个 <ul> 一起圈进子段，
+            // span 就吞了块级元素——正是这条红线本身。夹到第一个嵌套块级子元素之前。
+            const nested = [...b.children].find((c) => NESTED_BLOCK.has(c.tagName));
+            if (nested) r.setEndBefore(nested); else r.setEnd(b, b.childNodes.length);
+          }
+        } catch (e) { continue; }
+        if (r.collapsed) continue;
+        const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r);
+        if (fn()) any = true;
+      }
+      return any;
+    }
     function applyColor(prop, value) {
-      // 颜色/高亮：用 CSSOM span（KTD2）。wrapInlineStyle 内部已含跨块拒绝。
-      if (fmt.wrapInlineStyle(doc, prop, value)) { markDirty(); persistEditing(); }
+      // 颜色/高亮：用 CSSOM span（KTD2）。跨块由 eachLeafBlockRange 切段，wrapInlineStyle 每次只见单块。
+      if (eachLeafBlockRange(() => fmt.wrapInlineStyle(doc, prop, value))) { markDirty(); persistEditing(); }
     }
     function addLink() {
       // U3 气泡「链接」：有文件身份 + 有选区 → 文档选择菜单（wrap 模式：选中文字整体变链接、保留用户文字）；
@@ -1952,15 +2005,19 @@
       markDirty(); persistEditing();
     }
     // U6（§0 决策1）：高亮用 <mark>（行内、语义对、无 CSS 也黄底）；多色靠 mark 行内 style（校验器允许行内 style）。
-    function wrapMark(bg) {
+    // 单段高亮（作用于当前选区，要求它落在一个块内）。多块由 wrapMark 切段后逐段调用。
+    function wrapMarkOnce(bg) {
       const sel = doc.getSelection();
-      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
       const range = sel.getRangeAt(0);
-      if (!fmt.clampRangeToBlock(doc, range, body)) return; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块（否则高亮没反应）
+      if (!fmt.clampRangeToBlock(doc, range, body)) return false; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块（否则高亮没反应）
       const mk = doc.createElement('mark');
       if (bg) mk.style.background = bg;
       try { range.surroundContents(mk); } catch (e) { mk.appendChild(range.extractContents()); range.insertNode(mk); }
-      markDirty(); persistEditing();
+      return true;
+    }
+    function wrapMark(bg) {
+      if (eachLeafBlockRange(() => wrapMarkOnce(bg))) { markDirty(); persistEditing(); }
     }
     function wrapCode() {
       const sel = doc.getSelection();
