@@ -45,9 +45,11 @@ async function shot(name) {
       const r = e.getBoundingClientRect();
       if (r.width && r.height) bottom = Math.max(bottom, r.bottom);
     }
-    return { x: fb.x, y: fb.y, width: fb.width, height: Math.min(fb.height, Math.ceil(bottom) + 28) };
+    return { x: fb.x, y: fb.y, width: fb.width, height: Math.min(fb.height, Math.ceil(bottom) + 14) };
   });
-  await page.screenshot({ path: path.join(OUT, name + '.png'), clip });
+  // scale:'device'：窗口在 HiDPI 上时出 2 倍图。⚠ 实测本机 Electron 窗口 DPR=1，这里等于空操作，
+  // 出图就是 978px 宽（官网正文列宽约 690px，够用）。留着是为了换到 HiDPI 环境时自动变清楚。
+  await page.screenshot({ path: path.join(OUT, name + '.png'), clip, scale: 'device' });
 }
 const selAcross = (a, b) => page.evaluate((q) => {
   const d = document.getElementById('doc-frame').contentDocument;
@@ -68,8 +70,7 @@ test('多选统一改颜色（含带子项的行）', async () => {
   await launch();
   // 前后各留一个空行给浮起的气泡/菜单腾地方；解释文字不进图，由官网的 figcaption 承担
   await openDoc('<p id="lead">&nbsp;</p>'
-    + '<ul id="L"><li id="r2">季度目标</li><li id="r1">交付节奏<ul><li id="n1">每周一次发版</li><li id="n2">发版前真机验一遍</li></ul></li></ul>'
-    + '<p id="tail">&nbsp;</p>');
+    + '<ul id="L"><li id="r2">季度目标</li><li id="r1">交付节奏<ul><li id="n1">每周一次发版</li><li id="n2">发版前真机验一遍</li></ul></li></ul>');
   await frame.locator('#r2').click(); await page.waitForTimeout(200);
   await selAcross('#r2', '#n2'); await page.waitForTimeout(300);
   await page.evaluate(() => {
@@ -104,8 +105,7 @@ test('多段一起「转为」', async () => {
 test('列表里 Esc 只选中当前这一行', async () => {
   await launch();
   await openDoc('<p id="lead">&nbsp;</p>'
-    + '<ul id="L" class="ws-todo"><li id="r1">写发版说明</li><li id="r2">真机验一遍</li><li id="r3">打 tag</li></ul>'
-    + '<p id="tail">&nbsp;</p>');
+    + '<ul id="L" class="ws-todo"><li id="r1">写发版说明</li><li id="r2">真机验一遍</li><li id="r3">打 tag</li></ul>');
   await frame.locator('#r2').click(); await page.waitForTimeout(300);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(400);
