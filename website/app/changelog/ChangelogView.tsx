@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { ChangelogEntry } from '../lib/changelog';
+import type { ChangelogEntry, ChangelogImage } from '../lib/changelog';
 
 /**
  * 客户端切换层：两份语言的条目都在静态产物里（构建时读 CHANGELOG.md / CHANGELOG.en.md），
@@ -30,6 +30,25 @@ const UI = {
 
 const RELEASES_URL = 'https://github.com/jizhoutang10thglobal/wordspace-next/releases';
 const LANG_KEY = 'ws-changelog-lang';
+
+/**
+ * 配图：alt 同时当图注（figcaption），所以只有一份文字、不会出现「alt 和图注各写一套」的漂移。
+ * 用原生 <img>：全站不用 next/image（next.config.mjs 没有 images 配置），照 SiteHeader 的既有写法。
+ */
+function Figures({ images }: { images: ChangelogImage[] }) {
+  if (images.length === 0) return null;
+  return (
+    <>
+      {images.map((img, i) => (
+        <figure className="cl-figure" key={`${i}-${img.src}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={img.src} alt={img.alt} loading="lazy" decoding="async" />
+          <figcaption>{img.alt}</figcaption>
+        </figure>
+      ))}
+    </>
+  );
+}
 
 function GroupBadge({ title }: { title: string }) {
   const kind =
@@ -96,6 +115,7 @@ export function ChangelogView({ zh, en }: { zh: ChangelogEntry[]; en: ChangelogE
               {e.note && <span className="cl-entry__note">{e.note}</span>}
             </div>
             {e.lead && <p className="cl-entry__lead">{e.lead}</p>}
+            <Figures images={e.images} />
             {e.groups.map((g, gi) => (
               <div key={gi} className="cl-group">
                 {g.title && <GroupBadge title={g.title} />}
@@ -108,6 +128,7 @@ export function ChangelogView({ zh, en }: { zh: ChangelogEntry[]; en: ChangelogE
                     </li>
                   ))}
                 </ul>
+                <Figures images={g.images} />
               </div>
             ))}
           </section>
