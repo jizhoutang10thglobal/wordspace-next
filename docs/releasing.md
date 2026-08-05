@@ -109,13 +109,26 @@ mac 用 zip + latest-mac.yml、win 用 exe + latest.yml 给 electron-updater 做
 
 - **路径写仓库根相对的 `website/public/…`**——这样在 GitHub 上直接看 CHANGELOG.md 图也能显示；
   官网构建时会把 `website/public/` 前缀映射成站点根 `/`。写别的路径 → 构建直接挂。
-- **alt 必填**，它同时就是页面上的图注（figcaption）：只有一份文字，不会出现「alt 和图注各写一套」。
-  空 alt → 构建直接挂。
+  路径形状也被钉死：**不许出现 `//`、`./`、`../`，必须带图片扩展名**。原因是查盘那头用
+  `path.join` 会把这些归一掉、浏览器却按 URL 规则解析原串，两边不是同一个真相时就出现
+  「构建全绿 + 线上裂图」（`website/public//a.png` 在页面上是 protocol-relative URL，
+  会去请求一个外部主机）。
+- **alt 必填、且只能是纯文本**，它同时就是页面上的图注（figcaption）：只有一份文字，
+  不会出现「alt 和图注各写一套」。空 alt → 构建直接挂；alt 里写 `**粗体**` 或反引号也直接挂
+  ——图注不过行内 markdown 处理，写了就是原样吐到页面上的噪声。alt 里可以有半角 `[]`。
 - **图片必须独立成行**，不能塞进 `- ` 条目里或跟文字混在一行 → 否则构建直接挂
   （历史上这种写法会被剥成字面 `!alt` 噪声文本，全绿地坏掉，所以现在改成响亮报错）。
+  想在条目里**谈论** markdown 图片语法，用行内代码包起来（`` `![alt](path)` ``），门认这个。
+  另外，写坏了解析不出图片形状的行（比如少个括号）也会挂——不会被静默丢掉。
 - 位置决定归属：写在某个 `###` 之下 → 归该分组，渲染在该组条目下方；
   写在任何 `###` 之前 → 归该版本，渲染在导语下方。
 - **图片文件放 `website/public/changelog/`**，命名 `<版本号去点>-<短名>.png`（如 `0122-multi-color.png`）。
-  文件必须真在盘上，缺一张 → 构建直接挂（`website/app/lib/changelog.ts` 的 `assertImagesOnDisk`）。
+  文件必须真在盘上、而且真是个文件，缺一张 → 构建直接挂（`website/app/lib/changelog.ts` 的
+  `assertImagesOnDisk`；报错会写清「哪份正本 哪个版本 → 正本里的原始路径」，可直接拿去 grep）。
+  ⚠ 只有一个例外：正本读不到、退回 GitHub raw 时这道门会跳过（两边不同源，硬校会假红），
+  此时构建日志里有一行 `changelog: … 走了 GitHub raw 回退` 的 warn——看到它就知道这次没门保护。
 - 图会被收到跟正文同一列宽（约 690px），所以出图按 2 倍宽（1200–1600px）截就够，别传 4K 原图。
+  构建时会读图片文件头把固有宽高写进 `<img width/height>`，图到货时不会把下方内容顶下去。
 - **英文侧可选**：`CHANGELOG.en.md` 里同一条目要配图就复用同一个图片文件、alt 写英文；不配也行。
+- `website/public/changelog/fixture-render-check.png` 和 `-2.png` 不是真配图，是 `/changelog/fixture`
+  那道渲染门用的夹具图（两张刻意不同尺寸/不同文件名，见 `fixture-md.ts` 的注释），**别删**。

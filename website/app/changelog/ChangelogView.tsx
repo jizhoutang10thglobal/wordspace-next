@@ -34,6 +34,10 @@ const LANG_KEY = 'ws-changelog-lang';
 /**
  * 配图：alt 同时当图注（figcaption），所以只有一份文字、不会出现「alt 和图注各写一套」的漂移。
  * 用原生 <img>：全站不用 next/image（next.config.mjs 没有 images 配置），照 SiteHeader 的既有写法。
+ *
+ * width/height 是构建时从文件头读出来的固有尺寸，必须写上：浏览器靠这对属性算出 aspect-ratio
+ * 提前占位（CSS 那边是 max-width:100% + height:auto），否则图一到货就把下方所有条目顶下去
+ * ——实测首屏内一张图 = 387px 位移、CLS 0.166（Google「良好」阈值 0.1）。
  */
 function Figures({ images }: { images: ChangelogImage[] }) {
   if (images.length === 0) return null;
@@ -42,7 +46,14 @@ function Figures({ images }: { images: ChangelogImage[] }) {
       {images.map((img, i) => (
         <figure className="cl-figure" key={`${i}-${img.src}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={img.src} alt={img.alt} loading="lazy" decoding="async" />
+          <img
+            src={img.src}
+            alt={img.alt}
+            width={img.width}
+            height={img.height}
+            loading="lazy"
+            decoding="async"
+          />
           <figcaption>{img.alt}</figcaption>
         </figure>
       ))}
