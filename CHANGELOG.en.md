@@ -20,6 +20,10 @@ Select several rows and the next thing you do now lands on every one of them.
 - **Turn into**: a selection spanning several paragraphs can be converted in one go, and turning it into a list yields a single list (clicking used to do nothing)
 - **Lists**: Esc inside a list now selects the current row first; press it again for the whole list (it used to grab the whole list at once)
 
+![Several rows selected at once, all recoloured together — including the row that has sub-items](website/public/changelog/0122-multi-color.png)
+
+![Several paragraphs selected, converted in one go with Turn into](website/public/changelog/0122-multi-turn.png)
+
 ## v0.12.1 — 2026-08-05
 
 A handful of "nothing happened" and "that's not what I was pointing at" moments in the editor.
