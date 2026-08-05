@@ -1447,9 +1447,12 @@
       //   所以行级路径无论列表里有几行，都必须保子树。
       const LEAF_LIKE = { p: 1, h1: 1, h2: 1, h3: 1, h4: 1, blockquote: 1, div: 1 };
       const detached = [];
+      const detachedOf = new Map(); // 每行各自摘下的子树——多行路径要接回**各自**产物之后，不能全堆到最后一个
       if (LEAF_LIKE[item.tag]) {
         for (const li of lis) {
-          for (const c of [...li.children]) if (c.tagName === 'UL' || c.tagName === 'OL') { detached.push(c); c.remove(); }
+          const mine = [];
+          for (const c of [...li.children]) if (c.tagName === 'UL' || c.tagName === 'OL') { mine.push(c); c.remove(); }
+          if (mine.length) { detachedOf.set(li, mine); detached.push(...mine); }
         }
       }
       // 前段要继承原列表的 start（分割点**之前**的序号一个都不该变——Notion 同款，对拍 N8 实测）；
@@ -1462,6 +1465,29 @@
       };
       if (firstIdx > 0) { const b = mkUl(true); for (let k = 0; k < firstIdx; k++) b.appendChild(allLis[k]); ul.before(b); }
       if (lastIdx < allLis.length - 1) { const a = mkUl(false); for (let k = lastIdx + 1; k < allLis.length; k++) a.appendChild(allLis[k]); ul.after(a); }
+      // 多行「转为」叶子块：**每行各产一个块**（Wendi 2026-08-05 那批调研扫到的）。
+      // 修前是对「选中段」整体调一次 turnInto → flattenListToPhrasing 把选中的几行糊成**一个**段落
+      //（实测选 4 行转正文得到「待办第1条待办第2条待办第3条待办第4条」），行边界彻底丢失。
+      // Notion 是 4 行变 4 段。做法 = 每行套一个单行临时列表再走既有的单行转换，**最大化复用**：
+      // 类型/class 都从原列表继承，转换语义与单行路径完全同源。⚠ 单行路径一字不动（E1/E2 那批门压在上面）。
+      if (LEAF_LIKE[item.tag] && lis.length > 1) {
+        const outs = [];
+        for (const li of lis) {
+          const one = mkUl(false);
+          ul.before(one); // 插在选中段空壳之前 → 逐行产物天然保持原顺序
+          one.appendChild(li);
+          ckSuppressed = true;
+          let p; try { p = turnInto(one, item); } finally { ckSuppressed = false; }
+          if (li.id && p && p.nodeType === 1 && !p.id) p.id = li.id; // 每行的 id 各自迁到自己的产物上
+          if (p && p.nodeType === 1 && !p.firstChild) p.appendChild(doc.createElement('br')); // 空产物必带 <br>
+          let ref = p;
+          for (const sub of (detachedOf.get(li) || [])) { ref.after(sub); ref = sub; } // 子树跟着自己那一行走
+          outs.push(p);
+        }
+        ul.remove(); // 选中段的空壳
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return outs[outs.length - 1]; // 光标落最后一行的产物（= 选区结束的地方）
+      }
       // 子树在 DOM 外期间抑制 checkpoint（P1-1）：否则 turnInto 内部那次快照记下「子项已消失」的中间态，
       // 一次 undo 就落到它、并被自动保存写进磁盘。接回子树后再统一落一次。
       ckSuppressed = detached.length > 0;
