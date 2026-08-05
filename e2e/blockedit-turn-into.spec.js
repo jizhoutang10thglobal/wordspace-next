@@ -376,6 +376,54 @@ test('MT-6 多段转待办 → 并成**一张**列表，并吞掉紧跟其后的
   expect(await conformNow()).toBe(true);
 });
 
+// MT-7/MT-8（Colin 2026-08-05 实机抓到）：往返转换后整块留一层蓝底、点哪儿都不消。
+// 病灶：retagElement 原样复制全部属性 → 跨块拖选的 data-ws2-rangesel 跟着进了产物，
+// 而记账数组 rangeSelEls 里存的还是被摘走的旧元素，于是活着的那个谁也清不掉。
+// 两道门分守两层：MT-7 守「别造出来」，MT-8 守「造出来了也能清掉」（后者才是真正的兜底）。
+test('MT-7 转过去再转回来：不留一层没人认领的蓝底', async () => {
+  await launch();
+  await openDoc('<p id="pre">前段</p><ul id="L" class="ws-todo">'
+    + '<li id="d1">第一条</li><li id="d2">第二条</li><li id="d3">第三条</li><li id="d4">第四条</li>'
+    + '</ul><p id="post">后段</p>');
+  await frame.locator('#d1').click(); await page.waitForTimeout(200);
+  await selAcross('#d1', '#d3'); await page.waitForTimeout(300);
+  expect(await turnTo('正文')).toBe('ok');           // 三行 → 三段（单块路径）
+  await page.waitForTimeout(600);
+  await frame.locator('#d1').click(); await page.waitForTimeout(200);
+  await selAcross('#d1', '#d3'); await page.waitForTimeout(300); // 跨块拖选 → 三段各挂上蓝底标记
+  expect(await turnTo('编号列表')).toBe('ok');        // 再转回去（跨块路径 turnIntoMany）
+  await page.waitForTimeout(600);
+  const stuck = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.querySelectorAll('[data-ws2-rangesel]')].map((e) => e.tagName + (e.id ? '#' + e.id : ''));
+  });
+  expect(stuck, '转换产物身上不许挂着跨块选中的蓝底标记').toEqual([]);
+  expect(await conformNow()).toBe(true);
+});
+
+test('MT-8 兜底：不在记账数组里的蓝底标记，一次选区变化就得被清掉', async () => {
+  await launch();
+  await openDoc('<p id="a">甲</p><p id="b">乙</p>');
+  // 直接往元素上盖标记，模拟「标记是被 retag / clone 带进来的、记账数组根本不知道它」。
+  // 只清数组的实现在这里必然清不掉——这正是往返转换蓝底卡死的本体。
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    d.getElementById('a').setAttribute('data-ws2-rangesel', '');
+  });
+  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const b = d.getElementById('b');
+    const r = d.createRange(); r.setStart(b.firstChild, 0); r.collapse(true);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+    d.dispatchEvent(new Event('selectionchange'));
+  });
+  await page.waitForTimeout(300);
+  const left = await page.evaluate(() => document.getElementById('doc-frame').contentDocument
+    .querySelectorAll('[data-ws2-rangesel]').length);
+  expect(left, '清除必须扫 DOM，不能只认那个记账数组').toBe(0);
+});
+
 test('MT-4 负向：单行路径一字未变（E1/E2 那批门压在上面）', async () => {
   await launch();
   await openDoc(FIVE);
