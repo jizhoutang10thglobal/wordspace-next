@@ -119,8 +119,12 @@ test('菜单关闭后标记清零（Esc / 执行菜单项 两条路径）', asyn
   await page.waitForTimeout(260);
   expect(await markCount()).toBe(0); // 路径①：Esc
 
-  await openMenuFromCell('#c22');
-  expect(await markCount()).toBeGreaterThan(0);
+  // 【断言迁移·T5】行列操作已从块菜单迁到轴菜单——路径②改用行手柄菜单验「执行菜单项即清零」
+  await frame.locator('#c22').hover();
+  await page.waitForTimeout(250);
+  await frame.locator('.ws-rowsel').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  expect(await markCount()).toBeGreaterThan(0); // 轴菜单同样打 menurow 标记（T6 同一通道）
   await frame.locator('.ws-blockmenu-item', { hasText: '下方插行' }).click();
   await page.waitForTimeout(320);
   expect(await markCount()).toBe(0); // 路径②：执行菜单项（菜单项内部调 closeBlockMenu）
@@ -166,7 +170,11 @@ test('入盘门②：菜单开着时导出 PDF，标记不进打印 HTML', async
 // 这条比查描边强：它把「画的对象」和「做的对象」直接钉在一起——正是 T6 那个病的根。
 test('被标记的格集合 === 删除本行后真正消失的格集合', async () => {
   await launch();
-  await openMenuFromCell('#c22');
+  // 【断言迁移·T5】「删除本行」在行手柄菜单——标记与删除的同源性契约不变，入口换了
+  await frame.locator('#c22').hover();
+  await page.waitForTimeout(250);
+  await frame.locator('.ws-rowsel').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
   const markedRow = await page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
     return [...d.querySelectorAll('tr[data-ws2-menurow] > td, tr[data-ws2-menurow] > th')].map((n) => n.id);
