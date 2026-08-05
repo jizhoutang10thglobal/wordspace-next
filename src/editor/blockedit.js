@@ -3475,11 +3475,33 @@
         // U3 行作用域菜单开着时（无 editingEl / selectedEl，Esc 本会空转）→ 关菜单、清行高亮。
         // 只在这一态接管，块作用域的既有阶梯（editing→灰选→deselect，deselect 自带关菜单）一字不动。
         if (menuRow && !editingEl && !selectedEl) { closeBlockMenu(); e.preventDefault(); e.stopPropagation(); return; }
-        if (editingEl) { const el = editingEl; exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return; }
-        if (selectedEl) { deselect(); e.preventDefault(); e.stopPropagation(); return; }
+        if (editingEl) {
+          // 列表多一档（Wendi 2026-08-05 反馈；与 ⌘A 已有的三档对称）：① 当前行 ② 整个列表 ③ 取消。
+          // 病灶：列表的 editingEl 是整个 <ul> —— 那是**存储单元**。而这一行的手柄、「+」、菜单作用域、
+          // 行首退格、拖拽早就都是**行级**的了，唯独 Esc 把底层容器暴露出来：回车换行后按 Esc，
+          // 深色框把两行圈成一个（实测 UL 框高 61 = 两行 28+28，而单行框只有 28）。
+          let el = editingEl;
+          if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
+            const sel0 = doc.getSelection();
+            const an0 = sel0 && sel0.anchorNode ? (sel0.anchorNode.nodeType === 1 ? sel0.anchorNode : sel0.anchorNode.parentElement) : null;
+            const li0 = an0 && an0.closest ? an0.closest('li') : null;
+            if (li0 && editingEl.contains(li0)) el = li0; // ① 当前行
+          }
+          exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return;
+        }
+        if (selectedEl) {
+          // ② 行 → 整个列表（「Esc 灰选列表后拖 = 整列表」这条既有契约靠这一档保住，只是往后挪了一次按键）
+          const up = selectedEl.tagName === 'LI' ? blockOf(selectedEl) : null;
+          if (up && up !== selectedEl) { selectBlock(up); positionGrip(up); e.preventDefault(); e.stopPropagation(); return; }
+          deselect(); e.preventDefault(); e.stopPropagation(); return; // ③ 取消
+        }
       }
-      // 灰选中态 Delete/Backspace → 删整块
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
+      // 灰选中态 Delete/Backspace → 删整块。⚠ 灰选是**行**时必须走 removeRow：removeBlock 只认顶层块，
+      // 文档只剩这一个列表时它会把 <li> 原地 retag 成 <p>，产出 <ul><p></p></ul> —— 非合规、整篇降级。
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) {
+        e.preventDefault();
+        if (selectedEl.tagName === 'LI') removeRow(selectedEl); else removeBlock(selectedEl);
+      }
     }
 
     // toggle 空态标记（P3-7）：判据 = 展开体内只有一个叶子块且无可见内容。CSS 的 :empty 表达不了
