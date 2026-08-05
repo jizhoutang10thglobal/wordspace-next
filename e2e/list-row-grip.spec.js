@@ -98,10 +98,20 @@ test('非列表块锚整块（不回归）+ 跨块跟随', async () => {
 test('U2 后整块拖拽仍可用：Esc 灰选列表后拖拽 = 整列表移动', async () => {
   await launch();
   await openDoc('<p id="pre">上方段落</p><ul class="ws-todo"><li id="r1">一</li><li id="r2">二</li></ul><p id="post">下方段落</p>');
-  // 块灰选路径：点进行 → Esc 退出编辑进块选中 → selectedEl=整列表 → 拖拽单位=整块
+  // 块灰选路径：点进行 → Esc 退出编辑 → selectedEl=整列表 → 拖拽单位=整块。
+  // ⚠ 2026-08-05 起 Esc 在列表里是三档（① 当前行 ② 整张列表 ③ 取消，Wendi 反馈「深色框把两行圈成一个」），
+  // 所以「整列表灰选」要按两次。本条守的契约一字未变——**整列表灰选后拖走的是整张，绝不劈成两张**，
+  // 只是拿到整列表灰选的按键数从 1 变 2。第一档（单行灰选后拖 = 只搬那一行）由 E-2 那批门另外压着。
   await frame.locator('#r2').click();
   await page.keyboard.press('Escape');
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
+  expect(await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const s = d.querySelector('[data-ws2-selected]');
+    return s ? s.tagName : 'none';
+  }), '两次 Esc 之后灰选的必须是整张 <ul>，不是某一行').toBe('UL');
   await page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
     const grip = d.querySelector('.ws-grip');
