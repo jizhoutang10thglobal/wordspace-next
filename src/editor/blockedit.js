@@ -889,7 +889,15 @@
     // table 内 → 该 table 整行蓝（部分裁剪表格必产非合规，删除只能整删=ED-A2，高亮预示之，所见即所删）。
     // data-ws2-rangesel 进 serialize 白名单剥除（纯交互态、绝不入盘）。
     let rangeSelEls = [];
-    function clearRangeSel() { if (rangeSelEls.length) { rangeSelEls.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-rangesel')); rangeSelEls = []; } }
+    // ⚠ 必须扫 DOM，不能只清 rangeSelEls 里记的那批（跟 clearSelectedAttr 同一范式）。
+    // 病灶：retagElement **原样复制全部属性**——「转为」把带 data-ws2-rangesel 的 <p> 换成 <ol> 时，
+    // 蓝底标记跟着进了新元素，而 rangeSelEls 里存的还是那个已被摘走的旧 <p>。于是这个数组怎么清
+    // 都碰不到活着的那个 → 整块永久蓝底、点哪儿都不消（Colin 2026-08-05 实抓：往返转换后底色卡死）。
+    // 扫 DOM 让「谁带着标记谁被清」，任何未来会克隆 / 换标签的路径都自动兜住。
+    function clearRangeSel() {
+      body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel'));
+      if (rangeSelEls.length) { rangeSelEls.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-rangesel')); rangeSelEls = []; } // 已脱离文档的旧引用顺手清干净
+    }
     function refreshRangeSel() {
       clearRangeSel();
       const sel = doc.getSelection();
@@ -1734,6 +1742,9 @@
     // 列表块只被选中部分行时仍走 turnIntoLines（跟单块入口同一语义）——**行信息必须在动手之前
     // 全部算好**，因为第一块一转选区就没了，之后再问 selectedListLines 只会拿到空。
     function turnIntoMany(blks, item) {
+      // 先把跨块蓝底摘干净再动手：retagElement 会把 data-ws2-rangesel 一起复制进产物，
+      // 而这批源块马上就要被换掉。不在这儿摘，产物身上就会挂一个没人认领的高亮。
+      clearRangeSel();
       const linesOf = new Map();
       for (const b of blks) {
         if (b.tagName !== 'UL' && b.tagName !== 'OL') continue;
