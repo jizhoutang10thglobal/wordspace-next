@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { assertImagesOnDisk, parseChangelog } from '../../app/lib/changelog';
+import { assertImagesOnDisk, buildEntries, parseChangelog } from '../../app/lib/changelog';
 import { FIXTURE_CHANGELOG_MD } from '../../app/changelog/fixture/fixture-md';
 
 // parser 是纯函数，配图的规则（路径映射 / alt 必填 / 归属 / 写错就抛）全在这层定死。
@@ -129,5 +129,20 @@ test.describe('assertImagesOnDisk · 构建门', () => {
   test('真 public 目录里夹具图确实存在（图被误删 → 这条红）', async () => {
     const publicDir = path.join(__dirname, '..', '..', 'public');
     await expect(assertImagesOnDisk(entries, publicDir)).resolves.toBeUndefined();
+  });
+
+  test('buildEntries：给了 publicDir 就查盘，缺图直接挂', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'ws-cl-img-'));
+    await expect(buildEntries(FIXTURE_CHANGELOG_MD, 'CHANGELOG.md', dir)).rejects.toThrow(/配图文件不存在/);
+  });
+
+  test('buildEntries：publicDir=null（GitHub raw 回退）跳过查盘，不假红', async () => {
+    // 回退路径下 md 与磁盘不同源，硬校会拿两个版本对照 → 必须跳过
+    const got = await buildEntries(FIXTURE_CHANGELOG_MD, 'CHANGELOG.md', null);
+    expect(got[0].version).toBe('v9.9.9');
+  });
+
+  test('buildEntries：解析出零条目仍然挂（原有的格式漂移门没被削弱）', async () => {
+    await expect(buildEntries('# 只有个标题\n', 'CHANGELOG.md', null)).rejects.toThrow(/zero entries/);
   });
 });

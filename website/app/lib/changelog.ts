@@ -180,6 +180,21 @@ export async function assertImagesOnDisk(entries: ChangelogEntry[], publicDir: s
   }
 }
 
+/**
+ * 正本文本 → 结构化条目，顺带跑构建门。
+ *
+ * publicDir = null 表示「正本不是从本地盘读来的」（GitHub raw 回退），此时跳过配图存在性校验：
+ * 那条路径下 md 来自 GitHub main、而 public/ 里的图来自本次 checkout，两者不同源，硬校会假红
+ * 挂掉构建（图刚随 PR 进来、main 的正本还没提到它，或反过来）。跳过是安全的——这本就是
+ * 「盘上读不到正本」的异常降级，且图真缺了页面上是裂图 + figcaption 文字还在，不会静默错内容。
+ */
+export async function buildEntries(md: string, file: string, publicDir: string | null): Promise<ChangelogEntry[]> {
+  const entries = parseChangelog(md);
+  if (entries.length === 0) throw new Error(`changelog: ${file} parsed zero entries — format drift?`);
+  if (publicDir !== null) await assertImagesOnDisk(entries, publicDir);
+  return entries;
+}
+
 async function loadOne(file: string, rawUrl: string): Promise<ChangelogEntry[]> {
   let md: string | null = null;
   let fromDisk = false;
@@ -191,14 +206,7 @@ async function loadOne(file: string, rawUrl: string): Promise<ChangelogEntry[]> 
     if (res.ok) md = await res.text();
   }
   if (!md) throw new Error(`changelog: ${file} unreadable (fs ../ and raw fallback both failed)`);
-  const entries = parseChangelog(md);
-  if (entries.length === 0) throw new Error(`changelog: ${file} parsed zero entries — format drift?`);
-  // 配图存在性只在「正本来自磁盘」时校验。回退路径下 md 来自 GitHub main，而 public/ 里的图
-  // 来自本次 checkout——两者不同源，拿 main 的正本去对照本次 checkout 的图会假红挂掉构建
-  // （比如图刚随 PR 加进来、main 上的正本还没提到它，或反过来）。跳过是安全的：这条路径本就是
-  // 「盘上读不到正本」的异常降级，且图真缺了页面上是裂图 + figcaption 文字还在，不会静默错内容。
-  if (fromDisk) await assertImagesOnDisk(entries, path.join(process.cwd(), 'public'));
-  return entries;
+  return buildEntries(md, file, fromDisk ? path.join(process.cwd(), 'public') : null);
 }
 
 export async function loadChangelog(): Promise<ChangelogEntry[]> {
