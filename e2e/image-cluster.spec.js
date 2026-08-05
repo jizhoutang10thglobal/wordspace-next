@@ -176,6 +176,55 @@ test('I13b 带说明图：↓ 停进说明；再 ↓ 到下一段', async () => 
   await page.keyboard.press('ArrowDown');
   await page.waitForTimeout(250);
   expect(await caretIn()).toBe('caption'); // 停靠位 = 说明文字（Notion 同款）
+  // 门标题宣称的后半句（第一版没按第二次 ↓ = 假覆盖，对抗审查 ADV-IMG-3 的死端因此漏网）：
+  // 说明里再 ↓ 必须能出去、直达下一段——说明是 contenteditable 孤岛，不接管就是每图一处导航搁浅点
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(300);
+  expect(await caretIn()).toBe('P#z');
+  // 反向：↑ 回说明，再 ↑ 到上一段
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(250);
+  expect(await caretIn()).toBe('caption');
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(300);
+  expect(await caretIn()).toBe('P#a');
+});
+
+test('I11b 负向（ADV-IMG-1 回归钉）：拖说明里的文字不许搬走整张图', async () => {
+  await launch();
+  await openDoc(`<p id="a">上</p><figure id="F"><img src="${PNG}" alt="图"><figcaption id="cap">两个字</figcaption></figure><p id="z">下</p>`);
+  await frame.locator('#cap').click();
+  await page.waitForTimeout(250);
+  const before = await order();
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const cap = d.querySelector('#cap');
+    // 原生文字选区拖动的 dragstart target = figcaption（不是 IMG）
+    const r = d.createRange(); r.selectNodeContents(cap);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+    const tgt = d.querySelector('#z');
+    const dt = new DataTransfer();
+    cap.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const tr = tgt.getBoundingClientRect();
+    const ev = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: Math.round(tr.left + 10), clientY: Math.round(tr.bottom - 3) };
+    tgt.dispatchEvent(new DragEvent('dragover', ev));
+    tgt.dispatchEvent(new DragEvent('drop', ev));
+    cap.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
+  await page.waitForTimeout(300);
+  expect(await order()).toEqual(before); // 修前：整张图（连说明）被搬到 z 之后
+});
+
+test('I13c 跨作用域（ADV-IMG-2 回归钉）：toggle 体末 ↓ 越界撞裸图 → 落图后段落，不回卷体首', async () => {
+  await launch();
+  await openDoc(`<details id="D" open><summary id="S">标题</summary><p id="t1">甲</p><p id="t2">乙</p></details><img id="pic" src="${PNG}" alt="图"><p id="after">丙</p>`);
+  await frame.locator('#t2').click();
+  await page.waitForTimeout(200);
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(300);
+  // 修前：blocks.indexOf(域外裸图)=-1 → blocks[0] → 光标跳回 P#t1（向下变向上）
+  expect(await caretIn()).toBe('P#after');
 });
 
 test('I14 跨块选区罩图：图片呈被蓝罩态（透明度让蓝底透上来）', async () => {

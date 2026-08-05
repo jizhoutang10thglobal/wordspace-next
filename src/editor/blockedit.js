@@ -2818,6 +2818,31 @@
       // Enter 新建块 / Backspace 删块分支（ui-demo 踩过：说明里退格删了整张图）。
       if (captionEl) {
         if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); captionEl.blur(); }
+        // ADV-IMG-3（对抗审查实测）：说明是孤立 contenteditable 岛，原生 ↑↓ 在岛边界是 no-op——
+        // I13 把键盘流主动路由进来（↓ 停进说明），不给出去的路每张带说明图都是导航死端。
+        // 接管 ↑↓：blur 收尾说明（persistCaption，空说明会降回裸 img），再按 I13 同款规则落到下/上一停靠位。
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault(); e.stopPropagation();
+          const fwd = e.key === 'ArrowDown';
+          const figN = captionEl.parentElement;
+          const imgN = figN && figN.querySelector ? figN.querySelector('img') : null; // blur 后 figure 可能被替换成裸 img——img 恒存活，拿它当锚
+          captionEl.blur();
+          const anchor = imgN ? blockOf(imgN) : null;
+          if (!anchor) return;
+          const sc = scopeRootOf(anchor);
+          const bs = (sc === blockRoot) ? topBlocks() : blocksInScope(sc);
+          let t2 = fwd ? bs[bs.indexOf(anchor) + 1] : bs[bs.indexOf(anchor) - 1];
+          if (!t2 && sc !== blockRoot) t2 = fwd ? sc.nextElementSibling : summaryOf(sc); // 跨界 fallback（与块导航同款）
+          while (t2 && classify(t2) === 'image') {
+            const c2 = t2.querySelector && t2.querySelector('figcaption');
+            if (c2) { enterCaptionEdit(c2, false); return; }
+            t2 = fwd ? t2.nextElementSibling : t2.previousElementSibling; // DOM 步进（ADV-IMG-2 同款）
+          }
+          if (!t2 || (t2.hasAttribute && t2.hasAttribute('data-ws2-ui'))) return; // 边界：留在灰选图（persistCaption 已 selectBlock）
+          if (t2.tagName === 'SUMMARY') enterEdit(t2, { mode: 'end' });
+          else if (isEditableEl(t2)) enterEdit(t2, { mode: fwd ? 'start' : 'end' });
+          else { selectBlock(t2); positionGrip(t2); }
+        }
         // I6（Notion 实测）：说明**已经空了**再按一次 Backspace → 当场回收说明行（blur → persistCaption
         // 降回裸 img），光标弹到上一个可编辑位置。图片本体仍然绝不会被删（inert 不变——非空说明交原生删字）。
         else if (e.key === 'Backspace' && (captionEl.textContent || '').trim() === '') {
@@ -3814,7 +3839,9 @@
           while (next && classify(next) === 'image') {
             const cap0 = next.querySelector && next.querySelector('figcaption');
             if (cap0) { enterCaptionEdit(cap0, false); return; }
-            next = blocks[blocks.indexOf(next) + 1];
+            // ADV-IMG-2：步进沿真实 DOM，别用 blocks.indexOf——toggle 体末的跨界 fallback 拿到的是
+            // **域外**元素，indexOf 返回 -1、+1 后回卷到 blocks[0]，向下导航变成跳回体首（实测）。
+            next = next.nextElementSibling;
           }
           if (!next || next.hasAttribute('data-ws2-ui')) return; // 图后无块 → 光标留原位（Notion：再按停在末块）
           if (isEditableEl(next)) { const nr = next.getBoundingClientRect(); enterEdit(next, { mode: 'point', x: caret.left, y: nr.top + lh * 0.5 }); }
@@ -3828,7 +3855,9 @@
           while (prev && classify(prev) === 'image') { // I13 对称：↑ 遇带说明图停进说明、裸图跳过
             const cap0 = prev.querySelector && prev.querySelector('figcaption');
             if (cap0) { enterCaptionEdit(cap0, false); return; }
-            prev = blocks[blocks.indexOf(prev) - 1];
+            // ADV-IMG-2 对称：DOM 步进。toggle 体首是裸图时向上撞到 <summary> 元素本身 → 下面的
+            // SUMMARY 分支天然接住（正是想要的 fallback），域外/-1 回卷两个病一起消。
+            prev = prev.previousElementSibling;
           }
           if (!prev) return;
           if (prev.tagName === 'SUMMARY') enterEdit(prev, { mode: 'end' });
@@ -4576,11 +4605,18 @@
     function onImageDragStart(e) {
       if (dragFrom) return; // grip 起拖优先（它先于原生 dragstart 设了 dragFrom）
       const t = e.target;
-      if (!t || t.nodeType !== 1) return;
+      // ADV-IMG-1（对抗审查实测）：只认图片**本体**——本体拖动的 dragstart target 恒为 IMG；
+      // figcaption 里的原生文字选区拖动 target 是 figcaption，blockOf 上卷会把「拖两个字」
+      // 误判成「搬整张图」。按 target 标签分流，两条合法路径互不相扰。
+      if (!t || t.tagName !== 'IMG') return;
       const b = blockOf(t);
       if (!b || classify(b) !== 'image') return;
       dragFrom = b;
-      if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} }
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {}
+        try { if (t.src) e.dataTransfer.setData('text/uri-list', t.src); } catch (x) {} // ADV-IMG-4：拖出 app 时外部目标仍拿得到图片地址
+      }
     }
     function onImageDragEnd() { dragFrom = null; clearDrop(); }
     function onDrop(e) {
