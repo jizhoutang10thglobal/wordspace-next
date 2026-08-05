@@ -199,3 +199,97 @@ test('T11 末格 Tab 不长新行：行数不变、编辑框停在末格', async
   const st2 = await page.evaluate(() => { const d = document.getElementById('doc-frame').contentDocument; const c = d.querySelector('[data-ws2-cell]'); return c ? c.id : null; });
   expect(st2).toBe('c32');
 });
+
+// ── 对抗审查回归钉（ADV-1/3/4，全部实测复现过）──────────────────────────────
+test('ADV-1 cell 编辑态开轴菜单：格的编辑态被真正收掉；Esc 一下就关菜单', async () => {
+  await launch(); await openDoc(T33);
+  await frame.locator('#c22').click(); // 进 cell 编辑
+  await page.waitForTimeout(200);
+  await openAxisMenuAt2('#c22', 'row');
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { cellAttrs: d.querySelectorAll('[data-ws2-cell]').length, ce: d.querySelectorAll('#T [contenteditable="true"]').length };
+  });
+  expect(st).toEqual({ cellAttrs: 0, ce: 0 }); // 修前：菜单开着格还挂 contenteditable（exitEdit 对 cell 空转）
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  const menuOpen = await page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelector('.ws-blockmenu').style.display !== 'none');
+  expect(menuOpen).toBe(false); // 修前：Esc 被 cell 分支截走，菜单关不掉（僵尸菜单下 Backspace 可删整表）
+});
+
+test('ADV-2 复制本行不拷编辑态：副本格不带幽灵 contenteditable/data-ws2-cell', async () => {
+  await launch(); await openDoc(T33);
+  await frame.locator('#c22').click(); // c22 编辑态（属性在身上）
+  await page.waitForTimeout(200);
+  await openAxisMenuAt2('#c21', 'row'); // 悬停同行别的格开菜单
+  await clickItem('复制本行');
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { cellMarks: d.querySelectorAll('[data-ws2-cell]').length, ce: d.querySelectorAll('#T [contenteditable="true"]').length, rows: d.querySelectorAll('#T tr').length };
+  });
+  expect(st.rows).toBe(4);
+  expect(st.cellMarks).toBeLessThanOrEqual(1); // 落点格自己（enterCell）至多 1 个——修前副本再带 1 个幽灵 = 2
+  expect(st.ce).toBeLessThanOrEqual(1);
+});
+
+test('ADV-3 菜单开着再点另一根手柄：新菜单锚在手柄旁，不跳到文档左上角', async () => {
+  await launch(); await openDoc(T33);
+  await hoverCell('#c22');
+  await openAxis('row');
+  // 行菜单开着（手柄冻结可见），直接点列手柄切轴
+  await frame.locator('.ws-colsel').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  await page.waitForTimeout(120);
+  const g = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const m = d.querySelector('.ws-blockmenu').getBoundingClientRect();
+    const t = d.querySelector('#T').getBoundingClientRect();
+    return { mLeft: m.left, mTop: m.top, tLeft: t.left, tTop: t.top };
+  });
+  expect(g.mLeft).toBeGreaterThan(g.tLeft - 60); // 修前：rect 在 closeBlockMenu 之后读（手柄已藏、全零）→ 菜单跳 (0,4)
+  expect(g.mTop).toBeGreaterThan(20);
+});
+
+test('ADV-4 慢速滑向手柄：途经表缘间隙手柄不消失（连续轨迹，非瞬移）', async () => {
+  await launch(); await openDoc(T33);
+  await hoverCell('#c21');
+  const from = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const c = d.querySelector('#c21').getBoundingClientRect();
+    const h = d.querySelector('.ws-rowsel').getBoundingClientRect();
+    return { fx: c.left + c.width / 2, fy: c.top + c.height / 2, tx: h.left + h.width / 2, ty: h.top + h.height / 2 };
+  });
+  // iframe 内坐标 → 页面坐标：doc-frame 无偏移假设不可靠，直接量
+  const off = await page.evaluate(() => { const r = document.getElementById('doc-frame').getBoundingClientRect(); return { x: r.left, y: r.top }; });
+  await page.mouse.move(off.x + from.fx, off.y + from.fy);
+  await page.mouse.move(off.x + from.tx, off.y + from.ty, { steps: 25 }); // 慢速连续轨迹，途经 8px 间隙
+  await page.waitForTimeout(150);
+  const vis = await page.evaluate(() => getComputedStyle(document.getElementById('doc-frame').contentDocument.querySelector('.ws-rowsel')).display !== 'none');
+  expect(vis).toBe(true); // 修前：间隙里 el=null → hideAxisHandles，手柄在鼠标到达前消失
+});
+
+test('ADV-5b 列侧同源性：被标记的列格集合 === 删除本列后真正消失的格集合', async () => {
+  await launch(); await openDoc(T33);
+  await hoverCell('#c22');
+  await openAxis('col');
+  const marked = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.querySelectorAll('[data-ws2-menucol]')].map((n) => n.id).sort();
+  });
+  expect(marked).toEqual(['c12', 'c22', 'c32']);
+  await clickItem('删除本列');
+  const gone = await page.evaluate((ids) => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return ids.filter((i) => !d.getElementById(i)).sort();
+  }, marked);
+  expect(gone).toEqual(marked); // 标了哪列，删的就是哪列
+});
+
+// cell 编辑态下开轴菜单的入口（ADV-1/2 专用：先点格再 hover 开）
+async function openAxisMenuAt2(cellSel, axis) {
+  await frame.locator(cellSel).hover();
+  await page.waitForTimeout(250);
+  await frame.locator(axis === 'row' ? '.ws-rowsel' : '.ws-colsel').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  await page.waitForTimeout(80);
+}

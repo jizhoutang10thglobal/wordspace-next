@@ -274,3 +274,142 @@ test('C-undo：框内切行 + 段删除各是一步撤销', async () => {
   const s = await calloutShape();
   expect(s.paras).toEqual(['框一', '框二', '框三']);
 });
+
+// ── 对抗审查回归钉（ADV-C1..C5，全部实机复现过）────────────────────────────
+test('ADV-C1 反向跨段选区 + Enter：先删选区再切行——绝不产嵌套 <p>/重复 id', async () => {
+  await launch(); await openDoc(DOC3);
+  await frame.locator('#c2').click();
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight');           // 框|二
+  await page.keyboard.press('Shift+ArrowUp');        // 反向选区（anchor 在 c2、focus 进 c1）
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return {
+      nestedP: d.querySelectorAll('.ws-callout p p').length,
+      dupIds: ['c1', 'c2', 'c3'].filter((i) => d.querySelectorAll('#' + i).length > 1),
+      count: d.querySelectorAll('.ws-callout').length,
+      text: d.querySelector('.ws-callout').textContent.replace(/\s+/g, ''),
+    };
+  });
+  expect(st.nestedP).toBe(0);      // 修前：<p><p id=c1>…（活 DOM 与 reparse 落盘分叉）
+  expect(st.dupIds).toEqual([]);   // 修前：两个 #c1 两个 #c2
+  expect(st.count).toBe(1);
+  expect(st.text).not.toContain('框一框二'); // 选中的跨段内容真被删了
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('ADV-C4 同段选中文字 + Enter：删选中、从光标劈行（与全编辑器 Enter 语义一致）', async () => {
+  await launch(); await openDoc(DOC3);
+  await frame.locator('#c2').click();
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Shift+ArrowRight'); // 选中「框」
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  const s = await calloutShape();
+  expect(s.paras).toEqual(['框一', '', '二', '框三']); // 「框」被删、剩「二」在新行；修前：字没删、整行搬走、id 留空壳
+});
+
+test('ADV-C2 框内段间退格：自管合并，不留 Chromium font-family 垃圾 span', async () => {
+  await launch(); await openDoc(DOC3);
+  await frame.locator('#c2').click();
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Home');
+  await page.keyboard.press('Backspace'); // 第二段行首 → 并进第一段
+  await page.waitForTimeout(300);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const c = d.querySelector('.ws-callout');
+    return { paras: [...c.querySelectorAll(':scope > p')].map((p) => (p.textContent || '').trim()),
+      fontSpans: c.querySelectorAll('span[style*="font"]').length,
+      anyStyle: c.querySelectorAll('[style]').length };
+  });
+  expect(st.paras).toEqual(['框一框二', '框三']);
+  expect(st.fontSpans).toBe(0); // 修前：<span style="font-family: -apple-system…">框二</span> 落盘
+  expect(st.anyStyle).toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
+  // 镜像：段末 Delete
+  await page.keyboard.press('End');
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(300);
+  const st2 = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const c = d.querySelector('.ws-callout');
+    return { paras: [...c.querySelectorAll(':scope > p')].map((p) => (p.textContent || '').trim()), styles: c.querySelectorAll('[style]').length };
+  });
+  expect(st2.paras).toEqual(['框一框二框三']);
+  expect(st2.styles).toBe(0);
+});
+
+test('ADV-C3 多行粘贴进框：逐行成框内 <p>，一个框绝不粘成三个', async () => {
+  await launch(); await openDoc(DOC3);
+  await frame.locator('#c2').click();
+  await page.waitForTimeout(200);
+  await page.keyboard.press('End');
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const dt = new DataTransfer();
+    dt.setData('text/plain', '甲行\n乙行\n丙行');
+    (d.querySelector('.ws-callout') || d.body).dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(350);
+  const s = await calloutShape();
+  expect(s.count).toBe(1); // 修前：splitBlock 把一个 callout 劈成三个
+  expect(s.paras).toEqual(['框一', '框二甲行', '乙行', '丙行', '框三']);
+  // 死空段检查：所有空段必须带 <br> 占位
+  const deadEmpty = await page.evaluate(() => [...document.getElementById('doc-frame').contentDocument.querySelectorAll('.ws-callout > p')].filter((p) => !p.textContent && !p.querySelector('br,img')).length);
+  expect(deadEmpty).toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('ADV-C5 段选中态拖走该段：不留 data-ws2-selected 幽灵蓝条', async () => {
+  await launch(); await openDoc(DOC3);
+  await frame.locator('#c2').click();
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape'); // 段选中（属性在 c2 上）
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const grip = d.querySelector('.ws-grip');
+    const tgt = d.querySelector('#z');
+    const dt = new DataTransfer();
+    grip.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const r = tgt.getBoundingClientRect();
+    const ev = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: Math.round(r.left + 10), clientY: Math.round(r.bottom - 3) };
+    tgt.dispatchEvent(new DragEvent('dragover', ev));
+    tgt.dispatchEvent(new DragEvent('drop', ev));
+    grip.dispatchEvent(new DragEvent('dragend', { bubbles: true, cancelable: true, dataTransfer: dt }));
+  });
+  await page.waitForTimeout(300);
+  const ghosts = await page.evaluate(() => [...document.getElementById('doc-frame').contentDocument.querySelectorAll('[data-ws2-selected]')].map((el) => el.tagName + '#' + el.id));
+  expect(ghosts).toEqual([]); // 修前：P#c2 搬到顶层还挂着选中蓝罩、Delete 死键
+});
+
+test('QUOTE 覆盖：blockquote 与 callout 共享全部容器化路径（段菜单删段 + 框内 Enter 切行）', async () => {
+  await launch();
+  await openDoc('<p id="up">上</p><blockquote id="Q"><p id="q1">引一</p><p id="q2">引二</p><p id="q3">引三</p></blockquote><p id="z">下</p>');
+  await frame.locator('#q2').hover();
+  await page.waitForTimeout(220);
+  await frame.locator('.ws-grip').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).first().click();
+  await page.waitForTimeout(300);
+  let qs = await page.evaluate(() => [...document.getElementById('doc-frame').contentDocument.querySelectorAll('#Q > p')].map((p) => p.textContent.trim()));
+  expect(qs).toEqual(['引一', '引三']); // 段菜单只删该段
+  await frame.locator('#q3').click();
+  await page.waitForTimeout(200);
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('引四');
+  await page.waitForTimeout(300);
+  qs = await page.evaluate(() => [...document.getElementById('doc-frame').contentDocument.querySelectorAll('#Q > p')].map((p) => p.textContent.trim()));
+  expect(qs).toEqual(['引一', '引三', '引四']); // 框内 Enter 留框内
+  expect(await page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('blockquote').length)).toBe(1);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
