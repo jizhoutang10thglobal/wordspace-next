@@ -183,10 +183,15 @@ test('S5 排版文件段尾 Enter：正确判块末 → 新建空块（不把源
   await launch();
   await openDoc('<p id="a">上一段</p>\n<p id="b">\n  甲乙\n</p>\n<p id="z">下一段</p>');
   await caretEnd('#b'); await key('Enter');
-  const s = await shape();
-  // 修前：isCaretAtRealEnd 对 "\n" 判 false → 走段中劈块 → 劈出含源码空白的「假内容段」。
-  // 修后：判块末 → 新建空段。两种路径的可观测差别：新段必须是**空**的。
-  const m = s.body.match(/甲乙<\/p><p[^>]*>(.*?)<\/p><p id="z"/);
+  // ⚠ 读**未归一化**的原始 innerHTML —— shape() 的 norm 会把 \n 剥掉，而修前劈块留下的证据
+  // 恰是新段里的源码空白（P-6 的同款哑门坑，第一版就是这么栽的：变异 realEnd 后 11 条照样全绿）。
+  const raw = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return (d.body.innerHTML || '').replace(/ ?data-ws2-[a-z]+(="[^"]*")?/g, '').replace(/ ?contenteditable="[^"]*"/g, '');
+  });
+  // 修后（判块末 → 新建空块）：新段 = <p><br></p>（newBlock 种子）。
+  // 修前（误判段中 → 劈块）：新段里带着被劈下来的 "\n" 文本节点。
+  const m = raw.match(/甲乙[\s]*<\/p>[\s]*<p[^>]*>([\s\S]*?)<\/p>[\s]*<p id="z"/);
   expect(m, '「甲乙」后应有新块、且在下一段之前').not.toBeNull();
-  expect(m[1].replace(/<br>/g, '')).toBe(''); // 新块必须为空
+  expect(m[1], '新块必须是纯占位（无任何文本节点，源码空白也不行）').toMatch(/^(<br>)?$/);
 });
