@@ -101,9 +101,9 @@ test('单击即编辑 + 加粗 + 斜杠菜单 + Enter 新建 + Backspace 合并'
   await expect(frame.locator('.ws-slashmenu')).toBeVisible();
   await page.keyboard.press('Escape');
   await clearUI();
-  // Enter 段末新建正文块（块数 +1）
+  // Enter 段末新建正文块（块数 +1）。跳板用普通段落 #p3——#q 是引用（容器），容器末尾 Enter 是框内换行（callout-container.spec.js 管）
   let before = await blockCount();
-  await frame.locator('#q').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await frame.locator('#p3').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
   await page.keyboard.type('新块');
   await expect.poll(() => blockCount()).toBe(before + 1); // U3-B2
   await clearUI();
@@ -236,7 +236,7 @@ test('baseline: 居中可读宽度 + 四周留白 + 入盘', async () => {
 test('U7: H4 可创建（markdown #### → h4）', async () => {
   await launch();
   await openDoc(SIMPLE);
-  await frame.locator('#q').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await frame.locator('#p3').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
   await page.keyboard.type('#### ');
   await expect(frame.locator('h4').first()).toBeVisible(); // U3-B2
   expect(await frame.locator('h4').count(), 'markdown #### 没转 H4').toBeGreaterThan(0);
@@ -250,9 +250,9 @@ test('U7: H4 可创建（markdown #### → h4）', async () => {
 test('markdown 行首触发：1. / - / [] / > / # 转对应块', async () => {
   await launch();
   await openDoc(SIMPLE);
-  // 在 #q 后造一个空正文块、打 marker
+  // 在 #p3 后造一个空正文块、打 marker（#q 是容器，Enter 不出框）
   const mk = async (marker) => {
-    await frame.locator('#q').click();
+    await frame.locator('#p3').click();
     await page.keyboard.press('End');
     await page.keyboard.press('Enter'); // 空正文块进编辑
     await page.keyboard.type(marker);
@@ -277,7 +277,7 @@ test('markdown 行首触发：1. / - / [] / > / # 转对应块', async () => {
 test('待办：勾选切换 + 样式与 data-checked 随存盘保留', async () => {
   await launch();
   await openDoc(SIMPLE);
-  await frame.locator('#q').click();
+  await frame.locator('#p3').click();
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('[] '); // → 待办列表
@@ -562,7 +562,7 @@ test('Wendi bug3 边界：嵌套打头不被撕 / 子列表前插入 / 空目标
 test('Tab 缩进：列表项嵌套成子列表', async () => {
   await launch();
   await openDoc(SIMPLE);
-  await frame.locator('#q').click();
+  await frame.locator('#p3').click();
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('- 第一项'); // → 无序列表，第一项
