@@ -345,6 +345,49 @@
     br.remove();
     return true;
   }
+  // ===== 段 ↔ 多段容器接缝的两个共享动作（PR-1 零反馈边界）=====
+  // 铁则：同一条接缝，Backspace（从缝后按）与 Delete（从缝前按）必须产生**同一个结果**——
+  // 否则同一个位置两个删除键两种表现，用户没法建立模型（业界通则，Notion/Docs 同）。
+  //
+  // 动作①「容器供出首段」：C8 的搬运逻辑，原样抽出。首段（或首段行内序列）并进 recipient，
+  // 容器留着装剩下的、掏空才移除。返回 joinAt（接合点，可为 null=空段落供出）；零搬运返回
+  // false —— 调用方必须就地收手（不 checkpoint、不 markDirty、不动光标，C8-3 的教训）。
+  function donateContainerHead(container, recipient) {
+    // 跳过源码缩进的空白文本节点找「第一行」（C8-1：把空白当第一行搬 = 按了键看不出变化）
+    let head = container.firstChild;
+    while (head && head.nodeType === 3 && isBlankRun(head.nodeValue)) head = head.nextSibling;
+    // 第一个**块级**子元素。不能用 firstElementChild——混排时它可能是行内 <strong>，会把一行劈成两截（C8-4）
+    let firstBlockEl = null;
+    for (const n of container.children) { if (!SM.PHRASING_TAGS.has(n.tagName)) { firstBlockEl = n; break; } }
+    const donor = (head && head === firstBlockEl && isLeafTextBlock(head)) ? head : null;
+    const stopAt = donor ? null : firstBlockEl;
+    if (!(donor || (head && head !== stopAt))) return false; // 零搬运：调用方收手
+    stripPlaceholderBr(recipient);
+    let joinAt = null;
+    if (donor) { joinAt = trimSeamHead(donor.firstChild); while (donor.firstChild) recipient.appendChild(donor.firstChild); donor.remove(); }
+    else { let n = head; joinAt = head; while (n && n !== stopAt) { const nx = n.nextSibling; recipient.appendChild(n); n = nx; } }
+    if (!container.firstElementChild && isBlankRun(container.textContent || '')) container.remove(); // 掏空的框不留
+    return { joinAt };
+  }
+  // 容器的「最后一行」：末子是 <p> → 那个 <p>；末尾是行内内容/空 → 容器本身（phrasing 直挂容器合法）。
+  // 末块级子不是叶子（multiPara 文法下理论不可达）→ null = 收手，别猜。
+  function lastLineHostOf(container) {
+    let n = container.lastChild;
+    while (n && n.nodeType === 3 && isBlankRun(n.nodeValue)) n = n.previousSibling;
+    if (n && n.nodeType === 1 && !SM.PHRASING_TAGS.has(n.tagName)) return isLeafTextBlock(n) ? n : null;
+    return container;
+  }
+  // 动作②「缝旁叶子块并进容器末行」：donorLeaf（叶子文字块）整块消失、内容接到容器最后一行尾。
+  // 返回 joinAt；不可并（末行异常）返回 false —— 调用方收手。
+  function mergeLeafIntoContainerEnd(container, donorLeaf) {
+    const target = lastLineHostOf(container);
+    if (!target) return false;
+    stripPlaceholderBr(target);
+    const joinAt = trimSeamHead(donorLeaf.firstChild);
+    while (donorLeaf.firstChild) target.appendChild(donorLeaf.firstChild);
+    donorLeaf.remove();
+    return { joinAt, target };
+  }
   // 严格块末判定：光标右侧确无任何可见字符/元素（最多容一个末尾填充 <br>——浏览器给空块/末行补的占位）。
   // 区别于 isCaretAtEnd 的 trim()——后者把尾随空格/块内 <br> 也当块末，会让「段内按 →/Delete」误触发
   // 跨块跳转/前向合并（对抗验证 B 组）。破坏性操作（跨块右移、前向合并、Enter 劈块分流）必须用这个严格版。
@@ -359,7 +402,13 @@
     const frag = after.cloneContents(); // 克隆、不动原 DOM
     const last = frag.lastChild;
     if (last && last.nodeType === 1 && last.tagName === 'BR') frag.removeChild(last); // 去掉一个末尾填充 br
-    return (frag.textContent || '') === '' && !frag.querySelector('*'); // 不 trim：尾随空格算「有内容」
+    // 不 trim：尾随空格算「有内容」（B 组：「Hello␣␣␣|」段内按 Enter 不该走新建空块、把空格留原块）。
+    // ⚠ 但**以换行开头**的尾随空白是源码排版（isCaretAtStart 的镜像）：`<p>\n  文字\n</p>` 光标在
+    // 「文字」后，右侧还有 "\n  " —— 用户在 contenteditable 里打不出裸 \n（Enter 被接管），
+    // 所以「第一个字符是换行」⟹ 整段是磁盘排版、屏幕上不可见，判块末。以空格/tab 开头的维持旧判
+    // （可能是用户真打的尾随空格，渲染语义由浏览器管）。
+    const t = frag.textContent || '';
+    return (t === '' || /^[\r\n][\t\n\r ]*$/.test(t)) && !frag.querySelector('*');
   }
 
   function attach(doc, deps) {
@@ -3269,34 +3318,29 @@
         // 那条**已按 Notion 对拍定下的行为**原样推广过去，不是新设计。折叠块体（details）另有既定语义
         // （光标回 summary 末、绝不删 summary），不在此列。
         if (isMultiParaContainer(cur) && !isLeafTextBlock(cur) && isEditableEl(prev) && isLeafTextBlock(prev)) {
-          // 「第一行」的起点：跳过源码缩进产生的空白文本节点——它们屏幕上不占位，
-          // 把它们当第一行搬走 = 用户按了键、看不出任何变化（对抗审查 C8-1 同款陷阱）。
-          let head = cur.firstChild;
-          while (head && head.nodeType === 3 && isBlankRun(head.nodeValue)) head = head.nextSibling;
-          // 第一个**块级**子元素。⚠ 不能用 firstElementChild —— 混排时它可能是行内的 <strong>，
-          // 拿它当边界会把同一行文字从中间劈成两截跨两个块（对抗审查 C8-4 实测）。判据复用 schema-model 的
-          // PHRASING_TAGS 单一真相源。
-          let firstBlockEl = null;
-          for (const n of cur.children) { if (!SM.PHRASING_TAGS.has(n.tagName)) { firstBlockEl = n; break; } }
-          // 两种形态：以 <p> 开头 → 供出那个 <p> 的内容；以行内内容开头（混排，只可能来自外部文件）
-          //  → 供出到第一个块级元素为止的整段行内。两种都不动 callout 的其余子块。
-          const donor = (head && head === firstBlockEl && isLeafTextBlock(head)) ? head : null;
-          const stopAt = donor ? null : firstBlockEl;
-          // 零搬运就地收手：不 checkpoint、不 markDirty、不 enterEdit。否则「未保存」会亮起骗用户做了什么，
-          // 光标还被静默弹到上一块 —— 用户看没反应再按一次，删掉的是上一块的最后一个字（对抗审查 C8-3 实测）。
-          //（donor 为空段落时算真变更：那一行会消失。）
-          if (!(donor || (head && head !== stopAt))) return;
-          stripPlaceholderBr(prev); // 空目标块的占位 <br>（排版过的文件里它周围还有空白节点，见 placeholderBrOf）
-          let joinAt = null;
-          if (donor) { joinAt = trimSeamHead(donor.firstChild); while (donor.firstChild) prev.appendChild(donor.firstChild); donor.remove(); }
-          else { let n = head; joinAt = head; while (n && n !== stopAt) { const nx = n.nextSibling; prev.appendChild(n); n = nx; } }
-          if (!cur.firstElementChild && isBlankRun(cur.textContent || '')) cur.remove(); // 掏空的框不留（对齐单段那半的终态）
+          // 搬运逻辑抽到 donateContainerHead（PR-1：Delete 从缝前按到同一条缝时必须同一份逻辑，
+          // 「同缝同果」）。零搬运 = false → 就地收手（不 checkpoint、不 markDirty、不动光标，C8-3 教训）。
+          const dn = donateContainerHead(cur, prev);
+          if (!dn) return;
+          const joinAt = dn.joinAt;
           if (undoMgr) undoMgr.checkpoint(); markDirty();
           enterEdit(prev, { mode: 'end' });
           if (joinAt && joinAt.parentNode === prev) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
           return;
         }
         if (isEditableEl(prev)) {
+          // PR-1 零反馈边界：prev 是多段容器（引用/提示框）→ cur 并进容器**末行**。此前落到下面的
+          // 叶子判定 return = 死键（isEditableEl(callout/quote) 恒 true 但多段判非叶子）。
+          // 「同缝同果」：这正是「容器末行按 Delete」的同一条缝，两键必须同一个结果。
+          if (isMultiParaContainer(prev) && !isLeafTextBlock(prev) && isLeafTextBlock(cur)) {
+            const mg = mergeLeafIntoContainerEnd(prev, cur);
+            if (!mg) return; // 末行异常 → 收手（零副作用）
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            enterEdit(prev, { mode: 'end' });
+            if (mg.joinAt && mg.joinAt.parentNode) { try { const r = doc.createRange(); r.setStartBefore(mg.joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+            else if (mg.target) { try { const r = doc.createRange(); r.selectNodeContents(mg.target); r.collapse(false); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+            return;
+          }
           // 两块都得是「叶子文字块」才做节点级拼接——否则 prev/cur 是透明包裹块（div.lead>p）时，把块级 <p>
           // 搬进 <p> 会成 <p><p>、把裸文本灌进 div 会成「容器直挂文本」，存盘即坏（A 组）。非叶子则不吞、光标留原处。
           if (!isLeafTextBlock(prev) || !isLeafTextBlock(cur)) return;
@@ -3310,6 +3354,27 @@
           cur.remove(); if (undoMgr) undoMgr.checkpoint(); markDirty();
           enterEdit(prev, { mode: 'end' });
           if (joinAt && joinAt.parentNode === prev) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+          return;
+        }
+        // PR-1 零反馈边界：prev 是表格 → 光标移入**末格末尾**、不删任何内容。业界通则（Notion/Docs 同）：
+        // 跨结构边界的第一次删除键只移动光标、不隔墙拆结构——「先进入再删」。此前这里落到底部 return = 死键。
+        if (classify(prev) === 'table') {
+          const rows = tableRowsOf(prev);
+          const lr = rows[rows.length - 1];
+          const lc = lr ? rowCellsOf(lr)[rowCellsOf(lr).length - 1] : null;
+          if (lc) { enterCell(lc, { mode: 'end' }); return; }
+          return;
+        }
+        // PR-1：prev 是折叠块 → 光标移到它的**可见末端**（收起=标题末；展开=体内末块末尾），不吞内容。
+        // 与既有「toggle 体首块退格 → 光标回 summary 末」对称，同样绝不隔墙拆结构。
+        if (prev.tagName === 'DETAILS') {
+          if (prev.open) {
+            const inner = blocksInScope(prev);
+            const lastIn = inner[inner.length - 1];
+            if (lastIn && isEditableEl(lastIn)) { enterEdit(lastIn, { mode: 'end' }); return; }
+          }
+          const sm = summaryOf(prev);
+          if (sm) { enterEdit(sm, { mode: 'end' }); return; }
           return;
         }
         // prev 不可编辑（图片/分隔线/designed）且当前块非空：不吞内容，光标留在原处
@@ -3361,6 +3426,25 @@
         }
         const sel = doc.getSelection();
         if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return; // 非折叠选区前面已处理；这里只管折叠光标
+        // PR-1 零反馈边界：cur 是多段容器（引用/提示框）→ 「块末」要对**末行宿主**判，不能对容器整体判
+        // （克隆片段里有末段的空壳 <p>，isCaretAtRealEnd(容器) 恒 false → 此前这里 return 交原生 = 死键）。
+        // 光标在容器末行尾 + 下一块是叶子文字块 → 下一块并进容器末行（「同缝同果」：= 缝后块行首 Backspace）。
+        if (isMultiParaContainer(editingEl) && !isLeafTextBlock(editingEl)) {
+          const lineHost = lastLineHostOf(editingEl);
+          if (!lineHost || !isCaretAtRealEnd(doc, lineHost)) return; // 不在末行尾 → 交原生（容器内删字/段间由原生管）
+          const cScope = scopeRootOf(editingEl);
+          const cBlocks = (cScope === blockRoot) ? topBlocks() : blocksInScope(cScope);
+          const nxt = cBlocks[cBlocks.indexOf(editingEl) + 1];
+          if (!nxt) return;
+          if (isEditableEl(nxt) && isLeafTextBlock(nxt)) {
+            e.preventDefault();
+            const mg = mergeLeafIntoContainerEnd(editingEl, nxt);
+            if (!mg) return;
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            if (mg.joinAt && mg.joinAt.parentNode) { try { const r = doc.createRange(); r.setStartBefore(mg.joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+          }
+          return; // 下一块不可并（图/表/toggle/另一个容器）→ 不吞，与 Backspace 侧既有约定对称
+        }
         if (!isCaretAtRealEnd(doc, editingEl)) return; // 严格块末（尾随空格不算）——否则段内 Delete 会误吞下一段（B 组）
         const dScope = scopeRootOf(editingEl); // P1：作用域感知（原用 topBlocks → 体内块 indexOf=-1 → 误吞顶层首块）
         const blocks = (dScope === blockRoot) ? topBlocks() : blocksInScope(dScope);
@@ -3385,7 +3469,23 @@
           }
           return; // 首 li 空/含嵌套 / cur 非叶子 → no-op
         }
+        // PR-1 零反馈边界：next 是表格 → 光标移入**首格开头**、不删（「先进入再删」，镜像 Backspace 侧的表格缝）
+        if (classify(next) === 'table') {
+          e.preventDefault();
+          const fc = firstCellOf(next);
+          if (fc) enterCell(fc, { mode: 'start' });
+          return;
+        }
         if (!isEditableEl(next)) return; // 下一块图片/分隔线 → 不吞
+        // PR-1：next 是多段容器 → 容器首段脱框并进 cur（「同缝同果」：= C8 的 Backspace 从框首段按，同一条缝）
+        if (isMultiParaContainer(next) && !isLeafTextBlock(next) && isLeafTextBlock(cur)) {
+          e.preventDefault();
+          const dn = donateContainerHead(next, cur);
+          if (!dn) return; // 零搬运 → 零副作用收手
+          if (undoMgr) undoMgr.checkpoint(); markDirty();
+          if (dn.joinAt && dn.joinAt.parentNode === cur) { try { const r = doc.createRange(); r.setStartBefore(dn.joinAt); r.collapse(true); const s = doc.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (x) {} }
+          return;
+        }
         // 两块都得是叶子文字块才拼接——cur/next 是透明包裹块（div.lead>p）时平搬子节点会造 <p><p>/容器直挂裸文本（A 组）。
         if (!isLeafTextBlock(cur) || !isLeafTextBlock(next)) return;
         e.preventDefault();
