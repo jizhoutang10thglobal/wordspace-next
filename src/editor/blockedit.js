@@ -128,7 +128,7 @@
     if (dir === 'next') {
       if (pos.col + 1 < nCols) return { cell: at(pos.row, pos.col + 1) };
       if (pos.row + 1 < rows.length) return { cell: at(pos.row + 1, 0) };
-      return { newRow: true, col: 0 }; // 末格 Tab → 建行、落新行首格
+      return { stay: true }; // T11（Notion 实测）：末格 Tab **不建行**、停留原格；加行走行手柄/「下方插行」
     }
     if (dir === 'prev') {
       if (pos.col - 1 >= 0) return { cell: at(pos.row, pos.col - 1) };
@@ -181,12 +181,8 @@
       if (parent && !parent.querySelector('tr')) parent.remove(); // 空壳（thead/tbody）整删，不留 <thead></thead>
       const rest = tableRowsOf(table);
       if (!rest.length) return { deletedTable: true }; // 删光 → 升级删整表（绝不留 <table></table> ghost）
-      if (!inThead && !rest.some((r) => r.parentElement && r.parentElement.tagName === 'TBODY')) {
-        // 删掉最后一个数据行、表头尚存 → 自动补一空行（tbody ≥1 文法；Colin 拍板的退化收敛）
-        const nCols = rowCellsOf(rest[0]).length;
-        const tb = anyTbody(); const tr = buildRow(nCols, null); tb.appendChild(tr);
-        return rowCellsOf(tr)[Math.min(col, nCols - 1)] || null;
-      }
+      // T9（Notion 实测，替换掉旧的「自动补一空行」收敛）：数据行删光、只剩表头 → **不补**，表带着表头
+      // 继续立着；「表恒 ≥1 行 ≥1 列」由**菜单端**保证——最后一行/列的「删除」项直接不给（退化态不可达）。
       const t = rest[Math.min(row, rest.length - 1)];
       const cs = rowCellsOf(t);
       return cs[Math.min(col, cs.length - 1)] || null;
@@ -204,6 +200,40 @@
       }
       const nr = tableRowsOf(table)[row];
       return nr ? (rowCellsOf(nr)[at] || null) : null;
+    }
+    if (op === 'row-dup') {
+      const clone = curRow.cloneNode(true);
+      clone.removeAttribute('id'); clone.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id')); // 防重复锚点
+      if (inThead) {
+        // 表头行复制落 tbody 首（thead ≤1 硬约束），th → td（保内容与对齐 class）
+        [...clone.children].forEach((c) => {
+          if (c.tagName !== 'TH') return;
+          const td = doc.createElement('td');
+          while (c.firstChild) td.appendChild(c.firstChild);
+          alClasses(c).forEach((cl) => td.classList.add(cl));
+          c.replaceWith(td);
+        });
+        const tb = anyTbody(); tb.insertBefore(clone, tb.firstChild);
+      } else curRow.after(clone);
+      return rowCellsOf(clone)[Math.min(col, rowCellsOf(clone).length - 1)] || null;
+    }
+    if (op === 'row-clear') {
+      rowCellsOf(curRow).forEach((c) => { while (c.firstChild) c.firstChild.remove(); c.appendChild(doc.createElement('br')); });
+      return rowCellsOf(curRow)[Math.min(col, rowCellsOf(curRow).length - 1)] || null;
+    }
+    if (op === 'col-dup') {
+      for (const r of rows) {
+        const src = rowCellsOf(r)[col]; if (!src) continue;
+        const clone = src.cloneNode(true);
+        clone.removeAttribute('id'); clone.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+        src.after(clone);
+      }
+      const nr = tableRowsOf(table)[row];
+      return nr ? (rowCellsOf(nr)[col + 1] || null) : null;
+    }
+    if (op === 'col-clear') {
+      for (const r of rows) { const c = rowCellsOf(r)[col]; if (c) { while (c.firstChild) c.firstChild.remove(); c.appendChild(doc.createElement('br')); } }
+      return cellAt(table, row, col);
     }
     if (op === 'col-del') {
       if (rowCellsOf(curRow).length <= 1) return { deletedTable: true }; // 删最后一列 → 升级删整表
@@ -568,6 +598,40 @@
     grip.title = T('editor.gripTip');
     grip.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>';
     doc.documentElement.appendChild(grip);
+
+    // T1/T5（表格 Notion 化）：行手柄（表左缘外、y 随悬停行）+ 列手柄（表顶外、x 随悬停列），
+    // 与块手柄（gutter ⋮⋮，恒锚整表）**三套并存**——Notion 实测同款。点开各自的按轴菜单。
+    const rowHandle = mk('div', 'ws-rowsel');
+    rowHandle.style.position = 'absolute'; rowHandle.style.display = 'none';
+    rowHandle.title = T('editor.tableRowHandleTip');
+    const colHandle = mk('div', 'ws-colsel');
+    colHandle.style.position = 'absolute'; colHandle.style.display = 'none';
+    colHandle.title = T('editor.tableColHandleTip');
+    doc.documentElement.appendChild(rowHandle);
+    doc.documentElement.appendChild(colHandle);
+    let hoverTr = null;      // 悬停的表格行 <tr>（行手柄作用对象；随 mousemove 更新）
+    let hoverColIdx = -1;    // 悬停的列索引（列手柄作用对象）
+    let hoverTable = null;   // 两个手柄共同的宿主表
+    let menuAxis = null;     // 轴菜单开着时的作用快照 {axis:'row',tr} | {axis:'col',colIdx}——开着时手柄冻结
+    function hideAxisHandles() { if (menuAxis) return; rowHandle.style.display = 'none'; colHandle.style.display = 'none'; hoverTr = null; hoverColIdx = -1; hoverTable = null; }
+    function positionAxisHandles(tbl, clientX, clientY) {
+      const { sx, sy } = vp();
+      const tr0 = (() => { let best = null, bd = Infinity; for (const r of tableRowsOf(tbl)) { const rr = r.getBoundingClientRect(); const d = clientY < rr.top ? rr.top - clientY : clientY > rr.bottom ? clientY - rr.bottom : 0; if (d < bd) { bd = d; best = r; } } return best; })();
+      const cells0 = tr0 ? rowCellsOf(tr0) : [];
+      let ci = -1, bd = Infinity;
+      cells0.forEach((c, i) => { const cr = c.getBoundingClientRect(); const d = clientX < cr.left ? cr.left - clientX : clientX > cr.right ? clientX - cr.right : 0; if (d < bd) { bd = d; ci = i; } });
+      if (!tr0 || ci < 0) { hideAxisHandles(); return; }
+      hoverTr = tr0; hoverColIdx = ci; hoverTable = tbl;
+      const tRect = tbl.getBoundingClientRect();
+      const rRect = tr0.getBoundingClientRect();
+      rowHandle.style.left = (tRect.left + sx - 16) + 'px';
+      rowHandle.style.top = (rRect.top + sy + rRect.height / 2 - 10) + 'px';
+      rowHandle.style.display = 'flex';
+      const cRect = cells0[ci].getBoundingClientRect();
+      colHandle.style.left = (cRect.left + sx + cRect.width / 2 - 10) + 'px';
+      colHandle.style.top = (tRect.top + sy - 14) + 'px';
+      colHandle.style.display = 'flex';
+    }
 
     // U4「+」快捷插入钮（gutter 里紧挨手柄左侧，同显同隐；作用对象与手柄一致 = 行或块）
     const plus = mk('div', 'ws-plus');
@@ -2281,10 +2345,11 @@
           markDirty();
           enterCell(res, { mode: 'start' }); // 焦点显式还给落点格（悬空焦点 = macOS IME 唤不起）
         }, !!danger, danger ? 'trash' : 'plus');
-        tOp('tableRowAbove', 'row-above'); tOp('tableRowBelow', 'row-below');
-        tOp('tableColLeft', 'col-left'); tOp('tableColRight', 'col-right');
-        tOp('tableDelRow', 'row-del', true); tOp('tableDelCol', 'col-del', true);
-        const sepT = doc.createElement('div'); sepT.setAttribute('data-ws2-ui', WS2_OVERLAY); sepT.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sepT);
+        // T5/T7（按轴分离）：行列增删**退役出块菜单**——行操作在行手柄、列操作在列手柄，各自的菜单
+        // 只装自己轴的操作（Notion 项集实测）。两种前置状态（cell 编辑 / Esc 灰选）的块菜单随之一致（T7）。
+        // cell 对齐保留在这——Notion simple table 没有对齐概念，这是我们的**有意超集**（spec 记录），
+        // 不算漂移。tOp 通道留给对齐组之外未来的 cell 级操作。
+        void tOp;
         // 对齐三态（U6）：per-cell ws-al-*（文法即 cell 级）；左 = 清 class（默认态零字节）
         const aligns = doc.createElement('div'); aligns.setAttribute('data-ws2-ui', WS2_OVERLAY); aligns.className = 'ws-blockmenu-aligns';
         [['alignLeft', null], ['alignCenter', 'ws-al-center'], ['alignRight', 'ws-al-right']].forEach(([k, cls]) => {
@@ -2347,11 +2412,75 @@
       blockMenu.style.top = (r.bottom + sy + 4) + 'px';
       blockMenu.style.display = 'block';
     }
+    // ===== T5：行/列按轴菜单（Notion 项集实测：行=[上插/下插/复制/清空/删]、列=[左插/右插/复制/清空/删]，
+    // 互不含对方的操作）。复用 blockMenu 容器；作用行/列用 menurow/menucol 标记画出来（T6 同一通道）。
+    // T9 退化守卫在**构建端**：总行数 ≤1 不给「删除本行」、列数 ≤1 不给「删除本列」——表恒 ≥1 行 ≥1 列，
+    // 退化态从「删完再补救」变成「根本删不出来」（Notion 同款）。=====
+    function openAxisMenu(axis) {
+      if (!hoverTable || (axis === 'row' && !hoverTr) || (axis === 'col' && hoverColIdx < 0)) return;
+      const tbl = hoverTable, tr = hoverTr, ci = hoverColIdx;
+      closeBlockMenu();
+      exitEdit(); // 菜单操作以结构为准；cell 编辑态先收（防僵尸编辑态）
+      blockMenu.innerHTML = '';
+      menuAxis = axis === 'row' ? { axis, tr } : { axis, colIdx: ci };
+      // 作用范围可见（T6 通道）：行 → 整行标；列 → 各行同列格标
+      clearMenuScope();
+      if (axis === 'row') tr.setAttribute('data-ws2-menurow', '');
+      else tableRowsOf(tbl).forEach((r) => { const c = rowCellsOf(r)[ci]; if (c) c.setAttribute('data-ws2-menucol', ''); });
+      const head = doc.createElement('div'); head.setAttribute('data-ws2-ui', WS2_OVERLAY); head.className = 'ws-blockmenu-head';
+      head.textContent = T(axis === 'row' ? 'editor.tableRowMenuHead' : 'editor.tableColMenuHead');
+      blockMenu.appendChild(head);
+      const refCell = axis === 'row' ? rowCellsOf(tr)[Math.max(0, ci)] : (rowCellsOf(tableRowsOf(tbl)[0])[ci] || null);
+      const item = (labelKey, op, danger, icon) => {
+        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY);
+        it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-item--danger' : '');
+        it.innerHTML = '<span class="ws-blockmenu-ico">' + menuIcon(icon || (danger ? 'trash' : 'plus')) + '</span><span></span>';
+        it.lastElementChild.textContent = T('editor.' + labelKey);
+        it.addEventListener('mousedown', (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+        it.addEventListener('click', (ev) => {
+          ev.preventDefault(); ev.stopPropagation();
+          closeBlockMenu();
+          if (!refCell) return;
+          if (undoMgr) undoMgr.checkpoint();
+          const res = tableEditOp(doc, tbl, refCell, op);
+          if (res && res.deletedTable) { removeBlock(tbl); return; } // 守卫下不可达，防御保留
+          if (!res) return;
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          enterCell(res, { mode: 'start' });
+        });
+        blockMenu.appendChild(it);
+      };
+      if (axis === 'row') {
+        item('tableRowAbove', 'row-above'); item('tableRowBelow', 'row-below');
+        item('tableDupRow', 'row-dup', false, 'copy'); item('tableClearRow', 'row-clear', false, 'text');
+        if (tableRowsOf(tbl).length > 1) item('tableDelRow', 'row-del', true); // T9：最后一行不给删
+      } else {
+        item('tableColLeft', 'col-left'); item('tableColRight', 'col-right');
+        item('tableDupCol', 'col-dup', false, 'copy'); item('tableClearCol', 'col-clear', false, 'text');
+        const nCols = rowCellsOf(tableRowsOf(tbl)[0] || tr).length;
+        if (nCols > 1) item('tableDelCol', 'col-del', true); // T9：最后一列不给删
+      }
+      const hr = (axis === 'row' ? rowHandle : colHandle).getBoundingClientRect();
+      const { sx, sy } = vp();
+      blockMenu.style.left = (hr.left + sx) + 'px';
+      blockMenu.style.top = (hr.bottom + sy + 4) + 'px';
+      blockMenu.style.display = 'block';
+      // 键盘可达：手柄的 mousedown 被 preventDefault（不夺焦点），iframe 可能从未获得焦点——
+      // 那样 Esc 落在宿主窗口、永远进不了本文档的 keydown，菜单关不掉（e2e 实测）。焦点停进 focusCatcher。
+      try { focusCatcher.focus({ preventScroll: true }); } catch (x) {}
+    }
+    rowHandle.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    rowHandle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAxisMenu('row'); });
+    colHandle.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    colHandle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAxisMenu('col'); });
+
     // 单一关闭出口——所有调用点全走它，两种作用域标记都在这里统一清
     function closeBlockMenu() {
       blockMenu.style.display = 'none';
       clearMenuScope(); // T6：表格作用行/列/交点格标记
       if (menuRow) { menuRow.removeAttribute('data-ws2-selected'); menuRow = null; } // U3：行作用域高亮随菜单退场
+      if (menuAxis) { menuAxis = null; hideAxisHandles(); } // T5：轴菜单退场时解冻并收起行/列手柄
     }
 
     // ---- 斜杠菜单 ----
@@ -2577,6 +2706,8 @@
       // 作用对象，B/C 单元逐步下沉到行——进 main 前必须整体完成。
       const row = (el && classify(el) === 'list') ? rowOf(e.target, el, e.clientY)
         : (el && isMultiParaContainer(el) && !isLeafTextBlock(el)) ? paraOf(el, e.clientY) : null; // C1：容器段手柄（首段=容器手柄域→null）
+      // T1：悬停表格 → 行/列手柄跟随（菜单开着时冻结）；离开表格收起
+      if (!menuAxis) { if (el && classify(el) === 'table') positionAxisHandles(el, e.clientX, e.clientY); else hideAxisHandles(); }
       if (el && (el !== hoverEl || row !== hoverRow)) { hoverEl = el; hoverRow = row; positionGrip(row || el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
       // 移到块外空白/gutter 间隙：不立即隐藏（停在最后悬停块、保证可点）；隐藏交给进编辑/离开文档。
     }
@@ -2723,7 +2854,7 @@
               e.preventDefault();
               const t2 = cellNavTarget(cTbl, cellEl, e.shiftKey ? 'prev' : 'next');
               if (t2 && t2.cell) enterCell(t2.cell, { mode: 'end' });
-              else if (t2 && t2.newRow) { const tr = appendTableRow(cTbl); const c0 = rowCellsOf(tr)[0]; if (c0) enterCell(c0, { mode: 'start' }); }
+              else if (t2 && t2.stay) return; // T11：末格 Tab 停留（Notion 同款；行不悄悄变多）
               else if (t2 && t2.exit === 'up') exitToNeighbor(cTbl, 'up');
               return;
             }
@@ -3694,7 +3825,7 @@
       if (e.key === 'Escape') {
         // U3 行作用域菜单开着时（无 editingEl / selectedEl，Esc 本会空转）→ 关菜单、清行高亮。
         // 只在这一态接管，块作用域的既有阶梯（editing→灰选→deselect，deselect 自带关菜单）一字不动。
-        if (menuRow && !editingEl && !selectedEl) { closeBlockMenu(); e.preventDefault(); e.stopPropagation(); return; }
+        if ((menuRow || menuAxis) && !editingEl && !selectedEl) { closeBlockMenu(); e.preventDefault(); e.stopPropagation(); return; } // 行作用域菜单 / 表格轴菜单同款退场
         // C9 第二级：段选中态再 Esc → 上卷整框灰选（镜像 cell→整表的分级）
         const rs0 = rowSelEl();
         if (rs0 && !editingEl) {
@@ -4565,6 +4696,7 @@
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       rangeSelEls = []; body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel')); // undo/redo 重写 body → 旧引用失效,按属性清
       setGutterVisible(false); fmtbar.style.display = 'none'; closeBlockMenu();
+      menuAxis = null; hideAxisHandles(); // undo/redo 重写 body → hoverTr/hoverTable 引用失效，必须一起清
     }
 
     // U8/clip-3：undo/redo 用 body.innerHTML 整体重写、正在编辑的块被销毁、焦点回落非可编辑 BODY →
@@ -4707,6 +4839,10 @@
   [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}
   /* U23/select-4：跨 toggle 边界删除被拦成空操作时的反馈——高亮块闪一下橙红（不推布局、不用 transform 免劫持包含块）。 */
 
+  .ws-rowsel{width:8px;height:20px;border-radius:4px;background:#c9cdd3;cursor:pointer;z-index:99998;animation:ws-grip-in 120ms ease;}
+  .ws-rowsel:hover{background:#8a8f96;}
+  .ws-colsel{width:20px;height:8px;border-radius:4px;background:#c9cdd3;cursor:pointer;z-index:99998;animation:ws-grip-in 120ms ease;}
+  .ws-colsel:hover{background:#8a8f96;}
   .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
   .ws-grip:hover{background:#f0f1f3;color:#5a5f66;}
