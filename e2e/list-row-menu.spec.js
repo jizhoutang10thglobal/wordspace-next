@@ -214,7 +214,13 @@ test('Esc 灰选入口维持块作用域：删除删掉整张列表', async () =
   await launch();
   await openDoc('<p id="pre">前</p><ul class="ws-todo" id="L"><li id="r1">一</li><li id="r2">二</li></ul><p id="post">后</p>');
   await frame.locator('#r2').click();
-  await page.keyboard.press('Escape');
+  // 【断言迁移，2026-08-05】Esc 在列表里改成三档（Wendi 反馈：回车换行后第二行已是独立的
+  // 交互单元，Esc 却把整张列表圈成一个深色框）。① 当前行 ② 整张列表 ③ 取消 —— 与 ⌘A 已有的
+  // 三档对称。本条守的是**块作用域**那一档，所以按两次 Esc；「Esc 灰选列表后拖=整列表」这条
+  // 既有契约一字未改，只是入口往后挪了一次按键。行作用域那一档另有新门覆盖。
+  await page.keyboard.press('Escape'); // ① 当前行
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); // ② 整张列表
   await page.waitForTimeout(150);
   const marked = await page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
