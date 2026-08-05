@@ -13,6 +13,8 @@
   // 内容模型适配纯函数（schema-model）：闭合的单一来源——叶子判定 / 可否合并 / 列表拍平。
   const SM = (typeof WS2SchemaModel !== 'undefined') ? WS2SchemaModel
     : (typeof require !== 'undefined' ? require('../lib/schema-model.js') : null);
+  const SER = (typeof WS2Serialize !== 'undefined') ? WS2Serialize
+    : (typeof require !== 'undefined' ? require('./serialize.js') : null);
   // 覆盖层（⋮⋮手柄/块菜单/斜杠菜单/格式气泡）的 data-ws2-ui 值用这个 sentinel——serialize.cleanRoot
   // 按它精确删，用户自带 data-ws2-ui="任意值" 不受影响（F1）。单一来源 = serialize.OVERLAY_VAL。
   const WS2_OVERLAY = (((typeof WS2Serialize !== 'undefined') ? WS2Serialize
@@ -128,7 +130,7 @@
     if (dir === 'next') {
       if (pos.col + 1 < nCols) return { cell: at(pos.row, pos.col + 1) };
       if (pos.row + 1 < rows.length) return { cell: at(pos.row + 1, 0) };
-      return { newRow: true, col: 0 }; // 末格 Tab → 建行、落新行首格
+      return { stay: true }; // T11（Notion 实测）：末格 Tab **不建行**、停留原格；加行走行手柄/「下方插行」
     }
     if (dir === 'prev') {
       if (pos.col - 1 >= 0) return { cell: at(pos.row, pos.col - 1) };
@@ -181,12 +183,8 @@
       if (parent && !parent.querySelector('tr')) parent.remove(); // 空壳（thead/tbody）整删，不留 <thead></thead>
       const rest = tableRowsOf(table);
       if (!rest.length) return { deletedTable: true }; // 删光 → 升级删整表（绝不留 <table></table> ghost）
-      if (!inThead && !rest.some((r) => r.parentElement && r.parentElement.tagName === 'TBODY')) {
-        // 删掉最后一个数据行、表头尚存 → 自动补一空行（tbody ≥1 文法；Colin 拍板的退化收敛）
-        const nCols = rowCellsOf(rest[0]).length;
-        const tb = anyTbody(); const tr = buildRow(nCols, null); tb.appendChild(tr);
-        return rowCellsOf(tr)[Math.min(col, nCols - 1)] || null;
-      }
+      // T9（Notion 实测，替换掉旧的「自动补一空行」收敛）：数据行删光、只剩表头 → **不补**，表带着表头
+      // 继续立着；「表恒 ≥1 行 ≥1 列」由**菜单端**保证——最后一行/列的「删除」项直接不给（退化态不可达）。
       const t = rest[Math.min(row, rest.length - 1)];
       const cs = rowCellsOf(t);
       return cs[Math.min(col, cs.length - 1)] || null;
@@ -204,6 +202,51 @@
       }
       const nr = tableRowsOf(table)[row];
       return nr ? (rowCellsOf(nr)[at] || null) : null;
+    }
+    // dup 克隆清洗（对抗审查 ADV-2 实测）：cloneNode(true) 会把编辑态属性（contenteditable /
+    // data-ws2-cell / data-ws2-ce…）原样拷进副本——正在编辑的格被复制后屏幕上出现**两个**蓝色编辑框，
+    // 其中一个不在任何跟踪状态里（幽灵，要等 undo/reset 才被清）。剥除清单复用 serialize 的
+    // WS2_MARKERS 单一真相源（两份清单必然漂移的教训）。
+    const scrubClone = (root) => {
+      root.removeAttribute('id'); root.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id')); // 防重复锚点
+      const all = [root, ...root.querySelectorAll('*')];
+      for (const n of all) {
+        n.removeAttribute('contenteditable');
+        if (SER && SER.WS2_MARKERS) { for (const a of [...n.attributes]) if (SER.WS2_MARKERS.has(a.name)) n.removeAttribute(a.name); }
+      }
+      return root;
+    };
+    if (op === 'row-dup') {
+      const clone = scrubClone(curRow.cloneNode(true));
+      if (inThead) {
+        // 表头行复制落 tbody 首（thead ≤1 硬约束），th → td（保内容与对齐 class）
+        [...clone.children].forEach((c) => {
+          if (c.tagName !== 'TH') return;
+          const td = doc.createElement('td');
+          while (c.firstChild) td.appendChild(c.firstChild);
+          alClasses(c).forEach((cl) => td.classList.add(cl));
+          c.replaceWith(td);
+        });
+        const tb = anyTbody(); tb.insertBefore(clone, tb.firstChild);
+      } else curRow.after(clone);
+      return rowCellsOf(clone)[Math.min(col, rowCellsOf(clone).length - 1)] || null;
+    }
+    if (op === 'row-clear') {
+      rowCellsOf(curRow).forEach((c) => { while (c.firstChild) c.firstChild.remove(); c.appendChild(doc.createElement('br')); });
+      return rowCellsOf(curRow)[Math.min(col, rowCellsOf(curRow).length - 1)] || null;
+    }
+    if (op === 'col-dup') {
+      for (const r of rows) {
+        const src = rowCellsOf(r)[col]; if (!src) continue;
+        const clone = scrubClone(src.cloneNode(true)); // ADV-2 同款清洗
+        src.after(clone);
+      }
+      const nr = tableRowsOf(table)[row];
+      return nr ? (rowCellsOf(nr)[col + 1] || null) : null;
+    }
+    if (op === 'col-clear') {
+      for (const r of rows) { const c = rowCellsOf(r)[col]; if (c) { while (c.firstChild) c.firstChild.remove(); c.appendChild(doc.createElement('br')); } }
+      return cellAt(table, row, col);
     }
     if (op === 'col-del') {
       if (rowCellsOf(curRow).length <= 1) return { deletedTable: true }; // 删最后一列 → 升级删整表
@@ -316,6 +359,12 @@
   // 只允许 phrasing 或 <p> 子元素，不许装列表/表格/别的块。两者文法一致，交互语义也该一致。
   function isMultiParaContainer(el) {
     return !!el && el.nodeType === 1 && (el.tagName === 'BLOCKQUOTE' || (el.classList && el.classList.contains('ws-callout')));
+  }
+  // 容器「被掏空」判据（对抗审查残余①）：⚠ 不能看 firstElementChild——外部文件的「裸 <br> 直挂容器」
+  // 形态里 BR 是元素、判不掉。口径 = 无 <p> 子行且无可见内容/媒体。
+  function isContainerEmptied(co) {
+    if (!co) return false;
+    return !co.querySelector(':scope > p') && isBlankRun(co.textContent || '') && !co.querySelector('img,hr,table,figure,ul,ol,details');
   }
   // 合并接缝的空白修剪（对抗审查 disk-X1）：排版过的 HTML 里，块的第一个子节点通常是**源码缩进**
   // 产生的空白 —— `<p>\n  甲乙丙\n</p>` 的首子是文本节点 "\n  甲乙丙\n"。行首退格把它整块搬进上一块时，
@@ -569,6 +618,40 @@
     grip.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>';
     doc.documentElement.appendChild(grip);
 
+    // T1/T5（表格 Notion 化）：行手柄（表左缘外、y 随悬停行）+ 列手柄（表顶外、x 随悬停列），
+    // 与块手柄（gutter ⋮⋮，恒锚整表）**三套并存**——Notion 实测同款。点开各自的按轴菜单。
+    const rowHandle = mk('div', 'ws-rowsel');
+    rowHandle.style.position = 'absolute'; rowHandle.style.display = 'none';
+    rowHandle.title = T('editor.tableRowHandleTip');
+    const colHandle = mk('div', 'ws-colsel');
+    colHandle.style.position = 'absolute'; colHandle.style.display = 'none';
+    colHandle.title = T('editor.tableColHandleTip');
+    doc.documentElement.appendChild(rowHandle);
+    doc.documentElement.appendChild(colHandle);
+    let hoverTr = null;      // 悬停的表格行 <tr>（行手柄作用对象；随 mousemove 更新）
+    let hoverColIdx = -1;    // 悬停的列索引（列手柄作用对象）
+    let hoverTable = null;   // 两个手柄共同的宿主表
+    let menuAxis = null;     // 轴菜单开着时的作用快照 {axis:'row',tr} | {axis:'col',colIdx}——开着时手柄冻结
+    function hideAxisHandles() { if (menuAxis) return; rowHandle.style.display = 'none'; colHandle.style.display = 'none'; hoverTr = null; hoverColIdx = -1; hoverTable = null; }
+    function positionAxisHandles(tbl, clientX, clientY) {
+      const { sx, sy } = vp();
+      const tr0 = (() => { let best = null, bd = Infinity; for (const r of tableRowsOf(tbl)) { const rr = r.getBoundingClientRect(); const d = clientY < rr.top ? rr.top - clientY : clientY > rr.bottom ? clientY - rr.bottom : 0; if (d < bd) { bd = d; best = r; } } return best; })();
+      const cells0 = tr0 ? rowCellsOf(tr0) : [];
+      let ci = -1, bd = Infinity;
+      cells0.forEach((c, i) => { const cr = c.getBoundingClientRect(); const d = clientX < cr.left ? cr.left - clientX : clientX > cr.right ? clientX - cr.right : 0; if (d < bd) { bd = d; ci = i; } });
+      if (!tr0 || ci < 0) { hideAxisHandles(); return; }
+      hoverTr = tr0; hoverColIdx = ci; hoverTable = tbl;
+      const tRect = tbl.getBoundingClientRect();
+      const rRect = tr0.getBoundingClientRect();
+      rowHandle.style.left = (tRect.left + sx - 16) + 'px';
+      rowHandle.style.top = (rRect.top + sy + rRect.height / 2 - 10) + 'px';
+      rowHandle.style.display = 'flex';
+      const cRect = cells0[ci].getBoundingClientRect();
+      colHandle.style.left = (cRect.left + sx + cRect.width / 2 - 10) + 'px';
+      colHandle.style.top = (tRect.top + sy - 14) + 'px';
+      colHandle.style.display = 'flex';
+    }
+
     // U4「+」快捷插入钮（gutter 里紧挨手柄左侧，同显同隐；作用对象与手柄一致 = 行或块）
     const plus = mk('div', 'ws-plus');
     plus.style.position = 'absolute';
@@ -678,6 +761,54 @@
       return best;
     }
 
+    // ===== 容器化（PR-3，对拍 C1/C2/C5/C6/C7/C9/C11）：多段容器（callout/quote）内每个直接子 <p> 是
+    // 独立**交互**行——手柄/菜单/删除/插入/Enter/Esc/拖拽的作用单元下沉到段；**存储不动**（磁盘仍是
+    // 一个容器，Schema 决策4 文法原样）。机制 = 列表行级（U1-U4）的推广，「行」从 <li> 泛化到容器 <p>。=====
+    // 容器的「第一行宿主」：首个实子是 <p> → 那个 <p>；裸行内开头（混排，外部文件才有）/空 → 容器本身。
+    function containerFirstLineHost(container) {
+      let n = container.firstChild;
+      while (n && n.nodeType === 3 && isBlankRun(n.nodeValue)) n = n.nextSibling;
+      if (n && n.nodeType === 1 && n.tagName === 'P') return n;
+      return container;
+    }
+    // 光标所在的行宿主：容器直接子 <p>，或容器本身（光标在裸行内区）。光标不在容器内 → null。
+    function caretLineHostIn(container) {
+      const sel = doc.getSelection();
+      if (!sel || !sel.rangeCount) return null;
+      let n = sel.anchorNode;
+      if (!n || !container.contains(n)) return null;
+      if (n.nodeType === 3) n = n.parentElement;
+      while (n && n !== container && n.parentElement !== container) n = n.parentElement;
+      return (n && n !== container && n.tagName === 'P') ? n : container;
+    }
+    // 悬停行解析（rowOf 的容器版）：最近的直接子 <p>；**首行返回 null = 容器手柄域**——Notion C1 实测：
+    // 悬停第 1 段给的是容器自己的手柄（框外左侧、作用=整框），其余段才是段手柄。
+    function paraOf(container, clientY) {
+      const first = containerFirstLineHost(container);
+      let best = null, bestD = Infinity;
+      for (const c of container.children) {
+        if (c.tagName !== 'P' || c.hasAttribute('data-ws2-ui')) continue;
+        const r = c.getBoundingClientRect();
+        const d = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
+        if (d < bestD) { bestD = d; best = c; }
+      }
+      if (!best || best === first) return null;
+      return best;
+    }
+    // 「行锚元素」谓词：<li>，或多段容器的直接子 <p>。gripRow/openBlockMenu/removeRow 全按它分派。
+    function isRowAnchor(el) {
+      if (!el || el.nodeType !== 1) return false;
+      if (el.tagName === 'LI') return true;
+      return el.tagName === 'P' && el.parentElement && isMultiParaContainer(el.parentElement);
+    }
+    // Esc 段选中的真相源：不设变量，直接以「段上挂着 data-ws2-selected 且无 selectedEl/menuRow」为准
+    //（行模式「不设 selectedEl」原则 + 避免又一个会 stale 的引用）。
+    function rowSelEl() {
+      if (menuRow || selectedEl) return null;
+      const p = blockRoot.querySelector('p[data-ws2-selected]');
+      return (p && p.parentElement && isMultiParaContainer(p.parentElement)) ? p : null;
+    }
+
     // ---- 定位 ----
     function vp() { return { sx: (win.scrollX || 0), sy: (win.scrollY || 0) }; }
     // gutter 的**锚点**也要像显隐那样收成单一出口（P2-3）：此前 enterEdit/onScroll 只认 hoverEl，
@@ -707,7 +838,7 @@
       if (!lh || Number.isNaN(lh)) lh = (parseFloat(cs.fontSize) || 15) * 1.5;
       const top = (r.top + sy + Math.max(0, (Math.min(lh, r.height) - 22) / 2)) + 'px';
       grip.style.top = top; plus.style.top = top;
-      gripRow = (el.tagName === 'LI') ? el : null;
+      gripRow = isRowAnchor(el) ? el : null;
       gripEl = gripRow ? (blockOf(el) || el) : el;
       setGutterVisible(true);
     }
@@ -2279,6 +2410,20 @@
     //（嵌套子列表移除、宿主行保留；顶层列表 de-list 成空段落进编辑，顺带满足 toggle 体「≥1 块」铁则）。
     function removeRow(row) {
       if (!row || !row.isConnected || !row.parentElement) { deselect(); return; } // P2-4：行已被别的路径删掉（如 ⌘A 全删）→ 收摊，别抛
+      // C2：容器段——只删那一段，框留着；框被掏空 → 原位收敛成空段落（C8 终态同款，别留空壳框）
+      if (row.tagName === 'P') {
+        const co = row.parentElement;
+        row.remove();
+        if (isContainerEmptied(co)) {
+          const np = doc.createElement('p'); np.appendChild(doc.createElement('br'));
+          co.replaceWith(np);
+          if (undoMgr) undoMgr.checkpoint(); markDirty(); deselect();
+          enterEdit(np, { mode: 'start' });
+          return;
+        }
+        if (undoMgr) undoMgr.checkpoint(); markDirty(); deselect();
+        return;
+      }
       const list = row.parentElement;
       const hostLi = list && list.parentElement && list.parentElement.tagName === 'LI' ? list.parentElement : null;
       row.remove();
@@ -2302,7 +2447,7 @@
     function openBlockMenu(el, row) {
       // 表格行列操作的「当前格」快照：必须在 selectBlock（会 exitCell）之前取——菜单项点击时 cellEl 早已清空
       const menuCell = (cellEl && el.contains && el.contains(cellEl)) ? cellEl : null;
-      const rowMode = !!(row && row.tagName === 'LI' && classify(el) === 'list' && el.contains(row));
+      const rowMode = !!(row && el.contains(row) && ((row.tagName === 'LI' && classify(el) === 'list') || (row.tagName === 'P' && isMultiParaContainer(el)))); // C2：容器段也是行作用域
       if (rowMode) {
         // 作用域诚实可见：高亮那一行、不圈整张列表。**不设 selectedEl**——它是「块灰选」状态，
         // 塞个 <li> 进去会让 Delete 键 / removeBlock 的 topBlocks 计数按块语义误伤（li 不是顶层块）。
@@ -2319,7 +2464,10 @@
       // 菜单头标注作用对象的块类型（对拍：Notion 菜单头写 "To-do list"/"Numbered list"，我们此前没有，
       // 用户看不出这菜单管的是哪种块）。复用既有块类型词条，零新增 i18n key。
       const headKey = (() => {
-        if (rowMode) { const pl = row.parentElement; return pl.tagName === 'OL' ? 'blockNumberedList' : (pl.classList.contains('ws-todo') ? 'blockTodoList' : 'blockBulletList'); }
+        if (rowMode) {
+          if (row.tagName === 'P') return 'blockText'; // C2：Notion 段菜单标题就是 "Text"
+          const pl = row.parentElement; return pl.tagName === 'OL' ? 'blockNumberedList' : (pl.classList.contains('ws-todo') ? 'blockTodoList' : 'blockBulletList');
+        }
         const c = classify(el);
         if (c === 'toggle') return 'blockToggle';
         if (c === 'table') return 'blockTable';
@@ -2356,7 +2504,8 @@
       // 嵌套行不给「转为」组（P1-2）：嵌套 li 不是顶层列表的直接子项，抽不出去；产物也无法存在于嵌套层
       // （Schema 的 li 只装行内内容或子列表，同「+」那条结构性分歧）。删除/插入/复制/上色对嵌套行都是对的，照给。
       const rowNested = rowMode && row.parentElement !== el;
-      if (isEditableEl(el) && !rowNested) {
+      const rowIsPara = rowMode && row.tagName === 'P'; // 容器段：段级「转为」未对拍（Notion 段菜单有 Turn into，但目标语义没实测），先不给——别造半吊子
+      if (isEditableEl(el) && !rowNested && !rowIsPara) {
         sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading'); sub(T('editor.turnToQuote'), itemByKey('quote'), 'quote'); sub(T('editor.turnToCallout'), itemByKey('callout'), 'callout'); // C3：Notion 的 Turn into 有 Callout，我们此前变成别的块后回不来
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       } else if (classify(el) === 'toggle') {
@@ -2375,10 +2524,11 @@
           markDirty();
           enterCell(res, { mode: 'start' }); // 焦点显式还给落点格（悬空焦点 = macOS IME 唤不起）
         }, !!danger, danger ? 'trash' : 'plus');
-        tOp('tableRowAbove', 'row-above'); tOp('tableRowBelow', 'row-below');
-        tOp('tableColLeft', 'col-left'); tOp('tableColRight', 'col-right');
-        tOp('tableDelRow', 'row-del', true); tOp('tableDelCol', 'col-del', true);
-        const sepT = doc.createElement('div'); sepT.setAttribute('data-ws2-ui', WS2_OVERLAY); sepT.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sepT);
+        // T5/T7（按轴分离）：行列增删**退役出块菜单**——行操作在行手柄、列操作在列手柄，各自的菜单
+        // 只装自己轴的操作（Notion 项集实测）。两种前置状态（cell 编辑 / Esc 灰选）的块菜单随之一致（T7）。
+        // cell 对齐保留在这——Notion simple table 没有对齐概念，这是我们的**有意超集**（spec 记录），
+        // 不算漂移。tOp 通道留给对齐组之外未来的 cell 级操作。
+        void tOp;
         // 对齐三态（U6）：per-cell ws-al-*（文法即 cell 级）；左 = 清 class（默认态零字节）
         const aligns = doc.createElement('div'); aligns.setAttribute('data-ws2-ui', WS2_OVERLAY); aligns.className = 'ws-blockmenu-aligns';
         [['alignLeft', null], ['alignCenter', 'ws-al-center'], ['alignRight', 'ws-al-right']].forEach(([k, cls]) => {
@@ -2408,9 +2558,11 @@
       // 插入 / 复制 / 删除：行模式作用于该行（新行插同列表、复制行、删行），块模式维持既有整块语义。
       add(T('editor.insertBelow'), () => {
         if (rowMode) {
-          const li = doc.createElement('li'); li.appendChild(doc.createElement('br')); row.after(li);
+          const nr = doc.createElement(row.tagName === 'P' ? 'p' : 'li'); nr.appendChild(doc.createElement('br')); row.after(nr); // C5：容器段的「在下方插入」落框内
           if (undoMgr) undoMgr.checkpoint(); markDirty(); closeBlockMenu();
-          enterEdit(el, { mode: 'start' }); caretAtLiTextEnd(li);
+          enterEdit(el, { mode: 'start' });
+          if (nr.tagName === 'LI') caretAtLiTextEnd(nr);
+          else { try { const r0 = doc.createRange(); r0.setStart(nr, 0); r0.collapse(true); const s0 = doc.getSelection(); s0.removeAllRanges(); s0.addRange(r0); } catch (x) {} }
           return;
         }
         const nx = insertAfter(el, itemByKey('text')); closeBlockMenu(); enterEdit(nx, { mode: 'start' });
@@ -2439,11 +2591,81 @@
       blockMenu.style.top = (r.bottom + sy + 4) + 'px';
       blockMenu.style.display = 'block';
     }
+    // ===== T5：行/列按轴菜单（Notion 项集实测：行=[上插/下插/复制/清空/删]、列=[左插/右插/复制/清空/删]，
+    // 互不含对方的操作）。复用 blockMenu 容器；作用行/列用 menurow/menucol 标记画出来（T6 同一通道）。
+    // T9 退化守卫在**构建端**：总行数 ≤1 不给「删除本行」、列数 ≤1 不给「删除本列」——表恒 ≥1 行 ≥1 列，
+    // 退化态从「删完再补救」变成「根本删不出来」（Notion 同款）。=====
+    function openAxisMenu(axis) {
+      if (!hoverTable || (axis === 'row' && !hoverTr) || (axis === 'col' && hoverColIdx < 0)) return;
+      const tbl = hoverTable, tr = hoverTr, ci = hoverColIdx;
+      // ADV-3（对抗审查实测）：rect 必须在 closeBlockMenu **之前**快照——切轴/双击手柄时关旧菜单会
+      // hideAxisHandles，display:none 的手柄 rect 全零，菜单会跳到文档左上角。
+      const anchorRect = (axis === 'row' ? rowHandle : colHandle).getBoundingClientRect();
+      closeBlockMenu();
+      // ADV-1（对抗审查实测）：cell 编辑态**不设 editingEl**（设计如此），exitEdit() 对它是空转——
+      // 此前菜单开着时格还挂着 contenteditable，Esc 先被 cell 分支截走（selectTableFromCell 不关菜单），
+      // 僵尸菜单下再按 Backspace 会把整表删掉、菜单指着 detached 表。exitCell 才是真正的收口。
+      exitEdit(); exitCell();
+      blockMenu.innerHTML = '';
+      menuAxis = axis === 'row' ? { axis, tr } : { axis, colIdx: ci };
+      // 作用范围可见（T6 通道）：行 → 整行标；列 → 各行同列格标
+      clearMenuScope();
+      if (axis === 'row') tr.setAttribute('data-ws2-menurow', '');
+      else tableRowsOf(tbl).forEach((r) => { const c = rowCellsOf(r)[ci]; if (c) c.setAttribute('data-ws2-menucol', ''); });
+      const head = doc.createElement('div'); head.setAttribute('data-ws2-ui', WS2_OVERLAY); head.className = 'ws-blockmenu-head';
+      head.textContent = T(axis === 'row' ? 'editor.tableRowMenuHead' : 'editor.tableColMenuHead');
+      blockMenu.appendChild(head);
+      const refCell = axis === 'row' ? rowCellsOf(tr)[Math.max(0, ci)] : (rowCellsOf(tableRowsOf(tbl)[0])[ci] || null);
+      const item = (labelKey, op, danger, icon) => {
+        const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY);
+        it.className = 'ws-blockmenu-item' + (danger ? ' ws-blockmenu-item--danger' : '');
+        it.innerHTML = '<span class="ws-blockmenu-ico">' + menuIcon(icon || (danger ? 'trash' : 'plus')) + '</span><span></span>';
+        it.lastElementChild.textContent = T('editor.' + labelKey);
+        it.addEventListener('mousedown', (ev) => { ev.preventDefault(); ev.stopPropagation(); });
+        it.addEventListener('click', (ev) => {
+          ev.preventDefault(); ev.stopPropagation();
+          closeBlockMenu();
+          if (!refCell) return;
+          if (undoMgr) undoMgr.checkpoint();
+          const res = tableEditOp(doc, tbl, refCell, op);
+          if (res && res.deletedTable) { removeBlock(tbl); return; } // 守卫下不可达，防御保留
+          if (!res) return;
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          enterCell(res, { mode: 'start' });
+        });
+        blockMenu.appendChild(it);
+      };
+      if (axis === 'row') {
+        item('tableRowAbove', 'row-above'); item('tableRowBelow', 'row-below');
+        item('tableDupRow', 'row-dup', false, 'copy'); item('tableClearRow', 'row-clear', false, 'text');
+        if (tableRowsOf(tbl).length > 1) item('tableDelRow', 'row-del', true); // T9：最后一行不给删
+      } else {
+        item('tableColLeft', 'col-left'); item('tableColRight', 'col-right');
+        item('tableDupCol', 'col-dup', false, 'copy'); item('tableClearCol', 'col-clear', false, 'text');
+        const nCols = rowCellsOf(tableRowsOf(tbl)[0] || tr).length;
+        if (nCols > 1) item('tableDelCol', 'col-del', true); // T9：最后一列不给删
+      }
+      const hr = anchorRect;
+      const { sx, sy } = vp();
+      blockMenu.style.left = (hr.left + sx) + 'px';
+      blockMenu.style.top = (hr.bottom + sy + 4) + 'px';
+      blockMenu.style.display = 'block';
+      // 键盘可达：手柄的 mousedown 被 preventDefault（不夺焦点），iframe 可能从未获得焦点——
+      // 那样 Esc 落在宿主窗口、永远进不了本文档的 keydown，菜单关不掉（e2e 实测）。焦点停进 focusCatcher。
+      try { focusCatcher.focus({ preventScroll: true }); } catch (x) {}
+    }
+    rowHandle.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    rowHandle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAxisMenu('row'); });
+    colHandle.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    colHandle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAxisMenu('col'); });
+
     // 单一关闭出口——所有调用点全走它，两种作用域标记都在这里统一清
     function closeBlockMenu() {
       blockMenu.style.display = 'none';
       clearMenuScope(); // T6：表格作用行/列/交点格标记
       if (menuRow) { menuRow.removeAttribute('data-ws2-selected'); menuRow = null; } // U3：行作用域高亮随菜单退场
+      if (menuAxis) { menuAxis = null; hideAxisHandles(); } // T5：轴菜单退场时解冻并收起行/列手柄
     }
 
     // ---- 斜杠菜单 ----
@@ -2667,7 +2889,12 @@
       // U1 行级手柄：列表块内手柄逐行跟随（锚 hoverRow），其余块仍锚整块。
       // ⚠ A 阶段中间态（只在 feat/ux-granularity 隔离分支）：拖拽/菜单仍以 hoverEl（整块）为
       // 作用对象，B/C 单元逐步下沉到行——进 main 前必须整体完成。
-      const row = (el && classify(el) === 'list') ? rowOf(e.target, el, e.clientY) : null;
+      const row = (el && classify(el) === 'list') ? rowOf(e.target, el, e.clientY)
+        : (el && isMultiParaContainer(el) && !isLeafTextBlock(el)) ? paraOf(el, e.clientY) : null; // C1：容器段手柄（首段=容器手柄域→null）
+      // T1：悬停表格 → 行/列手柄跟随（菜单开着时冻结）。收起的判据照块手柄的既有裁决（ADV-4，
+      // 「手柄躲鼠标」的同款教训）：el=null（表缘与手柄之间的 8px 间隙 / 块外空白）**不收**——
+      // 否则慢速滑向手柄的鼠标途经间隙时手柄先一步消失；只在悬停到**另一个非表格块**上才收。
+      if (!menuAxis) { if (el && classify(el) === 'table') positionAxisHandles(el, e.clientX, e.clientY); else if (el) hideAxisHandles(); }
       if (el && (el !== hoverEl || row !== hoverRow)) { hoverEl = el; hoverRow = row; positionGrip(row || el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
       // 移到块外空白/gutter 间隙：不立即隐藏（停在最后悬停块、保证可点）；隐藏交给进编辑/离开文档。
     }
@@ -2789,7 +3016,7 @@
           const crossOut = !!(cTbl && selX && selX.rangeCount && !selX.isCollapsed && (() => { const rr = selX.getRangeAt(0); return !cellEl.contains(rr.startContainer) || !cellEl.contains(rr.endContainer); })());
           if (!cTbl || crossOut) { exitCell(); }
           else {
-            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); selectTableFromCell(cTbl); return; } // Esc 上卷=灰选整表；selectedEl 永不为 TD
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (menuAxis) closeBlockMenu(); selectTableFromCell(cTbl); return; } // Esc 上卷=灰选整表（轴菜单开着先关——纵深，ADV-1）；selectedEl 永不为 TD
             // ⌘A 三档（列表三档先例）：① 选本格内容 → ② 灰选整表（删除语义=整删，矩形安全）→ ③ 全篇（走非编辑态 generic）
             if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
               e.preventDefault();
@@ -2814,7 +3041,7 @@
               e.preventDefault();
               const t2 = cellNavTarget(cTbl, cellEl, e.shiftKey ? 'prev' : 'next');
               if (t2 && t2.cell) enterCell(t2.cell, { mode: 'end' });
-              else if (t2 && t2.newRow) { const tr = appendTableRow(cTbl); const c0 = rowCellsOf(tr)[0]; if (c0) enterCell(c0, { mode: 'start' }); }
+              else if (t2 && t2.stay) return; // T11：末格 Tab 停留（Notion 同款；行不悄悄变多）
               else if (t2 && t2.exit === 'up') exitToNeighbor(cTbl, 'up');
               return;
             }
@@ -3167,6 +3394,65 @@
           }
           return; // 非空/非末项 → 交原生（新建 <li>），分裂后 onSplit 清理克隆属性
         }
+        // ===== C6/C7：多段容器内 Enter = 框内切行，绝不劈框、绝不掉框外 =====
+        // 此前：框末 Enter 走「新建正文块」（新行掉框外，C6）；框中 Enter 走 splitBlock 劈整个容器
+        //（一个框变两个，C7）。Notion 两种情形框都不动：行内一分为二 / 框内多一行。
+        if (isMultiParaContainer(editingEl)) {
+          // ADV-C1/C4（对抗审查实测）：非折叠选区必须先删再切行（splitBlock 同款）——否则 extract 会把
+          // 部分选中的边界 <p> 连 id 克隆进 fragment：嵌套 <p><p> + 重复 id + 选中的字一个没删，
+          // 且 reparse 会拍平嵌套 = 屏幕结构 ≠ 落盘结构（静默变形）。
+          const selC = doc.getSelection();
+          if (!selC || !selC.rangeCount) return;
+          e.preventDefault();
+          if (!selC.isCollapsed) { try { doc.execCommand('delete'); } catch (x) {} }
+          // lh 从**塌陷后的 range 起点**推导——不能用 sel.anchorNode：反向选区（Shift+↑）的 anchor
+          // 在选区**尾**，与 Range 恒正向的 startContainer 不是同一个段（ADV-C1 的另一半根因）。
+          const rgC = selC.rangeCount ? selC.getRangeAt(0) : null;
+          if (!rgC) return;
+          let lhN = rgC.startContainer;
+          if (lhN && lhN.nodeType === 3) lhN = lhN.parentElement;
+          while (lhN && lhN !== editingEl && lhN.parentElement !== editingEl) lhN = lhN.parentElement;
+          const lh = (lhN && lhN !== editingEl && lhN.tagName === 'P') ? lhN : (lhN === editingEl ? editingEl : caretLineHostIn(editingEl));
+          if (!lh) return;
+          // 空末行 Enter → 跳出框（列表「双回车退出」的同款约定；Notion 未实测这条，记 spec 分歧）。
+          const lastH = lastLineHostOf(editingEl);
+          if (lh !== editingEl && lh === lastH && isBlankRun(lh.textContent || '') && !lh.querySelector('img,hr,table')) {
+            lh.remove();
+            if (!editingEl.firstChild) editingEl.appendChild(doc.createElement('br')); // 掏空的框占一行（占位由 data-ws2-empty 驱动）
+            const nx = insertAfter(editingEl, itemByKey('text'));
+            if (undoMgr) undoMgr.checkpoint(); markDirty();
+            enterEdit(nx, { mode: 'start' });
+            return;
+          }
+          // 光标处切行：光标后的内容进新 <p>，插在当前行宿主之后（裸行内区 → 插在第一个 <p> 之前/容器末）
+          const sel0 = selC;
+          const rg = rgC;
+          const np = doc.createElement('p');
+          const tail = doc.createRange();
+          tail.setStart(rg.startContainer, rg.startOffset);
+          if (lh === editingEl) {
+            // ADV-C6：stop 必须取**光标之后**的第一个 <p>——混排（裸文本+<p> 交错）里文档序第一个 <p>
+            // 可能在光标前面，setEndBefore 端点倒挂、Range 塌陷，空段插到上面两行去（实测）。
+            let stop = null;
+            for (const c of editingEl.children) { if (c.tagName === 'P' && rg.comparePoint(c, 0) === 1) { stop = c; break; } }
+            if (stop) tail.setEndBefore(stop); else tail.setEnd(editingEl, editingEl.childNodes.length);
+            np.appendChild(tail.extractContents());
+            if (stop) editingEl.insertBefore(np, stop); else editingEl.appendChild(np);
+          } else {
+            tail.setEnd(lh, lh.childNodes.length);
+            np.appendChild(tail.extractContents());
+            lh.after(np);
+          }
+          // ⚠ 判「空」不能看 firstChild —— extract 会劈出**空文本节点**留在段里，firstChild 非 null 但
+          // 零高、无 line box、落不住光标，打字被静默吞/落进邻段（create-1「空 li 吞输入」的同款，实测复发）。
+          // 判据 = 无可见内容（无文字且无占行元素）→ 清干净再补占位 <br>。行首劈出的 lh 同病同修。
+          const padLine = (el2) => { if (!(el2.textContent || '') && !el2.querySelector('br,img,hr')) { while (el2.firstChild) el2.firstChild.remove(); el2.appendChild(doc.createElement('br')); } };
+          if (lh !== editingEl) padLine(lh);
+          padLine(np);
+          if (undoMgr) undoMgr.checkpoint(); markDirty();
+          try { const r2 = doc.createRange(); r2.setStart(np, 0); r2.collapse(true); sel0.removeAllRanges(); sel0.addRange(r2); } catch (x) {}
+          return;
+        }
         if (!isCaretAtRealEnd(doc, editingEl)) {
           // 段落中间/块首回车 → 在光标处劈成两个同类型块（换段）。绝不交原生（原生塞嵌套 <p>，写坏文档，Bug7）。
           // 严格块末判定（尾随空格不算块末）：否则「Hello␣␣␣|」按 Enter 会走新建空块、把空格留原块（B 组）。
@@ -3335,6 +3621,37 @@
       // Backspace 块首：空块删/落上一块末；非空并入上一块（按标签类型安全合并，绝不产生非法嵌套）
       if (e.key === 'Backspace' && editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
+        // ADV-C2（对抗审查实测）：框内**段间**合并自己接管——交原生的话 Chromium 会往接缝写
+        // font-family 垃圾 span（嵌套 li 合并当年修过的同一课），且 conform 判不出来、直接落盘。
+        // 首段行首不在此列（前面无行可并 → fall through 到 C8 首段脱框分支）。
+        if (isMultiParaContainer(editingEl)) {
+          const lhB = caretLineHostIn(editingEl);
+          if (lhB && lhB !== editingEl && isCaretAtStart(doc, lhB)) {
+            let prevLine = lhB.previousSibling;
+            while (prevLine && prevLine.nodeType === 3 && isBlankRun(prevLine.nodeValue)) prevLine = prevLine.previousSibling;
+            if (prevLine && prevLine.nodeType === 1 && prevLine.tagName === 'P') {
+              e.preventDefault();
+              stripPlaceholderBr(prevLine);
+              const joinAt = trimSeamHead(lhB.firstChild);
+              while (lhB.firstChild) prevLine.appendChild(lhB.firstChild);
+              lhB.remove();
+              if (undoMgr) undoMgr.checkpoint(); markDirty();
+              if (joinAt && joinAt.parentNode === prevLine) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const sB = doc.getSelection(); sB.removeAllRanges(); sB.addRange(r); } catch (x) {} }
+              else { try { const r = doc.createRange(); r.selectNodeContents(prevLine); r.collapse(false); const sB = doc.getSelection(); sB.removeAllRanges(); sB.addRange(r); } catch (x) {} }
+              return;
+            }
+            if (prevLine) { // 前一行是裸行内（混排）：拼到容器该位置，同样不交原生
+              e.preventDefault();
+              const joinAt = trimSeamHead(lhB.firstChild);
+              while (lhB.firstChild) editingEl.insertBefore(lhB.firstChild, lhB);
+              lhB.remove();
+              if (undoMgr) undoMgr.checkpoint(); markDirty();
+              if (joinAt && joinAt.parentNode) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const sB = doc.getSelection(); sB.removeAllRanges(); sB.addRange(r); } catch (x) {} }
+              return;
+            }
+            // prevLine 为空 = 首段行首 → fall through（C8 首段脱框）
+          }
+        }
         if (classify(editingEl) === 'list') {
           const lsel = doc.getSelection();
           const lnode = lsel && lsel.anchorNode ? (lsel.anchorNode.nodeType === 1 ? lsel.anchorNode : lsel.anchorNode.parentElement) : null;
@@ -3597,7 +3914,25 @@
         // 光标在容器末行尾 + 下一块是叶子文字块 → 下一块并进容器末行（「同缝同果」：= 缝后块行首 Backspace）。
         if (isMultiParaContainer(editingEl) && !isLeafTextBlock(editingEl)) {
           const lineHost = lastLineHostOf(editingEl);
-          if (!lineHost || !isCaretAtRealEnd(doc, lineHost)) return; // 不在末行尾 → 交原生（容器内删字/段间由原生管）
+          if (!lineHost || !isCaretAtRealEnd(doc, lineHost)) {
+            // ADV-C2 镜像：**段间** Delete（某行行尾、有下一行）同样自管——交原生会写 font 垃圾 span
+            const curL = caretLineHostIn(editingEl);
+            if (curL && curL !== editingEl && isCaretAtRealEnd(doc, curL)) {
+              let nl = curL.nextSibling;
+              while (nl && nl.nodeType === 3 && isBlankRun(nl.nodeValue)) nl = nl.nextSibling;
+              if (nl && nl.nodeType === 1 && nl.tagName === 'P') {
+                e.preventDefault();
+                stripPlaceholderBr(curL);
+                const joinAt = trimSeamHead(nl.firstChild);
+                while (nl.firstChild) curL.appendChild(nl.firstChild);
+                nl.remove();
+                if (undoMgr) undoMgr.checkpoint(); markDirty();
+                if (joinAt && joinAt.parentNode === curL) { try { const r = doc.createRange(); r.setStartBefore(joinAt); r.collapse(true); const sD = doc.getSelection(); sD.removeAllRanges(); sD.addRange(r); } catch (x) {} }
+                return;
+              }
+            }
+            return; // 其余：容器内删字交原生
+          }
           const cScope = scopeRootOf(editingEl);
           const cBlocks = (cScope === blockRoot) ? topBlocks() : blocksInScope(cScope);
           const nxt = cBlocks[cBlocks.indexOf(editingEl) + 1];
@@ -3740,8 +4075,28 @@
       if (e.key === 'Escape') {
         // U3 行作用域菜单开着时（无 editingEl / selectedEl，Esc 本会空转）→ 关菜单、清行高亮。
         // 只在这一态接管，块作用域的既有阶梯（editing→灰选→deselect，deselect 自带关菜单）一字不动。
-        if (menuRow && !editingEl && !selectedEl) { closeBlockMenu(); e.preventDefault(); e.stopPropagation(); return; }
+        if ((menuRow || menuAxis) && !editingEl && !selectedEl) { closeBlockMenu(); e.preventDefault(); e.stopPropagation(); return; } // 行作用域菜单 / 表格轴菜单同款退场
+        // C9 第二级：段选中态再 Esc → 上卷整框灰选（镜像 cell→整表的分级）
+        const rs0 = rowSelEl();
+        if (rs0 && !editingEl) {
+          const co = rs0.parentElement;
+          clearSelectedAttr();
+          selectBlock(co); positionGrip(co);
+          e.preventDefault(); e.stopPropagation(); return;
+        }
         if (editingEl) {
+          // C9 第一级：容器内编辑、光标在非首行段 → Esc 选中**那一段**（Notion：蓝罩只罩该子段）。
+          // 首行/裸行内区 → 整框（与「首段悬停给容器手柄」同一个域划分）。行模式不设 selectedEl（既有原则）。
+          if (isMultiParaContainer(editingEl)) {
+            const lh = caretLineHostIn(editingEl);
+            const first = containerFirstLineHost(editingEl);
+            if (lh && lh !== editingEl && lh !== first) {
+              exitEdit(); clearSelectedAttr(); selectedEl = null;
+              lh.setAttribute('data-ws2-selected', '');
+              positionGrip(lh); positionFmtbar();
+              e.preventDefault(); e.stopPropagation(); return;
+            }
+          }
           // 列表多一档（Wendi 2026-08-05 反馈；与 ⌘A 已有的三档对称）：① 当前行 ② 整个列表 ③ 取消。
           // 病灶：列表的 editingEl 是整个 <ul> —— 那是**存储单元**。而这一行的手柄、「+」、菜单作用域、
           // 行首退格、拖拽早就都是**行级**的了，唯独 Esc 把底层容器暴露出来：回车换行后按 Esc，
@@ -3761,6 +4116,11 @@
           if (up && up !== selectedEl) { selectBlock(up); positionGrip(up); e.preventDefault(); e.stopPropagation(); return; }
           deselect(); e.preventDefault(); e.stopPropagation(); return; // ③ 取消
         }
+      }
+      // 段选中态 Delete/Backspace → 只删那一段（C2/C9 的键盘闭环；removeRow 自带掏空收敛）
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !selectedEl && !editingEl) {
+        const rs = rowSelEl();
+        if (rs) { e.preventDefault(); clearSelectedAttr(); removeRow(rs); return; }
       }
       // 灰选中态 Delete/Backspace → 删整块。⚠ 灰选是**行**时必须走 removeRow：removeBlock 只认顶层块，
       // 文档只剩这一个列表时它会把 <li> 原地 retag 成 <p>，产出 <ul><p></p></ul> —— 非合规、整篇降级。
@@ -3886,6 +4246,17 @@
       const el = gripEl; if (!el) return;
       const row = gripRow;
       const above = !!e.altKey;
+      if (row && row.tagName === 'P' && isMultiParaContainer(el) && el.contains(row)) {
+        const np = doc.createElement('p'); np.appendChild(doc.createElement('br'));
+        if (above) row.before(np); else row.after(np);
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        enterEdit(el, { mode: 'start' });
+        try { const r0 = doc.createRange(); r0.setStart(np, 0); r0.collapse(true); const s0 = doc.getSelection(); s0.removeAllRanges(); s0.addRange(r0); } catch (x) {}
+        hoverRow = np; positionGrip(np);
+        // 刻意**不弹**块类型选择器（与顶层「+」不同）：框内文法只装 <p>，弹全量选择器会引导用户选非法类型。
+        // 结构性分歧记 docs/features/callout.md。
+        return;
+      }
       if (row && row.tagName === 'LI' && classify(el) === 'list' && el.contains(row)) {
         const list = row.parentElement;
         if (list === el) {
@@ -3911,7 +4282,7 @@
       openSlash(nx, false); // E5：同上——「+」是全局 gutter 行为，所有块类型旁边点都该弹
     });
     // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
-    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); dragFrom = gripRow || gripEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
+    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); clearSelectedAttr(); /* ADV-C5：段选中态起拖，data-ws2-selected 会跟着搬家成幽灵蓝条 */ dragFrom = gripRow || gripEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
     // 落点态是三个属性（线 / 缩进量 / 父行高亮），必须一起清——只清一个会留下幽灵高亮或错位的线
     function clearDrop() {
@@ -4248,6 +4619,31 @@
           return;
         }
       }
+      // ADV-C3（对抗审查实测）：多行粘贴进多段容器 → 逐行建 <p> 落**框内**（镜像上面列表逐行建 li）。
+      // 通用 splitBlock 会按 editingEl.tagName 克隆容器本身——一个 callout 粘成三个框，还产出无 <br>
+      // 的死空段（create-1 吞输入形态）。「粘贴多行 = 自动化连按 Enter」，Enter 刚立了「绝不劈框」，
+      // 同一不变式不能换个入口就破。
+      if (isMultiParaContainer(editingEl)) {
+        const selP = doc.getSelection();
+        doc.execCommand('insertText', false, lines[0]); // 第一行接光标处
+        let cur = caretLineHostIn(editingEl);
+        let anchor = (cur && cur !== editingEl) ? cur : null;
+        for (let i = 1; i < lines.length; i++) {
+          if (!lines[i].trim()) continue; // 跳空行：不留死空段
+          const np = doc.createElement('p');
+          np.textContent = lines[i];
+          if (anchor) anchor.after(np);
+          else { // 裸行内区：插在第一个 <p> 之前 / 容器末
+            let stop = null;
+            for (const c of editingEl.children) { if (c.tagName === 'P') { stop = c; break; } }
+            if (stop) editingEl.insertBefore(np, stop); else editingEl.appendChild(np);
+          }
+          anchor = np;
+        }
+        if (anchor) { try { const r = doc.createRange(); r.selectNodeContents(anchor); r.collapse(false); selP.removeAllRanges(); selP.addRange(r); } catch (x) {} }
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return;
+      }
       doc.execCommand('insertText', false, lines[0]);
       for (let i = 1; i < lines.length; i++) {
         if (splitBlock()) { if (lines[i]) doc.execCommand('insertText', false, lines[i]); } // splitBlock 劈出同类型新块（不嵌套）+ 光标移到新块首
@@ -4420,7 +4816,20 @@
       if (!dragFrom) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'none'; return; }
       e.preventDefault();
       if (isRowDrag()) { rowDragOver(e); return; } // U2：行拖拽走行级指示线
-      const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop(); el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top');
+      const el = blockOf(e.target); if (!el || el === dragFrom) return; clearDrop();
+      // C11：目标是多段容器、拖的是段落（顶层 <p> 或框内段）→ 落点下沉到框内段缝（半区判）。
+      // 只放行 <p>——Schema 决策4 框内只装 phrasing/<p>，标题/列表/图片仍落框前后（文法边界）。
+      if (isMultiParaContainer(el) && dragFrom && dragFrom.tagName === 'P') {
+        const cand = [...el.children].filter((c) => c.tagName === 'P' && c !== dragFrom && !c.hasAttribute('data-ws2-ui'));
+        let best = null, bestD = Infinity;
+        for (const c of cand) { const r = c.getBoundingClientRect(); const d = e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0; if (d < bestD) { bestD = d; best = c; } }
+        if (best) {
+          const r = best.getBoundingClientRect();
+          best.setAttribute('data-ws2-drop', e.clientY < r.top + r.height / 2 ? 'top' : 'bottom');
+          return;
+        }
+      }
+      el.setAttribute('data-ws2-drop', el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING ? 'bottom' : 'top');
     }
     // 外部拖放没有 dragend（源不在本文档）：拖出窗口又不松手时，插入线得自己收，否则留一条幽灵线。
     // 只认「离开窗口」（relatedTarget 为空）——块间移动时的 dragleave 每次都触发，清了线就会闪。
@@ -4449,9 +4858,26 @@
       // 自嵌守卫：details 不能拖进自己的体（无限嵌套）。
       if (el && el !== dragFrom && !(dragFrom.contains && dragFrom.contains(el))) {
         const srcScope = scopeRootOf(dragFrom); // 源作用域（判拖出后 ≥1 体块铁则）
-        const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING;
-        if (before) el.after(dragFrom); else el.before(dragFrom);
+        const srcParent = dragFrom.parentElement; // C11 反向：段拖出后源容器可能被掏空
+        // C11：落进容器的段缝（与 onDragOver 的下沉判据同源——指示线画在哪就落在哪）
+        let dropped = false;
+        if (isMultiParaContainer(el) && dragFrom.tagName === 'P') {
+          const cand = [...el.children].filter((c) => c.tagName === 'P' && c !== dragFrom && !c.hasAttribute('data-ws2-ui'));
+          let best = null, bestD = Infinity;
+          for (const c of cand) { const r = c.getBoundingClientRect(); const d = e.clientY < r.top ? r.top - e.clientY : e.clientY > r.bottom ? e.clientY - r.bottom : 0; if (d < bestD) { bestD = d; best = c; } }
+          if (best) {
+            const r = best.getBoundingClientRect();
+            if (e.clientY < r.top + r.height / 2) best.before(dragFrom); else best.after(dragFrom);
+            dropped = true;
+          }
+        }
+        if (!dropped) {
+          const before = el.compareDocumentPosition(dragFrom) & Node.DOCUMENT_POSITION_PRECEDING;
+          if (before) el.after(dragFrom); else el.before(dragFrom);
+        }
         if (srcScope !== blockRoot && srcScope !== scopeRootOf(dragFrom) && blocksInScope(srcScope).length === 0) srcScope.appendChild(doc.createElement('p')); // 拖出后源 toggle 空了 → 补空 p
+        // 段拖出后源容器掏空 → 移除（C8 终态同款：空壳框不留）
+        if (srcParent && srcParent !== dragFrom.parentElement && isMultiParaContainer(srcParent) && isContainerEmptied(srcParent)) srcParent.remove();
         if (undoMgr) undoMgr.checkpoint(); markDirty();
       }
       clearDrop(); dragFrom = null;
@@ -4565,6 +4991,7 @@
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       rangeSelEls = []; body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel')); // undo/redo 重写 body → 旧引用失效,按属性清
       setGutterVisible(false); fmtbar.style.display = 'none'; closeBlockMenu();
+      menuAxis = null; hideAxisHandles(); // undo/redo 重写 body → hoverTr/hoverTable 引用失效，必须一起清
     }
 
     // U8/clip-3：undo/redo 用 body.innerHTML 整体重写、正在编辑的块被销毁、焦点回落非可编辑 BODY →
@@ -4707,6 +5134,10 @@
   [data-ws2-rangesel] ::-moz-selection, [data-ws2-rangesel]::-moz-selection{background:transparent;}
   /* U23/select-4：跨 toggle 边界删除被拦成空操作时的反馈——高亮块闪一下橙红（不推布局、不用 transform 免劫持包含块）。 */
 
+  .ws-rowsel{width:8px;height:20px;border-radius:4px;background:#c9cdd3;cursor:pointer;z-index:99998;animation:ws-grip-in 120ms ease;}
+  .ws-rowsel:hover{background:#8a8f96;}
+  .ws-colsel{width:20px;height:8px;border-radius:4px;background:#c9cdd3;cursor:pointer;z-index:99998;animation:ws-grip-in 120ms ease;}
+  .ws-colsel:hover{background:#8a8f96;}
   .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
   .ws-grip:hover{background:#f0f1f3;color:#5a5f66;}
