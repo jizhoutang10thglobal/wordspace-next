@@ -1558,6 +1558,61 @@
       if (detached.length) { if (undoMgr) undoMgr.checkpoint(); markDirty(); }
       return nx;
     }
+    // 跨块选区覆盖的顶层块（拖过好几段时用）。范式照抄 execText 的 tops/i/j——按**块序**取首末之间的
+    // 连续跨度，而不是 rangeSelEls：后者只收「内容被完全罩住」的块，两端半选的块会漏掉，
+    // 而加粗（execText）对半选块照样生效，「转为」不能比它小气。
+    function selectedTopBlocks() {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+      const full = sel.getRangeAt(0);
+      if (scopeRootOf(full.startContainer) !== scopeRootOf(full.endContainer)) return null;
+      const tops = blocksInScope(scopeRootOf(full.startContainer));
+      let i = tops.indexOf(blockOf(full.startContainer)), j = tops.indexOf(blockOf(full.endContainer));
+      if (i < 0 || j < 0) return null;
+      if (i > j) { const t = i; i = j; j = t; }
+      return tops.slice(i, j + 1);
+    }
+    // 逐块 retag 转列表会产出 N 张各含一项的 <ul>；磁盘正本是**一张** canonical 列表（方案 B 的存储单元），
+    // 所以把结果里相邻的同类列表并成一张，并顺手吞掉紧贴前后的既有同类列表（选 3 段转待办、下面本来就有
+    // 一张待办 → 应该并成一张而不是并排两张）。被吞掉的 <ul> 的 id 迁到它第一项上，避免锚点静默断链。
+    function coalesceLists(nodes) {
+      const sameKind = (a, b) => a && b && a.nodeType === 1 && b.nodeType === 1
+        && (a.tagName === 'UL' || a.tagName === 'OL') && a.tagName === b.tagName && a.className === b.className;
+      const absorb = (head, other) => {
+        if (other.id) { const li0 = other.querySelector(':scope > li'); if (li0 && !li0.id) li0.id = other.id; }
+        while (other.firstChild) head.appendChild(other.firstChild);
+        other.remove();
+      };
+      const out = [];
+      for (const n of nodes) {
+        if (!n || !n.isConnected) continue;
+        const prev = out.length ? out[out.length - 1] : null;
+        if (sameKind(prev, n) && prev.nextElementSibling === n) { absorb(prev, n); continue; }
+        out.push(n);
+      }
+      for (const n of out) {
+        if (!n.isConnected || (n.tagName !== 'UL' && n.tagName !== 'OL')) continue;
+        const before = n.previousElementSibling;
+        if (sameKind(before, n)) { absorb(before, n); out[out.indexOf(n)] = before; continue; }
+        const after = n.nextElementSibling;
+        if (sameKind(n, after)) absorb(n, after);
+      }
+      return out.filter((n) => n.isConnected);
+    }
+    // 「转为」的跨块入口：选区覆盖的每个顶层块各自转，整批只落一次 undo checkpoint。
+    function turnIntoMany(blks, item) {
+      const outs = [];
+      for (const b of blks) {
+        if (!b.isConnected) continue;
+        ckSuppressed = true;
+        let nx; try { nx = turnInto(b, item); } finally { ckSuppressed = false; }
+        if (nx && nx.nodeType === 1) outs.push(nx);
+      }
+      if (!outs.length) return null;
+      const merged = coalesceLists(outs);
+      if (undoMgr) undoMgr.checkpoint(); markDirty();
+      return merged[merged.length - 1] || null;
+    }
     function removeBlock(el) {
       const scope = scopeRootOf(el); // U6：作用域感知——toggle 体内删块按体内计数；≥1 块铁则（summary-only 死胡同）
       const blocks = (scope === blockRoot) ? topBlocks() : blocksInScope(scope);
@@ -1990,11 +2045,15 @@
         const r = doc.createRange();
         try {
           if (b.contains(sC)) r.setStart(sC, sO); else r.setStart(b, 0);
-          if (b.contains(eC)) { r.setEnd(eC, eO); } else {
-            // ⚠ 不能直接 setEnd(b, childNodes.length)：带嵌套子列表的行会把那个 <ul> 一起圈进子段，
-            // span 就吞了块级元素——正是这条红线本身。夹到第一个嵌套块级子元素之前。
-            const nested = [...b.children].find((c) => NESTED_BLOCK.has(c.tagName));
-            if (nested) r.setEndBefore(nested); else r.setEnd(b, b.childNodes.length);
+          if (b.contains(eC)) r.setEnd(eC, eO); else r.setEnd(b, b.childNodes.length);
+          // ⚠ 终点**一律**夹进「这一行自己的内容区」：带子项的行，其嵌套 <ul> 在 DOM 上就长在这行肚子里，
+          // 两条路径都会把它圈进子段——`b.contains(eC)` 那条（选区末尾正好落在子项里）与 childNodes.length
+          // 那条一样危险。圈进去的后果二选一：span 吞块（保真红线），或跨块被 clampRangeToBlock 拒掉、
+          // 这一整行静默漏改。Colin 2026-08-05 实抓：把带子项的行拖到选区末尾，它就是不上色。
+          const nested = [...b.children].find((c) => NESTED_BLOCK.has(c.tagName));
+          if (nested) {
+            const cap = doc.createRange(); cap.setStart(b, 0); cap.setEndBefore(nested);
+            if (r.compareBoundaryPoints(r.END_TO_END, cap) > 0) r.setEndBefore(nested);
           }
         } catch (e) { continue; }
         if (r.collapsed) continue;
@@ -2137,10 +2196,15 @@
             e.preventDefault(); e.stopPropagation();
             const item = SLASH_ITEMS.find((x) => x.key === key);
             const target = editingEl || selectedEl;
-            if (target && item) {
+            // 跨块选区（拖过好几段）时 editingEl / selectedEl 都是空——原来直接什么都不做，
+            // 表现就是「点『转为』毫无反应，几段正文永远只能是正文」（Colin 2026-08-05 实抓：
+            // 三行待办转成正文之后就再也转不回去了）。这种情形走逐块转。
+            const many = target ? null : selectedTopBlocks();
+            if ((target || (many && many.length)) && item) {
               // Step 2：列表 + 选区只覆盖部分行 → 只抽那几行（turnIntoLines）；整列表选中或非列表 → 整块 turnInto。
               let nx;
-              if (target.tagName === 'UL' || target.tagName === 'OL') {
+              if (!target) { nx = turnIntoMany(many, item); }
+              else if (target.tagName === 'UL' || target.tagName === 'OL') {
                 const lines = selectedListLines(target);
                 const allCount = [...target.children].filter((c) => c.tagName === 'LI').length;
                 nx = (lines && lines.length && lines.length < allCount) ? turnIntoLines(target, lines, item) : turnInto(target, item);

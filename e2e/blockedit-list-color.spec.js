@@ -234,3 +234,20 @@ test('MS-4 保真红线：选区里有带子列表的行，span 绝不能吞掉�
   expect(s.span吞块, '这条就是红线本身：任何 span 含块级元素都算改坏文档').toBe(0);
   expect(s.合规).toBe(true);
 });
+
+// MS-5（Colin 2026-08-05 实机抓到）：MS-4 里带子项的行排在选区**中间**，终点落在它外面的 #post 上，
+// 走的是「夹到嵌套块之前」那条分支——正好躲开了 bug。把那行拖到选区**末尾**、终点落进它自己的子项里，
+// `b.contains(eC)` 分支就会把整棵子树圈进这行的子段 → 跨块 → clampRangeToBlock 拒掉 → 这行整行不上色。
+// 症状是「四行里偏偏有一行还是白的」，看着毫无道理。终点必须无条件夹进本行内容区。
+test('MS-5 带子项的行排在选区末尾 → 它自己那段也得上色（修前：唯独这行是白的）', async () => {
+  await launch();
+  await openDoc('<p id="pre">前</p><ul id="L"><li id="r2">父项二</li><li id="r1">父项一<ul><li id="n1">子甲</li><li id="n2">子乙</li></ul></li></ul><p id="post">后</p>');
+  await frame.locator('#r2').click(); await page.waitForTimeout(200);
+  await selectAcross('#r2', '#n2'); await page.waitForTimeout(300);
+  expect(await pickSwatch('color')).toBe('ok');
+  await page.waitForTimeout(500);
+  const s = await inlineShape();
+  expect(s.色span, '父项二 + 父项一 + 子甲 + 子乙 = 4 段，一段都不许漏').toBe(4);
+  expect(s.span吞块).toBe(0);
+  expect(s.合规).toBe(true);
+});

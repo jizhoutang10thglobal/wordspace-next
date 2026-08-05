@@ -345,6 +345,37 @@ test('MT-3 多行带子列表：子树跟着**各自那一行**走，不全堆�
   expect(await conformNow()).toBe(true);
 });
 
+// MT-5/MT-6（Colin 2026-08-05 实机抓到）：MT-1..4 全在「选区落在一张 <ul> 里」的前提下测的——
+// 一旦几行已经变成独立的顶层块（比如刚被转成正文），editingEl / selectedEl 就都是空，
+// 「转为」点了毫无反应，那几段永远只能是正文。跨块入口 turnIntoMany 补的就是这一段。
+test('MT-5 选中三个独立段落转标题 → 三个 H2（修前：点「转为」零反应）', async () => {
+  await launch();
+  await openDoc('<p id="a">甲</p><p id="b">乙</p><p id="c">丙</p><p id="tail">尾</p>');
+  await frame.locator('#a').click(); await page.waitForTimeout(200);
+  await selAcross('#a', '#c'); await page.waitForTimeout(300);
+  expect(await turnTo('标题 2')).toBe('ok');
+  await page.waitForTimeout(600);
+  expect(await blocksOf()).toEqual(['H2#a「甲」', 'H2#b「乙」', 'H2#c「丙」', 'P#tail「尾」']);
+  expect(await conformNow()).toBe(true);
+});
+
+test('MT-6 多段转待办 → 并成**一张**列表，并吞掉紧跟其后的既有待办（磁盘正本是一张）', async () => {
+  await launch();
+  await openDoc('<p id="a">甲</p><p id="b">乙</p><ul id="T" class="ws-todo"><li id="d">丁</li></ul>');
+  await frame.locator('#a').click(); await page.waitForTimeout(200);
+  await selAcross('#a', '#b'); await page.waitForTimeout(300);
+  expect(await turnTo('待办列表')).toBe('ok');
+  await page.waitForTimeout(600);
+  // 逐块 retag 天然会产 3 张并排的 <ul>；coalesceLists 把它们并回一张
+  expect(await blocksOf()).toEqual(['UL#a「甲乙丁」']);
+  const lis = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.querySelectorAll('#a > li')].map((e) => (e.id || '-') + ':' + e.textContent.trim());
+  });
+  expect(lis, '被吞掉的 <ul> 的 id 要迁到它第一项上，锚点不许静默断链').toEqual(['-:甲', 'b:乙', 'd:丁']);
+  expect(await conformNow()).toBe(true);
+});
+
 test('MT-4 负向：单行路径一字未变（E1/E2 那批门压在上面）', async () => {
   await launch();
   await openDoc(FIVE);
