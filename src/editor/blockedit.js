@@ -1600,12 +1600,23 @@
       return out.filter((n) => n.isConnected);
     }
     // 「转为」的跨块入口：选区覆盖的每个顶层块各自转，整批只落一次 undo checkpoint。
+    // 列表块只被选中部分行时仍走 turnIntoLines（跟单块入口同一语义）——**行信息必须在动手之前
+    // 全部算好**，因为第一块一转选区就没了，之后再问 selectedListLines 只会拿到空。
     function turnIntoMany(blks, item) {
+      const linesOf = new Map();
+      for (const b of blks) {
+        if (b.tagName !== 'UL' && b.tagName !== 'OL') continue;
+        const lines = selectedListLines(b);
+        const all = [...b.children].filter((c) => c.tagName === 'LI').length;
+        if (lines && lines.length && lines.length < all) linesOf.set(b, lines);
+      }
       const outs = [];
       for (const b of blks) {
         if (!b.isConnected) continue;
         ckSuppressed = true;
-        let nx; try { nx = turnInto(b, item); } finally { ckSuppressed = false; }
+        let nx;
+        try { nx = linesOf.has(b) ? turnIntoLines(b, linesOf.get(b), item) : turnInto(b, item); }
+        finally { ckSuppressed = false; }
         if (nx && nx.nodeType === 1) outs.push(nx);
       }
       if (!outs.length) return null;
@@ -2196,14 +2207,16 @@
             e.preventDefault(); e.stopPropagation();
             const item = SLASH_ITEMS.find((x) => x.key === key);
             const target = editingEl || selectedEl;
-            // 跨块选区（拖过好几段）时 editingEl / selectedEl 都是空——原来直接什么都不做，
-            // 表现就是「点『转为』毫无反应，几段正文永远只能是正文」（Colin 2026-08-05 实抓：
-            // 三行待办转成正文之后就再也转不回去了）。这种情形走逐块转。
-            const many = target ? null : selectedTopBlocks();
-            if ((target || (many && many.length)) && item) {
+            // 选区跨了几个顶层块就**无条件**走逐块转——不看 editingEl。原来只认 editingEl/selectedEl：
+            // 两者皆空（拖选后没有任何块处于编辑态）时点「转为」毫无反应，几段正文永远只能是正文；
+            // 有值时又只转那一块、其余静默不动。加粗（execText）从来就是照选区跨度逐块作用的，
+            // 「转为」跟它同一个规矩（Colin 2026-08-05 实抓：三行待办转成正文后再也转不回去）。
+            const many = selectedTopBlocks();
+            if ((target || (many && many.length > 1)) && item) {
               // Step 2：列表 + 选区只覆盖部分行 → 只抽那几行（turnIntoLines）；整列表选中或非列表 → 整块 turnInto。
               let nx;
-              if (!target) { nx = turnIntoMany(many, item); }
+              if (many && many.length > 1) { nx = turnIntoMany(many, item); }
+              else if (!target) { nx = null; }
               else if (target.tagName === 'UL' || target.tagName === 'OL') {
                 const lines = selectedListLines(target);
                 const allCount = [...target.children].filter((c) => c.tagName === 'LI').length;
