@@ -433,6 +433,10 @@
     const placeholderCss =
       "p[data-ws2-editing]:empty::before{content:'" + cssEsc(T('editor.emptyBlockPlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
       "figcaption[data-ws2-ce]:empty::before{content:'" + cssEsc(T('editor.figcaptionPlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
+      // C14：空 callout 编辑态占位。Notion 对空 callout 与普通空段落显示同一句文案 → 复用同一词条。
+      // 空态判据是 JS 维护的 data-ws2-empty（refreshToggleEmpty，与 toggle 共用一条通道），
+      // 只在编辑态（data-ws2-editing）画 —— 浏览器直开/非编辑态不出现。
+      ".ws-callout[data-ws2-editing][data-ws2-empty]::before{content:'" + cssEsc(T('editor.emptyBlockPlaceholder')) + "';color:#8a8f96;pointer-events:none;}" +
       // 空 toggle 的占位（对拍 T17：Notion 写 "Empty toggle. Click or drop blocks inside."，我们原来是
       // 一行纯空白、看不出这里能放东西）。**编辑器 chrome、不入盘**——浏览器直开时不该出现这行提示。
       // 判据：展开态且体内只有一个空叶子块。:has() 在 Chromium 可用；不可用时仅退化为无占位。
@@ -2027,6 +2031,7 @@
       if (t === 'P') return 'text';
       if (t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') return t.toLowerCase();
       if (t === 'BLOCKQUOTE') return 'quote';
+      if (t === 'DIV' && el.classList && el.classList.contains('ws-callout')) return 'callout'; // C4：此前 callout 里开「转为」10 项全无高亮
       if (t === 'OL') return 'numbered';
       if (t === 'UL') return (el.classList && el.classList.contains('ws-todo')) ? 'todo' : 'list';
       if (t === 'DETAILS') return 'toggle';
@@ -2042,7 +2047,7 @@
         menu = doc.createElement('div'); menu.setAttribute('data-ws2-ui', WS2_OVERLAY); menu.className = 'ws-fmtbar-menu';
         menu.style.display = 'none'; // 必须先 none，否则 togglePopMenu 把默认 display='' 误判成「已开」→ 首次点反而隐藏
         // 标题给全 H1–H4（此前漏了 H4，与斜杠菜单不一致——Wendi 2026-07-22「我只有 123，它没有 4」）。
-        [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['h4', 'blockH4'], ['quote', 'blockQuote'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList'], ['toggle', 'blockToggle']].forEach(([key, labelKey]) => {
+        [['text', 'blockText'], ['h1', 'blockH1'], ['h2', 'blockH2'], ['h3', 'blockH3'], ['h4', 'blockH4'], ['quote', 'blockQuote'], ['callout', 'blockCallout'], ['list', 'blockBulletList'], ['numbered', 'blockNumberedList'], ['todo', 'blockTodoList'], ['toggle', 'blockToggle']].forEach(([key, labelKey]) => {
           const it = doc.createElement('button'); it.setAttribute('data-ws2-ui', WS2_OVERLAY); it.className = 'ws-fmtbar-menu-item'; it.dataset.key = key; it.textContent = T('editor.' + labelKey);
           it.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
           it.addEventListener('click', (e) => {
@@ -2078,6 +2083,7 @@
       quote: '<path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>',
       plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
       copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+      callout: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
       trash: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
     };
     const menuIcon = (k) => '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + MENU_ICON[k] + '</svg>';
@@ -2191,7 +2197,7 @@
       // （Schema 的 li 只装行内内容或子列表，同「+」那条结构性分歧）。删除/插入/复制/上色对嵌套行都是对的，照给。
       const rowNested = rowMode && row.parentElement !== el;
       if (isEditableEl(el) && !rowNested) {
-        sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading'); sub(T('editor.turnToQuote'), itemByKey('quote'), 'quote');
+        sub(T('editor.turnToText'), itemByKey('text'), 'text'); sub(T('editor.turnToHeading'), itemByKey('h2'), 'heading'); sub(T('editor.turnToQuote'), itemByKey('quote'), 'quote'); sub(T('editor.turnToCallout'), itemByKey('callout'), 'callout'); // C3：Notion 的 Turn into 有 Callout，我们此前变成别的块后回不来
         const sep = doc.createElement('div'); sep.setAttribute('data-ws2-ui', WS2_OVERLAY); sep.className = 'ws-blockmenu-sep'; blockMenu.appendChild(sep);
       } else if (classify(el) === 'toggle') {
         // 选中的 toggle → 转文本/标题（U9：toggle→text，summary 内容成段、正文块提到其后，零丢失）
@@ -3590,6 +3596,12 @@
         const kids = [...det.children].filter((c) => c.tagName !== 'SUMMARY' && !c.hasAttribute('data-ws2-ui'));
         const empty = kids.length === 1 && (kids[0].textContent || '').trim() === '' && !kids[0].querySelector('img,hr,table,figure,ul,ol,details');
         if (empty) det.setAttribute('data-ws2-empty', ''); else det.removeAttribute('data-ws2-empty');
+      }
+      // C14：空 callout 同款空态标记（驱动编辑态占位文字；同一属性、同一剥除白名单）。
+      // 判空不能纯 CSS —— :empty 被占位 <br> 破功、:has() 感知不到文本节点，只能 JS 维护。
+      for (const co of blockRoot.querySelectorAll('div.ws-callout')) {
+        const empty = (co.textContent || '').trim() === '' && !co.querySelector('img,hr,table,figure,ul,ol,details');
+        if (empty) co.setAttribute('data-ws2-empty', ''); else co.removeAttribute('data-ws2-empty');
       }
     }
     // 「空壳宿主行」归一（Colin 2026-08-04 实机抓到）：一个 <li> 自己没有任何内容、只裹着一个嵌套列表时，

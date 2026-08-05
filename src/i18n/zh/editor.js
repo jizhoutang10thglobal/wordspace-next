@@ -92,6 +92,7 @@ module.exports = {
   turnToText: '转为正文',
   turnToHeading: '转为标题',
   turnToQuote: '转为引用',
+  turnToCallout: '转为提示',
   addCaption: '加说明',
   insertBelow: '在下方插入',
   noMatch: '无匹配',

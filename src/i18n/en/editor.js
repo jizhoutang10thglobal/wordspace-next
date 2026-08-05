@@ -92,6 +92,7 @@ module.exports = {
   turnToText: 'Turn into Text',
   turnToHeading: 'Turn into Heading',
   turnToQuote: 'Turn into Quote',
+  turnToCallout: 'Turn into callout',
   addCaption: 'Add caption',
   insertBelow: 'Insert below',
   noMatch: 'No matches',
