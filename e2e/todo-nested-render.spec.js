@@ -32,8 +32,10 @@ const conformOf = (html) => page.evaluate((h) => { const d = new DOMParser().par
 async function clickGutter(liSel) {
   const box = await frame.locator(liSel).boundingBox();
   const dx = await frame.locator(liSel).evaluate((el) => {
-    const cs = el.ownerDocument.defaultView.getComputedStyle(el, '::before');
-    return (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
+    const win = el.ownerDocument.defaultView;
+    const cs = win.getComputedStyle(el, '::before');
+    const bw = parseFloat(win.getComputedStyle(el).borderLeftWidth) || 0;
+    return bw + (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
   });
   await page.mouse.click(box.x + dx, box.y + box.height / 2);
 }

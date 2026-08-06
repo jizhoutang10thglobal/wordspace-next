@@ -33,9 +33,11 @@ const conformOf = (html) => page.evaluate((h) => { const d = new DOMParser().par
 const dxOf = (liSel) => frame.locator(liSel).evaluate((el) => {
   const win = el.ownerDocument.defaultView;
   const cs = win.getComputedStyle(el, '::before');
-  const cbL = parseFloat(cs.left) || 0;
+  const own = win.getComputedStyle(el);
+  const bw = parseFloat(own.borderLeftWidth) || 0; // 透明左边框：::before/padding 都相对 padding 盒，而坐标要相对边框盒
+  const cbL = bw + (parseFloat(cs.left) || 0);
   const cbW = parseFloat(cs.width) || 16;
-  return { cbCenter: cbL + cbW / 2, textLeft: parseFloat(win.getComputedStyle(el).paddingLeft) || 0 };
+  return { cbCenter: cbL + cbW / 2, textLeft: bw + (parseFloat(own.paddingLeft) || 0) };
 });
 async function clickGutter(liSel) {
   const box = await frame.locator(liSel).boundingBox();

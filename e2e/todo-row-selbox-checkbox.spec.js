@@ -37,7 +37,8 @@ const geo = () => frame.locator('body').evaluate((b) => {
   const ul = d.querySelector('#lst');
   const liR = li.getBoundingClientRect(), ulR = ul.getBoundingClientRect();
   const cb = win.getComputedStyle(li, '::before');
-  const cbLeftAbs = liR.left + parseFloat(cb.left); // ::before 的包含块 = li 的 padding 盒（li 无 border）
+  // ::before 的包含块 = li 的 **padding 盒**；li 带透明左边框（U2 用它扩边框盒）→ 换算补 border 宽
+  const cbLeftAbs = liR.left + (parseFloat(win.getComputedStyle(li).borderLeftWidth) || 0) + parseFloat(cb.left);
   const cbW = parseFloat(cb.width);
   const tn = d.createTreeWalker(li, NodeFilter.SHOW_TEXT).nextNode();
   const tr = d.createRange(); tr.selectNodeContents(tn);
@@ -47,6 +48,15 @@ const geo = () => frame.locator('body').evaluate((b) => {
     cbLeft: +cbLeftAbs.toFixed(1), cbRight: +(cbLeftAbs + cbW).toFixed(1),
     textLeft: +textR.left.toFixed(1),
   };
+});
+// 同 geo()，但可指定行；额外给出勾选框宽度（CB-7 要按框体比例瞄准）
+const geo0 = (sel) => frame.locator(sel).evaluate((li) => {
+  const win = li.ownerDocument.defaultView;
+  const r = li.getBoundingClientRect();
+  const cb = win.getComputedStyle(li, '::before');
+  const bw = parseFloat(win.getComputedStyle(li).borderLeftWidth) || 0;
+  const left = r.left + bw + (parseFloat(cb.left) || 0);
+  return { liLeft: +r.left.toFixed(1), cbLeft: +left.toFixed(1), cbW: parseFloat(cb.width) || 16 };
 });
 const selBoxLeft = () => frame.locator('body').evaluate((b) => {
   const e = b.ownerDocument.querySelector('[data-ws2-selected]');
@@ -101,6 +111,39 @@ test('CB-4 嵌套层不塌：子行文字仍比父行右缩一层', async () => 
   // 一层的净缩进 = 内层 ul 的 padding-left(1.7em=27.2) + li 自身的 4px 文字内距 = 31.2，
   // 改动前后完全一致（负 margin 与等量 padding 逐层对冲，每一层都不动）。
   expect(d.sub - d.parent, '子行仍比父行缩进整整一层（1.7em + 4px = 31.2px）').toBeCloseTo(31.2, 0);
+});
+
+// ── 勾选态维度（对抗审查 ADV-1 后补，2026-08-06）──────────────────────────────────
+// 教训：CB-1..CB-5 的 fixture 全是**未勾**态，于是「勾选会不会改变几何」这个维度整个没被覆盖。
+// 第一版 U2 用 `::before{left:calc(1.7em - 22px)}`，而 em 在伪元素里按**伪元素自己的** font-size
+// 解析——既有的 `[data-checked=true]::before{font-size:11px}` 改的正是它 → 一勾选，勾选框横跳
+// 8.5px（5.2 → −3.3）、命中带跟着跳，同一点「勾得上、取消不掉」。几何断言当时是到位的，
+// 漏的是**状态维度没进 fixture 矩阵**。下面两条把这个维度钉死。
+test('CB-6 勾选态几何不变：勾上之后勾选框仍在行框内、位置一像素不动', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li>第一行</li><li>第二行</li></ul>');
+  const before = await geo();
+  await frame.locator('#lst > li').nth(1).evaluate((li) => li.setAttribute('data-checked', 'true'));
+  await page.waitForTimeout(150);
+  const after = await geo();
+  expect(after.cbLeft, '勾选后勾选框左缘不得移动（em 落在伪元素上就会跳 8.5px）').toBeCloseTo(before.cbLeft, 0);
+  expect(after.cbLeft, '勾选态下勾选框仍在行框内').toBeGreaterThanOrEqual(after.liLeft - 0.5);
+  expect(after.textLeft, '勾选后文字也不得移动').toBeCloseTo(before.textLeft, 0);
+});
+
+test('CB-7 真实手势：鼠标不动，点同一个绝对坐标 → 勾上、再取消', async () => {
+  await launch();
+  await openDoc('<ul id="lst" class="ws-todo"><li id="one">第一行</li></ul>');
+  const box = await frame.locator('#one').boundingBox();
+  const g = await geo0('#one');
+  // 瞄准框体右侧 3/4 处——ADV-1 里恰恰是这一带「勾得上、取消不掉」
+  const x = box.x + (g.cbLeft - g.liLeft) + g.cbW * 0.75;
+  const y = box.y + box.height / 2;
+  await page.mouse.click(x, y);
+  await expect.poll(() => frame.locator('#one').getAttribute('data-checked')).toBe('true');
+  await page.mouse.click(x, y); // 手不动，点同一个点
+  await page.waitForTimeout(200);
+  expect(await frame.locator('#one').getAttribute('data-checked'), '同一坐标再点一次必须取消勾选').toBeNull();
 });
 
 test('CB-5 老文档自愈：旧版 todo CSS 被升级，且文字不位移', async () => {

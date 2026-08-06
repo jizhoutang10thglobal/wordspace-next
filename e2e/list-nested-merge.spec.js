@@ -39,7 +39,7 @@ const BS = async () => { await page.keyboard.press('Backspace'); await page.wait
 // 用户实际点的区域一个像素没变（勾选带的**绝对**位置前后相同），变的只是 li 相对坐标系，
 // 所以这里改成按 li 自己的 padding-left 推导落点，不再写死。
 async function clickTextArea(sel) {
-  const pad = await frame.locator(sel).evaluate((el) => parseFloat(el.ownerDocument.defaultView.getComputedStyle(el).paddingLeft) || 0);
+  const pad = await frame.locator(sel).evaluate((el) => { const c = el.ownerDocument.defaultView.getComputedStyle(el); return (parseFloat(c.borderLeftWidth) || 0) + (parseFloat(c.paddingLeft) || 0); });
   await frame.locator(sel).click({ position: { x: pad + 6, y: 8 } });
 }
 async function caretAtRowStart(sel) {

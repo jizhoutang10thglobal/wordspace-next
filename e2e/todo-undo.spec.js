@@ -123,8 +123,10 @@ test('U20：打字后立刻点勾选，undo 只回退勾选、打字仍在（che
   // 点勾选框。⚠ U2（2026-08-06）把勾选框从 li 盒外收进了盒内，坐标改从渲染的 ::before 推导，
   // 不再写死「li.left 减常数」——写死那版当场失配（点空了、不翻转）。
   const cbdx = await frame.locator('#a').evaluate((el) => {
-    const cs = el.ownerDocument.defaultView.getComputedStyle(el, '::before');
-    return (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
+    const win = el.ownerDocument.defaultView;
+    const cs = win.getComputedStyle(el, '::before');
+    const bw = parseFloat(win.getComputedStyle(el).borderLeftWidth) || 0;
+    return bw + (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
   });
   await page.mouse.click(box.x + cbdx, box.y + box.height / 2); // 窗口内点勾选框
   await expect.poll(() => frame.locator('#a').getAttribute('data-checked')).toBe('true');

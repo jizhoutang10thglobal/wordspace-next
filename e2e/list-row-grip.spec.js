@@ -147,7 +147,8 @@ test('嵌套行勾选框 gutter 悬停：手柄不跳回父项（Colin 试玩实
     const n1 = d.getElementById('n1');
     const r = n1.getBoundingClientRect();
     const cs = d.defaultView.getComputedStyle(n1, '::before');
-    const cx = r.left + (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
+    const bw = parseFloat(d.defaultView.getComputedStyle(n1).borderLeftWidth) || 0;
+    const cx = r.left + bw + (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
     const cy = Math.round(r.top + r.height / 2);
     // 勾选框中心必须确凿落在本行 li 上（不是父 li、不是 ul）——立不住就是 fixture 变了，直接 fail
     const hit = d.elementFromPoint(Math.round(cx), cy);

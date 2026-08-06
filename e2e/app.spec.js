@@ -298,7 +298,8 @@ test('待办：勾选切换 + 样式与 data-checked 随存盘保留', async () 
     const li = document.querySelector('ul.ws-todo > li');
     const r = li.getBoundingClientRect();
     const cs = getComputedStyle(li, '::before');
-    const cx = r.left + (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
+    const bw = parseFloat(getComputedStyle(li).borderLeftWidth) || 0;
+    const cx = r.left + bw + (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
     li.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: cx, clientY: r.top + 5 }));
   });
   await expect.poll(() => frame.locator('ul.ws-todo > li').first().getAttribute('data-checked')).toBe('true'); // U3-B2
@@ -1496,7 +1497,7 @@ test('ED-SA 列表·嵌套：⌘A 在父行只选本行（不含子列表）、�
   // 光标点在父行文字上（顶部左侧 = 「父行」文本，不落进下方块级子列表）。
   // ⚠ 横坐标按 li 自己的 padding-left 推导：U2（2026-08-06）li 盒左扩后，写死的 x:8 从文字上
   // 挪进了勾选框命中带 → 点下去变成勾选、不放光标，⌘A 于是选不到任何东西。
-  const padP = await frame.locator('#p').evaluate((el) => parseFloat(getComputedStyle(el).paddingLeft) || 0);
+  const padP = await frame.locator('#p').evaluate((el) => { const c = getComputedStyle(el); return (parseFloat(c.borderLeftWidth) || 0) + (parseFloat(c.paddingLeft) || 0); });
   await frame.locator('#p').click({ position: { x: padP + 6, y: 6 } });
   await page.waitForTimeout(150);
   await page.keyboard.press('Meta+a');

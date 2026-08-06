@@ -586,7 +586,7 @@
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
-    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;margin-left:-1.7em;padding-left:calc(1.7em + 4px)}.ws-todo>li::before{content:"";position:absolute;left:calc(1.7em - 22px);top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;margin-left:-1.7em;border-left:1.7em solid transparent;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
     // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 细线 chevron + 正文缩进。
     // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
@@ -3248,8 +3248,10 @@
       if (!li) return null;
       const r = li.getBoundingClientRect();
       if (e.clientY < r.top - YTOL || e.clientY > r.bottom + YTOL) return null; // 离最近 li 也太远 → 不算勾选
-      const cb = doc.defaultView.getComputedStyle(li, '::before'); // ::before 的包含块 = li 的 padding 盒（li 无 border）
-      const cbLeft = r.left + (parseFloat(cb.left) || 0);
+      // ::before 的包含块 = li 的 **padding 盒**；li 带透明左边框（U2 用它扩边框盒），故换算要补 border 宽。
+      const cs2 = doc.defaultView.getComputedStyle(li);
+      const cb = doc.defaultView.getComputedStyle(li, '::before');
+      const cbLeft = r.left + (parseFloat(cs2.borderLeftWidth) || 0) + (parseFloat(cb.left) || 0);
       const cbRight = cbLeft + (parseFloat(cb.width) || 16);
       return (e.clientX >= cbLeft - 4 && e.clientX <= cbRight + 4) ? li : null;
     }
@@ -5703,8 +5705,8 @@
      扩到与 ul 盒左缘齐平（负 margin），再用等量 padding 把内容推回原位——**文字与勾选框的绝对位置
      一字不动**，只是 li 的边框盒变宽、把勾选框收了进来。用 em 跟着 :where(ul,ol) 的 1.7em 走，
      字号变了也不脱节；嵌套缩进由每层 ul 自己的 padding-left 给，不受影响。 */
-  .ws-todo > li { list-style:none;position:relative;margin-left:-1.7em;padding-left:calc(1.7em + 4px); }
-  .ws-todo > li::before { content:'';position:absolute;left:calc(1.7em - 22px);top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer; }
+  .ws-todo > li { list-style:none;position:relative;margin-left:-1.7em;border-left:1.7em solid transparent;padding-left:4px; }
+  .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer; }
   /* U14/check-2：勾选视觉传播反制。text-decoration:line-through 按 CSS 装饰传播规则会绘穿全部 in-flow 后代、
      无法从后代 text-decoration:none 取消 → 含子列表的勾选项**不给自身加 line-through**（只变灰），避免划穿未勾子项；
      叶子勾选项（无子列表）照常灰+划线。嵌套列表 color 显式重置回正文色（color 是继承属性、会下渗）。 */
@@ -5730,7 +5732,9 @@
   figure[data-ws2-selected]:not([data-ws2-editing]){box-shadow:0 0 0 2px #1a73e8,0 0 0 5px rgba(26,115,232,.28);}
   /* 编辑态底色作用在**交互单元**上。列表的 data-ws2-editing 挂在整个 ul/ol（存储单元）身上，
      整表着色会把兄弟行一起罩进去（Wendi 2026-08-05），所以列表这档改由行上的 data-ws2-editrow 承载。 */
-  [data-ws2-editing]:not(ul):not(ol){border-radius:4px;background:rgba(0,0,0,.015);}
+  /* 没有任何行被标时才由块自己承载（段落等非列表块恒成立；列表在 ⌘A 二档那种「光标锚在 ul 上、
+     解析不出具体行」的状态下也回落到整表着色——否则那一档会一点底色都没有，对抗审查 ADV-5）。 */
+  [data-ws2-editing]:not(:has(li[data-ws2-editrow])){border-radius:4px;background:rgba(0,0,0,.015);}
   [data-ws2-editrow]{border-radius:4px;background:rgba(0,0,0,.015);}
   /* 表格 cell 编辑（U2）：悬停 cursor:text = 可编辑性的最低发现性；编辑格 inset 蓝环（不占布局、纸方墨圆克制）。 */
   td:hover,th:hover{cursor:text;}
