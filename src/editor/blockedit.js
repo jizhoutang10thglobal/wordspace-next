@@ -701,7 +701,8 @@
       rectBox.style.height = (last.bottom - first.top + 2) + 'px';
       rectBox.style.display = 'block';
     }
-    // 矩形 Delete：清内容不动结构（Notion N3 实测读数：9 格恒 9 格、只空矩形内）。单 checkpoint 一步 undo。
+    // 矩形 Delete：清内容不动结构（Notion N3 实测读数：9 格恒 9 格、只空矩形内）。前后双 checkpoint
+    //（KTD6 型：前置结算 500ms 防抖打字债、后置封快照）——用户视角一步 undo 整体回滚。
     function deleteRectSel() {
       if (!rectSel) return false;
       if (undoMgr) undoMgr.checkpoint();
@@ -739,6 +740,13 @@
         if (clientX > r.right - 10 && clientY <= r.bottom + 4) { tbl = t; tr = r; kind = 'col'; break; }
       }
       if (!tbl) { hideEdgeBars(); return; }
+      // ADV-R8：双表相邻（margin 折叠后间隙 ~13px < 触发带 22px）时，指针已进下一张表的首行还在弹
+      // 上一张表的加行条、条还压着下表内容——命中点落在**另一张表**的内容矩形里就不弹。
+      for (const t of blockRoot.querySelectorAll('table')) {
+        if (t === tbl) continue;
+        const r = t.getBoundingClientRect();
+        if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) { hideEdgeBars(); return; }
+      }
       const { sx, sy } = vp();
       edgeTable = tbl;
       if (kind === 'row') {
@@ -757,7 +765,7 @@
     }
     function edgeBarOp(kind) {
       const tbl = edgeTable;
-      if (!tbl) return;
+      if (!tbl || !tbl.isConnected) { hideEdgeBars(); return; } // ADV-R9：表被键盘整删后条还挂着——幽灵条点击不得对 detached 表跑手术
       const rows = tableRowsOf(tbl);
       if (!rows.length) return;
       // 参照格：加行=末行首格（row-below 落其后）；加列=首行末格（col-right 落其右）
@@ -1059,9 +1067,12 @@
         // 实证——贯穿拖选在逐帧钳制下照样到达对岸），钳制反而把「表内瞬时原生高亮」逐帧压掉。
         // 钳出的端点必须锚在**相邻块内部**（selectWholeDoc 同款）：setEndBefore/setStartAfter 会产生
         // body 层锚点，deleteSelection 判「块外选区」return false = 死键（U2-4 注释里实锤过的坑）。
+        // ADV-R6：两端分属**不同表** → 没有合法钳法（哪边收都得把另一张表整个圈进来或产半截表 range）
+        // → 选区直接取消；相邻块查找跳过 TABLE（否则锚成 (邻表,0) 又把没碰的表圈进选区）。
+        if (sT0 && eT0 && sT0 !== eT0) { try { sel.removeAllRanges(); } catch (x) {} return; }
         const sibBlock = (tbl, dir) => {
           let n = dir < 0 ? tbl.previousElementSibling : tbl.nextElementSibling;
-          while (n && n.hasAttribute && n.hasAttribute('data-ws2-ui')) n = dir < 0 ? n.previousElementSibling : n.nextElementSibling;
+          while (n && ((n.hasAttribute && n.hasAttribute('data-ws2-ui')) || n.tagName === 'TABLE')) n = dir < 0 ? n.previousElementSibling : n.nextElementSibling;
           return n;
         };
         try {
@@ -1118,6 +1129,7 @@
     function deselect() {
       exitCell();
       exitEdit();
+      clearRectSel(); // ADV-R5：菜单删表走 removeBlock→deselect，不清的话 rectSel 指 detached 表、幽灵描边残留
       clearSelectedAttr();
       selectedEl = null;
       hoverEl = null; hoverRow = null; setGutterVisible(false); // 清悬停引用，防删块后幽灵手柄
@@ -1229,6 +1241,7 @@
     function selectWholeDoc() {
       exitCell();
       if (editingEl) exitEdit();
+      clearRectSel(); // ADV-R1（HIGH）：⌘A 不清矩形态的话，rectSel 与全篇原生选区并存——Delete 被矩形分支永久劫持、⌘C 拷错东西
       clearSelectedAttr(); selectedEl = null;
       closeBlockMenu(); // P2-4：这条路径不走 deselect，行菜单会留在屏上、menuRow 指向随后被删掉的行
       const blocks = [...body.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui'));
@@ -2443,6 +2456,7 @@
     }
     // el = 作用块；row = 行作用域目标 <li>（行锚手柄开菜单时给，Esc 灰选入口不给 = 块作用域）
     function openBlockMenu(el, row) {
+      clearRectSel(); // ADV-R2/R5：手柄在 data-ws2-ui 上、onMouseDown 的清态够不到——菜单开启点自己焊死单一活动态（也防「复制」把 cellsel 深克隆成游离标记）
       // 表格行列操作的「当前格」快照：必须在 selectBlock（会 exitCell）之前取——菜单项点击时 cellEl 早已清空
       const menuCell = (cellEl && el.contains && el.contains(cellEl)) ? cellEl : null;
       const rowMode = !!(row && el.contains(row) && ((row.tagName === 'LI' && classify(el) === 'list') || (row.tagName === 'P' && isMultiParaContainer(el)))); // C2：容器段也是行作用域
@@ -2600,6 +2614,7 @@
     // 退化态从「删完再补救」变成「根本删不出来」（Notion 同款）。=====
     function openAxisMenu(axis) {
       if (!hoverTable || (axis === 'row' && !hoverTr) || (axis === 'col' && hoverColIdx < 0)) return;
+      clearRectSel(); // ADV-R2：轴手柄同为 data-ws2-ui，菜单开启点焊死单一活动态（镜像 openBlockMenu）
       const tbl = hoverTable, tr = hoverTr, ci = hoverColIdx;
       // ADV-3（对抗审查实测）：rect 必须在 closeBlockMenu **之前**快照——切轴/双击手柄时关旧菜单会
       // hideAxisHandles，display:none 的手柄 rect 全零，菜单会跳到文档左上角。
@@ -2877,6 +2892,7 @@
       // T13：表格格子上的 mousedown → 矩形选区待命。非编辑格拦掉原生 mousedown（光标仍由 onClick 的
       // enterCell(point) 放，原生选区从此不再从格里长出来——Notion N4 实测：非聚焦格拖动=格矩形不是文字选择）；
       // 编辑格保留原生（格内选词靠 contenteditable 墙天然圈在格内），指针出格那一刻才升级矩形（onMouseMove 判）。
+      rectArm = null; // ADV-R10：mouseup 在 iframe 外丢失时 rectArm 残留（恒抑制边缘条/劫持下一次拖选）——每次按下无条件重置
       const tdT = e.target && e.target.closest && e.target.closest('td,th');
       const tdBlk = tdT ? blockOf(tdT) : null;
       if (tdT && tdBlk && classify(tdBlk) === 'table') {
@@ -3091,10 +3107,31 @@
       // 选中态保持）；Esc 上卷整表灰选（与 cell-Esc 同一档位）；方向键/打字先解除矩形（⌘Z 等组合键不碰，
       // undo 重写走 reset 兜底清）。生存不变式：table 可能已被 undo/拖拽变 detached → 静默清态走 generic。
       if (rectSel && !cellEl && !editingEl) {
+        const nsRect = doc.getSelection();
         if (!rectSel.table.isConnected) { clearRectSel(); }
+        else if (nsRect && nsRect.rangeCount > 0 && !nsRect.isCollapsed) {
+          clearRectSel(); // ADV-R1 纵深：非折叠原生选区（⌘A 等路径）在场 → 矩形态让位、按键放行 generic 管线
+        }
         else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); deleteRectSel(); return; }
-        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); const t = rectSel.table; clearRectSel(); selectTableFromCell(t); return; }
-        else if (e.key.indexOf('Arrow') === 0 || (e.key.length === 1 && !e.metaKey && !e.ctrlKey)) clearRectSel();
+        else if (e.key === 'Escape') {
+          e.preventDefault(); e.stopPropagation();
+          if (menuAxis) closeBlockMenu(); // ADV-R2：镜像 cell-Esc——菜单开着先关，否则灰选后菜单指 detached 行还能点
+          const t = rectSel.table; clearRectSel(); selectTableFromCell(t); return;
+        }
+        else if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
+          // ADV-R4：⌘X = TSV 拷贝 + 清格（execCommand('copy') 会走 onCopy 的矩形 ⓪ 分支写剪贴板）。
+          // ⌘V 按 anchor 铺格是独立 feature，spec 记欠账。
+          e.preventDefault(); e.stopPropagation();
+          try { doc.execCommand('copy'); } catch (x) {}
+          deleteRectSel(); return;
+        }
+        else if (e.key.indexOf('Arrow') === 0) clearRectSel();
+        else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+          // ADV-R3：打字不蒸发——清矩形、进左上格，原生插入接管（不 preventDefault，键照常落格）
+          const first = rectSel.cells[0];
+          clearRectSel();
+          if (first && first.isConnected) enterCell(first, { mode: 'end' });
+        }
       }
       // 表格 cell 编辑态（U2 骨架，U3 赋全键盘语义）：cellEl 分支整体前置——否则 generic Tab 吞噬/
       // 方向键 topBlocks 导航/Esc→selectBlock 都会误伤。生存不变式：cellEl 可能已被跨块整删（ED-A2）/

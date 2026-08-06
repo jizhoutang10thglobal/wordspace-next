@@ -94,6 +94,13 @@ test('R1/R2: 跨格拖选=矩形包围盒描边，松手保持，格不走 range
   expect(Math.abs(box.x - u.x)).toBeLessThan(4); // 描边贴合矩形并集（±每边 1px 外扩）
   expect(Math.abs(box.w - u.w)).toBeLessThan(6);
   expect(Math.abs(box.h - u.h)).toBeLessThan(6);
+  const border = await page.evaluate(() => {
+    const b = document.getElementById('doc-frame').contentDocument.querySelector('.ws-rectsel');
+    const cs = getComputedStyle(b);
+    return { w: parseFloat(cs.borderTopWidth), c: cs.borderTopColor };
+  });
+  expect(border.w).toBeGreaterThan(1); // ADV-R7：描边必须真画出来——.ws-rectsel 的 CSS 规则被删/失效时这里翻红（S4 判据）
+  expect(border.c).not.toBe('rgba(0, 0, 0, 0)');
   expect(await nativeSelText()).toBe(''); // 原生选区不参与（描边是唯一高亮，格不填 rangesel 蓝底）
   expect(await page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
@@ -249,4 +256,129 @@ test('S1: 矩形态的格标记与浮件绝不入盘（WS2_MARKERS + 覆盖层�
   expect(html).not.toContain('data-ws2-cellsel');
   expect(html).not.toContain('ws-rectsel');
   expect(html).not.toContain('ws-tbladdrow');
+});
+
+// ===== 对抗审查回归（2026-08-06 ADV-R1..R9，处置后钉死）=====
+
+test('ADV-R1: 矩形态按 ⌘A → 矩形让位全篇选区，Backspace 删的是全篇不是格', async () => {
+  await launch();
+  await openDoc(T33);
+  await drag(await center('#c21'), await center('#c32'));
+  expect((await cellselIds()).length).toBe(4);
+  await page.keyboard.press('Meta+a');
+  await page.waitForTimeout(250);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const s = d.getSelection();
+    return { cells: d.querySelectorAll('[data-ws2-cellsel]').length, hasSel: !!(s && s.rangeCount && !s.isCollapsed) };
+  });
+  expect(st.cells).toBe(0); // ⌘A 清矩形态（selectWholeDoc 的 clearRectSel）
+  expect(st.hasSel).toBe(true); // 全篇原生选区在
+  await page.keyboard.press('Backspace');
+  await expect.poll(() => page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { tables: d.querySelectorAll('table').length, text: (d.body.textContent || '').trim() };
+  })).toEqual({ tables: 0, text: '' }); // 全篇删干净——不是只清几个格（劫持 bug 的画像）
+});
+
+test('ADV-R2: 矩形态开轴菜单 → 矩形让位；Esc 一次关菜单', async () => {
+  await launch();
+  await openDoc(T33);
+  await drag(await center('#c21'), await center('#c32'));
+  await frame.locator('#c22').hover();
+  await page.waitForTimeout(300);
+  await frame.locator('.ws-rowsel').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  expect(await cellselIds()).toEqual([]); // openAxisMenu 清矩形（单一活动态）
+  await page.keyboard.press('Escape');
+  await expect(frame.locator('.ws-blockmenu')).toBeHidden(); // 菜单正常关（无 rectSel 分支截胡）
+});
+
+test('ADV-R3: 矩形态直接打字 → 字落左上格，不蒸发', async () => {
+  await launch();
+  await openDoc(T33);
+  await drag(await center('#c21'), await center('#c32'));
+  await page.keyboard.type('x');
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.getElementById('c21').textContent)).toBe('二甲x');
+  expect(await cellselIds()).toEqual([]); // 矩形已清、进格编辑
+});
+
+test('ADV-R4: 矩形态 ⌘X → TSV 进剪贴板 + 格清空', async () => {
+  await launch();
+  await openDoc(T33);
+  await drag(await center('#c21'), await center('#c32'));
+  await page.keyboard.press('Meta+x');
+  await expect.poll(() => page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return [...d.querySelectorAll('#T td')].map((c) => (c.textContent || '').trim()).join('|');
+  })).toBe('一甲|一乙|一丙|||二丙|||三丙'); // 矩形 4 格清空
+  const clip = await app.evaluate(({ clipboard }) => clipboard.readText());
+  expect(clip).toBe('二甲\t二乙\n三甲\t三乙'); // TSV：tab 分格、换行分行（onCopy ⓪ 分支全格式钉死）
+});
+
+test('ADV-R5: 矩形态开块菜单删表 → 无幽灵描边残留', async () => {
+  await launch();
+  await openDoc(T33);
+  await drag(await center('#c21'), await center('#c32'));
+  await frame.locator('#c22').hover();
+  await page.waitForTimeout(300);
+  await frame.locator('.ws-grip').click(); // 块手柄 → 整表块菜单
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  expect(await cellselIds()).toEqual([]); // openBlockMenu 清矩形（含防「复制」克隆游离标记）
+  await frame.locator('.ws-blockmenu-item', { hasText: '删除' }).click();
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('table').length)).toBe(0);
+  expect(await rectBoxInfo()).toBeNull(); // 描边浮件没有悬浮在尸体位置（deselect 的 clearRectSel）
+});
+
+test('ADV-R6: 双表相邻——跨两表的选区被取消，B 表不被圈进', async () => {
+  await launch();
+  await openDoc('<p id="a">前文。</p><table id="TA"><tbody><tr><td id="a11">A一</td><td>A二</td></tr></tbody></table>'
+    + '<table id="TB"><tbody><tr><td id="b11">B一</td><td>B二</td></tr></tbody></table><p id="z">后文。</p>');
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const r = d.createRange();
+    r.setStart(d.getElementById('a11').firstChild, 0);
+    r.setEnd(d.getElementById('b11').firstChild, 1);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.waitForTimeout(200);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const s = d.getSelection();
+    return {
+      collapsed: !s || s.rangeCount === 0 || s.isCollapsed,
+      aMarked: d.getElementById('TA').hasAttribute('data-ws2-rangesel'),
+      bMarked: d.getElementById('TB').hasAttribute('data-ws2-rangesel'),
+      cellMarks: d.querySelectorAll('[data-ws2-cellsel]').length,
+    };
+  });
+  expect(st.collapsed).toBe(true); // 无合法钳法 → 选区取消
+  expect(st.aMarked).toBe(false);
+  expect(st.bMarked).toBe(false); // B 表没有因钳制锚点被整个圈进
+  expect(st.cellMarks).toBe(0);
+});
+
+test('ADV-R9: 表被键盘整删后幽灵加行条点击 = 无害收场', async () => {
+  await launch();
+  await openDoc(T33);
+  await frame.locator('#c11').click(); // 进 cell
+  await page.waitForTimeout(150);
+  const tb = await frame.locator('#T').boundingBox();
+  await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
+  await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height + 8); // 唤出加行条
+  await expect(frame.locator('.ws-tbladdrow')).toBeVisible();
+  await page.keyboard.press('Escape'); // 灰选整表
+  await page.keyboard.press('Backspace'); // 整删（鼠标没动，条还挂着）
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('table').length)).toBe(0);
+  const blocksBefore = await page.evaluate(() => document.getElementById('doc-frame').contentDocument.body.querySelectorAll('p').length);
+  await frame.locator('.ws-tbladdrow').click({ force: true }); // 点幽灵条
+  await page.waitForTimeout(200);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { tables: d.querySelectorAll('table').length, blocks: d.body.querySelectorAll('p').length,
+      barShown: (() => { const b = d.querySelector('.ws-tbladdrow'); return b && b.style.display !== 'none'; })() };
+  });
+  expect(st.tables).toBe(0); // 没对尸体表跑手术
+  expect(st.blocks).toBe(blocksBefore); // 文档没被改
+  expect(st.barShown).toBe(false); // 条自我收场
 });

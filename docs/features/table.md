@@ -38,8 +38,10 @@
     格内拖动先是原生选词）；高亮 = 单个描边浮件 `.ws-rectsel` 罩住包围盒（Notion 同款：描边不填底），
     语义真相源 = 格上 `data-ws2-cellsel`（入 WS2_MARKERS 存盘剥除）。松手**保持**；点表外/进编辑/
     Esc（上卷整表灰选）解除；undo/redo reset 兜底清。
-  - **Delete/Backspace 清矩形内格内容、结构一格不动**（Notion N3：9 格恒 9 格）、单 checkpoint
-    一步 undo、清后选中态保持；**⌘C = 按行 TSV 纯文本**（tab 分格换行分行，无 HTML 载荷）。
+  - **Delete/Backspace 清矩形内格内容、结构一格不动**（Notion N3：9 格恒 9 格）、一步 undo 整体
+    回滚、清后选中态保持；**⌘C = 按行 TSV 纯文本**（tab 分格换行分行，无 HTML 载荷）；**⌘X = TSV
+    拷贝 + 清格**；矩形态直接打字 = 清矩形、字落左上格（不蒸发，ADV-R3）；⌘A/开任何菜单/灰选/
+    进编辑 = 矩形态让位（单一活动态，ADV-R1/R2/R5）。
   - **出向钳制**：拖出表界，指针坐标四向夹回表内（`cellPosAtPoint`），矩形恒在表内（Notion f3/f3b
     上下对称实测）。**入向钳制**：表外起的选区端点伸进表内 → 端点截到表界、选区夹在段落里（锚进
     相邻块**内部**——body 层锚点会让删除管线判块外死键）。**与 Notion 一致**（f4c 修正读数：入向
@@ -83,5 +85,7 @@
 ## 欠账
 
 - **中文 IME 在 cell 内组词只能真机验**（容器/CI 都验不了；历史上有真机才炸的先例）——发版前 Colin 真机 checklist 项。
+- **矩形选中态 ⌘V**（按 anchor 格铺 TSV，Notion 行为）未做——粘贴管线目前对矩形态静默放行 generic（无落点 no-op）；独立小项待拍板（ADV-R4 记录）。
+- **行拖拽（T3/T4）**：Notion 行为已实测坐实（t3f），实现押 PR-5c。
 - .md 文档中造表会被 md-adapter 岛化（class 不在白名单，管道表变 HTML 岛，内容保真但丢 md 可读性）；对 md 来源表格切对齐同账。绕法：.md 少用编辑器造表。等真实反馈再做「.md 造表产无 class + align 形态」分叉。
 - ui-demo 侧不追 cell 级交互（demo 定位，见有意分歧）。
