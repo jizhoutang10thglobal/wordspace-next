@@ -156,18 +156,23 @@ test('Shift-Tab 收编后 → 打字落出列项文字末尾（不落子列表�
 
 test('U19：行首 Tab 缩进后光标保留原位（不甩项末，keys-8）', async () => {
   await launch();
-  await openDoc('<ul id="lst" class="ws-todo"><li id="a">第一项</li><li id="b">缩进项</li></ul>');
+  // ⚠ fixture 用 <li>甲<br>缩进项</li>、光标紧跟 <br>：仍判行首，但**不是项首**——
+  // 直接用项首 offset 0 是哑门（对抗审查实证），「保原位」与「重置到项首」分不出来。
+  await openDoc('<ul id="lst" class="ws-todo"><li id="a">第一项</li><li id="b">甲<br>缩进项</li></ul>');
   await frame.locator('#b').click();
-  await page.keyboard.press('Home');
-  // Tab 分派迁移（Colin 2026-08-06）：原版这里还按两次 ArrowRight 把光标挪到「缩进|项」——
-  // 行中 Tab 现在是插两个空格（正门在 e2e/tab-inline-spaces.spec.js），那个位置已经触发不到嵌套。
-  // 契约（缩进后光标保原位、不甩项末）没变，只把触发位置改回行首。
+  await frame.locator('#b').evaluate((li) => {
+    const tns = [...li.childNodes].filter((n) => n.nodeType === 3);
+    const d = li.ownerDocument; const r = d.createRange(); r.setStart(tns[tns.length - 1], 0); r.collapse(true);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.waitForTimeout(60);
   await page.keyboard.press('Tab'); // 缩进
   await page.waitForTimeout(120);
   // 前置断言：先钉死「真嵌套了」。原版压根没断言嵌套发生——只删 ArrowRight 会得到一条哑门
   //（Tab 若退化成彻底 no-op，「光标没动」照样过）。
   expect(await frame.locator('#a > ul > li').evaluateAll((els) => els.map((l) => l.id)), '前置：#b 真嵌进 #a 的子列表').toEqual(['b']);
-  await page.keyboard.type('X'); // 应插在原光标处（行首 → X缩进项），非项末
-  await expect.poll(() => frame.locator('#b').textContent(), { message: 'Tab 后光标保留原位、X 落行首' }).toBe('X缩进项');
+  // 有牙的那一刀：X 必须落在 <br> 之后。重置到项首 → 「X甲缩进项」；甩到项末 → 「甲缩进项X」。
+  await page.keyboard.type('X');
+  await expect.poll(() => frame.locator('#b').textContent(), { message: 'Tab 后光标保留原位' }).toBe('甲X缩进项');
   expect(await conformOf(await serialize())).toBe(true);
 });

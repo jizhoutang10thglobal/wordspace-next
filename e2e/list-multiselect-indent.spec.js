@@ -74,23 +74,23 @@ test('多选两行 Tab → 两行一起嵌回上一项下', async () => {
 
 test('行首 Tab 缩进后光标 offset 不变（不跳行末）', async () => {
   await launch();
-  await openDoc('<ul id="lst" class="ws-todo"><li id="p">父</li><li id="a">甲乙丙丁</li></ul>');
+  // ⚠ fixture 用 <li>甲<br>乙丙丁</li>、光标紧跟 <br>：仍判行首（走得到嵌套），但**不是项首**。
+  // 直接用 offset 0 是哑门（对抗审查实证）——「保原位」与「被重置到项首」在断言上不可区分。
+  await openDoc('<ul id="lst" class="ws-todo"><li id="p">父</li><li id="a">甲<br>乙丙丁</li></ul>');
   await frame.locator('#a').click();
   await page.waitForTimeout(80);
-  // Tab 分派迁移（Colin 2026-08-06）：原版把光标放 offset 2（甲乙|丙丁）测「行中 Tab 缩进不甩光标」，
-  // 那个触发位置的语义已被拍板改成「插两个空格」（正门在 e2e/tab-inline-spaces.spec.js）。
-  // 本条守的契约没变——缩进操作后光标/选区原样恢复、不被甩到行末——只把触发位置改到行首 offset 0。
   await frame.locator('#a').evaluate((li) => {
-    const tn = [...li.childNodes].find((n) => n.nodeType === 3);
-    const d = li.ownerDocument; const r = d.createRange(); r.setStart(tn, 0); r.collapse(true);
+    const tns = [...li.childNodes].filter((n) => n.nodeType === 3);
+    const d = li.ownerDocument; const r = d.createRange(); r.setStart(tns[tns.length - 1], 0); r.collapse(true);
     const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
   });
   await page.keyboard.press('Tab');
   await page.waitForTimeout(120);
   // 前置断言：先钉死「Tab 真的嵌套了」。少了它，Tab 一旦变成彻底 no-op，下面的「光标没动」是平凡真 = 哑门。
   expect(await subIds('#p'), '前置：#a 真嵌进 #p 的子列表').toEqual(['a']);
-  await page.keyboard.type('X'); // 若光标保原位应插在 offset 0：X甲乙丙丁
-  await expect.poll(() => frame.locator('#a').evaluate((li) => (li.childNodes[0] && li.childNodes[0].textContent) || li.textContent)).toContain('X甲乙丙丁');
+  // 有牙的那一刀：X 必须落在 <br> 之后。被重置到项首会得到「X甲乙丙丁」。
+  await page.keyboard.type('X');
+  await expect.poll(() => frame.locator('#a').textContent()).toBe('甲X乙丙丁');
 });
 
 test('一个 li 带两个子列表、选区跨两个 → Shift+Tab 保持阅读顺序（对抗审查错序修复）', async () => {

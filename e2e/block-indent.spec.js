@@ -175,14 +175,16 @@ test('5b toggle 嵌入后 undo：块回顶层且 ws-indent-2 恢复（strip 必�
 
 test('6 光标不动：行首 Tab 缩进后 anchorNode/anchorOffset 原样', async () => {
   await launch();
-  await openDoc('<p id="a">甲</p><p id="b">乙丙丁戊</p>');
+  // ⚠ fixture 必须是「行首但不是块首」：<p>甲<br>乙丙丁</p> 光标紧跟 <br>。
+  // 用 <p>乙丙丁戊</p> + offset 0 那版是**哑门**（对抗审查实证）——锚点本来就在块首，
+  // 「光标保持原位」和「光标被重置到块首」在断言上完全不可区分，
+  // 于是「缩进时把光标甩回行首 / 把块整个重建」这类回归全程绿灯。
+  await openDoc('<p id="a">甲</p><p id="b">甲<br>乙丙丁</p>');
   await clickIn('#b');
-  // Tab 分派迁移（Colin 2026-08-06）：本条守的契约是「缩进只改 classList、绝不碰 Selection」，没变；
-  // 变的是触发位置——光标必须在行首（offset 0）才走得到缩进分支。原来放 offset 2 那版测的是
-  // 「段中 Tab 缩进」，那个语义已被拍板推翻（段中 Tab = 插两个空格），正门在 e2e/tab-inline-spaces.spec.js。
   await frame.locator('#b').evaluate((el) => {
-    const tn = [...el.childNodes].find((n) => n.nodeType === 3);
-    const d = el.ownerDocument; const r = d.createRange(); r.setStart(tn, 0); r.collapse(true);
+    // 第二个文本节点（<br> 之后）的 offset 0：仍判行首、仍走缩进，但**不是块首**
+    const tns = [...el.childNodes].filter((n) => n.nodeType === 3);
+    const d = el.ownerDocument; const r = d.createRange(); r.setStart(tns[tns.length - 1], 0); r.collapse(true);
     const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
   });
   await tab();
@@ -195,9 +197,10 @@ test('6 光标不动：行首 Tab 缩进后 anchorNode/anchorOffset 原样', asy
   });
   expect(sel.offset, '光标 offset 仍 0').toBe(0);
   expect(sel.inB, '光标仍在原块').toBe(true);
-  expect(await textOf('#b'), '缩进路径不动内容：一个空格都没插').toBe('乙丙丁戊');
-  await page.keyboard.type('X'); // 双保险：打字落在 offset 0
-  await expect.poll(() => frame.locator('#b').textContent()).toContain('X乙丙丁戊');
+  expect(await textOf('#b'), '缩进路径不动内容：一个空格都没插').toBe('甲乙丙丁');
+  // 真正有牙的那一刀：打字必须落在 <br> 之后。光标被重置到块首的话会得到「X甲乙丙丁」。
+  await page.keyboard.type('X');
+  await expect.poll(() => frame.locator('#b').textContent()).toBe('甲X乙丙丁');
 });
 
 test('7 类型覆盖：h2/blockquote/callout 都缩，table 不缩（负向直接断言）', async () => {
