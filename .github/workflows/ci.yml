@@ -51,11 +51,14 @@ jobs:
               app=false
             fi
           fi
-          # 官网门同款保守法：默认 true，只有「能算出 diff、有改动、且没碰 website/ 与 changelog 正本」才跳。
-          # 为什么 CHANGELOG*.md 也算：官网 /changelog 是构建时读仓库根正本渲染的，正本里配图路径写歪 /
-          # 图没提交 / alt 空，挂的是 next build——改正本却不跑官网构建，等于把这道门让给线上部署。
+          # 官网门同款保守法：默认 true，只有「能算出 diff、有改动、且三类文件都没碰」才跳。
+          #  · website/ —— 官网自己；
+          #  · CHANGELOG*.md —— 官网 /changelog 是构建时读仓库根正本渲染的，正本里配图路径写歪 / 图没提交 /
+          #    alt 空，挂的是 next build。改正本却不跑官网构建 = 把这道门让给线上部署，等部署才炸；
+          #  · .github/workflows/ —— **改门的 PR 必须被门自己跑一遍**。否则「加了个 job 却因为本次没碰
+          #    website/ 而被 skip」，这个 job 在合进 main 之前一次都没真跑过（本条就是这么加进来的）。
           website=true
-          if [ -n "${files:-}" ] && ! printf '%s\n' "$files" | grep -qE '^(website/|CHANGELOG(\.en)?\.md$)'; then
+          if [ -n "${files:-}" ] && ! printf '%s\n' "$files" | grep -qE '^(website/|CHANGELOG(\.en)?\.md$|\.github/workflows/)'; then
             website=false
           fi
           echo "changed (non-empty=$( [ -n "${files:-}" ] && echo y || echo n )), run-app-gate=$app, run-website-gate=$website"
