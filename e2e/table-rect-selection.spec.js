@@ -3,7 +3,7 @@
 //  N1 跨格拖选=anchor 格与指针格的行列包围盒，独立描边、格不填底（f1-during-drag）
 //  N2 松手保持（f1-after-release）；N3 Delete 清内容不动结构（9 格恒 9 格，AFTER-DELETE 读数）
 //  N4 非聚焦格内拖动=1×1 格矩形而非文字选择（f2/f2b）
-//  N5 出向拖出表界=夹回表内矩形，上下对称（f3/f3b）；N6 入向被表界挡住、表绝不被部分圈选（f4/f4b）
+//  N5 出向拖出表界=夹回表内矩形，上下对称（f3/f3b）；N6 入向选区夹在段落里、表绝不被部分圈选（f4c 修正读数）
 //  T2 贴近下缘/右缘出全宽/全高加条，点一下真加（t2b：rows 3→4 / cols 3→4）
 const { test, expect, _electron: electron } = require('@playwright/test');
 const fs = require('fs/promises');
@@ -157,7 +157,7 @@ test('R6: 入向拖选被表界截断——表格绝不被部分圈选', async (
     const endInTable = s && s.rangeCount ? T.contains(s.getRangeAt(0).endContainer) : false;
     return { endInTable, tableMarked: T.hasAttribute('data-ws2-rangesel'), cellMarks: d.querySelectorAll('#T [data-ws2-rangesel]').length };
   });
-  expect(st.endInTable).toBe(false); // 原生选区端点被钳在表外（段落侧文字选择保留 = 记录在案的有意分歧）
+  expect(st.endInTable).toBe(false); // 原生选区端点被钳在表外、段落侧文字选择保留（Notion f4c 修正读数同款：夹在段落里）
   expect(st.tableMarked).toBe(false); // 旧「端点在表内=整表蓝」通道已退役
   expect(st.cellMarks).toBe(0);
 });
