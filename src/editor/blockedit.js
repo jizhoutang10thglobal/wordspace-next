@@ -1055,11 +1055,8 @@
       const sC0 = cellOfNode(r.startContainer), eC0 = cellOfNode(r.endContainer);
       const sT0 = sC0 ? blockOf(sC0) : null, eT0 = eC0 ? blockOf(eC0) : null;
       if ((eT0 && eT0 !== sBlk) || (sT0 && sT0 !== eBlk)) {
-        // ⚠ 鼠标手势进行中绝不动原生选区——拖拽中 removeAllRanges 会杀掉浏览器的选择手势，
-        // 「从上段贯穿表格拖到下段」永远到不了下段（实测翻车；这多半也是 Notion 入向「整个不产生
-        // 选区」的实现成因）。拖拽中只是不做任何块级标记（表内瞬时原生高亮=已知视觉噪音），
-        // 钳制推迟到 onMouseUp 的收尾 refreshRangeSel；键盘/程序化路径（无手势）立即钳。
-        if (dragStart) return;
+        // 拖拽进行中也照钳：Chromium 的选择手势自持锚点、下一次 mousemove 会自己续上（变异自检
+        // 实证——贯穿拖选在逐帧钳制下照样到达对岸），钳制反而把「表内瞬时原生高亮」逐帧压掉。
         // 钳出的端点必须锚在**相邻块内部**（selectWholeDoc 同款）：setEndBefore/setStartAfter 会产生
         // body 层锚点，deleteSelection 判「块外选区」return false = 死键（U2-4 注释里实锤过的坑）。
         const sibBlock = (tbl, dir) => {
