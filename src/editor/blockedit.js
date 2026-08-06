@@ -1136,6 +1136,15 @@
         } catch (x) { try { sel.removeAllRanges(); } catch (y) {} }
         return;
       }
+      // 列表行的逐行判定：整行被罩就标这行、**不再下钻**（子行本就含在它的边框盒里，再标一层
+      // 会叠出更深的双重底色）；只罩到部分的行则钻进它的子列表继续判。
+      const walkListRows = (list) => {
+        for (const li of list.children) {
+          if (li.tagName !== 'LI' || !r.intersectsNode || !r.intersectsNode(li)) continue;
+          if (covered(li)) { mark(li); continue; }
+          for (const sub of li.children) if (sub.tagName === 'UL' || sub.tagName === 'OL') walkListRows(sub);
+        }
+      };
       const walk = (root) => {
         for (const b of blocksInScope(root)) {
           if (!r.intersectsNode || !r.intersectsNode(b)) continue; // 选区外的块直接跳（intersectsNode 现代 Chromium 恒有）
@@ -1147,6 +1156,11 @@
             continue;
           }
           if (covered(b)) { mark(b); continue; }
+          // U3（2026-08-06）：**部分**被罩的列表下沉到行。此前 walk 只遍历 blocksInScope（= root.children），
+          // <li> 永远进不了集合，于是「从段落拖到列表第二行」这种部分覆盖一个块级标记都不打——
+          // 列表是唯一拿不到跨块蓝底的块类型，与 PR #314 定的「跨块选区整行蓝底对齐 Notion」口径不一致。
+          // 语义照抄 DETAILS 那支：整个被罩 → 标容器（上面那行已处理）；部分被罩 → 体内行各自判、不上卷。
+          if (b.tagName === 'UL' || b.tagName === 'OL') { walkListRows(b); continue; }
           // T14 后这里不会再出现「部分被罩的 TABLE」：端点在表内的选区已在上方被截断（选区连续 ⇒
           // 相交而未全罩必有端点在内）。旧「端点在表内 → 整表蓝」提升通道退役。
         }
@@ -5629,6 +5643,10 @@
   tr[data-ws2-menurow]>td[data-ws2-menucell],tr[data-ws2-menurow]>th[data-ws2-menucell],
   td[data-ws2-menucell],th[data-ws2-menucell]{background:rgba(29,111,191,.24);box-shadow:inset 0 0 0 2px rgba(29,111,191,.55);}
   [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
+  /* U3：行级蓝底必须收窄光晕。相邻 <li> 的间距只有 4.8px（:where(li){margin:.3em 0} 折叠后），
+     而默认 spread 是 4px——两行各自向外 4px，合计 8px > 4.8px，中间会叠出一条 alpha 更高的带
+     （.16 叠 .16 ≈ .29，比本体还深），两行糊成一条、看不出选了几行。1px 留出 2.8px 干净缝。 */
+  li[data-ws2-rangesel]{box-shadow:0 0 0 1px rgba(26,115,232,.16);}
   /* I14：替换元素的像素会盖住背景蓝——降透明度让蓝底透上来，整张图呈被蓝罩态（Notion 同观感） */
   img[data-ws2-rangesel],figure[data-ws2-rangesel] img{opacity:.72;}
   [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
