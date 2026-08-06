@@ -5,6 +5,23 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.13.0 — 2026-08-06
+
+Tables can be selected by dragging.
+
+### Added
+
+- **Tables**: drag across cells to select a rectangular block, and it stays selected after you release; Delete clears just the contents without touching the table structure, and ⌘C copies it as text you can paste straight into a spreadsheet
+- **Tables**: hover near a table's bottom or right edge and a "+" bar appears — one click adds a row below or a column to the right
+
+![Dragging across cells selects a rectangular block](website/public/changelog/0130-table-rectsel.png)
+
+![A "+" bar appears near the table's bottom edge; one click adds a row](website/public/changelog/0130-table-edgeadd.png)
+
+### Improved
+
+- **Tables**: dragging a selection out of a table now stops at the table's edge, and dragging in from outside only reaches that edge — no more "I meant to select a few cells and the whole table got deleted"
+
 ## v0.12.2 — 2026-08-05
 
 Select several rows and the next thing you do now lands on every one of them.
