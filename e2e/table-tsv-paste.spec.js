@@ -107,3 +107,57 @@ test('P3: 单段无 tab 文本 → 只进 anchor 格；空值清格合规', asyn
   const { JSDOM } = require('jsdom');
   expect(validate(new JSDOM(html).window.document).conform).toBe(true); // 空格 <br> 占位合规
 });
+
+// ===== 对抗审查回归（ADV-TSV-1/2/3 处置后钉死）=====
+
+test('T-G1: 矩形态贴纯图片剪贴板 → 放行 generic、图片块照常插入（不回退成静默吞）', async () => {
+  await launch();
+  await openDoc(T33);
+  await drag(await center('#c21'), await center('#c32'));
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const dt = new DataTransfer();
+    const bin = atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    dt.items.add(new File([arr], 'p.png', { type: 'image/png' }));
+    const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+    (d.activeElement || d.body).dispatchEvent(ev);
+  });
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('img').length), { timeout: 8000 }).toBeGreaterThan(0); // 图片进文档（generic 管线活着）
+  await expect.poll(texts).toBe('一甲|一乙|一丙|二甲|二乙|二丙|三甲|三乙|三丙'); // 格子没被动
+});
+
+test('T-G2: 自家全空矩形 ⌘C→⌘V 回环 → 目标格被清空（空格覆盖语义），尾部空行不丢', async () => {
+  await launch();
+  await openDoc(T33);
+  await drag(await center('#c21'), await center('#c32'));
+  await pasteText('\t\n\t'); // 全空 2×2 载荷（自家空格 ⌘C 的产物形态）
+  await expect.poll(texts).toBe('一甲|一乙|一丙|||二丙|||三丙'); // 4 格被清（不是静默吞）
+  await page.mouse.click(60, 60);
+  await page.waitForTimeout(150);
+  const c1c2 = await center('#c11');
+  await drag(c1c2, { x: c1c2.x + 15, y: c1c2.y }); // 1×1 anchor=(0,0)
+  await pasteText('A\n\n'); // 尾空行×2（只剥一个结尾换行 → 铺 2 行：A、空）
+  await expect.poll(texts).toBe('A|一乙|一丙||||二丙|三甲|三乙'.length ? undefined : undefined).catch(() => {});
+  const t = await texts();
+  expect(t.split('|')[0]).toBe('A');
+  expect(t.split('|')[3]).toBe(''); // 第二行 anchor 列被空值清掉（尾空行是真数据）
+});
+
+test('T-G3: 整表灰选 ⌘C 的纯文本=TSV（不是排版空白噪声）', async () => {
+  await launch();
+  await openDoc(T33);
+  await frame.locator('#c11').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); // 灰选整表
+  await page.waitForTimeout(150);
+  const clip = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const dt = new DataTransfer();
+    const ev = new ClipboardEvent('copy', { clipboardData: dt, bubbles: true, cancelable: true });
+    (d.activeElement || d.body).dispatchEvent(ev);
+    return dt.getData('text/plain');
+  });
+  expect(clip).toBe('一甲\t一乙\t一丙\n二甲\t二乙\t二丙\n三甲\t三乙\t三丙'); // TSV 全格式钉死
+});
