@@ -87,7 +87,7 @@
 ## 欠账
 
 - **中文 IME 在 cell 内组词只能真机验**（容器/CI 都验不了；历史上有真机才炸的先例）——发版前 Colin 真机 checklist 项。
-- **矩形选中态 ⌘V**（按 anchor 格铺 TSV，Notion 行为）未做——粘贴管线目前对矩形态静默放行 generic（无落点 no-op）；独立小项待拍板（ADV-R4 记录）。
+- ~~矩形选中态 ⌘V~~（2026-08-06 已做，sweep 授权收账）：TSV 按 anchor 铺格、整格覆盖、空值清格 <br> 占位、**越界裁剪不扩结构**（有意收窄：Notion 会自动加行列；加行列走边缘条/轴菜单）、铺完选中态移到覆盖区、一步 undo。门 e2e/table-tsv-paste.spec.js 3 条。
 - ~~行拖拽（T3/T4）押 PR-5c~~（2026-08-06 已做，见「矩形选区与表界钳制」节；门 e2e/table-row-drag.spec.js 6 条）。
 - .md 文档中造表会被 md-adapter 岛化（class 不在白名单，管道表变 HTML 岛，内容保真但丢 md 可读性）；对 md 来源表格切对齐同账。绕法：.md 少用编辑器造表。等真实反馈再做「.md 造表产无 class + align 形态」分叉。
 - ui-demo 侧不追 cell 级交互（demo 定位，见有意分歧）。
