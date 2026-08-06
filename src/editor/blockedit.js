@@ -345,8 +345,14 @@
   //   第二种行首必须自己找最近的硬换行再看它到光标之间只有源码空白。
   // ⚠ **软折行（文字自动折到下一视觉行）不算行首**——那儿 DOM 上没有任何边界节点，本谓词纯按 DOM 算，
   //   天然把它判成行中，正是拍板要的语义（所以这里一行几何判定都不需要）。
+  // 「这一行」的左边界：硬换行 <br>，或任何块级元素的结束（容器里 <p>甲</p>丙 的「丙」是新的一行）。
+  // 软折行不在内——那不是真的行边界，在那儿缩进整块很怪（Colin 2026-08-06 拍板）。
+  const LINE_BREAKERS = 'br,p,div,h1,h2,h3,h4,h5,h6,ul,ol,blockquote,pre,table,details,figure,hr';
+  // 「左边有没有东西」不能只问 Range.toString()——它对 <img>/<hr> 这类**替换元素返回空串**，
+  // 于是 <p><img>|甲乙</p> 的光标会被判成行首、Tab 去缩整块而不是插空格（对抗审查实测）。
+  // 跟 memory 里 `getComputedStyle(el,'::after')` 那条同源：「读出来是空」≠「真的没东西」。
+  const REPLACED_SEL = 'img,hr,svg,video,canvas,object,iframe,input,button,figure,table';
   function isCaretAtLineStart(doc, el) {
-    if (isCaretAtStart(doc, el)) return true;
     const sel = doc.getSelection();
     if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
     const caret = sel.getRangeAt(0);
@@ -355,12 +361,14 @@
     before.setStart(el, 0);
     try { before.setEnd(caret.startContainer, caret.startOffset); } catch (x) { return false; }
     const frag = before.cloneContents();
-    const brs = frag.querySelectorAll ? frag.querySelectorAll('br') : [];
-    if (!brs.length) return false;
-    const tail = doc.createRange();
-    tail.selectNodeContents(frag);
-    tail.setStartAfter(brs[brs.length - 1]);
-    return isBlankRun(tail.toString());
+    // 只看「最后一个行边界之后」那一段；没有行边界就看整个前缀（= 块首那种情形）。
+    const marks = frag.querySelectorAll ? frag.querySelectorAll(LINE_BREAKERS) : [];
+    const seg = doc.createRange();
+    seg.selectNodeContents(frag);
+    if (marks.length) { try { seg.setStartAfter(marks[marks.length - 1]); } catch (x) { return false; } }
+    if (!isBlankRun(seg.toString())) return false;
+    const rest = seg.cloneContents();
+    return !(rest.querySelector && rest.querySelector(REPLACED_SEL));
   }
   // 空块的占位 <br>：contenteditable 里空块必须挂一个 <br> 才撑得起行高，往它里面并内容前要先摘掉，
   // 否则并进来的文字前面留一行空行。
@@ -3587,6 +3595,24 @@
           return;
         }
         if (e.key === ' ') { e.preventDefault(); doc.execCommand('insertText', false, ' '); return; } // 原生 summary 空格会折叠——拦默认、手动插空格
+        // Tab：summary 也是一行文字，照同一套分派走（行中 = 两个空格；summary 恒 phrasing-only，nbsp 合法）。
+        // ⚠ 这条分支原来**完全不管 Tab**，而它在下面那个 Tab gate 之前就 return —— 于是原生 Tab 把焦点
+        // 甩出 summary（实测 activeElement 变成 BODY），紧接着敲的那一个字被静默吞掉、用户得再点一次
+        // 才能继续写标题。base 版本同病，不是本次引入，但新契约在这条文字行上是空洞，顺手补上。
+        if (e.key === 'Tab') {
+          if (e.ctrlKey || e.metaKey || e.altKey) return; // 修饰键归上层（切标签 / 系统），编辑器不碰
+          e.preventDefault();                              // 无论走哪条都别让原生 Tab 把焦点带出编辑区
+          if (e.shiftKey) return;                          // summary 里没有反缩进语义，吞掉即可
+          const selS = doc.getSelection();
+          if (selS && selS.rangeCount > 0 && selS.isCollapsed && !isCaretAtLineStart(doc, editingEl)) {
+            if (undoMgr) undoMgr.checkpoint();
+            if (insertPadAtCaret(tabPadFor(selS.getRangeAt(0).startContainer))) {
+              if (undoMgr) undoMgr.checkpoint();
+              markDirty();
+            }
+          }
+          return;
+        }
         if (e.key === 'Backspace' && isCaretAtStart(doc, editingEl)) {
           // ===== E2：折叠块标题行首退格 = 降级成文本块（对拍实证 2026-08-04，探针 E2-a/E2-b）=====
           // 旧行为：只有「标题空 + 体也空」才解包，其余一律零反馈 —— 用户找不到退出这个折叠块的办法（死胡同）。
@@ -3892,6 +3918,13 @@
         // IME 组词中 Tab 是候选词操作，抢了输入法就失灵（本仓 IME 焦点坑踩过好几次）。
         // 不接管 = 不 preventDefault，跟本文件其它分支同款守卫。
         if (e.isComposing || e.keyCode === 229) return;
+        // 带修饰键的 Tab 一律放行给上层，编辑器一个字都不许碰（对抗审查 HIGH，实测）：
+        // Ctrl+Tab 是本 app 的「切标签页」快捷键（shell.js 捕获后转发给侧栏），⌘/⌥+Tab 归系统。
+        // 而本分支是 capture 阶段注册、只 preventDefault 不 stopPropagation —— 于是 Ctrl+Tab 会
+        // **先在文档里插两个 nbsp（或缩进一档）、再把标签切走**，插进去的东西用户在另一个文档里
+        // 根本看不见，1.2s 后照样落盘 = 静默污染用户文件。每按一次插一对、没有上限。
+        // ⚠ 顺带堵掉一个老洞：base 版本里 Ctrl+Tab 在非首块同样会缩进一档，也是这个修饰键盲区。
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
         e.preventDefault();
         // 【行中 Tab = 两个空格】Colin 2026-08-06 拍板：Tab 只在**行首**是缩进，在一行文字中间
         // 就是两个空格（Word / 代码编辑器的手感）。三道 gate，缺一不可：

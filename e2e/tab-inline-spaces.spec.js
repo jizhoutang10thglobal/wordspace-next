@@ -336,6 +336,112 @@ test('11 撤销粒度：两个空格自成一步，一次 undo 只撤它、不�
   expect(await textOf('#b'), 'undo×2 才撤掉打字').toBe('乙丙丁戊');
 });
 
+// 11b 补牙（对抗审查抓到 11 是哑门）：11 只守住了插入**前**那次 checkpoint。
+// 把插入**后**那次删掉，11 照样绿 —— 因为 undo() 自己开头会补调一次 checkpoint
+// （src/editor/undo.js），而 11 是「插完立刻 undo」，缺的那次正好被它补上、测不到。
+// 这条改成「插空格 → 继续打字 → 等过 input 的 500ms 去抖 → undo 一次」：
+// 少了插入后那次 checkpoint，两个空格会跟后打的字捆成同一步、一次 undo 全没。
+test('11b 撤销粒度补牙：插完空格再打字，undo 一次只撤后打的字、空格还在', async () => {
+  await launch();
+  await openDoc('<p id="a">甲</p><p id="b">乙丙丁戊</p>');
+  await clickIn('#b');
+  await caretAt('#b', 2);
+  await expectCaretMidLine('#b', '乙丙');
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(150);
+  expect(await codesOf('#b'), '前置：确实插进去两个 nbsp').toContain('a0 a0');
+  await page.keyboard.type('Z');
+  await page.waitForTimeout(700); // 必须跨过 input 的 500ms 去抖，让打字自己排一个 checkpoint
+  // ⚠ 实测：在插入的 nbsp 之后继续打字，Chromium 会把其中一个 nbsp **再平衡回普通空格**
+  //（a0 a0 → a0 20）。视觉宽度不变、存盘也不丢，所以不跟它较劲；但断言不能写死 `a0 a0`，
+  // 否则这条门在真实「打完字再撤销」的路径上恒红。这条门守的是**撤销粒度**，不是码点身份。
+  const RUN2 = /^4e59 4e19 (a0|20) (a0|20) /; // 乙丙 + 两个空白字符
+  expect(await codesOf('#b'), '前置：两个空格 + Z 都在').toMatch(/^4e59 4e19 (a0|20) (a0|20) 5a 4e01 620a$/);
+  await menu('undo');
+  await page.waitForTimeout(300);
+  const afterUndo = await codesOf('#b');
+  expect(afterUndo, 'undo×1 只撤掉 Z —— 两个空格必须原封不动还在（少了插入后那次 checkpoint 会一起没）').toMatch(RUN2);
+  expect(afterUndo, 'Z 确实被撤掉了').toBe(afterUndo.replace(/ 5a/, ''));
+  expect(afterUndo, '撤完恰好是 乙丙␣␣丁戊，不多不少').toMatch(/^4e59 4e19 (a0|20) (a0|20) 4e01 620a$/);
+});
+
+// 13 修饰键（对抗审查 HIGH，实测）：Ctrl+Tab 是本 app 的「切标签页」快捷键。
+// 病灶：本分支 capture 阶段注册、只 preventDefault 不 stopPropagation —— 于是会
+// **先在文档里插两个 nbsp、再把标签切走**，插进去的东西用户在别的文档里根本看不见，
+// 1.2s 后照样落盘 = 静默污染用户文件。每按一次插一对、没有上限。
+test('13 Ctrl / ⌘ / ⌥ + Tab 一个字符都不许写进文档，也不许缩进', async () => {
+  await launch();
+  await openDoc('<p id="a">甲</p><p id="b">乙丙丁戊</p>', INDENT_STYLE);
+  await clickIn('#b');
+  await caretAt('#b', 2);
+  await expectCaretMidLine('#b', '乙丙');
+  const before = await codesOf('#b');
+  for (const k of ['Control+Tab', 'Meta+Tab', 'Alt+Tab']) {
+    await page.keyboard.press(k);
+    await page.waitForTimeout(150);
+    expect(await codesOf('#b'), `${k} 之后文本必须逐码点不变`).toBe(before);
+  }
+  // 连按也不许攒（原病灶每按一次插一对、无上限；base 的缩进有 maxAllowed 封顶，插入没有）
+  for (let i = 0; i < 3; i++) { await page.keyboard.press('Control+Tab'); await page.waitForTimeout(80); }
+  expect(await codesOf('#b'), '连按 Ctrl+Tab 不许攒出任何字符').toBe(before);
+  // base 遗留的同一个修饰键盲区：Ctrl+Tab 在非首块会缩进一档，一并堵死
+  expect(await clsOf('#b'), 'Ctrl+Tab 也不许缩进整块').not.toMatch(/ws-indent/);
+  // 这条 bug 的杀伤力全在「用户看不见但写进了文件」——落盘也要干净
+  await page.waitForTimeout(1600);
+  const disk = await fs.readFile(docPath, 'utf8');
+  expect(disk, '磁盘字节里不许出现 &nbsp;').not.toContain('&nbsp;');
+  expect(disk, '磁盘字节里不许出现裸 nbsp').not.toContain(NB);
+});
+
+// 14 替换元素（对抗审查 LOW，实测）：Range.toString() 对 <img>/<hr> 返回空串，
+// 于是 <p><img>|甲乙</p> 的光标会被判成「行首」→ Tab 去缩整块、一个空格都不插。
+// 「读出来是空」不等于「真的没东西」——跟 memory 里 getComputedStyle(el,'::after') 那条同源。
+test('14 行内图片之后的光标算行中，不算行首（Range.toString 看不见替换元素）', async () => {
+  await launch();
+  // 运行时现生成一张真能解码的图（仓里那串写死的 data URL naturalWidth===0，坏图会走另一条路）
+  const png = await page.evaluate(() => {
+    const c = document.createElement('canvas'); c.width = 40; c.height = 16;
+    const x = c.getContext('2d'); x.fillStyle = '#4a7'; x.fillRect(0, 0, 40, 16);
+    return c.toDataURL('image/png');
+  });
+  await openDoc(`<p id="a">甲</p><p id="b"><img id="im" src="${png}" width="40" height="16">乙丙丁戊</p>`, INDENT_STYLE);
+  await clickIn('#b');
+  // 前置断言：图真解码出来了（坏图不是替换元素，会把这条门带去另一条代码路径）
+  const nat = await frame.locator('#im').evaluate((el) => ({ w: el.naturalWidth, h: el.naturalHeight }));
+  expect(nat.w, '前置：图必须真解码，否则这条门测的不是替换元素').toBeGreaterThan(0);
+  await caretAt('#b', 0); // 图片之后那个文本节点的 offset 0
+  expect(await caretBefore('#b'), '前置：Range.toString() 在这儿确实读成空串——这正是病灶').toBe('');
+  await page.keyboard.press('Tab');
+  await page.waitForTimeout(150);
+  expect(await codesOf('#b'), '图片之后按 Tab = 行中，插两个 nbsp').toContain('a0 a0');
+  expect(await clsOf('#b'), '同时绝不缩进整块（负向）').not.toMatch(/ws-indent/);
+});
+
+// 15 多段容器里的「裸行内文本行」（对抗审查 MED，实测）：<blockquote><p>甲乙</p>丙丁 里，
+// 「丙丁」是容器的直接文本子、自成一行。它的行首以前被判成行中（因为行宿主回退成了整个容器，
+// 左边看见前一个 <p> 的文字），于是 Tab 往合规文档里插了两个 nbsp 而不是缩进整块。
+test('15 引用 / 提示框里紧跟 <p> 的裸文本行，行首算行首', async () => {
+  await launch();
+  await openDoc('<p id="a">甲</p>'
+    + '<blockquote id="q"><p id="q1">甲乙</p>丙丁戊己</blockquote>'
+    + '<div class="ws-callout" id="co"><p id="co1">甲乙</p>庚辛壬癸</div>', INDENT_STYLE);
+  for (const [host, firstChar] of [['#q', '丙'], ['#co', '庚']]) {
+    await clickIn(host);
+    // 光标放到裸文本行的最前面
+    await frame.locator(host).evaluate((el, ch) => {
+      const tn = [...el.childNodes].find((n) => n.nodeType === 3 && n.nodeValue.indexOf(ch) === 0);
+      const d = el.ownerDocument; const r = d.createRange(); r.setStart(tn, 0); r.collapse(true);
+      const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+    }, firstChar);
+    await page.waitForTimeout(60);
+    const codes0 = await codesOf(host);
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(150);
+    expect(await codesOf(host), `${host} 裸文本行的行首按 Tab —— 一个字符都不许插`).toBe(codes0);
+    expect(await clsOf(host), `${host} 应该走整块缩进`).toMatch(/ws-indent-1/);
+  }
+});
+
 test('12 IME 组词中的 Tab 不接管（keyCode 229）——组词时 Tab 是候选词操作', async () => {
   await launch();
   await openDoc('<p id="a">甲</p><p id="b">乙丙丁戊</p>');
