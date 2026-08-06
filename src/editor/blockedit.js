@@ -652,6 +652,137 @@
       colHandle.style.display = 'flex';
     }
 
+    // ── T13/T14 表格矩形选区（Notion 2026-08-06 复拍实测：拖选=anchor 格与指针格的行列包围盒、
+    // 独立描边不填底、松手保持、Delete 清内容不动结构、选区出表夹回表内矩形、入表被边界挡住）。
+    // 状态三件套：rectArm（mousedown 待命）→ rectSel（活动矩形）→ rectBox（描边浮件，纯视觉）。
+    // 格上的 data-ws2-cellsel 是语义真相源（删除/门都读它），入 WS2_MARKERS 存盘剥除。
+    const rectBox = mk('div', 'ws-rectsel');
+    rectBox.style.position = 'absolute'; rectBox.style.display = 'none';
+    doc.documentElement.appendChild(rectBox);
+    let rectSel = null; // { table, r1, c1, r2, c2, cells:[] }
+    let rectArm = null; // { table, anchor:{row,col}, sx, sy, fromCell:td|th, viaEdit:bool, started:bool }
+    let rectClickSquelch = false; // 矩形拖选松手后紧跟的那下 click 要吞掉（否则 enterCell 当场拆台）
+    function clearRectSel() {
+      if (rectArm) rectArm = null;
+      if (!rectSel) return;
+      rectSel.cells.forEach((c) => c.removeAttribute && c.removeAttribute('data-ws2-cellsel'));
+      rectSel = null;
+      rectBox.style.display = 'none';
+    }
+    // 指针 → 表内行列坐标，四向夹回表内（T14 出向钳制的唯一来源）
+    function cellPosAtPoint(tbl, x, y) {
+      const rows = tableRowsOf(tbl);
+      if (!rows.length) return null;
+      let ri = 0;
+      for (let i = 0; i < rows.length; i++) { const rr = rows[i].getBoundingClientRect(); if (y >= rr.top) ri = i; }
+      const cs = rowCellsOf(rows[ri]);
+      if (!cs.length) return null;
+      let ci = 0;
+      for (let j = 0; j < cs.length; j++) { const cr = cs[j].getBoundingClientRect(); if (x >= cr.left) ci = j; }
+      return { row: ri, col: ci };
+    }
+    function setRectSel(tbl, a, b) {
+      const keep = rectArm; // clearRectSel 会把待命态一并清，拖拽中要保住
+      clearRectSel();
+      rectArm = keep;
+      const rows = tableRowsOf(tbl);
+      const r1 = Math.max(0, Math.min(a.row, b.row)), r2 = Math.min(rows.length - 1, Math.max(a.row, b.row));
+      const c1 = Math.min(a.col, b.col), c2 = Math.max(a.col, b.col);
+      const cells = [];
+      for (let r = r1; r <= r2; r++) { const cs = rowCellsOf(rows[r]); for (let c = c1; c <= c2 && c < cs.length; c++) if (cs[c]) cells.push(cs[c]); }
+      if (!cells.length) return;
+      cells.forEach((c) => c.setAttribute('data-ws2-cellsel', ''));
+      rectSel = { table: tbl, r1, c1, r2, c2, cells };
+      const { sx, sy } = vp();
+      const first = cells[0].getBoundingClientRect(), last = cells[cells.length - 1].getBoundingClientRect();
+      rectBox.style.left = (first.left + sx - 1) + 'px';
+      rectBox.style.top = (first.top + sy - 1) + 'px';
+      rectBox.style.width = (last.right - first.left + 2) + 'px';
+      rectBox.style.height = (last.bottom - first.top + 2) + 'px';
+      rectBox.style.display = 'block';
+    }
+    // 矩形 Delete：清内容不动结构（Notion N3 实测读数：9 格恒 9 格、只空矩形内）。前后双 checkpoint
+    //（KTD6 型：前置结算 500ms 防抖打字债、后置封快照）——用户视角一步 undo 整体回滚。
+    function deleteRectSel() {
+      if (!rectSel) return false;
+      if (undoMgr) undoMgr.checkpoint();
+      for (const c of rectSel.cells) {
+        while (c.firstChild) c.removeChild(c.firstChild);
+        c.appendChild(doc.createElement('br')); // 空格占位，光标落得进
+      }
+      if (undoMgr) undoMgr.checkpoint();
+      markDirty();
+      const tbl = rectSel.table, r1 = rectSel.r1, c1 = rectSel.c1, r2 = rectSel.r2, c2 = rectSel.c2;
+      setRectSel(tbl, { row: r1, col: c1 }, { row: r2, col: c2 }); // 选中态保持（Notion 同款），重挂新 <br> 后的格
+      return true;
+    }
+
+    // ── T2 表格边缘入口（Notion 2026-08-06 实测：贴近下缘现全宽横条、贴近右缘现全高竖条，点一下真加行/列）
+    const rowBar = mk('div', 'ws-tbladdrow');
+    rowBar.style.position = 'absolute'; rowBar.style.display = 'none';
+    rowBar.title = T('editor.tableAddRowTip');
+    rowBar.textContent = '+';
+    const colBar = mk('div', 'ws-tbladdcol');
+    colBar.style.position = 'absolute'; colBar.style.display = 'none';
+    colBar.title = T('editor.tableAddColTip');
+    colBar.textContent = '+';
+    doc.documentElement.appendChild(rowBar);
+    doc.documentElement.appendChild(colBar);
+    let edgeTable = null; // 当前边缘条的宿主表
+    function hideEdgeBars() { rowBar.style.display = 'none'; colBar.style.display = 'none'; edgeTable = null; }
+    function positionEdgeBars(clientX, clientY) {
+      if (menuAxis || (rectArm && rectArm.started)) { hideEdgeBars(); return; }
+      let tbl = null, tr = null, kind = null;
+      for (const t of blockRoot.querySelectorAll('table')) {
+        const r = t.getBoundingClientRect();
+        if (clientX < r.left - 6 || clientX > r.right + 22 || clientY < r.top - 6 || clientY > r.bottom + 22) continue;
+        if (clientY > r.bottom - 10 && clientX <= r.right + 4) { tbl = t; tr = r; kind = 'row'; break; }
+        if (clientX > r.right - 10 && clientY <= r.bottom + 4) { tbl = t; tr = r; kind = 'col'; break; }
+      }
+      if (!tbl) { hideEdgeBars(); return; }
+      // ADV-R8：双表相邻（margin 折叠后间隙 ~13px < 触发带 22px）时，指针已进下一张表的首行还在弹
+      // 上一张表的加行条、条还压着下表内容——命中点落在**另一张表**的内容矩形里就不弹。
+      for (const t of blockRoot.querySelectorAll('table')) {
+        if (t === tbl) continue;
+        const r = t.getBoundingClientRect();
+        if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) { hideEdgeBars(); return; }
+      }
+      const { sx, sy } = vp();
+      edgeTable = tbl;
+      if (kind === 'row') {
+        rowBar.style.left = (tr.left + sx) + 'px';
+        rowBar.style.top = (tr.bottom + sy + 3) + 'px';
+        rowBar.style.width = tr.width + 'px';
+        rowBar.style.display = 'flex';
+        colBar.style.display = 'none';
+      } else {
+        colBar.style.left = (tr.right + sx + 3) + 'px';
+        colBar.style.top = (tr.top + sy) + 'px';
+        colBar.style.height = tr.height + 'px';
+        colBar.style.display = 'flex';
+        rowBar.style.display = 'none';
+      }
+    }
+    function edgeBarOp(kind) {
+      const tbl = edgeTable;
+      if (!tbl || !tbl.isConnected) { hideEdgeBars(); return; } // ADV-R9：表被键盘整删后条还挂着——幽灵条点击不得对 detached 表跑手术
+      const rows = tableRowsOf(tbl);
+      if (!rows.length) return;
+      // 参照格：加行=末行首格（row-below 落其后）；加列=首行末格（col-right 落其右）
+      const ref = kind === 'row' ? rowCellsOf(rows[rows.length - 1])[0] : (() => { const cs = rowCellsOf(rows[0]); return cs[cs.length - 1]; })();
+      if (!ref) return;
+      if (undoMgr) undoMgr.checkpoint(); // KTD6 前置：先结算防抖窗口内的打字债
+      const res = tableEditOp(doc, tbl, ref, kind === 'row' ? 'row-below' : 'col-right');
+      if (!res || res.deletedTable) return; // 加行/加列不可能退化，防御而已
+      if (undoMgr) undoMgr.checkpoint();
+      markDirty();
+      enterCell(res, { mode: 'start' }); // 落点格直接可打字（悬空焦点 = macOS IME 唤不起）
+    }
+    rowBar.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    rowBar.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); edgeBarOp('row'); });
+    colBar.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    colBar.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); edgeBarOp('col'); });
+
     // U4「+」快捷插入钮（gutter 里紧挨手柄左侧，同显同隐；作用对象与手柄一致 = 行或块）
     const plus = mk('div', 'ws-plus');
     plus.style.position = 'absolute';
@@ -919,16 +1050,53 @@
       };
       const mark = (m) => { m.setAttribute('data-ws2-rangesel', ''); rangeSelEls.push(m); };
       if (sBlk === eBlk) {
-        // 同表跨格（U4/KTD3）：完全被罩的 cell 整格蓝（预示清内容）；端点部分格保持原生文字高亮。
+        // T13（换掉旧线性罩格 U4/KTD3）：残余通道造出的同表跨格原生选区（程序化/粘贴流），统一折算成
+        // 矩形选中态——全编辑器只有一个表内多格模型。鼠标拖选根本到不了这（onMouseDown 拦了原生）。
         if (sBlk.tagName === 'TABLE') {
           const sC = cellOfNode(r.startContainer), eC = cellOfNode(r.endContainer);
           if (sC && eC && sC !== eC) {
-            // 线性跨度中的内部格必然全罩（Range 连续），covered() 只需判两端——selectionchange 是逐击热路径
-            const span = cellSpanOf(sBlk, sC, eC);
-            if (span) for (const c of span) { if (c === sC || c === eC ? covered(c) : true) mark(c); }
+            const a = cellPosOf(sBlk, sC), b = cellPosOf(sBlk, eC);
+            try { sel.removeAllRanges(); } catch (x) {}
+            if (cellEl) exitCell(); // 跨格选区成立 = 不再编辑单格；cellEl 不清会挡住矩形态的键盘分支
+            if (a && b) setRectSel(sBlk, a, b);
           }
         }
         return; // 其余单块内情形：原生文字高亮已够，不标块级
+      }
+      // T14：选区不跨表边界（Notion 2026-08-06 复拍 f3/f3b/f4b）。端点伸进表内、另一端在表外 → 原生
+      // 选区当场在表界截断，表整个排除在选区外（截断后 selectionchange 重入、干净重算）。Notion 实测
+      // 入向是「整个不产生选区」；我们保留段落侧的文字选择（对用户更有用，共同守住「表格绝不被部分
+      // 圈选」的硬边界）——有意分歧，spec 记录。旧「端点落表内=整表蓝+整删」通道随之退役；表格被
+      // 完整罩住（⌘A 全篇/上下段贯穿拖选）仍走下面 covered() 整块标记 = ED-A2 整删语义原样保留。
+      const sC0 = cellOfNode(r.startContainer), eC0 = cellOfNode(r.endContainer);
+      const sT0 = sC0 ? blockOf(sC0) : null, eT0 = eC0 ? blockOf(eC0) : null;
+      if ((eT0 && eT0 !== sBlk) || (sT0 && sT0 !== eBlk)) {
+        // 拖拽进行中也照钳：Chromium 的选择手势自持锚点、下一次 mousemove 会自己续上（变异自检
+        // 实证——贯穿拖选在逐帧钳制下照样到达对岸），钳制反而把「表内瞬时原生高亮」逐帧压掉。
+        // 钳出的端点必须锚在**相邻块内部**（selectWholeDoc 同款）：setEndBefore/setStartAfter 会产生
+        // body 层锚点，deleteSelection 判「块外选区」return false = 死键（U2-4 注释里实锤过的坑）。
+        // ADV-R6：两端分属**不同表** → 没有合法钳法（哪边收都得把另一张表整个圈进来或产半截表 range）
+        // → 选区直接取消；相邻块查找跳过 TABLE（否则锚成 (邻表,0) 又把没碰的表圈进选区）。
+        if (sT0 && eT0 && sT0 !== eT0) { try { sel.removeAllRanges(); } catch (x) {} return; }
+        const sibBlock = (tbl, dir) => {
+          let n = dir < 0 ? tbl.previousElementSibling : tbl.nextElementSibling;
+          while (n && ((n.hasAttribute && n.hasAttribute('data-ws2-ui')) || n.tagName === 'TABLE')) n = dir < 0 ? n.previousElementSibling : n.nextElementSibling;
+          return n;
+        };
+        try {
+          const nr = doc.createRange();
+          if (eT0 && eT0 !== sBlk) {
+            const pb = sibBlock(eT0, -1);
+            if (!pb) { sel.removeAllRanges(); return; } // 表前无块可锚 → 选区整个取消（不留部分表）
+            nr.setStart(r.startContainer, r.startOffset); nr.setEnd(pb, pb.childNodes.length);
+          } else {
+            const nb = sibBlock(sT0, +1);
+            if (!nb) { sel.removeAllRanges(); return; }
+            nr.setStart(nb, 0); nr.setEnd(r.endContainer, r.endOffset);
+          }
+          sel.removeAllRanges(); if (!nr.collapsed) sel.addRange(nr);
+        } catch (x) { try { sel.removeAllRanges(); } catch (y) {} }
+        return;
       }
       const walk = (root) => {
         for (const b of blocksInScope(root)) {
@@ -941,7 +1109,8 @@
             continue;
           }
           if (covered(b)) { mark(b); continue; }
-          if (b.tagName === 'TABLE') mark(b);             // 端点在表格内 → 整行蓝预示整删（ED-A2）
+          // T14 后这里不会再出现「部分被罩的 TABLE」：端点在表内的选区已在上方被截断（选区连续 ⇒
+          // 相交而未全罩必有端点在内）。旧「端点在表内 → 整表蓝」提升通道退役。
         }
       };
       walk(blockRoot);
@@ -950,6 +1119,7 @@
     function selectBlock(el) {
       exitCell();
       exitEdit();
+      clearRectSel(); // 灰选任何块 = 矩形选中态退场（两态互斥，Esc 上卷链靠这保证单一活动态）
       clearSelectedAttr();
       selectedEl = el;
       if (el) el.setAttribute('data-ws2-selected', '');
@@ -967,6 +1137,7 @@
     function deselect() {
       exitCell();
       exitEdit();
+      clearRectSel(); // ADV-R5：菜单删表走 removeBlock→deselect，不清的话 rectSel 指 detached 表、幽灵描边残留
       clearSelectedAttr();
       selectedEl = null;
       hoverEl = null; hoverRow = null; setGutterVisible(false); // 清悬停引用，防删块后幽灵手柄
@@ -976,6 +1147,7 @@
     function enterEdit(el, caret) {
       exitCell();
       if (editingEl && editingEl !== el) exitEdit();
+      clearRectSel(); // 进块编辑 = 矩形选中态退场
       clearSelectedAttr();
       selectedEl = null;
       editingEl = el;
@@ -1005,6 +1177,7 @@
       if (captionEl) { try { captionEl.blur(); } catch (x) {} } // 先收尾说明编辑：blur→persistCaption 会 selectBlock(figure)+exitCell，留到 cell.focus() 才触发会反噬清掉刚设的 cell 状态（对抗审查 conf100）
       if (cellEl && cellEl !== cell) exitCell();
       if (editingEl) exitEdit();
+      clearRectSel(); // 进格编辑 = 矩形选中态退场（单一活动态）
       clearSelectedAttr(); selectedEl = null;
       closeBlockMenu();
       fmtShown = false; fmtbar.style.display = 'none';
@@ -1076,6 +1249,7 @@
     function selectWholeDoc() {
       exitCell();
       if (editingEl) exitEdit();
+      clearRectSel(); // ADV-R1（HIGH）：⌘A 不清矩形态的话，rectSel 与全篇原生选区并存——Delete 被矩形分支永久劫持、⌘C 拷错东西
       clearSelectedAttr(); selectedEl = null;
       closeBlockMenu(); // P2-4：这条路径不走 deselect，行菜单会留在屏上、menuRow 指向随后被删掉的行
       const blocks = [...body.children].filter((c) => c.nodeType === 1 && !c.hasAttribute('data-ws2-ui'));
@@ -1933,21 +2107,18 @@
       // 删除兑现承诺）；对齐 table 的 ED-A2「结构端点整块删」先例。flashNope 空操作反馈随之退役。
       const sBlk = blockOf(r.startContainer), eBlk = blockOf(r.endContainer);
       if (!sBlk || !eBlk) return false; // 选区落在块外/覆盖层 → 不碰
-      // 同表跨格选区（U4/KTD3，Colin 2026-08-03）：清内容不动结构——线性被罩集与原生高亮一致；全罩格清空
-      // 为 <br>，端点格按 range 裁剪（cell phrasing-only ⇒ 裁剪安全、绝无非矩形）。纯内容删除 = 单 checkpoint 一步 undo。
+      // 同表跨格选区（T13 改版，前身 U4/KTD3 线性罩格）：清内容不动结构。正常流程里这类原生选区已被
+      // refreshRangeSel 折算成矩形选中态（keydown 的 rectSel 分支处理删除）；这里是同步调用防御通道
+      //（paste/程序化先删后写），同一套矩形语义（cellPosOf 包围盒 + deleteRectSel），不再按线性跨度裁端点格。
       if (sBlk === eBlk && sBlk.tagName === 'TABLE') {
         const sC = cellOfNode(r.startContainer), eC = cellOfNode(r.endContainer);
         if (sC && eC && sC !== eC) {
-          const hit = cellSpanOf(sBlk, sC, eC); // 与高亮同一来源（所见即所删）
-          if (!hit || !hit.length) return false;
-          if (undoMgr) undoMgr.checkpoint(); // KTD6：先结算 500ms 防抖窗口内的打字债，否则一次 undo 连字带清格一起吞
-          for (const c of hit) {
-            if (c === sC) { try { const r1 = doc.createRange(); r1.setStart(r.startContainer, r.startOffset); r1.setEnd(c, c.childNodes.length); r1.deleteContents(); } catch (x) {} }
-            else if (c === eC) { try { const r2 = doc.createRange(); r2.setStart(c, 0); r2.setEnd(r.endContainer, r.endOffset); r2.deleteContents(); } catch (x) {} }
-            else { while (c.firstChild) c.removeChild(c.firstChild); }
-            if (!c.firstChild) c.appendChild(doc.createElement('br')); // 空格占位，光标落得进
-          }
-          markDirty(); if (undoMgr) undoMgr.checkpoint();
+          const a = cellPosOf(sBlk, sC), b = cellPosOf(sBlk, eC);
+          if (!a || !b) return false;
+          try { sel.removeAllRanges(); } catch (x) {}
+          setRectSel(sBlk, a, b);
+          if (!deleteRectSel()) return false;
+          clearRectSel(); // 同步调用方（打字覆盖）期望「删完接着写」——收掉选中态、光标交回首格
           enterCell(sC, { mode: 'end' });
           return true;
         }
@@ -2456,6 +2627,7 @@
     }
     // el = 作用块；row = 行作用域目标 <li>（行锚手柄开菜单时给，Esc 灰选入口不给 = 块作用域）
     function openBlockMenu(el, row) {
+      clearRectSel(); // ADV-R2/R5：手柄在 data-ws2-ui 上、onMouseDown 的清态够不到——菜单开启点自己焊死单一活动态（也防「复制」把 cellsel 深克隆成游离标记）
       // 表格行列操作的「当前格」快照：必须在 selectBlock（会 exitCell）之前取——菜单项点击时 cellEl 早已清空
       const menuCell = (cellEl && el.contains && el.contains(cellEl)) ? cellEl : null;
       const rowMode = !!(row && el.contains(row) && ((row.tagName === 'LI' && classify(el) === 'list') || (row.tagName === 'P' && isMultiParaContainer(el)))); // C2：容器段也是行作用域
@@ -2613,6 +2785,7 @@
     // 退化态从「删完再补救」变成「根本删不出来」（Notion 同款）。=====
     function openAxisMenu(axis) {
       if (!hoverTable || (axis === 'row' && !hoverTr) || (axis === 'col' && hoverColIdx < 0)) return;
+      clearRectSel(); // ADV-R2：轴手柄同为 data-ws2-ui，菜单开启点焊死单一活动态（镜像 openBlockMenu）
       const tbl = hoverTable, tr = hoverTr, ci = hoverColIdx;
       // ADV-3（对抗审查实测）：rect 必须在 closeBlockMenu **之前**快照——切轴/双击手柄时关旧菜单会
       // hideAxisHandles，display:none 的手柄 rect 全零，菜单会跳到文档左上角。
@@ -2887,17 +3060,56 @@
         markDirty();
         return;
       }
+      // T13：表格格子上的 mousedown → 矩形选区待命。非编辑格拦掉原生 mousedown（光标仍由 onClick 的
+      // enterCell(point) 放，原生选区从此不再从格里长出来——Notion N4 实测：非聚焦格拖动=格矩形不是文字选择）；
+      // 编辑格保留原生（格内选词靠 contenteditable 墙天然圈在格内），指针出格那一刻才升级矩形（onMouseMove 判）。
+      rectArm = null; // ADV-R10：mouseup 在 iframe 外丢失时 rectArm 残留（恒抑制边缘条/劫持下一次拖选）——每次按下无条件重置
+      const tdT = e.target && e.target.closest && e.target.closest('td,th');
+      const tdBlk = tdT ? blockOf(tdT) : null;
+      if (tdT && tdBlk && classify(tdBlk) === 'table') {
+        const viaEdit = cellEl === tdT;
+        clearRectSel();
+        const pos = cellPosOf(tdBlk, tdT);
+        if (pos) {
+          rectArm = { table: tdBlk, anchor: pos, sx: e.clientX, sy: e.clientY, fromCell: tdT, viaEdit, started: false };
+          if (!viaEdit) e.preventDefault();
+        }
+      } else if (rectSel) clearRectSel(); // 点表外任何地方 → 矩形选中态解除（Notion 同款）
       dragStart = { x: e.clientX, y: e.clientY };
       wallDropped = false;
     }
     function onMouseMove(e) {
+      // T13/T14 矩形拖选机：待命中且按住左键 → 非编辑格越过 4px 阈值（或编辑格指针出格）就接管整场
+      // 拖拽，原生选区不参与；指针格坐标经 cellPosAtPoint 四向夹回表内 = T14 出向钳制（Notion f3/f3b）。
+      if (rectArm && (e.buttons & 1)) {
+        if (!rectArm.started) {
+          const fr = rectArm.fromCell.getBoundingClientRect();
+          const leftCell = e.clientX < fr.left || e.clientX > fr.right || e.clientY < fr.top || e.clientY > fr.bottom;
+          const moved = Math.abs(e.clientX - rectArm.sx) > 4 || Math.abs(e.clientY - rectArm.sy) > 4;
+          if (rectArm.viaEdit ? leftCell : moved) {
+            rectArm.started = true;
+            if (rectArm.viaEdit) exitCell();
+            try { const s0 = doc.getSelection(); if (s0) s0.removeAllRanges(); } catch (x) {}
+            // mousedown 被 preventDefault ⇒ iframe 从未获得焦点，后续 Delete/Esc 会落宿主窗口
+            //（openAxisMenu 同款教训）——矩形激活即把焦点接进 focusCatcher。
+            try { focusCatcher.focus({ preventScroll: true }); } catch (x) {}
+            hideEdgeBars();
+          }
+        }
+        if (rectArm.started) {
+          const cur = cellPosAtPoint(rectArm.table, e.clientX, e.clientY);
+          if (cur) setRectSel(rectArm.table, rectArm.anchor, cur);
+          e.preventDefault();
+          return; // 矩形机接管：不摘墙、不动悬停手柄
+        }
+      }
       // 拖选进行中：按住左键移动超过阈值 → 摘掉当前编辑块的 contenteditable（放倒墙），让选区自由跨块。
       // 纯点击（不移动）不摘墙，保留「点同一块原生移光标」「IME 组词」等。选区此刻已起、摘墙不打断它。
-      if (dragStart && !wallDropped && (e.buttons & 1) &&
+      if (dragStart && !wallDropped && !rectArm && (e.buttons & 1) &&
           (Math.abs(e.clientX - dragStart.x) > 4 || Math.abs(e.clientY - dragStart.y) > 4)) {
         wallDropped = true;
         if (editingEl) exitEdit();
-        if (cellEl) exitCell(); // 起点在 cell 内的拖动同样摘墙（方案 B）——「从 cell 拖出做跨块选区」才活；mouseUp 同格再恢复
+        if (cellEl) exitCell(); // 格起点的拖动已被矩形机接管（rectArm 非空不进这），这里只剩非格块的摘墙
       }
       // 在手柄/菜单/气泡上移动：保持现状（手柄在块外 margin，移过去若隐藏就点不到了）
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
@@ -2911,15 +3123,22 @@
       // 「手柄躲鼠标」的同款教训）：el=null（表缘与手柄之间的 8px 间隙 / 块外空白）**不收**——
       // 否则慢速滑向手柄的鼠标途经间隙时手柄先一步消失；只在悬停到**另一个非表格块**上才收。
       if (!menuAxis) { if (el && classify(el) === 'table') positionAxisHandles(el, e.clientX, e.clientY); else if (el) hideAxisHandles(); }
+      positionEdgeBars(e.clientX, e.clientY); // T2：贴近表格下缘/右缘 → 全宽/全高加行加列条（几何判定，不依赖 el 命中表格）
       if (el && (el !== hoverEl || row !== hoverRow)) { hoverEl = el; hoverRow = row; positionGrip(row || el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
       // 移到块外空白/gutter 间隙：不立即隐藏（停在最后悬停块、保证可点）；隐藏交给进编辑/离开文档。
     }
     // 鼠标抬起：收尾一次拖选。单块内选区 → 恢复进编辑（保留选区，可打字替换/气泡走编辑态分支）；
     // 跨块/homeless 选区 → 留着、弹气泡。纯点击（没摘墙）→ 交给 onClick 走进编辑。
     function onMouseUp() {
+      if (rectArm) {
+        const wasRect = rectArm.started;
+        rectArm = null;
+        if (wasRect) { rectClickSquelch = true; dragStart = null; wallDropped = false; return; } // T13：矩形定格（Notion N2 实测松手保持）
+      }
       if (!dragStart) return;
       const dropped = wallDropped;
       dragStart = null; wallDropped = false;
+      refreshRangeSel(); // T14：手势结束才钳表界（拖拽中钳会杀手势）；顺带把定稿选区的块级高亮刷对
       if (!dropped) return;
       const sel = doc.getSelection();
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 拖了但没选到东西
@@ -2953,6 +3172,7 @@
       markDirty();
     }
     function onClick(e) {
+      if (rectClickSquelch) { rectClickSquelch = false; return; } // T13：矩形拖选松手后的 click 不进格、不折叠状态
       // 点到覆盖层（手柄/菜单/气泡）自身：交给它们各自的 handler，这里忽略
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
       // 待办勾选框 gutter：mousedown 已切 data-checked，这下 click 只吞掉——绝不进编辑/放光标、绝不再 toggle（U5/check-1）。
@@ -3053,6 +3273,36 @@
           if (prev0 && isEditableEl(prev0)) enterEdit(prev0, { mode: 'end' });
         }
         return;
+      }
+      // T13 矩形选中态的键盘语义（Notion 复拍）：Delete/Backspace 清矩形内格内容（结构不动、单步 undo、
+      // 选中态保持）；Esc 上卷整表灰选（与 cell-Esc 同一档位）；方向键/打字先解除矩形（⌘Z 等组合键不碰，
+      // undo 重写走 reset 兜底清）。生存不变式：table 可能已被 undo/拖拽变 detached → 静默清态走 generic。
+      if (rectSel && !cellEl && !editingEl) {
+        const nsRect = doc.getSelection();
+        if (!rectSel.table.isConnected) { clearRectSel(); }
+        else if (nsRect && nsRect.rangeCount > 0 && !nsRect.isCollapsed) {
+          clearRectSel(); // ADV-R1 纵深：非折叠原生选区（⌘A 等路径）在场 → 矩形态让位、按键放行 generic 管线
+        }
+        else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); deleteRectSel(); return; }
+        else if (e.key === 'Escape') {
+          e.preventDefault(); e.stopPropagation();
+          if (menuAxis) closeBlockMenu(); // ADV-R2：镜像 cell-Esc——菜单开着先关，否则灰选后菜单指 detached 行还能点
+          const t = rectSel.table; clearRectSel(); selectTableFromCell(t); return;
+        }
+        else if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
+          // ADV-R4：⌘X = TSV 拷贝 + 清格（execCommand('copy') 会走 onCopy 的矩形 ⓪ 分支写剪贴板）。
+          // ⌘V 按 anchor 铺格是独立 feature，spec 记欠账。
+          e.preventDefault(); e.stopPropagation();
+          try { doc.execCommand('copy'); } catch (x) {}
+          deleteRectSel(); return;
+        }
+        else if (e.key.indexOf('Arrow') === 0) clearRectSel();
+        else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
+          // ADV-R3：打字不蒸发——清矩形、进左上格，原生插入接管（不 preventDefault，键照常落格）
+          const first = rectSel.cells[0];
+          clearRectSel();
+          if (first && first.isConnected) enterCell(first, { mode: 'end' });
+        }
       }
       // 表格 cell 编辑态（U2 骨架，U3 赋全键盘语义）：cellEl 分支整体前置——否则 generic Tab 吞噬/
       // 方向键 topBlocks 导航/Esc→selectBlock 都会误伤。生存不变式：cellEl 可能已被跨块整删（ED-A2）/
@@ -4352,7 +4602,7 @@
       openSlash(nx, false); // E5：同上——「+」是全局 gutter 行为，所有块类型旁边点都该弹
     });
     // U2 行级拖拽：行悬停起拖 = 拖单行（dragFrom 可以是 <li>）；块灰选（Esc）优先 = 仍拖整块。
-    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); clearSelectedAttr(); /* ADV-C5：段选中态起拖，data-ws2-selected 会跟着搬家成幽灵蓝条 */ dragFrom = gripRow || gripEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
+    grip.addEventListener('dragstart', (e) => { if (cellEl) exitCell(); clearSelectedAttr(); /* ADV-C5：段选中态起拖，data-ws2-selected 会跟着搬家成幽灵蓝条 */ clearRectSel(); /* T13 同款：矩形态的格标记会跟表搬家成幽灵描边 */ dragFrom = gripRow || gripEl; if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', 'block'); } catch (x) {} if (dragFrom && dragFrom.tagName === 'LI') { try { e.dataTransfer.setDragImage(dragFrom, 12, 12); } catch (x) {} } } }); // 拖块前退出 cell 编辑（镜像摘墙 exitCell），防僵尸编辑态；行拖拽幽灵图=整行
     grip.addEventListener('dragend', () => { dragFrom = null; clearDrop(); });
     // 落点态是三个属性（线 / 缩进量 / 父行高亮），必须一起清——只清一个会留下幽灵高亮或错位的线
     function clearDrop() {
@@ -4378,6 +4628,20 @@
     function onCopy(e) {
       const cd = e.clipboardData; if (!cd || !cd.setData) return; // 无剪贴板 API → 交原生
       const sel = doc.getSelection();
+      // ⓪ T13 矩形选中态：按行 TSV 纯文本（tab 分格、换行分行，Notion/表格软件通用交换格式）。
+      // 无 HTML 载荷——延续「跨格复制=纯文本」的既有契约（U4 门）。
+      if (rectSel && rectSel.table.isConnected) {
+        const rows = tableRowsOf(rectSel.table);
+        const lines = [];
+        for (let ri = rectSel.r1; ri <= rectSel.r2 && ri < rows.length; ri++) {
+          const cs = rowCellsOf(rows[ri]);
+          const parts = [];
+          for (let ci = rectSel.c1; ci <= rectSel.c2 && ci < cs.length; ci++) parts.push((cs[ci].textContent || '').trim());
+          lines.push(parts.join('\t'));
+        }
+        cd.setData('text/plain', lines.join('\n'));
+        e.preventDefault(); return;
+      }
       // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
       if ((!sel || sel.isCollapsed) && selectedEl) {
         cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
@@ -5087,6 +5351,8 @@
       const s = body.querySelector('[data-ws2-selected]'); if (s) s.removeAttribute('data-ws2-selected');
       const d = body.querySelector('[data-ws2-drop]'); if (d) d.removeAttribute('data-ws2-drop');
       rangeSelEls = []; body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel')); // undo/redo 重写 body → 旧引用失效,按属性清
+      clearRectSel(); body.querySelectorAll('[data-ws2-cellsel]').forEach((el) => el.removeAttribute('data-ws2-cellsel')); // T13：矩形选区同款——引用清 + 属性扫双保险
+      hideEdgeBars(); // edgeTable 引用同样失效
       setGutterVisible(false); fmtbar.style.display = 'none'; closeBlockMenu();
       menuAxis = null; hideAxisHandles(); // undo/redo 重写 body → hoverTr/hoverTable 引用失效，必须一起清
     }
@@ -5237,6 +5503,11 @@
   .ws-rowsel:hover{background:#8a8f96;}
   .ws-colsel{width:20px;height:8px;border-radius:4px;background:#c9cdd3;cursor:pointer;z-index:99998;animation:ws-grip-in 120ms ease;}
   .ws-colsel:hover{background:#8a8f96;}
+  .ws-rectsel{box-sizing:border-box;border:2px solid #1a73e8;border-radius:2px;background:transparent;pointer-events:none;z-index:99997;}
+  .ws-tbladdrow{height:14px;border-radius:4px;background:#eceef1;color:#8a8f96;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui;cursor:pointer;user-select:none;z-index:99996;}
+  .ws-tbladdrow:hover{background:#dfe3e8;color:#1a73e8;}
+  .ws-tbladdcol{width:14px;border-radius:4px;background:#eceef1;color:#8a8f96;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui;cursor:pointer;user-select:none;z-index:99996;}
+  .ws-tbladdcol:hover{background:#dfe3e8;color:#1a73e8;}
   .ws-grip{align-items:center;justify-content:center;width:22px;height:22px;border-radius:3px;color:#8a8f96;cursor:grab;background:transparent;z-index:99998;animation:ws-grip-in 120ms ease;}
   @keyframes ws-grip-in{from{opacity:0}to{opacity:1}}
   .ws-grip:hover{background:#f0f1f3;color:#5a5f66;}

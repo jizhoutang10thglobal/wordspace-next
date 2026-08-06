@@ -29,6 +29,8 @@ module.exports = {
   tableColMenuHead: 'Column',
   tableRowHandleTip: 'Row actions',
   tableColHandleTip: 'Column actions',
+  tableAddRowTip: 'Add row below',
+  tableAddColTip: 'Add column right',
   blockImage: 'Image',
   blockDivider: 'Divider',
   aiGenerate: '✦ AI generate (coming soon)',
