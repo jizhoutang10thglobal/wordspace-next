@@ -2844,8 +2844,66 @@
       // 那样 Esc 落在宿主窗口、永远进不了本文档的 keydown，菜单关不掉（e2e 实测）。焦点停进 focusCatcher。
       try { focusCatcher.focus({ preventScroll: true }); } catch (x) {}
     }
-    rowHandle.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-    rowHandle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAxisMenu('row'); });
+    // ── T3/T4 行拖拽（Notion t3f 复拍坐实：行药丸按住拖=移动整行、拖拽中指示线横跨表宽落在行槽；
+    // 单击=行菜单不变）。表头行不可拖（thead ≤1 且恒在顶部是文法硬约束）；指针出表上下界=夹到首/末槽。
+    const rowDropLine = mk('div', 'ws-rowdropline');
+    rowDropLine.style.position = 'absolute'; rowDropLine.style.display = 'none';
+    doc.documentElement.appendChild(rowDropLine);
+    let rowDrag = null; // { tbl, tr, sx, sy, moved, slot } — slot = 数据行间插入索引
+    let rowDragDidMove = false; // 拖完那下 click 不得再开菜单
+    function hideRowDropLine() { rowDropLine.style.display = 'none'; }
+    function dataRowsOf(tbl) { return tableRowsOf(tbl).filter((r) => !(r.parentElement && r.parentElement.tagName === 'THEAD')); }
+    function rowDragSlotAt(tbl, clientY) {
+      const rows = dataRowsOf(tbl);
+      if (!rows.length) return null;
+      let slot = rows.length;
+      for (let i = 0; i < rows.length; i++) { const r = rows[i].getBoundingClientRect(); if (clientY < r.top + r.height / 2) { slot = i; break; } }
+      return { slot, rows };
+    }
+    function positionRowDropLine(tbl, slot, rows) {
+      const { sx, sy } = vp();
+      const tRect = tbl.getBoundingClientRect();
+      const y = slot < rows.length ? rows[slot].getBoundingClientRect().top : rows[rows.length - 1].getBoundingClientRect().bottom;
+      rowDropLine.style.left = (tRect.left + sx) + 'px';
+      rowDropLine.style.width = tRect.width + 'px';
+      rowDropLine.style.top = (y + sy - 1.5) + 'px';
+      rowDropLine.style.display = 'block';
+    }
+    function finishRowDrag(rd) {
+      hideRowDropLine();
+      rowDragDidMove = true;
+      const rows = dataRowsOf(rd.tbl);
+      const from = rows.indexOf(rd.tr);
+      const slot = rd.slot;
+      // slot===from / from+1 都是原位（行上缘/下缘两个等价槽）= 无操作不标脏
+      if (from < 0 || slot < 0 || slot === from || slot === from + 1 || !rd.tr.isConnected) { hideAxisHandles(); return; }
+      if (undoMgr) undoMgr.checkpoint();
+      const ref = slot < rows.length ? rows[slot] : null;
+      const oldParent = rd.tr.parentElement;
+      const parent = ref ? ref.parentElement : rows[rows.length - 1].parentElement;
+      if (ref) parent.insertBefore(rd.tr, ref); else parent.appendChild(rd.tr);
+      // ADV-RD4：多 tbody 是合规形态（appendTableRow 先例）——跨 tbody 迁移后搬空的 <tbody></tbody>
+      // 不能沉淀进磁盘，同一对 checkpoint 内收掉（undo 一步连分组一起还原）。
+      if (oldParent && oldParent !== parent && !oldParent.querySelector('tr')) oldParent.remove();
+      if (undoMgr) undoMgr.checkpoint();
+      markDirty();
+      hideAxisHandles(); // 手柄坐标已失效，下一次悬停重挂
+    }
+    rowHandle.addEventListener('mousedown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      rowDragDidMove = false;
+      if (hoverTable && hoverTr && !(hoverTr.parentElement && hoverTr.parentElement.tagName === 'THEAD')) {
+        const tbl0 = hoverTable, tr0 = hoverTr; // 必须先快照——closeBlockMenu 在菜单开着时会经 hideAxisHandles 清空 hover 状态
+        clearRectSel(); // 行拖起手 = 矩形选中态退场（cellsel 跟着行搬家会成游离标记）
+        closeBlockMenu(); // ADV-RD2：菜单开着时拖行会把行从菜单眼皮底下搬走（hideAxisHandles 被 menuAxis 冻结）——起手点焊死单一活动态
+        rowDrag = { tbl: tbl0, tr: tr0, sx: e.clientX, sy: e.clientY, moved: false, slot: -1 };
+      } else rowDrag = null;
+    });
+    rowHandle.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (rowDragDidMove) { rowDragDidMove = false; return; } // 拖完的 click 消化掉，不开菜单
+      openAxisMenu('row');
+    });
     colHandle.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     colHandle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAxisMenu('col'); });
 
@@ -3043,6 +3101,9 @@
     // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。
     function onMouseDown(e) {
       if (e.button !== 0) return; // 只管左键
+      // ADV-RD1（HIGH）：iframe 外松手丢 mouseup 后 rowDrag 残留会劫持下一次任意拖拽成真实行移动。
+      // 兜底必须在 data-ws2-ui early-return **之前**（capture 先跑，药丸自己的 mousedown 随后重新 arm）。
+      if (rowDrag) { rowDrag = null; hideRowDropLine(); }
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
       // 点菜单外任何地方 → 关斜杠菜单（Wendi 2026-07-22：以前点别处不关、只能删掉「/」才关，反直觉）。
       // 上面已对 data-ws2-ui 覆盖层（含斜杠菜单及其项）early-return，故点菜单项走不到这、不会误关。
@@ -3079,6 +3140,21 @@
       wallDropped = false;
     }
     function onMouseMove(e) {
+      // T3 行拖拽机：药丸按住越阈 → 指示线跟槽；接管本场拖拽（先于矩形机——两者互斥于起手点）。
+      if (rowDrag && !(e.buttons & 1)) { rowDrag = null; hideRowDropLine(); } // ADV-RD1 自愈：mouseup 丢了、按键已抬 → 掐掉悬空手势
+      if (rowDrag && (e.buttons & 1)) {
+        if (!rowDrag.moved && (Math.abs(e.clientX - rowDrag.sx) > 4 || Math.abs(e.clientY - rowDrag.sy) > 4)) {
+          rowDrag.moved = true;
+          if (cellEl) exitCell(); // ADV-RD3：被拖行可能含正在编辑的格——insertBefore 摘挂重插会把聚焦 contenteditable 打悬空
+          if (editingEl) exitEdit();
+        }
+        if (rowDrag.moved) {
+          const s = rowDragSlotAt(rowDrag.tbl, e.clientY);
+          if (s) { rowDrag.slot = s.slot; positionRowDropLine(rowDrag.tbl, s.slot, s.rows); }
+          e.preventDefault();
+          return;
+        }
+      }
       // T13/T14 矩形拖选机：待命中且按住左键 → 非编辑格越过 4px 阈值（或编辑格指针出格）就接管整场
       // 拖拽，原生选区不参与；指针格坐标经 cellPosAtPoint 四向夹回表内 = T14 出向钳制（Notion f3/f3b）。
       if (rectArm && (e.buttons & 1)) {
@@ -3130,6 +3206,11 @@
     // 鼠标抬起：收尾一次拖选。单块内选区 → 恢复进编辑（保留选区，可打字替换/气泡走编辑态分支）；
     // 跨块/homeless 选区 → 留着、弹气泡。纯点击（没摘墙）→ 交给 onClick 走进编辑。
     function onMouseUp() {
+      if (rowDrag) {
+        const rd = rowDrag; rowDrag = null;
+        if (rd.moved) { finishRowDrag(rd); dragStart = null; wallDropped = false; return; }
+        // 未越阈 = 纯点击 → 放行 click（开行菜单）
+      }
       if (rectArm) {
         const wasRect = rectArm.started;
         rectArm = null;
@@ -5353,6 +5434,7 @@
       rangeSelEls = []; body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel')); // undo/redo 重写 body → 旧引用失效,按属性清
       clearRectSel(); body.querySelectorAll('[data-ws2-cellsel]').forEach((el) => el.removeAttribute('data-ws2-cellsel')); // T13：矩形选区同款——引用清 + 属性扫双保险
       hideEdgeBars(); // edgeTable 引用同样失效
+      rowDrag = null; hideRowDropLine(); // 行拖拽中撞上 undo/reload → 掐掉悬空手势
       setGutterVisible(false); fmtbar.style.display = 'none'; closeBlockMenu();
       menuAxis = null; hideAxisHandles(); // undo/redo 重写 body → hoverTr/hoverTable 引用失效，必须一起清
     }
@@ -5504,6 +5586,7 @@
   .ws-colsel{width:20px;height:8px;border-radius:4px;background:#c9cdd3;cursor:pointer;z-index:99998;animation:ws-grip-in 120ms ease;}
   .ws-colsel:hover{background:#8a8f96;}
   .ws-rectsel{box-sizing:border-box;border:2px solid #1a73e8;border-radius:2px;background:transparent;pointer-events:none;z-index:99997;}
+  .ws-rowdropline{height:3px;border-radius:2px;background:#1a73e8;pointer-events:none;z-index:99997;}
   .ws-tbladdrow{height:14px;border-radius:4px;background:#eceef1;color:#8a8f96;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui;cursor:pointer;user-select:none;z-index:99996;}
   .ws-tbladdrow:hover{background:#dfe3e8;color:#1a73e8;}
   .ws-tbladdcol{width:14px;border-radius:4px;background:#eceef1;color:#8a8f96;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui;cursor:pointer;user-select:none;z-index:99996;}
