@@ -118,10 +118,16 @@ Schema 层早已就位、本 spec 零改动消费：`IMG` 是顶层块、`figure
   `dataTransfer.files` **能在 e2e 合成**（canvas → `File` → `dt.items.add`，`dt.types` 就含 `'Files'`），
   `e2e/image-drop-indicator.spec.js` 已按此把 dragover/drop 全链路纳入门。原判断「难在 e2e 合成」不成立。
   仍存的真风险：真机上 iframe 的 drop 事件若拿不到 files，回退方案 = 把 OS 图片 drop 处理器挂到父层 frame 元素。
-- **I1 的图内工具条与左右缩放条**（Notion：悬停出 7 键工具条 + col-resize 药丸）：**押后**。
-  缩放牵扯宽度入盘——`img[width]` 在校验器里可行（IMG v1 不深验属性），但「拖拽调宽 + 即时预览 +
-  入盘归一」是独立 feature 量级；工具条 7 键里我们有对应物的只有说明（已常驻）。评估结论：不塞进
-  对拍批次，独立立项。（`resize.js` 等 746 行死代码正是当年给这个留的，届时一并处置。）
+- **I1 图内工具条与左右缩放药丸（2026-08-06 已做，Notion 对齐 sweep）**：悬停图片出左右
+  col-resize 竖药丸（中部）+ 顶右工具条 `[说明][放大]`。拖药丸=宽随指针**对称收缩（2×dx 中心
+  锚定）**、等比（height auto）、缩后水平居中、松手定格——全部为 Notion 实测读数（notion-i1/
+  i1-hover / i1-resize-during / i1-resize-after：704→368 且居中偏移精确吻合）。持久化=img 的
+  **width 属性**（块级 style=非合规红线）+ `data-ws-schema-css="image"` 入盘 CSS（校验器 head
+  白名单通道，浏览器直开同渲染）；拖回全宽=属性移除（canonical 零字节噪音）；下限 80px；前后双
+  checkpoint 一步 undo。「放大」=lightbox 预览（Esc/点击关闭，覆盖层 data-ws2-ui 绝不入盘）。
+  门：e2e/image-resize.spec.js 5 条（含 S4 判据+变异两组）。旧 8 把手 `resize.js`/`resize-geom.js`
+  死代码+其单测已退役（与 Notion 双药丸模型不符）。**欠账：工具条「下载」**——需新开主进程
+  save-file IPC，独立小项；Notion 工具条其余键（AI/评论/收藏）无对应能力，制度性排除。
 - **EXIF 方向**：沿用 ui-demo 验证过的 `createImageBitmap(file)` 默认行为（未显式传
   `imageOrientation`）。若在更老 Chromium 上遇到方向不归正，显式传 `{ imageOrientation: 'from-image' }`。
 - **体积放大预案（未做压力用例）**：undo 是 `body.innerHTML` 全量快照、自动保存全量重写文件——
