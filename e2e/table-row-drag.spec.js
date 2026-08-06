@@ -145,11 +145,9 @@ test('D5: 拖到原位（自己的槽）= 无操作不标脏', async () => {
   const pill = await pillFor('#r2');
   await dragPill(pill, r2.y + 6); // 越了 4px 阈值但落回自己上缘槽
   expect(await rowsText()).toBe('一甲|二甲|三甲'); // 原样
-  const dirty = await page.evaluate(() => {
-    const el = document.querySelector('.doc-dirty, [data-dirty]');
-    return el ? true : (document.title.includes('●') || false);
-  });
-  expect(dirty).toBe(false); // 没标脏（原位拖不产生假编辑）
+  // ADV-RD5：dirty 真身是宿主 #dirty-dot 的 hidden 切换——查不存在的选择器=哑门（审查实锤后重写）
+  const dot = await page.evaluate(() => { const d = document.getElementById('dirty-dot'); return d ? d.hidden : null; });
+  expect(dot).toBe(true); // 没标脏（原位拖不产生假编辑/空 undo 步）
 });
 
 test('D6: 拖出表格下界 → 夹到末槽（行落最后）', async () => {
@@ -159,4 +157,89 @@ test('D6: 拖出表格下界 → 夹到末槽（行落最后）', async () => {
   const pill = await pillFor('#r1');
   await dragPill(pill, z.y + z.height + 20); // 指针远超表界
   expect(await rowsText()).toBe('二甲|三甲|一甲'); // 行 1 夹到末槽
+});
+
+// ===== 对抗审查回归（ADV-RD1..RD5 处置后钉死）=====
+
+test('RD-A: 短拖 6px 松手仍在药丸上 → 不开菜单（拖完 click 消化分支）', async () => {
+  await launch();
+  await openDoc(DOC);
+  const pill = await pillFor('#r2');
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pill.x, y: pill.y });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pill.x, y: pill.y, button: 'left', buttons: 1, clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pill.x + 2, y: pill.y + 6, button: 'left', buttons: 1 });
+  await page.waitForTimeout(60);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pill.x + 3, y: pill.y + 8, button: 'left', buttons: 1 });
+  await page.waitForTimeout(60);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pill.x + 3, y: pill.y + 8, button: 'left', buttons: 1, clickCount: 1 });
+  await page.waitForTimeout(250);
+  expect(await frame.locator('.ws-blockmenu').isVisible()).toBe(false); // 越阈的拖不弹菜单（哪怕松手仍在药丸上）
+  expect(await rowsText()).toBe('一甲|二甲|三甲'); // 原位槽 = 不动
+});
+
+test('RD-B: 矩形选区挂着时拖行 → 选中态退场、行照常移动', async () => {
+  await launch();
+  await openDoc(DOC);
+  const c21 = await frame.locator('#c21').boundingBox();
+  const c31 = await frame.locator('#r3 td').first().boundingBox();
+  await dragPill({ x: c21.x + c21.width / 2, y: c21.y + c21.height / 2 }, c31.y + c31.height / 2); // 先拖出格矩形（借 dragPill 的按住轨迹）
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('[data-ws2-cellsel]').length)).toBeGreaterThan(0);
+  const r3 = await frame.locator('#r3').boundingBox();
+  const pill = await pillFor('#r2');
+  await dragPill(pill, r3.y + r3.height + 2);
+  expect(await page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('[data-ws2-cellsel]').length)).toBe(0); // cellsel 没跟着行搬家
+  expect(await rowsText()).toBe('一甲|三甲|二甲'); // 行移动照常
+});
+
+test('RD-C: mouseup 丢失后按键已抬 → 手势自愈，划词不被劫持', async () => {
+  await launch();
+  await openDoc(DOC);
+  const pill = await pillFor('#r2');
+  const z = await frame.locator('#z').boundingBox();
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pill.x, y: pill.y });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pill.x, y: pill.y, button: 'left', buttons: 1, clickCount: 1 });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: pill.x + 20, y: pill.y + 30, button: 'left', buttons: 1 }); // 越阈，指示线出
+  await page.waitForTimeout(100);
+  // 模拟 iframe 外松手：不发 mouseReleased，直接发 buttons:0 的移动（回到文档时的第一帧）
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: z.x + 40, y: z.y + 5, buttons: 0 });
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelector('.ws-rowdropline').style.display)).toBe('none'); // 指示线自愈收场
+  // 随后的正常划词不被残留手势劫持
+  const sy = z.y + z.height / 2;
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: z.x + 8, y: sy });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: z.x + 8, y: sy, button: 'left', buttons: 1, clickCount: 1 });
+  for (let i = 1; i <= 5; i++) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: z.x + 8 + i * 12, y: sy, button: 'left', buttons: 1 });
+    await page.waitForTimeout(35);
+  }
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: z.x + 68, y: sy, button: 'left', buttons: 1, clickCount: 1 });
+  await page.waitForTimeout(150);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const s = d.getSelection();
+    return { text: s && s.rangeCount ? s.toString() : '', rows: [...d.querySelectorAll('#T tbody tr')].map((r) => r.firstElementChild.textContent.trim()).join('|') };
+  });
+  expect(st.text.length).toBeGreaterThan(0); // 划词正常
+  expect(st.rows).toBe('一甲|二甲|三甲'); // 行没有被幽灵手势搬动
+});
+
+test('RD-D: 多 tbody 表跨组拖行 → 搬空的 tbody 收掉、一步 undo 全还原', async () => {
+  await launch();
+  await openDoc('<p id="a">上文。</p><table id="T"><tbody id="tb1"><tr id="r1"><td>一甲</td><td>一乙</td></tr></tbody>'
+    + '<tbody id="tb2"><tr id="r2"><td>二甲</td><td>二乙</td></tr><tr id="r3"><td>三甲</td><td>三乙</td></tr></tbody></table><p id="z">下文。</p>');
+  const r3 = await frame.locator('#r3').boundingBox();
+  const pill = await pillFor('#r1');
+  await dragPill(pill, r3.y + r3.height + 2); // tb1 唯一行拖进 tb2 末槽
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { tbodies: d.querySelectorAll('#T tbody').length, rows: [...d.querySelectorAll('#T tbody tr')].map((r) => r.firstElementChild.textContent.trim()).join('|') };
+  });
+  expect(st.rows).toBe('二甲|三甲|一甲');
+  expect(st.tbodies).toBe(1); // 搬空的 <tbody></tbody> 不沉淀（ADV-RD4）
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'undo'));
+  await expect.poll(() => page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { tbodies: d.querySelectorAll('#T tbody').length, rows: [...d.querySelectorAll('#T tbody tr')].map((r) => r.firstElementChild.textContent.trim()).join('|') };
+  })).toEqual({ tbodies: 2, rows: '一甲|二甲|三甲' }); // 一步 undo 连分组一起还原
 });
