@@ -3488,7 +3488,16 @@
       }
       positionFmtbar();
     }
-    function onDocLeave() { if (!selectedEl && !editingEl) { hoverEl = null; hoverRow = null; setGutterVisible(false); } }
+    // 鼠标离开文档：收掉所有**纯悬停浮件**。
+    // ⚠ 只收悬停态，绝不动「选中态」（矩形选区 / 灰选块 / 编辑态）——那些是用户主动做出来的，
+    //   鼠标滑出去不该让它们消失。
+    // 表格边缘「+」条也是悬停浮件，但它只在 iframe 内的 mousemove 里重算，此前没人在这儿收它：
+    // 鼠标从表格下缘直接甩到工具栏 / 侧栏，那条灰「+」会一直挂在屏上，直到你再回文档里动一下鼠标
+    //（2026-08-06 实测：甩出后 display:flex、opacity:1、宽度与悬停时一模一样）。
+    function onDocLeave() {
+      if (!selectedEl && !editingEl) { hoverEl = null; hoverRow = null; setGutterVisible(false); }
+      hideEdgeBars();
+    }
     // 折叠持久化（KD4/R8）：原生 toggle 事件 → markDirty 触发自动保存；绝不 checkpoint（折叠不是撤销步 KD5）。
     function onToggle(e) {
       if (!e.target || e.target.tagName !== 'DETAILS') return;
@@ -3627,7 +3636,23 @@
           try { doc.execCommand('copy'); } catch (x) {}
           deleteRectSel(); return;
         }
-        else if (e.key.indexOf('Arrow') === 0) clearRectSel();
+        else if (e.key.indexOf('Arrow') === 0) {
+          // 方向键把矩形**收敛成一个光标**，别让用户掉进「没选区、也没光标」的真空。
+          // 病灶：原来只 clearRectSel() 就落到 generic 管线，而 generic 的方向键导航要求 selectedEl
+          // 非空——此刻是 null，于是按一下 ↓ 只是「蓝框没了、光标也没有」，等于白按（2026-08-06 实测）。
+          // 收敛方向照文字选区的老规矩：←/↑ 收到起点（左上格开头），→/↓ 收到终点（右下格末尾）。
+          // ⚠ 这**不是** Notion 的「方向键移动整个选区」——那个还要配 Shift 扩选才完整，是独立 feature，
+          //   spec 记欠账。这里只保证「按了有着落」，不假装做完了。
+          const backward = e.key === 'ArrowLeft' || e.key === 'ArrowUp';
+          const target = backward ? rectSel.cells[0] : rectSel.cells[rectSel.cells.length - 1];
+          clearRectSel();
+          if (target && target.isConnected) {
+            e.preventDefault(); e.stopPropagation();
+            enterCell(target, { mode: backward ? 'start' : 'end' });
+            return; // ⚠ 必须 return：不然同一次按键继续往下走，撞进「格内方向键移格」那条分支，
+                    //   刚落进 c23 的光标当场又被挪到 c33（实测）。收敛就是收敛，不许顺带再走一格。
+          }
+        }
         else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) {
           // ADV-R3：打字不蒸发——清矩形、进左上格，原生插入接管（不 preventDefault，键照常落格）
           const first = rectSel.cells[0];
