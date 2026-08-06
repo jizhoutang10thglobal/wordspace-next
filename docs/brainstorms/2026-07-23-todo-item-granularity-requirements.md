@@ -2,6 +2,8 @@
 
 Created: 2026-07-23
 Status: **needs-decision（Colin + Wendi 拍板，见文末开放问题）**
+Update 2026-08-06: 「每行独立成块」的三笔实测成本、Q4 的技术侧答案、以及对本文两处论证的更正，见
+`docs/brainstorms/2026-08-06-todo-row-independent-block-costing.md`（本文结论不变）。
 Origin: Colin 2026-07-23 手动测 todo UX sweep 时提的三点吐槽
 调研方式: 4 视角并行调研（架构代价 / 产品·Notion 对标 / Schema-1 完整性 / Wendi 范式方向），各自读真代码与愿景文档后合成。
 
