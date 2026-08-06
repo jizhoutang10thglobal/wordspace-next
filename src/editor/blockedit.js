@@ -3729,6 +3729,25 @@
         global.setTimeout(() => { if (editingEl === blockEl) openSlash(blockEl); }, 0);
         return;
       }
+      // SW-B（Notion 官方快捷键 parity；⌘ 组合键探针打不进 Notion 已实证，证据类别=官方 shortcuts
+      // 文档，spec 注明）：⌘E 行内代码；⌘⌥0/1/2/3 转正文/标题一/二/三。⌥ 在 mac 会改写 e.key
+      //（⌥0='º'）——数字用 e.code 判。
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'e' || e.key === 'E') && !e.isComposing && e.keyCode !== 229) {
+        if (editingEl || cellEl) {
+          const sE = doc.getSelection();
+          if (sE && sE.rangeCount > 0 && !sE.isCollapsed) { e.preventDefault(); wrapCode(); return; }
+        }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.altKey && /^Digit[0-3]$/.test(e.code) && !e.isComposing && e.keyCode !== 229) {
+        const tgt = editingEl || selectedEl;
+        if (tgt && !cellEl && ['text', 'heading', 'quote'].includes(classify(tgt))) {
+          e.preventDefault();
+          const kk = { Digit0: 'text', Digit1: 'h1', Digit2: 'h2', Digit3: 'h3' }[e.code];
+          const item = itemByKey(kk);
+          if (item) { const conv = turnInto(tgt, item); if (conv && isEditableEl(conv)) enterEdit(conv, { mode: 'end' }); }
+          return;
+        }
+      }
       // ⌘/Ctrl+A 分级全选（Notion/Typora 式，王波 2026-07-17「一次选一段、两次全篇」）：
       // 第一次全选当前块文字；已全选再按 → 放墙（exitEdit，同拖选跨块）+ 全篇跨块选区
       // （删除/剪切走下面既有 homeless 选区管线）。原生 Select All 被单块 contenteditable
@@ -4742,6 +4761,23 @@
     function tryMarkdown(e) {
       if (!editingEl || classify(editingEl) !== 'text') return; // 只在正文块（p）触发
       const _txt = editingEl.textContent || '';
+      // SW-A（Notion 实测 2026-08-06 md-hr 探针：dividers 1→2）：`---` 敲第三个 `-` **立即**转分隔线
+      //（不等空格），光标落到 hr 后的新空正文块。守卫与空格触发同构：这一击是 insertText '-'、
+      // 块内容恰为 '---'、caret 停在块首文本节点末尾（防「删字后恰剩 ---」误转）。
+      if (_txt === '---' && e && e.inputType === 'insertText' && e.data === '-') {
+        const f0 = editingEl.firstChild;
+        const s0 = doc.getSelection();
+        if (f0 && f0.nodeType === 3 && s0 && s0.anchorNode === f0 && s0.anchorOffset === 3) {
+          const hr = doc.createElement('hr');
+          const np = doc.createElement('p');
+          editingEl.replaceWith(hr);
+          hr.parentNode.insertBefore(np, hr.nextSibling);
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          enterEdit(np, { mode: 'start' });
+          return;
+        }
+      }
       const m = _txt.match(/^(#{1,4}|[-*+]|\d+\.|\[[ xX]?\]|>)[\s ]/);
       if (!m) return;
       const whole = _txt.length === m[0].length; // 整块只有 marker+空格（决定清空 vs 保留后缀）
