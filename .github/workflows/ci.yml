@@ -30,6 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       app: ${{ steps.f.outputs.app }}
+      website: ${{ steps.f.outputs.website }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,8 +51,16 @@ jobs:
               app=false
             fi
           fi
-          echo "changed (non-empty=$( [ -n "${files:-}" ] && echo y || echo n )), run-app-gate=$app"
+          # 官网门同款保守法：默认 true，只有「能算出 diff、有改动、且没碰 website/ 与 changelog 正本」才跳。
+          # 为什么 CHANGELOG*.md 也算：官网 /changelog 是构建时读仓库根正本渲染的，正本里配图路径写歪 /
+          # 图没提交 / alt 空，挂的是 next build——改正本却不跑官网构建，等于把这道门让给线上部署。
+          website=true
+          if [ -n "${files:-}" ] && ! printf '%s\n' "$files" | grep -qE '^(website/|CHANGELOG(\.en)?\.md$)'; then
+            website=false
+          fi
+          echo "changed (non-empty=$( [ -n "${files:-}" ] && echo y || echo n )), run-app-gate=$app, run-website-gate=$website"
           echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "website=$website" >> "$GITHUB_OUTPUT"
 
   test:
     needs: changes
@@ -71,6 +80,47 @@ jobs:
       # ——ui-demo 侧的同款门只在本地跑是盲区,这里不复刻那个盲区。
       - run: npm run i18n:scan
       - run: npm test
+
+  # 官网门（2026-08-06）：此前 website/ 的测试**从来不在 CI 里**——只有本地和 Vercel 生产构建把关。
+  # changelog 配图（#415）把「正本写错 → 构建挂」做成了硬门，可那道门只在 Vercel 上跑：配图路径写歪、
+  # 图没提交、alt 为空，都要等部署才炸，PR 阶段一片绿。这里把它提前到 PR。
+  # ⚠ 本 job 目前**不是 required status check**——那是 GitHub 服务端配置、agent 没权限改。
+  #   现在它红了**不挡合并**，只是 PR 上一个显眼的红勾。要真有牙，需要在 branch protection 里
+  #   把 `website` 勾成 required（同 S4 那条教训：门写多强，没设 required 也白搭）。
+  website:
+    needs: changes
+    if: ${{ needs.changes.outputs.website == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      # 整仓 checkout（不是只拿 website/）：changelog.ts 读的是仓库根的 ../CHANGELOG.md，
+      # 配图也要按 website/public 下的真文件查盘——只 checkout 子目录这两样都拿不到。
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run test:unit
+      # 构建门（真牙在这儿）：配图路径不在 website/public 下 / 图不在盘上 / alt 为空 / 图没独立成行
+      # → next build 直接挂。「CHANGELOG.en.md 最新版本 ≠ CHANGELOG.md 最新版本」也在这儿挂。
+      - run: npm run build
+      # 无漏测地板（照 e2e-all 同款）：防 spec 改名 / describe.skip 让门悄悄缩水。
+      # `.only` 另有 playwright config 的 forbidOnly 在 CI 下直接拒，不用在这儿重复。
+      # 放在 build 之后：e2e 那份 config 带 webServer(next start)，没 build 过它起不来。
+      - name: 无漏测（收集用例数 ≥ 地板）
+        run: |
+          u=$(npx playwright test -c playwright.unit.config.ts --list 2>&1 | sed -n 's/^Total: \([0-9]*\) tests.*/\1/p')
+          e=$(npx playwright test --list 2>&1 | sed -n 's/^Total: \([0-9]*\) tests.*/\1/p')
+          echo "unit=$u（地板 25，当前实测 27）  e2e=$e（地板 17，当前实测 19）"
+          [ -n "$u" ] && [ "$u" -ge 25 ] || { echo "::error::官网单测收集到 ${u:-空} 条 < 地板 25 → 疑似漏测"; exit 1; }
+          [ -n "$e" ] && [ "$e" -ge 17 ] || { echo "::error::官网 e2e 收集到 ${e:-空} 条 < 地板 17 → 疑似漏测"; exit 1; }
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
 
   # e2e 真门：在 ubuntu runner 上用 xvfb 真启动 Electron 跑 Playwright，
   # 抓「单测全绿但 app 其实打不开」这类渲染层/集成 bug。含两组：
