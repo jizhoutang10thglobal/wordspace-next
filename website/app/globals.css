@@ -818,6 +818,33 @@ p {
   font-weight: 600;
 }
 
+/* 配图。宽度跟条目文字对齐（46em @15px，与 .cl-items li 同一列宽）：图不比正文宽，
+   扫读时视线不用左右横跳，也就不可能撑破版心。颜色全走 token——站点目前只有一套浅色，
+   将来换暗色 token 这里自动跟着走；不写 prefers-color-scheme 分支，那会是全站唯一一处
+   没门覆盖、没人验的孤儿逻辑。 */
+.cl-figure {
+  margin: var(--sp-md) 0 0;
+  font-size: 15px;
+  max-width: 46em;
+}
+
+/* 不写 width: 100%：小图保持原尺寸，大截图被 max-width 收住。细边 + 浅底是给白底截图用的——
+   否则截图边界会跟纸色背景糊在一起；暗色 token 落地后这块也不会变成刺眼的纯白方块。 */
+.cl-figure img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--border-standard);
+  border-radius: var(--radius-md);
+  background: var(--bg-ink);
+}
+
+.cl-figure figcaption {
+  margin-top: var(--sp-xs);
+  color: var(--text-tertiary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .cl-dev-note {
   margin-top: var(--sp-3xl);
   padding-top: var(--sp-lg);

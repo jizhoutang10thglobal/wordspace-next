@@ -164,7 +164,13 @@ test('I4-5 反向不回归：Esc 灰选（无悬停行）仍是块作用域，�
   await openDoc('<ul id="L"><li id="r1">一</li><li id="r2">二</li></ul>');
   await frame.locator('#r2').click();
   await page.waitForTimeout(150);
-  await page.keyboard.press('Escape');
+  // 【断言迁移，2026-08-05】Esc 在列表里改成三档（Wendi 反馈：回车换行后第二行已是独立的
+  // 交互单元，Esc 却把整张列表圈成一个深色框）。① 当前行 ② 整张列表 ③ 取消 —— 与 ⌘A 已有的
+  // 三档对称。本条守的是**块作用域**那一档，所以按两次 Esc；「Esc 灰选列表后拖=整列表」这条
+  // 既有契约一字未改，只是入口往后挪了一次按键。行作用域那一档另有新门覆盖。
+  await page.keyboard.press('Escape'); // ① 当前行
+  await page.waitForTimeout(180);
+  await page.keyboard.press('Escape'); // ② 整张列表
   await page.waitForTimeout(200);
   expect(await selectedIds()).toEqual(['UL#L']); // 整块灰选，不是某一行
   await frame.locator('.ws-grip').click();
@@ -186,7 +192,13 @@ test('I4-8 灰选整列表后「与鼠标无关」的重锚：reposition 不许�
   await openDoc(LIST);
   await frame.locator('#r2').click();   // 这一次点击就把 hoverRow 锁成了 r2
   await page.waitForTimeout(150);
-  await page.keyboard.press('Escape');
+  // 【断言迁移，2026-08-05】Esc 在列表里改成三档（Wendi 反馈：回车换行后第二行已是独立的
+  // 交互单元，Esc 却把整张列表圈成一个深色框）。① 当前行 ② 整张列表 ③ 取消 —— 与 ⌘A 已有的
+  // 三档对称。本条守的是**块作用域**那一档，所以按两次 Esc；「Esc 灰选列表后拖=整列表」这条
+  // 既有契约一字未改，只是入口往后挪了一次按键。行作用域那一档另有新门覆盖。
+  await page.keyboard.press('Escape'); // ① 当前行
+  await page.waitForTimeout(180);
+  await page.keyboard.press('Escape'); // ② 整张列表
   await page.waitForTimeout(200);
   expect(await selectedIds()).toEqual(['UL#L']);
   // ⌘\ 收侧栏 / 缩放 / 拖窗口边 / 改页面设置都汇到这一个出口，全程**不需要鼠标动**。
@@ -206,7 +218,13 @@ test('I4-9 灰选整列表后鼠标**真的**停在某一行上：作用对象�
   await openDoc(LIST);
   await frame.locator('#r2').click();
   await page.waitForTimeout(150);
-  await page.keyboard.press('Escape');
+  // 【断言迁移，2026-08-05】Esc 在列表里改成三档（Wendi 反馈：回车换行后第二行已是独立的
+  // 交互单元，Esc 却把整张列表圈成一个深色框）。① 当前行 ② 整张列表 ③ 取消 —— 与 ⌘A 已有的
+  // 三档对称。本条守的是**块作用域**那一档，所以按两次 Esc；「Esc 灰选列表后拖=整列表」这条
+  // 既有契约一字未改，只是入口往后挪了一次按键。行作用域那一档另有新门覆盖。
+  await page.keyboard.press('Escape'); // ① 当前行
+  await page.waitForTimeout(180);
+  await page.keyboard.press('Escape'); // ② 整张列表
   await page.waitForTimeout(200);
   expect(await selectedIds()).toEqual(['UL#L']);
   // 与 I4-8 的区别：这次是**活体** hover，hoverRow 会被真实 mousemove 重新武装 ——
@@ -226,7 +244,13 @@ test('I4-10 灰选整列表后拖手柄：搬走整张列表，绝不把列表�
   await openDoc('<p id="top">上段</p>' + LIST + '<p id="bot">下段</p>');
   await frame.locator('#r2').click();
   await page.waitForTimeout(150);
-  await page.keyboard.press('Escape');
+  // 【断言迁移，2026-08-05】Esc 在列表里改成三档（Wendi 反馈：回车换行后第二行已是独立的
+  // 交互单元，Esc 却把整张列表圈成一个深色框）。① 当前行 ② 整张列表 ③ 取消 —— 与 ⌘A 已有的
+  // 三档对称。本条守的是**块作用域**那一档，所以按两次 Esc；「Esc 灰选列表后拖=整列表」这条
+  // 既有契约一字未改，只是入口往后挪了一次按键。行作用域那一档另有新门覆盖。
+  await page.keyboard.press('Escape'); // ① 当前行
+  await page.waitForTimeout(180);
+  await page.keyboard.press('Escape'); // ② 整张列表
   await page.waitForTimeout(200);
   expect(await selectedIds()).toEqual(['UL#L']);
   await frame.locator('#r1').hover(); // 真实用户去够手柄，路上必然经过某一行
@@ -276,4 +300,129 @@ test('I4-11 灰选之后，鼠标已经不在那儿的陈旧悬停行不许把�
   expect(a.visible).toBe(true);
   expect(a.gripCy).toBeGreaterThanOrEqual(a.top - 1);
   expect(a.gripCy).toBeLessThanOrEqual(a.bottom + 1);
+});
+
+// ── E 组（2026-08-05，Wendi 反馈）：Esc 在列表里的三档阶梯 ─────────────────────────────
+// 原话：「打开第一行 to do list，点击回车换行，第二行实质上已经是另一个 block 了，
+// 但选中深色的其实还是和上一行连成一起的」。实测复现：列表的 editingEl 是整个 <ul>（存储单元），
+// Esc 走 selectBlock(editingEl) → 深色框罩住整张列表。而这一行的手柄 / 「+」/ 菜单作用域 /
+// 行首退格 / 拖拽早就都是行级的了 —— 唯独 Esc 把底层容器暴露了出来。
+// 修法：Esc 分三档（与 ⌘A 已有的三档对称）① 当前行 ② 整张列表 ③ 取消。
+const serialize = () => page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
+const conformOf = (html) => page.evaluate((h) => { const d = new DOMParser().parseFromString(h, 'text/html'); return WS2SchemaRegistry.classify(d).conform; }, html);
+// 深色框的**几何**：这条报告本质是视觉的，只断结构会漏掉「框画得对不对」
+const selBox = () => page.evaluate(() => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const m = d.querySelector('[data-ws2-selected]');
+  const rows = [...d.querySelectorAll('#L > li')].map((li) => Math.round(li.getBoundingClientRect().height));
+  if (!m) return { none: true, rows };
+  const r = m.getBoundingClientRect();
+  return { tag: m.tagName, top: Math.round(r.top), h: Math.round(r.height), rows };
+});
+
+test('E-1 回车换行后按 Esc：深色框只罩新的那一行（Wendi 报告的原路径）', async () => {
+  await launch();
+  await openDoc('<p>上面</p><ul id="L"><li id="r1">买牛奶</li></ul><p>下面</p>');
+  await frame.locator('#r1').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  await page.keyboard.type('写周报');
+  await page.waitForTimeout(250);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  const b = await selBox();
+  expect(b.tag, '罩的是行，不是整张列表').toBe('LI');
+  // 几何才是这条报告的实质：修前框高 = 两行之和（实测 61，单行 28）
+  expect(b.rows.length).toBe(2);
+  expect(b.h, '框高必须等于单行高，不能把两行圈成一个').toBeLessThanOrEqual(b.rows[1] + 2);
+  expect(b.h).toBeGreaterThanOrEqual(b.rows[1] - 2);
+});
+
+test('E-2 三档阶梯：① 当前行 → ② 整张列表 → ③ 取消', async () => {
+  await launch();
+  await openDoc('<p>上面</p><ul id="L"><li id="r1">一</li><li id="r2">二</li></ul><p>下面</p>');
+  await frame.locator('#r2').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(220);
+  expect(await selectedIds(), '① 当前行').toEqual(['LI#r2']);
+  const one = await selBox();
+  await page.keyboard.press('Escape'); await page.waitForTimeout(220);
+  expect(await selectedIds(), '② 整张列表').toEqual(['UL#L']);
+  const two = await selBox();
+  expect(two.h, '② 的框必须比 ① 高——真的升了一档，不是标记换个位置').toBeGreaterThan(one.h + 10);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(220);
+  expect(await selectedIds(), '③ 取消').toEqual([]);
+});
+
+test('E-3 行灰选后 Delete：只删这一行（周边还有别的块）', async () => {
+  await launch();
+  await openDoc('<p id="pre">前</p><ul id="L"><li id="r1">一</li><li id="r2">二</li></ul><p id="post">后</p>');
+  await frame.locator('#r2').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['LI#r2']);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(350);
+  expect(await liTexts(), '只少这一行').toEqual(['一']);
+  expect(await bodyOrder()).toEqual(['P#pre', 'UL#L', 'P#post']);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+// ⚠ E-3a / E-3b 是被变异自检逼出来的：E-3 那个 fixture 有三个顶层块，removeBlock 在这种情况下
+// 恰好也只删掉那个 <li>，两条路径产出一样 —— 把行删除改回 removeBlock，E-3 照样绿（哑门）。
+// removeBlock 的危险只在下面这两种形态暴露，缺一条这个修复就没有门。
+test('E-3a 文档只剩这一个列表时删行：不许把 <li> 原地改造成 <p>（会产 <ul><p></p></ul>）', async () => {
+  await launch();
+  await openDoc('<ul id="L"><li id="r1">一</li><li id="r2">二</li></ul>');
+  await frame.locator('#r2').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['LI#r2']);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(350);
+  const shape = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const ul = d.querySelector('#L');
+    return { 列表还在: !!ul, 列表直接子: ul ? [...ul.children].map((e) => e.tagName) : null };
+  });
+  expect(shape.列表直接子, '<ul> 底下只许有 <li>').toEqual(['LI']);
+  // removeBlock 走「作用域只剩一块」分支会 retag 成 <p> 塞在 <ul> 里 —— 非合规、重开整篇降级
+  expect(await conformOf(await serialize()), '产物必须合规').toBe(true);
+});
+
+test('E-3b 删掉最后一行：空列表换成空段落，不留一个空 <ul>', async () => {
+  await launch();
+  await openDoc('<p id="pre">前</p><ul id="L"><li id="r1">唯一一行</li></ul><p id="post">后</p>');
+  await frame.locator('#r1').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await selectedIds()).toEqual(['LI#r1']);
+  await page.keyboard.press('Delete');
+  await page.waitForTimeout(400);
+  const shape = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { 块: [...d.body.children].filter((e) => !e.hasAttribute('data-ws2-ui')).map((e) => e.tagName),
+             空列表残留: d.querySelectorAll('ul:not(:has(li))').length };
+  });
+  expect(shape.块, '掏空的列表该换成空段落').toEqual(['P', 'P', 'P']);
+  expect(shape.空列表残留, '不许留空 <ul>').toBe(0);
+  expect(await conformOf(await serialize())).toBe(true);
+});
+
+test('E-4 负向：非列表块不受影响，Esc 仍是两档', async () => {
+  await launch();
+  await openDoc('<p id="a">第一段</p><p id="b">第二段</p>');
+  await frame.locator('#b').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(220);
+  expect(await selectedIds(), '段落一次就是块作用域').toEqual(['P#b']);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(220);
+  expect(await selectedIds(), '再按直接取消，不许多出一档').toEqual([]);
 });

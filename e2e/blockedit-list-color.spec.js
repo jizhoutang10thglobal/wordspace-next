@@ -122,8 +122,132 @@ test('fidelity：真跨两个有内容的 li 选区 → 文字色仍被拒（保
   await frame.locator('.ws-fmtbar [title="文字色"]').click();
   await frame.locator('.ws-fmtbar-swatches:visible .ws-fmtbar-swatch').nth(1).click();
   await page.waitForTimeout(150);
-  // 真跨块（两块各有被选文字）必须被拒绝：不产生任何 color span，文档不被改坏
-  await expect(frame.locator('ul li span[style*="color"]'), '真跨块上色应被拒绝，clamp 不该越块上色').toHaveCount(0);
+  // 【断言迁移，2026-08-05 —— Wendi「大批量选中 to do list，无法统一修改颜色」】
+  // 这条门原来断「真跨块上色被**拒绝**、span 数为 0」。那在当时是对的：唯一的备选是让一个 <span>
+  // 跨块，而那是保真红线（span 吞块级元素 = 非法嵌套 + 重复 id，写回磁盘就是损坏文档）。
+  // 现在多了第三条路：**按块切成子段、逐块各一个 span**——用户要的批量上色做到了，而且没有任何
+  // 一个 span 越过块边界。所以门守的不变式没变、只是「拒绝」不再是满足它的唯一方式。
+  // 终态断言换成直接钉那条红线本身（比原来强：原来只是「什么都没发生」的间接证据）。
+  await expect(frame.locator('#a span[style*="color"]'), '起块自己那段该上色').toHaveCount(1);
+  await expect(frame.locator('#b span[style*="color"]'), '尾块自己那段也该上色').toHaveCount(1);
+  const swallowed = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    // ⚠ 必须排除 [data-ws2-ui] 浮层：气泡的 .ws-fmtbar-holder 本身就是 <span>、里面装着
+    // <div class="ws-fmtbar-swatches">，不排除的话这条断言会咬到编辑器自己的 chrome（实测误报 2）。
+    return [...d.querySelectorAll('span ul, span ol, span li, span p, span table, span div')]
+      .filter((e) => !e.closest('[data-ws2-ui]')).length;
+  });
+  expect(swallowed, '保真红线：任何一个 span 都不许含块级元素').toBe(0);
+  // 文字一个不少、一个不多（原来这两条就在，保留）
   await expect(frame.locator('#a')).toHaveText('第一项有内容');
   await expect(frame.locator('#b')).toHaveText('第二项也有内容');
+});
+
+// ── 多选批量上色（Wendi 2026-08-05）────────────────────────────────────────────────
+// 病灶：wrapInlineStyle / wrapMark 按 LI/P 粒度判跨块并拒绝 → 一旦选中多行，点颜色**静默无反应**。
+// 而同一个气泡里的加粗早就能跨多行（execText 按块切段逐块执行）——是能力缺口，不是设计取舍。
+// 修法：颜色/高亮改走同一套切段骨架，wrapInlineStyle 每次只见单块，红线一寸没退。
+const FIVE = '<p id="pre">前段</p><ul id="L" class="ws-todo">'
+  + [1, 2, 3, 4, 5].map((i) => `<li id="r${i}">待办第 ${i} 条</li>`).join('') + '</ul><p id="post">后段</p>';
+const selectAcross = (a, b) => page.evaluate((q) => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const A = d.querySelector(q.a), B = d.querySelector(q.b);
+  const r = d.createRange(); r.setStart(A.firstChild || A, 0);
+  const last = B.lastChild || B;
+  r.setEnd(last, last.nodeType === 3 ? last.nodeValue.length : last.childNodes.length);
+  const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  d.dispatchEvent(new Event('selectionchange'));
+}, { a, b });
+// 直接驱动气泡里的色板（格子常在视口外，点击会被可见性挡住 → 用事件派发）
+const pickSwatch = (kind) => page.evaluate((k) => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  const fb = d.querySelector('.ws-fmtbar'); if (!fb) return 'no-fmtbar';
+  const pops = [...fb.querySelectorAll('.ws-fmtbar-swatches')];
+  const pop = pops[k === 'hilite' ? 1 : 0]; if (!pop) return 'no-pop';
+  pop.style.display = 'flex';
+  const sws = [...pop.querySelectorAll('button.ws-fmtbar-swatch')];
+  if (sws.length < 3) return 'too-few';
+  sws[2].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  return 'ok';
+}, kind);
+const inlineShape = () => page.evaluate(() => {
+  const d = document.getElementById('doc-frame').contentDocument;
+  return {
+    色span: d.querySelectorAll('span[style*="color"]').length,
+    高亮: d.querySelectorAll('mark').length,
+    // 排除编辑器自己的浮层（.ws-fmtbar-holder 是 <span> 且内含 <div>，会误报——实测踩过）
+    span吞块: [...d.querySelectorAll('span ul, span ol, span li, span p, span table, span div')]
+      .filter((e) => !e.closest('[data-ws2-ui]')).length,
+    合规: WS2SchemaRegistry.classify(new DOMParser().parseFromString(WS2Serialize.serializeDocument(d), 'text/html')).conform,
+  };
+});
+
+test('MS-1 同一张列表内选 4 行 → 每行各自上色（修前：零反应）', async () => {
+  await launch();
+  await openDoc(FIVE);
+  await frame.locator('#r1').click(); await page.waitForTimeout(200);
+  await selectAcross('#r1', '#r4'); await page.waitForTimeout(300);
+  expect(await pickSwatch('color')).toBe('ok');
+  await page.waitForTimeout(400);
+  const s = await inlineShape();
+  expect(s.色span, '选了 4 行就该有 4 段上色').toBe(4);
+  expect(s.span吞块).toBe(0);
+  expect(s.合规).toBe(true);
+});
+
+test('MS-2 真跨块（段落 + 5 行列表 + 段落）→ 7 个块各自上色', async () => {
+  await launch();
+  await openDoc(FIVE);
+  await frame.locator('#pre').click(); await page.waitForTimeout(200);
+  await selectAcross('#pre', '#post'); await page.waitForTimeout(300);
+  expect(await pickSwatch('color')).toBe('ok');
+  await page.waitForTimeout(500);
+  const s = await inlineShape();
+  expect(s.色span, '前段 + 5 行 + 后段 = 7 段').toBe(7);
+  expect(s.span吞块).toBe(0);
+  expect(s.合规).toBe(true);
+});
+
+test('MS-3 多选高亮同款（不止文字色）', async () => {
+  await launch();
+  await openDoc(FIVE);
+  await frame.locator('#r1').click(); await page.waitForTimeout(200);
+  await selectAcross('#r1', '#r3'); await page.waitForTimeout(300);
+  expect(await pickSwatch('hilite')).toBe('ok');
+  await page.waitForTimeout(400);
+  const s = await inlineShape();
+  expect(s.高亮).toBe(3);
+  expect(s.span吞块).toBe(0);
+  expect(s.合规).toBe(true);
+});
+
+test('MS-4 保真红线：选区里有带子列表的行，span 绝不能吞掉那个 <ul>', async () => {
+  await launch();
+  await openDoc('<p id="pre">前</p><ul id="L"><li id="r1">一<ul><li id="n1">子甲</li><li id="n2">子乙</li></ul></li><li id="r2">二</li></ul><p id="post">后</p>');
+  await frame.locator('#pre').click(); await page.waitForTimeout(200);
+  await selectAcross('#pre', '#post'); await page.waitForTimeout(300);
+  expect(await pickSwatch('color')).toBe('ok');
+  await page.waitForTimeout(500);
+  const s = await inlineShape();
+  // 宿主行「一」自己那段、两个子项、前后两段 —— 各自一个 span，一个都不许圈住嵌套 <ul>
+  expect(s.色span).toBe(6);
+  expect(s.span吞块, '这条就是红线本身：任何 span 含块级元素都算改坏文档').toBe(0);
+  expect(s.合规).toBe(true);
+});
+
+// MS-5（Colin 2026-08-05 实机抓到）：MS-4 里带子项的行排在选区**中间**，终点落在它外面的 #post 上，
+// 走的是「夹到嵌套块之前」那条分支——正好躲开了 bug。把那行拖到选区**末尾**、终点落进它自己的子项里，
+// `b.contains(eC)` 分支就会把整棵子树圈进这行的子段 → 跨块 → clampRangeToBlock 拒掉 → 这行整行不上色。
+// 症状是「四行里偏偏有一行还是白的」，看着毫无道理。终点必须无条件夹进本行内容区。
+test('MS-5 带子项的行排在选区末尾 → 它自己那段也得上色（修前：唯独这行是白的）', async () => {
+  await launch();
+  await openDoc('<p id="pre">前</p><ul id="L"><li id="r2">父项二</li><li id="r1">父项一<ul><li id="n1">子甲</li><li id="n2">子乙</li></ul></li></ul><p id="post">后</p>');
+  await frame.locator('#r2').click(); await page.waitForTimeout(200);
+  await selectAcross('#r2', '#n2'); await page.waitForTimeout(300);
+  expect(await pickSwatch('color')).toBe('ok');
+  await page.waitForTimeout(500);
+  const s = await inlineShape();
+  expect(s.色span, '父项二 + 父项一 + 子甲 + 子乙 = 4 段，一段都不许漏').toBe(4);
+  expect(s.span吞块).toBe(0);
+  expect(s.合规).toBe(true);
 });

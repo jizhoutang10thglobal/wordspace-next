@@ -86,6 +86,11 @@
 .pg-mm-input { -moz-appearance: textfield; appearance: textfield; }
 .pg-mm-unit { color: var(--c-text-3); font-size: var(--fs-xs); }
 
+/* 页眉/页脚文本框：label 定宽 + ws-input 吃剩余宽；行内 label 不吃 pg-field-label 的下边距 */
+.pg-hf-row { gap: 10px; padding: 6px 0; }
+.pg-hf-row .pg-field-label { margin-bottom: 0; flex: none; }
+.pg-hf-input:disabled { opacity: 0.5; }
+
 /* switch：track 圆丸，on = 墨底；滑块 spring 滑动（style.md §5） */
 .pg-switch {
   position: relative;

@@ -22,6 +22,15 @@ export interface PageConfig {
   orientation: Orientation
   margin: PageMargin // mm
   pageNumbers: boolean // 导出 PDF 页脚页码
+  header?: string // 页眉文字（每页纸顶边距区；空/缺 = 不显示）。对齐真 app meta ws-page-header
+  footer?: string // 页脚文字（每页纸底边距区；空/缺 = 不显示）。对齐真 app meta ws-page-footer
+}
+
+/** 页眉/页脚文字上限（对齐真 app schema-page HF_MAXLEN）。单行、砍长度——超长串 × 页数 会拖垮渲染。 */
+export const HF_MAXLEN = 200
+export function clampHF(s: string | undefined): string {
+  if (s == null) return ''
+  return String(s).replace(/[\r\n]+/g, ' ').slice(0, HF_MAXLEN)
 }
 
 /** 纸张 mm 尺寸（竖向：宽 × 高）。 */
