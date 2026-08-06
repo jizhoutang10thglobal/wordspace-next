@@ -105,6 +105,7 @@ module.exports = {
   turnToCallout: '转为提示',
   addCaption: '加说明',
   caption: '说明',
+  zoomIn: '放大',
   insertBelow: '在下方插入',
   noMatch: '无匹配',
 

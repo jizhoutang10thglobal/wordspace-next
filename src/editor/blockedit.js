@@ -1234,6 +1234,7 @@
       exitCell();
       exitEdit();
       clearRectSel(); // ADV-R5：菜单删表走 removeBlock→deselect，不清的话 rectSel 指 detached 表、幽灵描边残留
+      hideImgUi(); // ADV-I1-2 辅道：删除图片块的收敛路径把幽灵工具条一并收掉
       clearSelectedAttr();
       selectedEl = null;
       hoverEl = null; hoverRow = null; setGutterVisible(false); // 清悬停引用，防删块后幽灵手柄
@@ -3003,6 +3004,134 @@
     colHandle.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
     colHandle.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openAxisMenu('col'); });
 
+    // ── I1 图片缩放药丸 + 悬停工具条（Notion 2026-08-06 实测读数，notion-i1/*.png）：
+    // 悬停图片 → 左右两根 col-resize 竖药丸（中部）+ 顶右工具条；拖药丸=宽随指针**对称收缩
+    //（2×dx，中心锚定）**、等比（height auto）、松手定格；缩后水平居中。持久化=img 的 width **属性**
+    //（块级 style=非合规红线）+ 入盘 CSS（data-ws-schema-css="image"，校验器 head 白名单同款通道）。
+    // 工具条 v1=[说明][放大]；「下载」需新开主进程 IPC，记 spec 欠账。旧 8 把手 resize.js 死代码退役。
+    const imgPillL = mk('div', 'ws-imgresize');
+    const imgPillR = mk('div', 'ws-imgresize');
+    imgPillL.style.position = 'absolute'; imgPillL.style.display = 'none';
+    imgPillR.style.position = 'absolute'; imgPillR.style.display = 'none';
+    doc.documentElement.appendChild(imgPillL);
+    doc.documentElement.appendChild(imgPillR);
+    const imgBar = mk('div', 'ws-imgbar');
+    imgBar.style.position = 'absolute'; imgBar.style.display = 'none';
+    doc.documentElement.appendChild(imgBar);
+    const imgBarCaption = mk('button', 'ws-imgbar-btn');
+    const imgBarZoom = mk('button', 'ws-imgbar-btn');
+    imgBarCaption.textContent = T('editor.caption');
+    imgBarZoom.textContent = T('editor.zoomIn');
+    imgBar.appendChild(imgBarCaption); imgBar.appendChild(imgBarZoom);
+    let hoverImgEl = null;  // 当前悬停的图片块（img 或 figure）
+    let imgDrag = null;     // { img, side:'l'|'r', sx, startW, colW, changed }
+    function imgOfBlock(el) { return el ? (el.tagName === 'IMG' ? el : el.querySelector && el.querySelector('img')) : null; }
+    function hideImgUi() { imgPillL.style.display = 'none'; imgPillR.style.display = 'none'; imgBar.style.display = 'none'; hoverImgEl = null; }
+    function ensureImageStyle() {
+      if ((doc.head || doc.documentElement).querySelector('style[data-ws-schema-css="image"]')) return;
+      const st = doc.createElement('style');
+      st.setAttribute('data-ws-schema-css', 'image'); // 入盘保留：app 外浏览器打开同样居中等比（校验器 head 白名单认）
+      // ADV-I1-1（HIGH）：选择器必须钉在**顶层块图**上——裸 img[width] 会压过 baseline 用零权重
+      // :where() 做的「行内图豁免」，把 <p> 里带 width 的行内小图全打成块级居中、段落碎成三行。
+      st.textContent = 'body>img[width],body>figure>img[width]{max-width:100%;height:auto;display:block;margin-left:auto;margin-right:auto;}';
+      (doc.head || doc.documentElement).appendChild(st);
+      return st;
+    }
+    function positionImgUi(el) {
+      const img = imgOfBlock(el);
+      if (!img) { hideImgUi(); return; }
+      hoverImgEl = el;
+      const { sx, sy } = vp();
+      const r = img.getBoundingClientRect();
+      const ph = Math.min(48, Math.max(24, r.height * 0.3));
+      imgPillL.style.left = (r.left + sx + 4) + 'px';
+      imgPillL.style.top = (r.top + sy + r.height / 2 - ph / 2) + 'px';
+      imgPillL.style.height = ph + 'px';
+      imgPillL.style.display = 'block';
+      imgPillR.style.left = (r.right + sx - 10) + 'px';
+      imgPillR.style.top = (r.top + sy + r.height / 2 - ph / 2) + 'px';
+      imgPillR.style.height = ph + 'px';
+      imgPillR.style.display = 'block';
+      imgBar.style.display = 'flex';
+      const bw = imgBar.offsetWidth || 100;
+      if (r.width < bw + 40) {
+        // ADV-I1-5：小图（含 80px 钳制终态）上工具条比图宽——挪到图外上方，别盖住左药丸
+        imgBar.style.left = (r.right + sx - bw) + 'px';
+        imgBar.style.top = (r.top + sy - (imgBar.offsetHeight || 26) - 6) + 'px';
+      } else {
+        imgBar.style.left = (r.right + sx - bw - 6) + 'px';
+        imgBar.style.top = (r.top + sy + 6) + 'px';
+      }
+    }
+    function armImgDrag(side, e) {
+      const img = imgOfBlock(hoverImgEl);
+      if (!img || !img.isConnected) { hideImgUi(); return; }
+      const blk = blockOf(img);
+      const colW = (blk && blk.parentElement ? blk.parentElement.clientWidth : 0) || img.parentElement.clientWidth || 720;
+      // ADV-I1-3：原始态快照——按下不拖/1px 抖动必须还原成零字节变化；style 也只在真改宽时才注入
+      imgDrag = { img, side, sx: e.clientX, startW: img.getBoundingClientRect().width, colW, changed: false, origAttr: img.getAttribute('width'), styleNode: null };
+      if (undoMgr) undoMgr.checkpoint(); // 前置结算打字债（KTD6 型）
+    }
+    function stepImgDrag(e) {
+      const d = imgDrag;
+      if (!d || !d.img.isConnected) { imgDrag = null; return; }
+      const dx = e.clientX - d.sx;
+      let w = d.side === 'r' ? d.startW + 2 * dx : d.startW - 2 * dx; // 中心锚定：边缘随指针、宽度双倍变化（Notion 实测）
+      w = Math.max(80, Math.min(d.colW, Math.round(w)));
+      if (!d.changed && Math.abs(w - Math.round(d.startW)) <= 1) return; // 微抖不算改（ADV-I1-3）
+      if (!d.changed) d.styleNode = ensureImageStyle() || null; // 首次真改宽才注入入盘 CSS
+      d.img.setAttribute('width', String(w));
+      d.changed = true;
+      if (hoverImgEl) positionImgUi(hoverImgEl); // 药丸跟着新边缘走
+    }
+    function finishImgDrag() {
+      const d = imgDrag; imgDrag = null;
+      if (!d || !d.changed || !d.img.isConnected) return;
+      const w = parseInt(d.img.getAttribute('width') || '0', 10);
+      if (w >= d.colW - 2) d.img.removeAttribute('width'); // 拖回全宽 = 回到 canonical 无属性（零字节噪音）
+      else if (Math.abs(w - Math.round(d.startW)) <= 1 && !d.origAttr) d.img.removeAttribute('width'); // 绕一圈回起点（原本无属性）
+      // ADV-I1-3：终态与起始态相同 = 零改动——不 checkpoint 不 markDirty，本次注入的 style 一并收回
+      if ((d.img.getAttribute('width') || null) === (d.origAttr || null)) {
+        if (d.styleNode && !doc.querySelector('img[width]')) { try { d.styleNode.remove(); } catch (x) {} }
+        return;
+      }
+      if (undoMgr) undoMgr.checkpoint();
+      markDirty();
+    }
+    imgPillL.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); armImgDrag('l', e); });
+    imgPillR.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); armImgDrag('r', e); });
+    // 放大预览（lightbox）：纯覆盖层，Esc/点击关闭；绝不入盘（data-ws2-ui 通道）
+    const lightbox = mk('div', 'ws-lightbox');
+    lightbox.style.display = 'none';
+    doc.documentElement.appendChild(lightbox);
+    function openLightbox(img) {
+      lightbox.innerHTML = '';
+      const c = doc.createElement('img');
+      c.src = img.src;
+      lightbox.appendChild(c);
+      lightbox.style.display = 'flex';
+      // 工具条 mousedown 被 preventDefault ⇒ iframe 可能从未获得焦点，Esc 会落宿主窗口关不掉
+      //（openAxisMenu/矩形机同款教训）——开预览即接焦点。
+      try { focusCatcher.focus({ preventScroll: true }); } catch (x) {}
+    }
+    function closeLightbox() { lightbox.style.display = 'none'; lightbox.innerHTML = ''; }
+    lightbox.addEventListener('click', closeLightbox);
+    imgBarCaption.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    imgBarCaption.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const el = hoverImgEl;
+      if (!el || !el.isConnected) { hideImgUi(); return; } // ADV-I1-2（HIGH）：图已被删的幽灵工具条——disconnected 上进说明编辑会把 captionEl 永久卡死（blur 永不发生）
+      const cap0 = el.tagName === 'FIGURE' ? el.querySelector('figcaption') : null;
+      if (cap0) enterCaptionEdit(cap0, false); else addCaption(el); // 与块菜单「说明」同一口径（I7 常驻开关）
+    });
+    imgBarZoom.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    imgBarZoom.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (!hoverImgEl || !hoverImgEl.isConnected) { hideImgUi(); return; } // ADV-I1-2 同款
+      const img = imgOfBlock(hoverImgEl);
+      if (img) openLightbox(img);
+    });
+
     // 单一关闭出口——所有调用点全走它，两种作用域标记都在这里统一清
     function closeBlockMenu() {
       blockMenu.style.display = 'none';
@@ -3200,6 +3329,7 @@
       // ADV-RD1（HIGH）：iframe 外松手丢 mouseup 后 rowDrag 残留会劫持下一次任意拖拽成真实行移动。
       // 兜底必须在 data-ws2-ui early-return **之前**（capture 先跑，药丸自己的 mousedown 随后重新 arm）。
       if (rowDrag) { rowDrag = null; hideRowDropLine(); }
+      if (imgDrag) finishImgDrag(); // ADV-I1-6：拖拽中丢 mouseup 后的下一次按下——width 已写进 DOM，直接丢弃=可见改动不落盘/粘进别人 undo 步；finish 自带 changed 守卫
       if (e.target && e.target.closest && e.target.closest('[data-ws2-ui]')) return;
       // 点菜单外任何地方 → 关斜杠菜单（Wendi 2026-07-22：以前点别处不关、只能删掉「/」才关，反直觉）。
       // 上面已对 data-ws2-ui 覆盖层（含斜杠菜单及其项）early-return，故点菜单项走不到这、不会误关。
@@ -3236,6 +3366,9 @@
       wallDropped = false;
     }
     function onMouseMove(e) {
+      // I1 图片缩放机：拖拽中宽随指针（对称 2×dx）；mouseup 丢失自愈同款。
+      if (imgDrag && !(e.buttons & 1)) finishImgDrag();
+      if (imgDrag && (e.buttons & 1)) { stepImgDrag(e); e.preventDefault(); return; }
       // T3 行拖拽机：药丸按住越阈 → 指示线跟槽；接管本场拖拽（先于矩形机——两者互斥于起手点）。
       if (rowDrag && !(e.buttons & 1)) { rowDrag = null; hideRowDropLine(); } // ADV-RD1 自愈：mouseup 丢了、按键已抬 → 掐掉悬空手势
       if (rowDrag && (e.buttons & 1)) {
@@ -3296,12 +3429,14 @@
       // 否则慢速滑向手柄的鼠标途经间隙时手柄先一步消失；只在悬停到**另一个非表格块**上才收。
       if (!menuAxis) { if (el && classify(el) === 'table') positionAxisHandles(el, e.clientX, e.clientY); else if (el) hideAxisHandles(); }
       positionEdgeBars(e.clientX, e.clientY); // T2：贴近表格下缘/右缘 → 全宽/全高加行加列条（几何判定，不依赖 el 命中表格）
+      if (el && classify(el) === 'image') positionImgUi(el); else if (el) hideImgUi(); // I1：悬停图片 → 缩放药丸+工具条（收起判据照轴手柄 ADV-4 口径）
       if (el && (el !== hoverEl || row !== hoverRow)) { hoverEl = el; hoverRow = row; positionGrip(row || el); } // 编辑态也更新（能对当前/别的块开菜单·拖拽）
       // 移到块外空白/gutter 间隙：不立即隐藏（停在最后悬停块、保证可点）；隐藏交给进编辑/离开文档。
     }
     // 鼠标抬起：收尾一次拖选。单块内选区 → 恢复进编辑（保留选区，可打字替换/气泡走编辑态分支）；
     // 跨块/homeless 选区 → 留着、弹气泡。纯点击（没摘墙）→ 交给 onClick 走进编辑。
     function onMouseUp() {
+      if (imgDrag) { finishImgDrag(); dragStart = null; wallDropped = false; return; } // I1：缩放定格
       if (rowDrag) {
         const rd = rowDrag; rowDrag = null;
         if (rd.moved) { finishRowDrag(rd); dragStart = null; wallDropped = false; return; }
@@ -3409,6 +3544,13 @@
       } else { selectBlock(el); positionGrip(el); }
     }
     function onKeyDown(e) {
+      // I1 放大预览开着：Esc 关闭，Tab 拦死（焦点跑出 focusCatcher 后 Esc 会落宿主关不掉，ADV-I1-7），
+      // 其余键不进编辑器分支（覆盖层下的文档不该被盲改）
+      if (lightbox.style.display !== 'none') {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeLightbox(); }
+        else if (e.key === 'Tab') { e.preventDefault(); }
+        return;
+      }
       // 图片说明（figcaption）编辑中：Enter/Esc 收尾失焦，其它键交原生编辑文字——绝不落到块级
       // Enter 新建块 / Backspace 删块分支（ui-demo 踩过：说明里退格删了整张图）。
       if (captionEl) {
@@ -5611,6 +5753,7 @@
       clearRectSel(); body.querySelectorAll('[data-ws2-cellsel]').forEach((el) => el.removeAttribute('data-ws2-cellsel')); // T13：矩形选区同款——引用清 + 属性扫双保险
       hideEdgeBars(); // edgeTable 引用同样失效
       rowDrag = null; hideRowDropLine(); // 行拖拽中撞上 undo/reload → 掐掉悬空手势
+      imgDrag = null; hideImgUi(); closeLightbox(); // I1 同款
       setGutterVisible(false); fmtbar.style.display = 'none'; closeBlockMenu();
       menuAxis = null; hideAxisHandles(); // undo/redo 重写 body → hoverTr/hoverTable 引用失效，必须一起清
     }
@@ -5763,6 +5906,13 @@
   .ws-colsel:hover{background:#8a8f96;}
   .ws-rectsel{box-sizing:border-box;border:2px solid #1a73e8;border-radius:2px;background:transparent;pointer-events:none;z-index:99997;}
   .ws-rowdropline{height:3px;border-radius:2px;background:#1a73e8;pointer-events:none;z-index:99997;}
+  .ws-imgresize{width:6px;border-radius:3px;background:rgba(15,15,15,.55);border:1px solid rgba(255,255,255,.85);cursor:col-resize;z-index:99998;}
+  .ws-imgresize:hover{background:rgba(15,15,15,.82);}
+  .ws-imgbar{display:flex;gap:4px;padding:3px;background:rgba(15,15,15,.78);border-radius:6px;z-index:99998;}
+  .ws-imgbar-btn{font:500 12px/1 system-ui;color:#fff;background:transparent;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;}
+  .ws-imgbar-btn:hover{background:rgba(255,255,255,.16);}
+  .ws-lightbox{position:fixed;inset:0;background:rgba(10,10,10,.86);display:flex;align-items:center;justify-content:center;z-index:99999;cursor:zoom-out;}
+  .ws-lightbox img{max-width:92vw;max-height:92vh;box-shadow:0 8px 40px rgba(0,0,0,.5);}
   .ws-tbladdrow{height:14px;border-radius:4px;background:#eceef1;color:#8a8f96;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui;cursor:pointer;user-select:none;z-index:99996;}
   .ws-tbladdrow:hover{background:#dfe3e8;color:#1a73e8;}
   .ws-tbladdcol{width:14px;border-radius:4px;background:#eceef1;color:#8a8f96;display:flex;align-items:center;justify-content:center;font:600 12px/1 system-ui;cursor:pointer;user-select:none;z-index:99996;}
