@@ -6,8 +6,10 @@ import { useUI } from '../mock/ui'
 import { usePaged } from '../mock/paged'
 import { useDocTypography, useTypography, useCustomPresets } from '../mock/typography'
 import {
+  HF_MAXLEN,
   MARGIN_PRESETS,
   PAPERS,
+  clampHF,
   type Orientation,
   type PageConfig,
   type PageMargin,
@@ -176,6 +178,33 @@ export default function PageSetupModal() {
               </div>
               <Switch on={effective.pageNumbers} disabled={off} onToggle={() => patch({ pageNumbers: !effective.pageNumbers })} />
             </div>
+
+            {/* 页眉 / 页脚（页面级配置，同 pageNumbers 走 usePaged；每页纸顶/纸底一行，空 = 不显示。
+                渲染侧只走 JSX 文本插值天然转义，绝不 dangerouslySetInnerHTML） */}
+            <label className="pg-row pg-hf-row">
+              <span className="pg-field-label">{t('editor.pageHeader')}</span>
+              <input
+                type="text"
+                className="ws-input pg-hf-input"
+                maxLength={HF_MAXLEN}
+                disabled={off}
+                value={effective.header ?? ''}
+                placeholder={t('editor.pageHfPlaceholder')}
+                onChange={(e) => patch({ header: clampHF(e.target.value) })}
+              />
+            </label>
+            <label className="pg-row pg-hf-row">
+              <span className="pg-field-label">{t('editor.pageFooter')}</span>
+              <input
+                type="text"
+                className="ws-input pg-hf-input"
+                maxLength={HF_MAXLEN}
+                disabled={off}
+                value={effective.footer ?? ''}
+                placeholder={t('editor.pageHfPlaceholder')}
+                onChange={(e) => patch({ footer: clampHF(e.target.value) })}
+              />
+            </label>
 
             {/* ===== 排版（工具栏没有的：首行缩进 / 段间距）===== */}
             <div className="pg-sec-title">{t('editor.secTypography')}</div>

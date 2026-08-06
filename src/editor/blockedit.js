@@ -1020,7 +1020,15 @@
     // table 内 → 该 table 整行蓝（部分裁剪表格必产非合规，删除只能整删=ED-A2，高亮预示之，所见即所删）。
     // data-ws2-rangesel 进 serialize 白名单剥除（纯交互态、绝不入盘）。
     let rangeSelEls = [];
-    function clearRangeSel() { if (rangeSelEls.length) { rangeSelEls.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-rangesel')); rangeSelEls = []; } }
+    // ⚠ 必须扫 DOM，不能只清 rangeSelEls 里记的那批（跟 clearSelectedAttr 同一范式）。
+    // 病灶：retagElement **原样复制全部属性**——「转为」把带 data-ws2-rangesel 的 <p> 换成 <ol> 时，
+    // 蓝底标记跟着进了新元素，而 rangeSelEls 里存的还是那个已被摘走的旧 <p>。于是这个数组怎么清
+    // 都碰不到活着的那个 → 整块永久蓝底、点哪儿都不消（Colin 2026-08-05 实抓：往返转换后底色卡死）。
+    // 扫 DOM 让「谁带着标记谁被清」，任何未来会克隆 / 换标签的路径都自动兜住。
+    function clearRangeSel() {
+      body.querySelectorAll('[data-ws2-rangesel]').forEach((el) => el.removeAttribute('data-ws2-rangesel'));
+      if (rangeSelEls.length) { rangeSelEls.forEach((el) => el.removeAttribute && el.removeAttribute('data-ws2-rangesel')); rangeSelEls = []; } // 已脱离文档的旧引用顺手清干净
+    }
     function refreshRangeSel() {
       clearRangeSel();
       const sel = doc.getSelection();
@@ -1805,9 +1813,12 @@
       //   所以行级路径无论列表里有几行，都必须保子树。
       const LEAF_LIKE = { p: 1, h1: 1, h2: 1, h3: 1, h4: 1, blockquote: 1, div: 1 };
       const detached = [];
+      const detachedOf = new Map(); // 每行各自摘下的子树——多行路径要接回**各自**产物之后，不能全堆到最后一个
       if (LEAF_LIKE[item.tag]) {
         for (const li of lis) {
-          for (const c of [...li.children]) if (c.tagName === 'UL' || c.tagName === 'OL') { detached.push(c); c.remove(); }
+          const mine = [];
+          for (const c of [...li.children]) if (c.tagName === 'UL' || c.tagName === 'OL') { mine.push(c); c.remove(); }
+          if (mine.length) { detachedOf.set(li, mine); detached.push(...mine); }
         }
       }
       // 前段要继承原列表的 start（分割点**之前**的序号一个都不该变——Notion 同款，对拍 N8 实测）；
@@ -1820,6 +1831,29 @@
       };
       if (firstIdx > 0) { const b = mkUl(true); for (let k = 0; k < firstIdx; k++) b.appendChild(allLis[k]); ul.before(b); }
       if (lastIdx < allLis.length - 1) { const a = mkUl(false); for (let k = lastIdx + 1; k < allLis.length; k++) a.appendChild(allLis[k]); ul.after(a); }
+      // 多行「转为」叶子块：**每行各产一个块**（Wendi 2026-08-05 那批调研扫到的）。
+      // 修前是对「选中段」整体调一次 turnInto → flattenListToPhrasing 把选中的几行糊成**一个**段落
+      //（实测选 4 行转正文得到「待办第1条待办第2条待办第3条待办第4条」），行边界彻底丢失。
+      // Notion 是 4 行变 4 段。做法 = 每行套一个单行临时列表再走既有的单行转换，**最大化复用**：
+      // 类型/class 都从原列表继承，转换语义与单行路径完全同源。⚠ 单行路径一字不动（E1/E2 那批门压在上面）。
+      if (LEAF_LIKE[item.tag] && lis.length > 1) {
+        const outs = [];
+        for (const li of lis) {
+          const one = mkUl(false);
+          ul.before(one); // 插在选中段空壳之前 → 逐行产物天然保持原顺序
+          one.appendChild(li);
+          ckSuppressed = true;
+          let p; try { p = turnInto(one, item); } finally { ckSuppressed = false; }
+          if (li.id && p && p.nodeType === 1 && !p.id) p.id = li.id; // 每行的 id 各自迁到自己的产物上
+          if (p && p.nodeType === 1 && !p.firstChild) p.appendChild(doc.createElement('br')); // 空产物必带 <br>
+          let ref = p;
+          for (const sub of (detachedOf.get(li) || [])) { ref.after(sub); ref = sub; } // 子树跟着自己那一行走
+          outs.push(p);
+        }
+        ul.remove(); // 选中段的空壳
+        if (undoMgr) undoMgr.checkpoint(); markDirty();
+        return outs[outs.length - 1]; // 光标落最后一行的产物（= 选区结束的地方）
+      }
       // 子树在 DOM 外期间抑制 checkpoint（P1-1）：否则 turnInto 内部那次快照记下「子项已消失」的中间态，
       // 一次 undo 就落到它、并被自动保存写进磁盘。接回子树后再统一落一次。
       ckSuppressed = detached.length > 0;
@@ -1836,6 +1870,75 @@
       if (nx && nx.nodeType === 1 && !nx.firstChild) nx.appendChild(doc.createElement('br')); // 空产物必带 <br>，否则光标落不进去（E2 分支早有同款保险，这里补齐）
       if (detached.length) { if (undoMgr) undoMgr.checkpoint(); markDirty(); }
       return nx;
+    }
+    // 跨块选区覆盖的顶层块（拖过好几段时用）。范式照抄 execText 的 tops/i/j——按**块序**取首末之间的
+    // 连续跨度，而不是 rangeSelEls：后者只收「内容被完全罩住」的块，两端半选的块会漏掉，
+    // 而加粗（execText）对半选块照样生效，「转为」不能比它小气。
+    function selectedTopBlocks() {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+      const full = sel.getRangeAt(0);
+      if (scopeRootOf(full.startContainer) !== scopeRootOf(full.endContainer)) return null;
+      const tops = blocksInScope(scopeRootOf(full.startContainer));
+      let i = tops.indexOf(blockOf(full.startContainer)), j = tops.indexOf(blockOf(full.endContainer));
+      if (i < 0 || j < 0) return null;
+      if (i > j) { const t = i; i = j; j = t; }
+      return tops.slice(i, j + 1);
+    }
+    // 逐块 retag 转列表会产出 N 张各含一项的 <ul>；磁盘正本是**一张** canonical 列表（方案 B 的存储单元），
+    // 所以把结果里相邻的同类列表并成一张，并顺手吞掉紧贴前后的既有同类列表（选 3 段转待办、下面本来就有
+    // 一张待办 → 应该并成一张而不是并排两张）。被吞掉的 <ul> 的 id 迁到它第一项上，避免锚点静默断链。
+    function coalesceLists(nodes) {
+      const sameKind = (a, b) => a && b && a.nodeType === 1 && b.nodeType === 1
+        && (a.tagName === 'UL' || a.tagName === 'OL') && a.tagName === b.tagName && a.className === b.className;
+      const absorb = (head, other) => {
+        if (other.id) { const li0 = other.querySelector(':scope > li'); if (li0 && !li0.id) li0.id = other.id; }
+        while (other.firstChild) head.appendChild(other.firstChild);
+        other.remove();
+      };
+      const out = [];
+      for (const n of nodes) {
+        if (!n || !n.isConnected) continue;
+        const prev = out.length ? out[out.length - 1] : null;
+        if (sameKind(prev, n) && prev.nextElementSibling === n) { absorb(prev, n); continue; }
+        out.push(n);
+      }
+      for (const n of out) {
+        if (!n.isConnected || (n.tagName !== 'UL' && n.tagName !== 'OL')) continue;
+        const before = n.previousElementSibling;
+        if (sameKind(before, n)) { absorb(before, n); out[out.indexOf(n)] = before; continue; }
+        const after = n.nextElementSibling;
+        if (sameKind(n, after)) absorb(n, after);
+      }
+      return out.filter((n) => n.isConnected);
+    }
+    // 「转为」的跨块入口：选区覆盖的每个顶层块各自转，整批只落一次 undo checkpoint。
+    // 列表块只被选中部分行时仍走 turnIntoLines（跟单块入口同一语义）——**行信息必须在动手之前
+    // 全部算好**，因为第一块一转选区就没了，之后再问 selectedListLines 只会拿到空。
+    function turnIntoMany(blks, item) {
+      // 先把跨块蓝底摘干净再动手：retagElement 会把 data-ws2-rangesel 一起复制进产物，
+      // 而这批源块马上就要被换掉。不在这儿摘，产物身上就会挂一个没人认领的高亮。
+      clearRangeSel();
+      const linesOf = new Map();
+      for (const b of blks) {
+        if (b.tagName !== 'UL' && b.tagName !== 'OL') continue;
+        const lines = selectedListLines(b);
+        const all = [...b.children].filter((c) => c.tagName === 'LI').length;
+        if (lines && lines.length && lines.length < all) linesOf.set(b, lines);
+      }
+      const outs = [];
+      for (const b of blks) {
+        if (!b.isConnected) continue;
+        ckSuppressed = true;
+        let nx;
+        try { nx = linesOf.has(b) ? turnIntoLines(b, linesOf.get(b), item) : turnInto(b, item); }
+        finally { ckSuppressed = false; }
+        if (nx && nx.nodeType === 1) outs.push(nx);
+      }
+      if (!outs.length) return null;
+      const merged = coalesceLists(outs);
+      if (undoMgr) undoMgr.checkpoint(); markDirty();
+      return merged[merged.length - 1] || null;
     }
     function removeBlock(el) {
       const scope = scopeRootOf(el); // U6：作用域感知——toggle 体内删块按体内计数；≥1 块铁则（summary-only 死胡同）
@@ -2226,9 +2329,66 @@
       enterEdit(nx, { mode: 'start' });
       return true;
     }
+    // ---- 多选上色/高亮（Wendi 2026-08-05：「大批量选中 to do list，无法统一修改颜色」）----
+    // 病灶：wrapInlineStyle / wrapMark 自己按 LI/P 粒度判「跨块」并**拒绝**（clampRangeToBlock）。
+    // 那个拒绝是**保真红线、不能拆**——一个 <span> 吞掉块级元素 = 非法嵌套 + 重复 id，写回磁盘
+    // 就是损坏用户文档。所以修在调用方，照 execText 已验证过的骨架：**按块切成子段、逐块各调一次**，
+    // 每一段都落在单个块内，红线一寸没退。实测对照：同一个气泡里的加粗早就能跨多行（execText 走的
+    // 就是这套，选 4 行产 4 个 <b>），只有颜色/高亮没接上——是能力缺口，不是设计取舍。
+    // ⚠ 粒度必须是 wrapInlineStyle 自己认的那一层（LI / P / TD…），**不是** execText 用的顶层块：
+    // 同一张列表里的多行在顶层块看来只是「一个 UL」，那样切不开、照样被拒（实测颜色零变化）。
+    const NESTED_BLOCK = new Set(['UL', 'OL', 'TABLE', 'DETAILS', 'FIGURE', 'BLOCKQUOTE', 'DIV', 'P',
+      'PRE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IMG']);
+    function selectedLeafBlocks(range) {
+      const out = [], seen = new Set();
+      const w = doc.createTreeWalker(body, 4 /* SHOW_TEXT */);
+      for (let n = w.nextNode(); n; n = w.nextNode()) {
+        if (!(n.nodeValue || '').trim()) continue; // 纯空白（排版缩进）不算一段内容
+        let hit = false;
+        try { hit = range.intersectsNode(n); } catch (e) { hit = false; }
+        if (!hit) continue;
+        const b = fmt.nearestBlock(n, body);
+        if (b && !seen.has(b)) { seen.add(b); out.push(b); }
+      }
+      return out;
+    }
+    // 对选区覆盖到的每个叶子块各跑一次 fn（调用前已把选区设成「该块内的那一段」）。
+    // 返回 true = 至少作用了一段。单块时原样交回既有实现（它自带「幽灵边界夹回起块」那套）。
+    function eachLeafBlockRange(fn) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+      const full = sel.getRangeAt(0);
+      // 作用域感知（同 execText）：跨 summary/正文/外层的选区一律不碰，防跨界 span。
+      if (scopeRootOf(full.startContainer) !== scopeRootOf(full.endContainer)) return false;
+      const blocks = selectedLeafBlocks(full);
+      if (blocks.length <= 1) return fn();
+      const sC = full.startContainer, sO = full.startOffset, eC = full.endContainer, eO = full.endOffset;
+      let any = false;
+      for (const b of blocks) {
+        if (!b.isConnected) continue;
+        const r = doc.createRange();
+        try {
+          if (b.contains(sC)) r.setStart(sC, sO); else r.setStart(b, 0);
+          if (b.contains(eC)) r.setEnd(eC, eO); else r.setEnd(b, b.childNodes.length);
+          // ⚠ 终点**一律**夹进「这一行自己的内容区」：带子项的行，其嵌套 <ul> 在 DOM 上就长在这行肚子里，
+          // 两条路径都会把它圈进子段——`b.contains(eC)` 那条（选区末尾正好落在子项里）与 childNodes.length
+          // 那条一样危险。圈进去的后果二选一：span 吞块（保真红线），或跨块被 clampRangeToBlock 拒掉、
+          // 这一整行静默漏改。Colin 2026-08-05 实抓：把带子项的行拖到选区末尾，它就是不上色。
+          const nested = [...b.children].find((c) => NESTED_BLOCK.has(c.tagName));
+          if (nested) {
+            const cap = doc.createRange(); cap.setStart(b, 0); cap.setEndBefore(nested);
+            if (r.compareBoundaryPoints(r.END_TO_END, cap) > 0) r.setEndBefore(nested);
+          }
+        } catch (e) { continue; }
+        if (r.collapsed) continue;
+        const s2 = doc.getSelection(); s2.removeAllRanges(); s2.addRange(r);
+        if (fn()) any = true;
+      }
+      return any;
+    }
     function applyColor(prop, value) {
-      // 颜色/高亮：用 CSSOM span（KTD2）。wrapInlineStyle 内部已含跨块拒绝。
-      if (fmt.wrapInlineStyle(doc, prop, value)) { markDirty(); persistEditing(); }
+      // 颜色/高亮：用 CSSOM span（KTD2）。跨块由 eachLeafBlockRange 切段，wrapInlineStyle 每次只见单块。
+      if (eachLeafBlockRange(() => fmt.wrapInlineStyle(doc, prop, value))) { markDirty(); persistEditing(); }
     }
     function addLink() {
       // U3 气泡「链接」：有文件身份 + 有选区 → 文档选择菜单（wrap 模式：选中文字整体变链接、保留用户文字）；
@@ -2254,15 +2414,19 @@
       markDirty(); persistEditing();
     }
     // U6（§0 决策1）：高亮用 <mark>（行内、语义对、无 CSS 也黄底）；多色靠 mark 行内 style（校验器允许行内 style）。
-    function wrapMark(bg) {
+    // 单段高亮（作用于当前选区，要求它落在一个块内）。多块由 wrapMark 切段后逐段调用。
+    function wrapMarkOnce(bg) {
       const sel = doc.getSelection();
-      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
       const range = sel.getRangeAt(0);
-      if (!fmt.clampRangeToBlock(doc, range, body)) return; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块（否则高亮没反应）
+      if (!fmt.clampRangeToBlock(doc, range, body)) return false; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块（否则高亮没反应）
       const mk = doc.createElement('mark');
       if (bg) mk.style.background = bg;
       try { range.surroundContents(mk); } catch (e) { mk.appendChild(range.extractContents()); range.insertNode(mk); }
-      markDirty(); persistEditing();
+      return true;
+    }
+    function wrapMark(bg) {
+      if (eachLeafBlockRange(() => wrapMarkOnce(bg))) { markDirty(); persistEditing(); }
     }
     function wrapCode() {
       const sel = doc.getSelection();
@@ -2356,10 +2520,17 @@
             e.preventDefault(); e.stopPropagation();
             const item = SLASH_ITEMS.find((x) => x.key === key);
             const target = editingEl || selectedEl;
-            if (target && item) {
+            // 选区跨了几个顶层块就**无条件**走逐块转——不看 editingEl。原来只认 editingEl/selectedEl：
+            // 两者皆空（拖选后没有任何块处于编辑态）时点「转为」毫无反应，几段正文永远只能是正文；
+            // 有值时又只转那一块、其余静默不动。加粗（execText）从来就是照选区跨度逐块作用的，
+            // 「转为」跟它同一个规矩（Colin 2026-08-05 实抓：三行待办转成正文后再也转不回去）。
+            const many = selectedTopBlocks();
+            if ((target || (many && many.length > 1)) && item) {
               // Step 2：列表 + 选区只覆盖部分行 → 只抽那几行（turnIntoLines）；整列表选中或非列表 → 整块 turnInto。
               let nx;
-              if (target.tagName === 'UL' || target.tagName === 'OL') {
+              if (many && many.length > 1) { nx = turnIntoMany(many, item); }
+              else if (!target) { nx = null; }
+              else if (target.tagName === 'UL' || target.tagName === 'OL') {
                 const lines = selectedListLines(target);
                 const allCount = [...target.children].filter((c) => c.tagName === 'LI').length;
                 nx = (lines && lines.length && lines.length < allCount) ? turnIntoLines(target, lines, item) : turnInto(target, item);
@@ -4313,17 +4484,37 @@
               e.preventDefault(); e.stopPropagation(); return;
             }
           }
-          const el = editingEl; exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return;
+          // 列表多一档（Wendi 2026-08-05 反馈；与 ⌘A 已有的三档对称）：① 当前行 ② 整个列表 ③ 取消。
+          // 病灶：列表的 editingEl 是整个 <ul> —— 那是**存储单元**。而这一行的手柄、「+」、菜单作用域、
+          // 行首退格、拖拽早就都是**行级**的了，唯独 Esc 把底层容器暴露出来：回车换行后按 Esc，
+          // 深色框把两行圈成一个（实测 UL 框高 61 = 两行 28+28，而单行框只有 28）。
+          let el = editingEl;
+          if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
+            const sel0 = doc.getSelection();
+            const an0 = sel0 && sel0.anchorNode ? (sel0.anchorNode.nodeType === 1 ? sel0.anchorNode : sel0.anchorNode.parentElement) : null;
+            const li0 = an0 && an0.closest ? an0.closest('li') : null;
+            if (li0 && editingEl.contains(li0)) el = li0; // ① 当前行
+          }
+          exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return;
         }
-        if (selectedEl) { deselect(); e.preventDefault(); e.stopPropagation(); return; }
+        if (selectedEl) {
+          // ② 行 → 整个列表（「Esc 灰选列表后拖 = 整列表」这条既有契约靠这一档保住，只是往后挪了一次按键）
+          const up = selectedEl.tagName === 'LI' ? blockOf(selectedEl) : null;
+          if (up && up !== selectedEl) { selectBlock(up); positionGrip(up); e.preventDefault(); e.stopPropagation(); return; }
+          deselect(); e.preventDefault(); e.stopPropagation(); return; // ③ 取消
+        }
       }
       // 段选中态 Delete/Backspace → 只删那一段（C2/C9 的键盘闭环；removeRow 自带掏空收敛）
       if ((e.key === 'Delete' || e.key === 'Backspace') && !selectedEl && !editingEl) {
         const rs = rowSelEl();
         if (rs) { e.preventDefault(); clearSelectedAttr(); removeRow(rs); return; }
       }
-      // 灰选中态 Delete/Backspace → 删整块
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) { e.preventDefault(); removeBlock(selectedEl); }
+      // 灰选中态 Delete/Backspace → 删整块。⚠ 灰选是**行**时必须走 removeRow：removeBlock 只认顶层块，
+      // 文档只剩这一个列表时它会把 <li> 原地 retag 成 <p>，产出 <ul><p></p></ul> —— 非合规、整篇降级。
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEl && !editingEl) {
+        e.preventDefault();
+        if (selectedEl.tagName === 'LI') removeRow(selectedEl); else removeBlock(selectedEl);
+      }
     }
 
     // toggle 空态标记（P3-7）：判据 = 展开体内只有一个叶子块且无可见内容。CSS 的 :empty 表达不了
