@@ -5066,7 +5066,10 @@
       // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
       if ((!sel || sel.isCollapsed) && selectedEl) {
         cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
-        cd.setData('text/plain', selectedEl.textContent || '');
+        // ADV-TSV-3：整表灰选的纯文本给 TSV——裸 textContent 是排版空白噪声，贴回矩形会铺出碎片列
+        if (selectedEl.tagName === 'TABLE') {
+          cd.setData('text/plain', tableRowsOf(selectedEl).map((tr) => rowCellsOf(tr).map((c) => (c.textContent || '').trim()).join('\t')).join('\n'));
+        } else cd.setData('text/plain', selectedEl.textContent || '');
         e.preventDefault(); return;
       }
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return; // 无选区 → 交原生
@@ -5224,11 +5227,17 @@
       // tab 分格、换行分行、逐格**整格覆盖**；越界裁剪不扩结构（加行列走边缘条/轴菜单）；铺完
       // 矩形选中态移到实际覆盖区、前后双 checkpoint 一步 undo。单段无 tab 文本=只进 anchor 格。
       if (rectSel && rectSel.table.isConnected && !cellEl && !editingEl) {
-        e.preventDefault();
         const cdR = e.clipboardData || (typeof window !== 'undefined' && window.clipboardData);
-        const tR = cdR && cdR.getData ? cdR.getData('text/plain') : '';
-        if (!String(tR || '').trim()) return;
-        const grid = String(tR).replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map((l) => l.split('\t'));
+        const tR = String((cdR && cdR.getData ? cdR.getData('text/plain') : '') || '');
+        // ADV-TSV-1：先验货再吞事件——纯图/html-only 剪贴板（text/plain 空）放行 generic 管线，
+        // 否则「矩形态贴图片」从 main 的「插入图片块」退化成静默无事发生（行为回退）。
+        // ADV-TSV-2：「空但有结构」（自家全空格子 ⌘C 回环='\t\n\t'）≠「没内容」——含 \t/\n 的
+        // 载荷照常进铺格循环（空串=清格 <br>，正好是 Notion 的空格覆盖语义）；只剥**一个**结尾
+        // 换行（TSV 惯例），尾部空行是真数据不是垃圾。
+        const structured = /[\t\n]/.test(tR.replace(/\r\n?/g, '\n').replace(/\n$/, ''));
+        if (tR.trim() || structured) { // 空载荷不 return——**落下去**走同函数下方的 generic 管线（图片/富剪贴板），return 会把它们整个跳过（T-G1 实锤）
+        e.preventDefault();
+        const grid = tR.replace(/\r\n?/g, '\n').replace(/\n$/, '').split('\n').map((l) => l.split('\t'));
         const tblR = rectSel.table;
         const trsR = tableRowsOf(tblR);
         if (undoMgr) undoMgr.checkpoint();
@@ -5250,6 +5259,7 @@
         if (undoMgr) undoMgr.checkpoint();
         markDirty();
         return;
+        }
       }
       // cell 上下文输入闸（U4/KTD5）：一切粘贴形态压成单行纯文本落格（cell phrasing-only 红线；多行 join(' ')
       // = SUMMARY 守卫同款；内部富 clip 也走 text/plain = 压 textContent）；纯图剪贴板拒收 + 可感知提示
