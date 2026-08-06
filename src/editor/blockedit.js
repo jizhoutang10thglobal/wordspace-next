@@ -555,7 +555,7 @@
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
-    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;margin-left:-1.7em;padding-left:calc(1.7em + 4px)}.ws-todo>li::before{content:"";position:absolute;left:calc(1.7em - 22px);top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
     // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 细线 chevron + 正文缩进。
     // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
@@ -3116,9 +3116,12 @@
 
     // ---- 监听器（父层挂到 iframe doc）----
     // 待办勾选框 gutter 命中判定（mousedown 与 click 两处共用，避免判据漂移，U5）：命中返回该行 li，否则 null。
-    // U24/check-4：几何收敛。勾选框 ::before 是 left:-22px width:16px（相对 li border-box 左缘）→ 框体 [li.left-22, li.left-6]。
-    // ① X 带 = 框体 ±4px 缓冲 = [li.left-26, li.left-2]；右缘距文字左缘（li.left+4）留 6px 非勾选区，消「文字左缘零缓冲误触」。
-    // ② Y 吸附最近直接子 li（±YTOL 容差），消项间 margin 死区；缝隙等距时吸附上方项（文档序更前）。
+    // U24/check-4：几何收敛。① X 带 = 勾选框框体 ±4px 缓冲，右缘距文字左缘留 6px 非勾选区，
+    // 消「文字左缘零缓冲误触」。② Y 吸附最近直接子 li（±YTOL 容差），消项间 margin 死区；
+    // 缝隙等距时吸附上方项（文档序更前）。
+    // ⚠ U2（2026-08-06）：X 带改为**从真实渲染的 ::before 推导**，不再写死 li.left 减常数。
+    // 原来那组常数（[li.left-26, li.left-2]）是「勾选框画在 li 盒外」时代的产物，与 CSS 隐式耦合——
+    // 把勾选框收进 li 盒时它当场失配、勾选整个失灵。从渲染结果反推就不会再有第二次。
     function todoGutterHit(e) {
       const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
       if (!todoUl) return null;
@@ -3135,7 +3138,10 @@
       if (!li) return null;
       const r = li.getBoundingClientRect();
       if (e.clientY < r.top - YTOL || e.clientY > r.bottom + YTOL) return null; // 离最近 li 也太远 → 不算勾选
-      return (e.clientX >= r.left - 26 && e.clientX <= r.left - 2) ? li : null;
+      const cb = doc.defaultView.getComputedStyle(li, '::before'); // ::before 的包含块 = li 的 padding 盒（li 无 border）
+      const cbLeft = r.left + (parseFloat(cb.left) || 0);
+      const cbRight = cbLeft + (parseFloat(cb.width) || 16);
+      return (e.clientX >= cbLeft - 4 && e.clientX <= cbRight + 4) ? li : null;
     }
 
     // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。
@@ -5533,8 +5539,13 @@
   ul.ws-todo { list-style:none; }
   ul.ws-todo ul:not(.ws-todo) { list-style:disc; }
   ul.ws-todo ol:not(.ws-todo) { list-style:decimal; }
-  .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
-  .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer; }
+  /* 勾选框原来画在 li 盒子**外面**（left:-22px），于是行选中框（li 盒）把它漏在框外，而整表选中框
+     （ul 盒）又把它包进去——同一个勾选框两档选中一会儿在框内一会儿在框外。修法：把 li 的盒子向左
+     扩到与 ul 盒左缘齐平（负 margin），再用等量 padding 把内容推回原位——**文字与勾选框的绝对位置
+     一字不动**，只是 li 的边框盒变宽、把勾选框收了进来。用 em 跟着 :where(ul,ol) 的 1.7em 走，
+     字号变了也不脱节；嵌套缩进由每层 ul 自己的 padding-left 给，不受影响。 */
+  .ws-todo > li { list-style:none;position:relative;margin-left:-1.7em;padding-left:calc(1.7em + 4px); }
+  .ws-todo > li::before { content:'';position:absolute;left:calc(1.7em - 22px);top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer; }
   /* U14/check-2：勾选视觉传播反制。text-decoration:line-through 按 CSS 装饰传播规则会绘穿全部 in-flow 后代、
      无法从后代 text-decoration:none 取消 → 含子列表的勾选项**不给自身加 line-through**（只变灰），避免划穿未勾子项；
      叶子勾选项（无子列表）照常灰+划线。嵌套列表 color 显式重置回正文色（color 是继承属性、会下渗）。 */

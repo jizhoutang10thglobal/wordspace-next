@@ -27,9 +27,15 @@ async function openDoc(body) {
 }
 const serialize = () => page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
 const conformOf = (html) => page.evaluate((h) => { const d = new DOMParser().parseFromString(h, 'text/html'); return WS2SchemaRegistry.classify(d).conform; }, html);
+// 点勾选框。⚠ U2（2026-08-06）后勾选框收进了 li 盒内（原来画在盒外的 gutter 里），所以坐标
+// **从真实渲染的 ::before 推导**，不再写死 li.left 减常数——写死那版就是被 U2 撞红的。
 async function clickGutter(liSel) {
   const box = await frame.locator(liSel).boundingBox();
-  await page.mouse.click(box.x - 10, box.y + box.height / 2);
+  const dx = await frame.locator(liSel).evaluate((el) => {
+    const cs = el.ownerDocument.defaultView.getComputedStyle(el, '::before');
+    return (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
+  });
+  await page.mouse.click(box.x + dx, box.y + box.height / 2);
 }
 
 test.afterEach(async () => {

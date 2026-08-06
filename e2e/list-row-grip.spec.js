@@ -134,26 +134,26 @@ test('U2 后整块拖拽仍可用：Esc 灰选列表后拖拽 = 整列表移动'
 test('嵌套行勾选框 gutter 悬停：手柄不跳回父项（Colin 试玩实抓回归）', async () => {
   await launch();
   await openDoc('<ul class="ws-todo"><li id="r1">父项带嵌套<ul class="ws-todo"><li id="n1">嵌套子项甲</li><li id="n2">嵌套子项乙</li></ul></li><li id="r2">第二项</li></ul>');
-  // 先悬停嵌套行文字（手柄到嵌套行），再真实鼠标向左移进勾选框 gutter（嵌套 ul padding 区，
-  // 目标元素是 <ul> 容器——closest('li') 的老实现会在这里跳回父项）
+  // 先悬停嵌套行文字（手柄到嵌套行），再真实鼠标向左移到该行的勾选框上。
+  // ⚠ U2（2026-08-06）改了几何：勾选框原先画在 li 盒**外**（嵌套 ul 的 padding 区），
+  // elementFromPoint 在那一带命中的是 <ul> 容器，closest('li') 的老实现于是跳回父项——这条门当初
+  // 就是为那个坏区立的。现在勾选框收进了 li 盒内，**那个坏区在结构上不复存在**（同一像素点直接
+  // 命中本行 li）。本条改为在勾选框的新位置上守同一个不变式：悬停它，手柄必须留在本行。
   await frame.locator('#n1').hover();
   await page.waitForTimeout(150);
   const frameBox = await page.locator('#doc-frame').boundingBox();
-  // 坏区=「elementFromPoint 命中嵌套 <ul> 容器本身」的像素带（勾选框归 li、命中不了它）。
-  // 在嵌套行中线上从 ul 左缘往右扫，找到第一个确凿命中 ul 的点——不猜像素，扫不到就是 fixture 变了直接 fail。
   const pt = await page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
     const n1 = d.getElementById('n1');
-    const nul = n1.parentElement;
     const r = n1.getBoundingClientRect();
-    const ur = nul.getBoundingClientRect();
+    const cs = d.defaultView.getComputedStyle(n1, '::before');
+    const cx = r.left + (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
     const cy = Math.round(r.top + r.height / 2);
-    for (let x = Math.round(ur.left) + 1; x < Math.round(r.left); x += 2) {
-      if (d.elementFromPoint(x, cy) === nul) return { x, cy };
-    }
-    return null;
+    // 勾选框中心必须确凿落在本行 li 上（不是父 li、不是 ul）——立不住就是 fixture 变了，直接 fail
+    const hit = d.elementFromPoint(Math.round(cx), cy);
+    return { x: Math.round(cx), cy, onOwnRow: hit === n1 || n1.contains(hit) };
   });
-  expect(pt, '必须存在命中嵌套 ul 容器的 gutter 像素带（fixture 前提）').not.toBeNull();
+  expect(pt.onOwnRow, '勾选框中心必须命中本行 li（U2 后的结构前提）').toBe(true);
   await page.mouse.move(frameBox.x + pt.x + 30, frameBox.y + pt.cy);
   await page.mouse.move(frameBox.x + pt.x, frameBox.y + pt.cy);
   await page.waitForTimeout(150);

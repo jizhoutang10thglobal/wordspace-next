@@ -34,8 +34,16 @@ const serialize = () => page.evaluate(() => WS2Serialize.serializeDocument(docum
 const diskBody = async () => (await serialize()).split('<body')[1] || '';
 const conform = async () => page.evaluate((x) => { const d = new DOMParser().parseFromString(x, 'text/html'); return WS2SchemaRegistry.classify(d).conform; }, await serialize());
 const BS = async () => { await page.keyboard.press('Backspace'); await page.waitForTimeout(300); };
+// 点进该行的**文字区**再 Home。⚠ U2（2026-08-06）把 li 盒向左扩到与 ul 齐平（勾选框收进盒内），
+// 于是「相对 li 左缘 12px」从原来的文字上挪到了勾选框命中带里——点下去变成勾选、不放光标。
+// 用户实际点的区域一个像素没变（勾选带的**绝对**位置前后相同），变的只是 li 相对坐标系，
+// 所以这里改成按 li 自己的 padding-left 推导落点，不再写死。
+async function clickTextArea(sel) {
+  const pad = await frame.locator(sel).evaluate((el) => parseFloat(el.ownerDocument.defaultView.getComputedStyle(el).paddingLeft) || 0);
+  await frame.locator(sel).click({ position: { x: pad + 6, y: 8 } });
+}
 async function caretAtRowStart(sel) {
-  await frame.locator(sel).click({ position: { x: 12, y: 8 } });
+  await clickTextArea(sel);
   await page.keyboard.press('Home');
   await page.waitForTimeout(140);
 }
@@ -127,7 +135,7 @@ test('G4 嵌套【首】行行首退格：并入宿主行文字，后续兄弟�
 test('G5 归一化不乱动正常宿主行（有文字的父行不该被塞占位）', async () => {
   await launch();
   await openDoc('<ul id="L"><li id="host">我有文字<ul><li>子一</li></ul></li></ul>');
-  await frame.locator('#host').click({ position: { x: 12, y: 8 } });
+  await clickTextArea('#host');
   await page.keyboard.type('X');
   await page.waitForTimeout(300);
   const own = await page.evaluate(() => {
@@ -152,7 +160,7 @@ test('ADV-3a 空壳宿主行获得文字后，占位 <br> 必须撤掉（否则�
     return d.getElementById('host').firstChild.nodeName;
   });
   expect(hadBr, '前置：attach 时确实补了占位').toBe('BR');
-  await frame.locator('#host').click({ position: { x: 12, y: 8 } });
+  await clickTextArea('#host');
   await page.keyboard.type('父行名字');
   await page.waitForTimeout(400);
   const own = await page.evaluate(() => {

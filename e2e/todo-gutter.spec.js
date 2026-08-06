@@ -27,10 +27,20 @@ async function openDoc(body) {
 }
 const serialize = () => page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
 const conformOf = (html) => page.evaluate((h) => { const d = new DOMParser().parseFromString(h, 'text/html'); return WS2SchemaRegistry.classify(d).conform; }, html);
-// 点某 li 的勾选框 gutter（li 内容左缘左侧 ~10px，落在 ul padding 区，clientX < li.left+4 命中）。
+// 勾选框与文字的横向坐标一律**从真实渲染推导**，返回相对 li 左缘的偏移。
+// ⚠ U2（2026-08-06）把勾选框从 li 盒**外**（ul 的 padding 区）挪进了盒内，原来写死的
+// 「li.left 减常数」坐标当场全部失配——这个 helper 就是为了不再有第二次。
+const dxOf = (liSel) => frame.locator(liSel).evaluate((el) => {
+  const win = el.ownerDocument.defaultView;
+  const cs = win.getComputedStyle(el, '::before');
+  const cbL = parseFloat(cs.left) || 0;
+  const cbW = parseFloat(cs.width) || 16;
+  return { cbCenter: cbL + cbW / 2, textLeft: parseFloat(win.getComputedStyle(el).paddingLeft) || 0 };
+});
 async function clickGutter(liSel) {
   const box = await frame.locator(liSel).boundingBox();
-  await page.mouse.click(box.x - 10, box.y + box.height / 2);
+  const d = await dxOf(liSel);
+  await page.mouse.click(box.x + d.cbCenter, box.y + box.height / 2);
 }
 
 test.afterEach(async () => {
@@ -101,15 +111,19 @@ test('U24：勾选框正中翻转 / 文字左缘-2px不翻转 / 项间缝隙吸�
   await openDoc('<ul id="lst" class="ws-todo"><li id="li1">甲甲甲</li><li id="li2">乙乙乙</li></ul>');
   const b1 = await frame.locator('#li1').boundingBox();
   const b2 = await frame.locator('#li2').boundingBox();
-  // ① 勾选框正中（li.left-14）→ 翻转
-  await page.mouse.click(b1.x - 14, b1.y + b1.height / 2);
+  const d1 = await dxOf('#li1');
+  const d2 = await dxOf('#li2');
+  // ① 勾选框正中 → 翻转
+  await page.mouse.click(b1.x + d1.cbCenter, b1.y + b1.height / 2);
   await expect.poll(() => frame.locator('#li1').getAttribute('data-checked'), { message: '点框体正中翻转' }).toBe('true');
-  // ② 文字左缘 -2px（li.left+2，进 padding 但不在勾选带）→ 不翻转（旧带 clientX<li.left+4 会误触）
-  await page.mouse.click(b2.x + 2, b2.y + b2.height / 2);
+  // ② 文字左缘 -2px（进 li 的 padding 但在勾选带右侧之外）→ 不翻转。
+  //    这条守的是「勾选带右缘与文字左缘之间留非勾选区」，U2 换几何后仍成立：带右缘 = 框体+4，
+  //    与文字左缘之间仍有 6px 空档（U2 前是 li.left+2，U2 后是 li.left+29.2，语义一字未变）。
+  await page.mouse.click(b2.x + d2.textLeft - 2, b2.y + b2.height / 2);
   await page.waitForTimeout(80);
   expect(await frame.locator('#li2').getAttribute('data-checked'), '点文字左缘不翻转、进编辑').toBe(null);
   // ③ 两项缝隙靠近 li2（li2 上缘之上 1px）→ 吸附翻转 li2（旧 Y 精确containment 是死区、不翻）
-  await page.mouse.click(b2.x - 12, b2.y - 1);
+  await page.mouse.click(b2.x + d2.cbCenter, b2.y - 1);
   await expect.poll(() => frame.locator('#li2').getAttribute('data-checked'), { message: '缝隙点吸附最近项 li2' }).toBe('true');
   // ④ 勾选框 ::before 的 cursor:pointer
   const cur = await frame.locator('#li1').evaluate((li) => getComputedStyle(li, '::before').cursor);
