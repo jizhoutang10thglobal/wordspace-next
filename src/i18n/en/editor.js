@@ -105,6 +105,7 @@ module.exports = {
   turnToCallout: 'Turn into callout',
   addCaption: 'Add caption',
   caption: 'Caption',
+  zoomIn: 'Zoom in',
   insertBelow: 'Insert below',
   noMatch: 'No matches',
 
