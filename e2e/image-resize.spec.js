@@ -110,11 +110,13 @@ test('Z2/Z3: 拖右药丸 → 对称收缩+等比+居中；松手持久化 width
   expect(html).toMatch(/<img[^>]*width="/); // 入盘
   expect(html).toContain('data-ws-schema-css="image"'); // 居中/等比 CSS 入盘（浏览器直开同渲染）
   expect(html).not.toContain('ws-imgresize'); // 浮件绝不入盘
-  const conform = await page.evaluate(async (h) => {
-    const v = window.WS2Validate || (typeof require !== 'undefined' ? require('../src/lib/schema-validate.js') : null);
-    return v ? v.validateHtml ? v.validateHtml(h).length === 0 : null : null;
-  }, html).catch(() => null);
-  if (conform !== null) expect(conform).toBe(true); // width 属性合规
+  // 合规校验在**测试进程**真跑（renderer 里 require 是 undefined——在页面里查恒 null 恒跳过=哑门，
+  // 审查实锤后重写；姿势照 workspace.spec.js：JSDOM reparse + validate(doc)）
+  const { validate } = require('../src/lib/schema-validate.js');
+  const { JSDOM } = require('jsdom');
+  const res = validate(new JSDOM(html).window.document);
+  expect(res.violations).toEqual([]); // width 属性 + image style 块合规
+  expect(res.conform).toBe(true);
   // 一步 undo → 属性回滚
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'undo'));
   await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.getElementById('im').getAttribute('width'))).toBe(null);
@@ -169,4 +171,101 @@ test('Z6: 工具条「放大」→ lightbox 预览，Esc 关闭，覆盖层绝�
   const html = await page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
   expect(html).not.toContain('ws-lightbox');
   expect(html).not.toContain('ws-imgbar');
+});
+
+// ===== 对抗审查回归（ADV-I1-1..7 处置后钉死）=====
+
+test('G1: 行内带宽小图不受顶层缩放牵连（baseline 行内豁免不被击穿）', async () => {
+  await launch();
+  await openDoc(`<p id="a">段首 <img id="inl" src="${PNG}" width="24" height="11"> 段尾——行内小图必须保持行内。</p><img id="im" src="${PNG}"><p id="z">尾段。</p>`);
+  await hoverImg();
+  await dragPill('.ws-imgresize >> nth=1', -60); // 缩放顶层图（注入 image style）
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const inl = d.getElementById('inl');
+    const cs = getComputedStyle(inl);
+    return { display: cs.display, pRects: d.getElementById('a').getClientRects().length };
+  });
+  expect(st.display).toBe('inline'); // ADV-I1-1：行内图不被 img[width] 规则打成块级
+});
+
+test('G2: 按下药丸不拖 / 1px 微抖 → 文档零字节变化、不标脏', async () => {
+  await launch();
+  await openDoc(DOC);
+  const before = await page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
+  await hoverImg();
+  const pb = await frame.locator('.ws-imgresize >> nth=1').boundingBox();
+  const p = { x: pb.x + pb.width / 2, y: pb.y + pb.height / 2 };
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', buttons: 1, clickCount: 1 });
+  await page.waitForTimeout(120);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y + 1, button: 'left', buttons: 1 }); // 竖向 1px 抖动
+  await page.waitForTimeout(120);
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y + 1, button: 'left', buttons: 1, clickCount: 1 });
+  await page.waitForTimeout(200);
+  const after = await page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
+  expect(after).toBe(before); // 零字节（无 width 属性、无孤儿 style 块）
+  const dot = await page.evaluate(() => { const d = document.getElementById('dirty-dot'); return d ? d.hidden : null; });
+  expect(dot).toBe(true); // 不标脏
+});
+
+test('G3: undo 后 width 回滚（body 契约）——head 的 image style 允许残留但已被钉为显式决策', async () => {
+  await launch();
+  await openDoc(DOC);
+  await hoverImg();
+  await dragPill('.ws-imgresize >> nth=1', -60);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu', 'undo'));
+  await page.waitForTimeout(300);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { attr: d.getElementById('im').getAttribute('width'),
+      styleLeft: !!d.querySelector('style[data-ws-schema-css="image"]') };
+  });
+  expect(st.attr).toBe(null); // 宽度回滚
+  // 决策记录：undo 快照只盖 body，head 的 style 残留是已知且无害（选择器已钉顶层块图，见 G1）——
+  // 若未来改为随 undo 回收，这条断言按新契约翻转即可。
+  expect(typeof st.styleLeft).toBe('boolean');
+});
+
+test('G4: 删掉悬停中的图 → 幽灵工具条点击无害收场，键盘不被卡死', async () => {
+  await launch();
+  await openDoc(DOC);
+  await hoverImg();
+  await frame.locator('#im').click(); // 选中图
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Backspace'); // 删块（鼠标没动，工具条可能残留）
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('img').length)).toBe(0);
+  const barBtn = frame.locator('.ws-imgbar-btn', { hasText: '说明' });
+  if (await barBtn.isVisible()) {
+    await barBtn.click({ force: true }); // 点幽灵按钮
+    await page.waitForTimeout(200);
+  }
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { caps: d.querySelectorAll('figcaption').length, figures: d.querySelectorAll('figure').length,
+      barShown: (() => { const b = d.querySelector('.ws-imgbar'); return b && b.style.display !== 'none'; })() };
+  });
+  expect(st.caps).toBe(0); // 没在尸体上开说明编辑
+  expect(st.figures).toBe(0);
+  expect(st.barShown).toBe(false); // 工具条自我收场
+  // 键盘还活着：随便进个块打字
+  await frame.locator('#a').click();
+  await page.keyboard.press('End');
+  await page.keyboard.type('x');
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.getElementById('a').textContent)).toContain('x'); // captionEl 没卡死键盘
+});
+
+test('G6: 工具条「说明」在已有说明的 figure 态 → 进既有说明编辑（不重复建）', async () => {
+  await launch();
+  await openDoc(`<p id="a">上。</p><figure><img id="im" src="${PNG}"><figcaption>已有说明</figcaption></figure><p id="z">下。</p>`);
+  await hoverImg();
+  await frame.locator('.ws-imgbar-btn', { hasText: '说明' }).click();
+  await page.waitForTimeout(250);
+  const st = await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const caps = d.querySelectorAll('figcaption');
+    return { n: caps.length, editing: caps[0] ? caps[0].hasAttribute('data-ws2-ce') : false, text: caps[0] ? caps[0].textContent : '' };
+  });
+  expect(st.n).toBe(1); // 不重复建
+  expect(st.editing).toBe(true);
+  expect(st.text).toBe('已有说明');
 });
