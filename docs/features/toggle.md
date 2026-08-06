@@ -18,6 +18,19 @@ Notion 式可折叠块。磁盘 = 原生 `<details><summary>…</summary>…正�
 - **查找**：app 内查找命中折叠 toggle 内文字时自动展开其祖先 `<details>` 再滚动/高亮。
 - **分页/导出**：分页引擎递归进 toggle 体（`collectCutAtoms` 深查已覆盖，加 `details` 选择器让嵌套 toggle 成整块切点）；PDF/打印前把所有 `<details>` 强制 `open`（导出克隆上，不碰实时 DOM），折叠内容绝不丢。
 
+**与 Notion 的粒度对拍（2026-08-04，分支 feat/ux-granularity）。** 18 条交互事实实测：**粒度层全部一致**——标题行与每个体内块各有自己的手柄与「+」（锚点随缩进）、折叠态拖拽单位是整个 `<details>`（含隐藏子块）、体内块可独立拖出、标题行菜单作用域=整块、体内块菜单作用域=该块、标题行「+」插在整个 toggle **之后**（不是体内）。以下三条本轮改齐：
+
+- **标题行末尾 Enter = 在体内新建空块并落光标**（对拍 T14）。此前是跳到**已存在**的首个体内块 → 用户按 Enter 想写新东西、光标却神秘落到已有内容上。首块本就是空叶子块时不再多插一个（防连按堆空块）。⚠ **仅限展开态**——折叠态见下条（2026-08-05 更正：这里原写「折叠态下按 Enter 自动展开」，已废除）。
+- **折叠态标题末 Enter = 新建平级空 toggle**（对拍 T18，2026-08-05 处置）。原 toggle **保持收着不动**、新 toggle 也不带 `open`，光标落新标题。旧行为是「自动展开 + 把新空块插进体内首位」——用户按 Enter 是想写**下一个**条目，结果本来收着的内容全弹出来、新行还插在了里面，两件他都没要求的事。（当初自动展开有其道理：不展开的话新块藏在收起的内容里、看不见光标；正解是根本别往里插。）**边界**：只在光标**真在标题末**时走这条——标题中间按 Enter 属于「分裂 summary」语义，而 summary 恒 phrasing-only、绝不分裂（键盘边界契约），维持既有行为不动。门：`e2e/toggle.spec.js` T18-1（正向）/ T18-2（展开态不受影响）/ T18-3（标题中间不新建）。**这条此前只记在 `/align-notion` skill 的复跑日志里、没进本 spec 的账本，是欠账**——漂移与分歧一律当场进 spec，别只写在报告里。
+- **空 toggle 的可感知性**（对拍 T17）。体内只有一个空叶子块时：编辑器内显示占位提示（`editor.emptyTogglePlaceholder`，zh/en 双词条），且折叠三角**淡一档**与非空区分。判据用 `:has(> :not(summary):only-of-type:empty)`。⚠ **这两条都是编辑器 chrome、绝不入盘**——浏览器直开一个空折叠块不该出现「点这里放东西」的提示。
+- **折叠热区 24px**（对拍 T4）。从 summary 左缘起 20px 扩到 24px，对齐 Notion 的 24×24 语义按钮尺寸；热区外点击仍是进标题编辑。
+
+门：`e2e/toggle-align.spec.js`（6 条）。
+
+**标题行首 Backspace = 降级成文本块（对拍 T15 / E2，Colin 2026-08-04 拍板「按 Notion 做」，已落地）。** 旧行为是零反馈死胡同——标题非空或体非空时**什么都不发生**，用户找不到退出这个折叠块的办法。Notion 实证：① 剥掉 toggle 格式变文本块（体内块仍挂在它下面）；② 再退一次才并入上一块、体内块升到顶层。我们的 `<p>` 不能有子块（文法所限）→ **① 一步到位**：标题成段落、体内块按序提升为其后的兄弟，正是现成的 `turnInto(details→text)`（U9/R2）语义，与菜单「转为正文」路径同款；**第二次退格**落进通用合并分支，自动得到 Notion ② 的终态。折叠态下按也降级（内容不会因为收着就丢）。**空 toggle 的逃生路径不变**（解包成**一个**空段落，且空产物必带 `<br>` 才装得住光标）——⚠ 这条要走独立分支：走通用 `turnInto` 会得到「summary 产物 + 体内那个空块」**两个**空段落，凭空多一空行（发版把关抓到，门 E2-3 已补块数断言）。门：`e2e/list-backspace-peel.spec.js` E2-1/E2-2/E2-3。
+
+**有意分歧（不改）**：体内块缩进步长 22px（Notion 32px）；菜单项集差异（我们无 Copy link / Move to / Comment / Ask AI，Notion 无「在下方插入」）；toggle 块暂不给色板（`isEditableEl(details)===false` gate，要放开需先验 `ws-color-*` 挂 `<details>` 的合规性）；「+」点下去我们直接生成空块进编辑、Notion 会立刻弹块类型选择器——**Colin 2026-08-04 拍板按 Notion 做，排在 E5**（全局 gutter 行为、不是 toggle 专属，故单列一个单元、门要覆盖所有块类型）。
+
 ## 文件映射
 
 - 真 app：`src/editor/blockedit.js`（classify/SLASH_ITEMS/newBlock/ensureToggleStyle/TOGGLE_CSS/refreshSemanticStyles/applySlash/scopeRootOf-blocksInScope-summaryOf/blockOf/topBlocks/onKeyDown 边界/deleteSelection/execText/dropFileLink/turnInto/onDrop/onPaste/attach-toggle-event）、`src/editor/serialize.js`（cleanedBodyHtml 剥 open）、`src/editor/undo.js`（undo/redo 重贴 fold）、`src/editor/format.js`（BLOCK_TAGS 加 SUMMARY）、`src/editor/pagination.js`（collectCutAtoms）、`src/renderer/shell.js`（buildWordspacePrintHtml force-expand）、`src/editor/find.js` + `src/lib/find-ranges.js`（折叠自动展开）、`src/i18n/{zh,en}/editor.js`（blockToggle）。
@@ -32,6 +45,10 @@ Notion 式可折叠块。磁盘 = 原生 `<details><summary>…</summary>…正�
 ## 对齐锚点
 - ui-demo 侧：commit `<待 port>`（2026-07-20）
 - app 侧：commit `<建设中>`（2026-07-20）
+- **粒度对齐（本 track）**：app 侧 `feat/ux-granularity`（2026-08-04，T14/T17/T4）；ui-demo 侧未跟进（见下）
+
+**⚠ ui-demo 侧漂移（本轮产生，2026-08-04）**：与 Notion 的粒度对齐全部只做在真 app（`src/editor/blockedit.js`），ui-demo 未跟进。按仓库铁律当场进账本、不等审计。要不要回流 ui-demo 由 Colin 定——ui-demo 是「给人讨论 UX 的参考原型」，这批改动的真相源已经是真 app + 本 spec。
+
 
 ## 已知局限（v1，对抗审查记录在案，未修）
 

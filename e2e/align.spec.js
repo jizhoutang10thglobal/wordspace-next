@@ -27,7 +27,20 @@ async function launch(env) {
   await p.waitForLoadState('domcontentloaded');
   await p.setViewportSize({ width: 1280, height: 860 });
   await p.evaluate(() => { window.confirm = () => true; window.alert = () => {}; });
+  await pinLightTheme(p);
   return { a, p };
+}
+// 外观默认是 'system'。本文件里 T1/T2 断的是写死的浅色 computed style（白纸 puck、奶油色警告图标），
+// 所以在**深色主题的开发机**上它们恒红 —— 而且不是回归，是环境。这个假红有真实代价：每次本地
+// 跑完都得人工判一次「这两条是老红不是新问题」，这种判断迟早会出错、把真回归当噪音放过去。
+// 修法是把**环境**钉死，不是把断言改弱：走真实入口 setAppearance('light')（→ main applyAppearance
+// → 广播 effective → renderer 挂 data-theme），那几个真实颜色值继续被原样钉住。
+// CI runner 本就是浅色，所以这一步在 CI 上是 no-op，门的强度一点没变（appearance.spec.js 仍是
+// 唯一测暗色 token 的地方，本文件从来不测暗色）。
+async function pinLightTheme(p) {
+  await p.evaluate(() => window.ws2 && window.ws2.setAppearance && window.ws2.setAppearance('light'));
+  await p.waitForFunction(() => document.documentElement.getAttribute('data-theme') !== 'dark', null, { timeout: 4000 });
+  await p.waitForTimeout(120);
 }
 async function openWorkspace() {
   await page.click('#home-open-folder');
@@ -382,7 +395,22 @@ test('T2 标签栏：激活态白纸 puck（真 computed style）+ 未保存点�
   const tab = page.locator('#sb-tabs .sb-tab[data-rel="a.html"]');
   await expect(tab).toHaveClass(/is-active/);
   const st = await tab.evaluate((el) => { const cs = getComputedStyle(el); return { bg: cs.backgroundColor, shadow: cs.boxShadow, h: el.getBoundingClientRect().height }; });
-  expect(st.bg, '激活标签应是白纸 puck（surface），不是蓝底 selection').toBe('rgb(255, 255, 255)');
+  // ⚠ 别写死 rgb(255,255,255)：那是**浅色主题**的 surface 值，深色主机上这条恒红（本地跑全量时的
+  // 三条既有红之一），而且写死色值反而更弱——换个主题就测不到「等于 surface」这个真契约。
+  // 改成关系断言：等于 --c-surface 在当前主题下解析出来的值，且明确不等于 accent（原意的另一半）。
+  const tok = (name) => page.evaluate((n) => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = 'var(' + n + ')'; // CSSOM 赋值，不走 setAttribute('style')（CSP 会拦）
+    document.body.appendChild(probe);
+    const v = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return v;
+  }, name);
+  const surface = await tok('--c-surface');
+  const accent = await tok('--c-accent');
+  expect(surface, '前置：surface 必须解析得出且非透明，否则「相等」会是两个空值相等').not.toBe('rgba(0, 0, 0, 0)');
+  expect(st.bg, '激活标签应是白纸 puck（surface）').toBe(surface);
+  expect(st.bg, '激活标签不该是蓝底 selection').not.toBe(accent);
   expect(st.shadow, '保守口径（Wendi 2026-07-08）：卡片/控件零装饰阴影，激活标签靠底色差').toBe('none');
   expect(Math.round(st.h), '标签行高应为 32').toBe(32);
   await expect(tab.locator('.sb-tab-dot')).toBeHidden(); // 干净真文件无点

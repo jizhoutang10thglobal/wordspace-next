@@ -5,6 +5,80 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.12.2 — 2026-08-05
+
+Select several rows and the next thing you do now lands on every one of them.
+
+### Improved
+
+- **Lists**: with a single row selected, Delete removes that row
+
+### Fixed
+
+- **Colour / Highlight**: changing text colour or highlight across several rows or paragraphs now applies to all of them (previously nothing happened)
+- **Turn into**: turning several rows into text or a heading now gives one block per row instead of merging them into one
+- **Turn into**: a selection spanning several paragraphs can be converted in one go, and turning it into a list yields a single list (clicking used to do nothing)
+- **Lists**: Esc inside a list now selects the current row first; press it again for the whole list (it used to grab the whole list at once)
+
+![Several rows selected at once, all recoloured together — including the row that has sub-items](website/public/changelog/0122-multi-color.png)
+
+![Several paragraphs selected, converted in one go with Turn into](website/public/changelog/0122-multi-turn.png)
+
+## v0.12.1 — 2026-08-05
+
+A handful of "nothing happened" and "that's not what I was pointing at" moments in the editor.
+
+### Improved
+
+- **Toggles**: pressing Enter at the end of a collapsed toggle's title now creates a sibling toggle below it and leaves the original collapsed (it used to expand the toggle and insert the new line inside it)
+- **Images**: dragging an image in now shows the drop line next to existing images too
+- **Images**: an image can be dropped at the very top of a document, above the title — previously that position was unreachable
+
+### Fixed
+
+- **Lists**: with a whole list selected, delete and drag now act on the whole list — no more "the highlight covers everything but only one row moves", and no more splitting a list in two
+- **Callouts**: pressing Backspace on the first line of a callout that follows a list no longer does nothing at all
+- **Editing**: merging across paragraphs no longer inserts a space you never typed (most visible when opening HTML written by another tool or an AI)
+
+## v0.12.0 — 2026-08-04
+
+Row-level list and to-do interactions, matched to Notion.
+
+### Added
+
+- **Lists / To-do**: while dragging a row, move left or right to choose sibling vs. child — the drop line follows the indent
+- **Lists / To-do**: drag a to-do row into a plain list (or the other way round) and it keeps its own type
+- **Plus button**: clicking the gutter "+" now opens the block-type picker right away; type to filter (⌥-click inserts above)
+
+### Improved
+
+- **Lists / To-do**: Backspace at the start of a row is now two steps — first it drops the bullet or checkbox in place, a second press merges it into the line above
+- **Toggle**: Backspace at the start of a toggle title now unwraps the toggle (previously nothing happened)
+- **Lists**: nested bullets are distinguished by level (•, ◦, ▪)
+
+### Fixed
+
+- **To-do**: fixed rows showing two checkboxes; existing documents repair themselves on open
+- **Lists**: turning a row with sub-items into text no longer loses the sub-items
+- **Numbered lists**: removing a row from the middle no longer renumbers the part above it
+- **Lists**: repeated Backspace at the start of a row no longer gets stuck
+
+## v0.11.8 — 2026-08-03
+
+Tables are now editable, and blocks can be indented.
+
+### Added
+
+- **Tables**: edit table content in place — insert with `/table`, click a cell and type; move between cells with Tab / Enter / arrow keys, and Tab on the last cell adds a row; the block menu inserts and deletes rows and columns and sets center / right alignment; tables and alignment are saved into the file and render the same when opened in any browser
+- **Indent**: indent whole paragraphs / headings / quotes — Tab to indent one step, Shift+Tab to go back, with the cursor anywhere in the block
+- **Lists**: select multiple rows and press Tab to nest them together, Shift+Tab to move them back out — your selection stays put
+
+### Improved
+
+- **Updates**: update notifications are now concise and readable at a glance (full notes remain in the changelog)
+- **Browser**: download feedback now pops up right under the download button, so it's clear where it came from
+- **New document**: previews the upcoming "Paged document" layout mode (in development)
+
 ## v0.11.7 — 2026-07-24
 
 A polish pass for toggle blocks.
@@ -244,6 +318,24 @@ Document linking rounds out, and Wordspace can be your default browser on macOS.
 ### Improved
 
 - **Sidebar**: bookmarks section restyled to match the other sections
+
+## v0.8.2 — 2026-07-13
+
+Updating the app is no longer a bare system dialog.
+
+### Added
+
+- **Updates**: "Check for Updates" is now an in-app panel — see what changed, watch real download progress (percentage / speed / amount downloaded), and restart to install in one click; failures explain themselves and can be retried
+
+### Improved
+
+- **Updates**: the automatic check at launch is quieter — a small progress bar in the sidebar corner, and a single notice once the download finishes
+- **Updates**: from this version on, macOS downloads only the changed parts of an update instead of the whole package each time (takes effect from the next update after installing this one; Windows already worked this way)
+- **Updates**: the whole update process is logged, so "the update didn't install" is now traceable
+
+## v0.8.1 — 2026-07-13
+
+Fixes large blank gaps in PDF export: documents that carry their own page layout (an A4-formatted HTML from Word or an AI, say) now break where the document itself says to, without stretches of empty space between pages.
 
 ## v0.8.0 — 2026-07-12
 

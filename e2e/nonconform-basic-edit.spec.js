@@ -19,6 +19,13 @@ async function launch() {
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });
   await page.evaluate(() => { window.confirm = () => true; window.alert = () => {}; });
+  // 外观默认 'system'：T5 断的是写死的浅色 computed style（格式条 surface 白底），在**深色主题的
+  // 开发机**上恒红——不是回归，是环境。假红有真实代价：每次本地跑完都要人工判一次「这条是老红」，
+  // 这种判断迟早出错、把真回归当噪音放过去。钉环境而不是改弱断言：走真实入口 setAppearance('light')，
+  // 那个真实颜色值继续被原样钉住。CI runner 本就浅色，这一步在 CI 上是 no-op，门强度不变。
+  await page.evaluate(() => window.ws2 && window.ws2.setAppearance && window.ws2.setAppearance('light'));
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') !== 'dark', null, { timeout: 4000 });
+  await page.waitForTimeout(120);
 }
 test.afterEach(async () => { if (app) await app.close().catch(() => {}); if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {}); });
 
@@ -192,7 +199,18 @@ test('T5 视觉对齐：格式条画布同款壳（真 computed style）', async
   });
   expect(Math.round(bar.h), '格式条高度应 32（画布同款）').toBe(32);
   expect(bar.border, '格式条不应再有实体边框').toBe('0px');
-  expect(bar.bg).toBe('rgb(255, 255, 255)');
+  // ⚠ 同 align.spec T2：不写死浅色值。格式条的契约是「画布同款壳」= 等于 --c-surface，
+  // 写死 rgb(255,255,255) 在深色主机上恒红，且换主题就测不到真契约。
+  const surface = await page.evaluate(() => {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = 'var(--c-surface)'; // CSSOM 赋值（CSP 拦 setAttribute('style')）
+    document.body.appendChild(probe);
+    const v = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return v;
+  });
+  expect(surface, '前置：surface 必须解析得出且非透明，否则「相等」会是两个空值相等').not.toBe('rgba(0, 0, 0, 0)');
+  expect(bar.bg, '格式条底色应等于画布 surface').toBe(surface);
 });
 
 // Colin 2026-07-03 报的 bug：关掉最后一个非合规标签后，降级条留在空白页上（陈旧 frame.onload

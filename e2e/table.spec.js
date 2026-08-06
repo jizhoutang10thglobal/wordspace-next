@@ -310,10 +310,20 @@ test('U3: Tab 移格 / 末格 Tab 建行 / 空行 Backspace 删行', async () =>
   await page.waitForTimeout(100);
   expect(await cellId()).toBe('c11');
   await frame.locator('#c23').click();
-  await page.keyboard.press('Tab'); // 末格 → 建行
+  await page.keyboard.press('Tab'); // 【断言迁移·T11，Notion 实测】末格 Tab **不建行**、停留原格——旧行为「Tab 建行」已拍板废除
+  await page.waitForTimeout(150);
+  const stayed = await frame.locator('body').evaluate(() => ({ rows: document.querySelectorAll('tbody tr').length, editing: (document.querySelector('[data-ws2-cell]') || {}).id || null }));
+  expect(stayed.rows).toBe(2);
+  expect(stayed.editing).toBe('c23');
+  // 建行走行手柄菜单（T5 的新入口），随后「空行行首 Backspace 删行」的最小逆操作闭环原样保留
+  await openAxisMenuAt('#c23', 'row');
+  await frame.locator('.ws-blockmenu-item', { hasText: '下方插行' }).click();
   await page.waitForTimeout(150);
   const grown = await frame.locator('body').evaluate(() => ({ rows: document.querySelectorAll('tbody tr').length }));
   expect(grown.rows).toBe(3);
+  // 轴菜单插行落点=同列格（第 3 列）；「空行 Backspace 删行」契约要求光标在**首格**行首——点过去
+  await frame.locator('tbody tr:nth-child(3) td:first-child').click();
+  await page.waitForTimeout(150);
   await page.keyboard.press('Backspace'); // 新空行行首 → 删该行（Colin 拍板的对称逆操作）
   await page.waitForTimeout(150);
   const shrunk = await frame.locator('body').evaluate(() => ({
@@ -358,9 +368,14 @@ test('U3: ⌘A 三档分级', async () => {
   const t2 = await frame.locator('body').evaluate(() => ({
     sel: (document.querySelector('[data-ws2-selected]') || {}).tagName || null,
     cells: document.querySelectorAll('[data-ws2-cell]').length,
+    selText: String(document.getSelection()).replace(/\s+/g, ''),
   }));
   expect(t2.sel).toBe('TABLE'); // ② 整表灰选
   expect(t2.cells).toBe(0);
+  // 第二档不许留格内文字选中（对拍 T12）：内部已声明格级退出（cells=0、selected 上卷到 TABLE），
+  // 屏上却还标着某个格的文字被选中 = 画的和做的不是同一个对象。下面第三档的断言同时兜住
+  // 「清选区没把焦点甩出 iframe、分档链没断」——两条必须一起绿才算修对。
+  expect(t2.selText).toBe('');
   await page.keyboard.press('Meta+a');
   await page.waitForTimeout(150);
   const t3 = await frame.locator('body').evaluate(() => { const s = String(document.getSelection()).replace(/\s+/g, ''); return { hasP1: s.includes('前文段落甲'), hasP2: s.includes('后文段落乙'), hasCell: s.includes('廿二格') }; });
@@ -405,7 +420,7 @@ test('U3: 建行前置 checkpoint——undo 只回滚行不吞打字', async () 
   await frame.locator('#c23').click();
   await page.keyboard.press('End');
   await page.keyboard.type('尾字');
-  await page.keyboard.press('Tab'); // 立刻建行（打字债还在防抖窗口内）
+  await page.keyboard.press('Enter'); // 【断言迁移·T11】建行改走 Enter（末行 Enter 建行未对拍、保留）；Tab 已不建行
   await page.waitForTimeout(150);
   expect(await frame.locator('body').evaluate(() => document.querySelectorAll('tbody tr').length)).toBe(3);
   await menu('undo');
@@ -623,7 +638,7 @@ test('CR: header-only 表建行 + 单 undo 无幽灵 tbody', async () => {
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body><p id="p1">前文</p>'
     + '<table class="ws-table"><thead><tr><th scope="col" id="h1">仅表头甲</th><th scope="col" id="h2">仅表头乙</th></tr></thead></table></body></html>');
   await frame.locator('#h2').click();
-  await page.keyboard.press('Tab'); // 末格 → 建行（必须新建 tbody，绝不给 thead 塞第二行）
+  await page.keyboard.press('Enter'); // 【断言迁移·T11】Tab 不再建行；header-only 表的建行路径改走 Enter（同一 appendTableRow）
   await page.waitForTimeout(150);
   const grown = await frame.locator('body').evaluate(() => ({
     tbodies: document.querySelectorAll('tbody').length,
@@ -715,6 +730,14 @@ test('CR: 表-only 文档全选删除不哑', async () => {
 // ===== P2（U5/U6/U7）：行列增删 / cell 对齐 / undo 恢复 =====
 
 // 打开表格块菜单（cell 编辑态下 grip 锚整表；menuCell 快照在 openBlockMenu 入口取）
+// T5（2026-08-05 按轴分离）：行/列操作从块菜单迁到行/列手柄菜单——hover 格出手柄、点手柄开按轴菜单。
+async function openAxisMenuAt(cellSel, axis) {
+  await frame.locator(cellSel).hover();
+  await page.waitForTimeout(250);
+  await frame.locator(axis === 'row' ? '.ws-rowsel' : '.ws-colsel').click();
+  await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+  await page.waitForTimeout(80);
+}
 async function openTableMenu(cellSel) {
   await frame.locator(cellSel).click();
   await page.waitForTimeout(120);
@@ -729,7 +752,7 @@ test('P2: 菜单插行 + undo 不吞打字', async () => {
   await frame.locator('#c22').click();
   await page.keyboard.press('End');
   await page.keyboard.type('债'); // 500ms 防抖窗口内的打字债
-  await openTableMenu('#c22');
+  await openAxisMenuAt('#c22', 'row'); // 【断言迁移·T5】行操作从块菜单迁到行手柄菜单
   await frame.locator('.ws-blockmenu-item', { hasText: '下方插行' }).click();
   await page.waitForTimeout(150);
   const grown = await frame.locator('body').evaluate(() => ({
@@ -755,7 +778,7 @@ test('P2: 菜单插行 + undo 不吞打字', async () => {
 test('P2: 菜单删列全列生效', async () => {
   await launch();
   await openDoc(TABLE_DOC);
-  await openTableMenu('#c12');
+  await openAxisMenuAt('#c12', 'col'); // 【断言迁移·T5】列操作走列手柄菜单
   await frame.locator('.ws-blockmenu-item', { hasText: '删除本列' }).click();
   await page.waitForTimeout(150);
   const after = await frame.locator('body').evaluate(() => ({
@@ -775,9 +798,9 @@ test('P2: 菜单删列全列生效', async () => {
 test('P2: 表头行插行落 tbody 首位', async () => {
   await launch();
   await openDoc(TABLE_DOC);
-  await frame.locator('thead th').nth(1).click();
-  await page.waitForTimeout(120);
-  await frame.locator('.ws-grip').click();
+  await frame.locator('thead th').nth(1).hover(); // 【断言迁移·T5】表头行插行走行手柄
+  await page.waitForTimeout(250);
+  await frame.locator('.ws-rowsel').click();
   await expect(frame.locator('.ws-blockmenu')).toBeVisible();
   await frame.locator('.ws-blockmenu-item', { hasText: '上方插行' }).click();
   await page.waitForTimeout(150);
@@ -840,27 +863,29 @@ test('P2: undo 后回到原格编辑', async () => {
   expect(await frame.locator('#c21').textContent()).toContain('续');
 });
 
-// P2-6（U5 退化态）：连删三列 → 最后一列升级删整表，文档不留 ghost 壳。
-test('P2: 删到最后一列升级删整表', async () => {
+// P2-6【断言迁移·T9，Notion 实测】：旧行为「删到最后一列升级删整表」已拍板废除——Notion 不允许
+// 把表删成退化态：只剩 1 列时列菜单**没有**「删除本列」项，表恒 ≥1 行 ≥1 列、永远立着。
+test('P2: 删到只剩一列后「删除本列」项消失，表不消失', async () => {
   await launch();
   await openDoc(TABLE_DOC);
-  for (let i = 0; i < 3; i++) {
-    const hasTable = await frame.locator('body').evaluate(() => !!document.querySelector('table'));
-    if (!hasTable) break;
+  for (let i = 0; i < 2; i++) { // 3 列删 2 次 → 剩 1 列
     const firstCellId = await frame.locator('body').evaluate(() => { const c = document.querySelector('tbody td'); return c ? (c.id || null) : null; });
-    await frame.locator(firstCellId ? '#' + firstCellId : 'tbody td').first().click();
-    await page.waitForTimeout(120);
-    await frame.locator('.ws-grip').click();
-    await expect(frame.locator('.ws-blockmenu')).toBeVisible();
+    await openAxisMenuAt('#' + firstCellId, 'col');
     await frame.locator('.ws-blockmenu-item', { hasText: '删除本列' }).click();
     await page.waitForTimeout(150);
   }
+  const lastCellId = await frame.locator('body').evaluate(() => { const c = document.querySelector('tbody td'); return c ? c.id : null; });
+  await openAxisMenuAt('#' + lastCellId, 'col');
+  const items = await frame.locator('.ws-blockmenu-item').allTextContents();
+  expect(items.join('|')).not.toContain('删除本列'); // 退化不可达
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
   const after = await frame.locator('body').evaluate(() => ({
     tables: document.querySelectorAll('table').length,
-    ghosts: document.querySelectorAll('table:empty, tbody:empty, thead:empty').length,
+    cols: document.querySelectorAll('tbody tr:first-child td').length,
   }));
-  expect(after.tables).toBe(0);
-  expect(after.ghosts).toBe(0);
+  expect(after.tables).toBe(1);
+  expect(after.cols).toBe(1);
   expect(await conformOf(await serialize())).toBe(true);
 });
 

@@ -658,3 +658,71 @@ test('U25: chevron 细线样式强断言（content 空 + border 1.5px + 两态�
   expect(probe.closed.transform).not.toBe('none');
   expect(probe.open.transform).not.toBe(probe.closed.transform);
 });
+
+// ── T18（2026-08-05）：折叠态标题末 Enter = 新建平级空 toggle（对齐 Notion）──────────────
+// 这是 Notion 粒度对拍 track 里唯一记录在案、一直没处置的分歧。旧行为：自动展开这个 toggle +
+// 把新空块插进体内首位 —— 用户按 Enter 是想写下一个条目，结果本来收着的内容全弹出来、
+// 新行还插在了里面，两件他都没要求的事。
+const TWO = '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>' +
+  '<details><summary>第一章</summary><p>藏起来的内容</p></details><p id="tail">尾段</p></body></html>';
+const detailsShape = () => frame.locator('body').evaluate(() => [...document.querySelectorAll('body > details')]
+  .map((d) => ({ open: d.hasAttribute('open'), title: (d.querySelector('summary') || {}).textContent })));
+
+test('T18-1 折叠态标题末 Enter：新建平级空 toggle，原 toggle 保持收着、内容不被弹开', async () => {
+  await launch();
+  await openDoc(TWO);
+  await frame.locator('details > summary').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(120);
+  expect(await detailsOpen(), '前置：这个 toggle 是收着的').toBe(false);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  // 修前：detailsShape() 只有一个 details 且 open 变成 true，光标落在体内新插的 <p> 上
+  expect(await detailsShape()).toEqual([
+    { open: false, title: '第一章' }, // 原 toggle 一动不动，仍然收着
+    { open: false, title: '' },       // 新的平级空 toggle，也收着
+  ]);
+  const editing = await frame.locator('body').evaluate(() => {
+    const e = document.querySelector('[data-ws2-editing]');
+    return e ? { tag: e.tagName, isSecond: e.closest('details') === document.querySelectorAll('body > details')[1] } : null;
+  });
+  expect(editing, '光标应落在新 toggle 的标题上').toEqual({ tag: 'SUMMARY', isSecond: true });
+  await page.keyboard.type('第二章');
+  await page.waitForTimeout(200);
+  const html = await serialize();
+  expect(html).toContain('<summary>第二章</summary>');
+  expect(html).toContain('藏起来的内容');     // 原内容一个字没动
+  expect(html).not.toMatch(/<details open/);  // 谁都没被展开
+  expect(await conformOf(html)).toBe(true);
+});
+
+test('T18-2 负向：展开态不受影响，仍然是「体内新建空块」', async () => {
+  await launch();
+  await openDoc(TWO.replace('<details>', '<details open>'));
+  await frame.locator('details > summary').click();
+  await page.keyboard.press('End');
+  await page.waitForTimeout(120);
+  expect(await detailsOpen()).toBe(true);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  expect(await detailsShape(), '展开态不许平白多出一个 toggle').toHaveLength(1);
+  const editing = await frame.locator('body').evaluate(() => {
+    const e = document.querySelector('[data-ws2-editing]');
+    return e ? { tag: e.tagName, inDetails: !!e.closest('details') } : null;
+  });
+  expect(editing).toEqual({ tag: 'P', inDetails: true }); // T14 的既有行为原样保留
+});
+
+test('T18-3 负向：折叠态但光标在标题中间 → 不新建（summary 恒不分裂，维持既有行为）', async () => {
+  await launch();
+  await openDoc(TWO);
+  await frame.locator('details > summary').click();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight'); // 「第|一章」
+  await page.waitForTimeout(120);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  const shape = await detailsShape();
+  expect(shape, '标题中间按 Enter 不该新建平级 toggle').toHaveLength(1);
+  expect(shape[0].title, 'summary 绝不分裂').toBe('第一章');
+});

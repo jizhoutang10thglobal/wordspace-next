@@ -6,6 +6,12 @@ if (!process.env.WS2_LANG) process.env.WS2_LANG = 'zh';
 
 module.exports = {
   testDir: './e2e',
+  // 取证探针（probe-*.spec.js）不进默认套：它们是对拍/截图用的**记录工具**，几乎不含断言
+  // （跑了代码但不判定行为）。留在默认套里既拖 CI，又给出假覆盖信号——全绿里混着一批其实什么都没测的。
+  // 要跑用 `WS2_PROBES=1 npx playwright test e2e/probe-xxx.spec.js`——
+  // ⚠ testIgnore **连显式点名的路径一起挡**（实测：直接点名得 0 tests），所以必须留这个开关。
+  // ⚠ 与 ci.yml 的「收集 spec 数 ≥ 地板 400」并存无碍：排除后仍有 670+。
+  testIgnore: process.env.WS2_PROBES ? [] : /probe-.*\.spec\.js$/,
   timeout: 30000,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

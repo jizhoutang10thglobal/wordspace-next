@@ -10,6 +10,7 @@ Wordspace Next 的文档地图。新文档不知道往哪放时，先看这张�
 | [browser-feature-spec.md](browser-feature-spec.md) | **浏览器 feature 完整规格**：ui-demo 定稿的浏览器（标签 / 地址栏+补全 / 侧栏折叠收藏 / 历史 / 右键菜单 / 快捷键 / 会话恢复）——每个功能按「交互契约 → ui-demo 参考实现 → 真 app 后端设计（WebContentsView/IPC/存储）」三层写，给接手开发进真 app 的 AI/人。 |
 | [`team-memory.md`](team-memory.md) | **跨 session 公告板**：全局教训 / 规则变更 / 拍板决策的唯一跨 worktree channel。读靠 `/sync-main`，写靠 `/remember-global`（唯一允许直推 main 的文件）。 |
 | [`features/`](features/) | **feature 对齐 spec**：ui-demo ↔ 真 app 每 feature 一份（行为契约 + 文件映射 + 有意分歧 + 对齐锚点），配 `/align-feature`。模板见 [`features/README.md`](features/README.md)。 |
+| [`../.claude/skills/align-notion/`](../.claude/skills/align-notion/SKILL.md) | **与 Notion 的交互精细度对齐方法**（块粒度 / 悬停手感 / 菜单作用域这一层，不是「功能有无」）：双侧自动化取证 → 差异清单给 Colin approve → 分单元实现 → 每单元出带双侧实机截图的报告。首个样板 = todo 行粒度 A-D（2026-08-03）。技能：`/align-notion`。 |
 | [`releasing.md`](releasing.md) | 怎么发版（打 tag / 手动触发）。 |
 | [`apple-developer-setup-walkthrough.md`](apple-developer-setup-walkthrough.md) | 签名 / 公证的 5 个 GitHub secret 怎么配。 |
 | [`shipping-verification-checklist.md`](shipping-verification-checklist.md) | 发版后在宿主验签名 / 公证 / staple + 自动更新的清单。 |

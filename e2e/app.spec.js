@@ -101,9 +101,9 @@ test('单击即编辑 + 加粗 + 斜杠菜单 + Enter 新建 + Backspace 合并'
   await expect(frame.locator('.ws-slashmenu')).toBeVisible();
   await page.keyboard.press('Escape');
   await clearUI();
-  // Enter 段末新建正文块（块数 +1）
+  // Enter 段末新建正文块（块数 +1）。跳板用普通段落 #p3——#q 是引用（容器），容器末尾 Enter 是框内换行（callout-container.spec.js 管）
   let before = await blockCount();
-  await frame.locator('#q').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await frame.locator('#p3').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
   await page.keyboard.type('新块');
   await expect.poll(() => blockCount()).toBe(before + 1); // U3-B2
   await clearUI();
@@ -236,7 +236,7 @@ test('baseline: 居中可读宽度 + 四周留白 + 入盘', async () => {
 test('U7: H4 可创建（markdown #### → h4）', async () => {
   await launch();
   await openDoc(SIMPLE);
-  await frame.locator('#q').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
+  await frame.locator('#p3').click(); await page.keyboard.press('End'); await page.keyboard.press('Enter');
   await page.keyboard.type('#### ');
   await expect(frame.locator('h4').first()).toBeVisible(); // U3-B2
   expect(await frame.locator('h4').count(), 'markdown #### 没转 H4').toBeGreaterThan(0);
@@ -250,9 +250,9 @@ test('U7: H4 可创建（markdown #### → h4）', async () => {
 test('markdown 行首触发：1. / - / [] / > / # 转对应块', async () => {
   await launch();
   await openDoc(SIMPLE);
-  // 在 #q 后造一个空正文块、打 marker
+  // 在 #p3 后造一个空正文块、打 marker（#q 是容器，Enter 不出框）
   const mk = async (marker) => {
-    await frame.locator('#q').click();
+    await frame.locator('#p3').click();
     await page.keyboard.press('End');
     await page.keyboard.press('Enter'); // 空正文块进编辑
     await page.keyboard.type(marker);
@@ -277,7 +277,7 @@ test('markdown 行首触发：1. / - / [] / > / # 转对应块', async () => {
 test('待办：勾选切换 + 样式与 data-checked 随存盘保留', async () => {
   await launch();
   await openDoc(SIMPLE);
-  await frame.locator('#q').click();
+  await frame.locator('#p3').click();
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('[] '); // → 待办列表
@@ -314,20 +314,27 @@ test('待办删空退格：多项列表合并上去、不塌成空 <ul></ul>、�
   await page.keyboard.press('End');
   await page.keyboard.press('Backspace'); // 删 "测" → li2 空
   await page.waitForTimeout(120);
-  await page.keyboard.press('Backspace'); // 空 li2 退格 → 合并到 li1（绝不塌成空 ul）
-  await page.waitForTimeout(150);
+  // E1（2026-08-04）预期迁移：顶层空行退格改走 Notion 的剥离语义（空行也一样先剥格式），
+  // 所以第二项不再「合并到 li1」而是剥成一个空段落。**bug4 守的护栏一条没动**——每一步都断言
+  // 「绝不留空 <ul></ul> ghost」「全程合规」「光标不丢」，只有结构形态按新语义更新。
+  await page.keyboard.press('Backspace'); // ① 空 li2 剥成空段落（绝不塌成空 ul）
+  await page.waitForTimeout(180);
   let html = await serialize();
-  expect(html, '空待办退格后绝不留空 <ul></ul>').not.toMatch(EMPTY_UL);
-  expect(await conformOf(), '删空待办后文档仍合规').toBe(true);
-  expect(await frame.locator('ul.ws-todo > li').count(), '合并上去后保留一个空待办项').toBe(1);
-  expect(await editingId(), '光标没丢（有编辑焦点）').not.toBeNull();
-  // 再退格：唯一空项 de-list 成正文段落，仍无空 ul、仍合规
-  await page.keyboard.press('Backspace');
-  await page.waitForTimeout(150);
+  expect(html, '① 空待办退格后绝不留空 <ul></ul>').not.toMatch(EMPTY_UL);
+  expect(await conformOf(), '① 删空待办后文档仍合规').toBe(true);
+  expect(await frame.locator('ul.ws-todo > li').count(), '① 前段列表保留 li1 这一项').toBe(1);
+  expect(await editingId(), '① 光标没丢（有编辑焦点）').not.toBeNull();
+  await page.keyboard.press('Backspace'); // ② 空段落被删，光标回到 li1 末
+  await page.waitForTimeout(180);
+  expect(await serialize(), '② 仍无空 <ul></ul>').not.toMatch(EMPTY_UL);
+  expect(await conformOf(), '② 仍合规').toBe(true);
+  await page.keyboard.press('Backspace'); // ③ li1 是空的唯一顶层行 → 整块 de-list 成正文
+  await page.waitForTimeout(180);
   html = await serialize();
   expect(html).not.toMatch(EMPTY_UL);
-  expect(await frame.locator('ul.ws-todo').count(), '列表已彻底退成正文').toBe(0);
+  expect(await frame.locator('ul.ws-todo').count(), '③ 列表已彻底退成正文').toBe(0);
   expect(await conformOf()).toBe(true);
+  expect(await editingId(), '③ 光标没丢').not.toBeNull();
 });
 
 test('待办删空退格：单项列表整块 de-list 成段落、不留空 <ul>（Wendi bug4）', async () => {
@@ -454,7 +461,13 @@ async function caretToLiStart(sel) {
   await page.keyboard.press('Home');
   await page.waitForTimeout(120);
 }
-test('Wendi bug3：第二个列表块行首退格 → 并入上一块（不再原地哑掉）', async () => {
+// E1（2026-08-04）预期迁移，下面两条同理：
+// **为什么新预期才是对的**——Notion 对拍实证行首退格是「逐层剥离」两步：① 只剥列表格式、原地变文本、
+// **不合并**；② 才并入上一块。Colin 拍板「Notion 怎么做我们怎么做」。
+// **#319 守住了什么**——Wendi 报的是「行首退格什么都不发生、不上移」。两步语义下第一次按键就有可见反馈，
+// 第二次给出她要的上移，诉求完整保留。所以**终态断言一条都没删**，只在前面**补上**中间态断言：
+// 第一次按完必须已剥格式且**尚未**合并。少任一条都不算过。
+test('Wendi bug3：第二个列表块行首退格 —— ① 剥成文本块不合并 ② 再退才并入上一块', async () => {
   await launch();
   // 两个独立 ws-todo 块（第一项 checked=true 当存活标记）
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
@@ -462,27 +475,39 @@ test('Wendi bug3：第二个列表块行首退格 → 并入上一块（不再�
     + '<ul class="ws-todo"><li data-checked="false" id="li2">第二项BBB</li></ul></body></html>');
   await caretToLiStart('#li2');
   await page.keyboard.press('Backspace');
-  await expect.poll(() => frame.locator('ul.ws-todo').count(), { message: '两个 todo 块没合并（修前哑掉的 bug）' }).toBe(1);
+  // ① 中间态：第二个列表整块退成段落，第一个列表纹丝不动、**没有**发生合并
+  await expect.poll(() => frame.locator('ul.ws-todo').count(), { message: '① 第二个 todo 块已被剥成段落' }).toBe(1);
+  const mid = await frame.locator('body').evaluate((b) => [...b.children].map((c) => c.tagName + ':' + c.textContent.trim()).join('|'));
+  expect(mid, '① 剥离产物是独立段落，位置不动').toBe('UL:第一项AAA|P:第二项BBB');
+  expect(await conformOf(), '① 中间态也必须合规（会被自动保存写盘）').toBe(true);
+  // ② 再退一次 → #319 当初要的终态
+  await page.keyboard.press('Backspace');
   const li = frame.locator('ul.ws-todo > li');
-  await expect(li).toHaveCount(1);
-  expect((await li.first().textContent()).replace(/\s/g, ''), '第二项没并入第一项').toBe('第一项AAA第二项BBB');
-  expect(await li.first().getAttribute('data-checked'), '上面那项(存活块)的勾选态该保留=从上块来').toBe('true');
+  await expect.poll(() => li.count(), { message: '② 并入上一块后只剩一项' }).toBe(1);
+  expect((await li.first().textContent()).replace(/\s/g, ''), '② 第二项没并入第一项').toBe('第一项AAA第二项BBB');
+  expect(await li.first().getAttribute('data-checked'), '② 上面那项(存活块)的勾选态该保留=从上块来').toBe('true');
   // 光标落在上面那个块（= 合并后的列表），不是留在原第二块
-  expect(await editingId(), '光标没跳到上面的块').toBe('UL');
-  expect(await conformOf(), '合并后文档仍合规').toBe(true);
+  expect(await editingId(), '② 光标没跳到上面的块').toBe('UL');
+  expect(await conformOf(), '② 合并后文档仍合规').toBe(true);
 });
 
-test('Wendi bug3：段落后接待办，待办项行首退格 → 并入段落', async () => {
+test('Wendi bug3：段落后接待办 —— ① 剥成文本块不合并 ② 再退才并入段落', async () => {
   await launch();
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
     + '<p id="head">前面段落PP</p><ul class="ws-todo"><li data-checked="false" id="li2">待办项BBB</li></ul></body></html>');
   await caretToLiStart('#li2');
   await page.keyboard.press('Backspace');
-  // 待办项文字并入段落、列表清空后删掉（不留空 <ul>）
-  await expect.poll(() => frame.locator('ul.ws-todo').count(), { message: '待办项没并入段落' }).toBe(0);
-  expect((await frame.locator('#head').textContent()).replace(/\s/g, ''), '待办文字没接到段落末').toBe('前面段落PP待办项BBB');
-  expect(await editingId(), '光标该落在段落').toBe('head');
-  expect(await conformOf(), '并入段落后仍合规').toBe(true);
+  // ① 中间态：列表退成段落（勾选框消失），段落内容原位，**没有**并进 #head
+  await expect.poll(() => frame.locator('ul.ws-todo').count(), { message: '① 待办列表已被剥成段落' }).toBe(0);
+  expect((await frame.locator('#head').textContent()).replace(/\s/g, ''), '① 此时绝不能已经合并').toBe('前面段落PP');
+  const mid = await frame.locator('body').evaluate((b) => [...b.children].map((c) => c.tagName + ':' + c.textContent.trim()).join('|'));
+  expect(mid, '① 剥离产物是紧随其后的独立段落').toBe('P:前面段落PP|P:待办项BBB');
+  expect(await conformOf(), '① 中间态合规').toBe(true);
+  // ② 再退一次 → 并入段落（不留空 <ul>）
+  await page.keyboard.press('Backspace');
+  await expect.poll(() => (frame.locator('#head').textContent()).then((t) => t.replace(/\s/g, '')), { message: '② 待办文字没接到段落末' }).toBe('前面段落PP待办项BBB');
+  expect(await editingId(), '② 光标该落在段落').toBe('head');
+  expect(await conformOf(), '② 并入段落后仍合规').toBe(true);
 });
 
 // Wendi bug3 的三个对抗审查 finding 回归门（嵌套子列表/子列表末项/空目标块）：
@@ -501,7 +526,8 @@ test('Wendi bug3 边界：嵌套打头不被撕 / 子列表前插入 / 空目标
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
     + '<ul><li>A<ul><li>A1</li></ul></li></ul><ul><li id="li2">B</li></ul></body></html>');
   await frame.locator('#li2').click(); await page.keyboard.press('Home'); await page.waitForTimeout(150);
-  await page.keyboard.press('Backspace'); await page.waitForTimeout(200);
+  await page.keyboard.press('Backspace'); await page.waitForTimeout(200); // ① 剥成段落
+  await page.keyboard.press('Backspace'); await page.waitForTimeout(250); // ② 并入上一块末项（Finding B 的受测动作）
   const bOrder = await frame.locator('body').evaluate(() => {
     const topUls = [...document.body.children].filter((c) => c.tagName === 'UL');
     if (topUls.length !== 1) return { topUls: topUls.length };
@@ -512,15 +538,22 @@ test('Wendi bug3 边界：嵌套打头不被撕 / 子列表前插入 / 空目标
     for (const n of li.childNodes) { if (n === sub) break; directText += n.textContent; }
     return { topUls: 1, directText: directText.replace(/\s/g, ''), hasSub: !!sub, subText: sub ? sub.textContent.replace(/\s/g, '') : '' };
   });
+  // ADV-4（2026-08-04）预期迁移：合并目标从「上一块的最后一个直接子项」改成「视觉上的上一行」
+  // （= 沿末项子列表下钻到最深）。**为什么新预期才对**：Notion 实测 `- A / 　- A1 / 　- A2 / 段落文字`
+  // 段落行首退格得到 `A2段落文字`——并进最深那一行。并进父行 A 会让文字**跳到 A1 上方**，
+  // 子项越多跳得越远，用户读成「文字被搬走了」。
+  // Finding B 原来守的是「文字别吊到子列表下面」；新语义下文字进的就是子列表里的最后一行，
+  // 那条护栏的场景不再成立，改为断言：父行自有文字不被污染 + 子项仍在 + 文字并进最深行。
   expect(bOrder.topUls, 'B: 两列表没合并成一个').toBe(1);
-  expect(bOrder.directText, 'B: 文字没接到「A」末尾（吊到子列表下面了？）').toBe('AB');
-  expect(bOrder.hasSub && bOrder.subText === 'A1', 'B: 子列表 A1 该保留在原位').toBe(true);
+  expect(bOrder.directText, 'B: 父行 A 自己的文字不被污染').toBe('A');
+  expect(bOrder.hasSub && bOrder.subText === 'A1B', 'B: 文字并进视觉上的上一行 A1（子列表仍在原位）').toBe(true);
 
   // Finding C：并入空目标块（空段 <p><br></p>）不留前导空行 <br>。
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
     + '<p id="head"><br></p><ul class="ws-todo"><li data-checked="false" id="li2">B待办</li></ul></body></html>');
   await frame.locator('#li2').click(); await page.keyboard.press('Home'); await page.waitForTimeout(150);
-  await page.keyboard.press('Backspace'); await page.waitForTimeout(200);
+  await page.keyboard.press('Backspace'); await page.waitForTimeout(200); // ① 剥成段落
+  await page.keyboard.press('Backspace'); await page.waitForTimeout(250); // ② 并入空段落（Finding C 的受测动作）
   expect((await frame.locator('#head').evaluate((el) => el.innerHTML)).replace(/\s/g, ''), 'C: 空目标并入后留了前导 <br> 空行').toBe('B待办');
   expect(await conformOf(), 'C: 并入空段后仍合规').toBe(true);
 });
@@ -529,7 +562,7 @@ test('Wendi bug3 边界：嵌套打头不被撕 / 子列表前插入 / 空目标
 test('Tab 缩进：列表项嵌套成子列表', async () => {
   await launch();
   await openDoc(SIMPLE);
-  await frame.locator('#q').click();
+  await frame.locator('#p3').click();
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('- 第一项'); // → 无序列表，第一项

@@ -21,12 +21,21 @@ module.exports = {
   tableColRight: 'Insert column right',
   tableDelRow: 'Delete row',
   tableDelCol: 'Delete column',
+  tableDupRow: 'Duplicate row',
+  tableClearRow: 'Clear row',
+  tableDupCol: 'Duplicate column',
+  tableClearCol: 'Clear column',
+  tableRowMenuHead: 'Row',
+  tableColMenuHead: 'Column',
+  tableRowHandleTip: 'Row actions',
+  tableColHandleTip: 'Column actions',
   blockImage: 'Image',
   blockDivider: 'Divider',
   aiGenerate: '✦ AI generate (coming soon)',
 
   // Drag handle / hints
   gripTip: 'Drag to reorder · click to open menu',
+  plusTip: 'Click to add below · Option-click to add above',
   dragHandleTip: 'Drag to reorder, click to open menu',
   blockNotEditable: 'This block can’t be edited yet',
 
@@ -91,7 +100,9 @@ module.exports = {
   turnToText: 'Turn into Text',
   turnToHeading: 'Turn into Heading',
   turnToQuote: 'Turn into Quote',
+  turnToCallout: 'Turn into callout',
   addCaption: 'Add caption',
+  caption: 'Caption',
   insertBelow: 'Insert below',
   noMatch: 'No matches',
 
@@ -117,6 +128,8 @@ module.exports = {
 
   // In-editor placeholder text (empty block / image caption)
   emptyBlockPlaceholder: 'Type text, or press / for commands',
+  emptyTogglePlaceholder: 'Empty toggle. Click or drop blocks inside.',
+  pickerFilterPlaceholder: 'Type to filter…', // E5: placeholder while the block-type picker is open from the gutter “+”
   figcaptionPlaceholder: 'Image caption',
 
   // Pagination page-number chip

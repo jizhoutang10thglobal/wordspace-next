@@ -14,6 +14,201 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-06 — 交互态标记会跟着 retagElement 漏进产物，让「清不掉的高亮」永久卡在页面上
+
+**是什么**：`src/editor/format.js` 的 `retagElement` **原样复制源元素的全部属性**（设计如此，
+为了不静默丢用户的 id / lang / aria）。于是 `data-ws2-*` 这些纯交互态标记也会跟着进入产物。
+而这类状态在块编辑器里多是**双记账**——DOM 上一个属性 + JS 里一个元素引用（`rangeSelEls` /
+`selectedEl` / `editingEl`）。retag 之后引用指向的是已被摘走的旧元素，清理函数遍历引用就
+永远碰不到活着的那个 → 状态永久卡死。2026-08-05 实爆：多行「转为」往返后整块留一层清不掉的
+蓝底（`data-ws2-rangesel`），点哪儿都不消（Colin 试玩当场抓到，已随 v0.12.2 修掉）。
+
+**怎么 apply**：
+① 新写「某某态」时，**清理函数一律按属性扫 DOM**（`body.querySelectorAll('[data-ws2-x]')`），
+   引用数组只当快路径——`clearSelectedAttr` 本来就是这个范式，`clearRangeSel` 当初没对齐才出事。
+② 改 `retagElement` 附近的代码前，先问「源元素身上此刻挂着哪些 `data-ws2-*`」。
+③ 严重度判定：这类 bug **只坏显示、不坏文件**——所有标记都在 `serialize.js` 的 `WS2_MARKERS` 里
+   存盘剥除，磁盘字节是干净的。别按数据损坏定级。
+④ 门要分两层：一层守「别造出来」，一层守「造出来了也清得掉」（后者直接往元素上盖属性再触发
+   选区变化，只清引用数组的实现必然过不去）。样板：`e2e/blockedit-turn-into.spec.js` MT-7 / MT-8。
+
+**来源**：PR #413（fix/rangesel-ghost），随 v0.12.2 发版。
+
+## 2026-08-05 — 公告板静默停摆了三周：你以为发出去的公告，可能一条都没送达
+
+**是什么**：跨 session 唯一的知识 channel（本文件）在 7/17–8/03 之间实际处于**停摆**状态。
+四条公告 PR（#270 空态默认屏 / #266 changelog 双语 / #251 更新器哑修更正 / #343 分页口径反转）
+**全是 DIRTY、内容至今没进 main** —— 也就是说那四次广播根本没到任何人手里，而发的人以为发出去了。
+病根：并发插入同一个标记行会撞车变 DIRTY，`--auto` 在 DIRTY 下不会合，而 skill 里当时只写了一句
+「可选：隔段时间回头确认已合」，于是没有任何人回头。**靠自觉的收尾步骤等于没有。**
+
+**怎么 apply**：
+① `/remember-global` 已加**步骤 0**（PR #399）：发你自己这条之前，先
+`gh pr list --search "docs(team-memory) in:title"` 扫一遍 open 的，就地 update-branch / rebase /
+或按「已被现实超车」关掉。机制自愈——下一个发公告的人顺手把上一个救活，不依赖任何人记得。
+② **7/17 之后、你依赖过的任何 team-memory 结论，值得回头确认一次它真在 main 上**。
+那四条已按新流程逐条处置（关闭并写明原因，见各 PR 评论）；其中 #343 的口径已在 08-03 被**再次**
+反转（分页整体 revert 撤出 main），原样合进来反而害人——这也是「停摆的公告不能无脑补合」的实例。
+
+**来源**：#399（skill 修复）+ #343/#270/#266/#251 的处置评论。
+
+## 2026-08-05 — 别在别人正在用的 worktree 里建分支（实踩，代价是把两个 session 的改动混进了一个 commit）
+
+**是什么**：我在 `wordspace-next-align2` 里 `git checkout -b` 开了自己的分支——没先看它干不干净。
+那个 worktree 当时挂着**另一个 session 未提交的在制品**，`checkout -b` 把它一起带上了新分支；
+十分钟后对方 `git commit` 一提交，我的两处改动就被裹进了他们的 commit（作者是共用的
+`wordspace demo bot`，事后连按作者都分不出谁写的）。
+
+**怎么 apply**：进任何**已存在**的 worktree 之前，先 `git status --short`。
+非空 = 有人在用，**别在里面建分支、别改文件**，自己 `git worktree add` 一个新的
+（node_modules 软链过去即可，秒开）。
+撤出来要用 `git apply -R` 只反向应用自己那几个 hunk，**别用 `git checkout --`**——那会连人家的
+在制品一起冲掉。本仓 10+ worktree 并行是常态，这不是小概率事件。
+（同源教训：并行 worktree 里禁用 `git add -A` / `commit -a`，已在 2026-08-04 条目里。）
+
+**来源**：2026-08-05 凌晨实踩，涉及 commit 9ec9066。
+
+
+## 2026-08-04 — 发版收尾两条：Release body 顶部要手补 + 并行 worktree 禁用 `git add -A`
+
+**是什么**：
+① **tag 触发的 Release，body 只有自动生成的 PR 列表，没有用户可见说明**。而 App 内「有新版本」
+面板显示的就是 Release body `---` 之上那段（`src/lib/update-status.js` 的 `parseReleaseNotes`）。
+v0.12.0 发出来时这段是空的 → 用户在更新面板里看到的是一串带 PR 号的 commit 标题（含 docs/skills 这类
+开发侧改动）。已按 `docs/releasing.md`「Release notes 约定」手动补上：1 句导语 + ≤5 条要点 + `---` +
+官网 changelog 链接 + 原 PR 列表。
+② **并行 worktree 里用 `git add -A` / `commit -a` 会把别的 session 的临时文件扫进仓库**。本轮我用它
+把另一个 agent 的探针脚本一起提交了，对抗审查才抓到。
+
+**怎么 apply**：
+① 发完版**别以为完事了**——`gh release view vX.Y.Z --json body` 看一眼，没有顶部简洁版说明就
+`gh release edit vX.Y.Z --notes-file <file>` 补。补之前可以用
+`node -e "require('./src/lib/update-status.js').parseReleaseNotes(body)"` 预览面板里长什么样（截 8 行）。
+② 一律 `git add <具体路径>`。共享 worktree 目录里别人的临时文件不受你控制，`-A` 的作用域比你以为的大。
+
+**来源**：v0.12.0 发版收尾（PR #387 / tag v0.12.0），对抗审查 ADV-8。
+
+
+## 2026-08-04（当日更正）— 上一条关于「Notion 发键」的根因写错了；⚠ `pressKey` 的修饰键组合是假键
+
+**更正对象**：同日下面那条「对拍探针两条硬教训」里 §① 转述的
+「Notion 只认它自己那套键盘层，`cdp('Input.dispatchKeyEvent')` 发的原生键完全无视」。
+**这条不成立**，我按它去补采时用严格正对照两种方式各验了一遍，结论要反过来写。
+
+### 实测（同一会话、同一 fixture、两种方式各带正对照与还原）
+
+| 发键方式 | 普通键（Enter） | 修饰键组合（Meta+z） |
+|---|---|---|
+| ego-browser `pressKey` | **有效**（块计数 5→6，Backspace 回 5） | ❌ **假键**——删列后按它，表格 rect 恒 `[2,2,2,2]` 无任何变化 |
+| 裸 CDP `Input.dispatchKeyEvent` | **有效**（块计数 5→6） | ✅ **有效**——`modifiers:4` 的 Meta+z 本轮 **9 次全部真 undo**（rect `[2,2,2,2]`→`[3,3,3,3]`、文字全回来） |
+
+前提：`Page.bringToFront` + `Emulation.setFocusEmulationEnabled{enabled:true}`，且光标是靠**真 click** 落进 contenteditable 的。
+
+**所以正确的说法是**：不是「Notion 无视裸 CDP」，而是 **`pressKey` 的修饰键组合是假的**（这与 skill 坑清单里
+早就写过的「修饰键必须裸 CDP、`pressKey('Shift+Tab')` 是假键」一致，只是上一条把它误推广成了整个键盘层）。
+
+### ⚠ 对 `feat/ux-granularity` 那条 track 的直接风险
+
+如果你们的探针在**用 `pressKey('Meta+z')` 之类的组合键做 fixture 还原**，那些还原**很可能根本没发生**，
+而后续读数会建立在一个已经被改脏的 fixture 上（我这边正是靠裸 CDP 的 Meta+z 才把删掉的行列复原回去的）。
+**建议复查**：还原后有没有做 DOM 回读确认；没有的话，那批读数要重验。
+
+### 真正制造假读数的根因是另一个（这条才是该记进 skill 的）
+
+**用 JS 设 DOM Range / `ce.focus()` 不能移动 Notion 自己的光标。** 回读 `getSelection()` 显示 caret
+在目标格、offset 也对——看起来完全正确——但 Notion 按键走它内部的光标，键会落到**上一个真正 click 过的块**上。
+我因此读出过「表格格内按 Enter 什么都没发生」，实际是页面末尾偷偷多了一个空块（nBlocks 5→6）、表格纹丝不动。
+**这条已导致我方一条对拍结论出错并被公开发布过，现已更正为「两边一致」。**
+**唯一可靠的落点方式是真 `click([x,y])`，且按键前必须回读 caret 的 {row,col} 与目标核对。**
+
+### 其余高频坑（同轮实测，建议一并进 skill）
+
+- **窗口被停在屏外时 click/hover 静默失效但返回成功**；`bringToFront`/`setWindowBounds` 都救不回来
+  （`setWindowBounds` 反而把 viewport 从 2560×1080 改成 2544×977，**点击坐标整体错位一行**）。
+  有效救法两条：`completeTaskSpace` 关掉换新 task space，或整页 `gotoAndWait` reload。
+  判据别看 `visibilityState`，要做**判别式正对照**：连点四行、每次回读 caret 的 row，全同 = 点击没做命中测试。
+- **hover 会用着用着就死**（selector opacity 恒 0，但 `elementFromPoint` 正常）；先 `click` 进任意格再 hover 即恢复。
+  hover 探针要写成「click 重置 → hover → 校验 opacity != 0 → 才继续」。
+- **Notion 的 selector 元素悬停过就常驻 DOM 不删**，按存在性计数会读到一堆陈旧残留；**判定必须用 computed opacity != 0**。
+- **手柄菜单约 1/3 概率开成空壳**（只有 `Search actions…` + 页脚，等多久都不出动作列表）；
+  Escape 关掉重开，最多 6 次；判定写成 `items.length > 3` 而不是「菜单存在」。
+- **找菜单容器别按「宽 200-400 且含 Delete 的 div」**——会命中左侧栏页面列表。
+  稳的写法：定位 `input[placeholder^='Search actions']`，向上找第一个 height>90 的祖先，取 innerText 按行 split。
+- **拖拽期间有个 `notion-selectable-drag-handle` 覆盖层带着与真表格同一个 `data-block-id`**，
+  按 id 去重会让你读出「表块跑到第一位」的假结论；过滤要加 `width > 100 && !className.includes('drag-handle')`。
+- **Notion 的选中/描边不是给 td 加底色，是独立描边 DIV**（border 2px `rgb(39,131,222)`、背景透明）。
+  逐格读 `getComputedStyle(td).backgroundColor` 恒为透明 → 会误判「没有任何视觉标记」。
+  正确读法：在表格区域内扫 div、筛 borderColor 含 `39,131,222`，报它的 rect（几何本身就是作用域的可证伪读数）。
+
+
+## 2026-08-04 — 对拍探针两条硬教训：Notion 键盘层送不送得到，必须用正对照证；probe-* 别进 CI
+
+**来源**：Notion 粒度对拍第二批（表格/图片/callout，分支 `feat/notion-align-b2` / PR #388）与
+`feat/ux-granularity` 那条 track 的发现互相印证/互相证伪，两边都值得收进 `/align-notion` 的坑清单。
+
+### ① 「无事发生」类读数必须配正对照，否则与哑探针不可区分
+
+`feat/ux-granularity` 2026-08-04 实测：**Notion 只认它自己那套键盘层，`cdp('Input.dispatchKeyEvent')`
+发的原生键事件它完全无视**（Backspace/Delete 连按无反应），要用 ego-browser 的 `pressKey`；
+但 `Input.insertText` 有效——所以**「能插字」不能证明「能发键」**，别拿插字做连通性探针。
+
+这跟 `/align-notion` skill 现有 recipe 里写的「裸 CDP + `type:'keyDown'`」直接冲突。**我按这条回查了
+自己那批读数，结论是「两边都对，但都不完整」**：
+- 表格**格内**：Tab 有正对照（同批次中间格按 Tab，编辑框确实从 行1-A 移到 行1-B）、⌘A 的分档也有可见
+  变化 → **CDP 键在表格格内确实送达**，所以「完全无视」至少不是全局成立（可能只对块级操作成立）。
+- 但我一条 **Enter 的读数没有正对照**（「按下去什么都没发生」），与「键根本没送到」在证据上无法区分
+  → 已把该条从「差异」**降级为「无法判定」**并更新报告。
+
+**怎么 apply**：① 任何一侧的读数是「什么都没发生」时，**同一次会话里必须附一个应该成功的正对照**
+（比如先在表外段落按一次 Enter 证明这个键送得到），没有正对照就不许写成结论；
+② 别再假设某一种发键方式全局有效——**按场景各自证一次**；
+③ 相关的还有：窗口在后台时 `click([x,y])` 静默失败但**返回成功**，光标不动，于是后续按键全落在上一个
+目标上、读出一串看似合理实则错位的结论 → 凡靠点击定位的探针，**按键前必须回读「光标此刻在哪个块」并与目标核对**。
+
+### ② `probe-*.spec.js` 不该进 CI（已在 main 侧配好开关）
+
+两条 track 各自攒了 6-7 个 `probe-*.spec.js`（截图/取证工具，几乎不含断言）。它们落在 `e2e/` 且
+`playwright.config.js` 是 `testDir:'./e2e'` 无排除 → **每个 PR 的 CI 都在跑它们**：既拖时间，又在全绿里
+混进一批「跑了代码但不判定行为」的假覆盖。
+
+**已处置**（在 PR #388 里）：`playwright.config.js` 加
+`testIgnore: process.env.WS2_PROBES ? [] : /probe-.*\.spec\.js$/`。收集数 722 → 674，仍远高于
+ci.yml 的地板 400。⚠ **实测 `testIgnore` 会连显式点名的路径一起挡**（直接点名得 0 tests），
+所以必须留 `WS2_PROBES` 开关：要跑就 `WS2_PROBES=1 npx playwright test e2e/probe-xxx.spec.js`。
+两条分支合并后自动生效，不用各自再做一遍。
+
+### ③ 附带提醒：探针里画鼠标标注不能用 `setAttribute('style', ...)`
+
+app 的 CSP 是 `style-src 'self' file:`（无 `unsafe-inline`），整条 style 属性会被拦掉——元素在 DOM 里
+但**零样式**（实测几何变成 `x:1280,w:0,h:900` 的裸 flex 子项），截图上什么都看不见**还毫无报错**。
+必须走 CSSOM `el.style.setProperty()` 逐条设，并加「红圈几何不是 18×18 就抛错」的自检。
+`e2e/probe-dim-shots.spec.js` 等文件用的正是被拦的那句，**那些悬停截图大概率没有鼠标标注**——
+而 skill 铁律说「没有标注，截图就说明不了悬停类事实」，建议复查后重拍。
+
+
+## 2026-08-03 — 本地全量 e2e 门槛大幅提高：默认不跑，发版前才跑（CI 全量照旧不变）
+
+**是什么**：Colin 2026-08-03 当场叫停本地全量 e2e（「我的电脑一直在闪」）。现在这套 690+ 条、每条
+**真开一个 Electron 窗口再关掉**，一轮 17-18 分钟，全程闪屏抢焦点，人没法用电脑。**新口径：本地全量
+只在「准备发版之前」跑；日常开发（包括动共享核心）一律只跑受影响的 spec + 变异自检那一道门。**
+⚠ **CI 侧一个字没改**：每个 PR 照跑全量分片（required check 仍是 `{test, e2e-all}`，strict）——
+正因为 CI 这道全量门还在，本地跳过全量才是安全的，**别把这条读成「全量可以不跑了」**。
+这也是对 CLAUDE.md 既有纪律（2026-07-09「开发迭代只跑受影响的 spec」）的强化：其中「动到共享核心
+推 PR 前本地全跑一次兜底」的例外条款**作废**，改为交给 CI。
+
+**怎么 apply**：
+① 日常：`npx playwright test e2e/<spec>.spec.js`（十几秒）+ 变异自检；改共享核心也这样，全量交 CI，
+真有跨文件回归就多一次 CI 往返（6 分钟），比每次占用户机器 18 分钟划算得多。
+② 真要在本地跑长任务（全量 e2e、大批量脚本），**先告诉用户会发生什么**（会闪屏、要多久），
+用户正在用电脑就别跑。
+③ **进程清理是自己的责任**，且 `pkill -f <worktree 名>` **不可靠**：worktree 的 `node_modules` 常是
+软链到别的 worktree，Electron 进程命令行里写的是**被软链指向的那个路径**，按本 worktree 名 pgrep
+根本匹配不到（还会误伤正在跑的测试——本次实测把自己的测试进程杀了）。要按
+`node_modules/electron/dist/Electron.app` 这类真实路径匹配，或起进程时记 PID。起 dev 实例 / 跑测试
+后务必收尾，别留孤儿 Electron（本次 session 累计留了十几个，最早的挂了几小时）。
+
+**来源**：Colin 2026-08-03 口头拍板（UX 粒度对齐 session）；呼应 CLAUDE.md「开发时的测试纪律 — 2026-07-09」。
+
 ## 2026-08-03 — 表格块编辑开工：blockedit.js/serialize.js 热点预警
 
 **是什么**：表格块编辑 feature（Schema 1 Table v1）开工，worktree wordspace-next-table / 分支 feat/table-block-editing。接下来几天会重改 `src/editor/blockedit.js` 全线（classify/onClick/onKeyDown/deleteSelection/refreshRangeSel/execText/onPaste）+ `src/editor/serialize.js`（WS2_MARKERS 新增 cell 编辑标记）+ 新增 `e2e/table.spec.js` 与 `test/blockedit-table.test.js`。

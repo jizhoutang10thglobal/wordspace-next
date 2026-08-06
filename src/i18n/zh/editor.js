@@ -21,12 +21,21 @@ module.exports = {
   tableColRight: '右侧插列',
   tableDelRow: '删除本行',
   tableDelCol: '删除本列',
+  tableDupRow: '复制本行',
+  tableClearRow: '清空本行',
+  tableDupCol: '复制本列',
+  tableClearCol: '清空本列',
+  tableRowMenuHead: '行',
+  tableColMenuHead: '列',
+  tableRowHandleTip: '行操作',
+  tableColHandleTip: '列操作',
   blockImage: '图片',
   blockDivider: '分隔线',
   aiGenerate: '✦ AI 生成（开发中）',
 
   // 拖拽手柄 / 提示
   gripTip: '拖动重排 · 点击打开菜单',
+  plusTip: '点击在下方插入 · Option 点击插到上方',
   dragHandleTip: '拖动调整顺序，点击打开菜单',
   blockNotEditable: '此块暂不支持编辑',
 
@@ -91,7 +100,9 @@ module.exports = {
   turnToText: '转为正文',
   turnToHeading: '转为标题',
   turnToQuote: '转为引用',
+  turnToCallout: '转为提示',
   addCaption: '加说明',
+  caption: '说明',
   insertBelow: '在下方插入',
   noMatch: '无匹配',
 
@@ -117,6 +128,8 @@ module.exports = {
 
   // 编辑器内占位文案（空块 / 图片说明）
   emptyBlockPlaceholder: '输入正文,或按 / 插入',
+  emptyTogglePlaceholder: '空折叠块——点这里或把块拖进来',
+  pickerFilterPlaceholder: '输入以筛选…', // E5：从 gutter「+」唤起块类型选择器时，该空块的占位（Notion 同款）
   figcaptionPlaceholder: '图片说明',
 
   // 分页页码 chip
