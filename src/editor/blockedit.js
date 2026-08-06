@@ -1019,6 +1019,44 @@
     // toggle 的 summary 行、toggle 体内块（整个 toggle 被罩时标 details 本身）。唯一例外：端点落在
     // table 内 → 该 table 整行蓝（部分裁剪表格必产非合规，删除只能整删=ED-A2，高亮预示之，所见即所删）。
     // data-ws2-rangesel 进 serialize 白名单剥除（纯交互态、绝不入盘）。
+    // 行级**编辑态**标记（Wendi 2026-08-05：「回车换行后，第二行的选中深色还是和上一行连成一起」）。
+    // 与 Esc 那档同源的病：列表的 editingEl 是整个 <ul> = **存储单元**，而 [data-ws2-editing] 的底色画的是
+    // 该元素的整个盒子 → 编辑任何一行都把整张列表染上（实测三行列表编辑第 2 行，底色元素高 93.6px = 3.3 行；
+    // 段落对照恰好 28px = 自身）。v0.12.2 已把 Esc 的 data-ws2-selected 下沉到 <li>，编辑态这半没跟着下沉——
+    // 漏网原因是全仓 e2e 对 data-ws2-editing 只有「在不在 / 是什么标签」的存在性断言、**从无几何断言**，
+    // 那道门的操作序列跟用户复现逐字相同却只在按完 Esc 之后才开始看。底色改由 <li> 上的 editrow 承载。
+    // ⚠ 只下沉列表，不动多段容器（callout/quote）：容器有可见边框，编辑框内某段时整框着色读作「你在这个框里」，
+    // 是合理的；列表没有边框，整表着色读作「这些行是一个东西」，正是本 bug。语义不同，别一并改。
+    let editRowEl = null;
+    // ⚠ 清理必须扫 DOM，不能只清 editRowEl（与 clearSelectedAttr / clearRangeSel 同一范式）——retagElement
+    // 原样复制全部属性，标记会跟着进新元素而引用还指着被摘走的旧元素，只清引用必然漏掉活着的那个
+    // （2026-08-05 「清不掉的蓝底」就是这个病，team-memory 已立规）。
+    function clearEditRow() {
+      body.querySelectorAll('[data-ws2-editrow]').forEach((el) => el.removeAttribute('data-ws2-editrow'));
+      if (editRowEl && editRowEl.removeAttribute) editRowEl.removeAttribute('data-ws2-editrow');
+      editRowEl = null;
+    }
+    // 取光标所在的**最深** li（与 rowOf 的取深规则一致：closest 从文本节点的父元素起爬，天然命中最深那个）。
+    // 光标落在 <ul> 自身（如程序化选区）时返回 null = 不标行，好过标错行。
+    function caretRowOf(host) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return null;
+      const n = sel.anchorNode;
+      const el = n && (n.nodeType === 3 ? n.parentElement : n);
+      if (!el || !el.closest || !host.contains(el)) return null;
+      const li = el.closest('li');
+      return li && host.contains(li) ? li : null;
+    }
+    function refreshEditRow() {
+      clearEditRow();
+      if (!editingEl) return;
+      if (editingEl.tagName !== 'UL' && editingEl.tagName !== 'OL') return; // 只有列表的 editingEl 是容器，其余块自身就是交互单元
+      const li = caretRowOf(editingEl);
+      if (!li) return;
+      li.setAttribute('data-ws2-editrow', '');
+      editRowEl = li;
+    }
+
     let rangeSelEls = [];
     // ⚠ 必须扫 DOM，不能只清 rangeSelEls 里记的那批（跟 clearSelectedAttr 同一范式）。
     // 病灶：retagElement **原样复制全部属性**——「转为」把带 data-ws2-rangesel 的 <p> 换成 <ol> 时，
@@ -1158,6 +1196,7 @@
       el.setAttribute('data-ws2-editing', '');
       el.focus({ preventScroll: true }); // 不触发原生「聚焦滚进视野」（会把整块对齐→点击时文档跳，Wendi 2026-07-22）
       placeCaret(el, caret);
+      refreshEditRow(); // 列表：底色落到光标所在那一行（放 placeCaret 之后——它才定下光标位置）
       scrollCaretIntoViewIfNeeded(); // 只在光标越出视口时最小滚动露出它（键盘导航到屏外块仍可见）
       positionFmtbar();
     }
@@ -1166,6 +1205,7 @@
       const el = editingEl; editingEl = null;
       if (el.hasAttribute('data-ws2-ce')) { el.removeAttribute('contenteditable'); el.removeAttribute('data-ws2-ce'); }
       el.removeAttribute('data-ws2-editing');
+      clearEditRow();
       fmtShown = false; fmtbar.style.display = 'none'; // 离开编辑 → 关气泡
     }
     // ---- 表格 cell 编辑（第四状态，KTD1）：contenteditable 挂 TD/TH、绝不挂 table；不设 editingEl/selectedEl，
@@ -4630,7 +4670,7 @@
       enterEdit(conv, { mode: whole ? 'start' : 'end' });
     }
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
-    function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮
+    function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); refreshEditRow(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮 + 让列表的编辑底色跟着光标换行
     function onCompStart() { if (slash) closeSlash(); } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
     function onScroll() { const a = gutterAnchor(); if (a) positionGrip(a); positionFmtbar(); if (blockMenu.style.display !== 'none') closeBlockMenu(); }
 
@@ -5518,7 +5558,10 @@
      改用 accent 蓝:过「invert+hue-rotate」仍是蓝(配方保色相)、明暗两态都看得见。 */
   img[data-ws2-selected]:not([data-ws2-editing]),
   figure[data-ws2-selected]:not([data-ws2-editing]){box-shadow:0 0 0 2px #1a73e8,0 0 0 5px rgba(26,115,232,.28);}
-  [data-ws2-editing]{border-radius:4px;background:rgba(0,0,0,.015);}
+  /* 编辑态底色作用在**交互单元**上。列表的 data-ws2-editing 挂在整个 ul/ol（存储单元）身上，
+     整表着色会把兄弟行一起罩进去（Wendi 2026-08-05），所以列表这档改由行上的 data-ws2-editrow 承载。 */
+  [data-ws2-editing]:not(ul):not(ol){border-radius:4px;background:rgba(0,0,0,.015);}
+  [data-ws2-editrow]{border-radius:4px;background:rgba(0,0,0,.015);}
   /* 表格 cell 编辑（U2）：悬停 cursor:text = 可编辑性的最低发现性；编辑格 inset 蓝环（不占布局、纸方墨圆克制）。 */
   td:hover,th:hover{cursor:text;}
   [data-ws2-cell]{outline:none;border-radius:2px;box-shadow:inset 0 0 0 2px rgba(26,115,232,.4);background:rgba(26,115,232,.04);}
