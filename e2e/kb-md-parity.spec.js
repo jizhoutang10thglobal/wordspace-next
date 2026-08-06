@@ -53,9 +53,14 @@ test('M1: 空段打 --- → 第三个 - 立即转分隔线、光标落新段；�
     return { afterHr: hr.nextElementSibling ? hr.nextElementSibling.textContent : null, hrText: null };
   });
   expect(st.afterHr).toBe('后续文字');
-  await undoIPC(); // 撤打字
-  await undoIPC(); // 撤 hr 转换
-  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('hr').length)).toBe(0);
+  await undoIPC(); // 撤打字（后续文字）
+  await undoIPC(); // 撤 hr 转换 → 逃生舱：还原字面 ---（ADV-KB-2 钉门）
+  await expect.poll(() => page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { hr: d.querySelectorAll('hr').length, literal: [...d.querySelectorAll('p')].some((p) => p.textContent === '---') };
+  })).toEqual({ hr: 0, literal: true }); // Notion 同款：自动转换的 undo 先回字面文本
+  await undoIPC(); // 再撤 --- 打字
+  await expect.poll(() => page.evaluate(() => [...document.getElementById('doc-frame').contentDocument.querySelectorAll('p')].some((p) => p.textContent === '---'))).toBe(false);
 });
 
 test('M2: 负向守卫——「a---」不转、既有 --- 文本中键入不转', async () => {
@@ -123,14 +128,89 @@ test('K3: cell 编辑态 ⌘⌥1 不动（块级转换在格里禁用）', async
 test('H1: hr 既有交互钉门——点击=灰选、Backspace 删除、undo 回来（此前零门）', async () => {
   await launch();
   await openDoc('<p id="a">上。</p><hr id="line"><p id="z">下。</p>');
-  await frame.locator('#line').click({ force: true });
+  await frame.locator('#line').click(); // 不用 force——hit-target 真跑，覆盖层压住 hr 时这里就该红（ADV-KB-8）
   await expect.poll(() => page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
     const hr = d.getElementById('line');
-    return hr && hr.hasAttribute('data-ws2-selected');
+    if (!hr || !hr.hasAttribute('data-ws2-selected')) return false;
+    const cs = getComputedStyle(hr);
+    return cs.boxShadow !== 'none' || cs.outlineWidth !== '0px'; // 灰选必须真画出来（S4 判据）
   })).toBe(true); // 点击灰选
   await page.keyboard.press('Backspace');
   await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('hr').length)).toBe(0); // 删除
   await undoIPC();
   await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('hr').length)).toBe(1); // undo 回来
+});
+
+// ===== 对抗审查回归（ADV-KB-2/3/4/6 处置后钉死）=====
+
+test('K4: ⌘E 是开关——再按一次解包，绝不嵌套 <code>', async () => {
+  await launch();
+  await openDoc(DOC);
+  await frame.locator('#b').click();
+  await page.waitForTimeout(150);
+  const sel23 = () => page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const b = d.getElementById('b');
+    const tn = b.querySelector('code') ? b.querySelector('code').firstChild : b.firstChild;
+    const r = d.createRange(); r.setStart(tn, 0); r.setEnd(tn, 2);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const tn = d.getElementById('b').firstChild;
+    const r = d.createRange(); r.setStart(tn, 3); r.setEnd(tn, 5);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.keyboard.press('Meta+e');
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('#b code').length)).toBe(1);
+  await sel23(); // 选中 code 内文字
+  await page.keyboard.press('Meta+e'); // toggle off
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('#b code').length)).toBe(0); // 解包不嵌套
+});
+
+test('K5: ⌘E 后紧接 ⌘⌥1——两步 undo 各回各的（格式步不被并进转换步）', async () => {
+  await launch();
+  await openDoc(DOC);
+  await frame.locator('#b').click();
+  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const tn = d.getElementById('b').firstChild;
+    const r = d.createRange(); r.setStart(tn, 3); r.setEnd(tn, 5);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.keyboard.press('Meta+e');
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('code').length)).toBe(1);
+  await page.keyboard.press('Meta+Alt+1');
+  await expect.poll(() => page.evaluate(() => !!document.getElementById('doc-frame').contentDocument.querySelector('h1'))).toBe(true);
+  await undoIPC(); // 撤转换
+  await expect.poll(() => page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    return { h1: d.querySelectorAll('h1').length, code: d.querySelectorAll('code').length };
+  })).toEqual({ h1: 0, code: 1 }); // ADV-KB-3：code 幸存——格式步没被陪葬
+  await undoIPC(); // 撤 ⌘E
+  await expect.poll(() => page.evaluate(() => document.getElementById('doc-frame').contentDocument.querySelectorAll('code').length)).toBe(0);
+});
+
+test('K6: cell 编辑态 ⌘E——格内选词包 code，phrasing 合规', async () => {
+  await launch();
+  await openDoc('<p id="a">前。</p><table id="T"><tbody><tr><td id="c1">格内文字</td><td>乙</td></tr></tbody></table>');
+  await frame.locator('#c1').click();
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const d = document.getElementById('doc-frame').contentDocument;
+    const tn = d.getElementById('c1').firstChild;
+    const r = d.createRange(); r.setStart(tn, 0); r.setEnd(tn, 2);
+    const s = d.getSelection(); s.removeAllRanges(); s.addRange(r);
+  });
+  await page.keyboard.press('Meta+e');
+  await expect.poll(() => page.evaluate(() => {
+    const c = document.getElementById('doc-frame').contentDocument.querySelector('#c1 code');
+    return c ? c.textContent : null;
+  })).toBe('格内');
+  const html = await page.evaluate(() => WS2Serialize.serializeDocument(document.getElementById('doc-frame').contentDocument));
+  const { validate } = require('../src/lib/schema-validate.js');
+  const { JSDOM } = require('jsdom');
+  expect(validate(new JSDOM(html).window.document).conform).toBe(true);
 });

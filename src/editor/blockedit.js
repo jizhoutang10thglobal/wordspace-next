@@ -2526,12 +2526,24 @@
     }
     function wrapCode() {
       const sel = doc.getSelection();
-      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
       const range = sel.getRangeAt(0);
-      if (!fmt.clampRangeToBlock(doc, range, body)) return; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块
-      const code = doc.createElement('code');
-      try { range.surroundContents(code); } catch (e) { code.appendChild(range.extractContents()); range.insertNode(code); }
+      if (!fmt.clampRangeToBlock(doc, range, body)) return false; // 跨块拒绝 + 列表项 Shift+End 幽灵边界夹回起块
+      if (undoMgr) undoMgr.checkpoint(); // ADV-KB-3：Range 手术不触发 input 事件、防抖 checkpoint 不跑——不结算的话本次格式步会被并进下一个操作的 undo 步（⌘E 后 ⌘⌥1 一次 ⌘Z 双杀，实测）
+      // ADV-KB-4：⌘E 是开关（Notion 官方语义）——选区已在 code 里/恰为 code 内容 → 解包，否则连按无限嵌套 <code><code>
+      const anc = range.commonAncestorContainer;
+      const host = anc.nodeType === 3 ? anc.parentElement : anc;
+      const inCode = host && host.closest ? host.closest('code') : null;
+      if (inCode) {
+        while (inCode.firstChild) inCode.parentNode.insertBefore(inCode.firstChild, inCode);
+        inCode.remove();
+      } else {
+        const code = doc.createElement('code');
+        try { range.surroundContents(code); } catch (e) { code.appendChild(range.extractContents()); range.insertNode(code); }
+      }
+      if (undoMgr) undoMgr.checkpoint();
       markDirty(); persistEditing();
+      return true;
     }
     function persistEditing() { /* DOM 即模型：编辑直接改 DOM，无需额外落库；标脏即可 */ }
 
@@ -3735,10 +3747,13 @@
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'e' || e.key === 'E') && !e.isComposing && e.keyCode !== 229) {
         if (editingEl || cellEl) {
           const sE = doc.getSelection();
-          if (sE && sE.rangeCount > 0 && !sE.isCollapsed) { e.preventDefault(); wrapCode(); return; }
+          if (sE && sE.rangeCount > 0 && !sE.isCollapsed) {
+            if (wrapCode()) { e.preventDefault(); return; } // ADV-KB-6：clampRangeToBlock 拒绝（跨 li 等）时不吞键——吞了又不作用=零反馈死键
+          }
         }
       }
-      if ((e.metaKey || e.ctrlKey) && e.altKey && /^Digit[0-3]$/.test(e.code) && !e.isComposing && e.keyCode !== 229) {
+      // ADV-KB-1（HIGH）：Windows AltGr = ctrlKey+altKey——法语键盘 AltGr+0 打 @ 会被劫持成转正文。AltGraph 修饰态豁免。
+      if ((e.metaKey || e.ctrlKey) && e.altKey && !e.shiftKey && !(e.getModifierState && e.getModifierState('AltGraph')) && /^Digit[0-3]$/.test(e.code) && !e.isComposing && e.keyCode !== 229) {
         const tgt = editingEl || selectedEl;
         if (tgt && !cellEl && ['text', 'heading', 'quote'].includes(classify(tgt))) {
           e.preventDefault();
@@ -4768,8 +4783,10 @@
         const f0 = editingEl.firstChild;
         const s0 = doc.getSelection();
         if (f0 && f0.nodeType === 3 && s0 && s0.anchorNode === f0 && s0.anchorOffset === 3) {
+          if (undoMgr) undoMgr.checkpoint(); // ADV-KB-2：先把 <p>---</p> 结算成独立快照——undo 一步还原字面 ---（Notion 逃生舱同款），否则防抖窗口里的三击被转换 checkpoint 吞掉、字面 --- 永不可得
           const hr = doc.createElement('hr');
           const np = doc.createElement('p');
+          np.appendChild(doc.createElement('br')); // ADV-KB-5：空段必带 <br>（兄弟路径全款惯例；裸 <p></p> 在纯浏览器塌零高）
           editingEl.replaceWith(hr);
           hr.parentNode.insertBefore(np, hr.nextSibling);
           if (undoMgr) undoMgr.checkpoint();

@@ -27,7 +27,7 @@
 
 | 键 | 行为 | 作用域 |
 |---|---|---|
-| ⌘E | 选中文字包 `<code>` 行内代码（wrapCode 既有管线：跨块拒绝、夹回块内） | editing / cell 态，有非折叠选区才动 |
+| ⌘E | **开关**：选中文字包 `<code>`；选区已在 code 内再按=解包（Notion toggle 语义，ADV-KB-4） | editing / cell 态，有非折叠选区且可作用才吞键（跨 li 拒绝时放行原生，不做零反馈死键） |
 | ⌘⌥0 | 当前块转正文 | editing/灰选块，限 text/heading/quote；cell 态禁用 |
 | ⌘⌥1/2/3 | 当前块转 H1/H2/H3（turnInto 既有管线，内容/合规全走既有逻辑） | 同上 |
 
@@ -36,6 +36,11 @@
   keyboard shortcuts 文档**（⌘E inline code、⌘⌥0-3 text/headings），非实测读数。
 - ⌥ 在 mac 会改写 `e.key`（⌥0='º'）——实现用 `e.code`（Digit0-3）判定。
 - ⌘⌥4（Notion=to-do）暂未做：列表行级语义与「当前块」口径需先定（行还是整列表），记欠账。
+- **AltGr 豁免**（ADV-KB-1）：Windows 上 AltGr=ctrl+alt，法语/德语键盘 AltGr+数字打 @/#/² 会命中
+  ⌘⌥ 判据——`getModifierState('AltGraph')` 豁免。待王波 Windows 真机装欧洲布局各敲一遍验证。
+- **toggle 标题（summary）内 ⌘E/⌘⌥ 不可达**（summary keydown 分支整段截流）——欠账（ADV-KB-7）。
+- 自动转换的 **undo 逃生舱**：`---` 转 hr 后一步 undo=还原字面 `---`（Notion 同款，前置 checkpoint
+  结算防抖打字债）；既有空格触发一族（`# ` 等）同病未修，存量欠账记录在案。
 
 ### hr 分隔线既有交互（本轮钉门，行为未改）
 
