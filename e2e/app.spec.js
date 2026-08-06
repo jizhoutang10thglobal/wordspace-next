@@ -570,6 +570,9 @@ test('Tab 缩进：列表项嵌套成子列表', async () => {
   await page.keyboard.press('Enter'); // 原生新 <li>
   await page.keyboard.type('第二项');
   await page.waitForTimeout(120);
+  // Tab 分派迁移（Colin 2026-08-06）：打完字光标停在行末 = 行中，那儿按 Tab 现在是插两个空格。
+  // 嵌套要先回行首。契约（第二项 Tab 嵌进第一项，U3-B2）没变。
+  await page.keyboard.press('Home');
   await page.keyboard.press('Tab'); // 第二项缩进进第一项
   // 出现嵌套：某个 li 里又有一个 ul，其中含「第二项」
   await expect.poll(() => frame.locator('body').evaluate(() => {
