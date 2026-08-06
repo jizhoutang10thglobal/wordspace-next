@@ -5973,6 +5973,16 @@
      解析不出具体行」的状态下也回落到整表着色——否则那一档会一点底色都没有，对抗审查 ADV-5）。 */
   [data-ws2-editing]:not(:has(li[data-ws2-editrow])){border-radius:4px;background:rgba(0,0,0,.015);}
   [data-ws2-editrow]{border-radius:4px;background:rgba(0,0,0,.015);}
+  /* 带子项的行：底色只覆盖**它自己那一行**。<li> 的边框盒天然包含整棵嵌套子树，不钳的话
+     编辑父行会把所有子行一起罩住（实测 93.6px —— 正是最初那个「连成一片」的病灶数字，
+     对抗审查 ADV-2）。用 1lh 单位 = 该行自己的行高，正好一行。
+     ⚠ 这段 CSS 活在 JS 模板字符串里——注释里**绝不能出现反引号**（会当场提前闭合模板串、
+     整个编辑器样式与其后代码一起废掉）。同族的坑还有一个：注释里**也绝不能出现注释结束符的字面量**
+     ——写它会当场闭合注释、把紧随其后的规则吞掉（本条注释第一版就是这么把自己下面那条规则吃了）。
+     ⚠ 只钳带子项的行：叶子行维持整盒着色，否则自己换行的长条目只剩第一行有底色（净退步）。
+     ⚠ 不对 [data-ws2-rangesel] 做同样处理：那边父行拿到标记的前提是 covered() 成立
+     = 整棵子树都在选区里，连体着色恰恰是对的。 */
+  li[data-ws2-editrow]:has(ul,ol){background-color:transparent;background-image:linear-gradient(rgba(0,0,0,.015),rgba(0,0,0,.015));background-repeat:no-repeat;background-origin:border-box;background-size:100% 1lh;}
   /* 表格 cell 编辑（U2）：悬停 cursor:text = 可编辑性的最低发现性；编辑格 inset 蓝环（不占布局、纸方墨圆克制）。 */
   td:hover,th:hover{cursor:text;}
   [data-ws2-cell]{outline:none;border-radius:2px;box-shadow:inset 0 0 0 2px rgba(26,115,232,.4);background:rgba(26,115,232,.04);}
