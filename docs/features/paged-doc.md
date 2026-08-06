@@ -9,6 +9,10 @@
 版式设置。真 app 入盘 = head 的 `<style data-ws-schema-css="page">` 装标准 `@page{size;margin}`
 （本就在 Schema 1 head 白名单内），带且可解析 → 分页视图/分页导出；写坏了只是分页不生效，不降级。
 
+ui-demo 侧同步不随 parked、留 main 作移植真相源：新建范式轨「分页文档」卡片（#371）+ 页面设置
+页眉/页脚镜像（2026-08-03，重做自撞车关闭的 #350）。真 app 侧页眉/页脚的行为规格 = PR-C（#348），
+已随 Schema 2 批次撤入 `feat/schema-2-parked`——复活时两侧按「有意分歧」条目对齐。
+
 ## 行为契约
 
 **页面设置**（文档 ⋯ 菜单 → 页面设置…）：分页开关 / 纸张 A4·A3·Letter·Legal / 纵横向 /
@@ -76,6 +80,12 @@
 
 - 配置存储：demo 存 localStorage；真 app 入盘 `@page`（HTML-native，文件自携带）——产品设计如此
   （Colin 2026-07-08）。
+- 页眉/页脚（2026-08-03 同步）：demo 存 per-doc `PageConfig.header/footer`（localStorage，同上）；真 app
+  （PR-C #348，现随 Schema 2 parked）入盘 `meta[name="ws-page-header"/"ws-page-footer"]`。屏显都是「每页边距区画一行、源=配置、不进数据」；
+  demo 走 Canvas 覆盖层 JSX 文本插值、真 app 走 pagination.js 覆盖层 `textContent`——**两侧都靠文本
+  安全路径转义，绝不 innerHTML/dangerouslySetInnerHTML**（安全不算分歧，是硬要求）。关分页保留语义
+  demo 天然一致（只翻 `on`，header/footer 留在配置里，再开全回来）。demo 无 PDF 导出的页眉页脚
+  （demo 导出走 window.print，页眉页脚是真 app printToPDF headerTemplate 的能力），记为分歧。
 - 可编辑表格/代码块：demo 为测分页新建的简化块类型（2026-07-10）；真 app 的表格/代码编辑走
   Schema 1 既有块模型，能力差异不算漂移。**且 Schema 1 目前没有代码块类型**（`body>pre` 不在
   TOP_BLOCKS → 非合规 → 根本进不了分页）：真 app 引擎已按「pre 沿逻辑行（\n/`<br>`）切 +
@@ -106,8 +116,12 @@
   H4 块 + mm/inch + 另存预设都在 ui-demo；真 app align 时排版入盘 = 第二个 `data-ws-schema-css="type"` 块 +
   Schema 校验白名单扩展（origin RISK-2），真 app Schema 本就封顶 h4、H4 天然对得上。字体是系统替身
   （无仿宋_GB2312 等，视觉≈非逐字节国标；真合规可能得内嵌字体，RISK-B）。
-- **ui-demo 页眉/页脚未做**：真 app PR-C 已有页眉页脚，但 ui-demo `PageConfig` 无 header/footer 字段——加它
-  要动 `page.ts` + Canvas 每页覆盖层渲染 + 转义（类似真 app PR-C 独立一块），本期 defer。
+- ~~**ui-demo 页眉/页脚未做**：真 app PR-C 已有页眉页脚，但 ui-demo `PageConfig` 无 header/footer 字段——加它
+  要动 `page.ts` + Canvas 每页覆盖层渲染 + 转义（类似真 app PR-C 独立一块），本期 defer。~~
+  ✅ 已同步（2026-08-03，重做自撞车关闭的 #350）：`page.ts` PageConfig.header/footer + clampHF/HF_MAXLEN、
+  PageSetupModal「页面」分区两个文本框（maxLength 200）、Canvas 每页 HF 覆盖层（JSX 文本插值）。
+  **视觉参数（字号/垂直位置系数 0.42/0.58/对齐）待 Wendi 真机验收；真 app 侧（PR-C）现随
+  Schema 2 parked，「两侧一起调」发生在复活时。**
 - **ui-demo paged Playwright 门 harness stale**：`verify-paged-v4.mjs` / `smoke-paged.mjs` 的 `openDocPaged`
   用 ⋯-菜单导航，当前 main 上失效（`verify-typography.mjs` 已改用 seed localStorage 绕过、稳）；这两门
   跑前需修 harness（本期已 npm-script 化，未修导航）。
