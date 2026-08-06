@@ -89,3 +89,28 @@ test('边缘加行条', async () => {
   await page.waitForTimeout(200);
   await shot('b5-edge-rowbar');
 });
+
+test('行拖拽指示线', async () => {
+  await launch();
+  await openDoc('<p id="a">按住行药丸往下拖：整行跟着走，蓝色指示线标出落点行槽。</p><table id="T"><thead><tr><th scope="col">甲头</th><th scope="col">乙头</th><th scope="col">丙头</th></tr></thead><tbody>'
+    + '<tr id="r1"><td id="c11">一甲</td><td>一乙</td><td>一丙</td></tr>'
+    + '<tr id="r2"><td>二甲</td><td>二乙</td><td>二丙</td></tr>'
+    + '<tr id="r3"><td>三甲</td><td>三乙</td><td>三丙</td></tr>'
+    + '</tbody></table><p id="z">松手后行落到线的位置。</p>');
+  const c = await frame.locator('#r1 td').first().boundingBox();
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2);
+  await page.waitForTimeout(350);
+  const pb = await frame.locator('.ws-rowsel').boundingBox();
+  const from = { x: pb.x + pb.width / 2, y: pb.y + pb.height / 2 };
+  const r3 = await frame.locator('#r3').boundingBox();
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x, y: from.y });
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: from.x, y: from.y, button: 'left', buttons: 1, clickCount: 1 });
+  const toY = r3.y + r3.height + 2;
+  for (let i = 1; i <= 6; i++) {
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: from.x + 30 * i / 6, y: from.y + (toY - from.y) * i / 6, button: 'left', buttons: 1 });
+    await page.waitForTimeout(40);
+  }
+  await page.waitForTimeout(200);
+  await shot('b5-row-drag-line'); // 拖拽定格：指示线在行 3 下缘
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: from.x + 30, y: toY, button: 'left', buttons: 1, clickCount: 1 });
+});
