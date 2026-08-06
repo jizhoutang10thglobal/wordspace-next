@@ -5167,6 +5167,37 @@
     // 原来 shell 的 paste 用 execCommand('insertText', 带换行的文本)：Chromium 会把 \n 转成段落切分、
     // 在标题块里塞 <p>（<h2><p>..</p></h2>），reparse 后原样保留 → 持久非合规；段落块里也多出垃圾空 <p> + 活 DOM/磁盘分叉。
     function onPaste(e) {
+      // SW-C（table.md 欠账收账，sweep 授权）：矩形选中态 ⌘V = TSV 按 anchor（矩形左上角）铺格。
+      // tab 分格、换行分行、逐格**整格覆盖**；越界裁剪不扩结构（加行列走边缘条/轴菜单）；铺完
+      // 矩形选中态移到实际覆盖区、前后双 checkpoint 一步 undo。单段无 tab 文本=只进 anchor 格。
+      if (rectSel && rectSel.table.isConnected && !cellEl && !editingEl) {
+        e.preventDefault();
+        const cdR = e.clipboardData || (typeof window !== 'undefined' && window.clipboardData);
+        const tR = cdR && cdR.getData ? cdR.getData('text/plain') : '';
+        if (!String(tR || '').trim()) return;
+        const grid = String(tR).replace(/\r\n?/g, '\n').replace(/\n+$/, '').split('\n').map((l) => l.split('\t'));
+        const tblR = rectSel.table;
+        const trsR = tableRowsOf(tblR);
+        if (undoMgr) undoMgr.checkpoint();
+        let maxR = rectSel.r1, maxC = rectSel.c1;
+        for (let i = 0; i < grid.length; i++) {
+          const tr = trsR[rectSel.r1 + i];
+          if (!tr) break; // 越界裁剪（Notion 会扩表；我们不动结构=有意收窄，spec 记录）
+          const cs = rowCellsOf(tr);
+          for (let j = 0; j < grid[i].length; j++) {
+            const cell = cs[rectSel.c1 + j];
+            if (!cell) break;
+            while (cell.firstChild) cell.removeChild(cell.firstChild);
+            if (grid[i][j]) cell.appendChild(doc.createTextNode(grid[i][j]));
+            else cell.appendChild(doc.createElement('br')); // 空值=清格占位（光标落得进）
+            maxR = Math.max(maxR, rectSel.r1 + i); maxC = Math.max(maxC, rectSel.c1 + j);
+          }
+        }
+        setRectSel(tblR, { row: rectSel.r1, col: rectSel.c1 }, { row: maxR, col: maxC });
+        if (undoMgr) undoMgr.checkpoint();
+        markDirty();
+        return;
+      }
       // cell 上下文输入闸（U4/KTD5）：一切粘贴形态压成单行纯文本落格（cell phrasing-only 红线；多行 join(' ')
       // = SUMMARY 守卫同款；内部富 clip 也走 text/plain = 压 textContent）；纯图剪贴板拒收 + 可感知提示
       //（Colin 拍板 2026-08-03）。放在最前——cell 态绝不允许流进块级/行内富粘贴管线。
