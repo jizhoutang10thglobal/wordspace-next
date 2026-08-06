@@ -154,15 +154,20 @@ test('Shift-Tab 收编后 → 打字落出列项文字末尾（不落子列表�
   expect(await conformOf(await serialize())).toBe(true);
 });
 
-test('U19：Tab 缩进后光标保留在项中原位（不甩项末，keys-8）', async () => {
+test('U19：行首 Tab 缩进后光标保留原位（不甩项末，keys-8）', async () => {
   await launch();
   await openDoc('<ul id="lst" class="ws-todo"><li id="a">第一项</li><li id="b">缩进项</li></ul>');
   await frame.locator('#b').click();
   await page.keyboard.press('Home');
-  await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight'); // 光标在「缩进|项」
+  // Tab 分派迁移（Colin 2026-08-06）：原版这里还按两次 ArrowRight 把光标挪到「缩进|项」——
+  // 行中 Tab 现在是插两个空格（正门在 e2e/tab-inline-spaces.spec.js），那个位置已经触发不到嵌套。
+  // 契约（缩进后光标保原位、不甩项末）没变，只把触发位置改回行首。
   await page.keyboard.press('Tab'); // 缩进
   await page.waitForTimeout(120);
-  await page.keyboard.type('X'); // 应插在原光标处（缩进X项），非项末
-  await expect.poll(() => frame.locator('#b').textContent(), { message: 'Tab 后光标保留原位、X 落中间' }).toBe('缩进X项');
+  // 前置断言：先钉死「真嵌套了」。原版压根没断言嵌套发生——只删 ArrowRight 会得到一条哑门
+  //（Tab 若退化成彻底 no-op，「光标没动」照样过）。
+  expect(await frame.locator('#a > ul > li').evaluateAll((els) => els.map((l) => l.id)), '前置：#b 真嵌进 #a 的子列表').toEqual(['b']);
+  await page.keyboard.type('X'); // 应插在原光标处（行首 → X缩进项），非项末
+  await expect.poll(() => frame.locator('#b').textContent(), { message: 'Tab 后光标保留原位、X 落行首' }).toBe('X缩进项');
   expect(await conformOf(await serialize())).toBe(true);
 });

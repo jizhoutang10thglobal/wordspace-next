@@ -339,6 +339,29 @@
     before.setEnd(caret.startContainer, caret.startOffset);
     return isBlankRun(before.toString());
   }
+  // 行首判定（Tab 分派，Colin 2026-08-06 拍板）：口径 = 「行宿主的最开头」**或**「紧跟一个 <br> 之后」。
+  // 硬换行右边是真的行边界，那儿按 Tab 也该缩整块，不该插空格。
+  // ⚠ Range.toString() 完全忽略 <br>（它不产生字符），所以 isCaretAtStart 对 `<p>甲<br>|乙</p>` 判 false，
+  //   第二种行首必须自己找最近的硬换行再看它到光标之间只有源码空白。
+  // ⚠ **软折行（文字自动折到下一视觉行）不算行首**——那儿 DOM 上没有任何边界节点，本谓词纯按 DOM 算，
+  //   天然把它判成行中，正是拍板要的语义（所以这里一行几何判定都不需要）。
+  function isCaretAtLineStart(doc, el) {
+    if (isCaretAtStart(doc, el)) return true;
+    const sel = doc.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+    const caret = sel.getRangeAt(0);
+    if (el !== caret.startContainer && !el.contains(caret.startContainer)) return false;
+    const before = doc.createRange();
+    before.setStart(el, 0);
+    try { before.setEnd(caret.startContainer, caret.startOffset); } catch (x) { return false; }
+    const frag = before.cloneContents();
+    const brs = frag.querySelectorAll ? frag.querySelectorAll('br') : [];
+    if (!brs.length) return false;
+    const tail = doc.createRange();
+    tail.selectNodeContents(frag);
+    tail.setStartAfter(brs[brs.length - 1]);
+    return isBlankRun(tail.toString());
+  }
   // 空块的占位 <br>：contenteditable 里空块必须挂一个 <br> 才撑得起行高，往它里面并内容前要先摘掉，
   // 否则并进来的文字前面留一行空行。
   // ⚠ 判据不能写成 `childNodes.length === 1 && firstChild 是 BR` —— 排版过的文件里它长这样：
@@ -712,6 +735,71 @@
     function indentLevelOf(el) { for (let n = INDENT_MAX; n >= 1; n--) if (el.classList.contains('ws-indent-' + n)) return n; return 0; }
     function stripIndent(el) { for (let n = 1; n <= INDENT_MAX; n++) el.classList.remove('ws-indent-' + n); }
     function setIndentLevel(el, n) { stripIndent(el); if (n > 0) { el.classList.add('ws-indent-' + n); ensureIndentStyle(); } }
+    // ===== Tab 按光标位置分派（Colin 2026-08-06 拍板）：行首 = 缩进/嵌套（既有语义一字不动），
+    // 行中 = 插两个空格（像 Word / 代码编辑器）。三个 helper 都只服务 onKeyDown 的 Tab 分支。=====
+    // 「行宿主」：判行首必须相对**行**算，不能相对 editingEl 算——列表的 editingEl 是整个 <ul>，
+    // 引用/callout 的 editingEl 是容器（#406 容器化只下沉了交互单元、editingEl 没动）。
+    // 拿 editingEl 判的话「第二行及以后的行首」永远判成行中（光标左侧有前面几行的文字），
+    // 列表嵌套会整个失能——这是本次最容易踩的坑。
+    function tabLineHostOf(el) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return el;
+      let n = sel.getRangeAt(0).startContainer;
+      if (n && n.nodeType === 3) n = n.parentElement;
+      if (!n || (n !== el && !el.contains(n))) return el;
+      if (classify(el) === 'list') { const li = n.closest ? n.closest('li') : null; return li && el.contains(li) ? li : el; }
+      if (isMultiParaContainer(el)) return caretLineHostIn(el) || el;
+      return el;
+    }
+    // 插什么：普通块两个 &nbsp;（U+00A0）——HTML 把连续普通空格折叠成一个，插普通空格用户只看得到一个。
+    // nbsp 是普通文本字符，不碰「块级 style 属性 = 整篇非合规」那条红线（序列化成 &nbsp; 实体，
+    // 磁盘字节 reparse 后 validate() 仍 conform，e2e/tab-inline-spaces.spec.js 有往返门钉着）。
+    // 例外按**实际 computed white-space** 判、不按标签名：white-space 保留空白的地方（pre/pre-wrap/
+    // break-spaces）插普通空格才对，塞 nbsp 反而污染代码。
+    // ⚠ 实测（2026-08-06）：本 app 里这个例外目前一个都触发不到 —— <pre> 不在 Schema TOP_BLOCKS，
+    //   含 pre 的文档整篇非合规、走基础编辑器，blockedit 根本不挂；行内 <code> 的 BASELINE_CSS 没设
+    //   white-space，computed 是 normal。按 computed 判而不是按标签判，才能同时做到「哪天真给 code
+    //   设了 white-space:pre 它自动是对的」和「今天不制造按了 Tab 只看到一个空格的静默 bug」。
+    const TAB_PAD_NBSP = '\u00a0\u00a0'; // 字面写 \u00a0：源码里的裸 nbsp 肉眼与空格无异，改坏了没人看得见
+    const TAB_PAD_PLAIN = '  ';
+    function tabPadFor(node) {
+      const el = node && node.nodeType === 3 ? node.parentElement : node;
+      if (!el || el.nodeType !== 1) return TAB_PAD_NBSP;
+      try {
+        const view = doc.defaultView || global;
+        const ws = String(view.getComputedStyle(el).whiteSpace || '').trim();
+        if (ws === 'pre' || ws === 'pre-wrap' || ws === 'break-spaces') return TAB_PAD_PLAIN;
+      } catch (x) {}
+      return TAB_PAD_NBSP;
+    }
+    // 在折叠光标处插 pad。**不走 execCommand、也不走 range.insertNode**（两条都实测过）：
+    // ① execCommand('insertText') 会做 Chromium 的「空白再平衡」，行中插两个 nbsp 实测落成
+    //    「nbsp + 普通空格」（a0 20）、块末落成两个 nbsp——产出随上下文变，门没法钉死；
+    // ② range.insertNode 把原文本节点劈成三段（isCaretAtStart/trimSeamHead 这类逐节点扫描对碎节点
+    //    从没被测过），而且不触发 input。
+    // 直接改 nodeValue：产出恒等于两个 U+00A0、零节点切分、光标落点平凡。
+    function insertPadAtCaret(pad) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return false;
+      const r = sel.getRangeAt(0);
+      let node = r.startContainer, off = r.startOffset;
+      if (node.nodeType !== 3) {
+        // 光标锚在元素上（停在子节点缝隙）：先并进相邻文本节点，实在没有才新建一个空的——
+        // 宁可复用也不新增节点，理由同上（碎节点是没被测过的地形）。
+        const ref = node.childNodes[off] || null;
+        const prev = ref ? ref.previousSibling : node.lastChild;
+        if (prev && prev.nodeType === 3) { node = prev; off = prev.nodeValue.length; }
+        else if (ref && ref.nodeType === 3) { node = ref; off = 0; }
+        else { const t = doc.createTextNode(''); node.insertBefore(t, ref); node = t; off = 0; }
+      }
+      node.nodeValue = node.nodeValue.slice(0, off) + pad + node.nodeValue.slice(off);
+      try {
+        const nr = doc.createRange();
+        nr.setStart(node, off + pad.length); nr.collapse(true);
+        sel.removeAllRanges(); sel.addRange(nr);
+      } catch (x) {}
+      return true;
+    }
     // 表格门控（KTD7）说明：无表格文档 100% 走旧路径这一保证由结构自动成立——所有 cell 入口都先要求
     // closest('td,th') 命中（无表文档恒 null）+ blockOf/classify==='table' 复核（更强判据），不需要、也不要
     // 加全文档 querySelector('table') 的显式门（每次点击 O(全文档) 白扫，simplify 审查已证它改不了任何结果）。
@@ -3551,7 +3639,31 @@
       // Tab / Shift-Tab：仅在列表里缩进/反缩进（嵌套子列表，继承本块 ul/ol + class）；
       // 其它块也吞掉 Tab，避免它把光标跳出编辑区。
       if (e.key === 'Tab' && editingEl) {
+        // IME 组词中 Tab 是候选词操作，抢了输入法就失灵（本仓 IME 焦点坑踩过好几次）。
+        // 不接管 = 不 preventDefault，跟本文件其它分支同款守卫。
+        if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
+        // 【行中 Tab = 两个空格】Colin 2026-08-06 拍板：Tab 只在**行首**是缩进，在一行文字中间
+        // 就是两个空格（Word / 代码编辑器的手感）。三道 gate，缺一不可：
+        // ① 只有折叠光标才插——有选区时插入会把用户选中的内容**替换掉**（那是删数据），一律走原语义；
+        // ② Shift+Tab 一个字不动（反缩进 / 退出嵌套 / 跳出表格都归它）；
+        // ③ 行首（行宿主开头 或 紧跟 <br>）走原语义。
+        // 表格格内 Tab 走的是更前面的 cellEl 分支（移格 / 末格建行 / 首格 Shift+Tab 跳出），
+        // 那条在这里之前就 return 了 —— 新逻辑写在本 gate 内部天然碰不到它，别往 onKeyDown 顶上提。
+        if (!e.shiftKey) {
+          const selNow = doc.getSelection();
+          if (selNow && selNow.rangeCount > 0 && selNow.isCollapsed && !isCaretAtLineStart(doc, tabLineHostOf(editingEl))) {
+            const pad = tabPadFor(selNow.getRangeAt(0).startContainer);
+            // 先冲一次 checkpoint 封存之前的打字：input 排的那个 checkpoint 是 500ms 去抖的，
+            // 不先冲，undo 一次会把「刚打的字 + 这两个空格」一起撤掉（实测过）。
+            if (undoMgr) undoMgr.checkpoint();
+            if (insertPadAtCaret(pad)) {
+              if (undoMgr) undoMgr.checkpoint(); // 两个空格自成一步，一次 undo 只撤它
+              markDirty(); // 手改 nodeValue 不触发 input → markDirty/自动保存都得自己来，漏了空格永不落盘 = 真丢数据
+            }
+            return;
+          }
+        }
         if (classify(editingEl) !== 'list') {
           // toggle 嵌套（U7）：Tab 把块嵌进前一个 <details> 体；Shift-Tab 把体内块移出到 details 后。
           // Track2 方案B（§1.3 优先级）：toggle 协调先行；顶层 indentable 块走 ws-indent 整块缩进。
