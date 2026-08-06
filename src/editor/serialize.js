@@ -27,6 +27,7 @@
     'data-ws2-cell', // 块编辑：表格单元格编辑态标记（仅交互态，存盘剥除）
     'data-ws2-menurow', 'data-ws2-menucol', 'data-ws2-menucell', // 块编辑：块菜单开启时的作用行/列/交点格标记（仅交互态；菜单开着时自动保存撞上也剥）
     'data-ws2-empty', // 块编辑：toggle/callout 空态标记（驱动占位与淡三角；纯交互态，存盘剥除）
+    'data-ws2-cellsel', // 块编辑：表格矩形选区的格标记（T13；纯交互态，存盘剥除）
   ]);
 
   function cleanRoot(root) {

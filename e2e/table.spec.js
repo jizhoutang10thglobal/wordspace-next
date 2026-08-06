@@ -222,16 +222,17 @@ test('U2: 跨块选区罩表整删后按键不进死表', async () => {
   await openDoc(TABLE_DOC);
   await frame.locator('#c21').click();
   await page.waitForTimeout(120);
-  // 从 #p1 文中拖到表内 cell（跨块选区端点在表内 → 整表蓝 → 整删）
+  // T14 改版：端点落表内的选区已被表界钳制退役，「整表蓝→整删」只剩**完整覆盖**一条通道
+  //（ED-A2 语义不变、入口收窄）。这里用 p1 文中→p2 文中的贯穿选区把表完整罩住。
   await frame.locator('body').evaluate(() => {
     const r = document.createRange();
     r.setStart(document.getElementById('p1').firstChild, 2);
-    r.setEnd(document.getElementById('c11').firstChild, 1);
+    r.setEnd(document.getElementById('p2').firstChild, 2);
     const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
   });
   await page.waitForTimeout(150);
   const marked = await frame.locator('body').evaluate(() => (document.querySelector('table[data-ws2-rangesel]') ? true : false));
-  expect(marked).toBe(true); // 整表蓝预示整删（ED-A2 入向不变）
+  expect(marked).toBe(true); // 完整覆盖 → 整表蓝预示整删（ED-A2）
   await page.keyboard.press('Backspace');
   await page.waitForTimeout(150);
   const after = await frame.locator('body').evaluate(() => ({
@@ -520,25 +521,29 @@ test('U4: cell 内斜杠菜单禁用', async () => {
   expect(await frame.locator('#c13').textContent()).toBe('十三格子/'); // 字符照常落格
 });
 
-// U4-4：同表跨格选区 → 清内容不动结构（KTD3 线性被罩集）。
+// U4-4（T13 改版，前身 KTD3 线性被罩集）：同表跨格选区 → 折算矩形选中态 → 清内容不动结构。
+// 矩形=端点格行列包围盒（Notion f1 实测）：c11..c22 = 2×2，途径外的 c13 不再被线性扫进来；
+// 清格是**整格**清（不裁端点字），选中态保持、无格进编辑（Notion N3 同款）。
 test('U4: 跨格选区清内容不动结构', async () => {
   await launch();
   await openDoc(TABLE_DOC);
   await frame.locator('#c11').click();
-  // 程序化设置 c11 文中 → c22 文中 的跨格选区（还原拖选终态）
+  // 程序化设置 c11 文中 → c22 文中 的跨格选区（残余通道；鼠标拖选走矩形机，另有 table-rect-selection 门）
   await frame.locator('body').evaluate(() => {
     const r = document.createRange();
-    r.setStart(document.getElementById('c11').firstChild, 1); // 「十|一格」
-    r.setEnd(document.getElementById('c22').firstChild, 2);   // 「廿二|格」
+    r.setStart(document.getElementById('c11').firstChild, 1);
+    r.setEnd(document.getElementById('c22').firstChild, 2);
     const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
   });
   await page.waitForTimeout(150);
   const hl = await frame.locator('body').evaluate(() => ({
-    markedCells: document.querySelectorAll('td[data-ws2-rangesel]').length,
+    rectCells: [...document.querySelectorAll('[data-ws2-cellsel]')].map((c) => c.id).sort(),
     tableMarked: !!document.querySelector('table[data-ws2-rangesel]'),
+    nativeLeft: (() => { const s = document.getSelection(); return s && s.rangeCount > 0 && !s.isCollapsed; })(),
   }));
-  expect(hl.markedCells).toBeGreaterThan(0); // 全罩格整格蓝
-  expect(hl.tableMarked).toBe(false); // 不再整表蓝（同表内是 cell 级语义）
+  expect(hl.rectCells).toEqual(['c11', 'c12', 'c21', 'c22']); // 2×2 包围盒（c13 在外）
+  expect(hl.tableMarked).toBe(false); // 不整表蓝（同表内是矩形语义）
+  expect(hl.nativeLeft).toBe(false); // 原生选区已折算掉
   await page.keyboard.press('Backspace');
   await page.waitForTimeout(150);
   const after = await frame.locator('body').evaluate(() => {
@@ -548,23 +553,26 @@ test('U4: 跨格选区清内容不动结构', async () => {
       c11: document.getElementById('c11').textContent, c12: document.getElementById('c12').textContent,
       c13: document.getElementById('c13').textContent, c21: document.getElementById('c21').textContent,
       c22: document.getElementById('c22').textContent, c23: document.getElementById('c23').textContent,
+      keptSel: [...document.querySelectorAll('[data-ws2-cellsel]')].length,
       cellId: (document.querySelector('[data-ws2-cell]') || {}).id || null,
     };
   });
   expect(after.rect).toBe(true);
   expect(after.rows).toBe(3); // 结构一格不少
-  expect(after.c11).toBe('十'); // 端点格裁剪
-  expect(after.c12).toBe(''); // 途径格清空（线性覆盖：c12/c13/c21 全清）
-  expect(after.c13).toBe('');
+  expect(after.c11).toBe(''); // 矩形内整格清（不裁字）
+  expect(after.c12).toBe('');
   expect(after.c21).toBe('');
-  expect(after.c22).toBe('格'); // 端点格裁剪
-  expect(after.c23).toBe('廿三'); // 选区外不动
-  expect(after.cellId).toBe('c11'); // 光标回起格
+  expect(after.c22).toBe('');
+  expect(after.c13).toBe('十三格子'); // 包围盒外不动（线性模型会误清它）
+  expect(after.c23).toBe('廿三');
+  expect(after.keptSel).toBe(4); // 选中态保持（Notion 同款）
+  expect(after.cellId).toBe(null); // 不进格编辑
   expect(await conformOf(await serialize())).toBe(true);
 });
 
-// U4-5：从 cell 拖出到段落（出向跨块）→ 整表蓝 → Backspace 整删（ED-A2 出向）。
-test('U4: 出向跨块选区整表蓝整删', async () => {
+// U4-5（T14 改版，前身 ED-A2 出向整删）：端点在表内、另一端在表外的选区 → 表界钳制——表整个
+// 排除在选区外（钳出的端点锚进相邻块**内部**，删除管线不吃 body 层锚点）。旧「整表蓝→整删」退役。
+test('U4: 出向跨块选区被表界钳制、表不再整删', async () => {
   await launch();
   await openDoc(TABLE_DOC);
   await frame.locator('#c21').click();
@@ -575,11 +583,27 @@ test('U4: 出向跨块选区整表蓝整删', async () => {
     const s = document.getSelection(); s.removeAllRanges(); s.addRange(r);
   });
   await page.waitForTimeout(150);
-  expect(await frame.locator('body').evaluate(() => !!document.querySelector('table[data-ws2-rangesel]'))).toBe(true);
+  const st = await frame.locator('body').evaluate(() => {
+    const s = document.getSelection();
+    const T = document.querySelector('table');
+    return {
+      tableMarked: T.hasAttribute('data-ws2-rangesel'),
+      startInTable: s && s.rangeCount ? T.contains(s.getRangeAt(0).startContainer) : null,
+      selText: s && s.rangeCount ? s.toString() : '',
+    };
+  });
+  expect(st.tableMarked).toBe(false); // 不再整表蓝
+  expect(st.startInTable).toBe(false); // 起点被钳到表后块内部
   await page.keyboard.press('Backspace');
   await page.waitForTimeout(150);
-  const after = await frame.locator('body').evaluate(() => ({ tables: document.querySelectorAll('table').length, p2: document.getElementById('p2') ? document.getElementById('p2').textContent : null }));
-  expect(after.tables).toBe(0); // 端点在表内 → 整删不裁剪
+  const after = await frame.locator('body').evaluate(() => ({
+    tables: document.querySelectorAll('table').length,
+    c21: document.getElementById('c21').textContent,
+    p2: document.getElementById('p2') ? document.getElementById('p2').textContent : null,
+  }));
+  expect(after.tables).toBe(1); // 表存活（T14：表格绝不因跨块选区被整删）
+  expect(after.c21).toBe('廿一'); // 表内容纹丝不动
+  expect(after.p2).toBe('段落乙'); // 只删了被钳选区（p2 头两字「后文」）
   expect(await conformOf(await serialize())).toBe(true);
 });
 
