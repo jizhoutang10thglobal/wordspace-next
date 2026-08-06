@@ -29,6 +29,8 @@ module.exports = {
   tableColMenuHead: '列',
   tableRowHandleTip: '行操作',
   tableColHandleTip: '列操作',
+  tableAddRowTip: '下方加一行',
+  tableAddColTip: '右侧加一列',
   blockImage: '图片',
   blockDivider: '分隔线',
   aiGenerate: '✦ AI 生成（开发中）',
