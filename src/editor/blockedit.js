@@ -586,7 +586,7 @@
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
-    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;margin-left:-1.7em;border-left:1.7em solid transparent;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
     // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 细线 chevron + 正文缩进。
     // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
@@ -1115,6 +1115,44 @@
     // toggle 的 summary 行、toggle 体内块（整个 toggle 被罩时标 details 本身）。唯一例外：端点落在
     // table 内 → 该 table 整行蓝（部分裁剪表格必产非合规，删除只能整删=ED-A2，高亮预示之，所见即所删）。
     // data-ws2-rangesel 进 serialize 白名单剥除（纯交互态、绝不入盘）。
+    // 行级**编辑态**标记（Wendi 2026-08-05：「回车换行后，第二行的选中深色还是和上一行连成一起」）。
+    // 与 Esc 那档同源的病：列表的 editingEl 是整个 <ul> = **存储单元**，而 [data-ws2-editing] 的底色画的是
+    // 该元素的整个盒子 → 编辑任何一行都把整张列表染上（实测三行列表编辑第 2 行，底色元素高 93.6px = 3.3 行；
+    // 段落对照恰好 28px = 自身）。v0.12.2 已把 Esc 的 data-ws2-selected 下沉到 <li>，编辑态这半没跟着下沉——
+    // 漏网原因是全仓 e2e 对 data-ws2-editing 只有「在不在 / 是什么标签」的存在性断言、**从无几何断言**，
+    // 那道门的操作序列跟用户复现逐字相同却只在按完 Esc 之后才开始看。底色改由 <li> 上的 editrow 承载。
+    // ⚠ 只下沉列表，不动多段容器（callout/quote）：容器有可见边框，编辑框内某段时整框着色读作「你在这个框里」，
+    // 是合理的；列表没有边框，整表着色读作「这些行是一个东西」，正是本 bug。语义不同，别一并改。
+    let editRowEl = null;
+    // ⚠ 清理必须扫 DOM，不能只清 editRowEl（与 clearSelectedAttr / clearRangeSel 同一范式）——retagElement
+    // 原样复制全部属性，标记会跟着进新元素而引用还指着被摘走的旧元素，只清引用必然漏掉活着的那个
+    // （2026-08-05 「清不掉的蓝底」就是这个病，team-memory 已立规）。
+    function clearEditRow() {
+      body.querySelectorAll('[data-ws2-editrow]').forEach((el) => el.removeAttribute('data-ws2-editrow'));
+      if (editRowEl && editRowEl.removeAttribute) editRowEl.removeAttribute('data-ws2-editrow');
+      editRowEl = null;
+    }
+    // 取光标所在的**最深** li（与 rowOf 的取深规则一致：closest 从文本节点的父元素起爬，天然命中最深那个）。
+    // 光标落在 <ul> 自身（如程序化选区）时返回 null = 不标行，好过标错行。
+    function caretRowOf(host) {
+      const sel = doc.getSelection();
+      if (!sel || sel.rangeCount === 0) return null;
+      const n = sel.anchorNode;
+      const el = n && (n.nodeType === 3 ? n.parentElement : n);
+      if (!el || !el.closest || !host.contains(el)) return null;
+      const li = el.closest('li');
+      return li && host.contains(li) ? li : null;
+    }
+    function refreshEditRow() {
+      clearEditRow();
+      if (!editingEl) return;
+      if (editingEl.tagName !== 'UL' && editingEl.tagName !== 'OL') return; // 只有列表的 editingEl 是容器，其余块自身就是交互单元
+      const li = caretRowOf(editingEl);
+      if (!li) return;
+      li.setAttribute('data-ws2-editrow', '');
+      editRowEl = li;
+    }
+
     let rangeSelEls = [];
     // ⚠ 必须扫 DOM，不能只清 rangeSelEls 里记的那批（跟 clearSelectedAttr 同一范式）。
     // 病灶：retagElement **原样复制全部属性**——「转为」把带 data-ws2-rangesel 的 <p> 换成 <ol> 时，
@@ -1194,6 +1232,15 @@
         } catch (x) { try { sel.removeAllRanges(); } catch (y) {} }
         return;
       }
+      // 列表行的逐行判定：整行被罩就标这行、**不再下钻**（子行本就含在它的边框盒里，再标一层
+      // 会叠出更深的双重底色）；只罩到部分的行则钻进它的子列表继续判。
+      const walkListRows = (list) => {
+        for (const li of list.children) {
+          if (li.tagName !== 'LI' || !r.intersectsNode || !r.intersectsNode(li)) continue;
+          if (covered(li)) { mark(li); continue; }
+          for (const sub of li.children) if (sub.tagName === 'UL' || sub.tagName === 'OL') walkListRows(sub);
+        }
+      };
       const walk = (root) => {
         for (const b of blocksInScope(root)) {
           if (!r.intersectsNode || !r.intersectsNode(b)) continue; // 选区外的块直接跳（intersectsNode 现代 Chromium 恒有）
@@ -1205,6 +1252,11 @@
             continue;
           }
           if (covered(b)) { mark(b); continue; }
+          // U3（2026-08-06）：**部分**被罩的列表下沉到行。此前 walk 只遍历 blocksInScope（= root.children），
+          // <li> 永远进不了集合，于是「从段落拖到列表第二行」这种部分覆盖一个块级标记都不打——
+          // 列表是唯一拿不到跨块蓝底的块类型，与 PR #314 定的「跨块选区整行蓝底对齐 Notion」口径不一致。
+          // 语义照抄 DETAILS 那支：整个被罩 → 标容器（上面那行已处理）；部分被罩 → 体内行各自判、不上卷。
+          if (b.tagName === 'UL' || b.tagName === 'OL') { walkListRows(b); continue; }
           // T14 后这里不会再出现「部分被罩的 TABLE」：端点在表内的选区已在上方被截断（选区连续 ⇒
           // 相交而未全罩必有端点在内）。旧「端点在表内 → 整表蓝」提升通道退役。
         }
@@ -1255,6 +1307,7 @@
       el.setAttribute('data-ws2-editing', '');
       el.focus({ preventScroll: true }); // 不触发原生「聚焦滚进视野」（会把整块对齐→点击时文档跳，Wendi 2026-07-22）
       placeCaret(el, caret);
+      refreshEditRow(); // 列表：底色落到光标所在那一行（放 placeCaret 之后——它才定下光标位置）
       scrollCaretIntoViewIfNeeded(); // 只在光标越出视口时最小滚动露出它（键盘导航到屏外块仍可见）
       positionFmtbar();
     }
@@ -1263,6 +1316,7 @@
       const el = editingEl; editingEl = null;
       if (el.hasAttribute('data-ws2-ce')) { el.removeAttribute('contenteditable'); el.removeAttribute('data-ws2-ce'); }
       el.removeAttribute('data-ws2-editing');
+      clearEditRow();
       fmtShown = false; fmtbar.style.display = 'none'; // 离开编辑 → 关气泡
     }
     // ---- 表格 cell 编辑（第四状态，KTD1）：contenteditable 挂 TD/TH、绝不挂 table；不设 editingEl/selectedEl，
@@ -3313,9 +3367,12 @@
 
     // ---- 监听器（父层挂到 iframe doc）----
     // 待办勾选框 gutter 命中判定（mousedown 与 click 两处共用，避免判据漂移，U5）：命中返回该行 li，否则 null。
-    // U24/check-4：几何收敛。勾选框 ::before 是 left:-22px width:16px（相对 li border-box 左缘）→ 框体 [li.left-22, li.left-6]。
-    // ① X 带 = 框体 ±4px 缓冲 = [li.left-26, li.left-2]；右缘距文字左缘（li.left+4）留 6px 非勾选区，消「文字左缘零缓冲误触」。
-    // ② Y 吸附最近直接子 li（±YTOL 容差），消项间 margin 死区；缝隙等距时吸附上方项（文档序更前）。
+    // U24/check-4：几何收敛。① X 带 = 勾选框框体 ±4px 缓冲，右缘距文字左缘留 6px 非勾选区，
+    // 消「文字左缘零缓冲误触」。② Y 吸附最近直接子 li（±YTOL 容差），消项间 margin 死区；
+    // 缝隙等距时吸附上方项（文档序更前）。
+    // ⚠ U2（2026-08-06）：X 带改为**从真实渲染的 ::before 推导**，不再写死 li.left 减常数。
+    // 原来那组常数（[li.left-26, li.left-2]）是「勾选框画在 li 盒外」时代的产物，与 CSS 隐式耦合——
+    // 把勾选框收进 li 盒时它当场失配、勾选整个失灵。从渲染结果反推就不会再有第二次。
     function todoGutterHit(e) {
       const todoUl = e.target && e.target.closest ? e.target.closest('ul.ws-todo') : null;
       if (!todoUl) return null;
@@ -3332,7 +3389,12 @@
       if (!li) return null;
       const r = li.getBoundingClientRect();
       if (e.clientY < r.top - YTOL || e.clientY > r.bottom + YTOL) return null; // 离最近 li 也太远 → 不算勾选
-      return (e.clientX >= r.left - 26 && e.clientX <= r.left - 2) ? li : null;
+      // ::before 的包含块 = li 的 **padding 盒**；li 带透明左边框（U2 用它扩边框盒），故换算要补 border 宽。
+      const cs2 = doc.defaultView.getComputedStyle(li);
+      const cb = doc.defaultView.getComputedStyle(li, '::before');
+      const cbLeft = r.left + (parseFloat(cs2.borderLeftWidth) || 0) + (parseFloat(cb.left) || 0);
+      const cbRight = cbLeft + (parseFloat(cb.width) || 16);
+      return (e.clientX >= cbLeft - 4 && e.clientX <= cbRight + 4) ? li : null;
     }
 
     // 鼠标按下：记起点，开始判断是「点击」还是「拖选」。点编辑器 UI（气泡/手柄/菜单）不算。
@@ -4970,7 +5032,7 @@
       enterEdit(conv, { mode: whole ? 'start' : 'end' });
     }
     function closeFmtPops() { fmtbar.querySelectorAll('.ws-fmtbar-swatches, .ws-fmtbar-menu').forEach((p) => { p.style.display = 'none'; }); }
-    function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮
+    function onSelectionChange() { closeFmtPops(); positionFmtbar(); refreshRangeSel(); refreshEditRow(); } // 选区一动就收起开着的颜色/转为弹层（防指向旧状态）+ 刷新跨块块级高亮 + 让列表的编辑底色跟着光标换行
     function onCompStart() { if (slash) closeSlash(); } // IME 组词开始 → 关斜杠菜单，根除 query/DOM 漂移
     function onScroll() { const a = gutterAnchor(); if (a) positionGrip(a); positionFmtbar(); if (blockMenu.style.display !== 'none') closeBlockMenu(); }
 
@@ -5875,7 +5937,12 @@
   ul.ws-todo { list-style:none; }
   ul.ws-todo ul:not(.ws-todo) { list-style:disc; }
   ul.ws-todo ol:not(.ws-todo) { list-style:decimal; }
-  .ws-todo > li { list-style:none;position:relative;padding-left:4px; }
+  /* 勾选框原来画在 li 盒子**外面**（left:-22px），于是行选中框（li 盒）把它漏在框外，而整表选中框
+     （ul 盒）又把它包进去——同一个勾选框两档选中一会儿在框内一会儿在框外。修法：把 li 的盒子向左
+     扩到与 ul 盒左缘齐平（负 margin），再用等量 padding 把内容推回原位——**文字与勾选框的绝对位置
+     一字不动**，只是 li 的边框盒变宽、把勾选框收了进来。用 em 跟着 :where(ul,ol) 的 1.7em 走，
+     字号变了也不脱节；嵌套缩进由每层 ul 自己的 padding-left 给，不受影响。 */
+  .ws-todo > li { list-style:none;position:relative;margin-left:-1.7em;border-left:1.7em solid transparent;padding-left:4px; }
   .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer; }
   /* U14/check-2：勾选视觉传播反制。text-decoration:line-through 按 CSS 装饰传播规则会绘穿全部 in-flow 后代、
      无法从后代 text-decoration:none 取消 → 含子列表的勾选项**不给自身加 line-through**（只变灰），避免划穿未勾子项；
@@ -5900,7 +5967,22 @@
      改用 accent 蓝:过「invert+hue-rotate」仍是蓝(配方保色相)、明暗两态都看得见。 */
   img[data-ws2-selected]:not([data-ws2-editing]),
   figure[data-ws2-selected]:not([data-ws2-editing]){box-shadow:0 0 0 2px #1a73e8,0 0 0 5px rgba(26,115,232,.28);}
-  [data-ws2-editing]{border-radius:4px;background:rgba(0,0,0,.015);}
+  /* 编辑态底色作用在**交互单元**上。列表的 data-ws2-editing 挂在整个 ul/ol（存储单元）身上，
+     整表着色会把兄弟行一起罩进去（Wendi 2026-08-05），所以列表这档改由行上的 data-ws2-editrow 承载。 */
+  /* 没有任何行被标时才由块自己承载（段落等非列表块恒成立；列表在 ⌘A 二档那种「光标锚在 ul 上、
+     解析不出具体行」的状态下也回落到整表着色——否则那一档会一点底色都没有，对抗审查 ADV-5）。 */
+  [data-ws2-editing]:not(:has(li[data-ws2-editrow])){border-radius:4px;background:rgba(0,0,0,.015);}
+  [data-ws2-editrow]{border-radius:4px;background:rgba(0,0,0,.015);}
+  /* 带子项的行：底色只覆盖**它自己那一行**。<li> 的边框盒天然包含整棵嵌套子树，不钳的话
+     编辑父行会把所有子行一起罩住（实测 93.6px —— 正是最初那个「连成一片」的病灶数字，
+     对抗审查 ADV-2）。用 1lh 单位 = 该行自己的行高，正好一行。
+     ⚠ 这段 CSS 活在 JS 模板字符串里——注释里**绝不能出现反引号**（会当场提前闭合模板串、
+     整个编辑器样式与其后代码一起废掉）。同族的坑还有一个：注释里**也绝不能出现注释结束符的字面量**
+     ——写它会当场闭合注释、把紧随其后的规则吞掉（本条注释第一版就是这么把自己下面那条规则吃了）。
+     ⚠ 只钳带子项的行：叶子行维持整盒着色，否则自己换行的长条目只剩第一行有底色（净退步）。
+     ⚠ 不对 [data-ws2-rangesel] 做同样处理：那边父行拿到标记的前提是 covered() 成立
+     = 整棵子树都在选区里，连体着色恰恰是对的。 */
+  li[data-ws2-editrow]:has(ul,ol){background-color:transparent;background-image:linear-gradient(rgba(0,0,0,.015),rgba(0,0,0,.015));background-repeat:no-repeat;background-origin:border-box;background-size:100% 1lh;}
   /* 表格 cell 编辑（U2）：悬停 cursor:text = 可编辑性的最低发现性；编辑格 inset 蓝环（不占布局、纸方墨圆克制）。 */
   td:hover,th:hover{cursor:text;}
   [data-ws2-cell]{outline:none;border-radius:2px;box-shadow:inset 0 0 0 2px rgba(26,115,232,.4);background:rgba(26,115,232,.04);}
@@ -5957,6 +6039,10 @@
   tr[data-ws2-menurow]>td[data-ws2-menucell],tr[data-ws2-menurow]>th[data-ws2-menucell],
   td[data-ws2-menucell],th[data-ws2-menucell]{background:rgba(29,111,191,.24);box-shadow:inset 0 0 0 2px rgba(29,111,191,.55);}
   [data-ws2-rangesel]{border-radius:3px;background:rgba(26,115,232,.16);box-shadow:0 0 0 4px rgba(26,115,232,.16);}
+  /* U3：行级蓝底必须收窄光晕。相邻 <li> 的间距只有 4.8px（:where(li){margin:.3em 0} 折叠后），
+     而默认 spread 是 4px——两行各自向外 4px，合计 8px > 4.8px，中间会叠出一条 alpha 更高的带
+     （.16 叠 .16 ≈ .29，比本体还深），两行糊成一条、看不出选了几行。1px 留出 2.8px 干净缝。 */
+  li[data-ws2-rangesel]{box-shadow:0 0 0 1px rgba(26,115,232,.16);}
   /* I14：替换元素的像素会盖住背景蓝——降透明度让蓝底透上来，整张图呈被蓝罩态（Notion 同观感） */
   img[data-ws2-rangesel],figure[data-ws2-rangesel] img{opacity:.72;}
   [data-ws2-rangesel] *::selection, [data-ws2-rangesel]::selection{background:transparent;}
