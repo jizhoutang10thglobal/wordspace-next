@@ -399,7 +399,7 @@
   // 纯函数（blockRoot 显式传入、不吃闭包态）→ jsdom 可单测；attach 内包薄壳。
   // 与 blockOf 的爬升语义逐分支对齐（含 details 作用域/summary→details/data-ws2-ui→null），
   // 差异只有最后一步：存储块是 UL/OL/多段容器时继续下钻到行。
-  let ROWBLOCK = false; // A1 灰度开关（照 details 门控先例）：关=消费链走旧路径逐字节不变
+  let ROWBLOCK = true; // A1 灰度开关（2026-08-08 起默认开=新路径转正；旧路径保留到真机验收后再删，setRowBlock(false) 即整体回滚）（照 details 门控先例）：关=消费链走旧路径逐字节不变
   function setRowBlock(v) { ROWBLOCK = !!v; }
   function rowBlockOn() { return ROWBLOCK; }
   function iblockOf(blockRoot, node) {
