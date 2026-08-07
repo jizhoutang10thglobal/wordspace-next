@@ -5039,7 +5039,18 @@
     function normalizeHostLi() {
       for (const li of blockRoot.querySelectorAll('li')) {
         const sub = li.querySelector(':scope > ul, :scope > ol');
-        if (!sub) continue;
+        if (!sub) {
+          // 普通空行（无子列表）同样归一（2026-08-07 todo 深扫 C1）：`.ws-todo li{list-style:none}` 把
+          // marker 撑的行盒去掉后，磁盘/导入/粘贴来的 `<li></li>`（或排版空白 `<li>\n  </li>`）渲染成
+          // **0 高**——整行隐身、点不到、光标落不进，勾选框还叠到下一行的字上；且存盘原样保留、不自愈。
+          // 编辑器自建路径（create-1）早就补 <br>，唯独外来内容没走归一。判据与宿主行同源：纯空白算空。
+          // 反向不用管：li 有了文字后 Chromium 自己收编/保留尾部 <br>，不产生「凭空多一空行」问题。
+          const hasContent = [...li.childNodes].some((n) => (n.nodeType === 3 && (n.textContent || '').trim() !== '')
+            || (n.nodeType === 1 && n.tagName !== 'BR'));
+          const hasBr = [...li.childNodes].some((n) => n.nodeType === 1 && n.tagName === 'BR');
+          if (!hasContent && !hasBr) li.appendChild(doc.createElement('br'));
+          continue;
+        }
         const own = [];
         for (const n of li.childNodes) { if (n === sub) break; own.push(n); }
         // 「有内容」的判据（对抗审查 ADV-3 修正了两处）：
