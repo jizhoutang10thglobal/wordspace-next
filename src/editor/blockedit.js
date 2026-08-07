@@ -1209,6 +1209,18 @@
     function refreshEditRow() {
       clearEditRow();
       if (!editingEl) return;
+      if (rowBlockOn()) {
+        // A1 新路径（U2 第一条链）：行身份直接来自 iblockOf——不再按 tagName 白名单判「宿主是容器」，
+        // 交互块≠ce 宿主（li≠ul）时才有行标记，语义与旧路径逐格等价（矩阵门双开关态验证）。
+        const sel = doc.getSelection();
+        const n0 = sel && sel.rangeCount ? sel.anchorNode : null;
+        const ne = n0 && n0.nodeType === 3 ? n0.parentElement : n0;
+        if (!ne || !editingEl.contains(ne)) return;
+        const ib = iblockOf(blockRoot, n0);
+        if (ib && ib.tagName === 'LI' && editingEl.contains(ib)) { ib.setAttribute('data-ws2-editrow', ''); editRowEl = ib; }
+        return;
+      }
+      // 旧路径（开关关 = 逐字节不变，U5 拆开关时删）
       if (editingEl.tagName !== 'UL' && editingEl.tagName !== 'OL') return; // 只有列表的 editingEl 是容器，其余块自身就是交互单元
       const li = caretRowOf(editingEl);
       if (!li) return;
