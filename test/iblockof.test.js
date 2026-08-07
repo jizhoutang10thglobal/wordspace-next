@@ -64,10 +64,12 @@ test('iblockOf: hr/img 整块自身（不可编辑块无行概念）', () => {
   assert.equal(be.iblockOf(b, q(b, '#i1')), q(b, '#i1'));
 });
 
-test('setRowBlock/rowBlockOn: 灰度开关默认关、可翻转（U1 只落开关不接线）', () => {
-  assert.equal(be.rowBlockOn(), false); // 默认关 = 消费链走旧路径
+test('setRowBlock/rowBlockOn: 默认开（U5a 转正）、可翻回旧路径（真机验收期的回滚阀）', () => {
+  // U1 时默认关；U5a（2026-08-08）转正后默认开——本测曾因只改默认没改断言在 CI 上红过一次，
+  // 断言必须跟默认值同一次 commit 动。拆开关（验收后）时本测整条删除。
+  assert.equal(be.rowBlockOn(), true); // 默认开 = 消费链走 iblockOf 新路径
+  be.setRowBlock(false);
+  assert.equal(be.rowBlockOn(), false); // 回滚阀可用
   be.setRowBlock(true);
   assert.equal(be.rowBlockOn(), true);
-  be.setRowBlock(false);
-  assert.equal(be.rowBlockOn(), false);
 });
