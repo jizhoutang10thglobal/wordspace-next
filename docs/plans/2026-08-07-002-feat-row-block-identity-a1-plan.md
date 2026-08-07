@@ -35,7 +35,13 @@ A1 的机制 = 把分账做进原语层：
 新增原语与开关，行为零变化（开关默认关）。单测直接打（jsdom 级：各块型×光标位置→返回元素断言）。
 
 ### U2 视觉链接线：高亮/选中/手柄/菜单/「+」
-editrow/rangesel/grip/menu/plus 五条链从「blockOf+行补偿」改为 `iblockOf` 直取。**预期是删码**：refreshEditRow 的 UL/OL 特判、walkListRows 的下钻、gripRow/hoverRow 双轨、menuRow 行模式分支——这些补偿在 `iblockOf` 语义下塌缩为通用块路径。矩阵门（42 格）+ 各深门在开关开态必须全绿；变异自检重放。
+editrow/rangesel/grip/menu/plus 五条链从「blockOf+行补偿」改为 `iblockOf` 直取。矩阵门（42 格）+ 各深门在开关开态必须全绿；变异自检重放（模式：开关开+破坏 iblockOf 必红、开关关同款变异必绿=证明新路径真被走）。
+
+**U0/U2 动刀后修正的设计认知**：行单元解析有三种模式，`iblockOf` 只统一其中一种——
+- **caret/节点模式**（事件 target、光标锚点 → 行）：`iblockOf` 的主场。editrow ✅（2026-08-07 已迁，双态矩阵+双向变异验证）、菜单头/turn 菜单/⌘⌥/slash/键盘分支全属此类，即 ledger 里 editingEl-as-interaction 那 131 处的大头。
+- **几何模式**（鼠标 Y → 行，`rowOf`）：手柄/「+」悬停必须按几何找最深行（closest 会「躲鼠标」，Colin 实抓过），`iblockOf` 不适用也不该硬套——`rowOf` 留在行单元解析层作为几何模式权威。
+- **覆盖模式**（Range 覆盖 → 行集合，`walkListRows`）：跨块选区是区间覆盖判定不是点解析，保留。
+所以「删码」的真实落点是 caret 模式那一族 + U5 拆开关；grip/rangesel 两链维持现状即正确架构，不算欠账。
 
 ### U3 键盘面：⌘A/Esc/Backspace/Delete/Tab/Enter
 最大最险的一块，按键分 PR 迁移（worktree 内小步 commit）。行为契约不变的前提下换底座：三档⌘A/Esc 保留（第一档=iblockOf 产物、第二档=存储块、第三档=全篇——档位语义反而变整齐）；行首退格 E1、Delete 前向合并、Tab 多选缩进的 li 特判改经 `iblockOf`。Enter 不动（原生 li 分裂靠单 ce 宿主，铁约束 2）。
