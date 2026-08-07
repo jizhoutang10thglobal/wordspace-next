@@ -391,6 +391,42 @@
   function isMultiParaContainer(el) {
     return !!el && el.nodeType === 1 && (el.tagName === 'BLOCKQUOTE' || (el.classList && el.classList.contains('ws-callout')));
   }
+  // ═══════ A1 行块身份（plan 2026-08-07-002 U1）：交互块解析原语 + 灰度开关 ═══════
+  // iblockOf = 「交互块」：高亮/选中/菜单/拖拽/键盘的作用单元——列表内是最深所属 <li>、
+  // 多段容器（引用/callout）内是直接子 <p>、其余等于存储块。blockOf 语义收窄为「存储块」
+  // （顶层结构单元：serialize/topBlocks/劈容器手术）。分账清单：docs/plans/a1-callsite-ledger.md
+  //（319 处消费点逐条标注哪些迁 iblockOf）。U1 只落原语与开关、不接线；U2 起消费链灰度迁移。
+  // 纯函数（blockRoot 显式传入、不吃闭包态）→ jsdom 可单测；attach 内包薄壳。
+  // 与 blockOf 的爬升语义逐分支对齐（含 details 作用域/summary→details/data-ws2-ui→null），
+  // 差异只有最后一步：存储块是 UL/OL/多段容器时继续下钻到行。
+  let ROWBLOCK = true; // A1 灰度开关（2026-08-08 起默认开=新路径转正；旧路径保留到真机验收后再删，setRowBlock(false) 即整体回滚）（照 details 门控先例）：关=消费链走旧路径逐字节不变
+  function setRowBlock(v) { ROWBLOCK = !!v; }
+  function rowBlockOn() { return ROWBLOCK; }
+  function iblockOf(blockRoot, node) {
+    let el = node; if (el && el.nodeType === 3) el = el.parentElement;
+    if (!el || el.nodeType !== 1 || !blockRoot.contains(el) || el === blockRoot) return null;
+    const src = el; // 下钻要用事件/光标真正所在的节点，爬升会丢掉它
+    // 爬升到存储块（与 attach 内 blockOf 的 scoped 分支同语义；flat 文档 DETAILS 判据恒假=同款）
+    while (el.parentElement && el.parentElement !== blockRoot && el.parentElement.tagName !== 'DETAILS') el = el.parentElement;
+    if (el.hasAttribute('data-ws2-ui')) return null;
+    const p = el.parentElement;
+    if (p !== blockRoot && !(p && p.tagName === 'DETAILS')) return null;
+    if (el.tagName === 'SUMMARY') return p; // summary 归属其 details（与 blockOf 一致）
+    // 下钻：列表 → src 最深所属 li（与 caretRowOf/rowOf 的最深语义一致）
+    if (el.tagName === 'UL' || el.tagName === 'OL') {
+      const li = src.closest ? src.closest('li') : null;
+      return li && el.contains(li) ? li : el; // src 落在 ul 自身（如行间缝隙）→ 整列表兜底
+    }
+    // 下钻：多段容器 → src 所在的直接子 <p>（含首段；paraOf 的「首段=容器域」是悬停专属语义，不在此）
+    if (isMultiParaContainer(el)) {
+      let n = src;
+      while (n && n !== el && n.parentElement !== el) n = n.parentElement;
+      if (n && n !== el && n.tagName === 'P') return n;
+      return el; // 裸行内区/容器自身 → 整框兜底
+    }
+    return el;
+  }
+  // ════════════════════════════════════════════════
   // 容器「被掏空」判据（对抗审查残余①）：⚠ 不能看 firstElementChild——外部文件的「裸 <br> 直挂容器」
   // 形态里 BR 是元素、判不掉。口径 = 无 <p> 子行且无可见内容/媒体。
   function isContainerEmptied(co) {
@@ -886,6 +922,11 @@
       let n = sel.getRangeAt(0).startContainer;
       if (n && n.nodeType === 3) n = n.parentElement;
       if (!n || (n !== el && !el.contains(n))) return el;
+      if (rowBlockOn()) {
+        // A1（U3）：行宿主=交互块，一口径覆盖 列表li/容器p/块自身（头注「不能相对 editingEl 算」的正解）
+        const ib = iblockOf(blockRoot, sel.getRangeAt(0).startContainer);
+        return ib && (ib === el || el.contains(ib)) ? ib : el;
+      }
       if (classify(el) === 'list') { const li = n.closest ? n.closest('li') : null; return li && el.contains(li) ? li : el; }
       if (isMultiParaContainer(el)) return caretLineHostIn(el) || el;
       return el;
@@ -1173,6 +1214,18 @@
     function refreshEditRow() {
       clearEditRow();
       if (!editingEl) return;
+      if (rowBlockOn()) {
+        // A1 新路径（U2 第一条链）：行身份直接来自 iblockOf——不再按 tagName 白名单判「宿主是容器」，
+        // 交互块≠ce 宿主（li≠ul）时才有行标记，语义与旧路径逐格等价（矩阵门双开关态验证）。
+        const sel = doc.getSelection();
+        const n0 = sel && sel.rangeCount ? sel.anchorNode : null;
+        const ne = n0 && n0.nodeType === 3 ? n0.parentElement : n0;
+        if (!ne || !editingEl.contains(ne)) return;
+        const ib = iblockOf(blockRoot, n0);
+        if (ib && ib.tagName === 'LI' && editingEl.contains(ib)) { ib.setAttribute('data-ws2-editrow', ''); editRowEl = ib; }
+        return;
+      }
+      // 旧路径（开关关 = 逐字节不变，U5 拆开关时删）
       if (editingEl.tagName !== 'UL' && editingEl.tagName !== 'OL') return; // 只有列表的 editingEl 是容器，其余块自身就是交互单元
       const li = caretRowOf(editingEl);
       if (!li) return;
@@ -2681,7 +2734,20 @@
     // 当前编辑/选中块对应的「转为」菜单项 key——打开菜单时高亮它（Wendi 2026-07-22：看不出当前是几级标题）。
     // 直接看 tagName（classify 把 H1–H4 都归 'heading'、分不出级），列表按 ws-todo class 区分待办。
     function turnMenuActiveKey() {
-      const el = editingEl || selectedEl; if (!el) return null;
+      let el = editingEl || selectedEl; if (!el) return null;
+      if (rowBlockOn()) {
+        // A1（U2 链2）：高亮反映**行**的类型——编辑态取 caret 的交互块、灰选态直接用 selectedEl
+        //（Esc 一档后它可以是 LI，旧路径 t='LI' 落穿全部分支高亮空）。交互块是 LI → 按宿主列表映射
+        //（嵌套行反映**所在**列表的类型，与行级「转为」真正作用的对象一致）；非 LI（段/容器）→ 原样。
+        let ib = null;
+        if (el === editingEl) {
+          const sel = doc.getSelection();
+          const n0 = sel && sel.rangeCount ? sel.anchorNode : null;
+          const ne = n0 && n0.nodeType === 3 ? n0.parentElement : n0;
+          ib = ne && editingEl.contains(ne) ? iblockOf(blockRoot, n0) : null;
+        } else ib = el;
+        if (ib && ib.tagName === 'LI' && ib.parentElement) el = ib.parentElement;
+      }
       const t = el.tagName;
       if (t === 'P') return 'text';
       if (t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') return t.toLowerCase();
@@ -4034,7 +4100,8 @@
           // 列表 editingEl = 整个 <ul>，若直接走下面「一次选整块」，⌘A 一次就选全列表、随手打字覆盖整份 checklist（丢数据级）。
           if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
             const an = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
-            const li = an && an.closest ? an.closest('li') : null;
+            let li = an && an.closest ? an.closest('li') : null;
+            if (rowBlockOn()) { const ib = iblockOf(blockRoot, sel.anchorNode); li = ib && ib.tagName === 'LI' ? ib : null; } // A1（U3）：行=交互块
             if (li && editingEl.contains(li)) {
               const liRange = doc.createRange(); liRange.selectNodeContents(li);
               const subList = li.querySelector(':scope > ul, :scope > ol');
@@ -4472,7 +4539,8 @@
         if (classify(editingEl) === 'list') {
           const lsel = doc.getSelection();
           const lnode = lsel && lsel.anchorNode ? (lsel.anchorNode.nodeType === 1 ? lsel.anchorNode : lsel.anchorNode.parentElement) : null;
-          const cli = lnode && lnode.closest ? lnode.closest('li') : null;
+          let cli = lnode && lnode.closest ? lnode.closest('li') : null;
+          if (rowBlockOn()) { const ib = iblockOf(blockRoot, lsel && lsel.anchorNode); cli = ib && ib.tagName === 'LI' ? ib : null; } // A1（U3）：行=交互块
           // ===== E1：顶层列表行行首退格 = Notion「逐层剥离」的第①步（对拍实证 2026-08-04）=====
           // Notion 第一次按键**不合并**——只把这一行剥掉列表格式、原地变成文本块，列表在此处劈开；
           // 第二次才并入上一块。**终态与旧行为一致，只是推后一次按键**，所以 Wendi bug3（#319「行首退格
@@ -4690,7 +4758,8 @@
           const s0 = doc.getSelection();
           if (!s0 || s0.rangeCount === 0 || !s0.isCollapsed) return; // 非折叠已前处理
           const n0 = s0.anchorNode ? (s0.anchorNode.nodeType === 1 ? s0.anchorNode : s0.anchorNode.parentElement) : null;
-          const curLi = n0 && n0.closest ? n0.closest('li') : null;
+          let curLi = n0 && n0.closest ? n0.closest('li') : null;
+          if (rowBlockOn()) { const ib = iblockOf(blockRoot, s0.anchorNode); curLi = ib && ib.tagName === 'LI' ? ib : null; } // A1（U3）：行=交互块
           if (!curLi || curLi.parentElement !== editingEl) return; // 嵌套子项 / 定位不到顶层 li → 交原生
           const nextLi = curLi.nextElementSibling;
           // c) 空 li Delete → 前向并入下一 li（镜像 Backspace 空 li）
@@ -4940,7 +5009,8 @@
           if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
             const sel0 = doc.getSelection();
             const an0 = sel0 && sel0.anchorNode ? (sel0.anchorNode.nodeType === 1 ? sel0.anchorNode : sel0.anchorNode.parentElement) : null;
-            const li0 = an0 && an0.closest ? an0.closest('li') : null;
+            let li0 = an0 && an0.closest ? an0.closest('li') : null;
+            if (rowBlockOn()) { const ib = iblockOf(blockRoot, sel0 && sel0.anchorNode); li0 = ib && ib.tagName === 'LI' ? ib : null; } // A1（U3）：行=交互块
             if (li0 && editingEl.contains(li0)) el = li0; // ① 当前行
           }
           exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return;
@@ -5178,7 +5248,17 @@
       }
       // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
       if ((!sel || sel.isCollapsed) && selectedEl) {
-        cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
+        // A1（U4）：灰选的是**行**（Esc 一档，LI）→ 打包成携带宿主列表 tagName/class 的单项列表
+        //（对齐 U3/clip-1 跨行打包）。旧路径裸 <li> 出剪贴板，粘贴侧兜底裹的是无 class 的 <ul>——
+        // 待办行/编号行复制出去类型丢失。开关关时行为原样（Esc 一档本身就是开关前不存在的态叠加较少见）。
+        let clipEl = selectedEl;
+        if (rowBlockOn() && selectedEl.tagName === 'LI' && selectedEl.parentElement) {
+          const host = selectedEl.parentElement;
+          clipEl = doc.createElement(host.tagName);
+          if (host.className) clipEl.className = host.className;
+          clipEl.appendChild(cleanClone(selectedEl));
+        }
+        cd.setData('text/html', '<div ' + CLIP + '="b">' + (clipEl === selectedEl ? cleanClone(selectedEl).outerHTML : clipEl.outerHTML) + '</div>');
         // ADV-TSV-3：整表灰选的纯文本给 TSV——裸 textContent 是排版空白噪声，贴回矩形会铺出碎片列
         if (selectedEl.tagName === 'TABLE') {
           cd.setData('text/plain', tableRowsOf(selectedEl).map((tr) => rowCellsOf(tr).map((c) => (c.textContent || '').trim()).join('\t')).join('\n'));
@@ -6162,7 +6242,7 @@
   `;
   // i18n-exempt-end
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, cellPosOf, cellAt, cellNavTarget, cellSpanOf, tableEditOp, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, iblockOf, setRowBlock, rowBlockOn, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, cellPosOf, cellAt, cellNavTarget, cellSpanOf, tableEditOp, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);

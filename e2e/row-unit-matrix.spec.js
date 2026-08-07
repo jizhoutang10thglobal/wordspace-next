@@ -19,12 +19,17 @@ const os = require('os');
 const ROOT = path.join(__dirname, '..');
 let app, page, frame, tmpDir;
 
+// A1 双态验证（plan 2026-08-07-002）：WS2_ROWBLOCK=1 时载入后翻开 iblockOf 灰度开关再跑同一套矩阵——
+// 新旧路径必须逐格等价（开关是模块级动态查询，翻即生效）。开关关 = 本文件与 main 上的门逐字节同义。
+const ROWBLOCK_GATE = process.env.WS2_ROWBLOCK === '1';
+
 async function launch() {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ws2rowmx-'));
   app = await electron.launch({ args: ['--no-sandbox', ROOT], env: { ...process.env, WS2_LANG: 'zh', WS2_USERDATA: path.join(tmpDir, 'ud'), WS2_NO_CLOSE_DIALOG: '1' } });
   page = await app.firstWindow();
   await page.waitForLoadState('domcontentloaded');
   await page.setViewportSize({ width: 1280, height: 860 });
+  if (ROWBLOCK_GATE) await page.evaluate(() => window.WS2BlockEdit.setRowBlock(true));
 }
 async function openDoc(body) {
   const html = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title><style id="ws-todo-style" data-ws-schema-css="todo">.ws-todo{list-style:none}.ws-todo>li{list-style:none}</style></head><body>${body}</body></html>`;
