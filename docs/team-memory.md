@@ -14,6 +14,15 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-07 — 发版版本号默认只准 +0.0.1（patch），minor 必须 Colin 特批
+
+**是什么**：Colin 拍板：发版默认只允许 patch 位 +1（如 v0.13.0 → v0.13.1），不准直接跳
+minor（0.x.0），major 同理——必须 Colin 明确特批才准跳。理由：日常发版都是小修小补，
+不配 minor 语义。背景：v0.13.0 跳了 minor，另一 session 又提议 v0.14.0，被 Colin 当场叫停。
+**怎么 apply**：任何 session 发版前定版本号一律 = 上个 tag 的 patch 位 +1；想发 minor/major
+先问 Colin 拿明确批准，没批准就是 patch。
+**来源**：Colin 口头拍板 2026-08-07（sweep 收官后议发版时）
+
 ## 2026-08-06 — 交互态标记会跟着 retagElement 漏进产物，让「清不掉的高亮」永久卡在页面上
 
 **是什么**：`src/editor/format.js` 的 `retagElement` **原样复制源元素的全部属性**（设计如此，

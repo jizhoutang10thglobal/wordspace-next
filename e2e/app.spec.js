@@ -122,7 +122,10 @@ test('转为列表产生合法 <ul><li>（非裸 ul，不写坏文件）', async
   await frame.locator('.ws-fmtbar-menu-item', { hasText: '无序列表' }).click();
   await expect.poll(() => tagOf('p1')).toBe('UL'); // U3-B2
 
-  expect(await htmlOf('p1')).toMatch(/<li>/);
+  // ⚠ 匹配 `<li` 而非字面 `<li>`：这里读的是**活 DOM**，编辑态下 li 会带交互标记
+  //（2026-08-06 起 data-ws2-editrow，同族的 data-ws2-selected/menurow/drop* 早就会挂 li）。
+  // 存盘字节里这些标记全被 WS2_MARKERS 剥掉，本条守的「产物是合法 <ul><li>」不受影响。
+  expect(await htmlOf('p1')).toMatch(/<li[\s>]/);
   // 存盘：列表合法（ul 内是 li，没有裸文本直挂 ul）
   const html = await serialize();
   expect(html).not.toMatch(/<ul[^>]*>\s*[^<\s]/); // <ul> 后紧跟非标签文本 = 裸文本，禁止
@@ -289,10 +292,15 @@ test('待办：勾选切换 + 样式与 data-checked 随存盘保留', async () 
   const hasStyle = await page.evaluate(() => !!document.getElementById('doc-frame').contentDocument.getElementById('ws-todo-style'));
   expect(hasStyle).toBe(true);
   // 点 li 左侧勾选框 gutter → data-checked=true（dispatch 精确命中，避开 ⋮⋮ 手柄等覆盖层 z 序干扰）
+  // ⚠ 坐标从渲染的 ::before 反推：U2（2026-08-06）把勾选框从 li 盒**外**收进了盒内，
+  // 写死的「li.left - 8」当场落到框外、点不中（用户实际点的绝对区域没变，变的是 li 相对坐标系）。
   await frame.locator('body').evaluate(() => {
     const li = document.querySelector('ul.ws-todo > li');
     const r = li.getBoundingClientRect();
-    li.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: r.left - 8, clientY: r.top + 5 }));
+    const cs = getComputedStyle(li, '::before');
+    const bw = parseFloat(getComputedStyle(li).borderLeftWidth) || 0;
+    const cx = r.left + bw + (parseFloat(cs.left) || 0) + (parseFloat(cs.width) || 16) / 2;
+    li.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: cx, clientY: r.top + 5 }));
   });
   await expect.poll(() => frame.locator('ul.ws-todo > li').first().getAttribute('data-checked')).toBe('true'); // U3-B2
   // 存盘：勾选框样式 + data-checked + ws-todo 都在（文件自包含、任何浏览器渲染成 checklist）
@@ -590,7 +598,7 @@ test('转为编号列表：<ol><li> 且原文保留', async () => {
   await frame.locator('.ws-fmtbar [title="转为"]').click();
   await frame.locator('.ws-fmtbar-menu-item', { hasText: '编号列表' }).click();
   await expect.poll(() => tagOf('p1')).toBe('OL'); // U3-B2
-  expect(await htmlOf('p1')).toMatch(/<li>[^<]*第一段/); // 原文进了 <li>
+  expect(await htmlOf('p1')).toMatch(/<li[^>]*>[^<]*第一段/); // 原文进了 <li>（活 DOM 里 li 可带交互标记，见上文同款说明）
 });
 
 test('存盘保真：编辑后无编辑器标记泄漏；简单 + 复杂文档结构保留', async () => {
@@ -1486,8 +1494,11 @@ test('ED-SA 列表·嵌套：⌘A 在父行只选本行（不含子列表）、�
   await openDoc('<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>t</title></head><body>'
     + '<ul id="lst" class="ws-todo"><li id="p">父行<ul><li id="ch">子行</li></ul></li><li id="q">末行</li></ul></body></html>');
   const selText = () => frame.locator('body').evaluate((x) => (x.ownerDocument.getSelection().toString() || '').replace(/\s+/g, ''));
-  // 光标点在父行文字上（顶部左侧 = 「父行」文本，不落进下方块级子列表）
-  await frame.locator('#p').click({ position: { x: 8, y: 6 } });
+  // 光标点在父行文字上（顶部左侧 = 「父行」文本，不落进下方块级子列表）。
+  // ⚠ 横坐标按 li 自己的 padding-left 推导：U2（2026-08-06）li 盒左扩后，写死的 x:8 从文字上
+  // 挪进了勾选框命中带 → 点下去变成勾选、不放光标，⌘A 于是选不到任何东西。
+  const padP = await frame.locator('#p').evaluate((el) => { const c = getComputedStyle(el); return (parseFloat(c.borderLeftWidth) || 0) + (parseFloat(c.paddingLeft) || 0); });
+  await frame.locator('#p').click({ position: { x: padP + 6, y: 6 } });
   await page.waitForTimeout(150);
   await page.keyboard.press('Meta+a');
   expect(await selText(), '父行 ⌘A 只选「父行」、不含子行').toBe('父行');
