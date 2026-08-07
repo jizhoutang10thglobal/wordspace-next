@@ -2729,7 +2729,20 @@
     // 当前编辑/选中块对应的「转为」菜单项 key——打开菜单时高亮它（Wendi 2026-07-22：看不出当前是几级标题）。
     // 直接看 tagName（classify 把 H1–H4 都归 'heading'、分不出级），列表按 ws-todo class 区分待办。
     function turnMenuActiveKey() {
-      const el = editingEl || selectedEl; if (!el) return null;
+      let el = editingEl || selectedEl; if (!el) return null;
+      if (rowBlockOn()) {
+        // A1（U2 链2）：高亮反映**行**的类型——编辑态取 caret 的交互块、灰选态直接用 selectedEl
+        //（Esc 一档后它可以是 LI，旧路径 t='LI' 落穿全部分支高亮空）。交互块是 LI → 按宿主列表映射
+        //（嵌套行反映**所在**列表的类型，与行级「转为」真正作用的对象一致）；非 LI（段/容器）→ 原样。
+        let ib = null;
+        if (el === editingEl) {
+          const sel = doc.getSelection();
+          const n0 = sel && sel.rangeCount ? sel.anchorNode : null;
+          const ne = n0 && n0.nodeType === 3 ? n0.parentElement : n0;
+          ib = ne && editingEl.contains(ne) ? iblockOf(blockRoot, n0) : null;
+        } else ib = el;
+        if (ib && ib.tagName === 'LI' && ib.parentElement) el = ib.parentElement;
+      }
       const t = el.tagName;
       if (t === 'P') return 'text';
       if (t === 'H1' || t === 'H2' || t === 'H3' || t === 'H4') return t.toLowerCase();
