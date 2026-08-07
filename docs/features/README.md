@@ -8,6 +8,10 @@ ui-demo（`ui-demo/**`）和真 app（`src/**`）要保持 UI/UX/交互一致：
 配套 skill：`/align-feature`——audit 模式出漂移报告，port 模式按方向移植，没有 spec 时先生成。
 先例：[`../browser-feature-spec.md`](../browser-feature-spec.md)（浏览器 feature，这套模式的原型，留在原位）。
 
+**块级交互的行级完备性**：凡新增/修改块级交互（高亮、选中、手柄、菜单、拖拽、删除、插入…），
+受 `todo-list.md`「行单元契约」约束——作用单元必须经行单元解析层取得，且同 PR 在
+`e2e/row-unit-matrix.spec.js` 的矩阵补用例（每格「有用例」或「有理由的 n/a」）。
+
 ## 什么时候建 spec
 
 - 新 feature 在 ui-demo 定稿、准备移植进真 app 时（port 的第一步就是写 spec）。

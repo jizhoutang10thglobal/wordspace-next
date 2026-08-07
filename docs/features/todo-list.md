@@ -164,6 +164,16 @@ spread 是 4px——两行各向外 4px 合计 8px > 4.8px，中间叠出 alpha 
 **gutter「+」快捷插入钮（粒度对齐 U4=D，分支 feat/ux-granularity，2026-08-03）。** ⋮⋮ 手柄左侧一格常驻「+」，**与手柄同显同隐**（显隐统一走 `setGutterVisible`——分开控制必漏一处、产幽灵按钮）、与手柄同一水平线、`cursor:pointer`（与手柄的 `grab` 区分）。**插入产物 = 普通正文块，严格对齐 Notion**（Colin 2026-08-04 拍板方案 A；实测 Notion 的「+」永远插普通文本块，与当前块是不是列表行无关，中间行/末行双探针证）：**顶层行**上点「+」→ 在该行下方插入空正文块，落点在列表中间时把列表劈成 `[前段列表][段落][后段列表]`，切点在首/末则退化为插到整个列表前/后（**不产空列表**）；**非列表块**（或 Esc 灰选整块）→ 下方插入空正文块。**⌥ 点击插到上方**（对齐 Notion 的 `Click to add below. Option-click to add a block above`，实读其 aria-label）。插入后光标落新块，一次 undo 整体还原（劈开的列表也一并合回）；`title` 走 i18n（`editor.plusTip`，zh/en 双词条）。门：`e2e/list-row-plus.spec.js`（10 条）。
 ⚠ **嵌套行是结构性分歧、不是产品选择**：Schema 规定 `<li>` 只能装行内内容或嵌套列表（`li-content` 规则），**段落无法存在于嵌套层**，故嵌套行上的「+」退而插入同层新行。这是文法约束下最接近的可用行为，与 Notion 的差异记录在案。
 
+## 行单元契约（E，2026-08-07，Colin 拍板 E→A1 路径第一步）
+
+缘起：`docs/brainstorms/2026-08-07-notion-block-model-alignment-research.md` §3 方案 E——#421 式 bug 的复发条件是「交互必须下沉到行」只存在于口口相传，本节把它变成有形制度。代码锚点：`src/editor/blockedit.js` 的「行单元解析层」注释块（`rowOf` / `caretRowOf` / `topLiIn` / `tabLineHostOf` / `containerFirstLineHost` / `caretLineHostIn` / `paraOf` / `isRowAnchor` / `rowSelEl` 九个 helper）。「行」= 列表的 `<li>`、多段容器（callout/quote）的直接子 `<p>`。三条规则：
+
+1. **取用规则**：任何按行作用的交互，作用单元必须经行单元解析层获取。禁止拿 `blockOf` 产物当「行」（它对列表返回整个 `<ul>`——#421 一族的根）。裸 `closest('li')` 只允许「就地 + 归属检查（`host.contains` / `parentElement === host`）」的内联形态；新代码优先用命名 helper。
+2. **完备性规则**：新增块级交互（高亮/选中/手柄/菜单/拖拽/删除/插入/…）必须**同 PR** 在矩阵门 `e2e/row-unit-matrix.spec.js` 补行 fixture 用例——矩阵表每格必须是「有用例」或「有理由的 n/a」，不进矩阵不许合。
+3. **断言时点规则**（#421 的血教训：v0.12.2 的门操作序列与用户复现逐字相同、却只看按完 Esc 之后）：行级门必须在交互态**存续期间**断言（编辑中/选中中/拖拽中的那个时刻），不许只断言操作序列结束后的终态。门覆盖的是「时刻」，不只是「序列」。
+
+A1（li 升一等交互块，worktree `wordspace-next-rowblock` / `feat/row-block-identity`）落地后，本契约第 1 条由块身份自然承担，第 2、3 条继续有效。
+
 ## 文件映射
 
 | 维度 | ui-demo | 真 app |
