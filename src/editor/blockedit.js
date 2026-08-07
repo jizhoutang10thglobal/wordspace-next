@@ -1424,7 +1424,18 @@
 
     // 全篇跨块选区（⌘A 第二级）：退出编辑放墙（同拖选跨块），range 罩住首尾内容块——
     // 首尾锚点用内容块而非 body（覆盖层 data-ws2-ui 挂在 body 末尾，别把 UI 圈进选区）。
+    // 全篇选中前的出发点（B3）：Esc 退出全篇选区要回到用户按 ⌘A 时所在的位置，不是跳到文档头
+    //（跳文档头 = A4 那类「光标瞬移」）。只在这一对进/出路径间传递，staleness 由 isConnected 兜底。
+    let preWholeSel = null;
     function selectWholeDoc() {
+      // 兜底 stash（真正的出发光标由 ⌘A 分档入口在第一档就存——那才是用户按 ⌘A 前的位置；
+      // 这里只在没存到时补一个，且重入（已在全篇态再按 ⌘A）不覆盖——选区锚点那时早是首块了，
+      // 存它 Esc 就会跳文档头 = A4 那类瞬移）。
+      if (!rangeSelEls.length && !(preWholeSel && preWholeSel.node && preWholeSel.node.isConnected)) {
+        const s0 = doc.getSelection();
+        preWholeSel = (s0 && s0.rangeCount && s0.anchorNode && body.contains(s0.anchorNode))
+          ? { node: s0.anchorNode, offset: s0.anchorOffset } : null;
+      }
       exitCell();
       if (editingEl) exitEdit();
       clearRectSel(); // ADV-R1（HIGH）：⌘A 不清矩形态的话，rectSel 与全篇原生选区并存——Delete 被矩形分支永久劫持、⌘C 拷错东西
@@ -3453,6 +3464,19 @@
         markDirty();
         return;
       }
+      // 跨块 rangesel 态下的**纯点击**（2026-08-07 todo 深扫 C3 根因）：⌘A/跨块拖选后焦点在
+      // focusCatcher、选区是程序化的——目标块不是 contenteditable，mousedown 的原生「点击折叠选区」
+      // 不发生，onClick 的「拖选松手保选区」守卫（:361x）看到非折叠选区直接 return → 首击被吞、
+      // 必须点第二次。修在按下这一刻：清跨块选区 + 蓝底，onClick 随即走正常路由（enterEdit at point）。
+      // 单块内文字选区（rangeSelEls 恒空）不受影响；Shift+点击留给扩选语义。
+      if (rangeSelEls.length && !e.shiftKey) {
+        const sRS = doc.getSelection();
+        if (sRS && sRS.rangeCount && !sRS.isCollapsed) {
+          clearRangeSel();
+          try { sRS.removeAllRanges(); } catch (x) {}
+          preWholeSel = null;
+        }
+      }
       // T13：表格格子上的 mousedown → 矩形选区待命。非编辑格拦掉原生 mousedown（光标仍由 onClick 的
       // enterCell(point) 放，原生选区从此不再从格里长出来——Notion N4 实测：非聚焦格拖动=格矩形不是文字选择）；
       // 编辑格保留原生（格内选词靠 contenteditable 墙天然圈在格内），指针出格那一刻才升级矩形（onMouseMove 判）。
@@ -4033,6 +4057,9 @@
         const sel = doc.getSelection();
         if (editingEl && sel) {
           e.preventDefault();
+          // 出发点 stash（B3）：第一档动手前、光标还折叠时的这个位置才是用户真正的出发点——
+          // Esc 从全篇选区退出要回到这，不是回到某档 range 的锚点（那是块首，会诱发块首退格误并块）。
+          if (sel.isCollapsed && sel.anchorNode && body.contains(sel.anchorNode)) preWholeSel = { node: sel.anchorNode, offset: sel.anchorOffset };
           // 「块内已全选」判定剥空白比较——表格/列表的 sel.toString() 带 \t\n 分隔、textContent 没有，
           // 逐字比对会永远判「未全选」把第二级堵死。空块（无文字）第一次就直接升全篇。
           const norm = (s) => (s || '').replace(/\s+/g, '');
@@ -4115,6 +4142,34 @@
           e.preventDefault();
           try { doc.execCommand('insertText', false, e.key); } catch (x) {}
           markDirty();
+          return;
+        }
+      }
+      // 跨块 rangesel 态（⌘A 全篇 / 拖选跨块，焦点在 focusCatcher）的键盘退出（2026-08-07 todo 深扫 B3）：
+      // 此前 Esc / 四个方向键在这个态里全部空转——键盘上没有任何退出路径，只能鼠标点空白；用户以为
+      // 已经 Esc 掉了、随手一个退格把全文删光（1.8s 落盘，只能靠 undo 救）。表格矩形选区那格早有
+      // Esc 兜底（上卷整表），这里合流：Esc 塌回按 ⌘A 时的出发点（没有就选区起点），←/↑ 塌到选区
+      // 起点、→/↓ 塌到终点，落点块直接进编辑。
+      if ((e.key === 'Escape' || e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+        && !editingEl && !selectedEl && rangeSelEls.length && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing && e.keyCode !== 229) {
+        const sel = doc.getSelection();
+        if (sel && sel.rangeCount && !sel.isCollapsed) {
+          e.preventDefault();
+          const r = sel.getRangeAt(0);
+          const fwd = e.key === 'ArrowDown' || e.key === 'ArrowRight';
+          let node = fwd ? r.endContainer : r.startContainer;
+          let useSaved = false;
+          if (e.key === 'Escape' && preWholeSel && preWholeSel.node && preWholeSel.node.isConnected) { node = preWholeSel.node; useSaved = true; }
+          const blk = blockOf(node);
+          try {
+            if (useSaved) { const nr = doc.createRange(); nr.setStart(preWholeSel.node, Math.min(preWholeSel.offset, preWholeSel.node.length != null ? preWholeSel.node.length : preWholeSel.node.childNodes.length)); nr.collapse(true); sel.removeAllRanges(); sel.addRange(nr); }
+            else if (fwd) sel.collapseToEnd();
+            else sel.collapseToStart();
+          } catch (x) {}
+          clearRangeSel();
+          preWholeSel = null;
+          if (blk && isEditableEl(blk)) enterEdit(blk, { mode: 'keep' });
+          else if (blk) { selectBlock(blk); positionGrip(blk); }
           return;
         }
       }
