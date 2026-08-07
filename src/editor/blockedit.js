@@ -5248,7 +5248,17 @@
       }
       // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
       if ((!sel || sel.isCollapsed) && selectedEl) {
-        cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
+        // A1（U4）：灰选的是**行**（Esc 一档，LI）→ 打包成携带宿主列表 tagName/class 的单项列表
+        //（对齐 U3/clip-1 跨行打包）。旧路径裸 <li> 出剪贴板，粘贴侧兜底裹的是无 class 的 <ul>——
+        // 待办行/编号行复制出去类型丢失。开关关时行为原样（Esc 一档本身就是开关前不存在的态叠加较少见）。
+        let clipEl = selectedEl;
+        if (rowBlockOn() && selectedEl.tagName === 'LI' && selectedEl.parentElement) {
+          const host = selectedEl.parentElement;
+          clipEl = doc.createElement(host.tagName);
+          if (host.className) clipEl.className = host.className;
+          clipEl.appendChild(cleanClone(selectedEl));
+        }
+        cd.setData('text/html', '<div ' + CLIP + '="b">' + (clipEl === selectedEl ? cleanClone(selectedEl).outerHTML : clipEl.outerHTML) + '</div>');
         // ADV-TSV-3：整表灰选的纯文本给 TSV——裸 textContent 是排版空白噪声，贴回矩形会铺出碎片列
         if (selectedEl.tagName === 'TABLE') {
           cd.setData('text/plain', tableRowsOf(selectedEl).map((tr) => rowCellsOf(tr).map((c) => (c.textContent || '').trim()).join('\t')).join('\n'));

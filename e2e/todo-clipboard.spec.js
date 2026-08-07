@@ -284,3 +284,35 @@ test('U22 单行负例：单行普通文字（无 marker）→ 仍字面、不�
   await page.waitForTimeout(150);
   expect(await frame.locator('ul.ws-todo').count(), '无 marker 的单行不转').toBe(0);
 });
+
+// ═══ A1（U4，plan 2026-08-07-002）：灰选**行**的 ⌘C 打包——开关开时行为门 ═══
+// 旧路径灰选 LI 复制出**裸 li**，粘贴侧兜底裹无 class 的 <ul>：待办行复制出去变普通圆点、勾选态语义面目全非。
+// A1 打包成携带宿主列表 tagName/class 的单项列表（对齐 clip-1 跨行打包）。开关默认关，本测自翻。
+test('A1/clip-row：开关开，Esc 灰选待办行 ⌘C→⌘V = 单项 ws-todo 列表、勾选态保真、不出裸 li', async () => {
+  await launch();
+  await page.evaluate(() => window.WS2BlockEdit.setRowBlock(true));
+  await openDoc('<ul id="lst" class="ws-todo"><li id="r1" data-checked="true">甲事项</li><li id="r2">乙事项</li></ul><p id="pt">目标段落</p>');
+  await frame.locator('#r1').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape'); // A1 一档：灰选该行（LI）
+  await page.waitForTimeout(150);
+  const selTag = await frame.locator('body').evaluate((b) => { const s = b.ownerDocument.querySelector('[data-ws2-selected]'); return s ? s.tagName + '#' + s.id : null; });
+  expect(selTag, '前提：灰选的确实是行').toBe('LI#r1');
+  await page.keyboard.press('ControlOrMeta+c');
+  await page.waitForTimeout(150);
+  await frame.locator('#pt').click(); await page.keyboard.press('End');
+  await page.keyboard.press('ControlOrMeta+v');
+  await page.waitForTimeout(250);
+  await expect.poll(() => frame.locator('ul.ws-todo').count(), '粘出**第二张** ws-todo 列表').toBe(2);
+  const shape = await frame.locator('body').evaluate((b) => {
+    const uls = [...b.ownerDocument.querySelectorAll('ul.ws-todo')];
+    const nu = uls.find((u) => u.id !== 'lst');
+    const lis = nu ? [...nu.children].filter((c) => c.tagName === 'LI') : [];
+    return { n: lis.length, txt: lis[0] ? lis[0].textContent : null, checked: lis[0] ? lis[0].getAttribute('data-checked') : null, bareLi: !!b.ownerDocument.querySelector('p li') };
+  });
+  expect(shape.n, '单项').toBe(1);
+  expect(shape.txt).toBe('甲事项');
+  expect(shape.checked, '勾选态随行保真').toBe('true');
+  expect(shape.bareLi, '绝不出裸 li').toBe(false);
+  expect(await conformOf(await serialize())).toBe(true);
+});
