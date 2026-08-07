@@ -4048,9 +4048,38 @@
               const liText = norm(liRange.toString());
               const ulText = norm(editingEl.textContent);
               const curText = norm(sel.toString());
-              if (liText.length > 0 && curText !== liText && curText !== ulText) { sel.removeAllRanges(); sel.addRange(liRange); return; } // ① 当前行
-              if (curText !== ulText) { const r = doc.createRange(); r.selectNodeContents(editingEl); sel.removeAllRanges(); sel.addRange(r); return; } // ② 整个列表
+              // 空行修补（2026-08-07 todo 深扫 B1）：旧判据 `liText.length > 0` 把空行的第一档整个挡掉——
+              // 刚回车的空行上 ⌘A 一次就选整张清单，随手一个字把整份 checklist 替掉并落盘（这一档的
+              // 注释写明就是防这个，判据把「空的一行」漏了）。文本比较对空行是废的（''==='' 恒真），
+              // 空行改用 Range 端点结构比较判「已选到这一档没」；非空行文本比较原样保留（表格/列表
+              // sel.toString() 带 \t\n 的老坑还归它管，见上面 norm 注释）。
+              const cur0 = sel.rangeCount ? sel.getRangeAt(0) : null;
+              const sameRange = (r2) => { try { return !!cur0 && cur0.compareBoundaryPoints(Range.START_TO_START, r2) === 0 && cur0.compareBoundaryPoints(Range.END_TO_END, r2) === 0; } catch (x) { return false; } };
+              const ulR = doc.createRange(); ulR.selectNodeContents(editingEl);
+              const liSel = liText.length > 0 ? curText === liText : sameRange(liRange);
+              const ulSel = ulText.length > 0 ? curText === ulText : sameRange(ulR);
+              if (!liSel && !ulSel) { sel.removeAllRanges(); sel.addRange(liRange); return; } // ① 当前行
+              if (!ulSel) { sel.removeAllRanges(); sel.addRange(ulR); return; } // ② 整个列表
               selectWholeDoc(); return; // ③ 全篇
+            }
+          }
+          // 多段容器（callout/quote）补「本段」档（2026-08-07 todo 深扫 B2）：同一容器 Esc 有段档（C9）、
+          // ⌘A 此前只有 整框→全篇 两档——两套口径。列表那档防的「一键选全、随手打字替光」在这一样
+          // 成立：三段提示框 ⌘A×1 全选，下一个字整框内容没了并落盘。阶梯改成 本段→整框→全篇；
+          // 「本段=整框内容」（单段框）时段档自然与框档判据重合、直接升级，不憋死（SA-5）。
+          if (isMultiParaContainer(editingEl)) {
+            const para = caretLineHostIn(editingEl);
+            if (para && para !== editingEl) {
+              const pR = doc.createRange(); pR.selectNodeContents(para);
+              const pText = norm(pR.toString());
+              const curTx = norm(sel.toString());
+              const curR = sel.rangeCount ? sel.getRangeAt(0) : null;
+              const sameR = (r2) => { try { return !!curR && curR.compareBoundaryPoints(Range.START_TO_START, r2) === 0 && curR.compareBoundaryPoints(Range.END_TO_END, r2) === 0; } catch (x) { return false; } };
+              const pSel = pText.length > 0 ? curTx === pText : sameR(pR);
+              const boxText0 = norm(editingEl.textContent);
+              const boxSel = boxText0.length > 0 && curTx === boxText0;
+              if (!pSel && !boxSel) { sel.removeAllRanges(); sel.addRange(pR); return; } // ① 本段
+              // ②整框 ③全篇 交下面既有两档
             }
           }
           const blockText = norm(editingEl.textContent);
