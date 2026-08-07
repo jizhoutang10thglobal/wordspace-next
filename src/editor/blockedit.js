@@ -391,6 +391,42 @@
   function isMultiParaContainer(el) {
     return !!el && el.nodeType === 1 && (el.tagName === 'BLOCKQUOTE' || (el.classList && el.classList.contains('ws-callout')));
   }
+  // ═══════ A1 行块身份（plan 2026-08-07-002 U1）：交互块解析原语 + 灰度开关 ═══════
+  // iblockOf = 「交互块」：高亮/选中/菜单/拖拽/键盘的作用单元——列表内是最深所属 <li>、
+  // 多段容器（引用/callout）内是直接子 <p>、其余等于存储块。blockOf 语义收窄为「存储块」
+  // （顶层结构单元：serialize/topBlocks/劈容器手术）。分账清单：docs/plans/a1-callsite-ledger.md
+  //（319 处消费点逐条标注哪些迁 iblockOf）。U1 只落原语与开关、不接线；U2 起消费链灰度迁移。
+  // 纯函数（blockRoot 显式传入、不吃闭包态）→ jsdom 可单测；attach 内包薄壳。
+  // 与 blockOf 的爬升语义逐分支对齐（含 details 作用域/summary→details/data-ws2-ui→null），
+  // 差异只有最后一步：存储块是 UL/OL/多段容器时继续下钻到行。
+  let ROWBLOCK = false; // A1 灰度开关（照 details 门控先例）：关=消费链走旧路径逐字节不变
+  function setRowBlock(v) { ROWBLOCK = !!v; }
+  function rowBlockOn() { return ROWBLOCK; }
+  function iblockOf(blockRoot, node) {
+    let el = node; if (el && el.nodeType === 3) el = el.parentElement;
+    if (!el || el.nodeType !== 1 || !blockRoot.contains(el) || el === blockRoot) return null;
+    const src = el; // 下钻要用事件/光标真正所在的节点，爬升会丢掉它
+    // 爬升到存储块（与 attach 内 blockOf 的 scoped 分支同语义；flat 文档 DETAILS 判据恒假=同款）
+    while (el.parentElement && el.parentElement !== blockRoot && el.parentElement.tagName !== 'DETAILS') el = el.parentElement;
+    if (el.hasAttribute('data-ws2-ui')) return null;
+    const p = el.parentElement;
+    if (p !== blockRoot && !(p && p.tagName === 'DETAILS')) return null;
+    if (el.tagName === 'SUMMARY') return p; // summary 归属其 details（与 blockOf 一致）
+    // 下钻：列表 → src 最深所属 li（与 caretRowOf/rowOf 的最深语义一致）
+    if (el.tagName === 'UL' || el.tagName === 'OL') {
+      const li = src.closest ? src.closest('li') : null;
+      return li && el.contains(li) ? li : el; // src 落在 ul 自身（如行间缝隙）→ 整列表兜底
+    }
+    // 下钻：多段容器 → src 所在的直接子 <p>（含首段；paraOf 的「首段=容器域」是悬停专属语义，不在此）
+    if (isMultiParaContainer(el)) {
+      let n = src;
+      while (n && n !== el && n.parentElement !== el) n = n.parentElement;
+      if (n && n !== el && n.tagName === 'P') return n;
+      return el; // 裸行内区/容器自身 → 整框兜底
+    }
+    return el;
+  }
+  // ════════════════════════════════════════════════
   // 容器「被掏空」判据（对抗审查残余①）：⚠ 不能看 firstElementChild——外部文件的「裸 <br> 直挂容器」
   // 形态里 BR 是元素、判不掉。口径 = 无 <p> 子行且无可见内容/媒体。
   function isContainerEmptied(co) {
@@ -6162,7 +6198,7 @@
   `;
   // i18n-exempt-end
 
-  const api = { attach, classify, isEditableEl, pickBlockRoot, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, cellPosOf, cellAt, cellNavTarget, cellSpanOf, tableEditOp, EDITOR_CSS };
+  const api = { attach, classify, isEditableEl, pickBlockRoot, iblockOf, setRowBlock, rowBlockOn, tableSeed, tableRowsOf, rowCellsOf, firstCellOf, cellPosOf, cellAt, cellNavTarget, cellSpanOf, tableEditOp, EDITOR_CSS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WS2BlockEdit = api;
 })(typeof window !== 'undefined' ? window : globalThis);
