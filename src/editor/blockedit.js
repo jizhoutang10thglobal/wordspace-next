@@ -2719,13 +2719,19 @@
               let nx;
               if (many && many.length > 1) { nx = turnIntoMany(many, item); }
               else if (!target) { nx = null; }
+              else if (target.tagName === 'LI') {
+                // 行灰选（Esc 三档，2026-08-07 todo 深扫 A2）：抽出该行转——行菜单同款 turnIntoLines。
+                // 直接 turnInto(li) 会把 <li> 原地 retag 留在 ul 里（11 个选项全产非合规、整篇降级）。
+                // 嵌套行 turnIntoLines 返回 null = 零变更（结构性抽不出，行菜单对嵌套行同样不给转）。
+                nx = turnIntoLines(blockOf(target) || target.closest('ul,ol'), [target], item);
+              }
               else if (target.tagName === 'UL' || target.tagName === 'OL') {
                 const lines = selectedListLines(target);
                 const allCount = [...target.children].filter((c) => c.tagName === 'LI').length;
                 nx = (lines && lines.length && lines.length < allCount) ? turnIntoLines(target, lines, item) : turnInto(target, item);
               } else { nx = turnInto(target, item); }
               menu.style.display = 'none';
-              if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx);
+              if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (nx && editingEl) enterEdit(nx, { mode: 'end' }); else if (nx) selectBlock(nx);
             }
           });
           menu.appendChild(it);
@@ -4098,7 +4104,10 @@
         if (selectedEl && !editingEl) {
           e.preventDefault();
           try { doc.execCommand('copy'); } catch (x) {} // 触发 onCopy 的「灰选整块」分支，产出与 ⌘C 一致
-          removeBlock(selectedEl);
+          // 灰选是**行**必须走 removeRow（Delete/Backspace 分支同款）：removeBlock 只认顶层块，纯清单
+          // 文档会把 <li> 原地 retag 成 <p> 产出 <ul><p></p></ul> 非合规、整篇降级；多块文档留 0 高的
+          // 空 <ul></ul> 僵尸（2026-08-07 todo 深扫 A3，两支磁盘字节实锤）。
+          if (selectedEl.tagName === 'LI') removeRow(selectedEl); else removeBlock(selectedEl);
           return;
         }
       }
@@ -4278,6 +4287,21 @@
       if (e.key === 'Enter' && selectedEl && !editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
+        // 灰选是**行**（Esc 三档产的 <li>）→ 按行语义同层插一个新空行（Notion：选中行回车=下方新行）。
+        // 走 insertAfter 会把 <p> 塞进 <ul> —— 非合规、自动保存后下次打开整篇降级（2026-08-07 todo
+        // 深扫 A1，磁盘字节实锤）。Backspace/Delete 当年在下面那条分支单独补过行语义，Enter 漏了。
+        if (selectedEl.tagName === 'LI') {
+          const row = selectedEl;
+          const li = doc.createElement('li');
+          li.appendChild(doc.createElement('br')); // 空行必带占位（create-1：list-style:none 下空 li 高 0、光标落不进）
+          row.after(li);
+          const host = blockOf(li) || li.closest('ul,ol');
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          enterEdit(host, { mode: 'start' });
+          caretAtLiTextEnd(li);
+          return;
+        }
         const nx = insertAfter(selectedEl, itemByKey('text'));
         enterEdit(nx, { mode: 'start' });
         return;
@@ -4892,6 +4916,26 @@
         }
         return;
       }
+      // 行灰选态方向键（2026-08-07 todo 深扫 A4）：在**行**间移动灰选、边界出块到相邻顶层块。
+      // 下面那条通用分支拿 topBlocks().indexOf(<li>) 得 -1 → ↓/→ 落到 blocks[0] = 光标飞到**整篇文档
+      // 第一个块**并进编辑（随手打字进错块、1.5s 落盘），↑/← 取 blocks[-2] = undefined 死键。
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') && selectedEl && !editingEl && selectedEl.tagName === 'LI' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        const fwd = e.key === 'ArrowDown' || e.key === 'ArrowRight';
+        const topList = blockOf(selectedEl) || selectedEl.closest('ul,ol');
+        const rows = [...topList.querySelectorAll('li')]; // 文档序 = 视觉序（嵌套行也逐行走，同 Notion）
+        const i = rows.indexOf(selectedEl);
+        const next = fwd ? rows[i + 1] : rows[i - 1];
+        if (next) { selectBlock(next); positionGrip(next); return; }
+        const blocks = topBlocks();
+        const bi = blocks.indexOf(topList);
+        const target = fwd ? blocks[bi + 1] : blocks[bi - 1];
+        if (!target) return; // 文档边界：留在原行
+        if (isEditableEl(target)) enterEdit(target, { mode: fwd ? 'start' : 'end' });
+        else { selectBlock(target); positionGrip(target); }
+        return;
+      }
       // 灰选中（不可编辑块）态的方向键：继续穿过到上/下一块——否则键盘撞到图片/分隔线就卡死、过不去。
       // ↓→ = 下一块，↑← = 上一块（左右与上下同义，跟编辑态的跨块左右一致，避免落到图片上再卡住）。
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') && selectedEl && !editingEl && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -5178,6 +5222,17 @@
       }
       // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
       if ((!sel || sel.isCollapsed) && selectedEl) {
+        // 灰选是**行**（Esc 三档）：打包成所属列表类型的片段——clip-1 契约「绝不携带裸 <li>」。
+        // 裸 li 粘贴侧只按「有没有 data-checked」猜 ws-todo，未勾选的待办行会被猜成普通圆点（丢类型）。
+        if (selectedEl.tagName === 'LI') {
+          const host = selectedEl.parentElement; // 直接父列表（嵌套行取嵌套层：类型/勾选语义同源）
+          const wrap = doc.createElement(host && host.tagName === 'OL' ? 'ol' : 'ul');
+          if (host && host.className) wrap.className = host.className;
+          wrap.appendChild(cleanClone(selectedEl));
+          cd.setData('text/html', '<div ' + CLIP + '="b">' + wrap.outerHTML + '</div>');
+          cd.setData('text/plain', selectedEl.textContent || '');
+          e.preventDefault(); return;
+        }
         cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
         // ADV-TSV-3：整表灰选的纯文本给 TSV——裸 textContent 是排版空白噪声，贴回矩形会铺出碎片列
         if (selectedEl.tagName === 'TABLE') {
@@ -5321,6 +5376,30 @@
         if (isCaretAtStart(doc, editingEl)) editingEl.before(frag);
         else if (isCaretAtRealEnd(doc, editingEl)) editingEl.after(frag);
         else { const beforeHalf = editingEl; if (splitBlock()) beforeHalf.after(frag); else beforeHalf.after(frag); } // 块中：劈开，插在前半之后（=后半之前）
+      } else if (selectedEl && selectedEl.tagName === 'LI') {
+        // 行灰选粘贴（2026-08-07 todo 深扫 A1 第二入口）：selectedEl.after(frag) = 把块塞进 <ul> 内部
+        // （非合规落盘、整篇降级）。同类列表片段 → 逐项并入该行之后（clip 契约「粘进同类列表仍是
+        // 单个 ul」）；其余 → 按行劈开列表、frag 落两半之间（insertParaAtRow 同款切法，切点=该行之后）。
+        const row = selectedEl;
+        const host = row.parentElement;
+        const sameKind = blocks.every((b) => (b.tagName === 'UL' || b.tagName === 'OL')
+          && b.tagName === host.tagName && b.classList.contains('ws-todo') === host.classList.contains('ws-todo'));
+        if (sameKind) {
+          let at = row; let lastLi = null;
+          for (const b of blocks) for (const li of [...b.children]) { at.after(li); at = li; lastLi = li; }
+          if (lastLi) { enterEdit(blockOf(lastLi) || host, { mode: 'start' }); caretAtLiTextEnd(lastLi); }
+          return;
+        }
+        const top = blockOf(row) || host;
+        const topRow = topLiIn(top, row) || row; // 嵌套行：劈点上卷到所属顶层行（块级内容进不了嵌套层）
+        const tail = [];
+        for (let n2 = topRow.nextElementSibling; n2; n2 = n2.nextElementSibling) tail.push(n2);
+        if (tail.length) {
+          const nl = doc.createElement(top.tagName);
+          if (top.className) nl.className = top.className;
+          tail.forEach((x) => nl.appendChild(x));
+          top.after(nl); top.after(frag); // 先挂后半列表、再把 frag 顶进两半之间
+        } else top.after(frag);
       } else if (selectedEl) { selectedEl.after(frag); }
       else { blockRoot.appendChild(frag); }
       if (last && last.isConnected) { if (isEditableEl(last)) enterEdit(last, { mode: 'end' }); else selectBlock(last); }
