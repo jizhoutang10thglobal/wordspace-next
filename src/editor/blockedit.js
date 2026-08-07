@@ -495,6 +495,13 @@
     deps = deps || {};
     const win = deps.win || doc.defaultView;
     const undoMgr = deps.undoMgr || null;
+    // S1：相邻同类列表合并收口在「快照落下之前」（时点论证见 coalesceAdjacentLists 上方注释）。
+    if (undoMgr && typeof undoMgr.checkpoint === 'function') {
+      // 幂等包装：undoMgr 若跨 attach 复用，先退役上一份文档的包装（否则链式叠包、闭包里攥着 detached root）
+      if (undoMgr.__ws2RawCheckpoint) undoMgr.checkpoint = undoMgr.__ws2RawCheckpoint;
+      undoMgr.__ws2RawCheckpoint = undoMgr.checkpoint.bind(undoMgr);
+      undoMgr.checkpoint = (...a) => { try { coalesceAdjacentLists(); } catch (x) {} return undoMgr.__ws2RawCheckpoint(...a); };
+    }
     const markDirtyRaw = deps.markDirty || (() => {});
     // 每次标脏顺带同步 toggle 空态标记（结构变更：增删块 / 拖拽 / 转换 / 粘贴都会经过这里，P3-7）
     const markDirty = (...a) => { try { refreshToggleEmpty(); } catch (x) {} try { normalizeHostLi(); } catch (x) {} return markDirtyRaw(...a); };
@@ -610,6 +617,7 @@
     blockRoot.setAttribute('data-ws2-root', '');
     ensureSchemaBaseline(); // baseline 排版底线入盘（v2：字体/行高/标题节奏/块间距；旧文件静默升级；不 markDirty）
     refreshSemanticStyles(); // 旧文件的 todo/callout v1 语义 CSS → 同步升级到当前版（同上不 markDirty）
+    try { coalesceAdjacentLists(); } catch (x) {} // 相邻同类列表 attach 时就并（S1：已写坏的老文档打开即自愈，不等敲键）
     try { normalizeHostLi(); } catch (x) {} // 「空壳宿主行」在 **attach 时**就修（照上面两条静默升级的先例，不 markDirty）
     // ⚠ 只挂在 markDirty 上不够：已经被写坏的老文档要等用户敲一下才自愈，打开时照样是「一行两个勾选框」。
 
@@ -5120,6 +5128,37 @@
     // ::before 绝对定位落到同一个 y 上，视觉上就是「一行里两个勾选框」。补一个占位 <br> 让宿主行占住自己
     // 那一行（Notion 里父块本来就是独立一行）。这类结构由 Tab 缩进到空行之上、或原生合并产生，
     // 所以归一放在 markDirty 这个总出口上，而不是在每个产生点各修一遍（漏一处就复发）。
+    // 相邻同类列表合并归一（2026-08-07 todo 深扫 S1）：退格剥出再并回 / 拖走分隔段 之后，一张列表被
+    // 永久留成并排两张同类 <ul>——视觉连续、结构分裂：Esc 阶梯 / ⌘A 二档的「整张列表」只圈到前半截，
+    // 磁盘上也是两张（违背「磁盘正本是一张 canonical 列表」的存储单元约定）。coalesceLists 此前只在
+    // turnIntoMany 一条路被调；照 normalizeHostLi 先例挂 markDirty/attach 总出口，不在每个产生点各修。
+    // 同类 = 同 tag + 同 class（ws-todo/ws-color-* 全算）；后表带显式 start 不吞——那是它自己的编号语义；
+    // id 迁移照 coalesceLists 既有规则（被吞表的 id 落到它第一项上，锚点不静默断链）。
+    function coalesceAdjacentLists() {
+      const nextReal = (el) => { let n = el.nextElementSibling; while (n && n.hasAttribute && n.hasAttribute('data-ws2-ui')) n = n.nextElementSibling; return n; };
+      let changed = false;
+      for (const list of [...blockRoot.querySelectorAll('ul, ol')]) {
+        if (!list.isConnected) continue;
+        for (;;) {
+          const nx = nextReal(list);
+          if (!nx || nx.tagName !== list.tagName || nx.className !== list.className) break;
+          if (nx.hasAttribute('start')) break;
+          if (nx.id) { const li0 = nx.querySelector(':scope > li'); if (li0 && !li0.id) li0.id = nx.id; }
+          while (nx.firstChild) list.appendChild(nx.firstChild);
+          nx.remove();
+          changed = true;
+        }
+      }
+      return changed;
+    }
+    // ⚠ 归一的时点有两个雷，位置是被它们逼出来的：
+    //  ① 不能同步跑在 markDirty 里——复合变换（turnIntoLines 劈表等）中途必然有「几张同类表瞬时
+    //    相邻」的手术台状态，同步合并会把变换正在操作的节点卷走（MT-2 实测丢了一行）；
+    //  ② 不能放在收尾 checkpoint **之后**（微任务/防抖都算）——合并成了快照外的悬挂变更，
+    //    undo 第一步只回退合并本身（P1-1 实测「一步回原结构」破掉）。
+    // 唯一两全的位置：**checkpoint 落快照之前**（见 attach 处对 undoMgr.checkpoint 的包装）。
+    // 复合操作的中途快照全走 ckpt()（ckSuppressed 抑制）→ 抑制窗口内根本不会进到包装层；
+    // 非抑制的中途 checkpoint 均已实证发生在 DOM 终态（turnInto 替换完成之后）。
     function normalizeHostLi() {
       for (const li of blockRoot.querySelectorAll('li')) {
         const sub = li.querySelector(':scope > ul, :scope > ol');

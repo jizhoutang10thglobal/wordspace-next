@@ -98,10 +98,11 @@ test('带嵌套子项的行「转为正文」：子项不被吞、以列表形�
     const d = document.getElementById('doc-frame').contentDocument;
     return [...d.body.children].map((el) => ({ tag: el.tagName, text: el.textContent.trim() }));
   });
-  expect(st.map((k) => k.tag).join(','), '前列表 / 段落 / 子树列表 / 后列表').toBe('UL,P,UL,UL');
+  // S1（2026-08-08）：降级出的子树列表与后半张同类相邻 → coalesceAdjacentLists 并成一张
+  //（磁盘正本=一张 canonical 列表；Notion 视角这些就是连续顶层行）。
+  expect(st.map((k) => k.tag).join(','), '前列表 / 段落 / 子树+后列表').toBe('UL,P,UL');
   expect(st[1].text, '产物只含该行自己的文字、不含子项').toBe('一级 B');
-  expect(st[2].text.replace(/\s+/g, ''), '子项原样保留为独立列表').toBe('二级B1二级B2');
-  expect(st[3].text, '后段列表不受影响').toBe('一级 C');
+  expect(st[2].text.replace(/\s+/g, ''), '子项原样保留为条目 + 后段接续').toBe('二级B1二级B2一级C');
   const gone = await page.evaluate(() => !!document.getElementById('doc-frame').contentDocument.getElementById('b1'));
   expect(gone, '子项 li 节点仍在（不是被拍成文字）').toBe(true);
   expect(await conformOf(await serialize())).toBe(true);

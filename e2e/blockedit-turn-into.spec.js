@@ -338,9 +338,10 @@ test('MT-3 多行带子列表：子树跟着**各自那一行**走，不全堆�
   await selAcross('#r1', '#r2'); await page.waitForTimeout(300);
   expect(await turnTo('正文')).toBe('ok');
   await page.waitForTimeout(600);
-  // 修前会把两棵子树都接到唯一那个产物之后 → 子甲/子乙 挤在一起、跟不上各自的行
+  // 修前会把两棵子树都接到唯一那个产物之后 → 子甲/子乙 挤在一起、跟不上各自的行。
+  // S1（2026-08-08）：「子乙」子树表与剩余「三」同类相邻 → coalesce 并成一张（终态确实相邻，就该合）。
   expect(await blocksOf()).toEqual([
-    'P#pre「前」', 'P#r1「一」', 'UL「子甲」', 'P#r2「二」', 'UL「子乙」', 'UL「三」', 'P#post「后」',
+    'P#pre「前」', 'P#r1「一」', 'UL「子甲」', 'P#r2「二」', 'UL「子乙三」', 'P#post「后」',
   ]);
   expect(await conformNow()).toBe(true);
 });
