@@ -5,6 +5,26 @@
 > the two (see `docs/releasing.md`, "Changelog 文案规范"). Group names: Added / Improved / Fixed.
 > Historical entries (v0.0.1–v0.6.6) were back-written; the full list follows the same style rules.
 
+## v0.13.1 — 2026-08-07 (patch bump chosen by Colin; by the older rule this content would have bumped the minor)
+
+Images can be resized by dragging, plus a batch of table and shortcut work.
+
+### Added
+
+- **Images**: hover an image and grab the bars on either side to resize it (proportional, re-centred automatically); the top-right corner also offers "Caption" and "Zoom" — zoom opens a full-screen lightbox, dismissed with Esc or a click
+- **Tables**: press and drag the pill on the left of a row to move the whole row (header rows stay put)
+- **Tables**: select a block of cells and press ⌘V — tab-separated text from the clipboard fills the cells starting at the top-left corner; together with ⌘C / ⌘X, table data now moves in and out of a spreadsheet in one piece
+- **Shortcuts**: type three `-` in a row for a divider; ⌘E turns the selection into inline code; ⌘⌥0/1/2/3 turn the current block into body text / heading 1 / 2 / 3
+- **Editing**: Tab now depends on where the cursor is — at the start of a line it still indents, in the middle of the text it inserts two spaces
+
+![The resize bars on either side of an image, with Caption and Zoom in the corner](website/public/changelog/0131-image-resize.png)
+
+### Fixed
+
+- **Lists**: while editing a row, the dark background covers only that row — it no longer merges with the row above
+- **Tables**: the "+" bar at a table's edge now disappears when the pointer leaves the document, instead of staying on screen
+- **Tables**: pressing an arrow key with cells selected now puts the cursor in the corner cell of the selection, instead of leaving neither a selection nor a cursor
+
 ## v0.13.0 — 2026-08-06
 
 Tables can be selected by dragging.
