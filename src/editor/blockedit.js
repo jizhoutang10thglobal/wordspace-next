@@ -971,6 +971,20 @@
       return el;
     }
 
+    // ═══════ 行单元解析层（row-unit resolution layer）═══════
+    // 契约正本：docs/features/todo-list.md「行单元契约」；完备性门：e2e/row-unit-matrix.spec.js；
+    // 缘起：docs/brainstorms/2026-08-07-notion-block-model-alignment-research.md §3 方案 E。
+    // 「行」= 列表的 <li>、多段容器（callout/quote）的直接子 <p>。规则：
+    //   ① 任何按行作用的交互，作用单元必须经本层 helper 取得——禁止拿 blockOf 产物当「行」
+    //     （blockOf 对列表返回整个 <ul>，#421 一族 bug 全是这么来的）。
+    //   ② 裸 closest('li') 只允许「就地 + 归属检查（host.contains / parentElement === host）」的
+    //     内联形态（键盘分支里既有 12 处均属此形态）；新代码优先用本层 helper。
+    //   ③ 本层是 A1（li 升一等交互块，feat/row-block-identity）动工前的过渡垫层——A1 落地后
+    //     这组 helper 大半并入块身份，契约由「块」直接承担。
+    // 成员：rowOf（悬停 Y→列表行）· caretRowOf（光标→列表行）· topLiIn（归一到指定列表的直接子 li）
+    //   · tabLineHostOf（Tab 行首判定的行宿主）· containerFirstLineHost / caretLineHostIn / paraOf
+    //   （多段容器的行=直接子 <p>）· isRowAnchor（行锚谓词）· rowSelEl（段灰选真相源）。
+    // ════════════════════════════════════════════════
     // 列表块内的悬停行解析（U1 行级手柄）：纯按 clientY 找行——同 Y 命中多个嵌套层级取**最深**
     // （父项的盒子包含嵌套行，浅层命中永远成立，取深层才是指针真正所在的行）。
     // ⚠ 不能用 closest('li')：鼠标在嵌套行的勾选框 gutter 上时命中的是嵌套 <ul> 容器（勾选框画在
@@ -986,6 +1000,19 @@
         if (d < bestD || (d === bestD && depth > bestDepth)) { bestD = d; bestDepth = depth; best = li; }
       }
       return best;
+    }
+    // 归一到 listEl 的**直接子** li：node 落在嵌套子项时 closest('li') 取到的是最深 li，逐层上卷；
+    // node 不在 listEl 的任何 li 内（如端点落在 ul 自身）→ null，调用方自定回落。
+    // U1 收拢：onCopy 列表打包与 selectedListLines 折叠光标分支此前各养了一份同款循环，行为保持。
+    function topLiIn(listEl, node) {
+      let li = node && node.nodeType === 1 ? node : (node && node.parentElement);
+      li = li && li.closest ? li.closest('li') : null;
+      while (li && li.parentElement !== listEl) {
+        const up = li.parentElement && li.parentElement.closest ? li.parentElement.closest('li') : null;
+        if (!up || up === li) { li = null; break; }
+        li = up;
+      }
+      return li;
     }
 
     // ===== 容器化（PR-3，对拍 C1/C2/C5/C6/C7/C9/C11）：多段容器（callout/quote）内每个直接子 <p> 是
@@ -1930,9 +1957,8 @@
       const r = sel.getRangeAt(0);
       const allLis = [...ul.children].filter((c) => c.tagName === 'LI');
       if (!allLis.length) return null;
-      if (r.collapsed) { // 折叠光标 = 光标所在那一行（嵌套子项上卷到顶层 li）
-        let e = r.startContainer; e = e && (e.nodeType === 3 ? e.parentElement : e); e = e && e.closest ? e.closest('li') : null;
-        while (e && e.parentElement !== ul) { const up = e.parentElement && e.parentElement.closest ? e.parentElement.closest('li') : null; if (!up || up === e) { e = null; break; } e = up; }
+      if (r.collapsed) { // 折叠光标 = 光标所在那一行（嵌套子项上卷到顶层 li，走行单元解析层 topLiIn）
+        const e = topLiIn(ul, r.startContainer);
         return e ? [e] : null;
       }
       // 非折叠：取与选区**内容有非零交集**的直接子 li——按内容区间比，排除「只碰边界、零字符选中」的 li。
@@ -5181,16 +5207,10 @@
       // 粘进段落成 <p>…<li> 非法嵌套、整篇降级、勾选语义丢失。单 li 内选区（sLi===eLi）不进此分支、维持行内。
       if (sameBlock && (sBlk.tagName === 'UL' || sBlk.tagName === 'OL')) {
         const kids = [...sBlk.children].filter((c) => c.tagName === 'LI');
-        // 归一到 sBlk 的**直接子** li：选区落在嵌套子项时 closest('li') 取到的是最深 li（不在 kids 里），
-        // 直接 indexOf 会得 -1 → kids[-1].cloneNode 抛 TypeError、onCopy 崩、复制静默回落原生丢待办格式。
-        const topLiOf = (n) => {
-          let li = n && n.nodeType === 1 ? n : (n && n.parentElement);
-          li = li && li.closest ? li.closest('li') : null;
-          while (li && li.parentElement !== sBlk) { const up = li.parentElement && li.parentElement.closest ? li.parentElement.closest('li') : null; if (!up || up === li) { li = null; break; } li = up; }
-          return li;
-        };
-        // 端点落在 li 边界外（endContainer=ul 本身）→ 回落首/末项。
-        const sLi = topLiOf(r.startContainer) || kids[0], eLi = topLiOf(r.endContainer) || kids[kids.length - 1];
+        // 归一到 sBlk 的**直接子** li（行单元解析层 topLiIn）：选区落在嵌套子项时 closest('li') 取到的是
+        // 最深 li（不在 kids 里），直接 indexOf 会得 -1 → kids[-1].cloneNode 抛 TypeError、onCopy 崩、
+        // 复制静默回落原生丢待办格式。端点落在 li 边界外（endContainer=ul 本身）→ 回落首/末项。
+        const sLi = topLiIn(sBlk, r.startContainer) || kids[0], eLi = topLiIn(sBlk, r.endContainer) || kids[kids.length - 1];
         let i = sLi ? kids.indexOf(sLi) : -1, j = eLi ? kids.indexOf(eLi) : -1;
         if (i >= 0 && j >= 0 && sLi !== eLi) { // 都归到顶层 kids 且跨项才走块级；退化情形（i/j=-1，如空列表）安全回落
 
