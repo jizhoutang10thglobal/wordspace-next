@@ -14,6 +14,18 @@
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
 
+## 2026-08-07 — v0.13.1 已发版；发版后必核对 Release body 顶部首行
+
+**是什么**：v0.13.1 已发出（mac 双架构+win 产物齐、changelog 进 main）。两个坑：①昨晚发版搁浅
+根因是 **GitHub Actions 官方故障**（8-6 15:22Z→8-7 02:04Z，run 卡 queued、新 push 不生成 run），
+不是流程或代码问题，故障恢复后 GitHub 会自动补建积压 run——再遇到「CI 无故不跑」先查
+githubstatus.com 再折腾重触发。②v0.13.1 的 Release body 顶部曾被贴成 **v0.12.2** 的段落
+（疑似某 session 收尾自动化用了陈旧 CHANGELOG 副本），App 更新面板从 body 拉文案、用户会看错版，
+已 `gh release edit` 修正。
+**怎么 apply**：发版后 body 顶部文案必须取自 **tag 内** CHANGELOG.md 的最新版本段，并肉眼核对
+首行与本版内容对得上；贴 body 的收尾自动化先 `git fetch` 再取段，别用本 worktree 旧副本。
+**来源**：v0.13.1 发版收尾实录（tag 4feda63，Release run 全绿）
+
 ## 2026-08-07 — 发版版本号默认只准 +0.0.1（patch），minor 必须 Colin 特批
 
 **是什么**：Colin 拍板：发版默认只允许 patch 位 +1（如 v0.13.0 → v0.13.1），不准直接跳
