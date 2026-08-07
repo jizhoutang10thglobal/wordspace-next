@@ -922,6 +922,11 @@
       let n = sel.getRangeAt(0).startContainer;
       if (n && n.nodeType === 3) n = n.parentElement;
       if (!n || (n !== el && !el.contains(n))) return el;
+      if (rowBlockOn()) {
+        // A1（U3）：行宿主=交互块，一口径覆盖 列表li/容器p/块自身（头注「不能相对 editingEl 算」的正解）
+        const ib = iblockOf(blockRoot, sel.getRangeAt(0).startContainer);
+        return ib && (ib === el || el.contains(ib)) ? ib : el;
+      }
       if (classify(el) === 'list') { const li = n.closest ? n.closest('li') : null; return li && el.contains(li) ? li : el; }
       if (isMultiParaContainer(el)) return caretLineHostIn(el) || el;
       return el;
@@ -4095,7 +4100,8 @@
           // 列表 editingEl = 整个 <ul>，若直接走下面「一次选整块」，⌘A 一次就选全列表、随手打字覆盖整份 checklist（丢数据级）。
           if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
             const an = sel.anchorNode ? (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement) : null;
-            const li = an && an.closest ? an.closest('li') : null;
+            let li = an && an.closest ? an.closest('li') : null;
+            if (rowBlockOn()) { const ib = iblockOf(blockRoot, sel.anchorNode); li = ib && ib.tagName === 'LI' ? ib : null; } // A1（U3）：行=交互块
             if (li && editingEl.contains(li)) {
               const liRange = doc.createRange(); liRange.selectNodeContents(li);
               const subList = li.querySelector(':scope > ul, :scope > ol');
@@ -4533,7 +4539,8 @@
         if (classify(editingEl) === 'list') {
           const lsel = doc.getSelection();
           const lnode = lsel && lsel.anchorNode ? (lsel.anchorNode.nodeType === 1 ? lsel.anchorNode : lsel.anchorNode.parentElement) : null;
-          const cli = lnode && lnode.closest ? lnode.closest('li') : null;
+          let cli = lnode && lnode.closest ? lnode.closest('li') : null;
+          if (rowBlockOn()) { const ib = iblockOf(blockRoot, lsel && lsel.anchorNode); cli = ib && ib.tagName === 'LI' ? ib : null; } // A1（U3）：行=交互块
           // ===== E1：顶层列表行行首退格 = Notion「逐层剥离」的第①步（对拍实证 2026-08-04）=====
           // Notion 第一次按键**不合并**——只把这一行剥掉列表格式、原地变成文本块，列表在此处劈开；
           // 第二次才并入上一块。**终态与旧行为一致，只是推后一次按键**，所以 Wendi bug3（#319「行首退格
@@ -4751,7 +4758,8 @@
           const s0 = doc.getSelection();
           if (!s0 || s0.rangeCount === 0 || !s0.isCollapsed) return; // 非折叠已前处理
           const n0 = s0.anchorNode ? (s0.anchorNode.nodeType === 1 ? s0.anchorNode : s0.anchorNode.parentElement) : null;
-          const curLi = n0 && n0.closest ? n0.closest('li') : null;
+          let curLi = n0 && n0.closest ? n0.closest('li') : null;
+          if (rowBlockOn()) { const ib = iblockOf(blockRoot, s0.anchorNode); curLi = ib && ib.tagName === 'LI' ? ib : null; } // A1（U3）：行=交互块
           if (!curLi || curLi.parentElement !== editingEl) return; // 嵌套子项 / 定位不到顶层 li → 交原生
           const nextLi = curLi.nextElementSibling;
           // c) 空 li Delete → 前向并入下一 li（镜像 Backspace 空 li）
@@ -5001,7 +5009,8 @@
           if (editingEl.tagName === 'UL' || editingEl.tagName === 'OL') {
             const sel0 = doc.getSelection();
             const an0 = sel0 && sel0.anchorNode ? (sel0.anchorNode.nodeType === 1 ? sel0.anchorNode : sel0.anchorNode.parentElement) : null;
-            const li0 = an0 && an0.closest ? an0.closest('li') : null;
+            let li0 = an0 && an0.closest ? an0.closest('li') : null;
+            if (rowBlockOn()) { const ib = iblockOf(blockRoot, sel0 && sel0.anchorNode); li0 = ib && ib.tagName === 'LI' ? ib : null; } // A1（U3）：行=交互块
             if (li0 && editingEl.contains(li0)) el = li0; // ① 当前行
           }
           exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return;
