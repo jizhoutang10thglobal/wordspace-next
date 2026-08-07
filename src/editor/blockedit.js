@@ -4990,8 +4990,14 @@
           exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return;
         }
         if (selectedEl) {
-          // ② 行 → 整个列表（「Esc 灰选列表后拖 = 整列表」这条既有契约靠这一档保住，只是往后挪了一次按键）
-          const up = selectedEl.tagName === 'LI' ? blockOf(selectedEl) : null;
+          // ② 行 → 上一级（「Esc 灰选列表后拖 = 整列表」这条既有契约靠这一档保住，只是往后挪了一次按键）。
+          // 嵌套行不许跳级（2026-08-07 todo 深扫 S2）：老写法 blockOf 直达顶层 ul，「宿主行」这一级永远
+          // 够不到。改为沿 **LI 祖先**逐级上卷：子行 → 宿主行 → …… → 顶层整张列表 → 取消。
+          // 刻意不引入「嵌套 <ul> 灰选」这一级——灰选态的下游消费者（Enter/⌘X/拖拽…）只认「行」和
+          // 「顶层块」两种形态，造第三种就是再挖一遍 A 组那个坑。平列表无 LI 祖先，两档行为不变。
+          const up = selectedEl.tagName === 'LI'
+            ? ((selectedEl.parentElement && selectedEl.parentElement.closest && selectedEl.parentElement.closest('li')) || blockOf(selectedEl))
+            : null;
           if (up && up !== selectedEl) { selectBlock(up); positionGrip(up); e.preventDefault(); e.stopPropagation(); return; }
           deselect(); e.preventDefault(); e.stopPropagation(); return; // ③ 取消
         }

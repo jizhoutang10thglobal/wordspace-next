@@ -243,3 +243,29 @@ test('GC-5b 嵌套行灰选 fmtbar「转为」：结构性抽不出 → 零变�
   const v = await diskConform();
   expect(v.conform, '磁盘合规，实得 ' + JSON.stringify(v.violations)).toBe(true);
 });
+
+test('GC-6 Esc 阶梯（嵌套）：子行 → 宿主行 → 顶层列表 → 取消，逐级上卷不跳级', async () => {
+  await launch(); await openDoc('<ul class="ws-todo" id="lst"><li id="pa">父行<ul class="ws-todo" id="sub"><li id="n1">子一</li><li id="n2">子二</li></ul></li><li id="pb">父二</li></ul>');
+  await frame.locator('#n1').click();
+  await page.waitForTimeout(180);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await graySel(), '第一档：子行自己').toBe('LI#n1');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await graySel(), '第二档：宿主行（S2 主症状：直接跳到顶层 UL，父行这一级够不到）').toBe('LI#pa');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await graySel(), '第三档：顶层整张列表').toBe('UL#lst');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await graySel(), '第四档：取消').toBe(null);
+});
+
+test('GC-6b Esc 阶梯（平列表回归）：行 → 整张列表 → 取消，两档不变', async () => {
+  await launch(); await openDoc(DOC);
+  await frame.locator('#r2').click();
+  await page.waitForTimeout(180);
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await graySel(), '第一档：当前行').toBe('LI#r2');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await graySel(), '第二档：整张列表（平列表没有中间级，行为不变）').toBe('UL#lst');
+  await page.keyboard.press('Escape'); await page.waitForTimeout(200);
+  expect(await graySel(), '第三档：取消').toBe(null);
+});
