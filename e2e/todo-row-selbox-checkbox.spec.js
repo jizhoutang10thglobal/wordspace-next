@@ -108,9 +108,11 @@ test('CB-4 嵌套层不塌：子行文字仍比父行右缩一层', async () => 
     const txt = (el) => { const t = doc2.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode(); const r = doc2.createRange(); r.selectNodeContents(t); return +r.getBoundingClientRect().left.toFixed(1); };
     return { parent: txt(doc2.querySelector('#lst > li')), sub: txt(doc2.querySelector('#sub')) };
   });
-  // 一层的净缩进 = 内层 ul 的 padding-left(1.7em=27.2) + li 自身的 4px 文字内距 = 31.2，
-  // 改动前后完全一致（负 margin 与等量 padding 逐层对冲，每一层都不动）。
-  expect(d.sub - d.parent, '子行仍比父行缩进整整一层（1.7em + 4px = 31.2px）').toBeCloseTo(31.2, 0);
+  // 一层的净缩进：C6（2026-08-08，PR #432）给嵌套列表加了 -4px 补偿抵掉 li 的 4px 勾选框内距，
+  // 让 todo 的层级步长与 ul/ol 一致（1.7em ≈ 27.2；Notion 口径：三种列表同一缩进单位）。
+  // 本门的原始意图「嵌套不塌层」不变——步长仍是整整一层；跨列表类型的步长一致性由
+  // e2e/todo-visual-geometry.spec.js G-C6 用更强断言（三类实测相等）钉着。
+  expect(d.sub - d.parent, '子行仍比父行缩进整整一层（1.7em ≈ 27.2px，C6 后与 ul/ol 同步长）').toBeCloseTo(27.2, 0);
 });
 
 // ── 勾选态维度（对抗审查 ADV-1 后补，2026-08-06）──────────────────────────────────

@@ -67,8 +67,11 @@ test('E1-1 顶层圆点【中间】行：① 原地剥成文本、列表劈成�
     const d = document.getElementById('doc-frame').contentDocument;
     return [...d.body.querySelectorAll(':scope > ul')].map((u) => [...u.children].filter((c) => c.tagName === 'LI').map((l) => l.textContent.trim()));
   });
-  expect(lis, '② 并入上一块的【末项文字】拼成一项，不是多出一个列表项（Notion 实测同款）').toEqual([['甲乙'], ['丙']]);
-  expect(await shape()).toBe('P[前段] UL[甲乙] UL[丙]');
+  // S1（2026-08-08）起两半在并回后由 coalesceAdjacentLists 重新合成**一张**（磁盘正本=一张 canonical
+  // 列表；E1 契约原文「终态与旧的一次性合并完全一致」——旧一次性合并从不劈表）。旧期望 [['甲乙'],['丙']]
+  // 是把 S1 bug 的产物形状（并排两张）钉成了门。
+  expect(lis, '② 并入上一块的【末项文字】拼成一项，不是多出一个列表项（Notion 实测同款）；两半合回一张').toEqual([['甲乙', '丙']]);
+  expect(await shape()).toBe('P[前段] UL[甲乙丙]');
   expect(await conform()).toBe(true);
 });
 
@@ -158,13 +161,14 @@ test('E1-7 带子项的顶层行剥离：子项一个都不能丢（降级成顶
   await page.keyboard.press('Home');
   await page.waitForTimeout(140);
   await BS();
-  expect(await shape(), '子项作为条目仍存在，不是被拍成文字塞进段落').toBe('UL[甲] P[乙] UL[乙1乙2] UL[丙]');
-  // 反哑门：必须是两个真 <li> 节点，不是文字里恰好含「乙1乙2」
+  // S1（2026-08-08）起降级出来的子项列表与后半张同类相邻 → 合成一张（Notion：这些就是连续的顶层行）。
+  expect(await shape(), '子项作为条目仍存在，不是被拍成文字塞进段落').toBe('UL[甲] P[乙] UL[乙1乙2丙]');
+  // 反哑门：必须是真 <li> 节点，不是文字里恰好含「乙1乙2」
   const subCount = await page.evaluate(() => {
     const d = document.getElementById('doc-frame').contentDocument;
     return [...d.body.querySelectorAll(':scope > ul')].map((u) => u.querySelectorAll(':scope > li').length);
   });
-  expect(subCount, '三张顶层 ul 的直接 li 数：甲=1 / 子树=2 / 丙=1').toEqual([1, 2, 1]);
+  expect(subCount, '两张顶层 ul 的直接 li 数：甲=1 / 子树+丙=3').toEqual([1, 3]);
   expect(await conform()).toBe(true);
 });
 

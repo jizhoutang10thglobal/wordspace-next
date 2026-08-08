@@ -495,6 +495,13 @@
     deps = deps || {};
     const win = deps.win || doc.defaultView;
     const undoMgr = deps.undoMgr || null;
+    // S1：相邻同类列表合并收口在「快照落下之前」（时点论证见 coalesceAdjacentLists 上方注释）。
+    if (undoMgr && typeof undoMgr.checkpoint === 'function') {
+      // 幂等包装：undoMgr 若跨 attach 复用，先退役上一份文档的包装（否则链式叠包、闭包里攥着 detached root）
+      if (undoMgr.__ws2RawCheckpoint) undoMgr.checkpoint = undoMgr.__ws2RawCheckpoint;
+      undoMgr.__ws2RawCheckpoint = undoMgr.checkpoint.bind(undoMgr);
+      undoMgr.checkpoint = (...a) => { try { coalesceAdjacentLists(); } catch (x) {} return undoMgr.__ws2RawCheckpoint(...a); };
+    }
     const markDirtyRaw = deps.markDirty || (() => {});
     // 每次标脏顺带同步 toggle 空态标记（结构变更：增删块 / 拖拽 / 转换 / 粘贴都会经过这里，P3-7）
     const markDirty = (...a) => { try { refreshToggleEmpty(); } catch (x) {} try { normalizeHostLi(); } catch (x) {} return markDirtyRaw(...a); };
@@ -586,7 +593,7 @@
       ':where(figure){margin:1em 0}' +
       ':where(figure>img){display:block}' +
       ':where(figcaption){margin-top:6px;font-size:.875em;line-height:1.5;color:#78716c;text-align:center}';
-    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;margin-left:-1.7em;border-left:1.7em solid transparent;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
+    const TODO_CSS = '.ws-todo{list-style:none}.ws-todo ul:not(.ws-todo){list-style:disc}.ws-todo ol:not(.ws-todo){list-style:decimal}.ws-todo>li{list-style:none;position:relative;margin-left:-1.7em;border-left:1.7em solid transparent;padding-left:4px}.ws-todo>li::before{content:"";position:absolute;left:-22px;top:.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer}.ws-todo>li>ul,.ws-todo>li>ol{margin-left:-4px}.ws-todo>li[data-checked="true"]{color:#9b9891}.ws-todo>li[data-checked="true"]:not(:has(ul,ol)){text-decoration:line-through}.ws-todo>li[data-checked="true"] :is(ul,ol){color:#37352f}.ws-todo>li[data-checked="true"]::before{content:"\\2713";border-color:#1a73e8;background:#1a73e8;color:#fff;font-size:11px;line-height:13px;text-align:center}';
     const CALLOUT_CSS = '.ws-callout{background:#f7f6f3;border:1px solid #e8e6e1;border-radius:8px;padding:14px 16px;margin:14px 0}.ws-callout>p{margin:6px 0}.ws-callout>p:first-child{margin-top:0}.ws-callout>p:last-child{margin-bottom:0}';
     // toggle（<details>）入盘语义 CSS：干掉原生三角（双配方 list-style + webkit marker）+ 细线 chevron + 正文缩进。
     // 随 serialize 存盘 → app 外任何浏览器打开都渲染成折叠块、零 JS 折叠（R10）。校验器 head 白名单按 data-ws-schema-css 属性放行。
@@ -610,6 +617,7 @@
     blockRoot.setAttribute('data-ws2-root', '');
     ensureSchemaBaseline(); // baseline 排版底线入盘（v2：字体/行高/标题节奏/块间距；旧文件静默升级；不 markDirty）
     refreshSemanticStyles(); // 旧文件的 todo/callout v1 语义 CSS → 同步升级到当前版（同上不 markDirty）
+    try { coalesceAdjacentLists(); } catch (x) {} // 相邻同类列表 attach 时就并（S1：已写坏的老文档打开即自愈，不等敲键）
     try { normalizeHostLi(); } catch (x) {} // 「空壳宿主行」在 **attach 时**就修（照上面两条静默升级的先例，不 markDirty）
     // ⚠ 只挂在 markDirty 上不够：已经被写坏的老文档要等用户敲一下才自愈，打开时照样是「一行两个勾选框」。
 
@@ -1424,7 +1432,18 @@
 
     // 全篇跨块选区（⌘A 第二级）：退出编辑放墙（同拖选跨块），range 罩住首尾内容块——
     // 首尾锚点用内容块而非 body（覆盖层 data-ws2-ui 挂在 body 末尾，别把 UI 圈进选区）。
+    // 全篇选中前的出发点（B3）：Esc 退出全篇选区要回到用户按 ⌘A 时所在的位置，不是跳到文档头
+    //（跳文档头 = A4 那类「光标瞬移」）。只在这一对进/出路径间传递，staleness 由 isConnected 兜底。
+    let preWholeSel = null;
     function selectWholeDoc() {
+      // 兜底 stash（真正的出发光标由 ⌘A 分档入口在第一档就存——那才是用户按 ⌘A 前的位置；
+      // 这里只在没存到时补一个，且重入（已在全篇态再按 ⌘A）不覆盖——选区锚点那时早是首块了，
+      // 存它 Esc 就会跳文档头 = A4 那类瞬移）。
+      if (!rangeSelEls.length && !(preWholeSel && preWholeSel.node && preWholeSel.node.isConnected)) {
+        const s0 = doc.getSelection();
+        preWholeSel = (s0 && s0.rangeCount && s0.anchorNode && body.contains(s0.anchorNode))
+          ? { node: s0.anchorNode, offset: s0.anchorOffset } : null;
+      }
       exitCell();
       if (editingEl) exitEdit();
       clearRectSel(); // ADV-R1（HIGH）：⌘A 不清矩形态的话，rectSel 与全篇原生选区并存——Delete 被矩形分支永久劫持、⌘C 拷错东西
@@ -2719,13 +2738,19 @@
               let nx;
               if (many && many.length > 1) { nx = turnIntoMany(many, item); }
               else if (!target) { nx = null; }
+              else if (target.tagName === 'LI') {
+                // 行灰选（Esc 三档，2026-08-07 todo 深扫 A2）：抽出该行转——行菜单同款 turnIntoLines。
+                // 直接 turnInto(li) 会把 <li> 原地 retag 留在 ul 里（11 个选项全产非合规、整篇降级）。
+                // 嵌套行 turnIntoLines 返回 null = 零变更（结构性抽不出，行菜单对嵌套行同样不给转）。
+                nx = turnIntoLines(blockOf(target) || target.closest('ul,ol'), [target], item);
+              }
               else if (target.tagName === 'UL' || target.tagName === 'OL') {
                 const lines = selectedListLines(target);
                 const allCount = [...target.children].filter((c) => c.tagName === 'LI').length;
                 nx = (lines && lines.length && lines.length < allCount) ? turnIntoLines(target, lines, item) : turnInto(target, item);
               } else { nx = turnInto(target, item); }
               menu.style.display = 'none';
-              if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (editingEl) enterEdit(nx, { mode: 'end' }); else selectBlock(nx);
+              if (nx && nx.tagName === 'DETAILS') { const s = nx.querySelector('summary'); enterEdit(s || nx, { mode: 'end' }); } else if (nx && editingEl) enterEdit(nx, { mode: 'end' }); else if (nx) selectBlock(nx);
             }
           });
           menu.appendChild(it);
@@ -3447,6 +3472,19 @@
         markDirty();
         return;
       }
+      // 跨块 rangesel 态下的**纯点击**（2026-08-07 todo 深扫 C3 根因）：⌘A/跨块拖选后焦点在
+      // focusCatcher、选区是程序化的——目标块不是 contenteditable，mousedown 的原生「点击折叠选区」
+      // 不发生，onClick 的「拖选松手保选区」守卫（:361x）看到非折叠选区直接 return → 首击被吞、
+      // 必须点第二次。修在按下这一刻：清跨块选区 + 蓝底，onClick 随即走正常路由（enterEdit at point）。
+      // 单块内文字选区（rangeSelEls 恒空）不受影响；Shift+点击留给扩选语义。
+      if (rangeSelEls.length && !e.shiftKey) {
+        const sRS = doc.getSelection();
+        if (sRS && sRS.rangeCount && !sRS.isCollapsed) {
+          clearRangeSel();
+          try { sRS.removeAllRanges(); } catch (x) {}
+          preWholeSel = null;
+        }
+      }
       // T13：表格格子上的 mousedown → 矩形选区待命。非编辑格拦掉原生 mousedown（光标仍由 onClick 的
       // enterCell(point) 放，原生选区从此不再从格里长出来——Notion N4 实测：非聚焦格拖动=格矩形不是文字选择）；
       // 编辑格保留原生（格内选词靠 contenteditable 墙天然圈在格内），指针出格那一刻才升级矩形（onMouseMove 判）。
@@ -4027,6 +4065,9 @@
         const sel = doc.getSelection();
         if (editingEl && sel) {
           e.preventDefault();
+          // 出发点 stash（B3）：第一档动手前、光标还折叠时的这个位置才是用户真正的出发点——
+          // Esc 从全篇选区退出要回到这，不是回到某档 range 的锚点（那是块首，会诱发块首退格误并块）。
+          if (sel.isCollapsed && sel.anchorNode && body.contains(sel.anchorNode)) preWholeSel = { node: sel.anchorNode, offset: sel.anchorOffset };
           // 「块内已全选」判定剥空白比较——表格/列表的 sel.toString() 带 \t\n 分隔、textContent 没有，
           // 逐字比对会永远判「未全选」把第二级堵死。空块（无文字）第一次就直接升全篇。
           const norm = (s) => (s || '').replace(/\s+/g, '');
@@ -4042,9 +4083,38 @@
               const liText = norm(liRange.toString());
               const ulText = norm(editingEl.textContent);
               const curText = norm(sel.toString());
-              if (liText.length > 0 && curText !== liText && curText !== ulText) { sel.removeAllRanges(); sel.addRange(liRange); return; } // ① 当前行
-              if (curText !== ulText) { const r = doc.createRange(); r.selectNodeContents(editingEl); sel.removeAllRanges(); sel.addRange(r); return; } // ② 整个列表
+              // 空行修补（2026-08-07 todo 深扫 B1）：旧判据 `liText.length > 0` 把空行的第一档整个挡掉——
+              // 刚回车的空行上 ⌘A 一次就选整张清单，随手一个字把整份 checklist 替掉并落盘（这一档的
+              // 注释写明就是防这个，判据把「空的一行」漏了）。文本比较对空行是废的（''==='' 恒真），
+              // 空行改用 Range 端点结构比较判「已选到这一档没」；非空行文本比较原样保留（表格/列表
+              // sel.toString() 带 \t\n 的老坑还归它管，见上面 norm 注释）。
+              const cur0 = sel.rangeCount ? sel.getRangeAt(0) : null;
+              const sameRange = (r2) => { try { return !!cur0 && cur0.compareBoundaryPoints(Range.START_TO_START, r2) === 0 && cur0.compareBoundaryPoints(Range.END_TO_END, r2) === 0; } catch (x) { return false; } };
+              const ulR = doc.createRange(); ulR.selectNodeContents(editingEl);
+              const liSel = liText.length > 0 ? curText === liText : sameRange(liRange);
+              const ulSel = ulText.length > 0 ? curText === ulText : sameRange(ulR);
+              if (!liSel && !ulSel) { sel.removeAllRanges(); sel.addRange(liRange); return; } // ① 当前行
+              if (!ulSel) { sel.removeAllRanges(); sel.addRange(ulR); return; } // ② 整个列表
               selectWholeDoc(); return; // ③ 全篇
+            }
+          }
+          // 多段容器（callout/quote）补「本段」档（2026-08-07 todo 深扫 B2）：同一容器 Esc 有段档（C9）、
+          // ⌘A 此前只有 整框→全篇 两档——两套口径。列表那档防的「一键选全、随手打字替光」在这一样
+          // 成立：三段提示框 ⌘A×1 全选，下一个字整框内容没了并落盘。阶梯改成 本段→整框→全篇；
+          // 「本段=整框内容」（单段框）时段档自然与框档判据重合、直接升级，不憋死（SA-5）。
+          if (isMultiParaContainer(editingEl)) {
+            const para = caretLineHostIn(editingEl);
+            if (para && para !== editingEl) {
+              const pR = doc.createRange(); pR.selectNodeContents(para);
+              const pText = norm(pR.toString());
+              const curTx = norm(sel.toString());
+              const curR = sel.rangeCount ? sel.getRangeAt(0) : null;
+              const sameR = (r2) => { try { return !!curR && curR.compareBoundaryPoints(Range.START_TO_START, r2) === 0 && curR.compareBoundaryPoints(Range.END_TO_END, r2) === 0; } catch (x) { return false; } };
+              const pSel = pText.length > 0 ? curTx === pText : sameR(pR);
+              const boxText0 = norm(editingEl.textContent);
+              const boxSel = boxText0.length > 0 && curTx === boxText0;
+              if (!pSel && !boxSel) { sel.removeAllRanges(); sel.addRange(pR); return; } // ① 本段
+              // ②整框 ③全篇 交下面既有两档
             }
           }
           const blockText = norm(editingEl.textContent);
@@ -4083,6 +4153,34 @@
           return;
         }
       }
+      // 跨块 rangesel 态（⌘A 全篇 / 拖选跨块，焦点在 focusCatcher）的键盘退出（2026-08-07 todo 深扫 B3）：
+      // 此前 Esc / 四个方向键在这个态里全部空转——键盘上没有任何退出路径，只能鼠标点空白；用户以为
+      // 已经 Esc 掉了、随手一个退格把全文删光（1.8s 落盘，只能靠 undo 救）。表格矩形选区那格早有
+      // Esc 兜底（上卷整表），这里合流：Esc 塌回按 ⌘A 时的出发点（没有就选区起点），←/↑ 塌到选区
+      // 起点、→/↓ 塌到终点，落点块直接进编辑。
+      if ((e.key === 'Escape' || e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+        && !editingEl && !selectedEl && rangeSelEls.length && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing && e.keyCode !== 229) {
+        const sel = doc.getSelection();
+        if (sel && sel.rangeCount && !sel.isCollapsed) {
+          e.preventDefault();
+          const r = sel.getRangeAt(0);
+          const fwd = e.key === 'ArrowDown' || e.key === 'ArrowRight';
+          let node = fwd ? r.endContainer : r.startContainer;
+          let useSaved = false;
+          if (e.key === 'Escape' && preWholeSel && preWholeSel.node && preWholeSel.node.isConnected) { node = preWholeSel.node; useSaved = true; }
+          const blk = blockOf(node);
+          try {
+            if (useSaved) { const nr = doc.createRange(); nr.setStart(preWholeSel.node, Math.min(preWholeSel.offset, preWholeSel.node.length != null ? preWholeSel.node.length : preWholeSel.node.childNodes.length)); nr.collapse(true); sel.removeAllRanges(); sel.addRange(nr); }
+            else if (fwd) sel.collapseToEnd();
+            else sel.collapseToStart();
+          } catch (x) {}
+          clearRangeSel();
+          preWholeSel = null;
+          if (blk && isEditableEl(blk)) enterEdit(blk, { mode: 'keep' });
+          else if (blk) { selectBlock(blk); positionGrip(blk); }
+          return;
+        }
+      }
       if ((e.metaKey || e.ctrlKey) && (e.key === 'x' || e.key === 'X')) {
         const sel = doc.getSelection();
         if (sel && sel.rangeCount && !sel.isCollapsed) {
@@ -4098,7 +4196,10 @@
         if (selectedEl && !editingEl) {
           e.preventDefault();
           try { doc.execCommand('copy'); } catch (x) {} // 触发 onCopy 的「灰选整块」分支，产出与 ⌘C 一致
-          removeBlock(selectedEl);
+          // 灰选是**行**必须走 removeRow（Delete/Backspace 分支同款）：removeBlock 只认顶层块，纯清单
+          // 文档会把 <li> 原地 retag 成 <p> 产出 <ul><p></p></ul> 非合规、整篇降级；多块文档留 0 高的
+          // 空 <ul></ul> 僵尸（2026-08-07 todo 深扫 A3，两支磁盘字节实锤）。
+          if (selectedEl.tagName === 'LI') removeRow(selectedEl); else removeBlock(selectedEl);
           return;
         }
       }
@@ -4278,6 +4379,21 @@
       if (e.key === 'Enter' && selectedEl && !editingEl) {
         if (e.isComposing || e.keyCode === 229) return;
         e.preventDefault();
+        // 灰选是**行**（Esc 三档产的 <li>）→ 按行语义同层插一个新空行（Notion：选中行回车=下方新行）。
+        // 走 insertAfter 会把 <p> 塞进 <ul> —— 非合规、自动保存后下次打开整篇降级（2026-08-07 todo
+        // 深扫 A1，磁盘字节实锤）。Backspace/Delete 当年在下面那条分支单独补过行语义，Enter 漏了。
+        if (selectedEl.tagName === 'LI') {
+          const row = selectedEl;
+          const li = doc.createElement('li');
+          li.appendChild(doc.createElement('br')); // 空行必带占位（create-1：list-style:none 下空 li 高 0、光标落不进）
+          row.after(li);
+          const host = blockOf(li) || li.closest('ul,ol');
+          if (undoMgr) undoMgr.checkpoint();
+          markDirty();
+          enterEdit(host, { mode: 'start' });
+          caretAtLiTextEnd(li);
+          return;
+        }
         const nx = insertAfter(selectedEl, itemByKey('text'));
         enterEdit(nx, { mode: 'start' });
         return;
@@ -4892,6 +5008,26 @@
         }
         return;
       }
+      // 行灰选态方向键（2026-08-07 todo 深扫 A4）：在**行**间移动灰选、边界出块到相邻顶层块。
+      // 下面那条通用分支拿 topBlocks().indexOf(<li>) 得 -1 → ↓/→ 落到 blocks[0] = 光标飞到**整篇文档
+      // 第一个块**并进编辑（随手打字进错块、1.5s 落盘），↑/← 取 blocks[-2] = undefined 死键。
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') && selectedEl && !editingEl && selectedEl.tagName === 'LI' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        const fwd = e.key === 'ArrowDown' || e.key === 'ArrowRight';
+        const topList = blockOf(selectedEl) || selectedEl.closest('ul,ol');
+        const rows = [...topList.querySelectorAll('li')]; // 文档序 = 视觉序（嵌套行也逐行走，同 Notion）
+        const i = rows.indexOf(selectedEl);
+        const next = fwd ? rows[i + 1] : rows[i - 1];
+        if (next) { selectBlock(next); positionGrip(next); return; }
+        const blocks = topBlocks();
+        const bi = blocks.indexOf(topList);
+        const target = fwd ? blocks[bi + 1] : blocks[bi - 1];
+        if (!target) return; // 文档边界：留在原行
+        if (isEditableEl(target)) enterEdit(target, { mode: fwd ? 'start' : 'end' });
+        else { selectBlock(target); positionGrip(target); }
+        return;
+      }
       // 灰选中（不可编辑块）态的方向键：继续穿过到上/下一块——否则键盘撞到图片/分隔线就卡死、过不去。
       // ↓→ = 下一块，↑← = 上一块（左右与上下同义，跟编辑态的跨块左右一致，避免落到图片上再卡住）。
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') && selectedEl && !editingEl && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -4946,8 +5082,14 @@
           exitEdit(); selectBlock(el); positionGrip(el); e.preventDefault(); e.stopPropagation(); return;
         }
         if (selectedEl) {
-          // ② 行 → 整个列表（「Esc 灰选列表后拖 = 整列表」这条既有契约靠这一档保住，只是往后挪了一次按键）
-          const up = selectedEl.tagName === 'LI' ? blockOf(selectedEl) : null;
+          // ② 行 → 上一级（「Esc 灰选列表后拖 = 整列表」这条既有契约靠这一档保住，只是往后挪了一次按键）。
+          // 嵌套行不许跳级（2026-08-07 todo 深扫 S2）：老写法 blockOf 直达顶层 ul，「宿主行」这一级永远
+          // 够不到。改为沿 **LI 祖先**逐级上卷：子行 → 宿主行 → …… → 顶层整张列表 → 取消。
+          // 刻意不引入「嵌套 <ul> 灰选」这一级——灰选态的下游消费者（Enter/⌘X/拖拽…）只认「行」和
+          // 「顶层块」两种形态，造第三种就是再挖一遍 A 组那个坑。平列表无 LI 祖先，两档行为不变。
+          const up = selectedEl.tagName === 'LI'
+            ? ((selectedEl.parentElement && selectedEl.parentElement.closest && selectedEl.parentElement.closest('li')) || blockOf(selectedEl))
+            : null;
           if (up && up !== selectedEl) { selectBlock(up); positionGrip(up); e.preventDefault(); e.stopPropagation(); return; }
           deselect(); e.preventDefault(); e.stopPropagation(); return; // ③ 取消
         }
@@ -4986,10 +5128,52 @@
     // ::before 绝对定位落到同一个 y 上，视觉上就是「一行里两个勾选框」。补一个占位 <br> 让宿主行占住自己
     // 那一行（Notion 里父块本来就是独立一行）。这类结构由 Tab 缩进到空行之上、或原生合并产生，
     // 所以归一放在 markDirty 这个总出口上，而不是在每个产生点各修一遍（漏一处就复发）。
+    // 相邻同类列表合并归一（2026-08-07 todo 深扫 S1）：退格剥出再并回 / 拖走分隔段 之后，一张列表被
+    // 永久留成并排两张同类 <ul>——视觉连续、结构分裂：Esc 阶梯 / ⌘A 二档的「整张列表」只圈到前半截，
+    // 磁盘上也是两张（违背「磁盘正本是一张 canonical 列表」的存储单元约定）。coalesceLists 此前只在
+    // turnIntoMany 一条路被调；照 normalizeHostLi 先例挂 markDirty/attach 总出口，不在每个产生点各修。
+    // 同类 = 同 tag + 同 class（ws-todo/ws-color-* 全算）；后表带显式 start 不吞——那是它自己的编号语义；
+    // id 迁移照 coalesceLists 既有规则（被吞表的 id 落到它第一项上，锚点不静默断链）。
+    function coalesceAdjacentLists() {
+      const nextReal = (el) => { let n = el.nextElementSibling; while (n && n.hasAttribute && n.hasAttribute('data-ws2-ui')) n = n.nextElementSibling; return n; };
+      let changed = false;
+      for (const list of [...blockRoot.querySelectorAll('ul, ol')]) {
+        if (!list.isConnected) continue;
+        for (;;) {
+          const nx = nextReal(list);
+          if (!nx || nx.tagName !== list.tagName || nx.className !== list.className) break;
+          if (nx.hasAttribute('start')) break;
+          if (nx.id) { const li0 = nx.querySelector(':scope > li'); if (li0 && !li0.id) li0.id = nx.id; }
+          while (nx.firstChild) list.appendChild(nx.firstChild);
+          nx.remove();
+          changed = true;
+        }
+      }
+      return changed;
+    }
+    // ⚠ 归一的时点有两个雷，位置是被它们逼出来的：
+    //  ① 不能同步跑在 markDirty 里——复合变换（turnIntoLines 劈表等）中途必然有「几张同类表瞬时
+    //    相邻」的手术台状态，同步合并会把变换正在操作的节点卷走（MT-2 实测丢了一行）；
+    //  ② 不能放在收尾 checkpoint **之后**（微任务/防抖都算）——合并成了快照外的悬挂变更，
+    //    undo 第一步只回退合并本身（P1-1 实测「一步回原结构」破掉）。
+    // 唯一两全的位置：**checkpoint 落快照之前**（见 attach 处对 undoMgr.checkpoint 的包装）。
+    // 复合操作的中途快照全走 ckpt()（ckSuppressed 抑制）→ 抑制窗口内根本不会进到包装层；
+    // 非抑制的中途 checkpoint 均已实证发生在 DOM 终态（turnInto 替换完成之后）。
     function normalizeHostLi() {
       for (const li of blockRoot.querySelectorAll('li')) {
         const sub = li.querySelector(':scope > ul, :scope > ol');
-        if (!sub) continue;
+        if (!sub) {
+          // 普通空行（无子列表）同样归一（2026-08-07 todo 深扫 C1）：`.ws-todo li{list-style:none}` 把
+          // marker 撑的行盒去掉后，磁盘/导入/粘贴来的 `<li></li>`（或排版空白 `<li>\n  </li>`）渲染成
+          // **0 高**——整行隐身、点不到、光标落不进，勾选框还叠到下一行的字上；且存盘原样保留、不自愈。
+          // 编辑器自建路径（create-1）早就补 <br>，唯独外来内容没走归一。判据与宿主行同源：纯空白算空。
+          // 反向不用管：li 有了文字后 Chromium 自己收编/保留尾部 <br>，不产生「凭空多一空行」问题。
+          const hasContent = [...li.childNodes].some((n) => (n.nodeType === 3 && (n.textContent || '').trim() !== '')
+            || (n.nodeType === 1 && n.tagName !== 'BR'));
+          const hasBr = [...li.childNodes].some((n) => n.nodeType === 1 && n.tagName === 'BR');
+          if (!hasContent && !hasBr) li.appendChild(doc.createElement('br'));
+          continue;
+        }
         const own = [];
         for (const n of li.childNodes) { if (n === sub) break; own.push(n); }
         // 「有内容」的判据（对抗审查 ADV-3 修正了两处）：
@@ -5178,6 +5362,17 @@
       }
       // ① 灰选中的不可编辑块（图片等），无文字选区 → 复制该整块
       if ((!sel || sel.isCollapsed) && selectedEl) {
+        // 灰选是**行**（Esc 三档）：打包成所属列表类型的片段——clip-1 契约「绝不携带裸 <li>」。
+        // 裸 li 粘贴侧只按「有没有 data-checked」猜 ws-todo，未勾选的待办行会被猜成普通圆点（丢类型）。
+        if (selectedEl.tagName === 'LI') {
+          const host = selectedEl.parentElement; // 直接父列表（嵌套行取嵌套层：类型/勾选语义同源）
+          const wrap = doc.createElement(host && host.tagName === 'OL' ? 'ol' : 'ul');
+          if (host && host.className) wrap.className = host.className;
+          wrap.appendChild(cleanClone(selectedEl));
+          cd.setData('text/html', '<div ' + CLIP + '="b">' + wrap.outerHTML + '</div>');
+          cd.setData('text/plain', selectedEl.textContent || '');
+          e.preventDefault(); return;
+        }
         cd.setData('text/html', '<div ' + CLIP + '="b">' + cleanClone(selectedEl).outerHTML + '</div>');
         // ADV-TSV-3：整表灰选的纯文本给 TSV——裸 textContent 是排版空白噪声，贴回矩形会铺出碎片列
         if (selectedEl.tagName === 'TABLE') {
@@ -5321,6 +5516,30 @@
         if (isCaretAtStart(doc, editingEl)) editingEl.before(frag);
         else if (isCaretAtRealEnd(doc, editingEl)) editingEl.after(frag);
         else { const beforeHalf = editingEl; if (splitBlock()) beforeHalf.after(frag); else beforeHalf.after(frag); } // 块中：劈开，插在前半之后（=后半之前）
+      } else if (selectedEl && selectedEl.tagName === 'LI') {
+        // 行灰选粘贴（2026-08-07 todo 深扫 A1 第二入口）：selectedEl.after(frag) = 把块塞进 <ul> 内部
+        // （非合规落盘、整篇降级）。同类列表片段 → 逐项并入该行之后（clip 契约「粘进同类列表仍是
+        // 单个 ul」）；其余 → 按行劈开列表、frag 落两半之间（insertParaAtRow 同款切法，切点=该行之后）。
+        const row = selectedEl;
+        const host = row.parentElement;
+        const sameKind = blocks.every((b) => (b.tagName === 'UL' || b.tagName === 'OL')
+          && b.tagName === host.tagName && b.classList.contains('ws-todo') === host.classList.contains('ws-todo'));
+        if (sameKind) {
+          let at = row; let lastLi = null;
+          for (const b of blocks) for (const li of [...b.children]) { at.after(li); at = li; lastLi = li; }
+          if (lastLi) { enterEdit(blockOf(lastLi) || host, { mode: 'start' }); caretAtLiTextEnd(lastLi); }
+          return;
+        }
+        const top = blockOf(row) || host;
+        const topRow = topLiIn(top, row) || row; // 嵌套行：劈点上卷到所属顶层行（块级内容进不了嵌套层）
+        const tail = [];
+        for (let n2 = topRow.nextElementSibling; n2; n2 = n2.nextElementSibling) tail.push(n2);
+        if (tail.length) {
+          const nl = doc.createElement(top.tagName);
+          if (top.className) nl.className = top.className;
+          tail.forEach((x) => nl.appendChild(x));
+          top.after(nl); top.after(frag); // 先挂后半列表、再把 frag 顶进两半之间
+        } else top.after(frag);
       } else if (selectedEl) { selectedEl.after(frag); }
       else { blockRoot.appendChild(frag); }
       if (last && last.isConnected) { if (isEditableEl(last)) enterEdit(last, { mode: 'end' }); else selectBlock(last); }
@@ -5988,6 +6207,9 @@
      一字不动**，只是 li 的边框盒变宽、把勾选框收了进来。用 em 跟着 :where(ul,ol) 的 1.7em 走，
      字号变了也不脱节；嵌套缩进由每层 ul 自己的 padding-left 给，不受影响。 */
   .ws-todo > li { list-style:none;position:relative;margin-left:-1.7em;border-left:1.7em solid transparent;padding-left:4px; }
+  /* C6（2026-08-08）：4px padding 逐层累加 → todo 每层嵌套比普通列表多缩 4px、三层差 8px，混排层级对不齐。
+     嵌套列表原位补偿（勾选框挂各自 li 的 ::before，不受影响）。与 TODO_CSS 的同名补偿保持同步（两份拷贝坑）。 */
+  .ws-todo > li > ul, .ws-todo > li > ol { margin-left:-4px; }
   .ws-todo > li::before { content:'';position:absolute;left:-22px;top:0.38em;width:16px;height:16px;box-sizing:border-box;border:1.5px solid #8a857c;border-radius:4px;background:#fff;cursor:pointer; }
   /* U14/check-2：勾选视觉传播反制。text-decoration:line-through 按 CSS 装饰传播规则会绘穿全部 in-flow 后代、
      无法从后代 text-decoration:none 取消 → 含子列表的勾选项**不给自身加 line-through**（只变灰），避免划穿未勾子项；

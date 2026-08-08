@@ -66,7 +66,8 @@ test('P1-1 带子项的行「转为正文」后 undo 一步：子项必须回来
   await openDoc('<ul id="L"><li id="a">一级A</li><li id="b">一级B<ul id="S"><li id="b1">二级B1</li><li id="b2">二级B2</li></ul></li><li id="c">一级C</li></ul>');
   await openRowMenuAt('#b', { x: 30, y: 6 });
   await clickItem('转为正文');
-  expect(await shape(), '转换结果：前列表/段落/子树列表/后列表').toBe('UL[一级A] P[一级B] UL[二级B1二级B2] UL[一级C]');
+  // S1（2026-08-08）：子树列表与后半张同类相邻 → 并成一张（canonical 单表）。
+  expect(await shape(), '转换结果：前列表/段落/子树+后列表').toBe('UL[一级A] P[一级B] UL[二级B1二级B2一级C]');
   await menu('undo');
   await page.waitForTimeout(400);
   const after = await shape();

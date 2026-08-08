@@ -14,6 +14,10 @@
 - **非编辑态**（块选中/无输入焦点）按 ⌘A：直接全篇（Notion 同款）。
 - 「块内已全选」判定剥空白比较（表格/列表 `sel.toString()` 带 `\t\n` 分隔而 textContent 没有，
   逐字比对会把第二级堵死）；IME 组字（`isComposing`/keyCode 229）不拦。
+- **空行不塌档**（2026-08-08 todo 深扫 B1）：刚回车的空 `<li>` 上 ⌘A，第一档照选**本行**（选区就是那个占位 `<br>`、视觉为空但状态成立），再按才升整列表——旧判据 `liText.length>0` 把空行第一档整个挡掉，一次就是整张清单、随手一字替光整份 checklist 并落盘。判「已选到这一档没」：非空行维持文本比较（表格/列表 `sel.toString()` 带 `\t\n` 的老坑归它管），空行改 Range 端点结构比较（`compareBoundaryPoints`，文本比较对空行是废的：`''===''` 恒真）。
+- **多段容器（callout/quote）三档**（2026-08-08 todo 深扫 B2）：**① 本段 `<p>`（`caretLineHostIn`）→ ② 整框 → ③ 全篇**——此前只有 整框→全篇 两档，而同一容器 Esc 有段档（C9），两套口径；且「一键选全+打字=整框替光」与列表塌档同病。单段框（本段=整框内容）段档判据自然与框档重合、直接升级不憋死。
+- **全篇选中态的键盘退出**（2026-08-08 todo 深扫 B3）：全篇/跨块 rangesel 态下 **Esc = 塌回按 ⌘A 时的出发光标**（第一档入口 stash；`selectWholeDoc` 只兜底不覆盖、重入不刷新——否则 Esc 跳文档头）、**←/↑ 塌到选区起点、→/↓ 塌到终点**，落点块直接进编辑。此前五个键全空转，键盘上没有任何退出路径，用户以为退掉了、随手退格全文被删（1.8s 落盘）。全篇选中直接退格的「删全文」语义**原样保留**（undo 可救）。
+- **跨块态首击不吞**（2026-08-08 todo 深扫 C3 根因）：⌘A/跨块拖选后**第一次**点击任何段落就进编辑放光标——此前 onClick 的「拖选松手保选区」守卫把跨块态的纯点击也吞了（目标块非 contenteditable，mousedown 原生折叠不发生），必须点第二次。修在 mousedown：跨块 rangesel 态左键落下即清态；Shift+点击留给扩选。
 - **基础编辑器（非合规文档）不分级**：整篇单 contentEditable，原生 ⌘A 本来就是全篇，语义正确。
 
 ## 三个实现硬点（都实测踩过）
@@ -68,7 +72,7 @@ homeless 跨块选区管线（当年注释明说「全文多块选中需多选�
 | 跨块选区块级高亮 | `src/editor/blockedit.js`（`refreshRangeSel` / `onSelectionChange` / `data-ws2-rangesel` CSS）+ `src/editor/serialize.js` WS2_MARKERS |
 | 内部富复制粘贴 | `src/editor/blockedit.js`（`onCopy` / `onPaste` 富分支 / `insertBlocksAtCaret` / `insertInlineAtCaret` / `ensurePastedStyles` / `data-ws2-clip`）+ `src/editor/serialize.js`（导出 `cleanRoot` + WS2_MARKERS 加 `data-ws2-clip`） |
 | 菜单去 role 化 | `src/main/main.js` buildMenu 编辑菜单 |
-| 门 | `e2e/app.spec.js` ED-SA（四段强断言）；`e2e/block-range-select.spec.js`（块级高亮）；`e2e/rich-paste.spec.js`（内部块/行内保留格式 + 外部无哨兵走纯文本[ED-A4] + 块中劈开 + 落盘无哨兵；合成 copy/paste 事件驱动，不赌 OS 剪贴板/xvfb）；`test/serialize.test.js`（rangesel + clip 剥除、cleanRoot 导出） |
+| 门 | `e2e/app.spec.js` ED-SA（四段强断言）；`e2e/select-all-tiers.spec.js`（空行档/容器段档/阶梯回归）；`e2e/rangesel-exit.spec.js`（键盘退出+首击不吞）；`e2e/block-range-select.spec.js`（块级高亮）；`e2e/rich-paste.spec.js`（内部块/行内保留格式 + 外部无哨兵走纯文本[ED-A4] + 块中劈开 + 落盘无哨兵；合成 copy/paste 事件驱动，不赌 OS 剪贴板/xvfb）；`test/serialize.test.js`（rangesel + clip 剥除、cleanRoot 导出） |
 
 ## 欠账
 
