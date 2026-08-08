@@ -13,6 +13,16 @@
 > **沉淀**：时效已过的条目可清理；升格为硬规则的移进 `CLAUDE.md`。
 
 <!-- 新条目插在这行下面（倒序，最新在最上） -->
+## 2026-08-08 — todo 深扫修复批 #432 已合 main：blockedit 门契约变更 + 全局归一挂点血律
+
+**是什么**：todo 深扫 13 条缺陷的修复批（行灰选六消费者/Esc 阶梯/空行 0 高/⌘A 分档/rangesel 键盘退出/相邻同类列表合一/todo 缩进对齐）合进 main。两件事会砸到并行 session：
+① **六个既有门的期望变了**：E1-1 / E1-7（list-backspace-peel）、行菜单转正文（list-row-menu）、P1-1（list-row-review-fixes）、MT-3（blockedit-turn-into）、CB-4（todo-row-selbox-checkbox）——它们此前把「并排两张同类 ul」「todo 步长 31.2」这些 bug 产物钉成了期望，现按新契约（相邻同类列表必合一 / todo 步长=ul/ol 的 27.2）。rebase 后这些门红，先看新期望再改自己的代码。
+② **undoMgr.checkpoint 被包装了**（blockedit attach 处）：快照落下前跑 coalesceAdjacentLists。**血律：全局 DOM 归一唯一安全挂点=checkpoint 快照之前**——同步挂 markDirty 会把复合变换中途的手术台状态卷走（MT-2 实测丢行）、挂微任务/防抖（checkpoint 之后）会破 undo 一步语义（P1-1 实测）。谁再想加全局归一 pass，别再踩这两个雷。
+
+**怎么 apply**：动 blockedit.js 前先 rebase 过 #432；上述六门红了对照 docs/features/todo-list.md「结构不变式」节；新增结构归一一律进 checkpoint 包装层不另起炉灶。另：finding 动刀前必须在目标分支重验——本批 3 条（C2/C4/命中区）在最新 main 上已被 #421-U3/U2 顺带修好，旧 checkout 的读数差点让我白修。
+
+**来源**：PR #432（fix/todo-sweep-batch，merge d45e615）；spec 更新在 docs/features/todo-list.md + editor-select-all.md
+
 
 ## 2026-08-07 — 发版版本号默认只准 +0.0.1（patch），minor 必须 Colin 特批
 
